@@ -7,10 +7,10 @@ Three layers covered:
 * ``_apply_plugin_restrictions`` — the pure helper that strips
   restricted fields and warns on detected restricted frontmatter
   keys.
-* ``AgentPool._load_directory(plugin_restricted=True)`` — the
-  loader path that applies the helper, plus a regression test
-  that ``plugin_restricted=False`` (the default for user / project
-  agents) keeps existing behaviour.
+* ``AgentPool.load_plugin_directory`` — the loader path that
+  applies the helper, plus a regression test that
+  ``AgentPool.load_directory`` (user / project agents) keeps
+  existing behaviour.
 * ``OrchestrateTools.spawn_agent`` — the spawn path that honours
   ``force_isolation`` even when the caller didn't request it.
 """
@@ -177,17 +177,10 @@ class TestRawFrontmatterKeys:
         assert _raw_frontmatter_keys(f) == set()
 
 
-# ── AgentPool._load_directory(plugin_restricted=True) ──────
+# ── AgentPool plugin-restricted load ──────
 
 
 class TestAgentPoolPluginRestrictedLoad:
-    def _make_pool(self) -> AgentPool:
-        # Bypass the full constructor — for these tests we only
-        # need ``_load_directory`` to populate ``_definitions``.
-        pool = AgentPool.__new__(AgentPool)
-        pool._definitions = {}
-        return pool
-
     def test_plugin_agent_mcp_servers_stripped(self, tmp_path, captured_pool_warnings):
         """End-to-end: a plugin agent declaring mcp_servers gets
         them stripped at load time."""
@@ -196,14 +189,14 @@ class TestAgentPoolPluginRestrictedLoad:
             "bad",
             extra_frontmatter="mcp_servers:\n  - smuggled\n",
         )
-        pool = self._make_pool()
-        pool._load_directory(
+        pool = AgentPool()
+        pool.load_plugin_directory(
             tmp_path,
             priority=1,
             namespace="evil-plugin",
-            plugin_restricted=True,
+            restriction_policy=PluginRestrictionPolicy.strict(),
         )
-        defn = pool._definitions["evil-plugin:bad"][0]
+        defn = pool.get_definition("evil-plugin:bad")
         assert defn.mcp_servers == []
         assert defn.force_isolation == "worktree"
         # And the warning fired — visible in logs for audit.
@@ -219,30 +212,32 @@ class TestAgentPoolPluginRestrictedLoad:
             "p",
             extra_frontmatter='hooks:\n  PreToolUse:\n    - command: "echo"\n',
         )
-        pool = self._make_pool()
-        pool._load_directory(
+        pool = AgentPool()
+        pool.load_plugin_directory(
             tmp_path,
             priority=1,
             namespace="plug",
-            plugin_restricted=True,
+            restriction_policy=PluginRestrictionPolicy.strict(),
         )
-        defn = pool._definitions["plug:p"][0]
+        defn = pool.get_definition("plug:p")
         assert defn.force_isolation == "worktree"
         joined = " ".join(captured_pool_warnings)
         assert "hooks" in joined
 
-    def test_non_plugin_load_preserves_mcp_servers(self, tmp_path, captured_pool_warnings):
-        """The default ``plugin_restricted=False`` path (user /
-        project agents) must NOT strip mcp_servers — only plugin
-        agents get the security envelope."""
+    def test_non_plugin_load_preserves_mcp_servers(
+        self, tmp_path, settings, captured_pool_warnings
+    ):
+        """The ``load_directory`` path (user / project agents) must
+        NOT strip mcp_servers — only plugin agents get the security
+        envelope."""
         _write_agent(
             tmp_path,
             "userp",
             extra_frontmatter="mcp_servers:\n  - my-server\n",
         )
-        pool = self._make_pool()
-        pool._load_directory(tmp_path, priority=1)
-        defn = pool._definitions["userp"][0]
+        pool = AgentPool()
+        pool.load_directory(tmp_path, priority=1, settings=settings)
+        defn = pool.get_definition("userp")
         assert defn.mcp_servers == ["my-server"]
         assert defn.force_isolation is None
         # And NO warning fires for user / project agents.

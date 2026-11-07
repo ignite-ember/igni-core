@@ -212,36 +212,13 @@ class AgentEntry(BaseModel):
     """One entry in the :class:`AgentPool` — a definition plus its
     resolution priority.
 
-    Replaces the raw ``tuple[AgentDefinition, int]`` that used to
-    live in ``AgentPool._definitions`` and got unpacked at ~8 call
-    sites. Typed pair-container per Rule 1.
+    Typed pair-container per Rule 1.
     """
 
     model_config = ConfigDict(frozen=False)
 
     definition: AgentDefinition
     priority: AgentPriority
-
-    @classmethod
-    def from_legacy_pair(cls, value: object) -> AgentEntry:
-        """Coerce a legacy ``(definition, priority)`` tuple or an
-        existing :class:`AgentEntry` into a canonical entry.
-
-        Used by the legacy ``pool._definitions`` shim to normalise
-        the two shapes test code still writes. Kept as a classmethod
-        on the model (Rule 1) rather than a free helper so the
-        coercion lives next to the data it produces.
-        """
-        if isinstance(value, cls):
-            return value
-        if isinstance(value, tuple):
-            defn, prio = value
-            typed_prio = prio if isinstance(prio, AgentPriority) else AgentPriority(int(prio))
-            return cls(definition=defn, priority=typed_prio)
-        raise TypeError(
-            "Expected an AgentEntry or (AgentDefinition, priority) tuple; "
-            f"got {type(value).__name__}"
-        )
 
 
 class LoadError(BaseModel):

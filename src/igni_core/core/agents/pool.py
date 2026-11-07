@@ -11,11 +11,6 @@ Agents are built lazily on first :meth:`get`, so startup only
 pays the cost of parsing ``.md`` files (~50ms), not importing
 LLM provider modules (~350ms). Ephemeral CRUD lives on
 :class:`EphemeralAgentStore` and is reached via :attr:`ephemeral`.
-
-Backward-compat shim surface (``_definitions``
-/ ``_ephemeral_count`` / ``_max_ephemeral`` / ``_ephemeral_dir`` /
-``_load_directory``) is quarantined in :mod:`pool_legacy` — see that
-module for the follow-up-PR deletion target.
 """
 
 from __future__ import annotations
@@ -30,7 +25,6 @@ from igni_core.core.agents.ephemeral import EphemeralAgentStore
 from igni_core.core.agents.loader import AgentDefinitionLoader
 from igni_core.core.agents.markdown import AgentMarkdownFile
 from igni_core.core.agents.plugin_policy import PluginRestrictionPolicy
-from igni_core.core.agents.pool_legacy import LegacyAgentPoolMixin
 from igni_core.core.agents.schemas import (
     AgentBuildContext,
     AgentDefinition,
@@ -51,16 +45,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class AgentPool(LegacyAgentPoolMixin):
+class AgentPool:
     """Cache + orchestrator for the agent definitions and their
     built :class:`Agent` instances.
 
     Kept intentionally lean — ~7 instance fields, ~14 public
     methods. Discovery, build, and ephemeral CRUD are delegated
     to the three collaborators (:class:`AgentDefinitionLoader`,
-    :class:`AgentBuilder`, :class:`EphemeralAgentStore`). Legacy
-    reach-in attribute shims live on :class:`LegacyAgentPoolMixin`
-    in :mod:`pool_legacy` — this class knows nothing about them.
+    :class:`AgentBuilder`, :class:`EphemeralAgentStore`).
     """
 
     def __init__(
@@ -87,42 +79,11 @@ class AgentPool(LegacyAgentPoolMixin):
         # counter.
         self._spawn_budgets: dict[str, SpawnBudget] = {}
 
-    def _ensure_initialised(self) -> None:
-        """Idempotent guard: install the ``__init__`` fields if the
-        pool was created via ``AgentPool.__new__`` (bypassing
-        ``__init__``).
-
-        The legacy view uses this so
-        ``tests/test_plugin_agent_restrictions.py`` can build a
-        pool via ``__new__`` and immediately assign
-        ``pool._definitions = {}``.
-        """
-        if getattr(self, "_entries", None) is not None:
-            return
-        object.__setattr__(self, "_entries", {})
-        object.__setattr__(self, "_agents", {})
-        object.__setattr__(self, "_builder", None)
-        object.__setattr__(self, "_ephemeral", None)
-        object.__setattr__(self, "_db", None)
-        object.__setattr__(self, "_broadcast", None)
-        object.__setattr__(self, "_settings", None)
-        object.__setattr__(self, "_base_dir", None)
-        object.__setattr__(self, "_spawn_budgets", {})
-
     # ── Introspection helpers used by the collaborators ─────────
 
     def iter_entries(self) -> Iterable[AgentEntry]:
         """Iterate the current :class:`AgentEntry` values."""
         return self._entries.values()
-
-    def iter_entry_items(self) -> Iterable[tuple[str, AgentEntry]]:
-        """Iterate ``(name, entry)`` pairs.
-
-        Public helper used by :class:`_LegacyDefinitionsView` (via
-        the mixin) so the legacy adapter never reaches into
-        :attr:`_entries` directly. Order matches insertion order.
-        """
-        return list(self._entries.items())
 
     def has_definition(self, name: str) -> bool:
         return name in self._entries
@@ -150,34 +111,6 @@ class AgentPool(LegacyAgentPoolMixin):
         """Drop an entry (and its cached agent) from the pool."""
         self._entries.pop(name, None)
         self._agents.pop(name, None)
-
-    def clear_entries(self) -> None:
-        """Public entry-clear used by :class:`_LegacyDefinitionsView`.
-
-        Prefer :meth:`clear_definitions` for internal callers — it
-        respects the ephemeral-preservation flag. This method is
-        the flat "drop everything" equivalent kept intentionally
-        minimal so the legacy view has a public route (Rule 6).
-        """
-        self._entries.clear()
-        self._agents.clear()
-
-    def replace_entries_from(
-        self,
-        mapping: dict[str, tuple[AgentDefinition, int | AgentPriority] | AgentEntry],
-    ) -> None:
-        """Clear all entries and repopulate from ``mapping``.
-
-        Accepts either ``(definition, priority)`` tuples or
-        :class:`AgentEntry` values so legacy test paths that spell
-        ``pool._definitions = {name: (defn, prio)}`` route through
-        one public method rather than touching the entry store
-        directly. Coercion lives on :meth:`AgentEntry.from_legacy_pair`.
-        """
-        self._entries.clear()
-        self._agents.clear()
-        for name, value in mapping.items():
-            self._entries[name] = AgentEntry.from_legacy_pair(value)
 
     def load_ephemeral_directory(self, path: Path) -> None:
         """Merge a rehydrated ephemeral dir at
@@ -261,18 +194,14 @@ class AgentPool(LegacyAgentPoolMixin):
         namespace: str,
         restriction_policy: PluginRestrictionPolicy | None = None,
     ) -> LoadReport:
-        """Public entry-point for :class:`PluginLoader` — replaces
-        the old private-method reach-in ``pool._load_directory``.
+        """Load a plugin's agent directory under the plugin
+        security envelope.
 
-        Applies the plugin security envelope (via
+        Applies ``restriction_policy`` (strict by default — see
         :class:`PluginRestrictionPolicy`) and namespaces every
-        loaded agent as ``<namespace>:<name>``."""
-        policy = restriction_policy or PluginRestrictionPolicy.strict()
-        loader = AgentDefinitionLoader(
-            settings=self._settings_or_bare(),
-            project_dir=Path(self._base_dir) if self._base_dir else Path.cwd(),
-            restriction_policy=policy,
-        )
+        loaded agent as ``<namespace>:<name>``. Used by
+        :class:`PluginLoader`."""
+        loader = self._make_base_loader(restriction_policy or PluginRestrictionPolicy.strict())
         report = loader.load_directory(path, priority, namespace=namespace)
         self._merge(report)
         return report
@@ -449,7 +378,11 @@ class AgentPool(LegacyAgentPoolMixin):
             raise RuntimeError("Ephemeral agents not initialized. Call init_ephemeral() first.")
         return self._ephemeral
 
-    def init_ephemeral(self, project_dir: Path, max_ephemeral: int = 5) -> None:
+    def init_ephemeral(
+        self,
+        project_dir: Path,
+        max_ephemeral: int = EphemeralAgentStore.DEFAULT_MAX_EPHEMERAL,
+    ) -> None:
         """Set up the ephemeral store + rehydrate leftovers."""
         self._ephemeral = EphemeralAgentStore(
             project_dir=project_dir,
@@ -507,8 +440,7 @@ class AgentPool(LegacyAgentPoolMixin):
     def is_ephemeral(self, defn: AgentDefinition) -> bool:
         """Public predicate — is this definition an ephemeral agent?
 
-        Replaces the ``pool._ephemeral_dir`` reach-in previously
-        used by the panel snapshot. Returns ``False`` when the
+        Used by the agents panel snapshot. Returns ``False`` when the
         ephemeral store isn't initialised, when the definition has
         no source file, or when its file doesn't live inside the
         ephemeral directory.
@@ -528,12 +460,18 @@ class AgentPool(LegacyAgentPoolMixin):
             if existing is None or entry.priority > existing.priority:
                 self._entries[name] = entry
 
-    def _make_base_loader(self) -> AgentDefinitionLoader:
-        """Construct a bare-bones loader for single-directory
-        loads (tests, ephemeral rehydrate)."""
+    def _make_base_loader(
+        self, restriction_policy: PluginRestrictionPolicy | None = None
+    ) -> AgentDefinitionLoader:
+        """Construct a loader for single-directory loads (tests,
+        ephemeral rehydrate, plugin directories).
+
+        ``restriction_policy`` is passed through as-is: ``None``
+        means no plugin envelope. Callers that need one choose it."""
         return AgentDefinitionLoader(
             settings=self._settings_or_bare(),
             project_dir=Path(self._base_dir) if self._base_dir else Path.cwd(),
+            restriction_policy=restriction_policy,
         )
 
     def _ensure_builder(self) -> AgentBuilder:

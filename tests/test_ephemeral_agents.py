@@ -106,7 +106,7 @@ class TestRegisterEphemeral:
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_register_respects_limit(self, mock_build, pool):
         mock_build.return_value = MagicMock()
-        pool._max_ephemeral = 2
+        pool.ephemeral.max_ephemeral = 2
         pool.register_ephemeral(name="a1", description="d", system_prompt="p")
         pool.register_ephemeral(name="a2", description="d", system_prompt="p")
         with pytest.raises(ValueError, match="limit reached"):
@@ -170,9 +170,9 @@ class TestPromoteEphemeral:
         pool.init_ephemeral(tmp_path)
 
         pool.register_ephemeral(name="promo", description="d", system_prompt="p")
-        assert pool._ephemeral_count == 1
+        assert pool.ephemeral.count == 1
         pool.promote_ephemeral("promo", tmp_path)
-        assert pool._ephemeral_count == 0
+        assert pool.ephemeral.count == 0
 
     def test_promote_nonexistent_raises(self, tmp_path, settings):
         pool = AgentPool()
@@ -230,9 +230,9 @@ class TestDiscardEphemeral:
         pool.init_ephemeral(tmp_path)
 
         pool.register_ephemeral(name="temp", description="d", system_prompt="p")
-        assert pool._ephemeral_count == 1
+        assert pool.ephemeral.count == 1
         pool.discard_ephemeral("temp")
-        assert pool._ephemeral_count == 0
+        assert pool.ephemeral.count == 0
 
     def test_discard_nonexistent_raises(self, tmp_path, settings):
         pool = AgentPool()
@@ -279,11 +279,11 @@ class TestCleanupEphemeral:
 
         pool.register_ephemeral(name="e1", description="d", system_prompt="p")
         pool.register_ephemeral(name="e2", description="d", system_prompt="p")
-        assert pool._ephemeral_count == 2
+        assert pool.ephemeral.count == 2
 
         removed = pool.cleanup_ephemeral()
         assert removed == 2
-        assert pool._ephemeral_count == 0
+        assert pool.ephemeral.count == 0
         assert not (tmp_path / CONFIG_DIR / "agents.tmp" / "e1.md").exists()
         assert not (tmp_path / CONFIG_DIR / "agents.tmp" / "e2.md").exists()
         assert "e1" not in pool.agent_names

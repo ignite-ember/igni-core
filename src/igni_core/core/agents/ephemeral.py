@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from igni_core.core.agents.markdown import AgentMarkdownFile
 from igni_core.core.agents.schemas import (
@@ -59,11 +59,14 @@ class EphemeralAgentStore:
     #: that does not override it.
     DEFAULT_TOOLS: tuple[str, ...] = ("Write", "Edit", "Bash")
 
+    #: How many ephemerals may exist at once unless the caller says otherwise.
+    DEFAULT_MAX_EPHEMERAL: ClassVar[int] = 5
+
     def __init__(
         self,
         project_dir: Path,
         pool: AgentPool,
-        max_ephemeral: int = 5,
+        max_ephemeral: int = DEFAULT_MAX_EPHEMERAL,
     ) -> None:
         self._dir: Path = project_dir / CONFIG_DIR / "agents.tmp"
         self._pool = pool

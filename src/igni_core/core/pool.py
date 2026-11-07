@@ -13,12 +13,6 @@ module just binds the deprecated names to those classmethods so
 ``from igni_core.core.pool import parse_agent_file`` (etc.)
 resolves without a second implementation.
 
-Note: :mod:`igni_core.core.agents.pool_legacy` is a *separate*
-legacy shim living inside the ``core/agents/`` package (the
-:class:`LegacyAgentPoolMixin` for :class:`AgentPool` reach-in
-attribute compat). It is intentionally out of scope here — its
-own removal PR belongs on a different audit target.
-
 Documented resolution order (highest priority wins on name
 collision). Within the same scope, native Ember sources beat
 cross-tool Claude sources by +1::

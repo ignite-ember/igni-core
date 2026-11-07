@@ -2,8 +2,7 @@
 
 Owns the agents-panel concern: snapshot the pool for the panel
 UI, plus the promote/discard mutators for ephemeral agents.
-Uses the public :meth:`AgentPool.is_ephemeral` method (no more
-``pool._ephemeral_dir`` reach-in) and returns typed
+Uses the public :meth:`AgentPool.is_ephemeral` method and returns typed
 :class:`PromoteEphemeralResult` / :class:`DiscardEphemeralResult`
 objects rather than overloaded ``msg.Info`` toasts.
 """
