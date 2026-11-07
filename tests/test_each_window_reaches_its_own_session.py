@@ -49,6 +49,7 @@ from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_router import RpcRouter
 from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
 from igni_core.extensions.host.windows import WindowModelError
 from igni_core.extensions.service_events import DeliveryReceipt
@@ -90,8 +91,8 @@ class _Backend:
     def wire_queue_hook(self, queue: Any) -> None:
         self.queue_hook = queue
 
-    def register_broadcast(self, callback: Any) -> None:
-        self.broadcasts.append(callback)
+    def register_broadcast(self, subscriber: BroadcastSink) -> None:
+        self.broadcasts.append(subscriber)
 
     def reload_agents(self) -> None:
         self.reloads += 1

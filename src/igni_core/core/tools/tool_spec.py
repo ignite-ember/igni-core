@@ -33,11 +33,12 @@ from agno.tools import Toolkit
 from agno.tools.file import FileTools
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.tools.edit import FileEditNotifier, IgniEditTools
 from igni_core.core.tools.notebook import NotebookTools
 from igni_core.core.tools.schedule import ScheduleTools
 from igni_core.core.tools.shell import IgniShellTools
-from igni_core.core.tools.visualize import BroadcastFn, VisualizeTools
+from igni_core.core.tools.visualize import VisualizeTools
 from igni_core.core.tools.web import WebTools
 
 # Module-top optional import — replaces the inline import in the old
@@ -65,7 +66,7 @@ class ToolBuildContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     base_dir: Path
-    broadcast: BroadcastFn | None = None
+    broadcast: BroadcastSink | None = None
     cloud_token: str | None = None
     # DEC-14: no vendor default. Empty means "no server configured",
     # which a self-hosted first run legitimately is.

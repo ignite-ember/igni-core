@@ -16,7 +16,8 @@ from typing import Any
 
 from agno.tools import Toolkit
 
-from igni_core.core.tools.http_fetcher import BroadcastFn, HttpFetcher
+from igni_core.core.broadcast_schema import BroadcastSink
+from igni_core.core.tools.http_fetcher import HttpFetcher
 from igni_core.core.tools.web_schemas import HttpFetcherConfig
 
 
@@ -25,7 +26,7 @@ class WebTools(Toolkit):
 
     def __init__(
         self,
-        broadcast: BroadcastFn | None = None,
+        broadcast: BroadcastSink | None = None,
         config: HttpFetcherConfig | None = None,
         **kwargs: Any,
     ) -> None:

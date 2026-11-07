@@ -65,22 +65,15 @@ Housed here:
   ``plan_ops.py``) for the same reason as the loop schemas —
   it's the wire shape crossed by every plan-decision RPC and
   the schemas-home rule applies (Rule 1).
-* :class:`PlanDecidedBroadcast` — typed payload for the
-  ``plan_decided`` broadcast channel emitted after a plan is
-  approved / dismissed. Kept alongside
+* :class:`PlanDecidedEvent` — the ``plan_decided`` broadcast
+  emitted after a plan is approved / dismissed. Kept alongside
   :class:`PlanDecisionResult` because both cross the same RPC
   surface with the same run_id / decision pair.
-* :class:`OutputStyleChangedBroadcast` — typed payload for the
-  ``output_style_changed`` broadcast channel emitted by
-  :meth:`RuntimeModeCoordinator.set_output_style` when the user
-  flips the active output style at runtime. Rule 1 / Pattern 2:
-  emit sites call :meth:`model_dump` instead of hand-rolling
-  the payload dict.
-* :class:`PermissionModeChangedBroadcast` — typed payload for
-  the ``permission_mode_changed`` broadcast channel emitted by
-  :meth:`RuntimeModeCoordinator.set_permission_mode`. Fields
-  carry :class:`PermissionMode` enums; emit sites dump with
-  ``mode="json"`` so the wire keeps its string shape.
+* :class:`OutputStyleChangedEvent` — the ``output_style_changed``
+  broadcast emitted by :meth:`RuntimeModeCoordinator.set_output_style`.
+* :class:`PermissionModeChangedEvent` — the
+  ``permission_mode_changed`` broadcast emitted by
+  :meth:`RuntimeModeCoordinator.set_permission_mode`.
 * :class:`McpClientBundle` — typed wrapper around the
   ``name → client`` mapping crossing into
   :meth:`AgentPool.build_agents`. Replaces the raw
@@ -99,6 +92,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.tools.plan import PlanDecision
 
@@ -709,49 +703,33 @@ class PlanDecisionResult(BaseModel):
     error: str | None = None
 
 
-class PlanDecidedBroadcast(BaseModel):
-    """Typed payload for the ``plan_decided`` broadcast channel.
+class PlanDecidedEvent(BroadcastEvent):
+    """The ``plan_decided`` broadcast. The FE listens on this
+    channel to flip the plan card from pending to
+    approved/dismissed."""
 
-    The FE listens on this channel to flip the plan card from
-    pending to approved/dismissed. Modelled as a Pydantic
-    schema so the emit site calls :meth:`model_dump` instead of
-    hand-rolling the payload dict (Rule 1 / Pattern 2).
-    """
-
+    channel: Literal["plan_decided"] = "plan_decided"
     run_id: str
     decision: PlanDecision
 
 
-class OutputStyleChangedBroadcast(BaseModel):
-    """Typed payload for the ``output_style_changed`` broadcast
-    channel.
+class OutputStyleChangedEvent(BroadcastEvent):
+    """The ``output_style_changed`` broadcast, emitted by
+    :meth:`RuntimeModeCoordinator.set_output_style` after the
+    active style has been swapped. The FE refreshes the status
+    chip that shows the active style without polling."""
 
-    Emitted by :meth:`RuntimeModeCoordinator.set_output_style`
-    after the active style has been swapped and the main team's
-    ``instructions`` list has been hot-patched. The FE consumes
-    it to refresh the status chip that shows the active style
-    without polling. Modelled as a Pydantic schema so the emit
-    site calls :meth:`model_dump` instead of hand-rolling the
-    payload dict (Rule 1 / Pattern 2).
-    """
-
+    channel: Literal["output_style_changed"] = "output_style_changed"
     style: str
     previous: str
 
 
-class PermissionModeChangedBroadcast(BaseModel):
-    """Typed payload for the ``permission_mode_changed`` broadcast
-    channel.
+class PermissionModeChangedEvent(BroadcastEvent):
+    """The ``permission_mode_changed`` broadcast, emitted by
+    :meth:`RuntimeModeCoordinator.set_permission_mode` after the
+    live :class:`PermissionEvaluator` mode flip."""
 
-    Emitted by :meth:`RuntimeModeCoordinator.set_permission_mode`
-    after the live :class:`PermissionEvaluator` mode flip. Fields
-    carry :class:`PermissionMode` enums; emit sites dump with
-    ``mode="json"`` so the wire keeps its historic string shape
-    (mirrors the :class:`PlanDecidedBroadcast` / :class:`PlanDecision`
-    precedent). Rule 1 / Pattern 2: the emit site calls
-    :meth:`model_dump` instead of hand-rolling the payload dict.
-    """
-
+    channel: Literal["permission_mode_changed"] = "permission_mode_changed"
     mode: PermissionMode
     previous: PermissionMode
 

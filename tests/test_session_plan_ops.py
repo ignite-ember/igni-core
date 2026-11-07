@@ -62,7 +62,7 @@ class TestApprovePlan:
     async def test_broadcasts_plan_decided(self):
         s = _bare_session()
         captured: list[tuple[str, dict]] = []
-        s.broadcast_bus.register(lambda ch, p: captured.append((ch, p)))
+        s.broadcast_bus.register(lambda e: captured.append((e.channel, e.to_payload())))
         await s.plan.approve("run-1")
         assert len(captured) == 1
         channel, payload = captured[0]

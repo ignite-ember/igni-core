@@ -111,7 +111,7 @@ class TestSetOutputStyle:
     def test_broadcasts_change(self):
         s = _bare_session()
         captured: list[tuple[str, dict]] = []
-        s.broadcast_bus.register(lambda ch, p: captured.append((ch, p)))
+        s.broadcast_bus.register(lambda e: captured.append((e.channel, e.to_payload())))
         RuntimeModeCoordinator(s).set_output_style("explanatory")
         assert len(captured) == 1
         channel, payload = captured[0]
@@ -152,7 +152,7 @@ class TestSetPermissionMode:
     def test_same_mode_reports_noop(self):
         s = _bare_session()
         captured: list[tuple[str, dict]] = []
-        s.broadcast_bus.register(lambda ch, p: captured.append((ch, p)))
+        s.broadcast_bus.register(lambda e: captured.append((e.channel, e.to_payload())))
         msg = RuntimeModeCoordinator(s).set_permission_mode("default")
         assert "already" in msg.lower()
         assert captured == []
@@ -160,7 +160,7 @@ class TestSetPermissionMode:
     def test_broadcasts_change(self):
         s = _bare_session()
         captured: list[tuple[str, dict]] = []
-        s.broadcast_bus.register(lambda ch, p: captured.append((ch, p)))
+        s.broadcast_bus.register(lambda e: captured.append((e.channel, e.to_payload())))
         RuntimeModeCoordinator(s).set_permission_mode("plan")
         assert len(captured) == 1
         channel, payload = captured[0]

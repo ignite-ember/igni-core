@@ -21,11 +21,16 @@ Consumers:
   ``_get`` helper and :meth:`WebTools.fetch_url`. Callers at the
   Agno-toolkit boundary invoke :meth:`text_or_error` to stringify
   for the tool-call return contract.
+* :class:`HttpRetryAttemptEvent` / :class:`HttpRetrySucceededEvent`
+  — the broadcasts :class:`HttpFetcher` emits while retrying.
 """
+
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from igni_core import __version__
+from igni_core.core.broadcast_schema import BroadcastEvent
 
 
 class HttpFetcherConfig(BaseModel):
@@ -116,3 +121,21 @@ class FetchResult(BaseModel):
         pre-formatted :attr:`error` string.
         """
         return self.text if self.ok else self.error
+
+
+class HttpRetryAttemptEvent(BroadcastEvent):
+    """The ``http_retry_attempt`` broadcast, sent before each retry."""
+
+    channel: Literal["http_retry_attempt"] = "http_retry_attempt"
+    attempt: int
+    delay_seconds: float
+
+
+class HttpRetrySucceededEvent(BroadcastEvent):
+    """The ``http_retry_succeeded`` broadcast, sent when a fetch
+    succeeds after at least one retry."""
+
+    channel: Literal["http_retry_succeeded"] = "http_retry_succeeded"
+    url: str
+    attempt_count: int
+    delay_seconds: float

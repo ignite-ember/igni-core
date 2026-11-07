@@ -30,8 +30,9 @@ import pytest
 
 from igni_core.backend.server import BackendServer
 from igni_core.core.config.permission_eval import PermissionMode
+from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
-from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore
+from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore, PlanSubmittedEvent
 
 # ── PlanStore.decisions ─────────────────────────────────────
 
@@ -171,8 +172,6 @@ def _build_session() -> object:
     ``approve_plan`` / ``dismiss_plan`` touch. Skips Agno
     initialisation — keeps the test fast and isolated from
     schema drift in the storage layer."""
-    from igni_core.core.session.broadcast import BroadcastBus
-
     session = Session.__new__(Session)
     session.broadcast_bus = BroadcastBus()
     session.plan_store = PlanStore()
@@ -209,7 +208,7 @@ class TestSessionApproveDismiss:
         # the card stay in pending until they reloaded.
         session = _build_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
         await session.approve_plan("run-123")
         decided = [(c, p) for c, p in received if c == "plan_decided"]
         assert decided
@@ -231,7 +230,7 @@ class TestSessionApproveDismiss:
     async def test_dismiss_broadcasts_plan_decided(self) -> None:
         session = _build_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
         await session.dismiss_plan("run-789")
         decided = [(c, p) for c, p in received if c == "plan_decided"]
         assert decided
@@ -480,8 +479,6 @@ class TestPostRunBroadcastRunIdStamp:
     loop stamps it at drain time."""
 
     def _bus_session(self):
-        from igni_core.core.session.broadcast import BroadcastBus
-
         session = Session.__new__(Session)
         session.broadcast_bus = BroadcastBus()
         return session
@@ -489,9 +486,9 @@ class TestPostRunBroadcastRunIdStamp:
     def test_drain_stamps_run_id_into_payload(self) -> None:
         session = self._bus_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
 
-        session.queue_post_run_broadcast("plan_submitted", {"plan": "X", "tasks": []})
+        session.queue_post_run_broadcast(PlanSubmittedEvent(plan="X"))
         session.drain_post_run_broadcasts(run_id="R-stamped")
 
         assert received == [("plan_submitted", {"plan": "X", "tasks": [], "run_id": "R-stamped"})]
@@ -502,22 +499,21 @@ class TestPostRunBroadcastRunIdStamp:
         # through untouched.
         session = self._bus_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
 
-        session.queue_post_run_broadcast("plan_submitted", {"plan": "X", "tasks": []})
+        session.queue_post_run_broadcast(PlanSubmittedEvent(plan="X"))
         session.drain_post_run_broadcasts()  # no run_id arg
 
         assert received == [("plan_submitted", {"plan": "X", "tasks": []})]
 
     def test_drain_does_NOT_overwrite_existing_run_id(self) -> None:
-        # If the caller explicitly set run_id in the payload,
-        # the drain respects it. Belt and suspenders for tools
-        # that already know their run_id at queue time.
+        # If the caller explicitly set run_id on the event, the
+        # drain respects it.
         session = self._bus_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
 
-        session.queue_post_run_broadcast("plan_submitted", {"plan": "X", "run_id": "explicit"})
+        session.queue_post_run_broadcast(PlanSubmittedEvent(plan="X", run_id="explicit"))
         session.drain_post_run_broadcasts(run_id="from-loop")
 
         assert received[0][1]["run_id"] == "explicit"

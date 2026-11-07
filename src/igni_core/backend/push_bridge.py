@@ -34,6 +34,7 @@ from igni_core.backend.schemas_push import (
     SessionNamedPayload,
 )
 from igni_core.core.activity import background
+from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.tools.edit import (
     FileEditNotifier,
     default_file_edit_notifier,
@@ -284,17 +285,14 @@ class PushNotificationBridge:
             return
         backend.register_broadcast(self._on_broadcast)
 
-    def _on_broadcast(self, channel: str, payload: dict) -> None:
+    def _on_broadcast(self, event: BroadcastEvent) -> None:
         """Sync-callable broadcast handler (session.broadcast is
         sync and may be called from a tool-call context that isn't
         itself awaiting). We hop onto the loop via
         ``call_soon_threadsafe``.
 
-        The payload is already Pydantic-validated at the broadcast
-        source (see :mod:`core.broadcast_schema`); we
-        forward it as-is so downstream views see the exact same
-        wire shape the broadcast defined."""
-        self._schedule_push(channel, payload)
+        The event is serialised here, at the transport boundary."""
+        self._schedule_push(event.channel, event.to_payload())
 
     # ── Orchestrate progress ────────────────────────────────────
 

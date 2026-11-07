@@ -60,7 +60,7 @@ from igni_core.backend.schemas_model import ModelSwitchResult
 from igni_core.core.activity import background
 from igni_core.core.agents import AgentPool
 from igni_core.core.auth.credentials import CloudCredentials
-from igni_core.core.broadcast_schema import BroadcastEvent
+from igni_core.core.broadcast_schema import BroadcastEvent, BroadcastSink
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.permission_eval.schemas import PermissionMode
 from igni_core.core.config.settings import Settings
@@ -1501,11 +1501,9 @@ class Session:
 
     # ── Broadcast facade ───────────────────────────────────────
 
-    def register_broadcast_callback(self, callback) -> None:
-        """Register a ``(channel, payload) -> None`` subscriber on
-        the broadcast bus.
-        """
-        self.broadcast_bus.register(callback)
+    def register_broadcast_callback(self, subscriber: BroadcastSink) -> None:
+        """Register a subscriber on the broadcast bus."""
+        self.broadcast_bus.register(subscriber)
 
     async def append_event(
         self,
@@ -1561,17 +1559,13 @@ class Session:
         """Compat setter — seeds the seq counter for fixtures."""
         self._ensure_event_log_store()._seq = value
 
-    def broadcast(self, channel: str, payload: dict) -> None:
+    def broadcast(self, event: BroadcastEvent) -> None:
         """Fire an event through the broadcast bus."""
-        self.broadcast_bus.emit(BroadcastEvent(channel=channel, payload=payload))
-
-    def broadcast_event(self, event: BroadcastEvent) -> None:
-        """Typed-event companion to :meth:`broadcast`."""
         self.broadcast_bus.emit(event)
 
-    def queue_post_run_broadcast(self, channel: str, payload: dict) -> None:
+    def queue_post_run_broadcast(self, event: BroadcastEvent) -> None:
         """Defer a broadcast until the current run finishes."""
-        self.broadcast_bus.queue_post_run(BroadcastEvent(channel=channel, payload=payload))
+        self.broadcast_bus.queue_post_run(event)
 
     def drain_post_run_broadcasts(self, run_id: str | None = None) -> None:
         """Flush the post-run broadcast queue."""

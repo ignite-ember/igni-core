@@ -56,7 +56,7 @@ def _build_session_with_todo_tools() -> tuple[object, TodoTools, _CapturingPersi
     session = SimpleNamespace(
         todo_store=TodoStore(),
         persistence=_CapturingPersistence(),
-        broadcast=lambda channel, payload: None,
+        broadcast=lambda event: None,
     )
     tools = TodoTools.__new__(TodoTools)
     tools._session = session  # type: ignore[attr-defined]

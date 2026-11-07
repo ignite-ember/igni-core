@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from igni_core.core.agents import AgentPool
+from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.tool_permissions import ToolPermissions
 from igni_core.core.hooks.executor import HookExecutor
@@ -65,7 +66,7 @@ class ToolsBuilder:
         registry_cls: type[ToolRegistry],
         cloud_token: str | None,
         cloud_server_url: str | None,
-        broadcast: Callable[[str, dict], None],
+        broadcast: BroadcastSink,
         plugin_loader: PluginLoader,
         disabled_plugins: set[str],
         mcp_manager: MCPClientManager,

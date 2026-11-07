@@ -30,11 +30,11 @@ symbols it exported are re-exported here.
 
 from igni_core.core.tools.plan.researcher import PlanResearcherRunner
 from igni_core.core.tools.plan.schemas import (
-    PermissionModeChangedPayload,
     PlanEnterResult,
     PlanExitInput,
     PlanExitResult,
-    PlanSubmittedPayload,
+    PlanModeEnteredEvent,
+    PlanSubmittedEvent,
     PlanTaskInput,
 )
 from igni_core.core.tools.plan.store import (
@@ -50,17 +50,17 @@ from igni_core.core.tools.plan.submission import (
 from igni_core.core.tools.plan.tool import PlanTool
 
 __all__ = [
-    "PermissionModeChangedPayload",
     "PlanDecision",
     "PlanDecisionsBlob",
     "PlanEnterResult",
     "PlanExitInput",
     "PlanExitResult",
+    "PlanModeEnteredEvent",
     "PlanResearcherRunner",
     "PlanSessionShapeError",
     "PlanSnapshot",
     "PlanStore",
-    "PlanSubmittedPayload",
+    "PlanSubmittedEvent",
     "PlanTaskInput",
     "PlanTool",
     "PlanTransactionCoordinator",

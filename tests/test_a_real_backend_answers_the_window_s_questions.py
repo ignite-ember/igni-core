@@ -162,7 +162,7 @@ def test_marketplaces_start_from_what_the_user_registered(backend):
 
 def test_a_visualization_action_is_recorded_and_echoed(backend):
     seen: list[tuple[str, dict]] = []
-    backend.register_broadcast(lambda channel, payload: seen.append((channel, payload)))
+    backend.register_broadcast(lambda e: seen.append((e.channel, e.to_payload())))
 
     result = backend.dispatch_visualization_action("select_row", {"row": 3})
 

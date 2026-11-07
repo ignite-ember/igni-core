@@ -14,11 +14,10 @@ that flip runtime state without rebuilding the agent:
 
 Both broadcast the corresponding change event to attached
 clients (``output_style_changed`` / ``permission_mode_changed``)
-so the FE's status chip updates without polling. Broadcast
-payloads use the typed :class:`OutputStyleChangedBroadcast` /
-:class:`PermissionModeChangedBroadcast` schemas (Rule 1 /
-Pattern 2), sourced from the canonical
-:mod:`~igni_core.core.session.schemas` module.
+so the FE's status chip updates without polling. The
+broadcasts are the typed :class:`OutputStyleChangedEvent` /
+:class:`PermissionModeChangedEvent` from
+:mod:`~igni_core.core.session.schemas`.
 
 The ``# Output style:`` block encoding — the marker prefix and
 the empty-body-prune rule — is owned by
@@ -32,12 +31,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
-from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.config.permission_eval.mode_policy import ModePolicy
 from igni_core.core.session.schemas import (
-    OutputStyleChangedBroadcast,
-    PermissionModeChangedBroadcast,
+    OutputStyleChangedEvent,
+    PermissionModeChangedEvent,
 )
 
 if TYPE_CHECKING:
@@ -157,12 +155,7 @@ class RuntimeModeCoordinator:
         )
         # Broadcast so the FE can show the active style in a status
         # chip (parallel to permission_mode_changed).
-        session.broadcast_bus.emit(
-            BroadcastEvent(
-                channel="output_style_changed",
-                payload=OutputStyleChangedBroadcast(style=clean, previous=prev).model_dump(),
-            )
-        )
+        session.broadcast_bus.emit(OutputStyleChangedEvent(style=clean, previous=prev))
         if prev == clean:
             return f"Output style already {clean}."
         return f"Output style: {prev or '(none)'} → {clean}."
@@ -196,17 +189,7 @@ class RuntimeModeCoordinator:
         session.permission_evaluator.mode = new_mode
         if prev == new_mode:
             return f"Permission mode already {new_mode.value}."
-        # ``mode="json"`` collapses the :class:`PermissionMode`
-        # enum fields to their ``.value`` strings so downstream
-        # broadcast consumers keep the historic wire shape.
-        session.broadcast_bus.emit(
-            BroadcastEvent(
-                channel="permission_mode_changed",
-                payload=PermissionModeChangedBroadcast(mode=new_mode, previous=prev).model_dump(
-                    mode="json"
-                ),
-            )
-        )
+        session.broadcast_bus.emit(PermissionModeChangedEvent(mode=new_mode, previous=prev))
         return f"Permission mode: {prev.value} → {new_mode.value}."
 
 

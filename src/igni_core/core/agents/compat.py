@@ -47,10 +47,10 @@ from igni_core.core.agents.plugin_policy import PluginRestrictionPolicy
 from igni_core.core.agents.schemas import (
     AgentBuildContext,
     AgentDefinition,
-    Broadcast,
     DbHandle,
     McpClient,
 )
+from igni_core.core.broadcast_schema import BroadcastSink
 
 if TYPE_CHECKING:
     from agno.agent import Agent
@@ -130,13 +130,13 @@ class PoolCompatShim:
         base_dir: str | None = None,
         mcp_clients: dict[str, McpClient] | None = None,
         db: DbHandle | None = None,
-        broadcast: Broadcast | None = None,
+        broadcast: BroadcastSink | None = None,
     ) -> Agent:
         """Deprecated — instantiate :class:`AgentBuilder` directly.
 
         Wraps the six loose params into an
         :class:`AgentBuildContext` and delegates to
-        :meth:`AgentBuilder.build`. The typed :class:`Broadcast`,
+        :meth:`AgentBuilder.build`. The typed :class:`BroadcastSink`,
         :class:`DbHandle` and
         :class:`McpClient` protocols close the audit AP5 ``Any``
         holes on the public surface.

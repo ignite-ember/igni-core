@@ -68,6 +68,7 @@ from igni_core.backend.server_search import SearchController
 from igni_core.backend.server_sessions import SessionsController
 from igni_core.backend.team_wiring import TeamWiring
 from igni_core.backend.visualization_action_bus import VisualizationActionBus
+from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.core.session.schemas import PersistResult
 from igni_core.protocol import messages as msg
@@ -528,13 +529,12 @@ class BackendServer:
         """Forward to :meth:`Session.start_boot_background_services`."""
         self._session.start_boot_background_services()
 
-    def register_broadcast(self, callback: Any) -> None:
-        """Wire a ``(channel, payload) → None`` callback into the
-        session's broadcast bus."""
+    def register_broadcast(self, subscriber: BroadcastSink) -> None:
+        """Subscribe ``subscriber`` to the session's broadcast bus."""
         sess = getattr(self, "_session", None)
         if sess is None:
             return
-        sess.broadcast_bus.register(callback)
+        sess.broadcast_bus.register(subscriber)
 
     def consume_plan_research_flag(self) -> bool:
         """Get-and-reset the ``/plan``-armed flag.

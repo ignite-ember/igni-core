@@ -19,7 +19,7 @@ semantic tightening of the pre-refactor "swallow-and-flip"
 behaviour and matches the top-of-file invariant.
 
 The wire shapes — :class:`PlanDecisionResult` (return envelope)
-and :class:`PlanDecidedBroadcast` (broadcast payload) — live in
+and :class:`PlanDecidedEvent` (broadcast event) — live in
 :mod:`~igni_core.core.session.schemas` alongside sibling
 coordinator wire types (:class:`CompactResult`,
 :class:`LoopAdvance`). The re-export at the bottom of this
@@ -32,10 +32,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.session.schemas import (
-    PlanDecidedBroadcast,
+    PlanDecidedEvent,
     PlanDecisionResult,
 )
 from igni_core.core.tools.plan import PlanDecision
@@ -150,19 +149,7 @@ class PlanCoordinator:
             if not isinstance(start, PermissionMode) or start is PermissionMode.PLAN:
                 start = PermissionMode.DEFAULT
             mode_status = session.set_permission_mode(start.value)
-        # ``mode="json"`` collapses :class:`PlanDecision` StrEnum
-        # to its ``.value`` string so downstream broadcast
-        # consumers (transport adapters, TS clients) see the
-        # historic ``"decision": "approved"`` wire shape rather
-        # than an enum instance.
-        session.broadcast_bus.emit(
-            BroadcastEvent(
-                channel="plan_decided",
-                payload=PlanDecidedBroadcast(run_id=run_id, decision=decision).model_dump(
-                    mode="json"
-                ),
-            )
-        )
+        session.broadcast_bus.emit(PlanDecidedEvent(run_id=run_id, decision=decision))
         return PlanDecisionResult(
             run_id=run_id,
             decision=decision,

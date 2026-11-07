@@ -189,7 +189,7 @@ class TestSetOutputStyle:
     def test_broadcasts_output_style_changed(self):
         session = self._session()
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         session.set_output_style("explanatory")
         evt = next(p for ch, p in captured if ch == "output_style_changed")
         assert evt["style"] == "explanatory"

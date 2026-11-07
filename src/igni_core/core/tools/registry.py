@@ -28,6 +28,7 @@ from pathlib import Path
 
 from agno.tools import Toolkit
 
+from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.tool_permissions import ToolPermissions
 from igni_core.core.tools.custom_loader import load_custom_tools as _load_custom_tools
 from igni_core.core.tools.edit import FileEditNotifier
@@ -39,7 +40,6 @@ from igni_core.core.tools.tool_spec import (
     ToolSpec,
     ToolSpecCatalog,
 )
-from igni_core.core.tools.visualize import BroadcastFn
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class ToolRegistry:
         permissions: ToolPermissions | None = None,
         cloud_token: str | None = None,
         cloud_server_url: str | None = None,
-        broadcast: BroadcastFn | None = None,
+        broadcast: BroadcastSink | None = None,
         file_edit_notifier: FileEditNotifier | None = None,
     ):
         self.base_dir = Path(base_dir) if base_dir else Path.cwd()

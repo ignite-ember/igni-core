@@ -36,11 +36,11 @@ from igni_core.core.agents.schemas import (
     AgentDefinition,
     AgentEntry,
     AgentPriority,
-    Broadcast,
     DbHandle,
     LoadReport,
     McpClient,
 )
+from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
 from igni_core.core.prompts.contributions import PromptContributions, prompt_contributions
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
@@ -66,7 +66,7 @@ class AgentPool(LegacyAgentPoolMixin):
     def __init__(
         self,
         db: DbHandle | None = None,
-        broadcast: Broadcast | None = None,
+        broadcast: BroadcastSink | None = None,
     ) -> None:
         self._entries: dict[str, AgentEntry] = {}
         self._agents: dict[str, Agent] = {}
@@ -76,7 +76,7 @@ class AgentPool(LegacyAgentPoolMixin):
         # when ``load_definitions`` runs. ``AgentPool()`` calls
         # deliberately allow these to be None (test scaffolding).
         self._db: DbHandle | None = db
-        self._broadcast: Broadcast | None = broadcast
+        self._broadcast: BroadcastSink | None = broadcast
         # Settings pointer stashed for ``build_agents``'s lazy
         # re-context. Populated by ``load_definitions``.
         self._settings: Settings | None = None

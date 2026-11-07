@@ -168,7 +168,7 @@ class TestPlanTool:
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = PlanTool(session)
         await tool.exit_plan_mode(
             "plan",
@@ -342,7 +342,7 @@ class TestTodoWriteBroadcastsState:
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = TodoTools(session)
         await tool.todo_write(
             [
@@ -364,7 +364,7 @@ class TestTodoWriteBroadcastsState:
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = TodoTools(session)
         await tool.todo_write([])
         evt = next(p for ch, p in captured if ch == "todos_updated")
@@ -413,7 +413,7 @@ class TestEnterPlanMode:
         guessing who triggered it."""
         session = self._session_with_real_set_mode()
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = PlanTool(session)
         await tool.enter_plan_mode("refactor sweep")
         # set_permission_mode fires the basic flip; enter_plan_mode
@@ -696,7 +696,7 @@ class TestAcceptSlashCommand:
         plumbing as ``/plan``."""
         session = self._make_session("default")
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         handler = CommandHandler(session)
         await handler.handle("/accept on")
         modes = [p for ch, p in captured if ch == "permission_mode_changed"]
@@ -780,7 +780,7 @@ class TestBypassSlashCommand:
         override and lock in the new state."""
         session = self._make_session("default")
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         handler = CommandHandler(session)
         await handler.handle("/bypass on")
         modes = [p for ch, p in captured if ch == "permission_mode_changed"]

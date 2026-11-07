@@ -298,9 +298,9 @@ class PushChannel(StrEnum):
     deny it: besides the :func:`~igni_core.protocol.schemas.push`
     factories, ``push_bridge`` forwards raw channel strings and
     bridges the whole session broadcast bus into pushes, and
-    :class:`~igni_core.core.broadcast_schema.BroadcastEvent`
-    documents its ``channel`` as producer-open so a new tool can
-    introduce one without a schema change. Claiming closure here
+    the channel set is open by subclassing
+    :class:`~igni_core.core.broadcast_schema.BroadcastEvent`, so a
+    new tool introduces one with its own event class. Claiming closure here
     bought nothing and went stale — six live channels
     (``workflow_event``, ``todos_updated``, ``plan_decided``,
     ``http_retry_attempt``, ``http_retry_succeeded``,

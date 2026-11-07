@@ -42,6 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from igni_core.core.agents.trained_layout import TrainedLayout
 from igni_core.core.agno_telemetry import AgnoTelemetry
+from igni_core.core.broadcast_schema import BroadcastSink
 
 if TYPE_CHECKING:
     pass
@@ -286,15 +287,6 @@ class LoadReport(BaseModel):
 
 
 @runtime_checkable
-class Broadcast(Protocol):
-    """Callable that dispatches ``(channel, payload)`` events to
-    attached FE clients. In headless / tests this is ``None``."""
-
-    def __call__(self, channel: str, payload: dict) -> None: ...
-
-
-@runtime_checkable
-@runtime_checkable
 class DbHandle(Protocol):
     """Opaque Agno ``AsyncBaseDb`` handle. Threaded through so
     paused sub-agent runs land in the same store as the parent."""
@@ -394,7 +386,7 @@ class AgentBuildContext(BaseModel):
     base_dir: str | None = None
     mcp_clients: dict[str, Any] | None = None
     db: Any | None = None
-    broadcast: Any | None = None
+    broadcast: BroadcastSink | None = None
 
 
 __all__ = [
@@ -404,7 +396,6 @@ __all__ = [
     "AgentEntry",
     "AgentInfo",
     "AgentPriority",
-    "Broadcast",
     "DbHandle",
     "LoadError",
     "LoadReport",

@@ -24,8 +24,8 @@ The tool now delegates the ordering to
 * The single reply-text render site for each transaction —
   callers pull ``.reply_text`` off the typed envelope and are
   done.
-* The queue-post-run broadcast for ``plan_submitted`` + the
-  eager ``permission_mode_changed`` follow-up broadcast.
+* The typed broadcasts: the post-run :class:`PlanSubmittedEvent`
+  and the eager :class:`PlanModeEnteredEvent` follow-up.
 """
 
 from __future__ import annotations
@@ -33,17 +33,16 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.extension_gate import ExtensionHookGate, PlanSubmitValue
 from igni_core.core.tools.plan.researcher import PlanResearcherRunner
 from igni_core.core.tools.plan.schemas import (
-    PermissionModeChangedPayload,
     PlanEnterResult,
     PlanExitInput,
     PlanExitResult,
-    PlanSubmittedPayload,
+    PlanModeEnteredEvent,
+    PlanSubmittedEvent,
     PlanTaskInput,
 )
 from igni_core.core.tools.todo import _coerce_items
@@ -157,21 +156,8 @@ class PlanTransactionCoordinator:
         # the FE can render a small info banner. The broadcast
         # bus is a construction invariant on Session, so no
         # ``hasattr`` feature-detect is needed.
-        #
-        # TODO(broadcast-bus): drop the ``.model_dump()`` at this
-        # emit site once the BroadcastBus API accepts BaseModel
-        # payloads and dumps internally (audit's Pattern-2
-        # partial-application follow-up).
-        payload = PermissionModeChangedPayload(
-            mode="plan",
-            source="agent",
-            reason=reason_clean,
-        )
         self._session.broadcast_bus.emit(
-            BroadcastEvent(
-                channel="permission_mode_changed",
-                payload=payload.model_dump(),
-            )
+            PlanModeEnteredEvent(mode="plan", source="agent", reason=reason_clean)
         )
 
         # Spawn the plan_researcher sub-agent on the task. The
@@ -341,17 +327,8 @@ class PlanTransactionCoordinator:
         # run finishes: the PlanCard is the outcome of the run,
         # so it should land below the agent's closing reply in
         # the chat list, not mid-stream above it.
-        #
-        # TODO(broadcast-bus): drop the ``.model_dump()`` at this
-        # emit site once the BroadcastBus API accepts BaseModel
-        # payloads and dumps internally (audit's Pattern-2
-        # partial-application follow-up).
-        payload = PlanSubmittedPayload(plan=plan_text, tasks=list(task_snapshot))
         self._session.broadcast_bus.queue_post_run(
-            BroadcastEvent(
-                channel="plan_submitted",
-                payload=payload.model_dump(),
-            )
+            PlanSubmittedEvent(plan=plan_text, tasks=list(task_snapshot))
         )
 
         reply_text = self._render_submit_reply(

@@ -31,10 +31,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from agno.tools import Toolkit
 from pydantic import BaseModel, ConfigDict, Field
+
+from igni_core.core.broadcast_schema import BroadcastEvent
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session
@@ -91,6 +93,14 @@ class TodoItemWire(BaseModel):
             active_form = str(entry.get("activeForm", entry.get("active_form", "")) or "")
             out.append(cls(content=content, status=status, active_form=active_form))
         return out
+
+
+class TodosUpdatedEvent(BroadcastEvent):
+    """The ``todos_updated`` broadcast: the full todo snapshot in
+    its :class:`TodoItemWire` camelCase shape."""
+
+    channel: Literal["todos_updated"] = "todos_updated"
+    todos: list[dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -185,7 +195,7 @@ class TodoTools(Toolkit):
         store = getattr(self._session, "todo_store", None)
         if broadcast is None or store is None:
             return
-        broadcast("todos_updated", {"todos": store.snapshot()})
+        broadcast(TodosUpdatedEvent(todos=store.snapshot()))
 
     async def _persist_state(self) -> None:
         """Write the current ``TodoStore`` snapshot to

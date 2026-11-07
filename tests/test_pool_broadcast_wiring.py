@@ -3,7 +3,7 @@
 Bug: ``_create_runtime`` in ``backend/__main__.py`` used to spawn a
 fresh BackendServer + Session for every session the pool was asked
 to materialize, but never registered the broadcast callback that
-turns ``session.broadcast(channel, payload)`` calls into outgoing
+turns ``session.broadcast(event)`` calls into outgoing
 ``PushNotification`` messages. The boot-time default session had
 the wiring; every pool-created session was a silent black hole.
 
@@ -22,9 +22,14 @@ import asyncio
 import inspect
 from typing import Any
 
+from igni_core.backend.push_bridge import PushNotificationBridge
+from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_pool import SessionStampingTransport
+from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
+from igni_core.core.session.schemas import PermissionModeChangedEvent
+from igni_core.core.tools.plan import PlanModeEnteredEvent, PlanSubmittedEvent
 from igni_core.protocol import messages as msg
 
 
@@ -54,21 +59,21 @@ class _StubSession:
     def register_broadcast_callback(self, cb) -> None:
         self.broadcast_bus.register(cb)
 
-    def broadcast(self, channel: str, payload: dict) -> None:
-        from igni_core.core.broadcast_schema import BroadcastEvent
-
-        self.broadcast_bus.emit(BroadcastEvent(channel=channel, payload=payload))
+    def broadcast(self, event: BroadcastEvent) -> None:
+        self.broadcast_bus.emit(event)
 
 
 def _make_broadcast_callback_under_test(send_through: Any, loop: asyncio.AbstractEventLoop):
-    """Mirror of ``__main__._make_broadcast_callback`` so the test can
-    pin the wiring shape without importing the closure. If the real
-    closure changes signature, this stays a single-file change."""
+    """Mirror of :meth:`PushNotificationBridge._on_broadcast` (serialise
+    the event at the transport boundary, hop onto the loop) so the test
+    pins the wiring shape without building a whole bridge."""
 
-    def _on_event(channel: str, payload: dict) -> None:
+    def _on_event(event: BroadcastEvent) -> None:
         def _send() -> None:
             asyncio.ensure_future(
-                send_through.send(msg.PushNotification(channel=channel, payload=payload))
+                send_through.send(
+                    msg.PushNotification(channel=event.channel, payload=event.to_payload())
+                )
             )
 
         loop.call_soon_threadsafe(_send)
@@ -78,7 +83,7 @@ def _make_broadcast_callback_under_test(send_through: Any, loop: asyncio.Abstrac
 
 class TestBroadcastCallbackShape:
     async def test_plan_submitted_reaches_transport(self) -> None:
-        # ``exit_plan_mode`` calls ``session.broadcast("plan_submitted", {...})``.
+        # ``exit_plan_mode`` emits a ``PlanSubmittedEvent``.
         # With the callback registered, a PushNotification must land
         # on the transport.
         loop = asyncio.get_running_loop()
@@ -87,8 +92,7 @@ class TestBroadcastCallbackShape:
         session.register_broadcast_callback(_make_broadcast_callback_under_test(transport, loop))
 
         session.broadcast(
-            "plan_submitted",
-            {"plan": "Add a comment.", "tasks": [{"content": "x", "status": "pending"}]},
+            PlanSubmittedEvent(plan="Add a comment.", tasks=[{"content": "x", "status": "pending"}])
         )
         # The callback hops onto the loop via ``call_soon_threadsafe``;
         # let the scheduler run the deferred send.
@@ -108,21 +112,20 @@ class TestBroadcastCallbackShape:
         session = _StubSession()
         session.register_broadcast_callback(_make_broadcast_callback_under_test(transport, loop))
 
-        session.broadcast(
-            "permission_mode_changed",
-            {"mode": "plan", "previous": "default"},
-        )
+        session.broadcast(PermissionModeChangedEvent(mode="plan", previous="default"))
+        session.broadcast(PlanModeEnteredEvent(mode="plan", source="agent", reason="r"))
         await asyncio.sleep(0.01)
 
-        assert len(transport.sent) == 1
-        assert transport.sent[0].channel == "permission_mode_changed"
+        assert [p.channel for p in transport.sent] == ["permission_mode_changed"] * 2
+        assert transport.sent[0].payload == {"mode": "plan", "previous": "default"}
+        assert transport.sent[1].payload == {"mode": "plan", "source": "agent", "reason": "r"}
 
     async def test_zero_subscribers_drops_silently(self) -> None:
         # The pre-fix behavior: no callback registered → broadcast
         # iterates an empty list → silent. Tests the symptom we just
         # fixed, so it stays a regression.
         session = _StubSession()
-        session.broadcast("plan_submitted", {"plan": "x", "tasks": []})  # must not raise
+        session.broadcast(PlanSubmittedEvent(plan="x"))  # must not raise
         assert not session.broadcast_bus.has_callbacks
 
     async def test_stamped_transport_carries_session_id(self) -> None:
@@ -139,7 +142,7 @@ class TestBroadcastCallbackShape:
         session = _StubSession()
         session.register_broadcast_callback(_make_broadcast_callback_under_test(stamped, loop))
 
-        session.broadcast("plan_submitted", {"plan": "y", "tasks": []})
+        session.broadcast(PlanSubmittedEvent(plan="y"))
         await asyncio.sleep(0.01)
 
         assert len(inner.sent) == 1
@@ -160,9 +163,9 @@ class TestPostRunDeferral:
     def test_queue_holds_until_drain(self) -> None:
         session = self._bus_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
 
-        session.queue_post_run_broadcast("plan_submitted", {"plan": "x", "tasks": []})
+        session.queue_post_run_broadcast(PlanSubmittedEvent(plan="x"))
 
         # Nothing fires until drain — that's the whole point.
         assert received == []
@@ -177,7 +180,7 @@ class TestPostRunDeferral:
     def test_drain_with_empty_queue_is_noop(self) -> None:
         session = self._bus_session()
         received: list = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
 
         session.drain_post_run_broadcasts()
         assert received == []
@@ -190,8 +193,6 @@ class TestOrchestratorAndAppWiring:
     ``rt_bridge.bind_to_broadcast_bus``)."""
 
     def test_boot_wires_broadcast_via_push_bridge(self) -> None:
-        from igni_core.backend.push_bridge import PushNotificationBridge
-
         # ``wire_all`` is what ``BackendApp.setup`` calls — must
         # include the broadcast-bus bind for the default runtime.
         assert "bind_to_broadcast_bus" in inspect.getsource(PushNotificationBridge.wire_all), (
@@ -200,8 +201,6 @@ class TestOrchestratorAndAppWiring:
         )
 
     def test_pool_runtime_binds_broadcast_via_runtime_bridge(self) -> None:
-        from igni_core.backend.session_orchestrator import SessionOrchestrator
-
         create_src = inspect.getsource(SessionOrchestrator._create_runtime)
         # Pool sessions get a runtime-scoped ``rt_bridge`` bound to
         # the SessionStampingTransport — the bind must run there so

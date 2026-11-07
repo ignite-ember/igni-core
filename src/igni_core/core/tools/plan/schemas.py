@@ -1,12 +1,9 @@
 """Typed payload models for the plan-mode toolkit.
 
 Every broadcast the plan tool emits, plus the ``tasks`` argument
-of ``exit_plan_mode``, is typed via a Pydantic model here.
-Emit sites call ``.model_dump()`` at the :class:`BroadcastEvent`
-boundary so the identity-of-``payload`` contract that
-``broadcast_schema.py`` documents is preserved (each emit
-produces a fresh dict; callbacks see the same live dict for the
-duration of that emit).
+of ``exit_plan_mode``, is typed via a Pydantic model here. The
+broadcasts are :class:`BroadcastEvent` subclasses; the transport
+serialises them once, at the push boundary.
 
 Beyond the broadcast payloads, this module also hosts the two
 typed envelopes :class:`PlanTransactionCoordinator` returns —
@@ -31,29 +28,29 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from igni_core.core.broadcast_schema import BroadcastEvent, RunScopedBroadcastEvent
 
-class PermissionModeChangedPayload(BaseModel):
-    """Payload of the ``permission_mode_changed`` broadcast the
-    plan tool fires after switching into plan mode. The base flip
-    is already broadcast by :class:`RuntimeModeCoordinator`;
-    this follow-up carries the agent-attribution + reason string
-    the FE renders as a small banner."""
 
-    model_config = ConfigDict(extra="forbid")
+class PlanModeEnteredEvent(BroadcastEvent):
+    """The ``permission_mode_changed`` broadcast the plan tool fires
+    after switching into plan mode. The base flip is already
+    broadcast by :class:`RuntimeModeCoordinator`; this follow-up
+    carries the agent-attribution + reason string the FE renders as
+    a small banner."""
 
+    channel: Literal["permission_mode_changed"] = "permission_mode_changed"
     mode: Literal["default", "plan", "acceptEdits", "bypassPermissions"]
     source: Literal["agent", "user"]
     reason: str = ""
 
 
-class PlanSubmittedPayload(BaseModel):
-    """Payload of the ``plan_submitted`` broadcast queued by
+class PlanSubmittedEvent(RunScopedBroadcastEvent):
+    """The ``plan_submitted`` broadcast queued by
     :meth:`PlanTool.exit_plan_mode`. ``tasks`` rides along so
     the FE seeds the PlanCard checklist on first render — later
     ``todos_updated`` pushes refresh statuses live."""
 
-    model_config = ConfigDict(extra="ignore")
-
+    channel: Literal["plan_submitted"] = "plan_submitted"
     plan: str
     tasks: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -200,10 +197,10 @@ class PlanExitResult(BaseModel):
 
 
 __all__ = [
-    "PermissionModeChangedPayload",
     "PlanEnterResult",
     "PlanExitInput",
     "PlanExitResult",
-    "PlanSubmittedPayload",
+    "PlanModeEnteredEvent",
+    "PlanSubmittedEvent",
     "PlanTaskInput",
 ]

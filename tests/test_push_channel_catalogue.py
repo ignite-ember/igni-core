@@ -9,8 +9,8 @@ survives — so the cost was not dropped messages; it was that the one
 place claiming to tell you what channels exist told you wrong, and a
 reader adding a consumer had no way to find the other five.
 
-The producer set is open by design (``BroadcastEvent.channel`` says so,
-and ``push_bridge`` forwards raw strings), so this does not try to prove
+The producer set is open by design (any ``BroadcastEvent`` subclass adds
+a channel, and ``push_bridge`` forwards raw strings), so this does not try to prove
 the catalogue is complete. It pins the six that were missing, each next
 to the module that emits it.
 """

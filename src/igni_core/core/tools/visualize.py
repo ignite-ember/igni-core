@@ -25,14 +25,12 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
 
 from agno.tools import Toolkit
 
+from igni_core.core.broadcast_schema import BroadcastSink
+
 logger = logging.getLogger(__name__)
-
-
-BroadcastFn = Callable[[str, dict], None]
 
 
 class VisualizeTools(Toolkit):
@@ -44,16 +42,16 @@ class VisualizeTools(Toolkit):
     so ``spec_id`` naturally maps to "one card per visualizer run".
     """
 
-    def __init__(self, broadcast: BroadcastFn | None = None) -> None:
+    def __init__(self, broadcast: BroadcastSink | None = None) -> None:
         super().__init__(name="ember_visualize")
-        self._broadcast: BroadcastFn | None = broadcast
+        self._broadcast: BroadcastSink | None = broadcast
         # Stable id for the FE's card-dedup logic. Regenerated per
         # toolkit instance, so each sub-agent spawn gets a new one and
         # doesn't collide with previously-emitted cards.
         self._spec_id: str = uuid.uuid4().hex[:12]
         self.register(self.visualize)
 
-    def wire(self, broadcast: BroadcastFn) -> None:
+    def wire(self, broadcast: BroadcastSink) -> None:
         """Attach or replace the broadcast callable. Used by the
         orchestrator when it spawns a sub-agent whose tools were built
         by a session-less path (``AgentPool.build_agent``) and only

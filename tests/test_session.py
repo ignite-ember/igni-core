@@ -1,12 +1,16 @@
 """Tests for session/core.py — Session construction and message handling."""
 
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.config.settings import Settings
 from igni_core.core.learn import LearnBootResult
+from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
+from igni_core.core.tools.plan import PlanSubmittedEvent
 from igni_core.core.utils import context as ctx_mod
 
 
@@ -742,17 +746,19 @@ class TestSessionMcpResolver:
 # gone by design.
 
 
+class _PingEvent(BroadcastEvent):
+    channel: Literal["ping"] = "ping"
+
+
 class TestSessionBroadcast:
     def _bare_session(self):
-        from igni_core.core.session.broadcast import BroadcastBus
-
         session = Session.__new__(Session)
         session.broadcast_bus = BroadcastBus()
         return session
 
     def test_register_appends_callback(self):
         session = self._bare_session()
-        cb = lambda ch, p: None  # noqa: E731
+        cb = lambda e: None  # noqa: E731
         session.register_broadcast_callback(cb)
         assert session.broadcast_bus.callbacks_snapshot() == [cb]
 
@@ -764,7 +770,7 @@ class TestSessionBroadcast:
         # — load-bearing for the "callbacks fire once per
         # broadcast" contract callers rely on.
         session = self._bare_session()
-        cb = lambda ch, p: None  # noqa: E731
+        cb = lambda e: None  # noqa: E731
         session.register_broadcast_callback(cb)
         session.register_broadcast_callback(cb)
         session.register_broadcast_callback(cb)
@@ -772,8 +778,8 @@ class TestSessionBroadcast:
 
     def test_register_distinct_callbacks_both_kept(self):
         session = self._bare_session()
-        cb1 = lambda ch, p: None  # noqa: E731
-        cb2 = lambda ch, p: None  # noqa: E731
+        cb1 = lambda e: None  # noqa: E731
+        cb2 = lambda e: None  # noqa: E731
         session.register_broadcast_callback(cb1)
         session.register_broadcast_callback(cb2)
         assert session.broadcast_bus.callbacks_snapshot() == [cb1, cb2]
@@ -781,13 +787,13 @@ class TestSessionBroadcast:
     def test_broadcast_calls_every_registered_callback(self):
         session = self._bare_session()
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
-        session.broadcast("plan_submitted", {"plan": "x"})
-        # Both callbacks fired with the same args.
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
+        session.broadcast(PlanSubmittedEvent(plan="x"))
+        # Both callbacks fired with the same event.
         assert captured == [
-            ("plan_submitted", {"plan": "x"}),
-            ("plan_submitted", {"plan": "x"}),
+            ("plan_submitted", {"plan": "x", "tasks": []}),
+            ("plan_submitted", {"plan": "x", "tasks": []}),
         ]
 
     def test_broadcast_preserves_call_order(self):
@@ -796,24 +802,21 @@ class TestSessionBroadcast:
         # the active style lands first) rely on this.
         session = self._bare_session()
         log: list[str] = []
-        session.register_broadcast_callback(lambda ch, p: log.append("first"))
-        session.register_broadcast_callback(lambda ch, p: log.append("second"))
-        session.register_broadcast_callback(lambda ch, p: log.append("third"))
-        session.broadcast("any", {})
+        session.register_broadcast_callback(lambda e: log.append("first"))
+        session.register_broadcast_callback(lambda e: log.append("second"))
+        session.register_broadcast_callback(lambda e: log.append("third"))
+        session.broadcast(_PingEvent())
         assert log == ["first", "second", "third"]
 
-    def test_broadcast_forwards_payload_identity(self):
-        # The payload reaches the callback as the SAME object —
-        # no defensive copy. Callers can mutate the dict
-        # before/after broadcast and the callback sees it
-        # consistently. Pin this so a defensive ``copy.deepcopy``
-        # refactor surfaces as a deliberate behaviour change.
+    def test_broadcast_delivers_the_event_instance(self):
+        # Subscribers receive the emitted (frozen) event itself —
+        # no copy per subscriber.
         session = self._bare_session()
         seen: list[object] = []
-        session.register_broadcast_callback(lambda ch, p: seen.append(p))
-        payload = {"plan": "x"}
-        session.broadcast("plan_submitted", payload)
-        assert seen[0] is payload
+        session.register_broadcast_callback(seen.append)
+        event = PlanSubmittedEvent(plan="x")
+        session.broadcast(event)
+        assert seen[0] is event
 
     def test_callback_exception_does_not_block_others(self):
         # The contract is "best-effort fan-out" — one buggy
@@ -823,20 +826,20 @@ class TestSessionBroadcast:
         session = self._bare_session()
         log: list[str] = []
 
-        def boom(ch, p):
+        def boom(event):
             raise RuntimeError("subscriber crashed")
 
         session.register_broadcast_callback(boom)
-        session.register_broadcast_callback(lambda ch, p: log.append("after-boom"))
+        session.register_broadcast_callback(lambda e: log.append("after-boom"))
         # Must NOT raise.
-        session.broadcast("channel", {})
+        session.broadcast(_PingEvent())
         assert log == ["after-boom"]
 
     def test_broadcast_with_no_callbacks_is_noop(self):
         # Common case during session bootstrap before any
         # transport has subscribed. Don't crash.
         session = self._bare_session()
-        session.broadcast("any", {})  # no raise
+        session.broadcast(_PingEvent())  # no raise
 
     def test_broadcast_bus_is_construction_invariant(self):
         # Post-OOP-pivot: ``BroadcastBus`` is composed in
@@ -848,10 +851,9 @@ class TestSessionBroadcast:
         # test pins the tighter invariant so a regression toward
         # defensive silence surfaces.
         session = Session.__new__(Session)  # NO ``broadcast_bus``
-        import pytest as _pytest
 
-        with _pytest.raises(AttributeError):
-            session.broadcast("any", {})
+        with pytest.raises(AttributeError):
+            session.broadcast(_PingEvent())
 
     def test_callbacks_can_register_during_broadcast_safely(self):
         # Edge case — a callback that registers a NEW callback
@@ -863,17 +865,17 @@ class TestSessionBroadcast:
         session = self._bare_session()
         log: list[str] = []
 
-        def first(ch, p):
+        def first(event):
             log.append("first")
-            session.register_broadcast_callback(lambda c, p: log.append("late"))
+            session.register_broadcast_callback(lambda e: log.append("late"))
 
         session.register_broadcast_callback(first)
-        session.broadcast("ev", {})
+        session.broadcast(_PingEvent())
         # ``first`` fires; ``late`` is registered but doesn't
         # fire this round.
         assert log == ["first"]
         # ``late`` is now in the list for the next broadcast.
-        session.broadcast("ev2", {})
+        session.broadcast(_PingEvent())
         assert log == ["first", "first", "late"]
 
 
