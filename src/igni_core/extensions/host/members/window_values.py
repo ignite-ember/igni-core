@@ -1,5 +1,5 @@
-"""What members write into a window's model, and the links and dialogs
-an extension may ask a window to show.
+"""What members write into a window's model: its fields by name, their
+payloads, and the dialogs an extension may ask a window to show.
 
 Each payload dumps to exactly the keys the window's model takes for its
 field (:mod:`igni_core.extensions.host.windows`), ``None`` keys included.
@@ -8,44 +8,34 @@ field (:mod:`igni_core.extensions.host.windows`), ``None`` keys included.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal, Self
-from urllib.parse import urlsplit
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from igni_core.extensions.host.errors import HostModelError
+from igni_core.extensions.host.members.choice import Choice
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.windows import references
 
 
-class ExternalLink(BaseModel):
-    """A link an extension asks igni to open in the person's browser.
+class WindowFieldName(StrEnum):
+    """The fields of a window's model a member reads or writes, as
+    :data:`~igni_core.extensions.host.windows.FIELDS` names them."""
 
-    Absolute ``https`` only, with a host and no credentials: nothing
-    that runs on this machine (``file:``, a custom scheme), nothing
-    readable in transit, and nothing that hides who it signs in as.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    url: str = Field(max_length=2048)
-
-    @field_validator("url")
-    @classmethod
-    def _https(cls, url: str) -> str:
-        if any(ch.isspace() or ord(ch) < 0x20 for ch in url):
-            raise ValueError("a link has no whitespace or control characters")
-        parts = urlsplit(url)
-        if parts.scheme != "https":
-            raise ValueError(f"only https links open outside igni, not {parts.scheme or url!r}")
-        if not parts.hostname:
-            raise ValueError("a link names its host")
-        if parts.username is not None or parts.password is not None:
-            raise ValueError("a link carries no credentials")
-        return url
+    SESSION = "session"
+    PROJECT_DIR = "project_dir"
+    ROUTE = "route"
+    PANEL = "panel"
+    SIDEBAR = "sidebar"
+    PREVIEW = "preview"
+    SELECTION = "selection"
+    COMPOSER = "composer"
+    TOASTS = "toasts"
+    DIALOG = "dialog"
+    SCROLL = "scroll"
 
 
-class PanelKind(StrEnum):
+class PanelKind(Choice):
     """The panels a window has, by kind."""
 
     NOTIFICATIONS = "notifications"
@@ -54,16 +44,11 @@ class PanelKind(StrEnum):
     DIR_PICKER = "dir-picker"
 
     @classmethod
-    def of(cls, kind: str) -> Self:
-        if kind not in {k.value for k in cls}:
-            raise HostModelError(
-                ErrorCode.INVALID,
-                f"no panel {kind!r}: one of {', '.join(sorted(k.value for k in cls))}",
-            )
-        return cls(kind)
+    def refusal(cls, value: str) -> str:
+        return f"no panel {value!r}: one of {', '.join(sorted(k.value for k in cls))}"
 
 
-class ToastKind(StrEnum):
+class ToastKind(Choice):
     """The kinds of toast, in the order a refusal names them."""
 
     INFO = "info"
@@ -72,12 +57,8 @@ class ToastKind(StrEnum):
     ERROR = "error"
 
     @classmethod
-    def of(cls, kind: str) -> Self:
-        if kind not in {k.value for k in cls}:
-            raise HostModelError(
-                ErrorCode.INVALID, f"toast kind {kind!r}: one of {', '.join(k.value for k in cls)}"
-            )
-        return cls(kind)
+    def refusal(cls, value: str) -> str:
+        return f"toast kind {value!r}: one of {', '.join(k.value for k in cls)}"
 
 
 class Page(BaseModel):
@@ -227,7 +208,6 @@ __all__ = [
     "DialogInput",
     "DialogSpec",
     "ExtensionDialog",
-    "ExternalLink",
     "Page",
     "Panel",
     "PanelKind",
@@ -236,4 +216,5 @@ __all__ = [
     "Sidebar",
     "ToastKind",
     "ToastRequest",
+    "WindowFieldName",
 ]

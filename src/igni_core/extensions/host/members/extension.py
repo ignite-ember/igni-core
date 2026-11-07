@@ -6,7 +6,9 @@ from typing import Any
 
 from igni_core.extensions.busy import BusyLease
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.members.base import Call, Members, call, get, put
+from igni_core.extensions.host.members.base import Members
+from igni_core.extensions.host.members.call import Call
+from igni_core.extensions.host.members.tag import call, get, put
 from igni_core.extensions.host.spec import ErrorCode
 
 

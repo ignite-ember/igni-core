@@ -1,6 +1,7 @@
 """Every built member of the host object model, against igni's backend.
 
-One module per group of objects; :mod:`.base` holds what they share.
+One module per group of objects; :mod:`.base`, :mod:`.call` and
+:mod:`.tag` hold what they share.
 Each member reaches igni the way igni's own UI does: the RPC handler a
 panel calls, the action a window sends, the store a window writes.
 Nothing here re-implements what igni does; it translates between the
@@ -12,11 +13,8 @@ from __future__ import annotations
 from igni_core.extensions.host.members.app import AppMembers, AppStateMembers, WindowMembers
 from igni_core.extensions.host.members.approvals import ApprovalMembers
 from igni_core.extensions.host.members.base import Members
-from igni_core.extensions.host.members.chat import (
-    ChatReadMembers,
-    ChatViewMembers,
-    ChatWriteMembers,
-)
+from igni_core.extensions.host.members.chat import ChatReadMembers, ChatWriteMembers
+from igni_core.extensions.host.members.chat_views import ChatViewMembers
 from igni_core.extensions.host.members.decide import DecisionMembers
 from igni_core.extensions.host.members.extension import ExtensionMembers, SelfMembers
 from igni_core.extensions.host.members.notifications import NotificationMembers

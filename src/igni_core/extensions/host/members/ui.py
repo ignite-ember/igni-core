@@ -8,7 +8,9 @@ from __future__ import annotations
 from typing import Any
 
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.members.base import Call, Members, call, get, put
+from igni_core.extensions.host.members.base import Members
+from igni_core.extensions.host.members.call import Call
+from igni_core.extensions.host.members.tag import call, get, put
 from igni_core.extensions.host.members.window_values import (
     Composer,
     DialogSpec,
@@ -20,6 +22,7 @@ from igni_core.extensions.host.members.window_values import (
     Sidebar,
     ToastKind,
     ToastRequest,
+    WindowFieldName,
 )
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.windows import WindowModelError
@@ -28,16 +31,16 @@ from igni_core.extensions.host.windows import WindowModelError
 class WindowModelMembers(Members):
     """Base: reading and writing one field of the call's window."""
 
-    def read(self, c: Call, name: str) -> Any:
-        return self.host.windows.get(self.window(c), name)
+    def read(self, c: Call, field: WindowFieldName) -> Any:
+        return self.host.windows.get(c.require_window(), field.value)
 
-    def write(self, c: Call, name: str, value: Any) -> Any:
-        window = self.window(c)
+    def write(self, c: Call, field: WindowFieldName, value: Any) -> Any:
+        window = c.require_window()
         try:
-            self.host.windows.write(window, name, value)
+            self.host.windows.write(window, field.value, value)
         except WindowModelError as exc:
             raise HostModelError(ErrorCode.INVALID, str(exc)) from None
-        return self.host.windows.get(window, name)
+        return self.host.windows.get(window, field.value)
 
 
 class UiNavigationMembers(WindowModelMembers):
@@ -45,56 +48,56 @@ class UiNavigationMembers(WindowModelMembers):
 
     @get("ui.route")
     async def route(self, c: Call) -> Any:
-        return self.read(c, "route")
+        return self.read(c, WindowFieldName.ROUTE)
 
     @put("ui.route")
     async def set_route(self, c: Call) -> None:
-        self.write(c, "route", c.value or [])
+        self.write(c, WindowFieldName.ROUTE, c.value or [])
 
     @call("ui.navigate")
     async def navigate(self, c: Call) -> Any:
         page = Page.named(c.params["page"], c.params.get("params"))
-        return self.write(c, "route", [page.model_dump()])
+        return self.write(c, WindowFieldName.ROUTE, [page.model_dump()])
 
     @call("ui.back")
     async def back(self, c: Call) -> Any:
-        return self.write(c, "route", self.read(c, "route")[:-1])
+        return self.write(c, WindowFieldName.ROUTE, self.read(c, WindowFieldName.ROUTE)[:-1])
 
     @get("ui.panel")
     async def panel(self, c: Call) -> Any:
-        return self.read(c, "panel")
+        return self.read(c, WindowFieldName.PANEL)
 
     @put("ui.panel")
     async def set_panel(self, c: Call) -> None:
-        self.write(c, "panel", c.value)
+        self.write(c, WindowFieldName.PANEL, c.value)
 
     @call("ui.open_panel")
     async def open_panel(self, c: Call) -> Any:
         kind = PanelKind.of(str(c.params["kind"]))
         panel = Panel(kind=kind.value, params=c.params.get("params") or {})
-        return self.write(c, "panel", panel.model_dump())
+        return self.write(c, WindowFieldName.PANEL, panel.model_dump())
 
     @call("ui.close_panel")
     async def close_panel(self, c: Call) -> None:
-        self.write(c, "panel", None)
+        self.write(c, WindowFieldName.PANEL, None)
 
     @get("ui.sidebar")
     async def sidebar(self, c: Call) -> Any:
-        return self.read(c, "sidebar")
+        return self.read(c, WindowFieldName.SIDEBAR)
 
     @put("ui.sidebar")
     async def set_sidebar_value(self, c: Call) -> None:
-        self.write(c, "sidebar", c.value)
+        self.write(c, WindowFieldName.SIDEBAR, c.value)
 
     @call("ui.set_sidebar")
     async def set_sidebar(self, c: Call) -> Any:
         sidebar = Sidebar.merged(
-            self.read(c, "sidebar"),
+            self.read(c, WindowFieldName.SIDEBAR),
             open=bool(c.params["open"]),
             width=c.params.get("width"),
             section=c.params.get("section"),
         )
-        return self.write(c, "sidebar", sidebar.model_dump())
+        return self.write(c, WindowFieldName.SIDEBAR, sidebar.model_dump())
 
 
 class UiContentMembers(WindowModelMembers):
@@ -102,53 +105,43 @@ class UiContentMembers(WindowModelMembers):
 
     @get("ui.preview")
     async def preview(self, c: Call) -> Any:
-        return self.read(c, "preview")
+        return self.read(c, WindowFieldName.PREVIEW)
 
     @put("ui.preview")
     async def set_preview(self, c: Call) -> None:
         if c.value is not None:
-            self.within_workspace(c, str(c.value.get("path", "")))
-        self.write(c, "preview", c.value)
+            c.grants.require_workspace_path(str(c.value.get("path", "")))
+        self.write(c, WindowFieldName.PREVIEW, c.value)
 
     @call("ui.open_preview")
     async def open_preview(self, c: Call) -> Any:
         path = str(c.params["path"])
-        self.within_workspace(c, path)
-        return self.write(c, "preview", PreviewTarget(path=path).model_dump())
+        c.grants.require_workspace_path(path)
+        return self.write(c, WindowFieldName.PREVIEW, PreviewTarget(path=path).model_dump())
 
     @call("ui.close_preview")
     async def close_preview(self, c: Call) -> None:
-        self.write(c, "preview", None)
-
-    def within_workspace(self, c: Call, path: str) -> None:
-        """A preview shows a file's contents to the person, not to the
-        extension — but it is still the extension pointing at the
-        project, so the path must be one ``workspacePaths`` allows."""
-        if not c.grants.workspace.granted or not c.grants.workspace.permits(path):
-            raise HostModelError(
-                ErrorCode.REFUSED,
-                f"'{path}' is outside what '{c.extension_id}' was granted of the workspace",
-            )
+        self.write(c, WindowFieldName.PREVIEW, None)
 
     @get("ui.selection")
     async def selection(self, c: Call) -> Any:
-        return self.read(c, "selection")
+        return self.read(c, WindowFieldName.SELECTION)
 
     @put("ui.selection")
     async def set_selection(self, c: Call) -> None:
-        self.write(c, "selection", c.value)
+        self.write(c, WindowFieldName.SELECTION, c.value)
 
     @call("ui.select")
     async def select(self, c: Call) -> Any:
-        return self.write(c, "selection", c.params["selection"])
+        return self.write(c, WindowFieldName.SELECTION, c.params["selection"])
 
     @get("ui.composer")
     async def composer(self, c: Call) -> Any:
-        return self.read(c, "composer")
+        return self.read(c, WindowFieldName.COMPOSER)
 
     @put("ui.composer")
     async def set_composer_value(self, c: Call) -> None:
-        self.write(c, "composer", c.value)
+        self.write(c, WindowFieldName.COMPOSER, c.value)
 
     @call("ui.set_composer")
     async def set_composer(self, c: Call) -> Any:
@@ -157,18 +150,18 @@ class UiContentMembers(WindowModelMembers):
             str(c.params["text"]),
             c.params.get("attachments") or [],
             mode,
-            None if mode else self.read(c, "composer").get("mode"),
+            None if mode else self.read(c, WindowFieldName.COMPOSER).get("mode"),
         )
-        return self.write(c, "composer", composer.model_dump())
+        return self.write(c, WindowFieldName.COMPOSER, composer.model_dump())
 
     @get("ui.scroll")
     async def scroll(self, c: Call) -> Any:
-        return self.read(c, "scroll")
+        return self.read(c, WindowFieldName.SCROLL)
 
     @call("ui.scroll_to")
     async def scroll_to(self, c: Call) -> Any:
         position = ScrollPosition.to(str(c.params["message_id"]))
-        return self.write(c, "scroll", position.model_dump())
+        return self.write(c, WindowFieldName.SCROLL, position.model_dump())
 
 
 class UiNoticeMembers(WindowModelMembers):
@@ -176,7 +169,7 @@ class UiNoticeMembers(WindowModelMembers):
 
     @get("ui.toasts")
     async def toasts(self, c: Call) -> Any:
-        return self.read(c, "toasts")
+        return self.read(c, WindowFieldName.TOASTS)
 
     @call("ui.toast")
     async def toast(self, c: Call) -> Any:
@@ -188,11 +181,11 @@ class UiNoticeMembers(WindowModelMembers):
             target=c.params.get("target"),
             source=c.extension_id,
         )
-        return self.host.windows.toast(self.window(c), request.model_dump())
+        return self.host.windows.toast(c.require_window(), request.model_dump())
 
     @call("ui.dismiss_toast")
     async def dismiss_toast(self, c: Call) -> None:
-        window = self.window(c)
+        window = c.require_window()
         toast_id = str(c.params["toast_id"])
         found = self.host.windows.toast_of(window, toast_id)
         if found is None:
@@ -203,12 +196,14 @@ class UiNoticeMembers(WindowModelMembers):
 
     @get("ui.dialog")
     async def dialog(self, c: Call) -> Any:
-        return self.read(c, "dialog")
+        return self.read(c, WindowFieldName.DIALOG)
 
     @call("ui.show_dialog")
     async def show_dialog(self, c: Call) -> Any:
         spec = DialogSpec.of(c.params["spec"]).model_dump(mode="json")
-        _dialog, answer = self.host.windows.open_dialog(self.window(c), spec, source=c.extension_id)
+        _dialog, answer = self.host.windows.open_dialog(
+            c.require_window(), spec, source=c.extension_id
+        )
         return await answer
 
 

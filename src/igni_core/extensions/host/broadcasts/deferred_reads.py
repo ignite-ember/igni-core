@@ -12,10 +12,11 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 from igni_core.extensions.host.broadcasts.session_values import SessionValueSource
+from igni_core.extensions.host.display import Display
 from igni_core.extensions.host.signal_values import Emitter
 
 ACCOUNT_CHANGED = "account.changed"
-DISPLAY_CHANGED = "app.display_changed"
+DISPLAY_CHANGED = Display.WIRE
 LOOP_CHANGED = "loop.changed"
 
 

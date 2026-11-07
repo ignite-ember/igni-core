@@ -2,29 +2,27 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import Any, Self
+from typing import Any
 
 from pydantic import BaseModel
 
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.members.base import Call, Members, call, get
+from igni_core.extensions.host.members.base import Members
+from igni_core.extensions.host.members.call import Call
+from igni_core.extensions.host.members.choice import Choice
+from igni_core.extensions.host.members.tag import call, get
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.state.approvals import Approval, ApprovalMirror
 from igni_core.protocol import messages as msg
 
 
-class ApprovalAction(StrEnum):
+class ApprovalAction(Choice):
     CONFIRM = "confirm"
     REJECT = "reject"
 
     @classmethod
-    def of(cls, action: str) -> Self:
-        if action not in {a.value for a in cls}:
-            raise HostModelError(
-                ErrorCode.INVALID, f"action is 'confirm' or 'reject', not {action!r}"
-            )
-        return cls(action)
+    def refusal(cls, value: str) -> str:
+        return f"action is 'confirm' or 'reject', not {value!r}"
 
 
 class ApprovalAnswer(BaseModel):

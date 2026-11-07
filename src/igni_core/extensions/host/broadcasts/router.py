@@ -22,8 +22,8 @@ class BroadcastSignals:
         """
         Args:
             display: Reads ``app.display`` for a session, as
-                :meth:`~igni_core.extensions.host.members.app.AppMembers.display_value`
-                does, as a :class:`~igni_core.extensions.host.members.answers.Display`.
+                :meth:`~igni_core.extensions.host.display.DisplayReader.read`
+                does, as a :class:`~igni_core.extensions.host.display.Display`.
         """
         self._translators = Translators.of(host, display=display)
         self._activity = host.activity_watch

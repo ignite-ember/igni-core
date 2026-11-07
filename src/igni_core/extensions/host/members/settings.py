@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import Any, Self
+from typing import Any
 
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.members.base import Call, Members, call, get, put
-from igni_core.extensions.host.members.rpc_args import (
+from igni_core.extensions.host.members.base import Members
+from igni_core.extensions.host.members.call import Call
+from igni_core.extensions.host.members.choice import Choice
+from igni_core.extensions.host.members.tag import call, get, put
+from igni_core.extensions.host.rpc_wire.settings import (
     CheckPermissionArgs,
     InstallPluginArgs,
     PluginEnabledArgs,
@@ -32,8 +34,7 @@ class ModelMembers(Members):
 
     @get("models.current")
     async def current(self, c: Call) -> str:
-        status = await self.rpc(RpcMethod.GET_STATUS, c=c)
-        return str(status.get("model", ""))
+        return (await self.read_status(c)).model
 
     @put("models.current")
     async def set_current(self, c: Call) -> None:
@@ -148,23 +149,20 @@ class HookMembers(Members):
         await self.rpc(RpcMethod.FIRE_SESSION_START_HOOK, c=c)
 
 
-class PermissionLevel(StrEnum):
+class PermissionLevel(Choice):
     ALLOW = "allow"
     ASK = "ask"
     DENY = "deny"
 
     @classmethod
-    def of(cls, level: str) -> Self:
-        if level not in {lv.value for lv in cls}:
-            raise HostModelError(ErrorCode.INVALID, f"level is allow, ask or deny — not {level!r}")
-        return cls(level)
+    def refusal(cls, value: str) -> str:
+        return f"level is allow, ask or deny — not {value!r}"
 
 
 class PermissionMembers(Members):
     @get("permissions.mode")
     async def mode(self, c: Call) -> str:
-        status = await self.rpc(RpcMethod.GET_STATUS, c=c)
-        return str(status.get("permission_mode", "default"))
+        return (await self.read_status(c)).permission_mode
 
     @call("permissions.check")
     async def check(self, c: Call) -> Any:

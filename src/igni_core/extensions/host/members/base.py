@@ -1,8 +1,8 @@
-"""What every member class shares: the call it is handed, the tags that
-say which member a method implements, and the ways a member reaches igni.
+"""What every member class shares: its table of tagged members, and the
+ways a member reaches igni.
 
 One class per object, one method per member, each tagged with what it
-implements — the same shape :class:`~igni_core.backend.rpc_handlers.base.RpcHandler`
+implements (:mod:`.tag`) — the same shape :class:`~igni_core.backend.rpc_handlers.base.RpcHandler`
 gives the RPC table, for the same reason: the table is built by walking
 the classes, so a member cannot be implemented under a typo, and
 :class:`~igni_core.extensions.host.member_table.MemberTable` refuses one
@@ -11,64 +11,19 @@ implemented twice.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Any, TypeVar
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.grants import HostGrants
-from igni_core.extensions.host.members.answers import RpcInfo
+from igni_core.extensions.host.members.call import Call
+from igni_core.extensions.host.members.tag import MemberBinding, MemberTag
+from igni_core.extensions.host.rpc_wire.base import NO_ARGS, RpcInfo
+from igni_core.extensions.host.rpc_wire.status import StatusAnswer
 from igni_core.extensions.host.services import HostServices
+from igni_core.extensions.host.signal_values import Emitter
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.protocol.rpc import RpcMethod
-
-#: The attribute a tagged method carries: its ``(op, member path)``.
-_TAG = "_host_member"
-
-
-class Call(BaseModel):
-    """One request, resolved: who asks, about which window and session."""
-
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-
-    extension_id: str
-    grants: HostGrants
-    #: The window a per-window member is about, or the caller's window.
-    window: str | None
-    #: The session the caller's chat is: its window's, else the default —
-    #: or the one ``host.sessions.chat(id)`` named.
-    session_id: str
-    params: dict[str, Any]
-    value: Any = None
-    #: Whether ``session_id`` is the session on screen. ``False`` only
-    #: for ``host.sessions.chat(id)`` of another session.
-    on_screen: bool = True
-
-
-Impl = Callable[[Call], Awaitable[Any]]
-
-_F = TypeVar("_F", bound=Callable[..., Any])
-
-
-def get(path: str) -> Callable[[_F], _F]:
-    return _tag("get", path)
-
-
-def put(path: str) -> Callable[[_F], _F]:
-    return _tag("set", path)
-
-
-def call(path: str) -> Callable[[_F], _F]:
-    return _tag("call", path)
-
-
-def _tag(op: str, path: str) -> Callable[[_F], _F]:
-    def decorate(fn: _F) -> _F:
-        setattr(fn, _TAG, (op, path))
-        return fn
-
-    return decorate
 
 
 class Members:
@@ -76,31 +31,30 @@ class Members:
 
     def __init__(self, host: HostServices) -> None:
         self.host = host
+        #: Where a member's signals go: dumped once, at the seam.
+        self.signals = Emitter(host.bus.emit)
 
-    def table(self) -> list[tuple[tuple[str, str], Impl]]:
-        """``((op, path), bound method)`` for every tagged method. A key
+    def table(self) -> list[MemberBinding]:
+        """The member and the bound method, for every tagged method. A key
         that appears twice is :class:`MemberTable`'s to refuse."""
-        out: list[tuple[tuple[str, str], Impl]] = []
+        out: list[MemberBinding] = []
         for name in dir(type(self)):
             if name.startswith("__"):
                 continue
-            key = getattr(getattr(type(self), name, None), _TAG, None)
+            key = MemberTag.of(getattr(type(self), name, None))
             if key is not None:
-                out.append((key, getattr(self, name)))
+                out.append(MemberBinding(key=key, impl=getattr(self, name)))
         return out
 
-    async def rpc(self, method: RpcMethod, args: BaseModel | None = None, *, c: Call) -> Any:
+    async def rpc(self, method: RpcMethod, args: BaseModel = NO_ARGS, *, c: Call) -> Any:
         """An RPC handler, in the caller's session."""
         return await self.rpc_in(method, args, c.session_id)
 
-    async def rpc_in(self, method: RpcMethod, args: BaseModel | None, session_id: str) -> Any:
+    async def rpc_in(self, method: RpcMethod, args: BaseModel, session_id: str) -> Any:
         """An RPC handler, in a session named outright."""
-        payload = {} if args is None else args.model_dump()
-        return await self.host.gateway.rpc(method, payload, session_id=session_id)
+        return await self.host.gateway.rpc(method, args.model_dump(), session_id=session_id)
 
-    async def rpc_checked(
-        self, method: RpcMethod, args: BaseModel | None = None, *, c: Call
-    ) -> Any:
+    async def rpc_checked(self, method: RpcMethod, args: BaseModel = NO_ARGS, *, c: Call) -> Any:
         """An RPC handler whose refusal comes back as an ``info`` of type
         ``error``, rather than raised: that answer is a refusal here."""
         info = await self.rpc(method, args, c=c)
@@ -109,13 +63,10 @@ class Members:
             raise HostModelError(ErrorCode.REFUSED, refusal)
         return info
 
-    @staticmethod
-    def window(c: Call) -> str:
-        """The window a call is about; a member that needs one has none
-        to act on when no igni window is open."""
-        if c.window is None:
-            raise HostModelError(ErrorCode.NOT_FOUND, "no igni window is open")
-        return c.window
+    async def read_status(self, c: Call) -> StatusAnswer:
+        """``get_status``, in the caller's session, read once. Not named
+        ``status``: several objects have a member of that name."""
+        return StatusAnswer.from_rpc(await self.rpc(RpcMethod.GET_STATUS, c=c))
 
 
-__all__ = ["Call", "Impl", "Members", "call", "get", "put"]
+__all__ = ["Members"]

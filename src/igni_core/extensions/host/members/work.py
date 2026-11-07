@@ -3,21 +3,24 @@ and background processes."""
 
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import Any, Self
+from typing import Any
 
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.members.answers import PlanSnapshot, ScheduledTasks
-from igni_core.extensions.host.members.base import Call, Members, call, get
-from igni_core.extensions.host.members.rpc_args import (
+from igni_core.extensions.host.members.answers import PlanSnapshot
+from igni_core.extensions.host.members.base import Members
+from igni_core.extensions.host.members.call import Call
+from igni_core.extensions.host.members.choice import Choice
+from igni_core.extensions.host.members.tag import call, get
+from igni_core.extensions.host.rpc_wire.chat import RunIdArgs
+from igni_core.extensions.host.rpc_wire.work import (
     AgentNameArgs,
     CancelWorkflowArgs,
     ExecuteTaskArgs,
     PidArgs,
     PromoteArgs,
-    RunIdArgs,
     RunWorkflowArgs,
     ScheduledTaskArgs,
+    ScheduledTasks,
     ScheduledTasksArgs,
     ShellArgs,
     TailArgs,
@@ -98,7 +101,7 @@ class CommandMembers(Members):
         return await self.host.gateway.command(command, session_id=c.session_id)
 
 
-class PromoteTarget(StrEnum):
+class PromoteTarget(Choice):
     """Where ``promote_ephemeral`` may keep an agent, as ``/agents promote
     --project | --personal`` and the panel's RPC ``target`` name them."""
 
@@ -106,14 +109,11 @@ class PromoteTarget(StrEnum):
     PERSONAL = "personal"
 
     @classmethod
-    def of(cls, target: str) -> Self:
-        if target not in {t.value for t in cls}:
-            raise HostModelError(
-                ErrorCode.INVALID,
-                f"no promote target {target!r}: project (.igni/agents/, the default) "
-                "or personal (.igni/agents.local/)",
-            )
-        return cls(target)
+    def refusal(cls, value: str) -> str:
+        return (
+            f"no promote target {value!r}: project (.igni/agents/, the default) "
+            "or personal (.igni/agents.local/)"
+        )
 
 
 class AgentMembers(Members):
@@ -155,9 +155,7 @@ class WorkflowMembers(Members):
 class SchedulerMembers(Members):
     @get("scheduler.tasks")
     async def tasks(self, c: Call) -> Any:
-        return await self.rpc(
-            RpcMethod.GET_SCHEDULED_TASKS, ScheduledTasksArgs(include_done=True), c=c
-        )
+        return await self._listing(c)
 
     @call("scheduler.start")
     async def start(self, c: Call) -> None:
@@ -166,7 +164,7 @@ class SchedulerMembers(Members):
     @call("scheduler.run_now")
     async def run_now(self, c: Call) -> str:
         task_id = str(c.params["task_id"])
-        task = ScheduledTasks.from_rpc(await self.tasks(c)).find(task_id)
+        task = ScheduledTasks.from_rpc(await self._listing(c)).find(task_id)
         if task is None:
             raise HostModelError(ErrorCode.NOT_FOUND, f"no scheduled task {task_id!r}")
         args = ExecuteTaskArgs(description=task.description)
@@ -176,6 +174,12 @@ class SchedulerMembers(Members):
     async def cancel(self, c: Call) -> None:
         args = ScheduledTaskArgs(task_id=c.params["task_id"])
         await self.rpc(RpcMethod.CANCEL_SCHEDULED_TASK, args, c=c)
+
+    async def _listing(self, c: Call) -> Any:
+        """``get_scheduled_tasks``, done ones included, as the backend gives it."""
+        return await self.rpc(
+            RpcMethod.GET_SCHEDULED_TASKS, ScheduledTasksArgs(include_done=True), c=c
+        )
 
 
 class ProcessMembers(Members):

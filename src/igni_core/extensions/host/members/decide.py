@@ -13,7 +13,9 @@ from igni_core.core.decisions import (
     DecisionTooLong,
 )
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.members.base import Call, Members, call
+from igni_core.extensions.host.members.base import Members
+from igni_core.extensions.host.members.call import Call
+from igni_core.extensions.host.members.tag import call
 from igni_core.extensions.host.spec import ErrorCode
 
 

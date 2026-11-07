@@ -45,8 +45,8 @@ class Translators:
         """
         Args:
             display: Reads ``app.display`` for a session, as
-                :meth:`~igni_core.extensions.host.members.app.AppMembers.display_value`
-                does, as a :class:`~igni_core.extensions.host.members.answers.Display`.
+                :meth:`~igni_core.extensions.host.display.DisplayReader.read`
+                does, as a :class:`~igni_core.extensions.host.display.Display`.
         """
         emitter = Emitter(host.bus.emit)
         state = host.state

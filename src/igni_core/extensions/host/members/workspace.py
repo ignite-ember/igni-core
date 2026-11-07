@@ -8,9 +8,10 @@ from typing import Any
 from igni_core.backend.file_opener import FileOpener
 from igni_core.backend.workspace_watch import GitWorkspace
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.grants import WORKSPACE
-from igni_core.extensions.host.members.base import Call, Members, call, get
-from igni_core.extensions.host.members.rpc_args import CompleteArgs, PathArgs, QueryArgs
+from igni_core.extensions.host.members.base import Members
+from igni_core.extensions.host.members.call import Call
+from igni_core.extensions.host.members.tag import call, get
+from igni_core.extensions.host.rpc_wire.workspace import CompleteArgs, PathArgs, QueryArgs
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.values import HeadInfo
 from igni_core.extensions.host.workspace_scope import WorkspaceScope
@@ -69,8 +70,7 @@ class WorkspaceMembers(Members):
         never a program, a script or a bundle, because whatever opens it
         runs outside that sandbox.
         """
-        if not c.grants.workspace.granted:
-            raise HostModelError.not_granted(c.extension_id, "workspace.open", WORKSPACE)
+        c.grants.require_workspace("workspace.open")
         scope = self.scope(c)
         relative = scope.relative(str(c.params["path"]))
         target = scope.document(relative)

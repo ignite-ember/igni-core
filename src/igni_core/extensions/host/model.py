@@ -16,10 +16,11 @@ from typing import Any
 from igni_core.extensions.host.broadcasts import BroadcastSignals
 from igni_core.extensions.host.call_scope import CallScope
 from igni_core.extensions.host.caller import Caller
+from igni_core.extensions.host.display import DisplayReader
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.member_table import MemberTable
 from igni_core.extensions.host.members import ALL_MEMBERS
-from igni_core.extensions.host.members.app import AppMembers
+from igni_core.extensions.host.members.tag import MemberKey
 from igni_core.extensions.host.model_config import HostModelConfig
 from igni_core.extensions.host.page_channel import PageChannel
 from igni_core.extensions.host.plain import plain
@@ -54,8 +55,7 @@ class HostModel:
     def build(cls, config: HostModelConfig) -> HostModel:
         """The composition root: every collaborator, built once and wired."""
         services = HostServices.build(config)
-        app = AppMembers(services)
-        broadcasts = BroadcastSignals(services, display=app.display_value)
+        broadcasts = BroadcastSignals(services, display=DisplayReader(services.gateway).read)
         # Every write a member makes through the backend is a signal too.
         services.gateway.on_write(broadcasts.after_rpc)
         binder = RequestBinder(
@@ -63,12 +63,12 @@ class HostModel:
             services.types,
             CallScope(services.windows, config.backend, SessionTargets(services)),
         )
-        built = [app if each is AppMembers else each(services) for each in ALL_MEMBERS]
+        built = [each(services) for each in ALL_MEMBERS]
         members = MemberTable.of(built, services.types, config.strict)
         return cls(services=services, broadcasts=broadcasts, binder=binder, members=members)
 
-    def implemented(self) -> set[tuple[str, str]]:
-        """``(op, member path)`` for every built member, for the coverage test."""
+    def implemented(self) -> set[MemberKey]:
+        """Every built member, for the coverage test."""
         return self._members.implemented()
 
     # ── Requests ──────────────────────────────────────────────────

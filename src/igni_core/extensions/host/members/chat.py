@@ -1,23 +1,18 @@
-"""``host.chat``: what a session's chat holds, what an extension writes
-into it, and the json-render views it shows there."""
+"""``host.chat``: what a session's chat holds, and what an extension
+writes into it. The views it shows there are :mod:`.chat_views`'."""
 
 from __future__ import annotations
 
-import json
-import uuid
 from typing import Any
 
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.members.answers import (
-    CompactResult,
-    ContextUsage,
-    ExtensionViewEvent,
-)
-from igni_core.extensions.host.members.base import Call, Members, call, get
-from igni_core.extensions.host.members.rpc_args import (
+from igni_core.extensions.host.members.answers import CompactResult, ContextUsage
+from igni_core.extensions.host.members.base import Members
+from igni_core.extensions.host.members.call import Call
+from igni_core.extensions.host.members.tag import call, get
+from igni_core.extensions.host.rpc_wire.chat import (
     CompactArgs,
     DiscardInterruptedArgs,
-    DispatchViewArgs,
     LearningsArgs,
     RunIdArgs,
     SearchChatArgs,
@@ -30,16 +25,7 @@ from igni_core.extensions.host.values import SessionStatus
 from igni_core.protocol.rpc import RpcMethod
 
 
-class ChatMembersBase(Members):
-    """Base: what more than one chat member reads."""
-
-    async def _context_limit(self, c: Call) -> int:
-        """The model's context window, in tokens; ``0`` when unknown."""
-        status = await self.rpc(RpcMethod.GET_STATUS, c=c)
-        return int(status.get("max_context") or 0)
-
-
-class ChatReadMembers(ChatMembersBase):
+class ChatReadMembers(Members):
     @get("chat.session_id")
     async def session_id(self, c: Call) -> str:
         return c.session_id
@@ -60,7 +46,7 @@ class ChatReadMembers(ChatMembersBase):
 
     @get("chat.status")
     async def status(self, c: Call) -> SessionStatus:
-        return SessionStatus.from_status(await self.rpc(RpcMethod.GET_STATUS, c=c), c.session_id)
+        return (await self.read_status(c)).session_status(c.session_id)
 
     @get("chat.timeout")
     async def timeout(self, c: Call) -> int:
@@ -76,7 +62,7 @@ class ChatReadMembers(ChatMembersBase):
     async def context(self, c: Call) -> ContextUsage:
         tokens = await self.rpc(RpcMethod.COUNT_CONTEXT_TOKENS, c=c)
         breakdown = await self.rpc(RpcMethod.GET_CONTEXT_BREAKDOWN, c=c)
-        limit = await self._context_limit(c)
+        limit = (await self.read_status(c)).max_context
         return ContextUsage(tokens=int(tokens or 0), max=limit, breakdown=breakdown)
 
     @call("chat.search")
@@ -87,7 +73,7 @@ class ChatReadMembers(ChatMembersBase):
         return await self.rpc(RpcMethod.SEARCH_CHAT, args, c=c)
 
 
-class ChatWriteMembers(ChatMembersBase):
+class ChatWriteMembers(Members):
     @call("chat.post")
     async def post(self, c: Call) -> None:
         text = str(c.params["text"])
@@ -142,7 +128,7 @@ class ChatWriteMembers(ChatMembersBase):
     @call("chat.compact")
     async def compact(self, c: Call) -> CompactResult | None:
         tokens = int(await self.rpc(RpcMethod.COUNT_CONTEXT_TOKENS, c=c) or 0)
-        limit = await self._context_limit(c)
+        limit = (await self.read_status(c)).max_context
         cleared = await self.rpc(
             RpcMethod.COMPACT_IF_NEEDED, CompactArgs(ctx_tokens=tokens, max_ctx=limit), c=c
         )
@@ -164,59 +150,4 @@ class ChatWriteMembers(ChatMembersBase):
         return await self.rpc(RpcMethod.UPLOAD_ATTACHMENT, args, c=c)
 
 
-class ChatViewMembers(Members):
-    """The json-render views in a chat: an extension's own, and acting on any."""
-
-    @call("chat.append")
-    async def append(self, c: Call) -> str:
-        # A new card each time: two appends of the same view are two views.
-        view_id = f"ext-{uuid.uuid4().hex[:12]}"
-        await self.show(c, view_id, c.params["view"], str(c.params.get("title") or ""))
-        self.host.state.view_owners.own(view_id, c.extension_id)
-        return view_id
-
-    @call("chat.replace")
-    async def replace(self, c: Call) -> None:
-        view_id = str(c.params["view_id"])
-        owner = self.host.state.view_owners.owner_of(view_id)
-        if owner is None:
-            raise HostModelError(ErrorCode.NOT_FOUND, f"no view {view_id!r} was appended")
-        if owner != c.extension_id:
-            raise HostModelError(
-                ErrorCode.REFUSED, f"view {view_id!r} belongs to another extension"
-            )
-        await self.show(c, view_id, c.params["view"], str(c.params.get("title") or ""))
-
-    async def show(self, c: Call, view_id: str, spec: Any, title: str) -> None:
-        if not isinstance(spec, dict) or not isinstance(spec.get("root"), str):
-            raise HostModelError(
-                ErrorCode.INVALID,
-                "a view is a json-render spec: {root: <id>, elements: {<id>: {type, props, children}}}",
-            )
-        event = ExtensionViewEvent(
-            agent_path=f"ext:{c.extension_id}",
-            spec_id=view_id,
-            spec_json=json.dumps(spec),
-            final=True,
-            title=title,
-            source=c.extension_id,
-        )
-        await self.host.backend.show_view(
-            session_id=c.session_id,
-            payload=event.model_dump(by_alias=True),
-            run_id=self.host.state.runs.last_run_of(c.session_id),
-        )
-
-    @get("chat.views.list")
-    async def view_list(self, c: Call) -> Any:
-        return self.host.backend.views(c.session_id)
-
-    @call("chat.views.dispatch")
-    async def dispatch(self, c: Call) -> Any:
-        params = dict(c.params.get("params") or {})
-        params["view_id"] = c.params["view_id"]
-        args = DispatchViewArgs(action=c.params["action"], params=params)
-        return await self.rpc(RpcMethod.DISPATCH_VISUALIZATION_ACTION, args, c=c)
-
-
-__all__ = ["ChatMembersBase", "ChatReadMembers", "ChatViewMembers", "ChatWriteMembers"]
+__all__ = ["ChatReadMembers", "ChatWriteMembers"]

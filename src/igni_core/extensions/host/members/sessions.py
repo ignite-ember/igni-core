@@ -4,13 +4,24 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import BaseModel
+
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.members.answers import SessionSwitched
-from igni_core.extensions.host.members.base import Call, Members, call, get, put
-from igni_core.extensions.host.members.rpc_args import SwitchSessionArgs
+from igni_core.extensions.host.members.base import Members
+from igni_core.extensions.host.members.call import Call
+from igni_core.extensions.host.members.tag import call, get, put
+from igni_core.extensions.host.members.window_values import WindowFieldName
+from igni_core.extensions.host.rpc_wire.sessions import SwitchSessionArgs
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.values import SessionInfo
 from igni_core.protocol.rpc import RpcMethod
+
+
+class SessionSwitched(BaseModel):
+    """The session a switch landed on, and the window that shows it."""
+
+    session_id: str
+    window: str | None
 
 
 class SessionMembers(Members):
@@ -49,7 +60,7 @@ class SessionMembers(Members):
         window = c.window
         # The window's model says which session it shows; the write is
         # the signal (``session.switched``) and what moves the window.
-        self.host.windows.write(window, "session", attached.session_id)
+        self.host.windows.write(window, WindowFieldName.SESSION.value, attached.session_id)
         return SessionSwitched(session_id=attached.session_id, window=window)
 
     @call("sessions.create")
@@ -70,8 +81,10 @@ class SessionMembers(Members):
                 )
         if c.params.get("focus") and c.window is not None:
             # The folder first: a window moving to the session reads it.
-            self.host.windows.write(c.window, "project_dir", attached.project_dir)
-            self.host.windows.write(c.window, "session", attached.session_id)
+            self.host.windows.write(
+                c.window, WindowFieldName.PROJECT_DIR.value, attached.project_dir
+            )
+            self.host.windows.write(c.window, WindowFieldName.SESSION.value, attached.session_id)
         return attached
 
     @call("sessions.attach")
@@ -81,4 +94,4 @@ class SessionMembers(Members):
         )
 
 
-__all__ = ["SessionMembers"]
+__all__ = ["SessionMembers", "SessionSwitched"]

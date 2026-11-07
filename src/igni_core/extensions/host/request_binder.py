@@ -4,7 +4,7 @@ Everything between "an extension asked" and "a member runs": the member
 exists and is built, the grant allows it, the op fits what it is, the
 window and session are resolved, and the parameters or the value are of
 the schema's types. What comes out is a :class:`BoundRequest`, whose
-:class:`~.members.base.Call` the member is handed.
+:class:`~.members.call.Call` the member is handed.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from igni_core.extensions.host.call_scope import CallScope
 from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.grants import HostGrants
-from igni_core.extensions.host.members.base import Call
+from igni_core.extensions.host.members.call import Arguments, Call
 from igni_core.extensions.host.spec import (
     ErrorCode,
     HostSchema,
@@ -30,13 +30,6 @@ from igni_core.extensions.host.types import SchemaTypes
 from igni_core.extensions.host.wire import Op, Request
 
 Member = PropertySpec | SignalSpec | MethodSpec
-
-
-class Arguments(BaseModel):
-    """A method's parameters, or a set's value, validated."""
-
-    params: dict[str, Any] = {}
-    value: Any = None
 
 
 class BoundRequest(BaseModel):
@@ -76,10 +69,8 @@ class RequestBinder:
             extension_id=extension_id,
             grants=grants,
             window=window,
-            session_id=target.session_id,
-            params=arguments.params,
-            value=arguments.value,
-            on_screen=target.on_screen,
+            target=target,
+            arguments=arguments,
         )
         return BoundRequest(spec=spec, member=member, call=call)
 
@@ -133,4 +124,4 @@ class RequestBinder:
             ) from None
 
 
-__all__ = ["Arguments", "BoundRequest", "RequestBinder"]
+__all__ = ["BoundRequest", "RequestBinder"]

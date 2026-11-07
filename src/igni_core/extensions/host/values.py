@@ -91,6 +91,13 @@ class SessionStatus(Signal):
         )
 
 
+class Connection(BaseModel):
+    """``app.connection``: whether igni reaches the cloud and has a model."""
+
+    cloud_connected: bool
+    model_configured: bool
+
+
 class Account(Signal):
     """Who is signed in to igni server, if anyone."""
 
@@ -159,6 +166,9 @@ class CommandOutcome(BaseModel):
 
 class UpdateInfo(BaseModel):
     """A newer igni, when the update check found one."""
+
+    #: The signal an update check answers with: this, or ``None``.
+    CHANGED: ClassVar[str] = "app.update_changed"
 
     current_version: str
     latest_version: str
@@ -281,7 +291,7 @@ class NotificationCounts(BaseModel):
     def visible_to(self, grants: HostGrants) -> NotificationCounts:
         """What one extension may see: everything with ``notifications``,
         otherwise its own count alone."""
-        if grants.allows("notifications"):
+        if grants.sees_all_notifications:
             return self
         own = self.by_source.get(grants.extension_id, 0)
         return NotificationCounts(unread=own, by_source={grants.extension_id: own} if own else {})
@@ -290,6 +300,7 @@ class NotificationCounts(BaseModel):
 __all__ = [
     "Account",
     "CommandOutcome",
+    "Connection",
     "ExtensionInfo",
     "HeadInfo",
     "NotificationCounts",

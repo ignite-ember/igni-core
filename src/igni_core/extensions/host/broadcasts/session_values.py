@@ -15,8 +15,8 @@ from igni_core.extensions.host.backend_gateway import HostBackendGateway
 from igni_core.protocol.rpc import RpcMethod
 
 #: Reads ``app.display`` for a session, as
-#: :meth:`~igni_core.extensions.host.members.app.AppMembers.display_value`
-#: does, as a :class:`~igni_core.extensions.host.members.answers.Display`.
+#: :meth:`~igni_core.extensions.host.display.DisplayReader.read`
+#: does, as a :class:`~igni_core.extensions.host.display.Display`.
 DisplayRead = Callable[[str], Awaitable[Any]]
 
 
