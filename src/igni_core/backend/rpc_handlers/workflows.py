@@ -47,18 +47,16 @@ class WorkflowsRpcHandler(RpcHandler):
     @rpc(RpcMethod.RUN_WORKFLOW)
     async def run_workflow(self, args: dict) -> WorkflowRunResponse:
         request = WorkflowRunRequest.from_rpc(args)
-        workflow_run_id = await self._runner.run(
-            name=request.name,
-            args=request.args,
-            session=self._ctx.backend.session,
-        )
-        return WorkflowRunResponse(workflow_run_id=workflow_run_id, name=request.name)
+        result = await self._runner.run(request=request, session=self._ctx.backend.session)
+        if not result.ok:
+            raise result.to_exception()
+        return WorkflowRunResponse(workflow_run_id=result.workflow_run_id, name=request.name)
 
     @rpc(RpcMethod.CANCEL_WORKFLOW)
     async def cancel_workflow(self, args: dict) -> WorkflowCancelResponse:
-        """Stop a running workflow. The runner writes a
-        ``{"type":"cancel"}`` line to the subprocess stdin and
-        escalates to SIGTERM after a grace period.
+        """Stop a running workflow. The run sends the subprocess a
+        :class:`WorkflowCancelCommand` and escalates to SIGTERM after
+        a grace period.
 
         ``cancelled`` is false when no such run is active in this
         session — already completed, already cancelled, or unknown.

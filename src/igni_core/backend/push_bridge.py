@@ -33,6 +33,7 @@ from igni_core.backend.schemas_push import (
     SchedulerStartedPayload,
     SessionNamedPayload,
 )
+from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
 from igni_core.core.activity import background
 from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.tools.edit import (
@@ -337,6 +338,11 @@ class PushNotificationBridge:
         window must ask): every window showing the trust dialog for that
         folder closes it, or opens it when ``state`` is ``ask``."""
         self._schedule_push(PushChannel.WORKSPACE_TRUST_REQUIRED, status)
+
+    def workflow_event(self, record: WorkflowEventRecord) -> None:
+        """One event of a running workflow, for the window folding it into
+        that run's chat item."""
+        self._schedule_push(PushChannel.WORKFLOW_EVENT, record.model_dump())
 
     # ── Private helpers ─────────────────────────────────────────
 

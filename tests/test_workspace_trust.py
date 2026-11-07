@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from igni_core.backend.workflow_discovery import WorkflowDiscovery
 from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 from igni_core.core.config.permission_eval.schemas import PermissionDecision
 from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
@@ -178,12 +179,10 @@ def _workflow_that_writes(repo: Path, marker: Path) -> None:
 
 
 def test_untrusted_project_workflows_are_neither_discovered_nor_run(repo, tmp_path):
-    from igni_core.backend.workflow_runner import WorkflowDiscovery
-
     marker = tmp_path / "workflow-ran"
     _workflow_that_writes(repo, marker)
 
-    found = asyncio.run(WorkflowDiscovery(project_dir=repo).list_workflows())
+    found = asyncio.run(WorkflowDiscovery.for_project(project_dir=repo).list_workflows())
 
     assert found == []
     assert not marker.exists()
@@ -191,13 +190,11 @@ def test_untrusted_project_workflows_are_neither_discovered_nor_run(repo, tmp_pa
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
 def test_trusted_project_workflows_are_discovered(repo, tmp_path):
-    from igni_core.backend.workflow_runner import WorkflowDiscovery
-
     marker = tmp_path / "workflow-ran"
     _workflow_that_writes(repo, marker)
     _trust().trust(repo)
 
-    asyncio.run(WorkflowDiscovery(project_dir=repo).list_workflows())
+    asyncio.run(WorkflowDiscovery.for_project(project_dir=repo).list_workflows())
 
     # Discovery ran the file — which is exactly why it waits for trust.
     assert marker.exists()

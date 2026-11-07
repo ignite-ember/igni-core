@@ -27,6 +27,8 @@ from igni_core.backend.schemas_workflows import (
     WorkflowMeta,
     WorkflowMetaEnvelope,
     WorkflowPhase,
+    WorkflowRunRequest,
+    WorkflowStartResult,
 )
 from igni_core.backend.workflow_runner import WorkflowRunner
 from igni_core.core.paths import CONFIG_DIR
@@ -97,7 +99,7 @@ async def test_run_workflow_returns_workflow_run_id_without_blocking() -> None:
     itself streams events later."""
     session = object()
     handler, runner = _make_handler(session)
-    runner.run.return_value = "wf_abc123def456"
+    runner.run.return_value = WorkflowStartResult.started("wf_abc123def456")
 
     out = await handler.run_workflow(
         {
@@ -112,8 +114,7 @@ async def test_run_workflow_returns_workflow_run_id_without_blocking() -> None:
         "name": "refactor-to-standards",
     }
     runner.run.assert_awaited_once_with(
-        name="refactor-to-standards",
-        args={"file": "src/example.py"},
+        request=WorkflowRunRequest(name="refactor-to-standards", args={"file": "src/example.py"}),
         session=session,
     )
 
@@ -125,7 +126,7 @@ async def test_run_workflow_runs_in_the_routed_session_whatever_the_session_id()
     have, so every call with a session id failed."""
     session = object()
     handler, runner = _make_handler(session)
-    runner.run.return_value = "wf_1"
+    runner.run.return_value = WorkflowStartResult.started("wf_1")
 
     for session_id in ("", "sess_known", "sess_unknown"):
         await handler.run_workflow({"name": "smoke", "session_id": session_id})
@@ -134,17 +135,17 @@ async def test_run_workflow_runs_in_the_routed_session_whatever_the_session_id()
 
 async def test_run_workflow_defaults_args_to_empty_dict() -> None:
     handler, runner = _make_handler()
-    runner.run.return_value = "wf_q"
+    runner.run.return_value = WorkflowStartResult.started("wf_q")
 
     await handler.run_workflow({"name": "smoke", "args": None})
 
-    assert runner.run.await_args.kwargs["args"] == {}
+    assert runner.run.await_args.kwargs["request"].args == {}
 
 
 async def test_run_workflow_surfaces_file_not_found() -> None:
     """An unknown workflow name propagates as an RPC error."""
     handler, runner = _make_handler()
-    runner.run.side_effect = FileNotFoundError("workflow 'missing' not found")
+    runner.run.return_value = WorkflowStartResult.not_found("workflow 'missing' not found")
 
     with pytest.raises(FileNotFoundError, match="missing"):
         await handler.run_workflow({"name": "missing"})
@@ -152,7 +153,9 @@ async def test_run_workflow_surfaces_file_not_found() -> None:
 
 async def test_run_workflow_surfaces_runtime_error() -> None:
     handler, runner = _make_handler()
-    runner.run.side_effect = RuntimeError("workflow runtime missing at /tmp/x.mjs")
+    runner.run.return_value = WorkflowStartResult.runtime_missing(
+        "workflow runtime missing at /tmp/x.mjs"
+    )
 
     with pytest.raises(RuntimeError, match="workflow runtime missing"):
         await handler.run_workflow({"name": "smoke"})
@@ -183,7 +186,7 @@ async def test_run_workflow_rejects_non_dict_args() -> None:
 
 async def test_run_workflow_takes_a_numeric_name_as_text() -> None:
     handler, runner = _make_handler()
-    runner.run.return_value = "wf_n"
+    runner.run.return_value = WorkflowStartResult.started("wf_n")
 
     out = await handler.run_workflow({"name": 7})
 

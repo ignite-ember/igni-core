@@ -21,6 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from igni_core.backend.workflow_discovery import WorkflowDiscovery
 from igni_core.core.config.group_policy import (
     GroupPolicyCache,
     GroupPolicyEntry,
@@ -262,8 +263,6 @@ class TestTheLoadersFindThem:
         assert "terse" in styles
 
     def test_a_workflow_is_discovered(self, cache: GroupPolicyCache, tmp_path: Path):
-        from igni_core.backend.workflow_runner import WorkflowDiscovery
-
         cache.materialize(
             _pack(
                 _entry(
@@ -276,9 +275,11 @@ class TestTheLoadersFindThem:
         )
         project = tmp_path / "proj"
         (project / CONFIG_DIR).mkdir(parents=True)
-        discovery = WorkflowDiscovery(project_dir=project, group_dir=cache.dir_for("workflows"))
+        discovery = WorkflowDiscovery.for_project(
+            project_dir=project, group_dir=cache.dir_for("workflows")
+        )
 
-        assert [p.stem for p in discovery._iter_paths()] == ["review"]
+        assert [p.stem for p in discovery.paths()] == ["review"]
 
     def test_a_tool_is_scanned(self, cache: GroupPolicyCache, tmp_path: Path):
         from igni_core.core.tools.custom_loader import CustomToolLoader

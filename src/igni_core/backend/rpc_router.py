@@ -104,7 +104,7 @@ class RpcRouter:
         # (a stale index would list files from the wrong project).
         file_completion = FileCompletionService(project_dir=backend.project_dir)
         shell_runner = CapturedShellRunner(project_dir=backend.project_dir)
-        workflows = WorkflowRunner(project_dir=backend.project_dir, push=push)
+        workflows = WorkflowRunner.for_project(project_dir=backend.project_dir, push=push)
 
         ctx = RpcHandlerContext(
             backend=backend,

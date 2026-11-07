@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.backend.schemas_workflows import WorkflowRunRequest
 from igni_core.backend.workflow_runner import WorkflowRunner
 
 pytestmark = pytest.mark.skipif(
@@ -47,15 +48,15 @@ return { ok: true }
     )
 
     push = MagicMock()
-    push._schedule_push = MagicMock()
     session = MagicMock()
     session.id = "sess_smoke"
     session.append_event = AsyncMock()
     # main_team is unused here (no agent() calls in the workflow).
     session.main_team = MagicMock()
 
-    runner = WorkflowRunner(project_dir=tmp_path, push=push)
-    run_id = await runner.run(name="smoke", args={}, session=session)
+    runner = WorkflowRunner.for_project(project_dir=tmp_path, push=push)
+    result = await runner.run(request=WorkflowRunRequest(name="smoke"), session=session)
+    run_id = result.workflow_run_id
     assert run_id.startswith("wf_")
     assert run_id in runner._runs
 
@@ -80,6 +81,6 @@ return { ok: true }
     assert "workflow_completed" in types
 
     # The push side fired the same number of times.
-    assert push._schedule_push.call_count == session.append_event.await_count
+    assert push.workflow_event.call_count == session.append_event.await_count
     # Run is no longer tracked (await_completion unregisters).
     assert run_id not in runner._runs

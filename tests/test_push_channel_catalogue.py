@@ -23,7 +23,7 @@ from igni_core.protocol.schemas.enums import PushChannel
 
 #: channel wire string -> the module that emits it.
 PRODUCED_CHANNELS = {
-    "workflow_event": "backend/workflow_runner.py",
+    "workflow_event": "backend/workflow_run.py",
     "todos_updated": "core/tools/todo.py",
     "plan_decided": "core/session/plan_ops.py",
     "http_retry_attempt": "core/tools/http_fetcher.py",

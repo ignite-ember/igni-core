@@ -1,21 +1,22 @@
 """Typed schemas for the workflow runner surface.
 
-Three concerns:
+Four concerns:
 
 1. ``WorkflowMeta`` — what a workflow advertises (read from the
    ``meta`` export of every ``.igni/workflows/*.mjs``). Mirrors
    the CC convention: ``{name, description, whenToUse, phases}``.
 
-2. ``WorkflowEvent`` — the envelope the Node subprocess emits
-   one JSON line at a time on stdout. Every event has a
-   ``run_id`` (so the BE can route re-connections) and a
-   monotonic ``seq`` (so the FE can re-order if a push
-   arrives out of order).
+2. The runtime's stdout/stdin protocol lives in
+   :mod:`igni_core.backend.schemas_workflow_events`.
 
 3. The RPC contracts: ``WorkflowListItem`` (one ``LIST_WORKFLOWS``
    row), ``WorkflowRunRequest`` / ``WorkflowRunResponse``
    (``RUN_WORKFLOW``) and ``WorkflowCancelRequest`` /
    ``WorkflowCancelResponse`` (``CANCEL_WORKFLOW``).
+
+4. A run's state and results: ``WorkflowRunPhase``,
+   ``WorkflowRunIdentity``, ``WorkflowStartResult`` and
+   ``MetaProbeResult``.
 
 Following the same pattern as
 :mod:`igni_core.backend.schemas_rpc`: every wire shape is a
@@ -25,7 +26,9 @@ the boundary, shape drift fails loud at validation time.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any, ClassVar, Literal, Self
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from pydantic_core import ErrorDetails
@@ -99,32 +102,6 @@ class WorkflowListItem(BaseModel):
     when_to_use: str = Field("", alias="whenToUse")
     phases: list[WorkflowPhase]
     path: str
-
-
-# ── Runtime event envelope (subprocess stdout) ─────────────────────
-
-
-class WorkflowEvent(BaseModel):
-    """One JSON line emitted by ``workflow_runtime.mjs`` on stdout.
-
-    The BE writes one of these into ``session.append_event`` per
-    line, with the event_type normalized to ``"workflow_event"``,
-    and pushes it on the ``workflow_event`` push channel.
-
-    ``payload`` is intentionally a free-form dict — each event
-    ``type`` has its own shape, and the FE reducer folds by type.
-    Putting every variant on this model would force both ends to
-    keep a giant ``Union`` in sync; the FE is happy to do
-    ``switch(ev.type)`` on the raw dict.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    ts: int
-    run_id: str
-    seq: int = Field(ge=0)
-    type: str
-    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── RPC contracts (RUN_WORKFLOW / CANCEL_WORKFLOW) ─────────────────
@@ -224,3 +201,91 @@ class WorkflowCancelResponse(BaseModel):
 
 
 WorkflowStatus = Literal["running", "completed", "failed", "cancelled"]
+
+
+# ── Run state and results ──────────────────────────────────────────
+
+
+class WorkflowRunPhase(StrEnum):
+    """Where one run is. The terminal values are the :data:`WorkflowStatus`
+    strings the frontend reads."""
+
+    RUNNING = "running"
+    CANCELLING = "cancelling"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in (
+            WorkflowRunPhase.COMPLETED,
+            WorkflowRunPhase.FAILED,
+            WorkflowRunPhase.CANCELLED,
+        )
+
+    @property
+    def terminal_status(self) -> Literal["completed", "failed", "cancelled"]:
+        """This phase as a terminal :data:`WorkflowStatus`; raises for a live one."""
+        if self is WorkflowRunPhase.COMPLETED:
+            return "completed"
+        if self is WorkflowRunPhase.FAILED:
+            return "failed"
+        if self is WorkflowRunPhase.CANCELLED:
+            return "cancelled"
+        raise ValueError(f"{self.value} is not a terminal phase")
+
+
+class WorkflowRunIdentity(BaseModel):
+    """Which run an event belongs to: its id and the name it was started by."""
+
+    model_config = ConfigDict(frozen=True)
+
+    workflow_run_id: str
+    name: str
+
+    @classmethod
+    def new(cls, name: str) -> WorkflowRunIdentity:
+        return cls(workflow_run_id=f"wf_{uuid4().hex[:12]}", name=name)
+
+
+class WorkflowStartResult(BaseModel):
+    """What :meth:`WorkflowRunner.run` returns.
+
+    A miss is an expected outcome, so it is a result rather than a raise;
+    the RPC boundary turns it back into the exception callers have always
+    seen (:meth:`to_exception`).
+    """
+
+    ok: bool
+    reason: str = ""
+    failure: Literal["not_found", "runtime_missing"] | None = None
+    workflow_run_id: str = ""
+
+    @classmethod
+    def started(cls, workflow_run_id: str) -> WorkflowStartResult:
+        return cls(ok=True, workflow_run_id=workflow_run_id)
+
+    @classmethod
+    def not_found(cls, reason: str) -> WorkflowStartResult:
+        return cls(ok=False, reason=reason, failure="not_found")
+
+    @classmethod
+    def runtime_missing(cls, reason: str) -> WorkflowStartResult:
+        return cls(ok=False, reason=reason, failure="runtime_missing")
+
+    def to_exception(self) -> Exception:
+        if self.failure == "not_found":
+            return FileNotFoundError(self.reason)
+        return RuntimeError(self.reason)
+
+
+class MetaProbeResult(BaseModel):
+    """What running one workflow file with ``--discovery`` produced."""
+
+    meta: WorkflowMeta | None = None
+    reason: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.meta is not None

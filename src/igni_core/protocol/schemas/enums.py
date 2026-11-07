@@ -338,7 +338,7 @@ class PushChannel(StrEnum):
     # Bridged from the session broadcast bus / workflow runner rather
     # than a ``push_*`` factory — which is exactly why they were
     # missing while the FE routed on every one of them.
-    WORKFLOW_EVENT = "workflow_event"  # backend/workflow_runner.py
+    WORKFLOW_EVENT = "workflow_event"  # backend/workflow_run.py (WorkflowEventSink)
     TODOS_UPDATED = "todos_updated"  # core/tools/todo.py
     PLAN_DECIDED = "plan_decided"  # core/session/plan_ops.py
     HTTP_RETRY_ATTEMPT = "http_retry_attempt"  # core/tools/http_fetcher.py

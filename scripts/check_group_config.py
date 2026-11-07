@@ -23,6 +23,7 @@ from pathlib import Path
 
 from igni_core.core.init.group_agent_sync import SYNCED_KINDS, GroupAgentSync  # noqa: E402
 
+from igni_core.backend.workflow_discovery import WorkflowDiscovery  # noqa: E402
 from igni_core.core.auth.portal_client import PortalClient  # noqa: E402
 from igni_core.core.config.group_policy import GroupPolicyCache  # noqa: E402
 from igni_core.core.hooks.loader import HookLoader  # noqa: E402
@@ -131,10 +132,8 @@ async def main() -> int:
             check(bool(matched), "a path-scoped rule fires on a matching file")
 
         if "workflows" in by_kind:
-            from igni_core.backend.workflow_runner import WorkflowDiscovery
-
-            discovery = WorkflowDiscovery(project_dir=project)
-            names = {p.stem for p in discovery._iter_paths()}
+            discovery = WorkflowDiscovery.for_project(project_dir=project)
+            names = {p.stem for p in discovery.paths()}
             check(set(by_kind["workflows"]) <= names, "workflows are discovered")
 
         print("\nSecond sync (nothing should move)")

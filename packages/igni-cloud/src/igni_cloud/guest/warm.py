@@ -59,6 +59,8 @@ class WarmImports:
         "igni_core.core.hooks.bypass_guard",
         "igni_core.core.hooks.bypass_explainer",
         "igni_core.backend.workflow_runner",
+        "igni_core.backend.workflow_run",
+        "igni_core.backend.workflow_runtime_process",
         # The standard library's share of the above.
         "concurrent.futures.thread",
         "ctypes",
