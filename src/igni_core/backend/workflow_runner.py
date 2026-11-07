@@ -304,11 +304,11 @@ class _RunState:
 class WorkflowRunner:
     """Execute a workflow, broadcast progress, bridge agent() calls.
 
-    The runner is constructed once per ``BackendApp`` and held on
-    ``backend.workflow_runner`` so the RPC handlers can reach it.
-    A single runner multiplexes concurrent workflow runs (one
-    subprocess + one ``_RunState`` per run) — typical usage is a
-    handful of concurrent workflows at most.
+    Each :class:`RpcRouter` builds one for its session and hands it to
+    the RPC handlers on :class:`RpcHandlerContext`. A single runner
+    multiplexes concurrent workflow runs (one subprocess + one
+    ``_RunState`` per run) — typical usage is a handful of concurrent
+    workflows at most.
     """
 
     def __init__(

@@ -57,6 +57,7 @@ from igni_core.backend.rpc_handlers import (
     WorkflowsRpcHandler,
     WorkspaceTrustRpcHandler,
 )
+from igni_core.backend.workflow_runner import WorkflowRunner
 from igni_core.protocol.rpc import RpcMethod, validate_rpc_table
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,7 @@ class RpcRouter:
         # (a stale index would list files from the wrong project).
         file_completion = FileCompletionService(project_dir=backend.project_dir)
         shell_runner = CapturedShellRunner(project_dir=backend.project_dir)
+        workflows = WorkflowRunner(project_dir=backend.project_dir, push=push)
 
         ctx = RpcHandlerContext(
             backend=backend,
@@ -111,6 +113,7 @@ class RpcRouter:
             push=push,
             file_completion=file_completion,
             shell_runner=shell_runner,
+            workflows=workflows,
             extensions=extensions,
             origins=origins,
             notifications=notifications,

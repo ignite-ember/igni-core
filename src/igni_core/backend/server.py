@@ -112,6 +112,7 @@ if TYPE_CHECKING:
     from igni_core.core.config.settings import Settings
     from igni_core.core.config.tool_permissions import PermissionLevel
     from igni_core.core.plugins.models import MarketplaceInfo, PluginInfo
+    from igni_core.core.session.core import Session
     from igni_core.core.session.loop_ops import LoopAdvance
     from igni_core.core.session.schemas import (
         McpInitResult,
@@ -1084,6 +1085,10 @@ class BackendServer:
     @property
     def session_id(self) -> str:
         return self._session.session_id
+
+    @property
+    def session(self) -> Session:
+        return self._session
 
     def activity(self) -> SessionActivity:
         """Running, waiting on a person, or idle (``backend/activity.py``)."""

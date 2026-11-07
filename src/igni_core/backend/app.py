@@ -469,18 +469,6 @@ class BackendApp:
         # runtime that narration is addressed to the wrong window, so
         # the bridge needs to know how many sessions are live.
         self._push_bridge.set_live_session_count(lambda: len(pool.runtimes))
-        # Workflow runner (CC ``/workflows`` parity): the BE runs
-        # ``.igni/workflows/*.mjs`` scripts in a Node subprocess
-        # and streams live progress on the ``workflow_event`` push
-        # channel. The runner is attached to the default
-        # ``BackendServer`` so per-runtime RPC dispatch can find
-        # it via ``backend.workflow_runner``.
-        from igni_core.backend.workflow_runner import WorkflowRunner
-
-        self._backend.workflow_runner = WorkflowRunner(
-            project_dir=self._project_dir,
-            push=self._push_bridge,
-        )
         self._supervisor.start_evictor()
         self._supervisor.mark_running()
         # Before any window connects: an idle process nobody is looking at

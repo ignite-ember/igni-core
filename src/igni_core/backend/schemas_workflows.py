@@ -12,8 +12,10 @@ Three concerns:
    monotonic ``seq`` (so the FE can re-order if a push
    arrives out of order).
 
-3. ``WorkflowRunRequest`` / ``WorkflowRunResponse`` — the RPC
-   contract for ``LIST_WORKFLOWS`` and ``RUN_WORKFLOW``.
+3. The RPC contracts: ``WorkflowListItem`` (one ``LIST_WORKFLOWS``
+   row), ``WorkflowRunRequest`` / ``WorkflowRunResponse``
+   (``RUN_WORKFLOW``) and ``WorkflowCancelRequest`` /
+   ``WorkflowCancelResponse`` (``CANCEL_WORKFLOW``).
 
 Following the same pattern as
 :mod:`igni_core.backend.schemas_rpc`: every wire shape is a
@@ -23,9 +25,10 @@ the boundary, shape drift fails loud at validation time.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic_core import ErrorDetails
 
 # ── Discovery (LIST_WORKFLOWS) ─────────────────────────────────────
 
@@ -70,6 +73,33 @@ class WorkflowMetaEnvelope(BaseModel):
     meta: WorkflowMeta
     path: str
 
+    def to_list_item(self) -> WorkflowListItem:
+        """Flatten ``meta`` and ``path`` into the row the FE renders."""
+        return WorkflowListItem(
+            name=self.meta.name,
+            description=self.meta.description,
+            when_to_use=self.meta.whenToUse,
+            phases=self.meta.phases,
+            path=self.path,
+        )
+
+
+class WorkflowListItem(BaseModel):
+    """One ``LIST_WORKFLOWS`` row: ``{name, description, whenToUse, phases, path}``.
+
+    ``when_to_use`` goes out as ``whenToUse`` — the model serialises
+    by alias, so the dispatcher's plain ``model_dump()`` emits the
+    wire name.
+    """
+
+    model_config = ConfigDict(extra="forbid", validate_by_name=True, serialize_by_alias=True)
+
+    name: str
+    description: str = ""
+    when_to_use: str = Field("", alias="whenToUse")
+    phases: list[WorkflowPhase]
+    path: str
+
 
 # ── Runtime event envelope (subprocess stdout) ─────────────────────
 
@@ -97,16 +127,60 @@ class WorkflowEvent(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
-# ── RPC contracts (LIST_WORKFLOWS / RUN_WORKFLOW) ──────────────────
+# ── RPC contracts (RUN_WORKFLOW / CANCEL_WORKFLOW) ─────────────────
 
 
-class WorkflowRunRequest(BaseModel):
-    """``RUN_WORKFLOW`` params."""
+class _RpcParams(BaseModel):
+    """The params of one RPC, read from the call's raw ``args`` dict.
 
-    model_config = ConfigDict(extra="forbid")
+    Keys the model doesn't name are ignored: the FE and the extension
+    host send ``session_id`` too, and routing has already used it by
+    the time a handler runs. Numbers are taken as strings, as the
+    handlers' ``str(...)`` reads always did.
 
-    name: str
+    Malformed params are a caller bug, so :meth:`from_rpc` raises —
+    a ``ValueError`` worded ``"<rpc>: '<field>' is required"``, the
+    text the FE and extensions have always seen.
+    """
+
+    model_config = ConfigDict(extra="ignore", coerce_numbers_to_str=True)
+
+    rpc_name: ClassVar[str]
+
+    @classmethod
+    def from_rpc(cls, args: dict[str, Any]) -> Self:
+        try:
+            return cls.model_validate(args)
+        except ValidationError as exc:
+            raise ValueError(cls._refusal(exc.errors()[0], args)) from exc
+
+    @classmethod
+    def _refusal(cls, error: ErrorDetails, args: dict[str, Any]) -> str:
+        field = str(error["loc"][0]) if error["loc"] else ""
+        if error["type"] in ("missing", "string_too_short"):
+            return f"{cls.rpc_name}: '{field}' is required"
+        if error["type"] == "dict_type":
+            got = type(args.get(field)).__name__
+            return f"{cls.rpc_name}: '{field}' must be a dict, got {got}"
+        return f"{cls.rpc_name}: '{field}': {error['msg']}"
+
+
+class WorkflowRunRequest(_RpcParams):
+    """``RUN_WORKFLOW`` params.
+
+    ``args`` is a free-form bag on purpose: it is handed to the
+    workflow script as JSON, and each workflow reads its own keys.
+    """
+
+    rpc_name: ClassVar[str] = "run_workflow"
+
+    name: str = Field(min_length=1)
     args: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("args", mode="before")
+    @classmethod
+    def _absent_args_are_empty(cls, value: Any) -> Any:
+        return value or {}
 
 
 class WorkflowRunResponse(BaseModel):
@@ -122,6 +196,28 @@ class WorkflowRunResponse(BaseModel):
 
     workflow_run_id: str
     name: str
+
+
+class WorkflowCancelRequest(_RpcParams):
+    """``CANCEL_WORKFLOW`` params."""
+
+    rpc_name: ClassVar[str] = "cancel_workflow"
+
+    workflow_run_id: str = Field(min_length=1)
+
+
+class WorkflowCancelResponse(BaseModel):
+    """``CANCEL_WORKFLOW`` response.
+
+    ``cancelled`` is false when no such run is active — already
+    finished, already cancelled, or an unknown id are the same
+    outcome to the caller.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cancelled: bool
+    workflow_run_id: str
 
 
 # ── Status (used by FE reducer; also stable across the wire) ──────

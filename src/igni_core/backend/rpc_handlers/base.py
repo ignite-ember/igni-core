@@ -17,6 +17,7 @@ from typing import Any, TypeVar
 
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.push_bridge import PushNotificationBridge
+from igni_core.backend.workflow_runner import WorkflowRunner
 from igni_core.protocol.rpc import RpcMethod
 
 # Attribute name the decorator uses to tag handler methods with
@@ -61,6 +62,9 @@ class RpcHandlerContext:
     # them; others ignore them.
     file_completion: Any = None
     shell_runner: Any = None
+    # The session's workflow runner — one per router, rooted at the
+    # backend's project and pushing through the router's bridge.
+    workflows: WorkflowRunner | None = None
     # The extension surfaces. ``extensions`` is the shared
     # :class:`~igni_core.extensions.rpc.ExtensionRpc`, which owns the
     # registry every dispatcher authorises against; ``origins`` knows

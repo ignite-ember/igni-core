@@ -97,7 +97,6 @@ class FakeSession:
         self.switched_to: list[str] = []
         self.output_style = ""
         self.skill_names = ["review"]
-        self.workflow_runner = None
         self.run_release: asyncio.Event | None = None
         self.titles: list[str] = []
         self.promoted: list[tuple[str, str]] = []
