@@ -294,7 +294,8 @@ class RpcMethod(StrEnum):
     # the bridge forwards ``bridge.host.…`` here, with the frame's
     # extension as ``caller``, and the host answers from the same
     # :class:`~igni_core.extensions.host.model.HostModel` the
-    # extension's process reaches over its loopback socket. Pool-level,
+    # extension's process reaches over its loopback socket
+    # (``handle_page``, then ``handle(request, caller)``). Pool-level,
     # like ``attach_session``: the model spans every session.
     HOST_MODEL = "host_model"
     # How a *window* reaches its own part of the host model: it hydrates

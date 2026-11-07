@@ -1,21 +1,11 @@
-"""The host object model, served.
+"""The host object model, served: its composition root and its request dispatch.
 
-:class:`HostModel` answers an extension's requests — ``get``, ``set``,
-``call``, ``subscribe`` — from both channels (the process's loopback
-socket, :mod:`.channel`, and the page's bridge, the ``host_model`` RPC,
-:mod:`.page_channel`), checks every one against the extension's grants
-and the schema (:mod:`.request_binder`), and runs the member that
-implements it (:mod:`.members`, :mod:`.member_table`). It also turns
-what igni does into signals: every message igni sends a window, every
-write a window makes, every extension state change (:mod:`.broadcasts`,
-:mod:`.observations`, :mod:`.window_signals`).
-
-The schema is the authority. A member it does not define does not
-exist; a stage-2 member answers that it is not yet available; a member
-not granted answers ``not_granted`` and its signals never arrive.
-
-The model composes; the collaborators its members and broadcasts share
-are one :class:`~.services.HostServices` record.
+:meth:`HostModel.build` wires the model from a
+:class:`~.model_config.HostModelConfig`. :meth:`HostModel.handle`
+answers one request from one :class:`~.caller.Caller`: a subscription
+goes to the signal bus; anything else is bound against the grants and
+the schema and run by the member that implements it. A refusal is a
+reply, never a raise.
 """
 
 from __future__ import annotations
@@ -23,26 +13,21 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from igni_core.core.decisions import Laya
-from igni_core.extensions.host.backend import HostBackend
 from igni_core.extensions.host.broadcasts import BroadcastSignals
 from igni_core.extensions.host.call_scope import CallScope
-from igni_core.extensions.host.definition import HOST_SCHEMA
+from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.member_table import MemberTable
 from igni_core.extensions.host.members import ALL_MEMBERS
 from igni_core.extensions.host.members.app import AppMembers
+from igni_core.extensions.host.model_config import HostModelConfig
 from igni_core.extensions.host.page_channel import PageChannel
 from igni_core.extensions.host.plain import plain
 from igni_core.extensions.host.request_binder import RequestBinder
 from igni_core.extensions.host.services import HostServices
 from igni_core.extensions.host.session_target import SessionTargets
-from igni_core.extensions.host.signals import Subscriber
-from igni_core.extensions.host.spec import ErrorCode, HostSchema
+from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.wire import ErrorBody, Op, Reply, Request
-from igni_core.extensions.registry import ExtensionRegistry
-from igni_core.extensions.store import ExtensionStore
-from igni_core.notifications.extension_notices import ExtensionNoticeReceiver
 
 logger = logging.getLogger(__name__)
 
@@ -53,110 +38,81 @@ class HostModel:
     def __init__(
         self,
         *,
-        backend: HostBackend,
-        registry: ExtensionRegistry,
-        store: ExtensionStore | None = None,
-        notices: ExtensionNoticeReceiver | None = None,
-        decisions: Laya | None = None,
-        schema: HostSchema = HOST_SCHEMA,
-        strict: bool = False,
+        services: HostServices,
+        broadcasts: BroadcastSignals,
+        binder: RequestBinder,
+        members: MemberTable,
     ) -> None:
-        """
-        Args:
-            notices: For ``host.notifications.notify`` — the same check a
-                notice arriving over MCP passes.
-            decisions: Laya, for ``host.decide``; the process's shared
-                one unless a test brings its own.
-            strict: Check every answer against the schema and fail loudly
-                when it does not fit. For tests: in production an answer
-                is sent as the backend gave it.
-        """
-        services = HostServices.build(
-            backend=backend,
-            registry=registry,
-            store=store,
-            notices=notices,
-            decisions=decisions,
-            schema=schema,
-        )
         self.services = services
-        self.broadcasts = BroadcastSignals(services, display=AppMembers(services).display_value)
+        self.broadcasts = broadcasts
+        #: Public: a test swaps its schema for one with a stage-2 member.
+        self.binder = binder
+        self._members = members
+        self._pages = PageChannel(services.bus, services.pushes, self.handle)
+
+    @classmethod
+    def build(cls, config: HostModelConfig) -> HostModel:
+        """The composition root: every collaborator, built once and wired."""
+        services = HostServices.build(config)
+        app = AppMembers(services)
+        broadcasts = BroadcastSignals(services, display=app.display_value)
         # Every write a member makes through the backend is a signal too.
-        services.gateway.on_write(self.broadcasts.after_rpc)
-        self.binder = RequestBinder(
-            schema,
+        services.gateway.on_write(broadcasts.after_rpc)
+        binder = RequestBinder(
+            config.host_schema,
             services.types,
-            CallScope(services.windows, backend, SessionTargets(services)),
+            CallScope(services.windows, config.backend, SessionTargets(services)),
         )
-        self.members = MemberTable.build(ALL_MEMBERS, services, services.types, strict)
-        self.pages = PageChannel(services.bus, services.pushes, self.handle)
+        built = [app if each is AppMembers else each(services) for each in ALL_MEMBERS]
+        members = MemberTable.of(built, services.types, config.strict)
+        return cls(services=services, broadcasts=broadcasts, binder=binder, members=members)
 
     def implemented(self) -> set[tuple[str, str]]:
         """``(op, member path)`` for every built member, for the coverage test."""
-        return self.members.implemented()
+        return self._members.implemented()
 
     # ── Requests ──────────────────────────────────────────────────
 
-    async def handle(
-        self,
-        extension_id: str,
-        request: Request,
-        *,
-        subscriber: Subscriber | None = None,
-        home_window: str | None = None,
-    ) -> Reply:
-        """Answer one request. Never raises: a refusal is a reply.
-
-        ``home_window`` is the window the caller lives in — a page's
-        own window; ``None`` for a process, whose ``host.ui`` is the
-        active window.
-        """
+    async def handle(self, request: Request, caller: Caller) -> Reply:
+        """Answer one request. Never raises: a refusal is a reply."""
         try:
-            result = await self._handle(extension_id, request, subscriber, home_window)
+            return await self._answer(request, caller)
         except HostModelError as exc:
-            return Reply(
-                id=request.id, ok=False, error=ErrorBody(code=exc.code, message=exc.message)
-            )
+            return Reply.refused(request.id, exc.body())
         except Exception as exc:
             logger.exception("host model: %s %s failed", request.op.value, request.path)
-            return Reply(
-                id=request.id,
-                ok=False,
-                error=ErrorBody(code=ErrorCode.FAILED, message=f"{request.path}: {exc}"),
+            return Reply.refused(
+                request.id, ErrorBody(code=ErrorCode.FAILED, message=f"{request.path}: {exc}")
             )
-        return Reply(id=request.id, ok=True, result=result)
 
     async def handle_page(self, extension_id: str, args: dict[str, Any]) -> Reply:
         """One request from an extension's page, through the bridge (:class:`PageChannel`)."""
-        return await self.pages.answer(extension_id, args)
+        return await self._pages.answer(extension_id, args)
 
-    async def _handle(
-        self,
-        extension_id: str,
-        request: Request,
-        subscriber: Subscriber | None,
-        home_window: str | None,
-    ) -> Any:
-        grants = self.services.extensions.grants_for(extension_id)
-        if grants is None:
-            raise HostModelError(ErrorCode.NOT_FOUND, f"no extension {extension_id!r} is installed")
+    async def _answer(self, request: Request, caller: Caller) -> Reply:
+        grants = self.services.extensions.require_grants(caller.extension_id)
+        if isinstance(grants, ErrorBody):
+            return Reply.refused(request.id, grants)
         if request.op is Op.ANSWER:
-            raise HostModelError(
-                ErrorCode.INVALID, "only an extension's process answers a hook event; a page cannot"
+            # The process's socket (HostChannel) and the bridge (PageChannel)
+            # each take an answer before it reaches the model.
+            return Reply.refused(
+                request.id,
+                ErrorBody(code=ErrorCode.INVALID, message="answer is not a host-model request"),
             )
         if request.op in (Op.SUBSCRIBE, Op.UNSUBSCRIBE):
-            return self._subscription(request, subscriber)
-        bound = await self.binder.bind(extension_id, grants, request, home_window)
+            if caller.subscriber is None:
+                return Reply.refused(
+                    request.id,
+                    ErrorBody(
+                        code=ErrorCode.INVALID, message="this channel does not take subscriptions"
+                    ),
+                )
+            outcome = self.services.bus.answer(caller.subscriber, request)
+            return Reply.answered(request.id, plain(outcome))
+        bound = await self.binder.bind(caller, grants, request)
         # The one place a member's answer becomes plain JSON for the wire.
-        return plain(await self.members.run(request, bound))
-
-    def _subscription(self, request: Request, subscriber: Subscriber | None) -> Any:
-        if subscriber is None:
-            raise HostModelError(ErrorCode.INVALID, "this channel does not take subscriptions")
-        if request.op is Op.SUBSCRIBE:
-            return dict(self.services.bus.subscribe(subscriber, request.signals))
-        self.services.bus.unsubscribe(subscriber, request.signals)
-        return None
+        return Reply.answered(request.id, plain(await self._members.run(request, bound)))
 
 
 __all__ = ["HostModel"]

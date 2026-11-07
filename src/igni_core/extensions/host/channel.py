@@ -35,9 +35,11 @@ from websockets.http11 import Request as HttpRequest
 from websockets.http11 import Response as HttpResponse
 
 from igni_core.core.activity import BusyKind, background
+from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.host.processes import PROCESS_GROUP_HEADER, ExtensionProcesses
+from igni_core.extensions.host.signals import Subscriber
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.wire import (
     ErrorBody,
@@ -237,7 +239,7 @@ class HostChannel:
                 await writer
 
     async def _answer(
-        self, extension_id: str, subscriber: Any, sink: _SocketSink, raw: str | bytes
+        self, extension_id: str, subscriber: Subscriber, sink: _SocketSink, raw: str | bytes
     ) -> None:
         data: Any = None
         try:
@@ -245,16 +247,15 @@ class HostChannel:
             request = Request.model_validate(data)
         except (ValueError, ValidationError) as exc:
             request_id = data.get("id", 0) if isinstance(data, dict) else 0
-            reply = Reply(
-                id=request_id,
-                ok=False,
-                error=ErrorBody(code=ErrorCode.INVALID, message=f"not a host-model request: {exc}"),
+            reply = Reply.refused(
+                request_id,
+                ErrorBody(code=ErrorCode.INVALID, message=f"not a host-model request: {exc}"),
             )
         else:
             if request.op is Op.ANSWER:
                 reply = self._answered(extension_id, request)
             else:
-                reply = await self._model.handle(extension_id, request, subscriber=subscriber)
+                reply = await self._model.handle(request, Caller.process(extension_id, subscriber))
         with contextlib.suppress(asyncio.QueueFull):
             sink.queue.put_nowait(reply.model_dump_json())
 
@@ -263,22 +264,19 @@ class HostChannel:
         try:
             answer = HookAnswer.model_validate(request.params)
         except ValidationError as exc:
-            return Reply(
-                id=request.id,
-                ok=False,
-                error=ErrorBody(code=ErrorCode.INVALID, message=f"not an answer: {exc}"),
+            return Reply.refused(
+                request.id, ErrorBody(code=ErrorCode.INVALID, message=f"not an answer: {exc}")
             )
         if not self._hooks.answered(extension_id, answer):
-            return Reply(
-                id=request.id,
-                ok=False,
-                error=ErrorBody(
+            return Reply.refused(
+                request.id,
+                ErrorBody(
                     code=ErrorCode.NOT_FOUND,
                     message=f"nothing waits on {answer.hook!r} from this extension; "
                     "it was answered already, or ran out of time",
                 ),
             )
-        return Reply(id=request.id, ok=True)
+        return Reply.answered(request.id)
 
     @staticmethod
     async def _write(connection: ServerConnection, sink: _SocketSink) -> None:

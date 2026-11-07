@@ -40,7 +40,7 @@ from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.tools.plan.store import PlanStore
 from igni_core.core.tools.plan.submission import PlanTransactionCoordinator
 from igni_core.extensions.host.hooks import ExtensionHooks
-from igni_core.extensions.host.wire import HookAnswer, Op, Request
+from igni_core.extensions.host.wire import HookAnswer
 from igni_core.extensions.impact import ExtensionImpact, ImpactHook
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
@@ -599,8 +599,8 @@ async def rig(tmp_path: Path) -> Any:
 async def test_a_page_cannot_answer_a_hook(rig: HostRig) -> None:
     rig.install("acme.guard", host=["ui"])
     assert rig.model is not None
-    reply = await rig.model.handle(
-        "acme.guard", Request(id=1, op=Op.ANSWER, params={"hook": "h-1", "outcome": "allow"})
+    reply = await rig.model.handle_page(
+        "acme.guard", {"id": 1, "op": "answer", "params": {"hook": "h-1", "outcome": "allow"}}
     )
     assert not reply.ok and reply.error is not None and reply.error.code == "invalid"
 

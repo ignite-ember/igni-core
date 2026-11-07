@@ -13,10 +13,11 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError, field_validator
 
+from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.pushes import WindowPushes
 from igni_core.extensions.host.signals import SignalBus, Subscriber
 from igni_core.extensions.host.spec import ErrorCode
-from igni_core.extensions.host.wire import ErrorBody, Reply, Request, SignalMessage
+from igni_core.extensions.host.wire import ErrorBody, Op, Reply, Request, SignalMessage
 
 
 class PageRequest(Request):
@@ -34,16 +35,10 @@ class PageRequest(Request):
 
 
 class Handle(Protocol):
-    """:meth:`HostModel.handle`, as a page's request reaches it."""
+    """:meth:`HostModel.handle(request, caller) <.model.HostModel.handle>`,
+    as a page's request reaches it."""
 
-    async def __call__(
-        self,
-        extension_id: str,
-        request: Request,
-        *,
-        subscriber: Subscriber | None = None,
-        home_window: str | None = None,
-    ) -> Reply: ...
+    async def __call__(self, request: Request, caller: Caller) -> Reply: ...
 
 
 class PageSink:
@@ -74,21 +69,25 @@ class PageChannel:
         return found
 
     async def answer(self, extension_id: str, args: dict[str, Any]) -> Reply:
-        """One request from an extension's page. A malformed one is a refusal."""
+        """One request from an extension's page. A malformed one is a refusal,
+        and so is a hook answer: only an extension's process answers one."""
         try:
             request = PageRequest.model_validate(args)
         except ValidationError as exc:
-            return Reply(
-                id=str(args.get("id", "page")),
-                ok=False,
-                error=ErrorBody(code=ErrorCode.INVALID, message=f"not a host-model request: {exc}"),
+            return Reply.refused(
+                str(args.get("id", "page")),
+                ErrorBody(code=ErrorCode.INVALID, message=f"not a host-model request: {exc}"),
             )
-        return await self._handle(
-            extension_id,
-            request,
-            subscriber=self.subscriber_for(extension_id),
-            home_window=request.home_window,
-        )
+        if request.op is Op.ANSWER:
+            return Reply.refused(
+                request.id,
+                ErrorBody(
+                    code=ErrorCode.INVALID,
+                    message="only an extension's process answers a hook event; a page cannot",
+                ),
+            )
+        caller = Caller.page(extension_id, self.subscriber_for(extension_id), request.home_window)
+        return await self._handle(request, caller)
 
 
 __all__ = ["PageChannel", "PageRequest", "PageSink"]

@@ -35,6 +35,7 @@ from igni_core.backend.session_stamping_transport import SessionStampingTranspor
 from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.session.event_log_schema import SessionEvent
 from igni_core.core.session.schemas import PersistResult
+from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.host.wire import Op, Request
@@ -447,7 +448,9 @@ class HostRig:
             params=params,
             value=value,
         )
-        return await self.model.handle(extension_id, request, home_window=home_window)
+        return await self.model.handle(
+            request, Caller(extension_id=extension_id, home_window=home_window)
+        )
 
     async def window(
         self, window_id: str = "w-main", *, connection: str = "ws-1", session: str = ""

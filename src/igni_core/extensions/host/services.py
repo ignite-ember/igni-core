@@ -3,9 +3,10 @@
 :class:`HostServices` is the record every :class:`~.members.Members`
 class, the broadcasts and the session targets are built with, in place
 of the whole :class:`~.model.HostModel` — so none of them reaches back
-into the model that composes them. :meth:`HostServices.build` is the
-composition root: it builds each collaborator with what it needs and
-wires the windows' listeners.
+into the model that composes them. :meth:`HostServices.build` builds
+each collaborator from a :class:`~.model_config.HostModelConfig` and
+wires the windows' listeners; :meth:`HostModel.build <.model.HostModel.build>`,
+the composition root, calls it first.
 
 It is wide (sixteen collaborators) on purpose for now: each members
 class still takes the record rather than the two or three parts it
@@ -24,6 +25,7 @@ from igni_core.extensions.host.backend_gateway import HostBackendGateway
 from igni_core.extensions.host.extension_directory import ExtensionDirectory
 from igni_core.extensions.host.host_state import HostState
 from igni_core.extensions.host.local_notices import LocalNotices
+from igni_core.extensions.host.model_config import HostModelConfig
 from igni_core.extensions.host.observations import HostObservations
 from igni_core.extensions.host.pushes import WindowPushes
 from igni_core.extensions.host.signal_values import Emitter
@@ -34,10 +36,8 @@ from igni_core.extensions.host.window_rpc import WindowModelRpc
 from igni_core.extensions.host.window_signals import WindowSignals
 from igni_core.extensions.host.windows import Windows
 from igni_core.extensions.host.work import BackgroundWork
-from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.extensions.store import ExtensionStore
 from igni_core.extensions.web_home import ExtensionWebHome
-from igni_core.notifications.extension_notices import ExtensionNoticeReceiver
 
 
 class HostServices(BaseModel):
@@ -72,26 +72,14 @@ class HostServices(BaseModel):
     observations: HostObservations
 
     @classmethod
-    def build(
-        cls,
-        *,
-        backend: HostBackend,
-        registry: ExtensionRegistry,
-        store: ExtensionStore | None,
-        notices: ExtensionNoticeReceiver | None,
-        decisions: Laya | None,
-        schema: HostSchema,
-    ) -> HostServices:
-        """
-        Args:
-            notices: For ``host.notifications.notify`` — the same check a
-                notice arriving over MCP passes.
-            decisions: The process's shared Laya unless a test brings its own.
-        """
+    def build(cls, config: HostModelConfig) -> HostServices:
+        """Each collaborator, built from ``config`` with what it needs."""
+        backend = config.backend
+        schema = config.host_schema
         types = SchemaTypes(schema)
         gateway = HostBackendGateway(backend)
-        store = store if store is not None else ExtensionStore()
-        extensions = ExtensionDirectory(registry, store, ExtensionWebHome(store), gateway)
+        store = config.store if config.store is not None else ExtensionStore()
+        extensions = ExtensionDirectory(config.registry, store, ExtensionWebHome(store), gateway)
         bus = SignalBus(schema, extensions.grants_for)
         emitter = Emitter(bus.emit)
         busy = ExtensionBusy()
@@ -112,8 +100,8 @@ class HostServices(BaseModel):
             window_rpc=WindowModelRpc(windows),
             pushes=pushes,
             extensions=extensions,
-            notices=LocalNotices(notices),
-            decisions=decisions if decisions is not None else Laya.shared(),
+            notices=LocalNotices(config.notices),
+            decisions=config.decisions if config.decisions is not None else Laya.shared(),
             busy=busy,
             work=BackgroundWork(),
             # Read through the backend each time, so a test can replace it.

@@ -7,7 +7,9 @@ protocol for whoever maintains an SDK.
 One request shape serves both channels — the process's loopback
 WebSocket and the page's bridge (forwarded as the ``host_model`` RPC) —
 so the host answers both through
-:meth:`~igni_core.extensions.host.model.HostModel.handle`.
+:meth:`~igni_core.extensions.host.model.HostModel.handle` — one
+request, and the :class:`~igni_core.extensions.host.caller.Caller` it
+comes from.
 """
 
 from __future__ import annotations
@@ -72,6 +74,16 @@ class Reply(BaseModel):
     ok: bool
     result: Any = None
     error: ErrorBody | None = None
+
+    @classmethod
+    def answered(cls, id: int | str, result: Any = None) -> Reply:
+        """The request was answered, with ``result``."""
+        return cls(id=id, ok=True, result=result)
+
+    @classmethod
+    def refused(cls, id: int | str, error: ErrorBody) -> Reply:
+        """The request was refused, or failed, for the reason ``error`` gives."""
+        return cls(id=id, ok=False, error=error)
 
 
 class SignalMessage(BaseModel):

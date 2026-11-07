@@ -9,6 +9,7 @@ from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.values import ExtensionInfo, SettingsChange
+from igni_core.extensions.host.wire import ErrorBody
 from igni_core.extensions.registry import ExtensionRegistry, InstalledExtension
 from igni_core.extensions.store import ExtensionStore
 from igni_core.extensions.web_home import ExtensionWebHome
@@ -35,6 +36,15 @@ class ExtensionDirectory:
         if entry is None:
             return None
         return HostGrants(entry.manifest)
+
+    def require_grants(self, extension_id: str) -> HostGrants | ErrorBody:
+        """The extension's grants, or the refusal a request from one not installed gets."""
+        grants = self.grants_for(extension_id)
+        if grants is None:
+            return ErrorBody(
+                code=ErrorCode.NOT_FOUND, message=f"no extension {extension_id!r} is installed"
+            )
+        return grants
 
     def info(self, extension_id: str) -> ExtensionInfo:
         return self._info(self._entry(extension_id))

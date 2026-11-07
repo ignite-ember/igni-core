@@ -39,6 +39,7 @@ from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
+from igni_core.extensions.host.model_config import HostModelConfig
 from igni_core.extensions.host.rpc_write import RpcWrite
 from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.extensions.service_events import UnattendedPost
@@ -336,12 +337,10 @@ class HostModelWiring:
             project_dir=project_dir,
             client_state=orchestrator.client_state,
         )
-        model = HostModel(
-            backend=backend,
-            registry=registry,
-            store=store,
-            notices=notices,
-            strict=strict,
+        model = HostModel.build(
+            HostModelConfig(
+                backend=backend, registry=registry, store=store, notices=notices, strict=strict
+            )
         )
         orchestrator.attach_host_model(model)
         # igni's hook events reach the extensions that hook them.

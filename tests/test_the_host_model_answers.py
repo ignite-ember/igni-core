@@ -20,6 +20,7 @@ import pytest
 from igni_core.backend.activity import ActivityState, SessionActivity
 from igni_core.core.approvals.events import ApprovalChange, ApprovalState, approval_events
 from igni_core.extensions.host.definition import HOST_SCHEMA
+from igni_core.extensions.host.signals import SubscribeOutcome
 from igni_core.extensions.host.spec import PropertySpec
 from igni_core.extensions.registry import ExtensionState
 from igni_core.protocol import messages as msg
@@ -571,11 +572,9 @@ class TestSignals:
         outcome = rig.model.services.bus.subscribe(
             rig.model.services.bus.attach(ext, sink), ["chat.run_started", "chat.nope"]
         )
-        assert outcome == {
-            "subscribed": [],
-            "not_granted": ["chat.run_started"],
-            "unknown": ["chat.nope"],
-        }
+        assert outcome == SubscribeOutcome(
+            subscribed=[], not_granted=["chat.run_started"], unknown=["chat.nope"]
+        )
         await rig.transport.send(msg.RunStarted(session_id="boot", run_id="r1"))
         assert sink.got == []
 

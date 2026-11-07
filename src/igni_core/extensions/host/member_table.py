@@ -9,7 +9,6 @@ from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.members.base import Impl, Members
 from igni_core.extensions.host.plain import plain
 from igni_core.extensions.host.request_binder import BoundRequest
-from igni_core.extensions.host.services import HostServices
 from igni_core.extensions.host.spec import ErrorCode, MethodSpec
 from igni_core.extensions.host.types import SchemaTypes
 from igni_core.extensions.host.wire import Op, Request
@@ -26,18 +25,13 @@ class MemberTable:
         self._strict = strict
 
     @classmethod
-    def build(
-        cls,
-        members_classes: Iterable[type[Members]],
-        host: HostServices,
-        types: SchemaTypes,
-        strict: bool,
-    ) -> MemberTable:
-        """Every class's members in one table. A member built twice — in two
-        classes, or under two names in one — is a bug, refused here alone."""
+    def of(cls, members: Iterable[Members], types: SchemaTypes, strict: bool) -> MemberTable:
+        """Every built members object's members in one table. A member built
+        twice — in two classes, or under two names in one — is a bug, refused
+        here alone."""
         impls: dict[tuple[str, str], Impl] = {}
-        for members_class in members_classes:
-            for key, impl in members_class(host).table():
+        for built in members:
+            for key, impl in built.table():
                 if key in impls:
                     raise RuntimeError(f"host member {key} implemented twice")
                 impls[key] = impl

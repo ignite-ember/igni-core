@@ -36,6 +36,7 @@ from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
+from igni_core.extensions.host.model_config import HostModelConfig
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.impact import IgniCommands
 from igni_core.extensions.installer import ExtensionInstaller
@@ -182,10 +183,12 @@ class HeadlessExtensions:
             igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
         )
         contributions.attach()
-        model = HostModel(
-            backend=HeadlessHostBackend(Path(session.project_dir), str(session.session_id)),
-            registry=self._registry,
-            store=store,
+        model = HostModel.build(
+            HostModelConfig(
+                backend=HeadlessHostBackend(Path(session.project_dir), str(session.session_id)),
+                registry=self._registry,
+                store=store,
+            )
         )
         self._channel = HostChannel(model)
         hooks = ExtensionHooks.wire(self._registry)

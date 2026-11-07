@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, SkipValidation, ValidationError
 
 from igni_core.extensions.host.call_scope import CallScope
+from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.host.members.base import Call
@@ -57,13 +58,8 @@ class RequestBinder:
         self._types = types
         self._scope = scope
 
-    async def bind(
-        self,
-        extension_id: str,
-        grants: HostGrants,
-        request: Request,
-        home_window: str | None,
-    ) -> BoundRequest:
+    async def bind(self, caller: Caller, grants: HostGrants, request: Request) -> BoundRequest:
+        extension_id = caller.extension_id
         spec, member = self._resolve(request)
         path = request.path
         if member.stage != 1:
@@ -71,7 +67,7 @@ class RequestBinder:
         permission = spec.permission_of(member)
         if not grants.allows(permission):
             raise HostModelError.not_granted(extension_id, f"'{path}'", permission or "")
-        window = self._scope.window(spec, request, home_window)
+        window = self._scope.window(spec, request, caller.home_window)
         target = await self._scope.session(
             grants=grants, spec=spec, member=member, request=request, window=window
         )

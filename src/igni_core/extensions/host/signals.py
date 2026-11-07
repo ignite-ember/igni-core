@@ -19,9 +19,11 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol
 
+from pydantic import BaseModel
+
 from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.host.spec import HostSchema, ObjectSpec, SignalSpec
-from igni_core.extensions.host.wire import SignalMessage
+from igni_core.extensions.host.wire import Op, Request, SignalMessage
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +51,17 @@ class Subscriber:
         self.wires: set[str] = set()
 
 
-class SubscribeOutcome(dict[str, list[str]]):
+class SubscribeOutcome(BaseModel):
     """``{subscribed, not_granted, unknown}`` — told to the SDK so it can
     warn its author, never an error: subscribing to something ungranted
-    is allowed, and nothing arrives."""
+    is allowed, and nothing arrives.
+
+    The field order is the wire's key order; the SDKs and
+    ``docs/HOST_MODEL_PROTOCOL.md`` show it so."""
+
+    subscribed: list[str] = []
+    not_granted: list[str] = []
+    unknown: list[str] = []
 
 
 class SignalBus:
@@ -102,19 +111,27 @@ class SignalBus:
 
     def subscribe(self, subscriber: Subscriber, wires: list[str]) -> SubscribeOutcome:
         grants = self._grants_for(subscriber.extension_id)
-        outcome = SubscribeOutcome(subscribed=[], not_granted=[], unknown=[])
+        outcome = SubscribeOutcome()
         for wire in wires:
             found = self._signals.get(wire)
             if found is None:
-                outcome["unknown"].append(wire)
+                outcome.unknown.append(wire)
                 continue
             spec, sig = found
             subscriber.wires.add(wire)
             if grants is None or not grants.allows(spec.permission_of(sig)):
-                outcome["not_granted"].append(wire)
+                outcome.not_granted.append(wire)
             else:
-                outcome["subscribed"].append(wire)
+                outcome.subscribed.append(wire)
         return outcome
+
+    def answer(self, subscriber: Subscriber, request: Request) -> SubscribeOutcome | None:
+        """A ``subscribe`` or ``unsubscribe`` request: the outcome of a
+        subscribe; nothing for an unsubscribe."""
+        if request.op is Op.SUBSCRIBE:
+            return self.subscribe(subscriber, request.signals)
+        self.unsubscribe(subscriber, request.signals)
+        return None
 
     def unsubscribe(self, subscriber: Subscriber, wires: list[str]) -> None:
         subscriber.wires.difference_update(wires)
