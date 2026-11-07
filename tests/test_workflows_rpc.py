@@ -24,6 +24,7 @@ from igni_core.backend.message_dispatcher import _serialize
 from igni_core.backend.rpc_handlers.base import RpcHandlerContext
 from igni_core.backend.rpc_handlers.workflows import WorkflowsRpcHandler
 from igni_core.backend.schemas_workflows import (
+    WorkflowCancelOutcome,
     WorkflowMeta,
     WorkflowMetaEnvelope,
     WorkflowPhase,
@@ -211,7 +212,7 @@ async def test_run_workflow_takes_a_numeric_name_as_text() -> None:
 
 async def test_cancel_workflow_returns_cancelled_true_when_run_exists() -> None:
     handler, runner = _make_handler()
-    runner.cancel.return_value = True
+    runner.cancel.return_value = WorkflowCancelOutcome.CANCELLED
 
     out = await handler.cancel_workflow({"workflow_run_id": "wf_abc", "session_id": "s"})
 
@@ -223,7 +224,7 @@ async def test_cancel_workflow_returns_cancelled_false_when_no_run() -> None:
     """Already finished, cancelled or unknown: the caller's UI shows
     "already stopped"."""
     handler, runner = _make_handler()
-    runner.cancel.return_value = False
+    runner.cancel.return_value = WorkflowCancelOutcome.NOT_LIVE
 
     out = await handler.cancel_workflow({"workflow_run_id": "wf_unknown"})
 

@@ -124,6 +124,7 @@ class SessionOrchestrator:
         self._notifications = notifications
         self._queue = queue
         self._boot_rpc_table = rpc_table
+        self._boot_router = rpc_router
         # Constructed in ``setup_pool``. Kept on self so
         # ``spawn_auto_name`` etc. can reach them.
         self._pool: SessionPool | None = None
@@ -174,6 +175,7 @@ class SessionOrchestrator:
             rpc_table=self._boot_rpc_table,
             queue=self._queue,
             transport=SessionStampingTransport(self._transport, self._backend),
+            router=self._boot_router,
         )
         # Point the default dispatcher at the stamped transport so
         # broadcasts on the default runtime also get a session_id.
@@ -287,6 +289,7 @@ class SessionOrchestrator:
             rpc_table=rt_table,
             queue=rt_queue,
             transport=stamped,
+            router=rt_router,
         )
         rt_backend.attach_runtime(runtime)
         return runtime

@@ -15,7 +15,7 @@ Four concerns:
    ``WorkflowCancelResponse`` (``CANCEL_WORKFLOW``).
 
 4. A run's state and results: ``WorkflowRunPhase``,
-   ``WorkflowRunIdentity``, ``WorkflowStartResult`` and
+   ``WorkflowCancelOutcome``, ``WorkflowRunIdentity``, ``WorkflowStartResult`` and
    ``MetaProbeResult``.
 
 Following the same pattern as
@@ -189,9 +189,11 @@ class WorkflowCancelRequest(_RpcParams):
 
     workflow_run_id: str = Field(min_length=1)
 
-    def answer(self, cancelled: bool) -> WorkflowCancelResponse:
+    def answer(self, outcome: WorkflowCancelOutcome) -> WorkflowCancelResponse:
         """The response to this request, echoing the id it named."""
-        return WorkflowCancelResponse(cancelled=cancelled, workflow_run_id=self.workflow_run_id)
+        return WorkflowCancelResponse(
+            cancelled=outcome.cancelled, workflow_run_id=self.workflow_run_id
+        )
 
 
 class WorkflowCancelResponse(BaseModel):
@@ -245,6 +247,23 @@ class WorkflowRunPhase(StrEnum):
         if self is WorkflowRunPhase.CANCELLED:
             return "cancelled"
         raise ValueError(f"{self.value} is not a terminal phase")
+
+
+class WorkflowCancelOutcome(StrEnum):
+    """What asking to cancel one run came to.
+
+    The wire only says whether the run was cancelled
+    (:attr:`cancelled`); the other two outcomes are kept apart here so
+    the code that produces them says which one it meant.
+    """
+
+    NOT_LIVE = "not_live"
+    ALREADY_EXITED = "already_exited"
+    CANCELLED = "cancelled"
+
+    @property
+    def cancelled(self) -> bool:
+        return self is WorkflowCancelOutcome.CANCELLED
 
 
 class WorkflowRunIdentity(BaseModel):

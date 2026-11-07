@@ -2,8 +2,8 @@
 
 The work is the :class:`~igni_core.backend.workflow_runner.WorkflowRunner`'s;
 these handlers read the request model, delegate, and return the response
-model. The runner is a context collaborator: the :class:`RpcRouter` builds
-one per session and hands it over on :class:`RpcHandlerContext`.
+model. The runner is a context collaborator: each :class:`RpcRouter` builds
+one and hands it over on :class:`RpcHandlerContext`.
 """
 
 from __future__ import annotations
@@ -51,8 +51,10 @@ class WorkflowsRpcHandler(RpcHandler):
         :class:`WorkflowCancelCommand` and escalates to SIGTERM after
         a grace period.
 
-        ``cancelled`` is false when no such run is active in this
-        session — already completed, already cancelled, or unknown.
+        The runner answers with a :class:`WorkflowCancelOutcome`:
+        ``not_live`` (no such run, or it already ended), ``already_exited``
+        (its process exited, its record is still being written) or
+        ``cancelled``. Only the last is ``cancelled: true`` on the wire.
         """
         request = WorkflowCancelRequest.from_rpc(args)
         return request.answer(await self._ctx.workflows.cancel(request.workflow_run_id))

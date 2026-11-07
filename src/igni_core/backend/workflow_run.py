@@ -20,7 +20,11 @@ from igni_core.backend.schemas_workflow_events import (
     WorkflowFailedEvent,
     WorkflowRuntimeEvent,
 )
-from igni_core.backend.schemas_workflows import WorkflowRunIdentity, WorkflowRunPhase
+from igni_core.backend.schemas_workflows import (
+    WorkflowCancelOutcome,
+    WorkflowRunIdentity,
+    WorkflowRunPhase,
+)
 from igni_core.backend.workflow_agent_bridge import WorkflowAgentBridge
 from igni_core.backend.workflow_runtime_process import WorkflowRuntimeProcess
 from igni_core.core.activity import background
@@ -74,6 +78,24 @@ class WorkflowRun:
         self._phase = WorkflowRunPhase.RUNNING
         self._drain_task: asyncio.Future[None] | None = None
 
+    @classmethod
+    def for_session(
+        cls,
+        *,
+        identity: WorkflowRunIdentity,
+        process: WorkflowRuntimeProcess,
+        session: Session,
+        push: PushNotificationBridge,
+    ) -> WorkflowRun:
+        """A run whose records go to ``session`` and ``push``, and whose
+        ``agent()`` calls are answered by ``session``'s team."""
+        return cls(
+            identity=identity,
+            process=process,
+            sink=WorkflowEventSink(session, push),
+            bridge=WorkflowAgentBridge(session),
+        )
+
     @property
     def identity(self) -> WorkflowRunIdentity:
         return self._identity
@@ -125,13 +147,13 @@ class WorkflowRun:
                 self._identity.workflow_run_id,
             )
 
-    async def cancel(self) -> bool:
-        """Stop the run. False when its process has already exited."""
+    async def cancel(self) -> WorkflowCancelOutcome:
+        """Stop the run, unless its process has already exited."""
         if self._process.returncode is not None:
-            return False
+            return WorkflowCancelOutcome.ALREADY_EXITED
         self._transition_to(WorkflowRunPhase.CANCELLING)
         await self._process.stop()
-        return True
+        return WorkflowCancelOutcome.CANCELLED
 
     async def finish(self) -> None:
         """Wait for the process to exit and end the run on a terminal record."""

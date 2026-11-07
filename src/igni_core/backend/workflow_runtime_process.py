@@ -45,6 +45,7 @@ from igni_core.backend.schemas_workflows import (
     MetaProbeResult,
     WorkflowMetaEnvelope,
     WorkflowRunIdentity,
+    WorkflowStartResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -142,6 +143,12 @@ class WorkflowRuntime:
             f"workflow runtime missing at {self._runtime_path}; "
             "the .mjs file is part of the repo, this is a build issue"
         )
+
+    def preflight(self) -> WorkflowStartResult | None:
+        """The refusal to start a run when the bridge is missing; None when it is there."""
+        if self.available:
+            return None
+        return WorkflowStartResult.runtime_missing(self.missing_message)
 
     async def probe_meta(self, path: Path) -> MetaProbeResult:
         """Run ``path`` with ``--discovery`` and read its ``meta`` export."""

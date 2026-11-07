@@ -104,7 +104,7 @@ class RpcRouter:
         # (a stale index would list files from the wrong project).
         file_completion = FileCompletionService(project_dir=backend.project_dir)
         shell_runner = CapturedShellRunner(project_dir=backend.project_dir)
-        workflows = WorkflowRunner.for_project(project_dir=backend.project_dir, push=push)
+        self._workflows = WorkflowRunner.for_project(project_dir=backend.project_dir, push=push)
 
         ctx = RpcHandlerContext(
             backend=backend,
@@ -113,7 +113,7 @@ class RpcRouter:
             push=push,
             file_completion=file_completion,
             shell_runner=shell_runner,
-            workflows=workflows,
+            workflows=self._workflows,
             extensions=extensions,
             origins=origins,
             notifications=notifications,
@@ -140,6 +140,13 @@ class RpcRouter:
             WorkflowsRpcHandler(ctx),
             WorkspaceTrustRpcHandler(ctx),
         ]
+
+    def has_live_workflows(self) -> bool:
+        return self._workflows.has_live_runs()
+
+    async def close(self) -> None:
+        """Stop what this router started: its live workflow runs."""
+        await self._workflows.close()
 
     def build_table(self) -> dict[str, Callable[[dict], Any]]:
         """Produce the legacy dispatch shape

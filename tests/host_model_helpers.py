@@ -322,7 +322,11 @@ class RigOrchestrator(SessionOrchestrator):
             notifications=self._notifications,
         )
         runtime = SessionRuntime(
-            backend=backend, rpc_table=router.build_table(), queue=[], transport=stamped
+            backend=backend,
+            rpc_table=router.build_table(),
+            queue=[],
+            transport=stamped,
+            router=router,
         )
         backend.attach_runtime(runtime)
         return runtime

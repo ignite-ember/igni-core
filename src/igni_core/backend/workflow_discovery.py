@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from igni_core.backend.schemas_workflows import WorkflowMetaEnvelope
+from igni_core.backend.schemas_workflows import WorkflowMetaEnvelope, WorkflowStartResult
 from igni_core.backend.workflow_layers import FallbackLayerNotice, WorkflowLayers
 from igni_core.backend.workflow_runtime_process import RUNTIME_PATH, WorkflowRuntime
 from igni_core.core.workspace_trust import WorkspaceTrust
@@ -87,6 +87,10 @@ class WorkflowDiscovery:
 
     def not_found_message(self, name: str) -> str:
         return self._layers.not_found_message(name, trusted=self._trusted())
+
+    def refuse_missing(self, name: str) -> WorkflowStartResult:
+        """The refusal to start ``name`` when no layer has it."""
+        return WorkflowStartResult.not_found(self.not_found_message(name))
 
     async def list_workflows(self) -> list[WorkflowMetaEnvelope]:
         """Every workflow's meta, one per name, sorted by name."""

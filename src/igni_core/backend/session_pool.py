@@ -24,7 +24,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine, MutableSequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from igni_core.backend.schemas_sessions import (
     BackendLike,
@@ -39,6 +39,9 @@ from igni_core.backend.schemas_sessions import (
 # should import from :mod:`session_stamping_transport` directly.
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.core.activity import BusyKind, background
+
+if TYPE_CHECKING:
+    from igni_core.backend.rpc_router import RpcRouter
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +67,13 @@ class SessionRuntime:
         transport: TransportLike,
         known_ids: set[str] | None = None,
         last_used_at: float = 0.0,
+        router: RpcRouter | None = None,
     ) -> None:
         self.backend = backend
         self.rpc_table = rpc_table
+        # The router ``rpc_table`` was built from, closed with the
+        # runtime so the workflows it started do not outlive it.
+        self._router = router
         self.queue = queue
         self.transport = transport
         self.known_ids: set[str] = set(known_ids) if known_ids else set()
@@ -106,11 +113,13 @@ class SessionRuntime:
         return self.backend.session_id
 
     def is_busy(self) -> bool:
-        """True while a run is in flight on this runtime — the
-        eviction sweep spares busy runtimes so a mid-stream tool
-        call is never cancelled by teardown.
+        """True while a run or a workflow is in flight on this runtime —
+        the eviction sweep spares busy runtimes so a mid-stream tool
+        call or a running workflow is never cancelled by teardown.
         """
-        return bool(self.backend.processing)
+        if self.backend.processing:
+            return True
+        return self._router is not None and self._router.has_live_workflows()
 
     def is_idle_since(self, cutoff: float) -> bool:
         """``last_used_at < cutoff`` — the eviction sweep's
@@ -157,12 +166,14 @@ class SessionRuntime:
     # ── Lifetime ─────────────────────────────────────────────────
 
     async def shutdown_safely(self) -> ShutdownReport:
-        """Shut the backend down, capturing failures into a typed
+        """Close the router, then shut the backend down, capturing failures into a typed
         :class:`ShutdownReport` so the pool's evictor can surface
         real teardown bugs instead of DEBUG-swallowing them.
         """
         sid = self.backend.session_id
         try:
+            if self._router is not None:
+                await self._router.close()
             await self.backend.shutdown()
         except Exception as exc:
             return ShutdownReport(ok=False, session_id=sid, error=str(exc))

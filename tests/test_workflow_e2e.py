@@ -58,13 +58,13 @@ return { ok: true }
     result = await runner.run(request=WorkflowRunRequest(name="smoke"), session=session)
     run_id = result.workflow_run_id
     assert run_id.startswith("wf_")
-    assert run_id in runner._runs
+    assert runner.is_live(run_id)
 
     # Poll until the run is unregistered (the await_completion
     # task does that on natural exit). Each await iteration
     # yields to the loop so the runner's tasks make progress.
     for _ in range(200):
-        if run_id not in runner._runs:
+        if not runner.is_live(run_id):
             break
         await asyncio.sleep(0.05)
     else:
@@ -83,4 +83,4 @@ return { ok: true }
     # The push side fired the same number of times.
     assert push.workflow_event.call_count == session.append_event.await_count
     # Run is no longer tracked (await_completion unregisters).
-    assert run_id not in runner._runs
+    assert not runner.is_live(run_id)

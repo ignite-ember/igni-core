@@ -37,6 +37,7 @@ from igni_core.backend.schemas_workflow_events import (
     WorkflowRuntimeEventReader,
 )
 from igni_core.backend.schemas_workflows import (
+    WorkflowCancelOutcome,
     WorkflowRunIdentity,
     WorkflowRunPhase,
     WorkflowRunRequest,
@@ -348,7 +349,7 @@ async def test_a_cancelled_run_without_a_terminal_event_ends_cancelled(tmp_path:
     session.append_event = AsyncMock()
     run = _run(proc, session, push, run_id="wf_stop")
 
-    assert await run.cancel() is True
+    assert await run.cancel() is WorkflowCancelOutcome.CANCELLED
     await run.finish()
 
     record: WorkflowEventRecord = push.workflow_event.call_args.args[0]
@@ -613,7 +614,7 @@ async def test_runner_cancel_sends_cancel_message_and_sends_sigterm(tmp_path: Pa
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(asyncio, "wait_for", fake_wait_for)
-        assert await run.cancel() is True
+        assert await run.cancel() is WorkflowCancelOutcome.CANCELLED
 
     # The cancel message was written to stdin.
     assert len(written) == 1
