@@ -37,6 +37,7 @@ from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 
 if TYPE_CHECKING:
+    from igni_core.extensions.host.broadcasts.approvals import ApprovalMirror
     from igni_core.extensions.host.model import HostModel
 
 _TAG = "_host_member"
@@ -730,7 +731,7 @@ class ChatMembers(Members):
         await self.backend.show_view(
             session_id=c.session_id,
             payload=payload,
-            run_id=self.model.state.last_run.get(c.session_id, ""),
+            run_id=self.model.state.runs.last_run_of(c.session_id),
         )
 
     @call("chat.search")
@@ -803,16 +804,15 @@ class ChatMembers(Members):
 class ApprovalMembers(Members):
     @get("chat.approvals.waiting")
     async def waiting(self, c: Call) -> Any:
-        return list(self._waiting(c.session_id).values())
+        return [a.model_dump() for a in self._mirror(c.session_id).waiting(c.session_id)]
 
-    def _waiting(self, session_id: str) -> dict[str, dict[str, Any]]:
-        """The session's approvals; read from the backend's database the
+    def _mirror(self, session_id: str) -> ApprovalMirror:
+        """The approval mirror, the session read from the backend's database the
         first time — after a restart nothing has been broadcast yet."""
-        if session_id not in self.model.state.approvals:
-            self.model.broadcasts.restore_approvals(
-                session_id, self.backend.waiting_approvals(session_id)
-            )
-        return self.model.state.approvals.get(session_id, {})
+        mirror = self.model.state.approvals
+        if not mirror.knows(session_id):
+            mirror.restore(session_id, self.backend.waiting_approvals(session_id))
+        return mirror
 
     @call("chat.approvals.answer")
     async def answer(self, c: Call) -> Any:
@@ -846,7 +846,7 @@ class ApprovalMembers(Members):
             raise HostModelError(
                 ErrorCode.INVALID, f"action is 'confirm' or 'reject', not {action!r}"
             )
-        if requirement_id not in self._waiting(c.session_id):
+        if not self._mirror(c.session_id).has(c.session_id, requirement_id):
             raise HostModelError(
                 ErrorCode.NOT_FOUND,
                 f"no request {requirement_id!r} is waiting in session {c.session_id}",
@@ -905,7 +905,7 @@ class LoopMembers(Members):
 
     async def _then_status(self, c: Call, method: RpcMethod) -> Any:
         # ``loop.changed`` is emitted for every loop write, the person's
-        # and this one, by :meth:`BroadcastSignals.after_rpc`.
+        # and this one, by :class:`~.broadcasts.rpc_writes.RpcWriteSignals`.
         return await self.rpc(method, c=c)
 
     @call("loop.pause")

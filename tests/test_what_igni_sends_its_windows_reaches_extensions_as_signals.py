@@ -21,7 +21,9 @@ from typing import Any
 
 import pytest
 
-from igni_core.extensions.host.broadcasts import BroadcastSignals
+from igni_core.extensions.host import coverage
+from igni_core.extensions.host.broadcasts import RpcWrite, ViewShown
+from igni_core.extensions.host.broadcasts.signal import Signal
 from igni_core.extensions.host.definition import HOST_SCHEMA
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
@@ -135,7 +137,7 @@ async def test_a_failed_run_drops_what_it_was_waiting_on(rig, heard):
     )
 
     assert heard.values("chat.run_error") == [{"session_id": "boot", "error": "model went away"}]
-    assert rig.model.state.approvals.get("boot") is None
+    assert not rig.model.state.approvals.knows("boot")
 
 
 async def test_messages_typing_info_and_errors_are_told(rig, heard):
@@ -186,7 +188,8 @@ async def test_an_approval_is_requested_detailed_and_resolved(rig, heard):
     (paused,) = heard.values("chat.run_paused")
     assert paused["requirements"][0]["tool_args"] == {"command": "ls"}
     assert heard.values("chat.approvals.requested")[0]["friendly_name"] == "Bash"
-    assert rig.model.state.approvals["boot"]["q1"]["details"] == "lists files"
+    (waiting,) = rig.model.state.approvals.waiting("boot")
+    assert waiting.details == "lists files"
     assert len(heard.values("chat.approvals.details")) == 2
 
     await _send(rig, msg.RequirementResolved(session_id="boot", requirement_id="q1"))
@@ -194,7 +197,8 @@ async def test_an_approval_is_requested_detailed_and_resolved(rig, heard):
     assert heard.values("chat.approvals.resolved") == [
         {"session_id": "boot", "requirement_id": "q1"}
     ]
-    assert rig.model.state.approvals["boot"] == {}
+    assert rig.model.state.approvals.knows("boot")
+    assert rig.model.state.approvals.waiting("boot") == []
 
 
 async def test_approvals_waiting_after_a_restart_are_taken_back_quietly(rig, heard):
@@ -203,10 +207,10 @@ async def test_approvals_waiting_after_a_restart_are_taken_back_quietly(rig, hea
         msg.Info(text="not an approval"),
     ]
 
-    rig.model.broadcasts.restore_approvals("boot", waiting)
-    rig.model.broadcasts.restore_approvals("boot", waiting)
+    rig.model.state.approvals.restore("boot", waiting)
+    rig.model.state.approvals.restore("boot", waiting)
 
-    assert list(rig.model.state.approvals["boot"]) == ["q1"]
+    assert [a.requirement_id for a in rig.model.state.approvals.waiting("boot")] == ["q1"]
     assert heard.values("chat.approvals.requested") == []
 
 
@@ -307,7 +311,7 @@ async def test_an_agents_progress_and_a_finished_view_are_told(rig, heard):
 def test_a_view_whose_spec_is_not_json_is_shown_empty():
     from_wire = {"spec_id": "v1", "json": "{not json"}
 
-    assert BroadcastSignals.view("s", from_wire)["spec"] == {}
+    assert ViewShown.from_payload("s", from_wire).spec == {}
 
 
 async def test_session_mode_plan_and_todo_pushes_are_told(rig, heard):
@@ -391,7 +395,7 @@ async def test_each_rpc_write_is_told_as_what_it_changed(rig, heard):
         (RpcMethod.LIST_SESSIONS, {}),
     ]
     for method, args in writes:
-        after(method, args, "boot", None)
+        after(RpcWrite(method=method, args=args, session_id="boot"))
     await rig.settle()
 
     assert heard.values("models.changed") == [{"current": "large"}]
@@ -415,9 +419,9 @@ async def test_each_rpc_write_is_told_as_what_it_changed(rig, heard):
 async def test_writes_that_need_a_fresh_read_are_read_and_told(rig, heard):
     after = rig.model.broadcasts.after_rpc
 
-    after(RpcMethod.TOGGLE_VERBOSE, {}, "boot", True)
-    after(RpcMethod.LOOP_PAUSE, {}, "boot", True)
-    after(RpcMethod.CLEAR_CLOUD_CREDENTIALS, {}, "boot", None)
+    after(RpcWrite(method=RpcMethod.TOGGLE_VERBOSE, args={}, session_id="boot"))
+    after(RpcWrite(method=RpcMethod.LOOP_PAUSE, args={}, session_id="boot"))
+    after(RpcWrite(method=RpcMethod.CLEAR_CLOUD_CREDENTIALS, args={}, session_id="boot"))
     await rig.settle()
 
     assert len(heard.values("app.display_changed")) == 1
@@ -433,12 +437,14 @@ async def test_an_extensions_own_settings_write_is_told_to_it_alone(rig, heard):
     )
     rig.store.save_settings(rig.registry.get("acme.all").manifest, {"serviceUrl": "https://s"})
 
-    rig.model.broadcasts.after_rpc(
-        RpcMethod.SET_EXTENSION_SETTINGS, {"extension_id": "acme.all"}, "boot", None
-    )
-    rig.model.broadcasts.after_rpc(
-        RpcMethod.SET_EXTENSION_SETTINGS, {"extension_id": "acme.absent"}, "boot", None
-    )
+    for extension_id in ("acme.all", "acme.absent"):
+        rig.model.broadcasts.after_rpc(
+            RpcWrite(
+                method=RpcMethod.SET_EXTENSION_SETTINGS,
+                args={"extension_id": extension_id},
+                session_id="boot",
+            )
+        )
 
     assert heard.values("self.settings_changed") == [{"values": {"serviceUrl": "https://s"}}]
     assert other.got == []
@@ -453,8 +459,8 @@ async def test_a_failing_activity_listener_does_not_stop_the_others(rig, heard):
     def broken(_activity: Any) -> None:
         raise RuntimeError("listener bug")
 
-    rig.model.broadcasts.on_activity(broken)
-    rig.model.broadcasts.on_activity(told.append)
+    rig.model.activity_watch.listen(broken)
+    rig.model.activity_watch.listen(told.append)
     rig.session.processing = True
 
     await _send(rig, msg.RunStarted(session_id="boot", run_id="r1"))
@@ -472,3 +478,98 @@ async def test_an_activity_that_cannot_be_read_is_not_told(rig, heard, monkeypat
     await _send(rig, msg.RunStarted(session_id="boot", run_id="r1"))
 
     assert heard.values("app.activity_changed") == []
+
+
+# ── The translation's own coverage ────────────────────────────────
+
+#: The message types translated before the handlers became a typed table
+#: (``_on_<type>`` methods); a class added or lost is a decision to make here.
+TRANSLATED = {
+    "user_message_received",
+    "typing",
+    "content_delta",
+    "reasoning_started",
+    "run_started",
+    "run_completed",
+    "run_error",
+    "run_paused",
+    "hitl_request",
+    "requirement_resolved",
+    "requirement_details",
+    "streaming_done",
+    "status_update",
+    "info",
+    "error",
+    "tool_started",
+    "tool_completed",
+    "tool_error",
+    "model_completed",
+    "task_created",
+    "task_updated",
+    "task_iteration",
+    "task_state_updated",
+    "session_list_result",
+    "session_cleared",
+    "scheduler_event",
+    "push_notification",
+}
+
+
+def _wire_type(kind: type[msg.Message]) -> str:
+    return str(kind.model_fields["type"].default)
+
+
+def test_each_message_translated_is_one_igni_broadcasts(rig):
+    handled = rig.model.broadcasts.handled()
+
+    assert {_wire_type(kind) for kind in handled} == TRANSLATED
+    assert len({_wire_type(kind) for kind in handled}) == len(handled)
+    assert {_wire_type(kind) for kind in handled} - {"push_notification"} <= set(
+        coverage.BROADCASTS
+    )
+
+
+def test_every_push_channel_with_a_signal_is_translated(rig):
+    assert rig.model.broadcasts.push_channels() == set(coverage.PUSH)
+
+
+def _signals(base: type[Signal]) -> list[type[Signal]]:
+    found: list[type[Signal]] = []
+    for sub in base.__subclasses__():
+        if "WIRE" in sub.__dict__:
+            found.append(sub)
+        found.extend(_signals(sub))
+    return found
+
+
+def test_each_signal_model_is_the_schemas_type_for_its_wire():
+    types = {HOST_SCHEMA.wire_name(o, s): s.type for o in HOST_SCHEMA.objects for s in o.signals}
+    signals = _signals(Signal)
+
+    assert signals, "no signal models found"
+    for model in signals:
+        expression = types[model.WIRE]
+        spec = HOST_SCHEMA.type(expression)
+        assert spec is not None, f"{model.__name__}: {expression} is not a named type"
+        assert set(model.model_fields) == {f.name for f in spec.fields}, model.__name__
+
+
+async def test_what_is_heard_fits_the_schema(rig, heard):
+    """Every value told in a run's life validates as its signal's schema type."""
+    (rig.project / "src").mkdir()
+    await _send(
+        rig,
+        msg.RunStarted(session_id="boot", run_id="r1"),
+        msg.ContentDelta(session_id="boot", text="x"),
+        _push("file_edited", path="src/a.py"),
+        msg.HITLRequest(session_id="boot", requirement_id="q1", tool_name="x"),
+        msg.TaskStateUpdated(session_id="boot", tasks=[TaskSnapshot(task_id="t1")]),
+        _push("orchestrate_event", type="step"),
+        _push("scheduler_event", task_id=None),
+        msg.RunCompleted(session_id="boot", run_id="r1"),
+    )
+    types = {HOST_SCHEMA.wire_name(o, s): s.type for o in HOST_SCHEMA.objects for s in o.signals}
+
+    assert heard.got
+    for wire, value in heard.got:
+        assert rig.model.types.check(types[wire], value) is None, (wire, value)

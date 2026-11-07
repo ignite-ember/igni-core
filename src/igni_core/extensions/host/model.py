@@ -30,11 +30,15 @@ from igni_core.core.decisions import Laya
 from igni_core.extensions.busy import ExtensionBusy
 from igni_core.extensions.events import HostTopic
 from igni_core.extensions.host.backend import HostBackend
-from igni_core.extensions.host.broadcasts import BroadcastSignals
+from igni_core.extensions.host.broadcasts import BroadcastSignals, RpcWrite
+from igni_core.extensions.host.broadcasts.activity import ActivityWatch
+from igni_core.extensions.host.broadcasts.approvals import ApprovalMirror
+from igni_core.extensions.host.broadcasts.runs import RunLedger
+from igni_core.extensions.host.broadcasts.status import StatusMemory
 from igni_core.extensions.host.definition import HOST_SCHEMA
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.grants import HostGrants
-from igni_core.extensions.host.members import ALL_MEMBERS, Call, Impl
+from igni_core.extensions.host.members import ALL_MEMBERS, AppMembers, Call, Impl
 from igni_core.extensions.host.session_target import SessionTargets
 from igni_core.extensions.host.signals import Content, SignalBus, Subscriber
 from igni_core.extensions.host.spec import (
@@ -68,21 +72,14 @@ class HostState:
 
     #: The last update check's answer.
     update: dict[str, Any] | None = None
-    #: Approvals waiting, by session, by requirement id. A mirror of the
-    #: backend's, which are in the database (``ApprovalJournal``): kept
-    #: from what is broadcast, and read from the backend for a session
-    #: it has not heard of — after a restart.
-    approvals: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
-    #: The last top-level run of each session.
-    last_run: dict[str, str] = field(default_factory=dict)
-    #: Files the current top-level run of each session edited.
-    run_files: dict[str, set[str]] = field(default_factory=dict)
+    #: Approvals waiting, by session (:class:`ApprovalMirror`).
+    approvals: ApprovalMirror = field(default_factory=ApprovalMirror)
+    #: Each session's last top-level run, and the files its current one edited.
+    runs: RunLedger = field(default_factory=RunLedger)
     #: Which extension appended which view.
     view_owner: dict[str, str] = field(default_factory=dict)
     #: The last status seen, by session.
-    status: dict[str, dict[str, Any]] = field(default_factory=dict)
-    #: The last ``app.activity`` signalled.
-    activity: dict[str, Any] | None = None
+    status: StatusMemory = field(default_factory=StatusMemory)
 
 
 class ExternalOpen(BaseModel):
@@ -139,7 +136,9 @@ class HostModel:
         self.windows = Windows(backend.client_state, types=self.types, push=self._push_window)
         self.windows.on_change(self._window_model_changed)
         self.windows.on_window(self._window_changed)
-        self.broadcasts = BroadcastSignals(self)
+        #: ``app.activity``, told when it moves.
+        self.activity_watch = ActivityWatch(lambda: self.backend.activity(), self.emit)
+        self.broadcasts = BroadcastSignals(self, display=AppMembers(self).display_value)
         #: Which session a ``host.sessions.chat(id)`` request is about.
         self.session_targets = SessionTargets(self)
         #: Extensions that said they are working (``self.busy``).
@@ -405,7 +404,7 @@ class HostModel:
             raise HostModelError(ErrorCode.INVALID, f"{method.value}: {exc} is required") from None
         except (ValueError, PermissionError, FileNotFoundError) as exc:
             raise HostModelError(ErrorCode.REFUSED, str(exc)) from None
-        self.broadcasts.after_rpc(method, args, session_id, result)
+        self.broadcasts.after_rpc(RpcWrite(method=method, args=args, session_id=session_id))
         return result
 
     async def command(self, text: str, *, session_id: str) -> dict[str, Any]:

@@ -36,7 +36,7 @@ from igni_core.core.activity import ActivityRegistry, background
 from igni_core.core.approvals.events import approval_events
 from igni_core.core.hooks.extension_gate import ExtensionHookGate
 from igni_core.core.session.schemas import PersistResult
-from igni_core.extensions.host.broadcasts import BroadcastSignals
+from igni_core.extensions.host.broadcasts import RpcWrite, ViewShown
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.registry import ExtensionRegistry
@@ -98,14 +98,15 @@ class RpcWatch:
     "Every write is a signal": a window's write through an RPC broadcasts
     nothing of its own, so the host learns it succeeded from the reply
     going out and tells
-    :meth:`~igni_core.extensions.host.broadcasts.BroadcastSignals.after_rpc`.
+    :meth:`~igni_core.extensions.host.broadcasts.BroadcastSignals.after_rpc`
+    the :class:`~igni_core.extensions.host.broadcasts.RpcWrite`.
     """
 
     LIMIT = 1000
 
-    def __init__(self, after: Callable[[RpcMethod, dict[str, Any], str, Any], None]) -> None:
+    def __init__(self, after: Callable[[RpcWrite], None]) -> None:
         self._after = after
-        self._pending: OrderedDict[str, tuple[RpcMethod, dict[str, Any], str]] = OrderedDict()
+        self._pending: OrderedDict[str, RpcWrite] = OrderedDict()
 
     def inbound(self, message: Any) -> None:
         if not isinstance(message, msg.RPCRequest) or not message.id:
@@ -116,23 +117,24 @@ class RpcWatch:
             return
         if method in POOL_LEVEL_RPCS:
             return
-        self._pending[message.id] = (method, dict(message.args or {}), message.session_id)
+        self._pending[message.id] = RpcWrite(
+            method=method, args=dict(message.args or {}), session_id=message.session_id
+        )
         while len(self._pending) > self.LIMIT:
             self._pending.popitem(last=False)
 
     def outbound(self, message: msg.Message) -> None:
         if not message.id or message.id not in self._pending:
             return
-        method, args, session_id = self._pending.pop(message.id)
+        write = self._pending.pop(message.id)
         if isinstance(message, msg.RPCResponse):
             if message.error:
                 return
-            result = message.result
-        else:
-            if message.type == "error":
-                return
-            result = message.model_dump()
-        self._after(method, args, session_id or message.session_id, result)
+        elif message.type == "error":
+            return
+        if not write.session_id:
+            write = write.model_copy(update={"session_id": message.session_id})
+        self._after(write)
 
 
 class OrchestratorHostBackend:
@@ -241,7 +243,9 @@ class OrchestratorHostBackend:
             payload = dict(event.payload or {})
             if not payload.get("final", True) or not payload.get("spec_id"):
                 continue
-            latest[str(payload["spec_id"])] = BroadcastSignals.view(session_id, payload)
+            latest[str(payload["spec_id"])] = ViewShown.from_payload(
+                session_id, payload
+            ).model_dump()
         return list(latest.values())
 
     def activity(self) -> dict[str, Any]:
@@ -300,7 +304,7 @@ class ActivityNudge:
     def _look(self) -> None:
         with self._lock:
             self._pending = False
-        self._model.broadcasts.activity_moved()
+        self._model.activity_watch.moved()
 
 
 class HostModelWiring:

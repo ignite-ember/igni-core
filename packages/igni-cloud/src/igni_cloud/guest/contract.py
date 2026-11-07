@@ -196,7 +196,7 @@ class CloudGuest(BackendHooks):
             clients=self._clients,
             credential=self._credential_state,
         )
-        model.broadcasts.on_activity(self.activity.changed)
+        model.activity_watch.listen(self.activity.changed)
         # A window coming or going changes ``clients``.
         watch_connections = getattr(
             getattr(transport, "inner", transport), "watch_connections", None

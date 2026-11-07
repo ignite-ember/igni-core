@@ -54,8 +54,7 @@ from igni_core.core.db.scope import Tenant, tenancy
 from igni_core.core.db.urls import DatabaseUrl
 from igni_core.core.layer import BackendHooks, Layer
 from igni_core.core.session.pending_messages import PendingMessageStore
-from igni_core.extensions.host.broadcasts import BroadcastSignals
-from igni_core.extensions.host.model import HostState
+from igni_core.extensions.host.broadcasts.activity import ActivityWatch
 from igni_core.notifications.stream import NotificationStreamFollower
 from igni_core.protocol import messages as msg
 from igni_core.transport.websocket import WebSocketServerTransport
@@ -267,26 +266,22 @@ def test_activity_changed_reaches_a_listener():
         def activity(self) -> dict[str, Any]:
             return self.value
 
-    class Model:
-        def __init__(self) -> None:
-            self.state = HostState()
-            self.backend = Backend()
-            self.emitted: list[str] = []
+    backend = Backend()
+    emitted: list[str] = []
 
-        def emit(self, wire: str, value: Any = None, **_: Any) -> list[str]:
-            self.emitted.append(wire)
-            return []
+    def emit(wire: str, value: Any = None, **_: Any) -> list[str]:
+        emitted.append(wire)
+        return []
 
-    model = Model()
-    signals = BroadcastSignals(model)  # type: ignore[arg-type]
+    watch = ActivityWatch(backend.activity, emit)
     heard: list[dict[str, Any]] = []
-    signals.on_activity(heard.append)
-    signals.activity_moved()
-    signals.activity_moved()
-    model.backend.value = {"state": "running"}
-    signals.activity_moved()
+    watch.listen(heard.append)
+    watch.moved()
+    watch.moved()
+    backend.value = {"state": "running"}
+    watch.moved()
     assert heard == [{"state": "idle"}, {"state": "running"}]
-    assert model.emitted == ["app.activity_changed", "app.activity_changed"]
+    assert emitted == ["app.activity_changed", "app.activity_changed"]
 
 
 # ── producer.env ──────────────────────────────────────────────────
@@ -698,13 +693,13 @@ async def test_serving_keeps_the_file_and_reconnects_after_a_restore(run_dir: Pa
     class Model:
         def __init__(self) -> None:
             self.backend = self
-            self.broadcasts = self
+            self.activity_watch = self
             self.listeners: list[Any] = []
 
         def activity(self) -> dict[str, Any]:
             return Activity.of([]).model_dump(mode="json")
 
-        def on_activity(self, listener: Any) -> None:
+        def listen(self, listener: Any) -> None:
             self.listeners.append(listener)
 
     class Transport:
@@ -759,12 +754,12 @@ async def test_bound_before_any_sign_in_says_so_to_the_windows_and_the_node_agen
     class Model:
         def __init__(self) -> None:
             self.backend = self
-            self.broadcasts = self
+            self.activity_watch = self
 
         def activity(self) -> dict[str, Any]:
             return Activity.of([]).model_dump(mode="json")
 
-        def on_activity(self, listener: Any) -> None:
+        def listen(self, listener: Any) -> None:
             pass
 
     guest.serving(model=Model(), transport=Transport(), api_url=lambda: "https://igni.test")
