@@ -13,7 +13,8 @@ installation that has not upgraded yet.
 ## Security advisories
 
 A fixed vulnerability is published as a **GitHub Security Advisory on
-`ignite-ember/igni`** (the Security tab, then Advisories), with a CVE
+`ignite-ember/igni-app`** (formerly `ignite-ember/igni`; the Security tab,
+then Advisories), for any of igni's repositories — this one included, with a CVE
 identifier assigned through GitHub, which is a CVE Numbering Authority for
 what it hosts, so the identifier is requested from the advisory itself.
 
@@ -35,9 +36,9 @@ what it hosts, so the identifier is requested from the advisory itself.
 
 Watching the repository for security alerts is how to hear of one. Because
 only the macOS desktop app updates itself, the advisory is what tells
-everyone else to upgrade. The SDKs published from this repository
-(`igni-service`, `igni-extension` and the `@ignite-ember` npm packages) are
-covered by the same advisories. The paid modules are not public
+everyone else to upgrade. The SDKs published from igni-sdk
+(`igni-service`, `igni-extension`, `igni-client` and the `@ignite-ember` npm
+packages) are covered by the same advisories. The paid modules are not public
 repositories, so their customers are told directly instead. The policy is
 igni server's, and so is the way it meets the Cyber Resilience Act's
 reporting duties (Art. 14, Annex I Part II(4)), described in igni server's vulnerability management document.

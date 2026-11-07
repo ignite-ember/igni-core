@@ -12,7 +12,7 @@ It was 34 exports and no layout at all, which was enough for one pane
 of forms and a table — exactly the shape of the reference extension,
 and why the gap was not obvious from looking at it.
 
-Companion documents: `DESIGN_SYSTEM.md` (how the scales and primitives
+Companion documents: [DESIGN_SYSTEM.md](https://github.com/ignite-ember/igni-app/blob/main/docs/DESIGN_SYSTEM.md) in igni-app (how the scales and primitives
 were extracted, and what that cost), `EXTENSIBILITY.md` §8 (what the
 compatibility floor promises).
 
