@@ -60,7 +60,7 @@ dependencies = [
     # and refuses an ``httpx`` client, which Agno 2.6 would hand it; igni
     # builds an ``httpx2`` one (``core/activity/http2.py``) and gives it to
     # the SDK itself (``LoggingClaude.get_async_client``).
-    "anthropic~=2.3.0",
+    "anthropic>=2.3,<2.5",
     "tokenizers~=0.23.3",
     "ripgrep~=15.1.0",
     # Ed25519 verification of extension bundle signatures
@@ -127,7 +127,7 @@ gemini = [
     "google-genai~=2.34.0",
 ]
 anthropic = [
-    "anthropic~=2.3.0",
+    "anthropic>=2.3,<2.5",
 ]
 web = [
     "duckduckgo-search~=8.1",
