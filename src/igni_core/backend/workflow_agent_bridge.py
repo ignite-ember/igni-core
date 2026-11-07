@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic_core import PydanticSerializationError
 
 from igni_core.backend.schemas_workflow_events import AgentRequestEvent, AgentResponseMessage
-from igni_core.core.config.group_policy import GroupPolicyGate
+from igni_core.core.config.group_policy.gate import GroupPolicyGate
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session

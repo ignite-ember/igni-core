@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from igni_core.core.activity.http import busy_call
 from igni_core.core.auth.credentials import CloudCredentials
-from igni_core.core.config.group_policy import group_policy_dir
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.settings import load_settings
 from igni_core.core.mcp.approval import McpApprovalPolicy
 
@@ -184,7 +184,7 @@ class CloudMcpApprovals(McpApprovalPolicy):
         person: PersonMcpApprovals | None = None,
     ) -> None:
         #: Where igni server's group policy delivers MCP configs.
-        self._delivered = delivered_dir or (group_policy_dir() / "mcps")
+        self._delivered = delivered_dir or GroupPolicyLayout.for_data_dir(None).dir_for("mcps")
         self._person = (
             person
             if person is not None

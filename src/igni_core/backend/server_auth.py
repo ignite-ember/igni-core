@@ -36,8 +36,13 @@ from igni_core.core.auth.credentials import (
 )
 from igni_core.core.auth.discovery import discover, is_safe_url
 from igni_core.core.auth.portal_client import PortalClient
-from igni_core.core.auth.schemas import JwtClaims
+from igni_core.core.auth.schemas import JwtClaims, SignedInSession
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.refresher import PackRefresher
+from igni_core.core.config.group_policy.trust import PackTrust
+from igni_core.core.config.group_policy.verifier import PackVerifier
 from igni_core.core.config.user_config_store import UserConfigStore
+from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.plugins.source_policy import PluginSourcePolicy
 from igni_core.protocol import messages as msg
 
@@ -55,7 +60,6 @@ __all__ = ["AuthController", "CloudPlan", "LoginResult"]
 
 
 if TYPE_CHECKING:
-    from igni_core.core.config.group_policy import PackVerifier
     from igni_core.core.config.settings import Settings
     from igni_core.core.session import Session
 
@@ -274,9 +278,9 @@ class AuthController:
     async def _hydrate_group_policy(self, token: str, *, force: bool = False) -> bool:
         """Refresh the cached group policy pack if stale.
 
-        Wraps ``GroupPolicyCache.refresh`` so this controller doesn't
-        need to know which on-disk path the cache writes to — that
-        decision lives in :mod:`core.config.group_policy`.
+        Wraps :class:`PackRefresher` so this controller doesn't need to
+        know which on-disk path the cache writes to — that decision
+        lives in :class:`GroupPolicyLayout`.
 
         Constructs a fresh :class:`PluginInstaller` so plugin overrides
         with ``source_url`` get git-installed instead of being logged
@@ -288,9 +292,6 @@ class AuthController:
         ``logger`` so FE / ops see when the portal is unreachable
         instead of silently seeing "no group" for hours.
         """
-        from igni_core.core.config.group_policy import refresh as _refresh
-        from igni_core.core.plugins.installer import PluginInstaller
-
         data_dir = Path(self._settings.storage.data_dir).expanduser()
         # A group's plugin sources are the admin's, but an air-gapped install
         # still fetches only from inside its network.
@@ -322,20 +323,14 @@ class AuthController:
                 # when ``force`` is set — a login or a new dialogue
                 # should pick up an admin's change now, and the ETag
                 # makes an unchanged pack a 304 rather than a download.
-                from igni_core.core.config.group_policy import GroupPolicyCache
-
-                cache_dir = data_dir / "group-policy"
-                cache = GroupPolicyCache(cache_dir=cache_dir, data_dir=data_dir)
-                if not force and not cache._is_stale():
+                cache = GroupPolicyCache.for_data_dir(data_dir, installer=installer)
+                if not force and not cache.meta.is_stale():
                     return False
-                refreshed = await _refresh(
-                    token,
-                    fetch=self._portal.fetch_group_pack,
-                    data_dir=data_dir,
-                    installer=installer,
-                    force=force,
-                    verifier=self._pack_verifier(token),
+                result = await PackRefresher(cache, self._pack_verifier(token)).refresh_if_stale(
+                    token, self._portal.fetch_group_pack, force=force
                 )
+                # ``unchanged`` is a 304: nothing new was written, so nothing reloads.
+                refreshed = result.ok
                 if refreshed:
                     await _emit("group policy pack refreshed")
                     # An admin moving somebody between groups should
@@ -343,7 +338,7 @@ class AuthController:
                     with contextlib.suppress(Exception):
                         if self._session.reload_group_agents():
                             await _emit("group agents reloaded")
-                return bool(refreshed)
+                return refreshed
             except Exception as exc:
                 # Network blip, schema drift, or PortalClient bug — at
                 # minimum log loud; the cached pack (if any) is left
@@ -362,16 +357,17 @@ class AuthController:
         file or the environment can set. The keys themselves come from igni
         server's JWKS, fetched now. See ``core/config/group_policy_signature.py``.
         """
-        from igni_core.core.config.group_policy import PackVerifier
-
         claims = JwtClaims.decode(token)
-        return PackVerifier(
+        trust = PackTrust(
             api_url=self._settings.api_url or None,
-            subject=claims.sub if claims else None,
+            session=SignedInSession(
+                subject=claims.sub if claims else None,
+                org=claims.org if claims else None,
+                token=token,
+            ),
             pins=tuple(self._settings.group_policy.trusted_keys or ()),
-            jwks_fetch=self._portal.fetch_jwks,
-            org=claims.org if claims else None,
         )
+        return PackVerifier(trust=trust, jwks_fetch=self._portal.fetch_jwks)
 
     async def revalidate_for_new_dialogue(self) -> bool:
         """Ask the server whether the group changed, bounded by a timeout.

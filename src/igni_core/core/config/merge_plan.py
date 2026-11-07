@@ -50,7 +50,7 @@ from igni_core.core.layer import Layers
 from igni_core.core.paths import home_config_dir, project_config_dir
 
 if TYPE_CHECKING:
-    from igni_core.core.config.group_policy import GroupPolicyPack
+    from igni_core.core.config.group_policy.pack import GroupPolicyPack
     from igni_core.core.config.models import CliOverrides
     from igni_core.core.config.schemas.models import ModelsConfig
 
@@ -598,7 +598,7 @@ class GroupPolicyTier(Tier):
     BELOW ManagedTier (sysadmin file still wins over any org policy).
 
     ``fetcher`` is a zero-argument callable that returns a
-    :class:`~igni_core.core.config.group_policy.GroupPolicyPack` or
+    :class:`~igni_core.core.config.group_policy.pack.GroupPolicyPack` or
     ``None`` when the user has no group. It is invoked once per
     :meth:`Tier.apply` call; callers should memoize or cache at the
     fetcher level to avoid repeated network calls.
@@ -630,7 +630,7 @@ class GroupPolicyTier(Tier):
     and it was not.
 
     Production now passes
-    :class:`~igni_core.core.config.group_policy.CachedSettingsFetcher`, from
+    :class:`~igni_core.core.config.group_policy.settings_fetcher.CachedSettingsFetcher`, from
     the two places that build a real ``Settings``: ``BackendApp.run`` (the
     backend process every window talks to) and ``load_settings_from_options``
     (the ``igni -m`` / pipe path, which runs a session in-process). Both build

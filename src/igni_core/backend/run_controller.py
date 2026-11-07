@@ -54,6 +54,7 @@ from igni_core.backend.schemas_run import CancelAgentRunResult, MediaAttachments
 from igni_core.backend.session_checkpointer import SessionCheckpointer
 from igni_core.backend.stream_event_dispatcher import StreamEventDispatcher
 from igni_core.core.activity import background
+from igni_core.core.config.group_policy.gate import GroupPolicyGate
 from igni_core.core.session.queued_messages import DurableMessageQueue
 from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.core.utils.memory_files import MemoryMirror
@@ -466,8 +467,6 @@ class RunController:
 
         # ``group_policy.required`` and no verified pack at start-up: no
         # agent run, and the person is told how to get one (``GroupPolicyGate``).
-        from igni_core.core.config.group_policy import GroupPolicyGate
-
         refusal = GroupPolicyGate.reason()
         if refusal:
             yield msg.Error(text=refusal)

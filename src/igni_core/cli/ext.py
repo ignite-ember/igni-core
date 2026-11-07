@@ -38,7 +38,10 @@ import click
 
 from igni_core.cli.ext_doctor import Findings, NameCheck, ProcessProbe
 from igni_core.cli.ext_scaffold import Scaffold
-from igni_core.core.config.group_policy import CachedSettingsFetcher, GroupPolicyUnavailable
+from igni_core.core.config.group_policy.settings_fetcher import (
+    CachedSettingsFetcher,
+    GroupPolicyUnavailable,
+)
 from igni_core.core.config.settings import load_settings
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.plugins.git import GitClient, GitError

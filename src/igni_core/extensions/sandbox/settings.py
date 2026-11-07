@@ -13,7 +13,7 @@ setting             managed file  env    group policy  user file  project
 ==================  ============  =====  ============  =========  =======
 
 The group policy is the organisation's pack as igni server signed it and
-igni verified it (:class:`~igni_core.core.config.group_policy.CachedSettingsFetcher`),
+igni verified it (:class:`~igni_core.core.config.group_policy.settings_fetcher.CachedSettingsFetcher`),
 never the cached files beside it: a pack that does not verify sets
 nothing. It may require the sandbox; it may not turn it off.
 

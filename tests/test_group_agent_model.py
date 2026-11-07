@@ -21,11 +21,10 @@ import pytest
 import yaml
 
 from igni_core.core.agents.loader import AgentDefinitionLoader
-from igni_core.core.config.group_policy import (
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyPack,
-)
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.paths import CONFIG_DIR
 
 
@@ -59,16 +58,16 @@ class TestWhatSurvivesOnDisk:
     """The loaders read the cache directory, not the pack."""
 
     def test_the_group_default_is_recorded(self, tmp_path: Path):
-        cache = GroupPolicyCache(cache_dir=tmp_path)
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
         cache.materialize(_pack(default_model="legal-reviewer"))
 
-        assert cache.read_pack_meta()["default_model"] == "legal-reviewer"
+        assert cache.meta.load().default_model == "legal-reviewer"
 
 
 class TestTheModelAnAgentRunsAgainst:
     def test_it_lands_in_the_frontmatter(self, tmp_path: Path):
         """Where the agent loader already reads it — no new plumbing."""
-        cache = GroupPolicyCache(cache_dir=tmp_path)
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
         cache.materialize(_pack(entries=[_agent_entry("contracts", model="legal-reviewer")]))
 
         written = (cache.agents_dir / "contracts.md").read_text(encoding="utf-8")
@@ -84,7 +83,7 @@ class TestTheModelAnAgentRunsAgainst:
         there. The loader reads the cache directly now, so the path is
         one hop shorter and the model has one fewer place to be lost.
         """
-        cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
         cache.materialize(_pack(entries=[_agent_entry("contracts", model="legal-reviewer")]))
         project = tmp_path / "proj"
         (project / CONFIG_DIR).mkdir(parents=True)
@@ -106,7 +105,7 @@ class TestTheModelAnAgentRunsAgainst:
         default rather than the group's choice. That is the right answer,
         but it is not the obvious one.
         """
-        cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
         cache.materialize(_pack(entries=[_agent_entry("contracts", model="legal-reviewer")]))
         project = tmp_path / "proj"
         agents = project / CONFIG_DIR / "agents"
@@ -126,7 +125,7 @@ class TestTheModelAnAgentRunsAgainst:
 
     def test_an_agent_naming_none_keeps_its_content_verbatim(self, tmp_path: Path):
         """Absent means "inherit", so there is nothing to write."""
-        cache = GroupPolicyCache(cache_dir=tmp_path)
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
         entry = _agent_entry("general")
         cache.materialize(_pack(entries=[entry]))
 
@@ -135,7 +134,7 @@ class TestTheModelAnAgentRunsAgainst:
     def test_the_body_is_not_lost(self, tmp_path: Path):
         """Rewriting frontmatter means re-emitting the file, which is a
         good way to drop the prompt it carries."""
-        cache = GroupPolicyCache(cache_dir=tmp_path)
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
         cache.materialize(
             _pack(entries=[_agent_entry("contracts", model="m", body="Review the contract.")])
         )
@@ -145,7 +144,7 @@ class TestTheModelAnAgentRunsAgainst:
         )
 
     def test_existing_frontmatter_keys_are_kept(self, tmp_path: Path):
-        cache = GroupPolicyCache(cache_dir=tmp_path)
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
         cache.materialize(_pack(entries=[_agent_entry("contracts", model="m")]))
 
         written = (cache.agents_dir / "contracts.md").read_text(encoding="utf-8")
@@ -157,7 +156,7 @@ class TestTheModelAnAgentRunsAgainst:
         """It will not load as an agent either way, and the loader
         reports that with the file name — better than writing a file
         nobody wrote."""
-        cache = GroupPolicyCache(cache_dir=tmp_path)
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
         broken = GroupPolicyEntry(
             kind="agents",
             entry_name="broken",

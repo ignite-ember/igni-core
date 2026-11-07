@@ -25,7 +25,8 @@ from igni_core.core.init.group_agent_sync import SYNCED_KINDS, GroupAgentSync  #
 
 from igni_core.backend.workflow_discovery import WorkflowDiscovery  # noqa: E402
 from igni_core.core.auth.portal_client import PortalClient  # noqa: E402
-from igni_core.core.config.group_policy import GroupPolicyCache  # noqa: E402
+from igni_core.core.config.group_policy.cache import GroupPolicyCache  # noqa: E402
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout  # noqa: E402
 from igni_core.core.hooks.loader import HookLoader  # noqa: E402
 from igni_core.core.output_styles.loader import discover_output_styles  # noqa: E402
 from igni_core.core.skills.loader import SkillPool  # noqa: E402
@@ -61,15 +62,18 @@ async def main() -> int:
         home = Path(tmp) / "home"
         project = Path(tmp) / "project"
         (project / ".igni").mkdir(parents=True)
-        cache = GroupPolicyCache(cache_dir=home / "group-policy")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=home / "group-policy"))
 
         print("\nMaterialising")
         cache.materialize(pack)
         for kind in by_kind:
             if kind in ("settings", "plugins"):
                 continue
-            directory = cache.dir_for(kind)
-            check(directory.is_dir() and any(directory.iterdir()), f"{kind} written to {directory.name}/")
+            directory = cache.layout.dir_for(kind)
+            check(
+                directory.is_dir() and any(directory.iterdir()),
+                f"{kind} written to {directory.name}/",
+            )
 
         print("\nLoading, as a session would")
 
@@ -78,7 +82,7 @@ async def main() -> int:
         for kind in SYNCED_KINDS:
             if kind in by_kind and kind != "agents":
                 GroupAgentSync(
-                    project_dir=project, source_dir=cache.dir_for(kind), kind=kind
+                    project_dir=project, source_dir=cache.layout.dir_for(kind), kind=kind
                 ).run()
 
         if "agents" in by_kind:
@@ -115,14 +119,17 @@ async def main() -> int:
             }
             wanted = {d.get("command") for d in shipped.values() if isinstance(d, dict)}
             result = HookLoader(
-                project, cross_tool_support=False, group_dir=cache.dir_for("hooks")
+                project, cross_tool_support=False, group_dir=cache.layout.dir_for("hooks")
             ).load()
             registered = {
                 h.command
                 for event in ("PreToolUse", "PostToolUse", "Stop", "SubagentStop")
                 for h in result.registry.for_event(event)
             }
-            check(wanted <= registered, f"the group's own hooks register ({', '.join(sorted(wanted))})")
+            check(
+                wanted <= registered,
+                f"the group's own hooks register ({', '.join(sorted(wanted))})",
+            )
 
         if "rules" in by_kind:
             index = RulesIndex(project, read_claude_md=False)

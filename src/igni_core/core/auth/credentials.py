@@ -32,9 +32,9 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
-from igni_core.core.auth.schemas import JwtClaims, LoadCredentialsResult
+from igni_core.core.auth.schemas import JwtClaims, LoadCredentialsResult, SignedInSession
 from igni_core.core.layer import Layers
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
@@ -213,6 +213,28 @@ class CredentialsStore:
             logger.warning("Credentials at %s don't match schema: %s", fp, exc)
             return LoadCredentialsResult(ok=False, reason="schema_mismatch", error=str(exc))
         return LoadCredentialsResult(ok=True, creds=creds)
+
+    def signed_in_session(self) -> SignedInSession:
+        """Who the stored session is for — empty when nobody is signed in.
+
+        The claims are decoded, not verified; see :class:`SignedInSession`.
+        """
+        try:
+            loaded = self.load()
+        except OSError as exc:
+            logger.debug("could not read the signed-in session (%s)", exc)
+            return SignedInSession()
+        if not loaded.ok or loaded.creds is None:
+            return SignedInSession()
+        token = loaded.creds.access_token
+        try:
+            claims = JwtClaims.decode(token)
+        except ValidationError as exc:
+            logger.debug("the signed-in session's claims are unreadable (%s)", exc)
+            claims = None
+        if claims is None:
+            return SignedInSession(token=token)
+        return SignedInSession(subject=claims.sub, org=claims.org, token=token)
 
     async def ready(self) -> None:
         """Until the token :meth:`load` gives may be sent (the layer's source says; a file always may)."""

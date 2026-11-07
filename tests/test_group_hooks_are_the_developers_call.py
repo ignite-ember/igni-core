@@ -30,7 +30,8 @@ from typing import Any
 import pytest
 
 from igni_core.cli.options import CliOptions
-from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.models import CliOverrides
 from igni_core.core.config.settings import load_settings
 from igni_core.core.hooks.executor import HookExecutor

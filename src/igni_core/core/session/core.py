@@ -61,6 +61,7 @@ from igni_core.core.activity import background
 from igni_core.core.agents import AgentPool
 from igni_core.core.auth.credentials import CloudCredentials
 from igni_core.core.broadcast_schema import BroadcastEvent, BroadcastSink
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.permission_eval.schemas import PermissionMode
 from igni_core.core.config.settings import Settings
@@ -202,17 +203,13 @@ class Session:
         self._init_per_session_scratch()
 
         # Group-policy on-disk roots — the paths :class:`GroupPolicyCache`
-        # writes to. ``expanduser`` mirrors how :class:`PluginLoader`
-        # resolves its default ``data_dir`` (``~/.igni``).
+        # writes to, derived by the one :class:`GroupPolicyLayout`.
         #
         # MCP servers are read from the cache directly. Agents are not:
         # they are synced into ``<project>/.igni/agents`` so a person
         # can edit one, which means this directory is the *source* of
         # that sync rather than a place the loader reads.
-        data_dir = Path(settings.storage.data_dir).expanduser()
-        self._group_policy_dir = data_dir / "group-policy"
-        self._group_agents_dir = self._group_policy_dir / "agents"
-        self._group_mcps_dir = self._group_policy_dir / "mcps"
+        self._group_policy = GroupPolicyLayout.for_data_dir(settings.storage.data_dir)
 
         # ── First-run initialization (agents, skills, hooks, igni.md) ─
         # The bundled agents stand down when the group ships its own —
@@ -457,7 +454,7 @@ class Session:
         """
         self.mcp_manager = MCPClientManager(
             self.project_dir,
-            group_mcps_dir=self._group_mcps_dir,
+            group_mcps_dir=self._group_policy.dir_for("mcps"),
             network_policy=NetworkPolicy.from_settings(self.settings),
         )
         # Session-scoped ``{server: reason}`` cache. Written by
@@ -506,7 +503,7 @@ class Session:
         answer to "where does the group's stuff live" is in one place
         rather than eight.
         """
-        return self._group_policy_dir / kind
+        return self._group_policy.dir_for(kind)
 
     def unknown_agent_tools(self) -> dict[str, list[str]]:
         """Agents naming tools that will not resolve, by agent name.

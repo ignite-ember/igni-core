@@ -21,6 +21,10 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from igni_core.core.config.group_policy.settings_fetcher import (
+    CachedSettingsFetcher,
+    GroupPolicyUnavailable,
+)
 from igni_core.core.config.settings import Settings, load_settings
 from igni_core.core.workspace_trust import (
     GATED_SUMMARY,
@@ -72,11 +76,6 @@ class WorkspaceTrustRefusedError(Exception):
 def reload_settings(project_dir: Path) -> Settings:
     """Settings for ``project_dir`` the way the backend boots them: a local
     pass to find the group-policy cache, then the load that counts."""
-    from igni_core.core.config.group_policy import (
-        CachedSettingsFetcher,
-        GroupPolicyUnavailable,
-    )
-
     local_only = load_settings(project_dir=project_dir)
     try:
         return load_settings(

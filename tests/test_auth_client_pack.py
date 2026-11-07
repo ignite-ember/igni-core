@@ -25,6 +25,9 @@ import httpx
 import pytest
 
 from igni_core.core.auth.portal_client import PortalClient
+from igni_core.core.config.group_policy.answers import PACK_UNCHANGED
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.refresher import PackRefresher
 
 # ── helpers ────────────────────────────────────────────────────────────
 
@@ -503,7 +506,7 @@ async def test_fetch_urls_strip_trailing_slash(monkeypatch):
     assert seen[1] == "https://api.example.invalid/v1/portal/me/group"
 
 
-# ── end-to-end: pack → cache → read_pack_meta ────────────────────────
+# ── end-to-end: pack → cache → meta.load ──────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -511,7 +514,6 @@ async def test_full_e2e_pack_to_cache(tmp_path, monkeypatch):
     """Round-trip: stub igni server → PortalClient → GroupPolicyCache.materialize →
     the on-disk cache contains the materialized agents + MCP envelopes + meta.
     """
-    from igni_core.core.config.group_policy import GroupPolicyCache, refresh
 
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_sample_pack_body())
@@ -519,19 +521,17 @@ async def test_full_e2e_pack_to_cache(tmp_path, monkeypatch):
     portal, patched = _stub_client(handler)
     monkeypatch.setattr("httpx.AsyncClient", patched)
 
-    refreshed = await refresh(
-        token="t-e2e",
-        fetch=portal.fetch_group_pack,
-        data_dir=tmp_path,
+    result = await PackRefresher(GroupPolicyCache.for_data_dir(tmp_path)).refresh_if_stale(
+        "t-e2e", portal.fetch_group_pack
     )
-    assert refreshed is True
+    assert result.ok
 
     # Read the cache back as the loaders would
-    cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy", data_dir=tmp_path)
-    meta = cache.read_pack_meta()
+    cache = GroupPolicyCache.for_data_dir(tmp_path)
+    meta = cache.meta.load()
     assert meta is not None
-    assert meta["group_id"] == "g-1"
-    assert meta["entry_count"] == 2
+    assert meta.group_id == "g-1"
+    assert meta.entry_count == 2
 
     # Agent file is on disk exactly as the loader would consume it.
     agent_path = cache.agents_dir / "code-reviewer.md"
@@ -540,7 +540,7 @@ async def test_full_e2e_pack_to_cache(tmp_path, monkeypatch):
     assert "code-reviewer" in body
 
     # MCP envelope is on disk exactly as MCPConfigLoader would read it.
-    mcp_path = cache.mcps_dir / "github.json"
+    mcp_path = cache.layout.dir_for("mcps") / "github.json"
     assert mcp_path.exists()
     blob = json.loads(mcp_path.read_text(encoding="utf-8"))
     assert "mcpServers" in blob
@@ -591,8 +591,6 @@ async def test_a_304_answers_unchanged_not_none(monkeypatch):
     """``None`` means "I could not tell you" and leaves the cache alone;
     this means "I checked, you are current". Conflating them would make
     a failed request look like a confirmation."""
-    from igni_core.core.config.group_policy import PACK_UNCHANGED
-
     portal, patched = _stub_client(lambda req: httpx.Response(304))
     monkeypatch.setattr("httpx.AsyncClient", patched)
 

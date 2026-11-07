@@ -2,8 +2,8 @@
 
 ``GroupPolicyCache`` materialises a group's pack to
 ``~/.igni/group-policy/<kind>/<entry_name><ext>``, and ``Path`` accepts a
-separator without complaint. Verified against this class before the fix:
-``path_for('agents', '../../../../../../tmp/PWNED')`` resolved to
+separator without complaint. Verified before the fix: the path for the
+agent ``../../../../../../tmp/PWNED`` resolved to
 ``/tmp/PWNED.md``, and the ``scripts`` kind the same — those are written
 mode 0700, so the primitive is an executable dropped anywhere the user
 can write, on every machine in the org.
@@ -26,13 +26,10 @@ from pathlib import Path
 
 import pytest
 
-from igni_core.core.config.group_policy import (
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyPack,
-    UnsafeEntryName,
-    safe_entry_name,
-)
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.layout import EntryPlacement, GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 
 ESCAPES = [
     "../../../../../../tmp/PWNED",
@@ -59,36 +56,41 @@ def _entry(kind: str, name: str, content: str = "body") -> GroupPolicyEntry:
 class TestSafeEntryName:
     @pytest.mark.parametrize("name", ESCAPES)
     def test_it_refuses_anything_path_shaped(self, name: str):
-        with pytest.raises(UnsafeEntryName):
-            safe_entry_name(name)
+        assert not _entry("agents", name).safe_name().ok
 
     @pytest.mark.parametrize(
         "name", ["reviewer", "pre-pr-review", "a.b", "a_b-c.d", ".mcp", "UPPER1"]
     )
     def test_ordinary_names_pass_through_unchanged(self, name: str):
-        assert safe_entry_name(name) == name
+        check = _entry("agents", name).safe_name()
+        assert check.ok and check.name == name
 
     def test_the_message_names_the_entry(self):
         """An admin reading a log needs to know which entry to fix."""
-        with pytest.raises(UnsafeEntryName, match="escape"):
-            safe_entry_name("../escape")
+        assert "escape" in _entry("agents", "../escape").safe_name().reason
 
 
-class TestPathForStaysInside:
+#: The filename template each kind's loader expects (``kinds.KindRegistry``).
+TEMPLATES = {"agents": "{name}.md", "scripts": "{name}.sh", "skills": "{name}/SKILL.md"}
+
+
+def _place(layout: GroupPolicyLayout, kind: str, name: str) -> EntryPlacement:
+    return layout.place(kind, TEMPLATES[kind], _entry(kind, name))
+
+
+class TestPlacementStaysInside:
     @pytest.mark.parametrize("kind", ["agents", "scripts"])
     @pytest.mark.parametrize("name", ["../../../../../../tmp/PWNED", "/tmp/PWNED", ".."])
     def test_it_refuses_to_build_an_escaping_path(self, tmp_path: Path, kind: str, name: str):
-        cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy")
+        placement = _place(GroupPolicyLayout(root=tmp_path / "group-policy"), kind, name)
 
-        with pytest.raises(UnsafeEntryName):
-            cache.path_for(kind, name)
+        assert not placement.ok and placement.path is None
 
     @pytest.mark.parametrize("kind", ["agents", "scripts"])
     def test_an_ordinary_name_lands_inside(self, tmp_path: Path, kind: str):
         cache_dir = tmp_path / "group-policy"
-        cache = GroupPolicyCache(cache_dir=cache_dir)
 
-        path = cache.path_for(kind, "reviewer")
+        path = _place(GroupPolicyLayout(root=cache_dir), kind, "reviewer").path
 
         assert cache_dir.resolve() in path.resolve().parents
 
@@ -107,7 +109,7 @@ class TestMaterializeSkipsRatherThanDies:
         worth leaving as a mystery.
         """
         cache_dir = tmp_path / "group-policy"
-        cache = GroupPolicyCache(cache_dir=cache_dir)
+        cache = GroupPolicyCache(GroupPolicyLayout(root=cache_dir))
         pack = GroupPolicyPack(
             group_id="g",
             group_name="G",
@@ -172,7 +174,7 @@ class TestMaterializeSkipsRatherThanDies:
         is under the cache root.
         """
         cache_dir = tmp_path / "group-policy"
-        cache = GroupPolicyCache(cache_dir=cache_dir)
+        cache = GroupPolicyCache(GroupPolicyLayout(root=cache_dir))
         pack = GroupPolicyPack(
             group_id="g",
             group_name="G",
@@ -192,7 +194,7 @@ class TestMaterializeSkipsRatherThanDies:
 class TestSkillsAreDirectoriesAndStillContained:
     """The case that made the first containment check wrong.
 
-    ``_PLAIN_KINDS['skills']`` is ``{name}/SKILL.md`` — a separator the
+    The ``skills`` kind's template is ``{name}/SKILL.md`` — a separator the
     *template* owns, not the entry name. Asserting that a written path's
     parent IS the kind directory therefore rejected every legitimate
     skill, so the property is "under the kind directory" instead.
@@ -203,9 +205,8 @@ class TestSkillsAreDirectoriesAndStillContained:
 
     def test_a_skill_lands_in_its_own_directory(self, tmp_path: Path):
         cache_dir = tmp_path / "group-policy"
-        cache = GroupPolicyCache(cache_dir=cache_dir)
 
-        path = cache.path_for("skills", "deploy")
+        path = _place(GroupPolicyLayout(root=cache_dir), "skills", "deploy").path
 
         assert path.name == "SKILL.md"
         assert path.parent.name == "deploy"
@@ -215,7 +216,6 @@ class TestSkillsAreDirectoriesAndStillContained:
     def test_a_skill_name_cannot_escape_either(self, tmp_path: Path, name: str):
         """The template's own separator must not become cover for one in
         the name."""
-        cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy")
+        placement = _place(GroupPolicyLayout(root=tmp_path / "group-policy"), "skills", name)
 
-        with pytest.raises(UnsafeEntryName):
-            cache.path_for("skills", name)
+        assert not placement.ok

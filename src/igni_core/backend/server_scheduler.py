@@ -29,6 +29,7 @@ from igni_core.backend.schemas_scheduler import (
     TaskCreatedPayload,
 )
 from igni_core.core.activity import background
+from igni_core.core.config.group_policy.gate import GroupPolicyGate
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
 from igni_core.core.scheduler.prompt import wrap_scheduled_prompt
@@ -99,8 +100,6 @@ class SchedulerController:
         :class:`SchedulerRunner` covers both callers: the poller and the
         "run it now" RPC. Both are a stored task firing, not a live turn.
         """
-        from igni_core.core.config.group_policy import GroupPolicyGate
-
         refusal = GroupPolicyGate.reason()
         if refusal:
             # Raised, not returned: a returned string would be recorded as

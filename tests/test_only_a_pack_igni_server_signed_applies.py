@@ -36,15 +36,19 @@ import click
 import httpx
 import pytest
 
-from igni_core.core.config.group_policy import (
+from igni_core.core.auth.schemas import SignedInSession
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.settings_fetcher import (
     CachedSettingsFetcher,
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyGate,
-    GroupPolicyPack,
     GroupPolicyUnavailable,
-    PackVerifier,
 )
+from igni_core.core.config.group_policy.transport import LiveFetchResult, SignedPackTransport
+from igni_core.core.config.group_policy.trust import PackTrust
+from igni_core.core.config.group_policy.verifier import PackVerifier
 from igni_core.core.config.group_policy_signature import (
     REQUIRED_ENV,
     TRUSTED_KEYS_ENV,
@@ -126,6 +130,10 @@ def _applied(tmp_path: Path) -> bool:
     return _settings(tmp_path).learning.enabled is False
 
 
+def _trust(*, api_url: str = ISSUER, pins: tuple[str, ...] = ()) -> PackTrust:
+    return PackTrust(api_url=api_url, session=SignedInSession(subject=PERSON), pins=pins)
+
+
 def _segments(compact: str) -> list[str]:
     return compact.split(".")
 
@@ -150,7 +158,7 @@ class TestAValidPackIsApplied:
         _configure()
         compact = store(_cache_dir(), _pack())
 
-        assert (_cache_dir() / GroupPolicyCache.SIGNED_PACK_FILE).read_text() == compact
+        assert (_cache_dir() / GroupPolicyLayout.SIGNED_PACK_FILE).read_text() == compact
 
 
 class TestAForgedPackIsIgnored:
@@ -160,7 +168,7 @@ class TestAForgedPackIsIgnored:
         head, _, signature = _segments(compact)
         claims = _claims(compact)
         claims["policy"]["entries"][0]["content"] = json.dumps({"learning": {"enabled": False}})
-        (_cache_dir() / GroupPolicyCache.SIGNED_PACK_FILE).write_text(
+        (_cache_dir() / GroupPolicyLayout.SIGNED_PACK_FILE).write_text(
             f"{head}.{_b64(claims)}.{signature}"
         )
 
@@ -176,7 +184,7 @@ class TestAForgedPackIsIgnored:
         _configure()
         store(_cache_dir(), _pack())
         unsigned = f"{_b64({'alg': 'none', 'typ': 'igni-group-policy+jwt'})}.{_b64(_claims((_cache_dir() / 'pack.jws').read_text()))}."
-        (_cache_dir() / GroupPolicyCache.SIGNED_PACK_FILE).write_text(unsigned)
+        (_cache_dir() / GroupPolicyLayout.SIGNED_PACK_FILE).write_text(unsigned)
 
         assert not _applied(tmp_path)
 
@@ -184,7 +192,7 @@ class TestAForgedPackIsIgnored:
         """What the cache used to be: an unsigned JSON file of settings."""
         _configure()
         _cache_dir().mkdir(parents=True)
-        (_cache_dir() / GroupPolicyCache.SETTINGS_FILE).write_text(
+        (_cache_dir() / GroupPolicyLayout.LEGACY_SETTINGS_FILE).write_text(
             json.dumps({"learning": {"enabled": False}})
         )
 
@@ -199,7 +207,7 @@ class TestAForgedPackIsIgnored:
             {**_claims((_cache_dir() / "pack.jws").read_text()), "token_use": "session"},
             header={"typ": "JWT"},
         )
-        (_cache_dir() / GroupPolicyCache.SIGNED_PACK_FILE).write_text(token)
+        (_cache_dir() / GroupPolicyLayout.SIGNED_PACK_FILE).write_text(token)
 
         assert not _applied(tmp_path)
 
@@ -244,7 +252,7 @@ class TestARollbackIsRejected:
         _configure()
         older = store(_cache_dir(), _pack(), version=1_000)
         store(_cache_dir(), _pack({"learning": {"enabled": True}}), version=2_000)
-        (_cache_dir() / GroupPolicyCache.SIGNED_PACK_FILE).write_text(older)
+        (_cache_dir() / GroupPolicyLayout.SIGNED_PACK_FILE).write_text(older)
 
         assert not _applied(tmp_path)
 
@@ -274,7 +282,9 @@ class TestRequiredFailsClosed:
         store(_cache_dir(), _pack(), key=STRANGER, jwks=KEY.jwks)
         # Signed in, so igni tries igni server first; it is unreachable.
         monkeypatch.setattr(
-            "igni_core.core.config.group_policy.fetch_signed_pack_now", lambda *a, **k: False
+            SignedPackTransport,
+            "fetch_into",
+            lambda self, cache: LiveFetchResult(stored=False, reason="unreachable"),
         )
 
         with pytest.raises(GroupPolicyUnavailable, match="Connect to"):
@@ -303,7 +313,7 @@ class TestRequiredFailsClosed:
         )
 
         assert _settings(tmp_path).learning.enabled is False
-        assert (_cache_dir() / GroupPolicyCache.SIGNED_PACK_FILE).read_text() == signed
+        assert (_cache_dir() / GroupPolicyLayout.SIGNED_PACK_FILE).read_text() == signed
 
     def test_the_environment_can_require_it(self, tmp_path, monkeypatch):
         _configure(signed_in_as=None)
@@ -444,7 +454,7 @@ class TestTheFetchIsVerifiedToo:
         )
         ctrl._portal = MagicMock()
         ctrl._portal.fetch_group_pack = AsyncMock()
-        ctrl._portal.fetch_jwks = AsyncMock(return_value=KEY.jwks)
+        ctrl._portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
         ctrl._hydration_lock = None
         return ctrl
 
@@ -453,17 +463,17 @@ class TestTheFetchIsVerifiedToo:
         ctrl._portal.fetch_group_pack.return_value = KEY.signed(_pack(), version=42)
 
         assert asyncio.run(ctrl._hydrate_group_policy(session_token(), force=True)) is True
-        cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy")
-        assert cache.signed_pack_text()
-        assert cache.cached_jwks() == KEY.jwks
-        assert cache.applied_version() == 42
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
+        assert cache.signed.signed_text()
+        assert cache.signed.jwks().as_mapping() == KEY.jwks
+        assert cache.signed.applied_version() == 42
 
     def test_a_forged_pack_from_the_wire_writes_nothing(self, tmp_path):
         ctrl = self._controller(tmp_path)
         ctrl._portal.fetch_group_pack.return_value = STRANGER.signed(_pack())
 
         assert asyncio.run(ctrl._hydrate_group_policy(session_token(), force=True)) is False
-        assert not (tmp_path / "group-policy" / GroupPolicyCache.SIGNED_PACK_FILE).exists()
+        assert not (tmp_path / "group-policy" / GroupPolicyLayout.SIGNED_PACK_FILE).exists()
 
     def test_an_unsigned_pack_from_the_wire_writes_nothing(self, tmp_path):
         ctrl = self._controller(tmp_path)
@@ -476,25 +486,24 @@ class TestTheFetchIsVerifiedToo:
 
     def test_unpinned_keys_are_not_trusted_over_plain_http(self, tmp_path):
         verifier = PackVerifier(
-            api_url="http://igni.corp.invalid",
-            subject=PERSON,
-            jwks_fetch=AsyncMock(return_value=KEY.jwks),
+            trust=_trust(api_url="http://igni.corp.invalid"),
+            jwks_fetch=AsyncMock(return_value=KEY.key_set),
         )
         pack = KEY.signed(_pack(), iss="http://igni.corp.invalid")
 
-        with pytest.raises(PackRejected, match="pin"):
-            asyncio.run(verifier(pack))
+        verification = asyncio.run(verifier(pack))
+
+        assert verification.accepted is None
+        assert "pin" in verification.reason
 
     def test_a_pinned_key_is_trusted_over_plain_http(self, tmp_path):
         verifier = PackVerifier(
-            api_url="http://igni.corp.invalid",
-            subject=PERSON,
-            pins=(KEY.thumbprint,),
-            jwks_fetch=AsyncMock(return_value=KEY.jwks),
+            trust=_trust(api_url="http://igni.corp.invalid", pins=(KEY.thumbprint,)),
+            jwks_fetch=AsyncMock(return_value=KEY.key_set),
         )
         pack = KEY.signed(_pack(), iss="http://igni.corp.invalid")
 
-        assert asyncio.run(verifier(pack)).pack.to_settings_dict() == {
+        assert asyncio.run(verifier(pack)).accepted.pack.to_settings_dict() == {
             "learning": {"enabled": False}
         }
 
@@ -503,10 +512,8 @@ class TestTheFetchIsVerifiedToo:
         signed content is materialised."""
         signed = KEY.sign(_pack())
         tampered = _pack({"learning": {"enabled": True}}).model_copy(update={"signed_pack": signed})
-        verifier = PackVerifier(
-            api_url=ISSUER, subject=PERSON, jwks_fetch=AsyncMock(return_value=KEY.jwks)
-        )
+        verifier = PackVerifier(trust=_trust(), jwks_fetch=AsyncMock(return_value=KEY.key_set))
 
-        accepted = asyncio.run(verifier(tampered))
+        accepted = asyncio.run(verifier(tampered)).accepted
 
         assert accepted.pack.to_settings_dict() == {"learning": {"enabled": False}}

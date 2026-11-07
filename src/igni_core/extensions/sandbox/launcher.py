@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
 from igni_core.core.mcp.config import MCPServerConfig, MCPTransport
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.extensions.manifest import ExtensionManifest
@@ -132,8 +133,6 @@ class ExtensionSandbox:
         only as the pack igni server signed and igni verifies here, the
         same way the settings loader reads it.
         """
-        from igni_core.core.config.group_policy import CachedSettingsFetcher
-
         try:
             group = CachedSettingsFetcher.for_settings(settings)
         except Exception:  # noqa: BLE001 — a partial settings object has no pack

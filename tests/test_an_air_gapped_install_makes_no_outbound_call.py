@@ -30,7 +30,8 @@ import pytest
 
 from igni_core.backend.cmd_plugin.gateway import PluginBackendGateway
 from igni_core.core import air_gap
-from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.schemas import PluginsConfig, StorageConfig
 from igni_core.core.config.settings import Settings, SettingsLoader, load_settings
 from igni_core.core.config.tool_permissions import ToolPermissions

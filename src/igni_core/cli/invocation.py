@@ -35,6 +35,7 @@ from igni_core.cli.logging import DebugLogging
 from igni_core.cli.options import CliOptions
 from igni_core.cli.resume import ResumeResolver
 from igni_core.core.config import settings as _settings_module
+from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
 from igni_core.core.config.settings import Settings
 from igni_core.core.worktree import WorktreeManager
 
@@ -253,8 +254,6 @@ def load_settings_from_options(options: CliOptions) -> Settings:
     # The fetcher reads what the backend's ``AuthController`` last cached — a
     # CLI invocation has no token of its own at settings-load time and must
     # not stall on a portal call. See ``CachedSettingsFetcher``.
-    from igni_core.core.config.group_policy import CachedSettingsFetcher
-
     # The pack is verified before it is merged; with ``group_policy.required``
     # set and no verified pack, the fetcher raises ``GroupPolicyUnavailable``
     # and this run starts no session (``main`` reports it).

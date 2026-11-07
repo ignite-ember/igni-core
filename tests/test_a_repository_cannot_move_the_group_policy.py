@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from igni_core.core.config.group_policy import CachedSettingsFetcher
+from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
 from igni_core.core.config.settings import load_settings
 
 

@@ -68,7 +68,7 @@ from igni_core.core.config.model_entry import ModelRegistryEntry
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from igni_core.core.config.group_policy import GroupPolicyPack
+    from igni_core.core.config.group_policy.pack import GroupPolicyPack
     from igni_core.core.config.models import CliOverrides
     from igni_core.core.config.settings import Settings
 

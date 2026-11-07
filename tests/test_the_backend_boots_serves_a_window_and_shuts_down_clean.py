@@ -33,7 +33,8 @@ from igni_core.backend import app as app_mod
 from igni_core.backend.app import BackendApp, TransportBuilder
 from igni_core.backend.lockfile import Lockfile
 from igni_core.backend.schemas_rpc import LifecyclePhase
-from igni_core.core.config.group_policy import GroupPolicyGate, GroupPolicyUnavailable
+from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.protocol import messages as msg
 from igni_core.transport.websocket import CompositeTransport, WebSocketServerTransport
 

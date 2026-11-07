@@ -48,13 +48,15 @@ from igni_core.core.config.endpoint import (
     portal_url_for,
     require_api_url,
 )
-from igni_core.core.config.group_policy import (
+from igni_core.core.config.group_policy.answers import (
     PACK_UNCHANGED,
-    GroupPolicyEntry,
-    GroupPolicyPack,
+    PackAnswer,
     SignedAbsence,
-    UnchangedPack,
 )
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.jwks import Jwks
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy_signature import jwks_url_for
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +262,7 @@ class PortalClient:
         except Exception:
             return None
 
-    async def fetch_jwks(self) -> dict | None:
+    async def fetch_jwks(self) -> Jwks | None:
         """igni server's published signing keys, or ``None``.
 
         What a group pack's signature is checked against when no key is
@@ -268,8 +270,6 @@ class PortalClient:
         configured ``api_url`` — over TLS, which is what makes the answer
         worth trusting; ``PackVerifier`` refuses an unpinned plain-HTTP one.
         """
-        from igni_core.core.config.group_policy_signature import jwks_url_for
-
         url = jwks_url_for(self._base("Fetching igni server's signing keys"))
         try:
             async with (
@@ -286,13 +286,13 @@ class PortalClient:
             payload = resp.json()
         except Exception:
             return None
-        return payload if isinstance(payload, dict) else None
+        return Jwks.parse(payload)
 
     async def fetch_group_pack(
         self,
         token: str,
         etag: str | None = None,
-    ) -> GroupPolicyPack | SignedAbsence | None | UnchangedPack:
+    ) -> PackAnswer:
         """Fetch the group pack, or learn that it has not changed.
 
         Three answers, and the caller has to tell them apart:
@@ -341,7 +341,7 @@ class PortalClient:
         if isinstance(payload, dict) and payload.get("no_pack") and payload.get("signed_pack"):
             # "No pack for you", signed — verified by ``PackVerifier`` before
             # it clears anything.
-            return SignedAbsence(payload["signed_pack"], etag=resp.headers.get("etag"))
+            return SignedAbsence(signed_pack=payload["signed_pack"], etag=resp.headers.get("etag"))
 
         try:
             entries = [GroupPolicyEntry(**o) for o in payload.get("entries", [])]

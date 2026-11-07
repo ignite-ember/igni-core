@@ -23,12 +23,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from igni_core.backend.server_auth import AuthController
-from igni_core.core.config.group_policy import (
-    PACK_UNCHANGED,
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyPack,
-)
+from igni_core.core.config.group_policy.answers import PACK_UNCHANGED
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.refresher import PackRefresher, RefreshStatus
 
 
 def _pack(names: list[str], etag: str | None = None) -> GroupPolicyPack:
@@ -150,28 +150,30 @@ class TestAnUnchangedPack:
 
     @pytest.mark.asyncio
     async def test_nothing_is_rewritten(self, tmp_path: Path):
-        cache = GroupPolicyCache(cache_dir=tmp_path / "gp")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"))
         cache.materialize(_pack(["reviewer", "debugger"]))
         before = sorted(p.name for p in cache.agents_dir.glob("*.md"))
 
-        refreshed = await cache.refresh_if_stale("t", AsyncMock(return_value=PACK_UNCHANGED))
+        result = await PackRefresher(cache).refresh_if_stale(
+            "t", AsyncMock(return_value=PACK_UNCHANGED)
+        )
 
-        assert refreshed is False
+        assert not result.ok
         assert sorted(p.name for p in cache.agents_dir.glob("*.md")) == before
 
     @pytest.mark.asyncio
     async def test_it_is_not_mistaken_for_no_group(self, tmp_path: Path):
         """``None`` means "I could not tell you" and leaves the cache
         alone too — but only ``PACK_UNCHANGED`` should mark it fresh."""
-        cache = GroupPolicyCache(cache_dir=tmp_path / "gp")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"))
         cache.materialize(_pack(["reviewer"]))
         stale = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        meta_path = cache._cache_dir / "pack_meta.json"
+        meta_path = cache.layout.file(GroupPolicyLayout.META_FILE)
         meta = json.loads(meta_path.read_text())
         meta["fetched_at"] = stale
         meta_path.write_text(json.dumps(meta))
 
-        await cache.refresh_if_stale("t", AsyncMock(return_value=PACK_UNCHANGED))
+        await PackRefresher(cache).refresh_if_stale("t", AsyncMock(return_value=PACK_UNCHANGED))
 
         assert json.loads(meta_path.read_text())["fetched_at"] != stale
 
@@ -179,61 +181,48 @@ class TestAnUnchangedPack:
     async def test_a_confirmed_pack_stops_being_stale(self, tmp_path: Path):
         """Otherwise every poll would find it stale and ask again, and
         the 304 would save nothing."""
-        cache = GroupPolicyCache(cache_dir=tmp_path / "gp")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"))
         cache.materialize(_pack(["reviewer"]))
-        meta_path = cache._cache_dir / "pack_meta.json"
+        meta_path = cache.layout.file(GroupPolicyLayout.META_FILE)
         meta = json.loads(meta_path.read_text())
         meta["fetched_at"] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         meta_path.write_text(json.dumps(meta))
 
         fetch = AsyncMock(return_value=PACK_UNCHANGED)
-        await cache.refresh_if_stale("t", fetch)
-        await cache.refresh_if_stale("t", fetch)
+        await PackRefresher(cache).refresh_if_stale("t", fetch)
+        await PackRefresher(cache).refresh_if_stale("t", fetch)
 
         # The second call found it fresh and never asked.
         assert fetch.await_count == 1
 
     @pytest.mark.asyncio
     async def test_the_tag_is_handed_to_the_fetcher(self, tmp_path: Path):
-        cache = GroupPolicyCache(cache_dir=tmp_path / "gp")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"))
         cache.materialize(_pack(["reviewer"], etag='"abc"'))
-        meta_path = cache._cache_dir / "pack_meta.json"
+        meta_path = cache.layout.file(GroupPolicyLayout.META_FILE)
         meta = json.loads(meta_path.read_text())
         meta["fetched_at"] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         meta_path.write_text(json.dumps(meta))
 
         fetch = AsyncMock(return_value=PACK_UNCHANGED)
-        await cache.refresh_if_stale("t", fetch)
+        await PackRefresher(cache).refresh_if_stale("t", fetch)
 
         fetch.assert_awaited_once_with("t", '"abc"')
 
-    @pytest.mark.asyncio
-    async def test_a_fetcher_that_takes_no_tag_still_works(self, tmp_path: Path):
-        """Tests and older callers pass a one-argument coroutine."""
-        cache = GroupPolicyCache(cache_dir=tmp_path / "gp")
-        seen = []
-
-        async def one_arg(token):
-            seen.append(token)
-            return _pack(["reviewer"])
-
-        assert await cache.refresh_if_stale("t", one_arg) is True
-        assert seen == ["t"]
-
     def test_the_tag_survives_materialisation(self, tmp_path: Path):
-        cache = GroupPolicyCache(cache_dir=tmp_path / "gp")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"))
         cache.materialize(_pack(["reviewer"], etag='"abc"'))
 
-        assert cache.stored_etag() == '"abc"'
+        assert cache.meta.stored_etag() == '"abc"'
 
     def test_no_tag_yet_is_not_an_error(self, tmp_path: Path):
-        assert GroupPolicyCache(cache_dir=tmp_path / "gp").stored_etag() is None
+        assert GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp")).meta.stored_etag() is None
 
 
 class TestANewDialogueAsksAgain:
     """The age check is right for CLI invocations and wrong for a session.
 
-    ``_is_stale`` returns False for five minutes after a fetch, and
+    ``meta.is_stale()`` returns False for five minutes after a fetch, and
     hydration returned early on that — so starting a new dialogue inside
     the window silently used a pack up to five minutes old. Session start
     is exactly when somebody should pick up an admin's change, and it is
@@ -246,48 +235,49 @@ class TestANewDialogueAsksAgain:
 
     @pytest.mark.asyncio
     async def test_a_fresh_cache_is_still_asked_about(self, tmp_path: Path):
-        cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
         cache.materialize(_pack(["reviewer"], etag='W/"1"'))
-        assert not cache._is_stale(), "precondition: the cache is fresh"
+        assert not cache.meta.is_stale(), "precondition: the cache is fresh"
 
         fetch = AsyncMock(return_value=PACK_UNCHANGED)
-        assert await cache.refresh_if_stale("t", fetch, force=True) is False
+        result = await PackRefresher(cache).refresh_if_stale("t", fetch, force=True)
+        assert result.status is RefreshStatus.unchanged
         fetch.assert_awaited_once(), "forcing must actually ask"
 
     @pytest.mark.asyncio
     async def test_without_force_a_fresh_cache_is_not_asked_about(self, tmp_path: Path):
         """The poller keeps the old behaviour — this is what keeps it quiet."""
-        cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
         cache.materialize(_pack(["reviewer"], etag='W/"1"'))
 
         fetch = AsyncMock(return_value=PACK_UNCHANGED)
-        assert await cache.refresh_if_stale("t", fetch) is False
+        result = await PackRefresher(cache).refresh_if_stale("t", fetch)
+        assert result.status is RefreshStatus.fresh
         fetch.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_forcing_still_sends_the_etag(self, tmp_path: Path):
         """Otherwise every session start would download the whole pack."""
-        cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
         cache.materialize(_pack(["reviewer"], etag='W/"abc"'))
 
-        # ``_call_fetch`` hands the tag over positionally — it tries the
-        # two-argument form first and falls back for older stubs.
+        # The tag is handed over positionally: a fetcher is ``(token, etag)``.
         seen: list[object] = []
 
-        async def fetch(token, etag=None):
+        async def fetch(token, etag):
             seen.append(etag)
             return PACK_UNCHANGED
 
-        await cache.refresh_if_stale("t", fetch, force=True)
+        await PackRefresher(cache).refresh_if_stale("t", fetch, force=True)
         assert seen == ['W/"abc"'], seen
 
     @pytest.mark.asyncio
     async def test_a_changed_pack_is_picked_up(self, tmp_path: Path):
-        cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
         cache.materialize(_pack(["reviewer"], etag='W/"1"'))
 
         fetch = AsyncMock(return_value=_pack(["reviewer", "migrator"], etag='W/"2"'))
-        assert await cache.refresh_if_stale("t", fetch, force=True) is True
+        assert (await PackRefresher(cache).refresh_if_stale("t", fetch, force=True)).ok
         assert (cache.agents_dir / "migrator.md").exists()
 
 

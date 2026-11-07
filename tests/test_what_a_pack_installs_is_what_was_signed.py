@@ -27,20 +27,23 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.core.config.group_policy import (
+from igni_core.core.auth.schemas import SignedInSession
+from igni_core.core.config.group_policy.answers import SignedAbsence
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.materializer import EntryMaterializer
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.settings_fetcher import (
     CachedSettingsFetcher,
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyGate,
-    GroupPolicyPack,
     GroupPolicyUnavailable,
-    PackVerifier,
-    SignedAbsence,
 )
+from igni_core.core.config.group_policy.trust import PackTrust
+from igni_core.core.config.group_policy.verifier import AcceptedPack, PackVerifier
 from igni_core.core.config.group_policy_signature import (
     REQUIRED_ENV,
     TRUSTED_KEYS_ENV,
-    PackRejected,
 )
 from igni_core.core.config.settings import load_settings
 from igni_core.core.config.settings_loader import SettingsLoader
@@ -174,7 +177,7 @@ class TestTheFilesAreRebuiltFromThePack:
     def test_with_the_pack_deleted_nothing_derived_remains(self, tmp_path):
         _configure()
         store(_cache(), _pack())
-        (_cache() / GroupPolicyCache.SIGNED_PACK_FILE).unlink()
+        (_cache() / GroupPolicyLayout.SIGNED_PACK_FILE).unlink()
 
         _start(tmp_path)
 
@@ -186,10 +189,10 @@ class TestTheFilesAreRebuiltFromThePack:
         _require(tmp_path, monkeypatch)
         store(_cache(), _pack())
 
-        def broken(self, pack):
+        def broken(self, pack, *, rebuild=False):
             raise OSError("read-only file system")
 
-        monkeypatch.setattr(GroupPolicyCache, "rebuild", broken)
+        monkeypatch.setattr(EntryMaterializer, "materialize", broken)
 
         with pytest.raises(GroupPolicyUnavailable, match="could not be rebuilt"):
             _start(tmp_path)
@@ -198,7 +201,9 @@ class TestTheFilesAreRebuiltFromThePack:
         _configure()
         store(_cache(), _pack())
         monkeypatch.setattr(
-            GroupPolicyCache, "rebuild", lambda self, pack: (_ for _ in ()).throw(OSError("ro"))
+            EntryMaterializer,
+            "materialize",
+            lambda self, pack, *, rebuild=False: (_ for _ in ()).throw(OSError("ro")),
         )
 
         assert _start(tmp_path).learning.enabled is False
@@ -217,7 +222,7 @@ class TestNoPackIsASignedAnswer:
         )
         ctrl._portal = MagicMock()
         ctrl._portal.fetch_group_pack = AsyncMock()
-        ctrl._portal.fetch_jwks = AsyncMock(return_value=KEY.jwks)
+        ctrl._portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
         ctrl._session = MagicMock()
         ctrl._hydration_lock = None
         return ctrl
@@ -230,22 +235,24 @@ class TestNoPackIsASignedAnswer:
         store(_cache(), _pack(), version=1_000)
         ctrl = self._controller(tmp_path)
         ctrl._portal.fetch_group_pack.return_value = SignedAbsence(
-            KEY.sign_absence(version=2_000), etag='"none"'
+            signed_pack=KEY.sign_absence(version=2_000), etag='"none"'
         )
 
         assert self._hydrate(ctrl) is True
         assert not _agent().exists() and not _hooks().exists()
         assert _start(tmp_path).learning.enabled is True
-        assert GroupPolicyCache(cache_dir=_cache()).stored_etag() == '"none"'
+        assert GroupPolicyCache(GroupPolicyLayout(root=_cache())).meta.stored_etag() == '"none"'
 
     def test_an_older_pack_put_back_after_it_is_a_rollback(self, tmp_path):
         _configure()
         older = store(_cache(), _pack(), version=1_000)
         ctrl = self._controller(tmp_path)
-        ctrl._portal.fetch_group_pack.return_value = SignedAbsence(KEY.sign_absence(version=2_000))
+        ctrl._portal.fetch_group_pack.return_value = SignedAbsence(
+            signed_pack=KEY.sign_absence(version=2_000)
+        )
         self._hydrate(ctrl)
 
-        (_cache() / GroupPolicyCache.SIGNED_PACK_FILE).write_text(older)
+        (_cache() / GroupPolicyLayout.SIGNED_PACK_FILE).write_text(older)
 
         assert _start(tmp_path).learning.enabled is True
         assert not _agent().exists()
@@ -254,7 +261,9 @@ class TestNoPackIsASignedAnswer:
         _configure()
         store(_cache(), _pack())
         ctrl = self._controller(tmp_path)
-        ctrl._portal.fetch_group_pack.return_value = SignedAbsence(STRANGER.sign_absence())
+        ctrl._portal.fetch_group_pack.return_value = SignedAbsence(
+            signed_pack=STRANGER.sign_absence()
+        )
 
         assert self._hydrate(ctrl) is False
         assert _agent().exists()
@@ -264,7 +273,9 @@ class TestNoPackIsASignedAnswer:
         _configure()
         store(_cache(), _pack())
         ctrl = self._controller(tmp_path)
-        ctrl._portal.fetch_group_pack.return_value = SignedAbsence(KEY.sign_absence(sub="person-2"))
+        ctrl._portal.fetch_group_pack.return_value = SignedAbsence(
+            signed_pack=KEY.sign_absence(sub="person-2")
+        )
 
         assert self._hydrate(ctrl) is False
         assert _start(tmp_path).learning.enabled is False
@@ -272,10 +283,12 @@ class TestNoPackIsASignedAnswer:
     def test_a_pack_presented_as_an_absence_is_refused(self):
         """The response's shape and the signed claim must agree."""
         verifier = PackVerifier(
-            api_url=ISSUER, subject=PERSON, jwks_fetch=AsyncMock(return_value=KEY.jwks)
+            trust=PackTrust(api_url=ISSUER, session=SignedInSession(subject=PERSON)),
+            jwks_fetch=AsyncMock(return_value=KEY.key_set),
         )
-        with pytest.raises(PackRejected):
-            asyncio.run(verifier(SignedAbsence(KEY.sign(_pack()))))
+        verification = asyncio.run(verifier(SignedAbsence(signed_pack=KEY.sign(_pack()))))
+        assert verification.accepted is None
+        assert "does not say what the response says" in verification.reason
 
     def test_an_unsigned_absence_is_not_an_answer(self):
         """The portal client turns only a *signed* ``no_pack`` into an
@@ -302,8 +315,10 @@ class TestNoPackIsASignedAnswer:
         policy state, not a missing one."""
         _configure()
         _require(tmp_path, monkeypatch)
-        cache = GroupPolicyCache(cache_dir=_cache())
-        cache.store_signed(KEY.sign_absence(), jwks=KEY.jwks, version=5)
+        cache = GroupPolicyCache(GroupPolicyLayout(root=_cache()))
+        cache.signed.store(
+            AcceptedPack(pack=None, compact=KEY.sign_absence(), jwks=KEY.key_set, version=5)
+        )
 
         assert _start(tmp_path).learning.enabled is True
 
@@ -385,7 +400,7 @@ class TestGroupPluginsLiveWithThePack:
         )
         ctrl._portal = MagicMock()
         ctrl._portal.fetch_group_pack = AsyncMock(return_value=KEY.signed(pack, version=version))
-        ctrl._portal.fetch_jwks = AsyncMock(return_value=KEY.jwks)
+        ctrl._portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
         ctrl._session = MagicMock()
         ctrl._hydration_lock = None
         real_init = PluginInstaller.__init__
@@ -443,7 +458,8 @@ class TestGroupPluginsLiveWithThePack:
             settings = _start(tmp_path)
         assert settings.learning.enabled is False
         assert any("remote-tool" in r.getMessage() for r in caplog.records)
-        assert GroupPolicyCache(cache_dir=_cache())._stored_pack_lacks_plugins()
+        cache = GroupPolicyCache(GroupPolicyLayout(root=_cache()))
+        assert cache.plugins.lacks_any(cache.signed.unverified_plugin_sources())
 
         self._hydrate(_plugin_pack(), git, version=2)
         assert self._installed().is_dir()

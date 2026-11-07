@@ -34,13 +34,12 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from igni_core.core.config.group_policy import (
-    CachedSettingsFetcher,
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyPack,
-    PackTrust,
-)
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
+from igni_core.core.config.group_policy.trust import PackTrust
 from igni_core.core.config.settings import load_settings
 from tests.group_policy_signing import ISSUER, sign_in, store
 
@@ -196,7 +195,7 @@ class TestTheCachedFetcher:
         fetcher = _fetcher()
         first = fetcher()
 
-        (cache_dir / GroupPolicyCache.SIGNED_PACK_FILE).unlink()
+        (cache_dir / GroupPolicyLayout.SIGNED_PACK_FILE).unlink()
 
         assert fetcher() is first
 
@@ -215,7 +214,7 @@ class TestTheCachedFetcher:
         would be a second thing to forge."""
         cache_dir = _publish({"learning": {"enabled": False}})
 
-        assert not (cache_dir / GroupPolicyCache.SETTINGS_FILE).exists()
+        assert not (cache_dir / GroupPolicyLayout.LEGACY_SETTINGS_FILE).exists()
 
 
 class TestItDegradesInsteadOfFailing:
@@ -229,7 +228,7 @@ class TestItDegradesInsteadOfFailing:
         assert load_settings(project_dir=tmp_path, group_policy_fetcher=fetcher).learning.enabled
 
     def test_a_data_directory_that_does_not_exist(self, tmp_path: Path):
-        fetcher = CachedSettingsFetcher(tmp_path / "nowhere")
+        fetcher = CachedSettingsFetcher(GroupPolicyCache.for_data_dir(tmp_path / "nowhere"))
 
         assert fetcher() is None
         assert load_settings(project_dir=tmp_path, group_policy_fetcher=fetcher)
@@ -238,7 +237,7 @@ class TestItDegradesInsteadOfFailing:
         """A crash mid-write leaves half a JWS. Settings still load, without
         the policy, and the log says the pack was ignored."""
         cache_dir = _publish({"learning": {"enabled": False}})
-        path = cache_dir / GroupPolicyCache.SIGNED_PACK_FILE
+        path = cache_dir / GroupPolicyLayout.SIGNED_PACK_FILE
         path.write_text(path.read_text()[:40], encoding="utf-8")
 
         with caplog.at_level(logging.WARNING, logger="igni_core.core.config.group_policy"):
@@ -249,7 +248,7 @@ class TestItDegradesInsteadOfFailing:
 
     def test_a_cache_holding_a_list_is_not_a_policy(self, tmp_path: Path):
         cache_dir = _publish({"learning": {"enabled": False}})
-        (cache_dir / GroupPolicyCache.SIGNED_PACK_FILE).write_text("[1, 2, 3]", encoding="utf-8")
+        (cache_dir / GroupPolicyLayout.SIGNED_PACK_FILE).write_text("[1, 2, 3]", encoding="utf-8")
 
         assert _fetcher()() is None
 
@@ -281,7 +280,7 @@ class TestItDegradesInsteadOfFailing:
         _publish({"learning": {"enabled": False}})
         trust = PackTrust.from_settings(load_settings())
 
-        assert CachedSettingsFetcher(object(), trust=trust)() is not None
+        assert CachedSettingsFetcher(GroupPolicyCache.for_data_dir(object()), trust)() is not None
 
 
 class TestTheEntryPointsBuildOne:

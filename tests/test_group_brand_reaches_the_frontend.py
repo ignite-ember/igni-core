@@ -19,7 +19,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from igni_core.core.config.group_policy import GroupPolicyCache, GroupPolicyPack
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 
 THEME = {"accent": "#123456", "brand_name": "Acme"}
 
@@ -36,7 +38,7 @@ def _pack(theme: dict | None) -> GroupPolicyPack:
 
 class TestThePackCarriesIt:
     def test_a_theme_on_the_wire_is_kept(self):
-        assert _pack(THEME).theme == THEME
+        assert _pack(THEME).theme.model_dump() == THEME
 
     def test_a_pack_without_one_has_none(self):
         # Every group that has not set a brand, which is most of them.
@@ -61,15 +63,15 @@ class TestTheCacheKeepsIt:
         # ``pack_meta.json`` is what the backend reads on every status
         # poll — if the theme is not written here it never reaches the
         # frontend, however correct the rest of the path is.
-        cache = GroupPolicyCache(cache_dir=tmp_path / "cache", data_dir=tmp_path / "data")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "cache"))
         cache.materialize(_pack(THEME))
 
         meta = json.loads((tmp_path / "cache" / "pack_meta.json").read_text())
         assert meta["theme"] == THEME
-        assert cache.read_pack_meta()["theme"] == THEME
+        assert cache.meta.load().theme.model_dump() == THEME
 
     def test_a_group_without_a_brand_writes_none(self, tmp_path: Path):
-        cache = GroupPolicyCache(cache_dir=tmp_path / "cache", data_dir=tmp_path / "data")
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "cache"))
         cache.materialize(_pack(None))
 
-        assert cache.read_pack_meta()["theme"] is None
+        assert cache.meta.load().theme is None

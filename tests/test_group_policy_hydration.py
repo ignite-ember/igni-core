@@ -18,7 +18,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from igni_core.backend.server_auth import AuthController
-from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.group_policy import refresher as refresher_mod
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from tests.group_policy_signing import ISSUER, KEY, session_token
 
 #: Hydration verifies the pack against the person this token names.
@@ -44,7 +48,7 @@ def _make_controller(tmp_path: Path) -> AuthController:
     portal = MagicMock()
     portal.fetch_group_pack = AsyncMock()
     # igni server's published keys, which a fetched pack is verified against.
-    portal.fetch_jwks = AsyncMock(return_value=KEY.jwks)
+    portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
 
     # Bypass __init__ — we only want _hydrate_group_policy reachable.
     ctrl = AuthController.__new__(AuthController)
@@ -121,10 +125,8 @@ async def test_hydrate_handles_none_pack(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_hydrate_skipped_when_cache_fresh(tmp_path: Path):
     """A pre-existing fresh cache must not trigger a network call."""
-    from igni_core.core.config.group_policy import GroupPolicyCache
-
     # Pre-populate the cache with a fresh fetch_at
-    cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy", data_dir=tmp_path)
+    cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
     cache.materialize(_sample_pack())
 
     ctrl = _make_controller(tmp_path)
@@ -195,7 +197,7 @@ async def test_concurrent_hydrations_serialize(tmp_path: Path):
 
     fetch_calls = 0
 
-    async def slow_fetch(token: str):
+    async def slow_fetch(token: str, etag: str | None):
         nonlocal fetch_calls
         fetch_calls += 1
         await asyncio.sleep(0.05)  # Let the second caller queue up
@@ -226,10 +228,8 @@ async def test_hydrate_logs_warning_on_failure(tmp_path, monkeypatch):
     Patching the bound method on the logger instance is immune to
     that — we own the recording surface regardless of global config.
     """
-    from igni_core.core.config import group_policy as gp_mod
-
     messages: list[str] = []
-    real_warning = gp_mod.logger.warning
+    real_warning = refresher_mod.logger.warning
 
     def _capture(fmt: str, *args, **kwargs) -> None:
         try:
@@ -238,7 +238,7 @@ async def test_hydrate_logs_warning_on_failure(tmp_path, monkeypatch):
             messages.append(str(fmt))
         real_warning(fmt, *args, **kwargs)
 
-    monkeypatch.setattr(gp_mod.logger, "warning", _capture)
+    monkeypatch.setattr(refresher_mod.logger, "warning", _capture)
 
     ctrl = _make_controller(tmp_path)
     ctrl._portal.fetch_group_pack.side_effect = RuntimeError("portal down")

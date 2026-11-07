@@ -40,6 +40,7 @@ from igni_core.backend.schemas_context import (
     PendingMessage,
     TruncateHistoryResult,
 )
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.session.persistence.run_history import RunHistory
 from igni_core.core.session.token_estimate import TokenEstimate
 from igni_core.protocol import messages as msg
@@ -113,11 +114,9 @@ class ContextController:
         because of a branding lookup would take the status bar with it.
         """
         try:
-            from igni_core.core.config.group_policy import GroupPolicyCache
-
-            meta = GroupPolicyCache().read_pack_meta() or {}
-            theme = meta.get("theme")
-            return theme if isinstance(theme, dict) and theme else None
+            meta = GroupPolicyCache.for_data_dir(self._settings.storage.data_dir).meta.load()
+            theme = meta.theme.model_dump() if meta is not None and meta.theme else None
+            return theme or None
         except Exception as exc:  # pragma: no cover — defensive
             logger.debug("group theme unavailable (%s); using the shipped palette", exc)
             return None

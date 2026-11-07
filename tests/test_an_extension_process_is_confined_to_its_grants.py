@@ -26,6 +26,9 @@ from pathlib import Path
 
 import pytest
 
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.core.mcp.config import MCPServerConfig, MCPTransport
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.extensions.installer import ExtensionInstaller
@@ -42,6 +45,7 @@ from igni_core.extensions.sandbox import (
     SandboxRefused,
     SandboxSettings,
 )
+from igni_core.extensions.sandbox import launcher as sandbox_launcher
 from igni_core.extensions.sandbox.bubblewrap import PROXY_PORT, Bubblewrap
 from igni_core.extensions.sandbox.seatbelt import Seatbelt
 
@@ -399,8 +403,6 @@ def test_require_sandbox_comes_from_managed_or_the_env_and_never_the_user(tmp_pa
 def group_pack(extensions: dict):
     from datetime import UTC, datetime
 
-    from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
-
     return GroupPolicyPack(
         group_id="g1",
         group_name="Engineering",
@@ -430,8 +432,6 @@ def test_a_verified_group_policy_may_require_the_sandbox_but_not_turn_it_off(tmp
 
 
 def test_a_group_policy_that_does_not_verify_requires_nothing(tmp_path):
-    from igni_core.core.config.group_policy import GroupPolicyUnavailable
-
     def unverified():
         raise GroupPolicyUnavailable("the pack on disk does not verify")
 
@@ -444,8 +444,6 @@ def test_a_group_policy_that_does_not_verify_requires_nothing(tmp_path):
 
 
 def test_the_backend_reads_the_group_policy_through_the_verifying_fetcher(monkeypatch):
-    from igni_core.core.config import group_policy
-
     seen = []
 
     class Fetcher:
@@ -454,7 +452,7 @@ def test_the_backend_reads_the_group_policy_through_the_verifying_fetcher(monkey
             seen.append(settings)
             return lambda: group_pack({"require_sandbox": True})
 
-    monkeypatch.setattr(group_policy, "CachedSettingsFetcher", Fetcher)
+    monkeypatch.setattr(sandbox_launcher, "CachedSettingsFetcher", Fetcher)
     settings = object()
     sandbox = ExtensionSandbox.for_settings(settings)
     assert seen == [settings]

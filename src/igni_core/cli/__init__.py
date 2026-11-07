@@ -56,6 +56,7 @@ from igni_core.cli.trust import trust_command
 from igni_core.core import air_gap
 from igni_core.core import session as _session_module
 from igni_core.core.agno_telemetry import AgnoTelemetry
+from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.core.observability import OtelRuntime
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
@@ -168,8 +169,6 @@ def cli(ctx: click.Context, **_params: object) -> None:
         return
 
     options = CliOptions.model_validate(ctx.params)
-    from igni_core.core.config.group_policy import GroupPolicyUnavailable
-
     try:
         settings = load_settings_from_options(options)
     except GroupPolicyUnavailable as exc:

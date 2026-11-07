@@ -42,6 +42,11 @@ from igni_core.backend.workspace_signals import WorkspaceSignals
 from igni_core.core import air_gap
 from igni_core.core.activity import background
 from igni_core.core.agno_telemetry import AgnoTelemetry
+from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.config.group_policy.settings_fetcher import (
+    CachedSettingsFetcher,
+    GroupPolicyUnavailable,
+)
 from igni_core.core.config.settings import Settings, load_settings
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.db.scope import tenancy
@@ -220,21 +225,15 @@ class BackendApp:
         The fetcher reads the pack ``AuthController`` last wrote to disk — the
         live portal call cannot happen here, because the token this process
         authenticates with is read out of the ``Settings`` being built. See
-        :class:`~igni_core.core.config.group_policy.CachedSettingsFetcher`.
+        :class:`~igni_core.core.config.group_policy.settings_fetcher.CachedSettingsFetcher`.
 
         The fetcher verifies the pack before any of it is merged, and when the
         managed setting ``group_policy.required`` is on and no verified pack
         can be had, it raises. The backend still comes up — on local settings,
         so the person can sign in, which is how a valid pack is fetched — but
-        with :class:`~igni_core.core.config.group_policy.GroupPolicyGate`
+        with :class:`~igni_core.core.config.group_policy.gate.GroupPolicyGate`
         closed, so no agent run starts and each attempt says why.
         """
-        from igni_core.core.config.group_policy import (
-            CachedSettingsFetcher,
-            GroupPolicyGate,
-            GroupPolicyUnavailable,
-        )
-
         local_only = load_settings(project_dir=self._project_dir)
         try:
             return load_settings(

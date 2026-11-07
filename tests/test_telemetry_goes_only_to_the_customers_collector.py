@@ -56,7 +56,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import BaseModel, Field
 
-from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.schemas.telemetry import OtlpConfig, TelemetryConfig
 from igni_core.core.config.settings import Settings, SettingsLoader, load_settings
 from igni_core.core.observability import OtelRuntime, OtlpTarget

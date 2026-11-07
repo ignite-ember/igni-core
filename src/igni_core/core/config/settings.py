@@ -43,7 +43,7 @@ from pydantic import BaseModel, Field, model_validator
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from igni_core.core.config.group_policy import GroupPolicyPack
+    from igni_core.core.config.group_policy.pack import GroupPolicyPack
     from igni_core.core.config.models import CliOverrides
 
 from igni_core.core.air_gap import AIR_GAPPED_ENV, air_gapped_by_environment
@@ -375,13 +375,13 @@ def load_settings(
     other former shim now lives as a method on a class.
 
     ``group_policy_fetcher`` returns the org's
-    :class:`~igni_core.core.config.group_policy.GroupPolicyPack`, whose
+    :class:`~igni_core.core.config.group_policy.pack.GroupPolicyPack`, whose
     ``settings`` entries become the tier between CLI and managed policy.
     :meth:`SettingsLoader.load` has taken one since the tier was written; this
     facade dropped it, and this facade is what production calls — so an admin
     publishing ``{"permissions": {"web_fetch": "deny"}}`` could not have it applied
     even by a caller that wanted to. Production now passes
-    :class:`~igni_core.core.config.group_policy.CachedSettingsFetcher` from
+    :class:`~igni_core.core.config.group_policy.settings_fetcher.CachedSettingsFetcher` from
     ``BackendApp.run`` and ``load_settings_from_options``; callers that want no
     org policy (tests, tooling) simply leave it ``None``.
     """

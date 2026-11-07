@@ -19,7 +19,11 @@ from typing import Any
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from igni_core.core.config.group_policy import GroupPolicyCache, GroupPolicyPack
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.jwks import Jwks
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.verifier import AcceptedPack
 from igni_core.core.config.group_policy_signature import PACK_TYPE, PACK_USE, jwk_thumbprint
 
 #: The ``api_url`` tests configure, and so the ``iss`` a pack must carry.
@@ -64,6 +68,11 @@ class ServerKey:
     @property
     def jwks(self) -> dict[str, Any]:
         return {"keys": [dict(self.jwk)]}
+
+    @property
+    def key_set(self) -> Jwks:
+        """:attr:`jwks` as ``PortalClient.fetch_jwks`` returns it."""
+        return Jwks.model_validate(self.jwks)
 
     def sign_claims(self, claims: dict[str, Any], *, header: dict[str, Any] | None = None) -> str:
         head = {"alg": "RS256", "kid": self.kid, "typ": PACK_TYPE, **(header or {})}
@@ -158,12 +167,15 @@ def store(
 ) -> str:
     """Put ``pack`` in the cache the way a verified hydrate leaves it."""
     compact = key.sign(pack, version=version, **sign_kwargs)
-    cache = GroupPolicyCache(cache_dir=cache_dir)
+    cache = GroupPolicyCache(GroupPolicyLayout(root=cache_dir))
     cache.materialize(pack)
-    cache.store_signed(
-        compact,
-        jwks=jwks if jwks is not None else key.jwks,
-        version=version if version is not None else json.loads(_payload(compact))["version"],
+    cache.signed.store(
+        AcceptedPack(
+            pack=pack.model_copy(update={"signed_pack": compact}),
+            compact=compact,
+            jwks=Jwks.model_validate(jwks if jwks is not None else key.jwks),
+            version=version if version is not None else json.loads(_payload(compact))["version"],
+        )
     )
     return compact
 
