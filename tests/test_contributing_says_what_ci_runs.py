@@ -1,5 +1,8 @@
 """CONTRIBUTING.md exists, sends security reports to SECURITY.md, and lists what CI runs.
 
+The web client's and the SDKs' checks are igni-app's and igni-sdk's, listed
+in their own CONTRIBUTING.md.
+
 A contribution guide that names checks CI does not run, or misses ones it
 does, sends a contributor to a red pull request they could have caught
 locally.
@@ -29,10 +32,6 @@ def test_security_reports_go_to_security_md_not_issues():
         "ruff format --check src/ tests/",
         "mypy src/ember_code/",
         "pytest tests/",
-        "make packages-check",
-        "npx tsc -b --noEmit",
-        "npx vitest run",
-        "npx playwright test",
     ],
 )
 def test_each_listed_check_is_one_ci_runs(check: str):
@@ -52,6 +51,7 @@ def test_the_advisory_channel_is_named():
     vulnerability to be disclosed publicly; without a named channel there
     was nowhere to look."""
     text = _CONTRIBUTING.read_text()
-    assert "GitHub Security Advisory on\n`ignite-ember/igni`" in text
+    # On igni-app, which inherited igni's repository and its Security tab.
+    assert "GitHub Security Advisory on\n`ignite-ember/igni-app`" in text
     assert "CVE" in text
     assert "never\n   before" in text
