@@ -1,8 +1,8 @@
 """Regression: async tools in a Toolkit must get
 ``requires_confirmation`` set from ``requires_confirmation_tools``.
 
-The bug this file guards: ``EmberShellTools.__init__`` (and
-``EmberEditTools.__init__``) accepted a
+The bug this file guards: ``IgniShellTools.__init__`` (and
+``IgniEditTools.__init__``) accepted a
 ``requires_confirmation_tools`` kwarg, then post-registration
 looped over ``self.functions`` to flip
 ``func.requires_confirmation = True``. Agno's
@@ -23,15 +23,15 @@ The fix iterates BOTH registries. This test locks that in.
 
 from __future__ import annotations
 
-from ember_code.core.tools.edit import EmberEditTools
-from ember_code.core.tools.shell import EmberShellTools
+from igni_core.core.tools.edit import IgniEditTools
+from igni_core.core.tools.shell import IgniShellTools
 
 
 class TestShellToolkitConfirmation:
     def test_run_shell_command_has_requires_confirmation_flag(self) -> None:
         # ``run_shell_command`` is async — used to be routed to
         # ``async_functions`` and skipped by the confirm-loop.
-        toolkit = EmberShellTools(requires_confirmation_tools=["run_shell_command"])
+        toolkit = IgniShellTools(requires_confirmation_tools=["run_shell_command"])
         # Find the tool wherever it landed (sync or async
         # registry — both are valid Agno storage).
         by_name: dict[str, object] = {}
@@ -50,7 +50,7 @@ class TestShellToolkitConfirmation:
         # ``stop_process`` is listed in the toolkit's confirm set
         # from ``registry.py::_make_bash``; ensure the same fix
         # covers it (also async, would have hit the same bug).
-        toolkit = EmberShellTools(requires_confirmation_tools=["run_shell_command", "stop_process"])
+        toolkit = IgniShellTools(requires_confirmation_tools=["run_shell_command", "stop_process"])
         by_name: dict[str, object] = {}
         by_name.update(toolkit.functions)
         by_name.update(toolkit.async_functions)
@@ -60,7 +60,7 @@ class TestShellToolkitConfirmation:
         # Sanity: tools not in the confirm list stay
         # unconfirmed. The bug fix must not accidentally flag
         # EVERY async tool.
-        toolkit = EmberShellTools(requires_confirmation_tools=["run_shell_command"])
+        toolkit = IgniShellTools(requires_confirmation_tools=["run_shell_command"])
         by_name: dict[str, object] = {}
         by_name.update(toolkit.functions)
         by_name.update(toolkit.async_functions)
@@ -74,9 +74,9 @@ class TestShellToolkitConfirmation:
 class TestEditToolkitConfirmation:
     def test_edit_file_has_requires_confirmation_flag(self) -> None:
         # ``edit_file`` / ``create_file`` / ``edit_file_replace_all``
-        # are all async in ``EmberEditTools`` — same async-registry
+        # are all async in ``IgniEditTools`` — same async-registry
         # bug applied to file edits.
-        toolkit = EmberEditTools(
+        toolkit = IgniEditTools(
             requires_confirmation_tools=[
                 "edit_file",
                 "create_file",

@@ -24,30 +24,30 @@ from typing import get_args
 
 import pytest
 
-from ember_code.backend.activity import ActivityState, SessionActivity
-from ember_code.backend.hitl_controller import HitlController
-from ember_code.backend.marketplace_controller import MarketplaceController
-from ember_code.backend.model_switcher import ModelSwitcher
-from ember_code.backend.plan_snapshot_builder import PlanSnapshotBuilder
-from ember_code.backend.plugin_controller import PluginController
-from ember_code.backend.schemas_hitl import ToolCallArgs
-from ember_code.backend.server import BackendServer
-from ember_code.backend.server_auth import AuthController
-from ember_code.backend.server_context import ContextController
-from ember_code.backend.server_files import FilesController
-from ember_code.backend.server_lifecycle import LifecycleController
-from ember_code.backend.server_loop import LoopController
-from ember_code.backend.server_mcp import McpController
-from ember_code.backend.server_panels import PanelsController
-from ember_code.backend.server_processes import ProcessesController
-from ember_code.backend.server_rehydrate import RehydrateController
-from ember_code.backend.server_search import SearchController
-from ember_code.backend.server_sessions import SessionsController
-from ember_code.backend.team_wiring import TeamWiring
-from ember_code.backend.visualization_action_bus import VisualizationActionBus
-from ember_code.core.config.settings import load_settings
-from ember_code.core.config.tool_permissions import PermissionLevel
-from ember_code.protocol import messages as msg
+from igni_core.backend.activity import ActivityState, SessionActivity
+from igni_core.backend.hitl_controller import HitlController
+from igni_core.backend.marketplace_controller import MarketplaceController
+from igni_core.backend.model_switcher import ModelSwitcher
+from igni_core.backend.plan_snapshot_builder import PlanSnapshotBuilder
+from igni_core.backend.plugin_controller import PluginController
+from igni_core.backend.schemas_hitl import ToolCallArgs
+from igni_core.backend.server import BackendServer
+from igni_core.backend.server_auth import AuthController
+from igni_core.backend.server_context import ContextController
+from igni_core.backend.server_files import FilesController
+from igni_core.backend.server_lifecycle import LifecycleController
+from igni_core.backend.server_loop import LoopController
+from igni_core.backend.server_mcp import McpController
+from igni_core.backend.server_panels import PanelsController
+from igni_core.backend.server_processes import ProcessesController
+from igni_core.backend.server_rehydrate import RehydrateController
+from igni_core.backend.server_search import SearchController
+from igni_core.backend.server_sessions import SessionsController
+from igni_core.backend.team_wiring import TeamWiring
+from igni_core.backend.visualization_action_bus import VisualizationActionBus
+from igni_core.core.config.settings import load_settings
+from igni_core.core.config.tool_permissions import PermissionLevel
+from igni_core.protocol import messages as msg
 
 
 @pytest.fixture

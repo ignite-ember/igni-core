@@ -4,7 +4,7 @@
 the UI sends and every event the host broadcasts is a member of the
 model, or is listed under *Not reachable* with its reason. A feature
 added to igni without its member fails here, so the model cannot fall
-behind the app. The mapping is :mod:`ember_code.extensions.host.coverage`.
+behind the app. The mapping is :mod:`igni_core.extensions.host.coverage`.
 
 Also here: every built member is implemented and every stage-2 member is
 not — a member is either answered or answered as not yet available,
@@ -19,15 +19,15 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.extensions.events import HostTopic
-from ember_code.extensions.host import coverage
-from ember_code.extensions.host.definition import HOST_SCHEMA
-from ember_code.extensions.host.members import ALL_MEMBERS
-from ember_code.extensions.host.spec import MethodSpec, PropertySpec, SignalSpec
-from ember_code.protocol.rpc import RpcMethod
-from ember_code.protocol.schemas import be_events, fe_actions, mirroring
-from ember_code.protocol.schemas.enums import PushChannel
-from ember_code.protocol.schemas.envelope import Message
+from igni_core.extensions.events import HostTopic
+from igni_core.extensions.host import coverage
+from igni_core.extensions.host.definition import HOST_SCHEMA
+from igni_core.extensions.host.members import ALL_MEMBERS
+from igni_core.extensions.host.spec import MethodSpec, PropertySpec, SignalSpec
+from igni_core.protocol.rpc import RpcMethod
+from igni_core.protocol.schemas import be_events, fe_actions, mirroring
+from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.envelope import Message
 from tests.host_model_helpers import HostRig
 
 DOC = Path(__file__).resolve().parent.parent / "docs" / "HOST_OBJECT_MODEL.md"
@@ -58,7 +58,7 @@ class TestEveryRpcMethodHasAPlace:
         where = coverage.rpc_destination(method)
         assert where is not None, (
             f"RpcMethod.{method.name} ({method.value}) is in neither the host model nor "
-            "its Not-reachable list. Add the member it is (ember_code.extensions.host."
+            "its Not-reachable list. Add the member it is (igni_core.extensions.host."
             "definition) and map it in coverage.RPC — or say in coverage.RPC_UNREACHABLE "
             "why an extension may not do it."
         )

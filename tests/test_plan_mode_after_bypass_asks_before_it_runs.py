@@ -19,16 +19,16 @@ from typing import Any
 
 import pytest
 
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.core.config.permission_eval import PermissionEvaluator, PermissionMode
-from ember_code.core.config.settings import Settings
-from ember_code.core.config.tool_permissions import ToolPermissions
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.schemas import HookDefinition, HookResult
-from ember_code.core.hooks.tool_hook import ToolEventHook
-from ember_code.core.session.broadcast import BroadcastBus
-from ember_code.core.session.core import Session
-from ember_code.core.tools.registry import ToolRegistry
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.schemas import HookDefinition, HookResult
+from igni_core.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.session.broadcast import BroadcastBus
+from igni_core.core.session.core import Session
+from igni_core.core.tools.registry import ToolRegistry
 
 
 class _SilentExecutor(HookExecutor):

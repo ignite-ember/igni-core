@@ -32,7 +32,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
-from ember_code.backend.schemas_push import SchedulerCompletedPayload
+from igni_core.backend.schemas_push import SchedulerCompletedPayload
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ def bridge():
     Only ``_on_scheduler_completed`` is exercised; the transport is where the
     message would go and is not what is under test.
     """
-    from ember_code.backend.push_bridge import PushNotificationBridge
+    from igni_core.backend.push_bridge import PushNotificationBridge
 
     made = PushNotificationBridge.__new__(PushNotificationBridge)
     made._transport = MagicMock()
@@ -65,7 +65,7 @@ def _sent_payload(bridge) -> dict:
 class TestTheCompletionPushIsSendable:
     def test_a_successful_task_publishes_its_output(self, bridge, monkeypatch):
         monkeypatch.setattr(
-            "ember_code.backend.push_bridge.background.daemon", lambda work, **_: work
+            "igni_core.backend.push_bridge.background.daemon", lambda work, **_: work
         )
 
         bridge._on_scheduler_completed("t1", "nightly report", True, "42 rows written")
@@ -76,7 +76,7 @@ class TestTheCompletionPushIsSendable:
 
     def test_a_failed_task_publishes_its_error(self, bridge, monkeypatch):
         monkeypatch.setattr(
-            "ember_code.backend.push_bridge.background.daemon", lambda work, **_: work
+            "igni_core.backend.push_bridge.background.daemon", lambda work, **_: work
         )
 
         bridge._on_scheduler_completed("t2", "nightly report", False, "Task timed out after 300s")
@@ -91,7 +91,7 @@ class TestTheCompletionPushIsSendable:
         blank result the client cannot interpret.
         """
         monkeypatch.setattr(
-            "ember_code.backend.push_bridge.background.daemon", lambda work, **_: work
+            "igni_core.backend.push_bridge.background.daemon", lambda work, **_: work
         )
 
         bridge._on_scheduler_completed("t3", "nightly report", False)

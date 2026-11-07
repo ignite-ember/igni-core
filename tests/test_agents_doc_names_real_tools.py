@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.tools.tool_spec import ToolSpecCatalog
+from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
 DOC = Path(__file__).resolve().parents[1] / "docs" / "AGENTS.md"
 

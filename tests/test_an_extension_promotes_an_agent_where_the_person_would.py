@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from ember_code.extensions.host.definition import HOST_SCHEMA
+from igni_core.extensions.host.definition import HOST_SCHEMA
 from tests.host_model_helpers import HostRig
 
 

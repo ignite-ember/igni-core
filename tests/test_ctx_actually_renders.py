@@ -33,8 +33,8 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.backend.schemas_context import ContextBreakdownView
-from ember_code.core.session.schemas import ContextBreakdown
+from igni_core.backend.schemas_context import ContextBreakdownView
+from igni_core.core.session.schemas import ContextBreakdown
 
 
 class TestTheModelIsFullyDefined:
@@ -55,9 +55,9 @@ class TestTheModelIsFullyDefined:
     @pytest.mark.parametrize(
         "first",
         [
-            "ember_code.backend.schemas_context",
-            "ember_code.core.session",
-            "ember_code.backend.command_handler",
+            "igni_core.backend.schemas_context",
+            "igni_core.core.session",
+            "igni_core.backend.command_handler",
         ],
     )
     def test_it_is_complete_whichever_module_is_imported_first(self, first: str):
@@ -85,7 +85,7 @@ class TestTheModelIsFullyDefined:
                 sys.executable,
                 "-c",
                 f"import {first};"
-                "from ember_code.backend.schemas_context import ContextBreakdownView as V;"
+                "from igni_core.backend.schemas_context import ContextBreakdownView as V;"
                 "print(V.__pydantic_complete__)",
             ],
             capture_output=True,

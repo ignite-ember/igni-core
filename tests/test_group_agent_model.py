@@ -20,13 +20,13 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from ember_code.core.agents.loader import AgentDefinitionLoader
-from ember_code.core.config.group_policy import (
+from igni_core.core.agents.loader import AgentDefinitionLoader
+from igni_core.core.config.group_policy import (
     GroupPolicyCache,
     GroupPolicyEntry,
     GroupPolicyPack,
 )
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.paths import CONFIG_DIR
 
 
 def _pack(*, entries=(), default_model=None) -> GroupPolicyPack:

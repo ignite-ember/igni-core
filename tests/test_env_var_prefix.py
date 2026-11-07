@@ -161,7 +161,7 @@ class TestTheCrossProcessContractAgrees:
 
     def test_parent_pid_is_spelled_the_same_on_both_sides(self):
         root = _repo_root()
-        reader = (root / "src/ember_code/backend/supervisor.py").read_text()
+        reader = (root / "src/igni_core/backend/supervisor.py").read_text()
         setter = (IGNI_APP / "clients/tauri/src-tauri/src/lib.rs").read_text()
 
         assert "IGNI_PARENT_PID" in reader, "the backend no longer reads it"

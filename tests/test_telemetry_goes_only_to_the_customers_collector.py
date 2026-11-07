@@ -56,13 +56,13 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import BaseModel, Field
 
-from ember_code.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
-from ember_code.core.config.schemas.telemetry import OtlpConfig, TelemetryConfig
-from ember_code.core.config.settings import Settings, SettingsLoader, load_settings
-from ember_code.core.observability import OtelRuntime, OtlpTarget
-from ember_code.core.observability.pipeline import OtelSinks
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.session.core import Session
+from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.schemas.telemetry import OtlpConfig, TelemetryConfig
+from igni_core.core.config.settings import Settings, SettingsLoader, load_settings
+from igni_core.core.observability import OtelRuntime, OtlpTarget
+from igni_core.core.observability.pipeline import OtelSinks
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.core import Session
 from tests.egress_guard import EgressGuard, InternalNetwork
 from tests.test_igni_reaches_nothing_outside_the_network import StubModel
 

@@ -29,13 +29,13 @@ from pathlib import Path
 import pytest
 from websockets.asyncio.client import connect
 
-from ember_code.backend import app as app_mod
-from ember_code.backend.app import BackendApp, TransportBuilder
-from ember_code.backend.lockfile import Lockfile
-from ember_code.backend.schemas_rpc import LifecyclePhase
-from ember_code.core.config.group_policy import GroupPolicyGate, GroupPolicyUnavailable
-from ember_code.protocol import messages as msg
-from ember_code.transport.websocket import CompositeTransport, WebSocketServerTransport
+from igni_core.backend import app as app_mod
+from igni_core.backend.app import BackendApp, TransportBuilder
+from igni_core.backend.lockfile import Lockfile
+from igni_core.backend.schemas_rpc import LifecyclePhase
+from igni_core.core.config.group_policy import GroupPolicyGate, GroupPolicyUnavailable
+from igni_core.protocol import messages as msg
+from igni_core.transport.websocket import CompositeTransport, WebSocketServerTransport
 
 POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="the loop's signal handlers")
 

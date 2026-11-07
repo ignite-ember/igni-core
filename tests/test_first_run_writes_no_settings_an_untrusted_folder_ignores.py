@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.init.project_initializer import ProjectInitializer
-from ember_code.core.workspace_trust import WorkspaceTrust
+from igni_core.core.init.project_initializer import ProjectInitializer
+from igni_core.core.workspace_trust import WorkspaceTrust
 
 pytestmark = pytest.mark.workspace_trust
 

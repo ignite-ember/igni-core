@@ -20,10 +20,10 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.mcp.approval import MCPApprovalManager
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.core.mcp.config import MCPPolicy, MCPServerConfig, MCPTransport
-from ember_code.core.network_policy import NetworkPolicy
+from igni_core.core.mcp.approval import MCPApprovalManager
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.mcp.config import MCPPolicy, MCPServerConfig, MCPTransport
+from igni_core.core.network_policy import NetworkPolicy
 
 SERVER = r"""
 from mcp.server.mcpserver import MCPServer

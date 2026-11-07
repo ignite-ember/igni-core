@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.utils.file_index import (
+from igni_core.core.utils.file_index import (
     FileIndex,
     _fallback_list,
     _git_ls_files,
@@ -148,13 +148,13 @@ class TestFileIndex:
     def test_match_deep_paths(self):
         fi = self._make_index(
             [
-                "src/ember_code/tui/widgets/_file_picker.py",
-                "src/ember_code/tui/app.py",
-                "src/ember_code/tools/registry.py",
+                "src/igni_core/tui/widgets/_file_picker.py",
+                "src/igni_core/tui/app.py",
+                "src/igni_core/tools/registry.py",
             ]
         )
         result = fi.match("picker")
-        assert "src/ember_code/tui/widgets/_file_picker.py" in result
+        assert "src/igni_core/tui/widgets/_file_picker.py" in result
 
     def test_is_loaded(self):
         fi = FileIndex(Path("."))

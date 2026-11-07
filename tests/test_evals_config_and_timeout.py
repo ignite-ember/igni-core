@@ -19,11 +19,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.config.schemas.llm_behavior import EvalsConfig
-from ember_code.core.evals.loader import EvalCase, EvalSuite, load_eval_file
-from ember_code.core.evals.runner import CaseRunner, SuiteRunner
-from ember_code.core.evals.tool_names import DEFAULT_CATALOG
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.config.schemas.llm_behavior import EvalsConfig
+from igni_core.core.evals.loader import EvalCase, EvalSuite, load_eval_file
+from igni_core.core.evals.runner import CaseRunner, SuiteRunner
+from igni_core.core.evals.tool_names import DEFAULT_CATALOG
+from igni_core.core.paths import CONFIG_DIR
 
 BARE_CASE_YAML = textwrap.dedent("""\
     agent: explorer

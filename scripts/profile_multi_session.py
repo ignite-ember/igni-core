@@ -32,9 +32,7 @@ import tempfile
 import time
 from pathlib import Path
 
-import resource
 import websockets
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
@@ -140,7 +138,7 @@ async def _drive(n_sessions: int) -> None:
         [
             str(PYTHON),
             "-m",
-            "ember_code.backend",
+            "igni_core.backend",
             "--ws-port",
             "0",
             "--project-dir",

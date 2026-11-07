@@ -30,7 +30,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.core.session.message_handler import SessionMessageHandler
+from igni_core.core.session.message_handler import SessionMessageHandler
 
 
 class _Hooks:
@@ -257,7 +257,7 @@ class TestTheSessionWiresTheRefsThrough:
         defect with the handler unchanged."""
         import inspect
 
-        from ember_code.core.session.core import Session
+        from igni_core.core.session.core import Session
 
         source = inspect.getsource(Session.__init__)
         construction = source.split("SessionMessageHandler(")[1]
@@ -270,7 +270,7 @@ class TestTheSessionWiresTheRefsThrough:
         ``_rebuild_main_team`` — every model swap funnels there."""
         import inspect
 
-        from ember_code.core.session.core import Session
+        from igni_core.core.session.core import Session
 
         source = inspect.getsource(Session._rebuild_main_team)
 
@@ -292,7 +292,7 @@ class TestTheUserMemoryCapabilityIsGateable:
     def _builder(self, *, user_memory: bool):
         from pathlib import Path
 
-        from ember_code.core.session.agent_builder.prompt_builder import PromptBuilder
+        from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
 
         return PromptBuilder(
             project_dir=Path("/nonexistent"),
@@ -323,7 +323,7 @@ class TestTheUserMemoryCapabilityIsGateable:
         there."""
         import inspect
 
-        from ember_code.core.session.agent_builder.coordinator import MainAgentBuilder
+        from igni_core.core.session.agent_builder.coordinator import MainAgentBuilder
 
         source = inspect.getsource(MainAgentBuilder.build_prompt)
 

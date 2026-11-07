@@ -31,7 +31,7 @@ flow that has nothing to log in to.
 
 The scan below is the part that will still be true in a year. Naming the
 five call sites that had a default is a snapshot; asserting that no
-module under `src/ember_code` contains a vendor URL literal is the rule,
+module under `src/igni_core` contains a vendor URL literal is the rule,
 and it fails on the sixth.
 """
 
@@ -42,15 +42,15 @@ import re
 
 import pytest
 
-from ember_code.core.config.endpoint import (
+from igni_core.core.config.endpoint import (
     ApiUrlNotConfigured,
     is_configured,
     portal_url_for,
     require_api_url,
 )
-from ember_code.core.config.settings import Settings
+from igni_core.core.config.settings import Settings
 
-_SRC = pathlib.Path(__file__).resolve().parent.parent / "src" / "ember_code"
+_SRC = pathlib.Path(__file__).resolve().parent.parent / "src" / "igni_core"
 
 #: A URL whose host is the vendor's. Matched as a URL rather than as a
 #: bare hostname on purpose: `model_entry.py` classifies a *configured*
@@ -204,7 +204,7 @@ class TestPathsThatDegradeRatherThanRefuse:
         user: one means "sign in", the other means "tell me where your
         server is". Collapsing them sends somebody to a login flow with
         nothing to log in to."""
-        from ember_code.core.config.cloud_models import (
+        from igni_core.core.config.cloud_models import (
             CloudModelCatalogClient,
             FetchReason,
         )
@@ -218,7 +218,7 @@ class TestPathsThatDegradeRatherThanRefuse:
         """You cannot be signed in to a server you have not named, so
         the server check has to come first or the reason is wrong for
         the common case of a fresh install."""
-        from ember_code.core.config.cloud_models import (
+        from igni_core.core.config.cloud_models import (
             CloudModelCatalogClient,
             FetchReason,
         )
@@ -248,14 +248,14 @@ class TestAPortalThatDiffersByPort:
         assert portal_url_for("http://127.0.0.1:7777") == "http://127.0.0.1:7777"
 
     def test_a_configured_portal_wins(self):
-        from ember_code.core.auth.portal_client import PortalClient
+        from igni_core.core.auth.portal_client import PortalClient
 
         portal = PortalClient(api_url="http://127.0.0.1:7777", portal_url="http://127.0.0.1:3000")
 
         assert portal.login_url(62721) == "http://127.0.0.1:3000/cli-auth?port=62721"
 
     def test_without_one_the_guess_still_applies(self):
-        from ember_code.core.auth.portal_client import PortalClient
+        from igni_core.core.auth.portal_client import PortalClient
 
         portal = PortalClient(api_url="https://api.acme.example")
 
@@ -265,7 +265,7 @@ class TestAPortalThatDiffersByPort:
         # The portal moving must not take the API with it: the
         # callback redeems its one-time code against the API, and a
         # setting that moved both would trade one 404 for another.
-        from ember_code.core.auth.portal_client import PortalClient
+        from igni_core.core.auth.portal_client import PortalClient
 
         portal = PortalClient(api_url="http://127.0.0.1:7777", portal_url="http://127.0.0.1:3000")
 
@@ -274,6 +274,6 @@ class TestAPortalThatDiffersByPort:
     def test_the_setting_has_no_default(self):
         # Empty means "guess", which is what every deployment that was
         # working before relies on.
-        from ember_code.core.config.settings import Settings
+        from igni_core.core.config.settings import Settings
 
         assert Settings().portal_url == ""

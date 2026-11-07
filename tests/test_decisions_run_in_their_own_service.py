@@ -22,19 +22,19 @@ from typing import Any
 import httpx
 import pytest
 
-from ember_code.core.decisions import Laya
-from ember_code.core.decisions.laya import (
+from igni_core.core.decisions import Laya
+from igni_core.core.decisions.laya import (
     DecisionsEndpoints,
     LocalDecisions,
     RemoteDecisions,
 )
-from ember_code.core.decisions.schemas import DecisionRequest, DecisionsUnavailable
-from ember_code.decisions_server.__main__ import DecisionsServer
-from ember_code.decisions_server.app import DecisionsApp
-from ember_code.decisions_server.model import LayaModel
+from igni_core.core.decisions.schemas import DecisionRequest, DecisionsUnavailable
+from igni_core.decisions_server.__main__ import DecisionsServer
+from igni_core.decisions_server.app import DecisionsApp
+from igni_core.decisions_server.model import LayaModel
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE = ROOT / "src" / "ember_code"
+PACKAGE = ROOT / "src" / "igni_core"
 HEAVY = ("laya", "torch", "transformers")
 REQUEST = DecisionRequest(
     contexts=[{"text": "it crashes"}],
@@ -54,7 +54,7 @@ class TestTheBackendNeverCarriesLaya:
                     names = [a.name for a in node.names] + [getattr(node, "module", "") or ""]
                     for name in names:
                         if name.split(".")[0] in HEAVY or name.startswith(
-                            "ember_code.decisions_server"
+                            "igni_core.decisions_server"
                         ):
                             offenders.append(f"{path.relative_to(ROOT)}: {name}")
         assert offenders == []
@@ -62,14 +62,14 @@ class TestTheBackendNeverCarriesLaya:
     def test_a_started_backend_with_the_guard_and_host_decide_has_no_torch(self) -> None:
         script = (
             "import sys\n"
-            "import ember_code.backend.__main__\n"
-            "import ember_code.core.hooks.bypass_guard\n"
-            "import ember_code.extensions.host.model\n"
-            "from ember_code.core.decisions import Laya\n"
+            "import igni_core.backend.__main__\n"
+            "import igni_core.core.hooks.bypass_guard\n"
+            "import igni_core.extensions.host.model\n"
+            "from igni_core.core.decisions import Laya\n"
             "Laya.shared()\n"
             f"loaded = [m for m in {HEAVY!r} if m in sys.modules]\n"
             "assert not loaded, loaded\n"
-            "assert 'ember_code.decisions_server' not in sys.modules\n"
+            "assert 'igni_core.decisions_server' not in sys.modules\n"
         )
         result = subprocess.run(
             [sys.executable, "-c", script], capture_output=True, text=True, timeout=120
@@ -116,7 +116,7 @@ class TestTheSecret:
             DecisionsApp(LayaModel(), "")
         env = {k: v for k, v in os.environ.items() if k != "IGNI_DECISIONS_SECRET"}
         result = subprocess.run(
-            [sys.executable, "-m", "ember_code.decisions_server", "--port", "0"],
+            [sys.executable, "-m", "igni_core.decisions_server", "--port", "0"],
             capture_output=True,
             text=True,
             env=env,
@@ -155,7 +155,7 @@ class TestTheLocalService:
 
     def test_it_exits_with_the_backend_that_started_it(self, tmp_path) -> None:
         script = (
-            "from ember_code.core.decisions.laya import LocalDecisions\n"
+            "from igni_core.core.decisions.laya import LocalDecisions\n"
             "local = LocalDecisions()\n"
             "local.connection()\n"
             "print(local._process.pid, flush=True)\n"

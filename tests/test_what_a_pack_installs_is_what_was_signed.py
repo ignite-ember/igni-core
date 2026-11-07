@@ -27,7 +27,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.config.group_policy import (
+from igni_core.core.config.group_policy import (
     CachedSettingsFetcher,
     GroupPolicyCache,
     GroupPolicyEntry,
@@ -37,13 +37,13 @@ from ember_code.core.config.group_policy import (
     PackVerifier,
     SignedAbsence,
 )
-from ember_code.core.config.group_policy_signature import (
+from igni_core.core.config.group_policy_signature import (
     REQUIRED_ENV,
     TRUSTED_KEYS_ENV,
     PackRejected,
 )
-from ember_code.core.config.settings import load_settings
-from ember_code.core.config.settings_loader import SettingsLoader
+from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from tests.group_policy_signing import ISSUER, KEY, PERSON, ServerKey, session_token, sign_in, store
 
 STRANGER = ServerKey()
@@ -206,7 +206,7 @@ class TestTheFilesAreRebuiltFromThePack:
 
 class TestNoPackIsASignedAnswer:
     def _controller(self, tmp_path: Path):
-        from ember_code.backend.server_auth import AuthController
+        from igni_core.backend.server_auth import AuthController
 
         ctrl = AuthController.__new__(AuthController)
         ctrl._settings = SimpleNamespace(
@@ -282,7 +282,7 @@ class TestNoPackIsASignedAnswer:
         absence; an unsigned one is a pack it cannot read, so ``None``."""
         import httpx
 
-        from ember_code.core.auth.portal_client import PortalClient
+        from igni_core.core.auth.portal_client import PortalClient
 
         def server(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"no_pack": True})
@@ -372,8 +372,8 @@ def _plugin_pack(*, with_plugin: bool = True) -> GroupPolicyPack:
 
 class TestGroupPluginsLiveWithThePack:
     def _hydrate(self, pack: GroupPolicyPack, git: _FakeGit, *, version: int | None = None) -> bool:
-        from ember_code.backend.server_auth import AuthController
-        from ember_code.core.plugins.installer import PluginInstaller
+        from igni_core.backend.server_auth import AuthController
+        from igni_core.core.plugins.installer import PluginInstaller
 
         ctrl = AuthController.__new__(AuthController)
         ctrl._settings = SimpleNamespace(
@@ -439,7 +439,7 @@ class TestGroupPluginsLiveWithThePack:
         self._hydrate(_plugin_pack(), git, version=1)
         shutil.rmtree(self._installed())
 
-        with caplog.at_level("WARNING", logger="ember_code.core.config.group_policy"):
+        with caplog.at_level("WARNING", logger="igni_core.core.config.group_policy"):
             settings = _start(tmp_path)
         assert settings.learning.enabled is False
         assert any("remote-tool" in r.getMessage() for r in caplog.records)
@@ -461,7 +461,7 @@ class TestGroupPluginsLiveWithThePack:
             _start(tmp_path)
 
     def test_an_older_install_in_the_users_directory_is_moved_once(self):
-        from ember_code.core.plugins.state import PluginsState, load_state, save_state
+        from igni_core.core.plugins.state import PluginsState, load_state, save_state
 
         _configure()
         legacy = _home() / "plugins" / "remote-tool"
@@ -489,8 +489,8 @@ class TestGroupPluginsLiveWithThePack:
 
 class TestTheUsersOwnInstallsAreUnchanged:
     def test_a_user_install_goes_to_the_users_directory_with_its_pin(self, tmp_path):
-        from ember_code.core.plugins.installer import PluginInstaller
-        from ember_code.core.plugins.state import load_state
+        from igni_core.core.plugins.installer import PluginInstaller
+        from igni_core.core.plugins.state import load_state
 
         installer = PluginInstaller(data_dir=tmp_path, git_client=_FakeGit())
 

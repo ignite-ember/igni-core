@@ -29,46 +29,46 @@ from alembic.migration import MigrationContext
 from click.testing import CliRunner
 from sqlalchemy.engine import make_url
 
-from ember_code.cli.migrate import migrate
-from ember_code.core.approvals import journal as approval_journal  # noqa: F401 — its tables
-from ember_code.core.db.base import Base
-from ember_code.core.db.database import Database
-from ember_code.core.db.engine import cache
-from ember_code.core.db.locator import StorageLocator
-from ember_code.core.db.schema import HEAD_REVISION, SchemaRevision
-from ember_code.core.db.scope import NoTenantError, StorageScope, Tenant, tenancy
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.hooks.memory_sync import MemorySyncHook
-from ember_code.core.loop.models import LoopState
-from ember_code.core.loop.store import LoopProgressStore, LoopStore
-from ember_code.core.scheduler.models import ScheduledTask
-from ember_code.core.scheduler.store import TaskStore
-from ember_code.core.session import queued_messages  # noqa: F401 — its table
-from ember_code.core.session.client_state import ClientStateStore
-from ember_code.core.session.pending_messages import PendingMessageStore
-from ember_code.core.session.session_directories import SessionDirectoryStore
-from ember_code.core.session.session_preferences import SessionPreferencesStore
-from ember_code.core.tools.process_store import BackgroundProcessStore
-from ember_code.core.tools.process_store_schemas import BackgroundProcessRow
-from ember_code.core.utils.attachment_store import (
+from igni_core.cli.migrate import migrate
+from igni_core.core.approvals import journal as approval_journal  # noqa: F401 — its tables
+from igni_core.core.db.base import Base
+from igni_core.core.db.database import Database
+from igni_core.core.db.engine import cache
+from igni_core.core.db.locator import StorageLocator
+from igni_core.core.db.schema import HEAD_REVISION, SchemaRevision
+from igni_core.core.db.scope import NoTenantError, StorageScope, Tenant, tenancy
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.hooks.memory_sync import MemorySyncHook
+from igni_core.core.loop.models import LoopState
+from igni_core.core.loop.store import LoopProgressStore, LoopStore
+from igni_core.core.scheduler.models import ScheduledTask
+from igni_core.core.scheduler.store import TaskStore
+from igni_core.core.session import queued_messages  # noqa: F401 — its table
+from igni_core.core.session.client_state import ClientStateStore
+from igni_core.core.session.pending_messages import PendingMessageStore
+from igni_core.core.session.session_directories import SessionDirectoryStore
+from igni_core.core.session.session_preferences import SessionPreferencesStore
+from igni_core.core.tools.process_store import BackgroundProcessStore
+from igni_core.core.tools.process_store_schemas import BackgroundProcessRow
+from igni_core.core.utils.attachment_store import (
     Attachments,
     Base64Chunks,
     DirectoryAttachments,
 )
-from ember_code.core.utils.context_memory import ProjectMemoryBank
-from ember_code.core.utils.memory_files import (
+from igni_core.core.utils.context_memory import ProjectMemoryBank
+from igni_core.core.utils.memory_files import (
     DatabaseMemoryFiles,
     DirectoryMemoryFiles,
     MemoryFiles,
     MemoryMirror,
 )
-from ember_code.extensions.settings_values import (
+from igni_core.extensions.settings_values import (
     DatabaseSettingsValues,
     FileSettingsValues,
     SettingsValues,
 )
-from ember_code.notifications.local_store import LocalNotificationStore
-from ember_code.notifications.schemas import ExtensionNotice, NotificationTarget
+from igni_core.notifications.local_store import LocalNotificationStore
+from igni_core.notifications.schemas import ExtensionNotice, NotificationTarget
 from tests.storage_backends import Scopes
 
 # ── The schema ────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ def test_the_desktop_keeps_its_files(tmp_path: Path):
     assert not locator.shared
     assert locator.project_url(tmp_path).file is not None
     assert locator.project_url(tmp_path).file.name == "state.db"  # type: ignore[union-attr]
-    assert locator.global_url().file == (tmp_path / "ember.db").resolve()
+    assert locator.global_url().file == (tmp_path / "igni.db").resolve()
     assert locator.scope(tmp_path) == StorageScope.local()
     assert isinstance(Attachments.for_project(tmp_path, locator), DirectoryAttachments)
 

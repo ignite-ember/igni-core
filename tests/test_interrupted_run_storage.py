@@ -36,7 +36,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.session.pending_messages import (
+from igni_core.core.session.pending_messages import (
     INTERRUPTED_REASONS,
     InterruptedMessage,
     PendingMessageStore,
@@ -326,8 +326,8 @@ class TestInterruptedRunsRpcDispatch:
         return backend
 
     def test_get_interrupted_runs_extracts_session_id(self) -> None:
-        from ember_code.backend.__main__ import _build_rpc_table
-        from ember_code.protocol.rpc import RpcMethod
+        from igni_core.backend.__main__ import _build_rpc_table
+        from igni_core.protocol.rpc import RpcMethod
 
         backend = MagicMock()
         backend.get_interrupted_runs = AsyncMock(return_value=[])
@@ -338,8 +338,8 @@ class TestInterruptedRunsRpcDispatch:
     def test_discard_interrupted_run_extracts_session_and_message_id(
         self,
     ) -> None:
-        from ember_code.backend.__main__ import _build_rpc_table
-        from ember_code.protocol.rpc import RpcMethod
+        from igni_core.backend.__main__ import _build_rpc_table
+        from igni_core.protocol.rpc import RpcMethod
 
         backend = MagicMock()
         backend.discard_interrupted_run = AsyncMock(return_value={"ok": True, "error": ""})
@@ -358,7 +358,7 @@ class TestInterruptedRunWireModel:
     """
 
     def test_from_interrupted_row_round_trip(self) -> None:
-        from ember_code.backend.schemas_context import InterruptedRun
+        from igni_core.backend.schemas_context import InterruptedRun
 
         ts = int(datetime.now(timezone.utc).timestamp())
         row = InterruptedMessage(
@@ -379,7 +379,7 @@ class TestInterruptedRunWireModel:
         assert wire.last_error == "anthropic 504"
 
     def test_from_interrupted_row_preserves_null_last_error(self) -> None:
-        from ember_code.backend.schemas_context import InterruptedRun
+        from igni_core.backend.schemas_context import InterruptedRun
 
         ts = int(datetime.now(timezone.utc).timestamp())
         row = InterruptedMessage(
@@ -407,7 +407,7 @@ class TestContextControllerInterrupted:
 
     @pytest.mark.asyncio
     async def test_get_interrupted_runs_projects_to_wire(self, tmp_path: Path) -> None:
-        from ember_code.backend.server_context import ContextController
+        from igni_core.backend.server_context import ContextController
 
         store = PendingMessageStore(tmp_path / "state.db")
         msg_id = store.record_received("sess", "search foo")
@@ -431,7 +431,7 @@ class TestContextControllerInterrupted:
 
     @pytest.mark.asyncio
     async def test_get_interrupted_runs_empty_on_clean_session(self, tmp_path: Path) -> None:
-        from ember_code.backend.server_context import ContextController
+        from igni_core.backend.server_context import ContextController
 
         store = PendingMessageStore(tmp_path / "state.db")
         # No interrupted rows for this session.
@@ -443,7 +443,7 @@ class TestContextControllerInterrupted:
 
     @pytest.mark.asyncio
     async def test_discard_interrupted_run_removes_one_row(self, tmp_path: Path) -> None:
-        from ember_code.backend.server_context import ContextController
+        from igni_core.backend.server_context import ContextController
 
         store = PendingMessageStore(tmp_path / "state.db")
         a = store.record_received("sess", "a")
@@ -468,7 +468,7 @@ class TestContextControllerInterrupted:
         """Deleting a row that doesn't exist returns ``ok=True``
         so the FE can safely retry on transient errors without
         worrying about double-delete surfacing as a failure."""
-        from ember_code.backend.server_context import ContextController
+        from igni_core.backend.server_context import ContextController
 
         store = PendingMessageStore(tmp_path / "state.db")
         session = MagicMock()
@@ -480,7 +480,7 @@ class TestContextControllerInterrupted:
 
     @pytest.mark.asyncio
     async def test_discard_interrupted_run_rejects_empty_message_id(self, tmp_path: Path) -> None:
-        from ember_code.backend.server_context import ContextController
+        from igni_core.backend.server_context import ContextController
 
         store = PendingMessageStore(tmp_path / "state.db")
         session = MagicMock()
@@ -506,13 +506,13 @@ class TestUserMessageForceFlag:
         """Backwards-compat: a UserMessage without an explicit
         ``force`` field parses as ``force=False``. The pre-force
         clients keep working unchanged."""
-        from ember_code.protocol.messages import UserMessage
+        from igni_core.protocol.messages import UserMessage
 
         msg = UserMessage(type="user_message", text="hi")
         assert msg.force is False
 
     def test_force_round_trips_through_true(self) -> None:
-        from ember_code.protocol.messages import UserMessage
+        from igni_core.protocol.messages import UserMessage
 
         msg = UserMessage(type="user_message", text="hi", force=True)
         assert msg.force is True

@@ -53,11 +53,6 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ember_code.core.activity import background
-from ember_code.core.auth.credentials import CloudCredentials
-from ember_code.core.config.schemas.storage_and_paths import StorageConfig
-from ember_code.core.db.scope import Tenant
-from ember_code.protocol import messages as msg
 from igni_cloud.credentials import EnvironmentCredentials
 from igni_cloud.guest.watch import DirectoryWatch, FileWatch
 from igni_cloud.producer import (
@@ -66,6 +61,11 @@ from igni_cloud.producer import (
     ProducerRef,
     UnknownProducer,
 )
+from igni_core.core.activity import background
+from igni_core.core.auth.credentials import CloudCredentials
+from igni_core.core.config.schemas.storage_and_paths import StorageConfig
+from igni_core.core.db.scope import Tenant
+from igni_core.protocol import messages as msg
 
 logger = logging.getLogger(__name__)
 

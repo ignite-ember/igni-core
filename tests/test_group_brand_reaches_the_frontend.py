@@ -19,7 +19,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ember_code.core.config.group_policy import GroupPolicyCache, GroupPolicyPack
+from igni_core.core.config.group_policy import GroupPolicyCache, GroupPolicyPack
 
 THEME = {"accent": "#123456", "brand_name": "Acme"}
 

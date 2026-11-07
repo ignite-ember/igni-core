@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.skills.loader import SkillPool, SkillPriority
-from ember_code.core.skills.parser import SkillDefinition, SkillParser
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.skills.loader import SkillPool, SkillPriority
+from igni_core.core.skills.parser import SkillDefinition, SkillParser
 
 
 class TestSkillParser:

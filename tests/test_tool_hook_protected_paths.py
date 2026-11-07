@@ -2,9 +2,9 @@
 
 import pytest
 
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.permission_pipeline import ProtectedPathStage
-from ember_code.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.permission_pipeline import ProtectedPathStage
+from igni_core.core.hooks.tool_hook import ToolEventHook
 
 
 class TestIsProtectedPath:

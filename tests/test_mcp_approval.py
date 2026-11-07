@@ -3,7 +3,7 @@
 import json
 from unittest.mock import patch
 
-from ember_code.core.mcp.approval import _USER_GLOBAL_MCP, MCPApprovalManager
+from igni_core.core.mcp.approval import _USER_GLOBAL_MCP, MCPApprovalManager
 
 
 class TestMCPApprovalManager:
@@ -90,7 +90,7 @@ class TestMCPApprovalManager:
         # without one — force the interactive branch.
         with (
             patch.object(MCPApprovalManager, "_can_prompt", staticmethod(lambda: True)),
-            patch("ember_code.core.mcp.approval.Confirm.ask", return_value=True),
+            patch("igni_core.core.mcp.approval.Confirm.ask", return_value=True),
         ):
             result = mgr.check_approval("new-server", "/project/custom-mcp.json")
 
@@ -102,7 +102,7 @@ class TestMCPApprovalManager:
 
         with (
             patch.object(MCPApprovalManager, "_can_prompt", staticmethod(lambda: True)),
-            patch("ember_code.core.mcp.approval.Confirm.ask", return_value=False),
+            patch("igni_core.core.mcp.approval.Confirm.ask", return_value=False),
         ):
             result = mgr.check_approval("new-server", "/project/custom-mcp.json")
 

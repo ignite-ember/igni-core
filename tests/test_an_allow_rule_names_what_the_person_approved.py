@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.config.tool_permissions.tool_invocation import ToolInvocation
+from igni_core.core.config.tool_permissions.tool_invocation import ToolInvocation
 
 
 @pytest.mark.parametrize(

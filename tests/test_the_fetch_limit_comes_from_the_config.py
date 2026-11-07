@@ -19,9 +19,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.tools.http_fetcher import HttpFetcher
-from ember_code.core.tools.web import WebTools
-from ember_code.core.tools.web_schemas import HttpFetcherConfig
+from igni_core.core.tools.http_fetcher import HttpFetcher
+from igni_core.core.tools.web import WebTools
+from igni_core.core.tools.web_schemas import HttpFetcherConfig
 
 
 def _mock_client(text: str, content_type: str = "text/plain"):
@@ -39,7 +39,7 @@ def _mock_client(text: str, content_type: str = "text/plain"):
 
 @pytest.fixture
 def patched_client():
-    with patch("ember_code.core.tools.http_fetcher.httpx.AsyncClient") as MockClient:
+    with patch("igni_core.core.tools.http_fetcher.httpx.AsyncClient") as MockClient:
         MockClient.return_value = _mock_client("x" * 20_000)
         yield MockClient
 

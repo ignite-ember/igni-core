@@ -34,9 +34,9 @@ from igni_cloud.guest.watch import DirectoryWatch
 from igni_cloud.layer import CloudLayer
 from igni_cloud.logs import StdoutLog
 
-from ember_code.backend.host_backend import ObservedTransport
-from ember_code.protocol import messages as msg
-from ember_code.transport.websocket import WebSocketServerTransport
+from igni_core.backend.host_backend import ObservedTransport
+from igni_core.protocol import messages as msg
+from igni_core.transport.websocket import WebSocketServerTransport
 
 
 class GuestAgent:

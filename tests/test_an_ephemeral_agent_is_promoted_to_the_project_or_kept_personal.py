@@ -23,12 +23,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ember_code.backend.cmd_agents import AgentsCommand
-from ember_code.backend.panels.agents_panel import AgentsPanelController
-from ember_code.core.agents import AgentPool
-from ember_code.core.agents.schemas import AgentPriority
-from ember_code.core.init.project_initializer import ProjectInitializer
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.backend.cmd_agents import AgentsCommand
+from igni_core.backend.panels.agents_panel import AgentsPanelController
+from igni_core.core.agents import AgentPool
+from igni_core.core.agents.schemas import AgentPriority
+from igni_core.core.init.project_initializer import ProjectInitializer
+from igni_core.core.paths import CONFIG_DIR
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -49,13 +49,13 @@ def repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
-    ProjectInitializer(project_dir=repo, home_ember=tmp_path / "home" / CONFIG_DIR).run()
+    ProjectInitializer(project_dir=repo, home_igni=tmp_path / "home" / CONFIG_DIR).run()
     return repo
 
 
 @pytest.fixture
 def session(repo: Path, settings):
-    with patch("ember_code.core.agents.builder.AgentBuilder.build", return_value=MagicMock()):
+    with patch("igni_core.core.agents.builder.AgentBuilder.build", return_value=MagicMock()):
         pool = AgentPool()
         pool._settings = settings
         pool._base_dir = str(repo)

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ember_code.core.session.identity import SessionIdentity
+from igni_core.core.session.identity import SessionIdentity
 
 
 class _Team:

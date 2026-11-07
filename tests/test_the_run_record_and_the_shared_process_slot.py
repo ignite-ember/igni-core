@@ -29,13 +29,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.backend import run_controller as run_controller_mod
-from ember_code.backend.prompt_builder import PromptBuilder
-from ember_code.backend.push_bridge import PushNotificationBridge
-from ember_code.backend.run_controller import RunController
-from ember_code.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
-from ember_code.core.session.reminders import PendingReminderQueue
-from ember_code.protocol import messages as msg
+from igni_core.backend import run_controller as run_controller_mod
+from igni_core.backend.prompt_builder import PromptBuilder
+from igni_core.backend.push_bridge import PushNotificationBridge
+from igni_core.backend.run_controller import RunController
+from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
+from igni_core.core.session.reminders import PendingReminderQueue
+from igni_core.protocol import messages as msg
 
 # ── Fakes ────────────────────────────────────────────────────────────
 

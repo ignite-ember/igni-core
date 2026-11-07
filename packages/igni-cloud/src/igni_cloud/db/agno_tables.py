@@ -12,8 +12,8 @@ from agno.db.migrations.manager import MigrationManager
 from agno.db.postgres import AsyncPostgresDb
 from agno.exceptions import MigrationRequiredError
 
-from ember_code.core.db.agno_schema import AgnoSchema
-from ember_code.core.db.urls import DatabaseUrl
+from igni_core.core.db.agno_schema import AgnoSchema
+from igni_core.core.db.urls import DatabaseUrl
 
 
 class AgnoTables:
@@ -43,7 +43,7 @@ class AgnoTables:
             # Tables an earlier Agno made are brought to the current schema
             # first: Agno 3 refuses to open one it would have made otherwise
             # (``MigrationRequiredError``), and moved a session's runs into a
-            # table of their own (``ember_code.core.db.agno_schema`` does the
+            # table of their own (``igni_core.core.db.agno_schema`` does the
             # same on the desktop).
             try:
                 await db._create_all_tables()

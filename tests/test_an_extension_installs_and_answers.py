@@ -27,19 +27,19 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.extensions.installer import (
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.extensions.installer import (
     ExtensionInstaller,
     InstallError,
     server_name,
 )
-from ember_code.extensions.origin import ExtensionOrigins
-from ember_code.extensions.registry import (
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.registry import (
     ExtensionRefused,
     ExtensionRegistry,
     ExtensionState,
 )
-from ember_code.extensions.rpc import ExtensionRpc
+from igni_core.extensions.rpc import ExtensionRpc
 
 pytestmark = pytest.mark.asyncio
 

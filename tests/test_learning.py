@@ -2,8 +2,8 @@
 
 from agno.db.in_memory import InMemoryDb
 
-from ember_code.core.config.settings import Settings
-from ember_code.core.learn import LearnBootResult, create_learning_machine
+from igni_core.core.config.settings import Settings
+from igni_core.core.learn import LearnBootResult, create_learning_machine
 
 
 class TestCreateLearningMachine:

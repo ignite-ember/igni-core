@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.config.permission_eval import PermissionDecision, PermissionEvaluator
-from ember_code.core.config.settings import Settings
+from igni_core.core.config.permission_eval import PermissionDecision, PermissionEvaluator
+from igni_core.core.config.settings import Settings
 
 SHELL = "run_shell_command"
 

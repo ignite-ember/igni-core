@@ -31,10 +31,10 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.prompts import load_prompt
-from ember_code.core.prompts.contributions import EditOp, PromptContributions, PromptEdit
-from ember_code.core.session.agent_builder.prompt_builder import PromptBuilder
-from ember_code.extensions.manifest import ExtensionManifest
+from igni_core.core.prompts import load_prompt
+from igni_core.core.prompts.contributions import EditOp, PromptContributions, PromptEdit
+from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
+from igni_core.extensions.manifest import ExtensionManifest
 
 #: Who supplies the project-documents text in these tests. Not a real
 #: extension: igni's prompts name no extension, so neither does this.
@@ -289,7 +289,7 @@ class TestTheFlagIsComputedFromRealConfigFields:
     something else in production."""
 
     def test_both_fields_exist_on_the_learning_schema(self):
-        from ember_code.core.config.schemas.llm_behavior import LearningConfig
+        from igni_core.core.config.schemas.llm_behavior import LearningConfig
 
         assert {"enabled", "user_memory"} <= set(LearningConfig.model_fields)
 
@@ -297,7 +297,7 @@ class TestTheFlagIsComputedFromRealConfigFields:
         """The second half of the conjunction, at its source: with the flag
         off ``to_user_memory_input`` returns ``False`` and the learning store
         contributes no ``update_user_memory``."""
-        from ember_code.core.config.schemas.llm_behavior import LearningConfig
+        from igni_core.core.config.schemas.llm_behavior import LearningConfig
 
         assert LearningConfig(user_memory=False).to_user_memory_input() is False
         assert LearningConfig(user_memory=True).to_user_memory_input() is not False

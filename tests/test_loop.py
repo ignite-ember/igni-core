@@ -23,13 +23,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.backend.server import BackendServer
-from ember_code.core.loop.limits import LOOP_DEFAULT_MAX_ITERATIONS, LOOP_HARD_CAP
-from ember_code.core.loop.models import LoopState
-from ember_code.core.loop.store import LoopProgressStore
-from ember_code.core.session.loop_ops import LoopAdvance, LoopController
-from ember_code.core.tools.loop import LoopTools
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.backend.server import BackendServer
+from igni_core.core.loop.limits import LOOP_DEFAULT_MAX_ITERATIONS, LOOP_HARD_CAP
+from igni_core.core.loop.models import LoopState
+from igni_core.core.loop.store import LoopProgressStore
+from igni_core.core.session.loop_ops import LoopAdvance, LoopController
+from igni_core.core.tools.loop import LoopTools
 
 # ── Helpers ─────────────────────────────────────────────────────────
 

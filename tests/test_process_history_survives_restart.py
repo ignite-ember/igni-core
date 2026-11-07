@@ -20,15 +20,15 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.tools.orphan_rehydrator import (
+from igni_core.core.tools.orphan_rehydrator import (
     HISTORY_RETENTION_SECONDS,
     OrphanRehydrator,
 )
-from ember_code.core.tools.process_store import (
+from igni_core.core.tools.process_store import (
     BackgroundProcessRow,
     BackgroundProcessStore,
 )
-from ember_code.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 DEAD_PID = 0x7FFFFFFE
 
@@ -75,7 +75,7 @@ async def test_history_survives_a_restart(store, tmp_path):
 
 async def test_the_watcher_would_list_it_as_stopped(store):
     """Surviving is not enough; it has to reach the panel's list."""
-    from ember_code.backend.server_processes import ProcessesController
+    from igni_core.backend.server_processes import ProcessesController
 
     await store.upsert(
         BackgroundProcessRow(pid=DEAD_PID, cmd="make lint", pgid=None, started_at=100)

@@ -13,11 +13,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ember_code.backend.__main__ import _build_rpc_table
-from ember_code.backend.server import BackendServer
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.skills.parser import SkillDefinition
-from ember_code.protocol.rpc import RpcMethod
+from igni_core.backend.__main__ import _build_rpc_table
+from igni_core.backend.server import BackendServer
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.skills.parser import SkillDefinition
+from igni_core.protocol.rpc import RpcMethod
 
 
 def _write(p: Path, text: str) -> None:

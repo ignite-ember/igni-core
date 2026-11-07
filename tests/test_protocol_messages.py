@@ -8,9 +8,9 @@ from unittest.mock import MagicMock
 import pytest
 from agno.run.agent import RunContentEvent, RunStartedEvent
 
-from ember_code.protocol import messages as msg
-from ember_code.protocol.registry import MessageRegistry
-from ember_code.protocol.serializer import serialize_event
+from igni_core.protocol import messages as msg
+from igni_core.protocol.registry import MessageRegistry
+from igni_core.protocol.serializer import serialize_event
 
 
 class TestAllMessageTypes:

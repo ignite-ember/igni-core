@@ -17,12 +17,12 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from ember_code.core.hooks.loader import HookLoader
-from ember_code.core.hooks.registry import HookRegistry
-from ember_code.core.hooks.schemas import HookDefinition
-from ember_code.core.mcp.config import MCPConfigLoader, MCPServerConfig
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.plugins.loader import PluginLoader
+from igni_core.core.hooks.loader import HookLoader
+from igni_core.core.hooks.registry import HookRegistry
+from igni_core.core.hooks.schemas import HookDefinition
+from igni_core.core.mcp.config import MCPConfigLoader, MCPServerConfig
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.plugins.loader import PluginLoader
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -311,9 +311,9 @@ def test_apply_to_agents_namespaces_loaded_agents(tmp_path: Path) -> None:
     """Symmetric to ``test_apply_to_skills_namespaces_loaded_skills``
     but for agents. A plugin named ``foo`` whose ``agents/demo.md``
     carries ``name: demo`` lands in the AgentPool as ``foo:demo``."""
-    from ember_code.core.config.settings import Settings
-    from ember_code.core.plugins.loader import PluginLoader
-    from ember_code.core.pool import AgentPool
+    from igni_core.core.config.settings import Settings
+    from igni_core.core.plugins.loader import PluginLoader
+    from igni_core.core.pool import AgentPool
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     plugin_dir = user_ember / "foo"
@@ -345,9 +345,9 @@ def test_apply_to_agents_honors_disabled(tmp_path: Path) -> None:
     """Symmetric to the skills-disabled test: a disabled plugin's
     agents never make it into the AgentPool, but the plugin itself
     is still discoverable for the panel."""
-    from ember_code.core.config.settings import Settings
-    from ember_code.core.plugins.loader import PluginLoader
-    from ember_code.core.pool import AgentPool
+    from igni_core.core.config.settings import Settings
+    from igni_core.core.plugins.loader import PluginLoader
+    from igni_core.core.pool import AgentPool
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     for plugin_name in ("off", "on"):
@@ -379,7 +379,7 @@ def test_load_custom_tools_namespaces_plugin_toolkits(tmp_path: Path) -> None:
     """End-to-end: a plugin's ``tools/<file>.py`` becomes a toolkit named
     ``custom_<plugin>_<file>``. The prefix prevents collisions with
     same-named user files in ``~/.igni/tools/``."""
-    from ember_code.core.tools.custom_loader import load_custom_tools
+    from igni_core.core.tools.custom_loader import load_custom_tools
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     _write_plugin_with_tools(user_ember, "mp", "demo")

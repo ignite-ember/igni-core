@@ -41,9 +41,9 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 from sqlalchemy import Connection, text
 
-from ember_code.core.db.urls import DatabaseUrl
 from igni_cloud.db.rls import AGNO_SCHEMA, ProducerRoles, RowLevelSecurity
 from igni_cloud.producer import ProducerIncarnation
+from igni_core.core.db.urls import DatabaseUrl
 
 
 class AdminCannotSeeRows(PermissionError):

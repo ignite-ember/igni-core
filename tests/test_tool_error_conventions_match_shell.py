@@ -26,8 +26,8 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.tools import process_supervisor, shell
-from ember_code.protocol.tool_error_conventions import ToolResultErrorDetector
+from igni_core.core.tools import process_supervisor, shell
+from igni_core.protocol.tool_error_conventions import ToolResultErrorDetector
 
 
 @pytest.fixture

@@ -18,11 +18,11 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ember_code.backend.server import BackendServer
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.plugins.loader import PluginLoader
-from ember_code.core.plugins.state import PluginsState, load_state, save_state
-from ember_code.core.session.core import PluginReloadCounts
+from igni_core.backend.server import BackendServer
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.plugins.loader import PluginLoader
+from igni_core.core.plugins.state import PluginsState, load_state, save_state
+from igni_core.core.session.core import PluginReloadCounts
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -190,7 +190,7 @@ def test_set_plugin_enabled_round_trip(tmp_path: Path) -> None:
 
 def test_install_plugin_url_delegates_to_installer(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         manifest = MagicMock()
@@ -220,14 +220,14 @@ def test_install_plugin_marketplace_ref(tmp_path: Path) -> None:
     """Marketplace ref → resolve → install. The resolver's
     ``ResolvedSource.ref`` (sha if present, else ref, else
     catalog branch) flows into the install call."""
-    from ember_code.core.plugins.marketplaces import ResolvedSource
+    from igni_core.core.plugins.marketplaces import ResolvedSource
 
     backend = _make_backend(tmp_path)
     fake_entry = MagicMock()
     fake_entry.branch = "release"
     with (
-        patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls,
-        patch("ember_code.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
+        patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls,
+        patch("igni_core.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
     ):
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
@@ -254,14 +254,14 @@ def test_install_plugin_marketplace_ref(tmp_path: Path) -> None:
 
 
 def test_install_plugin_explicit_ref_wins_over_catalog_branch(tmp_path: Path) -> None:
-    from ember_code.core.plugins.marketplaces import ResolvedSource
+    from igni_core.core.plugins.marketplaces import ResolvedSource
 
     backend = _make_backend(tmp_path)
     fake_entry = MagicMock()
     fake_entry.branch = "default"
     with (
-        patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls,
-        patch("ember_code.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
+        patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls,
+        patch("igni_core.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
     ):
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
@@ -293,8 +293,8 @@ def test_install_plugin_unresolved_marketplace_ref(tmp_path: Path) -> None:
     """Unresolved ref → ``Info`` with a list hint, no installer call."""
     backend = _make_backend(tmp_path)
     with (
-        patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls,
-        patch("ember_code.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
+        patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls,
+        patch("igni_core.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
     ):
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
@@ -306,7 +306,7 @@ def test_install_plugin_unresolved_marketplace_ref(tmp_path: Path) -> None:
 
 def test_install_plugin_no_git(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = False
         result = backend.install_plugin("https://x.git")
@@ -315,10 +315,10 @@ def test_install_plugin_no_git(tmp_path: Path) -> None:
 
 
 def test_install_plugin_surfaces_git_error(tmp_path: Path) -> None:
-    from ember_code.core.plugins.git import GitError
+    from igni_core.core.plugins.git import GitError
 
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.install.side_effect = GitError("clone failed")
@@ -328,10 +328,10 @@ def test_install_plugin_surfaces_git_error(tmp_path: Path) -> None:
 
 
 def test_install_plugin_surfaces_plugin_error(tmp_path: Path) -> None:
-    from ember_code.core.plugins.installer import PluginError
+    from igni_core.core.plugins.installer import PluginError
 
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.install.side_effect = PluginError("already installed")
@@ -344,7 +344,7 @@ def test_install_plugin_surfaces_plugin_error(tmp_path: Path) -> None:
 
 def test_update_plugin_delegates(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.update.return_value = "a" * 40
@@ -355,7 +355,7 @@ def test_update_plugin_delegates(tmp_path: Path) -> None:
 
 def test_update_plugin_with_ref(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.update.return_value = "b" * 40
@@ -365,7 +365,7 @@ def test_update_plugin_with_ref(tmp_path: Path) -> None:
 
 def test_remove_plugin_delegates(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         result = backend.remove_plugin("foo")
     installer.remove.assert_called_once_with("foo")
@@ -376,10 +376,10 @@ def test_remove_plugin_delegates(tmp_path: Path) -> None:
 
 
 def test_remove_plugin_surfaces_error(tmp_path: Path) -> None:
-    from ember_code.core.plugins.installer import PluginError
+    from igni_core.core.plugins.installer import PluginError
 
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.remove.side_effect = PluginError("not installed")
         result = backend.remove_plugin("ghost")
@@ -424,7 +424,7 @@ def test_get_marketplaces_shape(tmp_path: Path) -> None:
     p1.resolved_source.return_value = resolved
     e.cached.plugins = [p1]
     fake_registry.marketplaces = [e]
-    with patch("ember_code.core.plugins.marketplaces.load_registry") as mock_load:
+    with patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load:
         mock_load.return_value = fake_registry
         out = backend.get_marketplaces()
     assert len(out) == 1
@@ -446,7 +446,7 @@ def test_add_marketplace_delegates(tmp_path: Path) -> None:
     fake_entry.name = "m1"
     fake_entry.cached = MagicMock()
     fake_entry.cached.plugins = [MagicMock(), MagicMock()]
-    with patch("ember_code.core.plugins.marketplaces.add_marketplace") as mock_add:
+    with patch("igni_core.core.plugins.marketplaces.add_marketplace") as mock_add:
         mock_add.return_value = fake_entry
         result = backend.add_marketplace("https://m.git")
     args, kwargs = mock_add.call_args
@@ -456,10 +456,10 @@ def test_add_marketplace_delegates(tmp_path: Path) -> None:
 
 
 def test_add_marketplace_surfaces_git_error(tmp_path: Path) -> None:
-    from ember_code.core.plugins.git import GitError
+    from igni_core.core.plugins.git import GitError
 
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.marketplaces.add_marketplace") as mock_add:
+    with patch("igni_core.core.plugins.marketplaces.add_marketplace") as mock_add:
         mock_add.side_effect = GitError("auth required")
         result = backend.add_marketplace("https://m.git")
     assert "git error" in result.text.lower()
@@ -467,7 +467,7 @@ def test_add_marketplace_surfaces_git_error(tmp_path: Path) -> None:
 
 def test_remove_marketplace_delegates(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.marketplaces.remove_marketplace") as mock_remove:
+    with patch("igni_core.core.plugins.marketplaces.remove_marketplace") as mock_remove:
         mock_remove.return_value = True
         result = backend.remove_marketplace("m1")
     assert "m1" in result.text
@@ -475,7 +475,7 @@ def test_remove_marketplace_delegates(tmp_path: Path) -> None:
 
 def test_remove_marketplace_unknown(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.marketplaces.remove_marketplace") as mock_remove:
+    with patch("igni_core.core.plugins.marketplaces.remove_marketplace") as mock_remove:
         mock_remove.return_value = False
         result = backend.remove_marketplace("ghost")
     assert "ghost" in result.text
@@ -488,7 +488,7 @@ def test_refresh_marketplaces_named(tmp_path: Path) -> None:
     fake_entry.name = "m1"
     fake_entry.cached = MagicMock()
     fake_entry.cached.plugins = [MagicMock(), MagicMock(), MagicMock()]
-    with patch("ember_code.core.plugins.marketplaces.refresh_marketplace") as mock_refresh:
+    with patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh:
         mock_refresh.return_value = fake_entry
         result = backend.refresh_marketplaces("m1")
     assert "m1" in result.text
@@ -497,7 +497,7 @@ def test_refresh_marketplaces_named(tmp_path: Path) -> None:
 
 def test_refresh_marketplaces_named_unknown(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("ember_code.core.plugins.marketplaces.refresh_marketplace") as mock_refresh:
+    with patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh:
         mock_refresh.return_value = None
         result = backend.refresh_marketplaces("ghost")
     assert "ghost" in result.text
@@ -521,8 +521,8 @@ def test_refresh_marketplaces_all_aggregates_errors(tmp_path: Path) -> None:
         raise RuntimeError("boom")
 
     with (
-        patch("ember_code.core.plugins.marketplaces.load_registry") as mock_load,
-        patch("ember_code.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
+        patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load,
+        patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
     ):
         mock_load.return_value = fake_registry
         mock_refresh.side_effect = _refresh_side_effect
@@ -536,7 +536,7 @@ def test_refresh_marketplaces_all_empty_registry(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
     fake_registry = MagicMock()
     fake_registry.marketplaces = []
-    with patch("ember_code.core.plugins.marketplaces.load_registry") as mock_load:
+    with patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load:
         mock_load.return_value = fake_registry
         result = backend.refresh_marketplaces(None)
     assert "no marketplaces" in result.text.lower()

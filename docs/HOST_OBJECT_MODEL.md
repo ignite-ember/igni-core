@@ -42,7 +42,7 @@ of them, by the same path the view uses. igni's own UI is then just the
 first client of the model.
 
 **The window's model.** Every window has one, kept by the host
-(`ember_code.extensions.host.windows`). Its fields are what the window
+(`igni_core.extensions.host.windows`). Its fields are what the window
 shows:
 
 | Field | Member | Lasts |
@@ -140,7 +140,7 @@ window, another extension, or this one.
   the model's — fails the build, so the model cannot fall behind the
   app.
 - **One schema, two SDKs.** The model is described once —
-  `ember_code.extensions.host.definition`, version **1.11.0** — and
+  `igni_core.extensions.host.definition`, version **1.11.0** — and
   versioned under the compatibility floor (EXTENSIBILITY §8): a new
   member is a minor version, a changed or removed one a major. The Python
   SDK (`igni-extension`, `igni_extension.host_model`) and the TypeScript

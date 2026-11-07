@@ -26,15 +26,15 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.core.prompts.contributions import PromptContributions
-from ember_code.core.prompts.fragments import PromptFragments
-from ember_code.extensions.contributions import ExtensionContributions
-from ember_code.extensions.installer import ExtensionInstaller
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.origin import ExtensionOrigins
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.prompts.contributions import PromptContributions
+from igni_core.core.prompts.fragments import PromptFragments
+from igni_core.extensions.contributions import ExtensionContributions
+from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
 from tests.siblings import IGNI_SDK, needs_sdk
 
 pytestmark = [needs_sdk, pytest.mark.asyncio]

@@ -33,10 +33,10 @@ from pathlib import Path
 
 import pytest
 
-import ember_code
-from ember_code.core.prompts import load_prompt
-from ember_code.core.prompts.contributions import EditOp, PromptContributions, PromptEdit
-from ember_code.core.session.agent_builder.prompt_builder import PromptBuilder
+import igni_core
+from igni_core.core.prompts import load_prompt
+from igni_core.core.prompts.contributions import EditOp, PromptContributions, PromptEdit
+from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
 
 #: A stand-in for the extension that keeps the documents. igni's prompts
 #: name none, so neither does this.
@@ -200,7 +200,7 @@ class TestTheSwitchIsTheOneTheExtensionDeclares:
         from pathlib import Path as _Path
 
         source = (
-            _Path(ember_code.__file__).parent
+            _Path(igni_core.__file__).parent
             / "core"
             / "session"
             / "agent_builder"

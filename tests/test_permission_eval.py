@@ -8,7 +8,7 @@ auto-approving edit tools, ``dontAsk`` denying unmatched.
 
 from __future__ import annotations
 
-from ember_code.core.config.permission_eval import (
+from igni_core.core.config.permission_eval import (
     FILE_EDIT_TOOLS,
     PermissionDecision,
     PermissionEvaluator,
@@ -269,7 +269,7 @@ def test_explain_deny_plan_mode_edit() -> None:
     # point at exit_plan_mode — without this hint the model treats
     # the block as a hostile environment and asks the user to run
     # the command manually.
-    from ember_code.core.config.permission_eval import explain_deny
+    from igni_core.core.config.permission_eval import explain_deny
 
     ev = PermissionEvaluator.from_strings(mode="plan")
     reason = explain_deny(ev, "edit_file", {"file_path": "x.py"})
@@ -278,7 +278,7 @@ def test_explain_deny_plan_mode_edit() -> None:
 
 
 def test_explain_deny_plan_mode_mutating_shell() -> None:
-    from ember_code.core.config.permission_eval import explain_deny
+    from igni_core.core.config.permission_eval import explain_deny
 
     ev = PermissionEvaluator.from_strings(mode="plan")
     reason = explain_deny(ev, "run_shell_command", {"command": "sed -i '' '1s/^/x\\n/' f.py"})
@@ -288,7 +288,7 @@ def test_explain_deny_plan_mode_mutating_shell() -> None:
 
 
 def test_explain_deny_scoped_deny_rule() -> None:
-    from ember_code.core.config.permission_eval import explain_deny
+    from igni_core.core.config.permission_eval import explain_deny
 
     ev = PermissionEvaluator.from_strings(mode="bypassPermissions", deny=["Bash(rm *)"])
     reason = explain_deny(ev, "Bash", {"command": "rm -rf /tmp/x"})

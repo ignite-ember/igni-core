@@ -9,8 +9,8 @@ package shape (or the `Settings` sub-model layout) can't
 silently regress the "None means feature disabled" contract.
 """
 
-from ember_code.core.config.settings import GuardrailsConfig, ReasoningConfig, Settings
-from ember_code.core.session.agent_factory import create_guardrails, create_reasoning_tools
+from igni_core.core.config.settings import GuardrailsConfig, ReasoningConfig, Settings
+from igni_core.core.session.agent_factory import create_guardrails, create_reasoning_tools
 
 
 class TestCreateReasoningTools:

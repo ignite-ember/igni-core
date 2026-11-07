@@ -2,7 +2,7 @@
 
 An extension's process runs in an OS sandbox that cannot launch an
 application (no ``open``, no ``xdg-open``), so it asks igni, which opens
-the file with the backend's :class:`~ember_code.backend.file_opener.FileOpener`.
+the file with the backend's :class:`~igni_core.backend.file_opener.FileOpener`.
 Whatever opens it runs outside the sandbox, so the host opens only a
 document the workspace grant reaches, and only with ``files.open``.
 """
@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from ember_code.extensions.host import members
+from igni_core.extensions.host import members
 from tests.host_model_helpers import HostRig
 
 

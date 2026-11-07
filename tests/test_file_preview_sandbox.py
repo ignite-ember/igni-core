@@ -31,7 +31,7 @@ from unittest.mock import patch
 
 import pytest
 
-import ember_code.backend.server_files as server_files
+import igni_core.backend.server_files as server_files
 
 FilesController = next(
     value

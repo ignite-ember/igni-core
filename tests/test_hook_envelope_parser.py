@@ -19,8 +19,8 @@ each one.
 
 from __future__ import annotations
 
-from ember_code.core.hooks.executor import _hook_result_from_envelope
-from ember_code.core.hooks.schemas import HookResult
+from igni_core.core.hooks.executor import _hook_result_from_envelope
+from igni_core.core.hooks.schemas import HookResult
 
 
 class TestDictWithoutPermission:

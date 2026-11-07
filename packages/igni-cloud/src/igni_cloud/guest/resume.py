@@ -54,9 +54,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
-from ember_code.core.activity import background
 from igni_cloud.guest.timeline import ResumeTimeline
 from igni_cloud.guest.watch import DirectoryWatch, FileWatch
+from igni_core.core.activity import background
 
 logger = logging.getLogger(__name__)
 

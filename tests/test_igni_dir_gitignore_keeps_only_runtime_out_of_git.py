@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.init.gitignore import BLOCK_BEGIN, BLOCK_END, IgniGitignore
-from ember_code.core.init.project_initializer import ProjectInitializer
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.init.gitignore import BLOCK_BEGIN, BLOCK_END, IgniGitignore
+from igni_core.core.init.project_initializer import ProjectInitializer
+from igni_core.core.paths import CONFIG_DIR
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -53,7 +53,7 @@ RUNTIME = [
     "sessions.db",
     "memory.db",
     "state.db",
-    "ember.db-wal",
+    "igni.db-wal",
     "credentials.json",
     "workspace-trust.json",
     "mcp-approved.json",
@@ -82,7 +82,7 @@ def _repo(tmp_path: Path) -> Path:
 
 
 def _init(repo: Path, tmp_path: Path) -> None:
-    ProjectInitializer(project_dir=repo, home_ember=tmp_path / "home" / CONFIG_DIR).run()
+    ProjectInitializer(project_dir=repo, home_igni=tmp_path / "home" / CONFIG_DIR).run()
 
 
 def _untracked(repo: Path) -> set[str]:

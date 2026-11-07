@@ -21,9 +21,9 @@ from typing import Any
 
 import pytest
 
-from ember_code.backend.service_event_delivery import ExtensionEventHandler
-from ember_code.extensions.service_events import EventHandling, ServiceEvent
-from ember_code.protocol import messages as msg
+from igni_core.backend.service_event_delivery import ExtensionEventHandler
+from igni_core.extensions.service_events import EventHandling, ServiceEvent
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import PYTHON, FakeSession, HostRig, extension_process_env
 from tests.siblings import needs_sdk
 

@@ -1,6 +1,6 @@
 """PostgreSQL as a shared database for igni (``igni.storage`` entry point ``postgresql``).
 
-:class:`~ember_code.core.db.providers.SharedStorage` for PostgreSQL:
+:class:`~igni_core.core.db.providers.SharedStorage` for PostgreSQL:
 Agno's storage kept to one scope's rows (:class:`ScopedAsyncPostgresDb`),
 uploads as large objects (:class:`LargeObjectAttachments`), and what an
 admin's ``igni migrate`` prepares besides igni's tables — Agno's tables,
@@ -13,16 +13,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ember_code.core.db.database import Database
-from ember_code.core.db.engine import cache
-from ember_code.core.db.providers import SharedStorage
-from ember_code.core.db.scope import StorageScope
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.memory.manager import StorageManager
 from igni_cloud.db.agno_tables import AgnoTables
 from igni_cloud.db.rls import RowLevelSecurity
 from igni_cloud.storage.attachments import LargeObjectAttachments
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
+from igni_core.core.db.database import Database
+from igni_core.core.db.engine import cache
+from igni_core.core.db.providers import SharedStorage
+from igni_core.core.db.scope import StorageScope
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.memory.manager import StorageManager
 
 
 class PostgresStorage(SharedStorage):

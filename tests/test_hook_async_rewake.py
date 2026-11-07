@@ -16,10 +16,10 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.loader import HookLoader
-from ember_code.core.hooks.schemas import HookDefinition
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.loader import HookLoader
+from igni_core.core.hooks.schemas import HookDefinition
+from igni_core.core.paths import CONFIG_DIR
 
 
 async def _settle_background_tasks() -> None:

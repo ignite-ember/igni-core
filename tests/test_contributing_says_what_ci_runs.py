@@ -30,7 +30,7 @@ def test_security_reports_go_to_security_md_not_issues():
     [
         "ruff check src/ tests/",
         "ruff format --check src/ tests/",
-        "mypy src/ember_code/",
+        "mypy src/igni_core/",
         "pytest tests/",
     ],
 )

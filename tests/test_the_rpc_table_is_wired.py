@@ -40,8 +40,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ember_code.backend.rpc_router import RpcRouter
-from ember_code.protocol.rpc import RpcMethod
+from igni_core.backend.rpc_router import RpcRouter
+from igni_core.protocol.rpc import RpcMethod
 
 
 def _router() -> RpcRouter:
@@ -130,7 +130,7 @@ class TestEveryBindingCanBeCalled:
 
         dispatcher = (
             pathlib.Path(__file__).resolve().parent.parent
-            / "src/ember_code/backend/message_dispatcher.py"
+            / "src/igni_core/backend/message_dispatcher.py"
         ).read_text()
 
         assert (

@@ -1,8 +1,8 @@
 """Tests for the browser-based CLI authentication flow.
 
 Exercises the OOP-first surface in
-:mod:`ember_code.core.auth.portal_client` and
-:mod:`ember_code.core.auth.callback_server`.
+:mod:`igni_core.core.auth.portal_client` and
+:mod:`igni_core.core.auth.callback_server`.
 """
 
 from threading import Thread
@@ -10,10 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.auth.callback_server import CallbackServer
-from ember_code.core.auth.portal_client import PortalClient
-from ember_code.core.auth.schemas import ValidateResult
-from ember_code.core.config.endpoint import ApiUrlNotConfigured
+from igni_core.core.auth.callback_server import CallbackServer
+from igni_core.core.auth.portal_client import PortalClient
+from igni_core.core.auth.schemas import ValidateResult
+from igni_core.core.config.endpoint import ApiUrlNotConfigured
 
 
 class TestPortalClientLoginUrl:

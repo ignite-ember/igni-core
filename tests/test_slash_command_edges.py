@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.backend.command_handler import CommandHandler, CommandResult
-from ember_code.core.session.schemas import PersistResult
+from igni_core.backend.command_handler import CommandHandler, CommandResult
+from igni_core.core.session.schemas import PersistResult
 
 
 def _make_session():
@@ -182,10 +182,10 @@ class TestConfigCommand:
     async def test_config_shows_model(self):
         """'/config' should show current model."""
         session = _make_session()
-        from ember_code.core.auth.schemas import LoadCredentialsResult
+        from igni_core.core.auth.schemas import LoadCredentialsResult
 
         with patch(
-            "ember_code.core.auth.credentials.CredentialsStore.load",
+            "igni_core.core.auth.credentials.CredentialsStore.load",
             return_value=LoadCredentialsResult(ok=False, reason="no_file"),
         ):
             handler = CommandHandler(session)
@@ -206,7 +206,7 @@ class TestModelCommand:
     @pytest.mark.asyncio
     async def test_model_switch_unknown(self):
         """'/model unknown' should show error."""
-        from ember_code.backend.schemas_model import ModelSwitchResult
+        from igni_core.backend.schemas_model import ModelSwitchResult
 
         session = _make_session()
         session.settings.models.registry = {}

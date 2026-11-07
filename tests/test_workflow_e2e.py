@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.workflow_runner import WorkflowRunner
+from igni_core.backend.workflow_runner import WorkflowRunner
 
 pytestmark = pytest.mark.skipif(
     shutil.which("node") is None,

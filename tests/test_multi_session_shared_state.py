@@ -32,10 +32,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from ember_code.core.config.settings import Settings
-from ember_code.core.db.engine_registry import EngineRegistry
-from ember_code.core.session.client_state import ClientStateStore
-from ember_code.core.session.session_directories import SessionDirectoryStore
+from igni_core.core.config.settings import Settings
+from igni_core.core.db.engine_registry import EngineRegistry
+from igni_core.core.session.client_state import ClientStateStore
+from igni_core.core.session.session_directories import SessionDirectoryStore
 
 # ── Settings deep-copy isolation ─────────────────────────────────────
 

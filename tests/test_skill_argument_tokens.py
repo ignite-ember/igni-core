@@ -8,8 +8,8 @@ rewrote the ``$1`` inside ``$10``. Plus the bare ``/`` that used to
 IndexError out of the skill router.
 """
 
-from ember_code.core.skills.loader import SkillPool
-from ember_code.core.skills.parser import SkillDefinition
+from igni_core.core.skills.loader import SkillPool
+from igni_core.core.skills.parser import SkillDefinition
 
 
 class TestIndexedArguments:

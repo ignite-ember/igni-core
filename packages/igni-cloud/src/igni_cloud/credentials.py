@@ -22,8 +22,8 @@ import os
 from pathlib import Path
 from typing import ClassVar, Protocol
 
-from ember_code.core.auth.credentials import Credentials, CredentialSource
-from ember_code.core.auth.schemas import LoadCredentialsResult
+from igni_core.core.auth.credentials import Credentials, CredentialSource
+from igni_core.core.auth.schemas import LoadCredentialsResult
 
 logger = logging.getLogger(__name__)
 

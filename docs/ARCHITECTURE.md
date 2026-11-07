@@ -363,7 +363,7 @@ igni runs as two OS processes connected by a Unix domain socket. This isolates t
 |---|---|---|
 | `BackendServer` | `backend/server.py` | Wraps Session; dispatches FE messages to Session/CommandHandler; streams Agno events back as protocol messages |
 | `BackendClient` | `frontend/tui/backend_client.py` | FE-side proxy with the same public interface as BackendServer; serializes calls to protocol messages over the socket |
-| `BackendProcess` | `frontend/tui/process_manager.py` | Spawns the BE subprocess (`python -m ember_code.backend`), manages its lifecycle, waits for READY, and returns a connected `BackendClient` |
+| `BackendProcess` | `frontend/tui/process_manager.py` | Spawns the BE subprocess (`python -m igni_core.backend`), manages its lifecycle, waits for READY, and returns a connected `BackendClient` |
 | `CommandHandler` | `backend/command_handler.py` | Slash command dispatch (moved from TUI to backend so commands execute with direct Session access) |
 | `UnixSocketClientTransport` / `UnixSocketServerTransport` | `transport/unix_socket.py` | Async Unix socket transport with NDJSON framing (one JSON object per `\n`) |
 
@@ -387,7 +387,7 @@ All messages are Pydantic models defined in `protocol/messages.py` with plain ty
 ### Startup Sequence
 
 1. `EmberApp` creates a `BackendProcess` with project dir and settings
-2. `BackendProcess.start()` spawns `python -m ember_code.backend --socket /tmp/ember-code/<id>.sock`
+2. `BackendProcess.start()` spawns `python -m igni_core.backend --socket /tmp/ember-code/<id>.sock`
 3. The BE process creates `BackendServer`, binds to the socket, sends a `Ready` message
 4. `BackendProcess` connects a `BackendClient` to the socket and returns it
 5. The FE uses `BackendClient` as if it were a local `BackendServer` — all calls are transparent proxies

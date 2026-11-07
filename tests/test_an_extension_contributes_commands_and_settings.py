@@ -21,20 +21,20 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.backend.panels.slash_commands_catalog import SlashCommandsCatalog
-from ember_code.core.contributed_commands import ContributedCommands
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.extensions.contributions import ExtensionContributions
-from ember_code.extensions.installer import ExtensionInstaller
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.origin import ExtensionOrigins
-from ember_code.extensions.registry import (
+from igni_core.backend.panels.slash_commands_catalog import SlashCommandsCatalog
+from igni_core.core.contributed_commands import ContributedCommands
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.extensions.contributions import ExtensionContributions
+from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.registry import (
     ExtensionRefused,
     ExtensionRegistry,
     ExtensionState,
 )
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.extensions.store import ExtensionStore, StoreError
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.store import ExtensionStore, StoreError
 
 # No module-level ``asyncio`` mark: this file mixes async and sync
 # tests, and the mark would be applied to the sync ones too — which

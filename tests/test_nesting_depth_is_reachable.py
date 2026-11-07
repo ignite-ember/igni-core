@@ -30,12 +30,12 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
-import ember_code
-from ember_code.core.tools.orchestrate_budget import SpawnBudget
-from ember_code.core.tools.orchestrate_events import SpawnDeps, SubAgentRegistry
-from ember_code.core.tools.orchestrate_spawn import AgentSpawn
+import igni_core
+from igni_core.core.tools.orchestrate_budget import SpawnBudget
+from igni_core.core.tools.orchestrate_events import SpawnDeps, SubAgentRegistry
+from igni_core.core.tools.orchestrate_spawn import AgentSpawn
 
-_BUNDLED = Path(ember_code.__file__).parent / "bundled_agents"
+_BUNDLED = Path(igni_core.__file__).parent / "bundled_agents"
 
 #: The archivist is the Artifacts extension's: it ships in that
 #: extension's plugin, and is held to igni's agent contract here, against
@@ -60,7 +60,7 @@ def _settings(max_depth: int = 5, max_agents: int = 20):
     built from the fields this file cares about fails on a field it
     does not, for reasons that have nothing to do with nesting.
     """
-    from ember_code.core.config.schemas.orchestration import OrchestrationConfig
+    from igni_core.core.config.schemas.orchestration import OrchestrationConfig
 
     return SimpleNamespace(
         orchestration=OrchestrationConfig(
@@ -112,7 +112,7 @@ def _spawn(*, depth: int, can_orchestrate: bool, max_depth: int = 5, agent=None)
 
 def _nested(agent):
     """The orchestration toolkit granted to ``agent``, if any."""
-    from ember_code.core.tools.orchestrate import OrchestrateTools
+    from igni_core.core.tools.orchestrate import OrchestrateTools
 
     return [t for t in (agent.tools or []) if isinstance(t, OrchestrateTools)]
 

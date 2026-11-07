@@ -8,8 +8,8 @@ appended to every assistant turn's instructions.
 
 import pytest
 
-from ember_code.core.output_styles.loader import discover_output_styles
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.output_styles.loader import discover_output_styles
+from igni_core.core.paths import CONFIG_DIR
 
 
 def _write(path, text):

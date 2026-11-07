@@ -28,21 +28,21 @@ from sqlalchemy import BigInteger, Boolean, DateTime, Integer, create_engine, te
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DBAPIError
 
-from ember_code.cli.migrate import SchemaMigration
-from ember_code.core.approvals import journal as _journal  # noqa: F401 — its tables
-from ember_code.core.db.base import Base
-from ember_code.core.db.database import Database
-from ember_code.core.db.engine import cache
-from ember_code.core.db.locator import StorageLocator
-from ember_code.core.db.scope import StorageScope, Tenant
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.memory.manager import StorageManager
-from ember_code.core.scheduler.models import ScheduledTask
-from ember_code.core.scheduler.store import TaskStore
-from ember_code.core.session import queued_messages as _queued  # noqa: F401 — its table
-from ember_code.core.session.client_state import ClientStateStore
-from ember_code.core.session.pending_messages import PendingMessageStore
-from ember_code.extensions import settings_values as _settings  # noqa: F401 — its table
+from igni_core.cli.migrate import SchemaMigration
+from igni_core.core.approvals import journal as _journal  # noqa: F401 — its tables
+from igni_core.core.db.base import Base
+from igni_core.core.db.database import Database
+from igni_core.core.db.engine import cache
+from igni_core.core.db.locator import StorageLocator
+from igni_core.core.db.scope import StorageScope, Tenant
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.memory.manager import StorageManager
+from igni_core.core.scheduler.models import ScheduledTask
+from igni_core.core.scheduler.store import TaskStore
+from igni_core.core.session import queued_messages as _queued  # noqa: F401 — its table
+from igni_core.core.session.client_state import ClientStateStore
+from igni_core.core.session.pending_messages import PendingMessageStore
+from igni_core.extensions import settings_values as _settings  # noqa: F401 — its table
 from tests.storage_backends import ThrowawayPostgres
 
 

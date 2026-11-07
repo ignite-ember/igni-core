@@ -5,7 +5,7 @@ the agent does with your machine. An inventory of the toolkits found
 sixty-six statically-named functions, and thirteen of the ones igni
 itself implements had no direct test at all:
 
-* ``EmberShellTools`` — ``watch_process``, ``stop_process``,
+* ``IgniShellTools`` — ``watch_process``, ``stop_process``,
   ``list_processes``. Three of the five process-control functions.
   ``stop_process`` kills a process; nothing had ever called it.
 * ``LoopProgressTool`` — all five. The toolkit was not imported by a
@@ -36,18 +36,18 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.tools.loop_progress import LoopProgressTool
-from ember_code.core.tools.process_supervisor import ProcessSupervisor
-from ember_code.core.tools.shell import EmberShellTools
+from igni_core.core.tools.loop_progress import LoopProgressTool
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.shell import IgniShellTools
 
-# ── EmberShellTools: the three process-control functions ────────────
+# ── IgniShellTools: the three process-control functions ────────────
 
 
 @pytest.fixture
 def shell(tmp_path):
     """A toolkit on its own supervisor, so nothing leaks between tests."""
     supervisor = ProcessSupervisor()
-    tools = EmberShellTools(base_dir=tmp_path, supervisor=supervisor)
+    tools = IgniShellTools(base_dir=tmp_path, supervisor=supervisor)
     try:
         yield tools
     finally:

@@ -11,14 +11,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.backend.hitl_tracer import HITLTracer
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-from ember_code.backend.schemas_pause import PendingRequirement
-from ember_code.backend.server import BackendServer
-from ember_code.core.config.settings import Settings
-from ember_code.core.config.tool_permissions import ToolPermissions
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.protocol.messages import Error
+from igni_core.backend.hitl_tracer import HITLTracer
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.backend.schemas_pause import PendingRequirement
+from igni_core.backend.server import BackendServer
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.protocol.messages import Error
 
 # ── Permission check levels ──────────────────────────────────────
 
@@ -186,7 +186,7 @@ class TestBackendHITLResolution:
     @pytest.mark.asyncio
     async def test_resolve_confirm_calls_requirement(self):
         """Backend resolves a confirmed HITL requirement."""
-        with patch("ember_code.backend.server.BackendServer.__init__", return_value=None):
+        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
             server = BackendServer.__new__(BackendServer)
             server._session = MagicMock()
             server._session.main_team = MagicMock()
@@ -216,7 +216,7 @@ class TestBackendHITLResolution:
     @pytest.mark.asyncio
     async def test_resolve_reject_calls_requirement(self):
         """Backend resolves a rejected HITL requirement."""
-        with patch("ember_code.backend.server.BackendServer.__init__", return_value=None):
+        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
             server = BackendServer.__new__(BackendServer)
             server._session = MagicMock()
             server._session.main_team = MagicMock()
@@ -247,7 +247,7 @@ class TestBackendHITLResolution:
     @pytest.mark.asyncio
     async def test_resolve_unknown_requirement_returns_error(self):
         """Backend returns error for unknown requirement ID."""
-        with patch("ember_code.backend.server.BackendServer.__init__", return_value=None):
+        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
             server = BackendServer.__new__(BackendServer)
             server._session = MagicMock()
             server._session.sub_agent_hitl.resolve = MagicMock(return_value=False)

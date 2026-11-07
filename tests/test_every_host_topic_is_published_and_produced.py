@@ -30,12 +30,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ember_code.extensions.events import HostTopic
+from igni_core.extensions.events import HostTopic
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DOC = _ROOT / "docs/EXTENSIBILITY.md"
-_PRODUCERS = _ROOT / "src/ember_code/extensions/host/model.py"
-_SRC = _ROOT / "src/ember_code"
+_PRODUCERS = _ROOT / "src/igni_core/extensions/host/model.py"
+_SRC = _ROOT / "src/igni_core"
 _VOCABULARY = _SRC / "extensions/events.py"
 
 

@@ -15,8 +15,8 @@ from typing import Any
 
 from sqlalchemy import event
 
-from ember_code.core.db.engine_registry import EngineRegistry
-from ember_code.core.db.urls import DatabaseUrl
+from igni_core.core.db.engine_registry import EngineRegistry
+from igni_core.core.db.urls import DatabaseUrl
 
 
 class Seen:

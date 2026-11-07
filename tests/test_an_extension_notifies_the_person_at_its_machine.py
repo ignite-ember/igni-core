@@ -26,20 +26,20 @@ import pytest
 from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCNotification
 
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.core.mcp.notification_tap import McpNotificationRouter
-from ember_code.extensions.installer import ExtensionInstaller, server_name
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.origin import ExtensionOrigins
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.notifications.center import NotificationCenter
-from ember_code.notifications.extension_notices import (
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.mcp.notification_tap import McpNotificationRouter
+from igni_core.extensions.installer import ExtensionInstaller, server_name
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.notifications.center import NotificationCenter
+from igni_core.notifications.extension_notices import (
     ExtensionNoticeReceiver,
     NoticeVerdict,
 )
-from ember_code.notifications.local_store import LocalNotificationStore
-from ember_code.notifications.schemas import MarkReadRequest, NotificationCounts
+from igni_core.notifications.local_store import LocalNotificationStore
+from igni_core.notifications.schemas import MarkReadRequest, NotificationCounts
 from tests.notification_helpers import FakeNotificationServer, settle, signed_in
 
 FIXTURE = Path(__file__).parent / "fixtures" / "dev_extension"

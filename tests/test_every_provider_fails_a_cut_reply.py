@@ -30,11 +30,11 @@ from anthropic.types import (
 from anthropic.types.raw_message_delta_event import Delta
 from google.genai import types as genai
 
-from ember_code.core.config.checked_gemini import CheckedGemini
-from ember_code.core.config.logging_claude import LoggingClaude
-from ember_code.core.config.model_entry import ModelRegistryEntry
-from ember_code.core.config.provider_builders import GeminiBuilder
-from ember_code.core.config.reply_ending import ModelReplyCut
+from igni_core.core.config.checked_gemini import CheckedGemini
+from igni_core.core.config.logging_claude import LoggingClaude
+from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.provider_builders import GeminiBuilder
+from igni_core.core.config.reply_ending import ModelReplyCut
 
 
 def claude() -> LoggingClaude:

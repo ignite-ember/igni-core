@@ -23,8 +23,8 @@ import re
 
 import pytest
 
-from ember_code.core.tools.process_supervisor_locator import supervisors
-from ember_code.core.tools.shell import EmberShellTools
+from igni_core.core.tools.process_supervisor_locator import supervisors
+from igni_core.core.tools.shell import IgniShellTools
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ async def _wait_for_finish(pid: int, timeout: float = 8.0) -> None:
 async def test_background_process_emits_completion(tmp_path, collected_completions):
     """A backgrounded ``echo`` should fire the subscriber once it exits."""
     seen, seen_event = collected_completions
-    tools = EmberShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path))
 
     out = await tools.run_shell_command(command="echo done", background=True)
     # Either landed as "exited immediately" (which still counts —
@@ -92,7 +92,7 @@ async def test_foreground_process_does_not_emit(tmp_path, collected_completions)
     must NOT fire the completion subscriber. The agent already saw
     the result inline; a queue notification would be redundant noise."""
     seen, seen_event = collected_completions
-    tools = EmberShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path))
 
     await tools.run_shell_command(command="echo hi", timeout=5)
     # Give the loop a tick in case the reader task is still wrapping up.
@@ -111,7 +111,7 @@ async def test_read_process_output_is_idempotent_after_finish(tmp_path):
     which means the run reports a PID rather than "exited
     immediately" (which evicts the entry from the registry).
     """
-    tools = EmberShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path))
     out = await tools.run_shell_command(
         command="echo first_read_works; sleep 4",
         background=True,
@@ -152,7 +152,7 @@ async def test_finished_process_evicted_after_ttl(tmp_path, monkeypatch):
     registry = supervisor.registry
     monkeypatch.setattr(registry, "_ttl_seconds", 0.3, raising=True)
 
-    tools = EmberShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path))
     out = await tools.run_shell_command(
         command="echo hi; sleep 4",
         background=True,
@@ -182,7 +182,7 @@ async def test_ttl_resets_on_subsequent_read(tmp_path, monkeypatch):
     registry = supervisor.registry
     monkeypatch.setattr(registry, "_ttl_seconds", 0.4, raising=True)
 
-    tools = EmberShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path))
     out = await tools.run_shell_command(
         command="echo hi; sleep 4",
         background=True,
@@ -218,7 +218,7 @@ async def test_unsubscribe_stops_emissions(tmp_path):
     bus.on("exit", _cb)
     bus.off("exit", _cb)
 
-    tools = EmberShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path))
     await tools.run_shell_command(command="echo after_unsub", background=True)
 
     # Wait long enough for the reader task to finish.
@@ -234,7 +234,7 @@ async def test_run_shell_command_does_not_block_loop(tmp_path):
     the ticker should advance during the shell wait. With the
     earlier sync impl, the ticker would freeze for the duration of
     the shell timeout."""
-    tools = EmberShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path))
 
     ticks = 0
 

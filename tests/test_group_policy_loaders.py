@@ -22,15 +22,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ember_code.core.agents.loader import AgentDefinitionLoader
-from ember_code.core.agents.schemas import AgentPriority
-from ember_code.core.config.group_policy import (
+from igni_core.core.agents.loader import AgentDefinitionLoader
+from igni_core.core.agents.schemas import AgentPriority
+from igni_core.core.config.group_policy import (
     GroupPolicyCache,
     GroupPolicyEntry,
     GroupPolicyPack,
 )
-from ember_code.core.mcp.config import MCPConfigLoader
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.mcp.config import MCPConfigLoader
+from igni_core.core.paths import CONFIG_DIR
 
 # ---------------------------------------------------------------------------
 # Cache → MCP file format

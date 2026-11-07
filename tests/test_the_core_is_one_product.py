@@ -13,11 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.db.providers import SharedStorages, SqliteStorage, StorageUnavailable
-from ember_code.core.db.urls import Dialect
-from ember_code.core.layer import BackendHooks, Layer, Layers, UnknownLayer
+from igni_core.core.db.providers import SharedStorages, SqliteStorage, StorageUnavailable
+from igni_core.core.db.urls import Dialect
+from igni_core.core.layer import BackendHooks, Layer, Layers, UnknownLayer
 
-SRC = Path(__file__).resolve().parents[1] / "src" / "ember_code"
+SRC = Path(__file__).resolve().parents[1] / "src" / "igni_core"
 
 
 def _modules() -> list[tuple[str, ast.Module, str]]:
@@ -76,7 +76,7 @@ def test_a_layer_no_package_declares_is_refused_not_ignored(monkeypatch):
 
 
 def test_postgresql_without_its_package_says_what_to_install(monkeypatch):
-    monkeypatch.setattr("ember_code.core.db.providers.entry_points", lambda group: [])
+    monkeypatch.setattr("igni_core.core.db.providers.entry_points", lambda group: [])
     monkeypatch.setattr(SharedStorages, "_found", {})
     with pytest.raises(StorageUnavailable, match="igni-cloud"):
         SharedStorages.for_dialect(Dialect.POSTGRESQL)

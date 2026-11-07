@@ -11,8 +11,8 @@ contract between two files that had no idea they shared one.
 
 from __future__ import annotations
 
-from ember_code.core.config.models import ModelRegistry
-from ember_code.core.config.settings import Settings
+from igni_core.core.config.models import ModelRegistry
+from igni_core.core.config.settings import Settings
 
 
 def _settings(**models) -> Settings:
@@ -48,7 +48,7 @@ def test_a_discovered_model_counts_even_without_a_default():
 def test_the_answer_matches_what_get_model_would_do():
     """The point of the method: it predicts the fallthrough rather than
     reimplementing a rule that could drift from it."""
-    from ember_code.core.config.null_model import NoModelConfigured
+    from igni_core.core.config.null_model import NoModelConfigured
 
     empty = ModelRegistry(_settings(default="", registry={}))
     assert empty.has_usable_model() is False

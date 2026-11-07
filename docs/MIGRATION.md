@@ -20,9 +20,9 @@ Cross-tool support is **enabled by default** — igni reads `CLAUDE.md` files, `
 
 ```bash
 brew install ignite-ember
-# or: pip install ignite-ember
+# or: pip install igni-core
 igni                                  # then type /login at the prompt
-ignite-ember                         # start — picks up existing agents, skills, CLAUDE.md automatically
+igni                         # start — picks up existing agents, skills, CLAUDE.md automatically
 ```
 
 Your existing Claude Code agents, skills, and `CLAUDE.md` files are picked up automatically — cross-tool support is enabled by default.

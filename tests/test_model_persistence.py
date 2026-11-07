@@ -18,12 +18,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from ember_code.backend.server import BackendServer
-from ember_code.core.config.settings import Settings
-from ember_code.core.config.user_config_store import UserConfigStore
-from ember_code.core.data_paths import state_db_path
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.session.session_preferences import SessionPreferencesStore
+from igni_core.backend.server import BackendServer
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.user_config_store import UserConfigStore
+from igni_core.core.data_paths import state_db_path
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.session_preferences import SessionPreferencesStore
 
 
 def _save_default_model(name: str) -> None:
@@ -177,7 +177,7 @@ class TestBackendServerResumeOverride:
             m.project_dir = project_dir
             return m
 
-        with patch("ember_code.core.session.Session", side_effect=fake_session):
+        with patch("igni_core.core.session.Session", side_effect=fake_session):
             BackendServer(settings, project_dir=project_dir, **kwargs)
 
     def test_resume_overrides_default_with_persisted_choice(self, tmp_path):

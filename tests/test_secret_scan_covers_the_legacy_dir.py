@@ -3,7 +3,7 @@
 ``scan_project_config`` warned about literal ``api_key`` values in the
 project's shareable ``config.yaml``, and only ever built one path:
 ``<project>/.igni/config.yaml``. The settings loader is not so narrow —
-:func:`ember_code.core.paths.project_config_dir` falls back to the
+:func:`igni_core.core.paths.project_config_dir` falls back to the
 pre-rename ``.ember`` while that is the directory on disk, and
 ``SettingsMergePlan.standard`` builds every project tier through it. So a
 project that had not migrated was a fully working install whose config
@@ -22,8 +22,8 @@ from pathlib import Path
 
 import yaml
 
-from ember_code.core.config.secret_scan import scan_project_config
-from ember_code.core.paths import CONFIG_DIR, LEGACY_CONFIG_DIR
+from igni_core.core.config.secret_scan import scan_project_config
+from igni_core.core.paths import CONFIG_DIR, LEGACY_CONFIG_DIR
 
 
 def _write_key(project_dir: Path, config_dir: str, model: str, key: str) -> None:

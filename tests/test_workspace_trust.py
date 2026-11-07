@@ -15,19 +15,19 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ember_code.core.config.permission_eval.pipeline import PermissionEvaluator
-from ember_code.core.config.permission_eval.schemas import PermissionDecision
-from ember_code.core.config.schemas.workspace_trust import WorkspaceTrustConfig
-from ember_code.core.config.settings import load_settings
-from ember_code.core.config.settings_loader import SettingsLoader
-from ember_code.core.config.tool_permissions.store import ToolPermissions
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.loader import HookLoader
-from ember_code.core.lsp.loader import load_lsp_config
-from ember_code.core.monitors.config import load_monitor_config
-from ember_code.core.tools.custom_loader import CustomToolLoader
-from ember_code.core.utils.markdown_commands import MarkdownCommand
-from ember_code.core.workspace_trust import (
+from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
+from igni_core.core.config.permission_eval.schemas import PermissionDecision
+from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
+from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
+from igni_core.core.config.tool_permissions.store import ToolPermissions
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.loader import HookLoader
+from igni_core.core.lsp.loader import load_lsp_config
+from igni_core.core.monitors.config import load_monitor_config
+from igni_core.core.tools.custom_loader import CustomToolLoader
+from igni_core.core.utils.markdown_commands import MarkdownCommand
+from igni_core.core.workspace_trust import (
     TrustRefused,
     WorkspaceIdentity,
     WorkspaceTrust,
@@ -178,7 +178,7 @@ def _workflow_that_writes(repo: Path, marker: Path) -> None:
 
 
 def test_untrusted_project_workflows_are_neither_discovered_nor_run(repo, tmp_path):
-    from ember_code.backend.workflow_runner import WorkflowDiscovery
+    from igni_core.backend.workflow_runner import WorkflowDiscovery
 
     marker = tmp_path / "workflow-ran"
     _workflow_that_writes(repo, marker)
@@ -191,7 +191,7 @@ def test_untrusted_project_workflows_are_neither_discovered_nor_run(repo, tmp_pa
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
 def test_trusted_project_workflows_are_discovered(repo, tmp_path):
-    from ember_code.backend.workflow_runner import WorkflowDiscovery
+    from igni_core.backend.workflow_runner import WorkflowDiscovery
 
     marker = tmp_path / "workflow-ran"
     _workflow_that_writes(repo, marker)
@@ -207,7 +207,7 @@ def test_trusted_project_workflows_are_discovered(repo, tmp_path):
 
 
 def test_untrusted_lsp_json_command_is_never_started(repo, tmp_path):
-    from ember_code.core.lsp.manager import LspServerManager
+    from igni_core.core.lsp.manager import LspServerManager
 
     marker = tmp_path / "lsp-ran"
     _write(
@@ -522,18 +522,18 @@ def test_an_unmanaged_default_still_yields_to_a_trusted_project(repo):
 
 
 def test_headless_without_trust_is_untrusted(repo, monkeypatch):
-    from ember_code.cli.trust import SessionTrust
+    from igni_core.cli.trust import SessionTrust
 
-    monkeypatch.setattr("ember_code.cli.trust._can_prompt", lambda: False)
+    monkeypatch.setattr("igni_core.cli.trust._can_prompt", lambda: False)
 
     assert SessionTrust(repo, pipe=False, trust_flag=False, quiet=True).settle() is False
     assert not _trust().is_trusted(repo)
 
 
 def test_headless_with_trust_is_trusted_for_the_run_only(repo, monkeypatch):
-    from ember_code.cli.trust import SessionTrust
+    from igni_core.cli.trust import SessionTrust
 
-    monkeypatch.setattr("ember_code.cli.trust._can_prompt", lambda: False)
+    monkeypatch.setattr("igni_core.cli.trust._can_prompt", lambda: False)
 
     assert SessionTrust(repo, pipe=True, trust_flag=True, quiet=True).settle() is True
     assert _trust().is_trusted(repo)
@@ -541,9 +541,9 @@ def test_headless_with_trust_is_trusted_for_the_run_only(repo, monkeypatch):
 
 
 def test_headless_trust_flag_cannot_beat_policy(repo, monkeypatch):
-    from ember_code.cli.trust import SessionTrust
+    from igni_core.cli.trust import SessionTrust
 
-    monkeypatch.setattr("ember_code.cli.trust._can_prompt", lambda: False)
+    monkeypatch.setattr("igni_core.cli.trust._can_prompt", lambda: False)
     _set_policy(mode="never")
 
     assert SessionTrust(repo, pipe=True, trust_flag=True, quiet=True).settle() is False
@@ -554,7 +554,7 @@ def test_igni_m_without_trust_runs_the_session_untrusted(repo, monkeypatch):
     """The real ``igni -m`` path, with the session stubbed to record what it saw."""
     from click.testing import CliRunner
 
-    from ember_code import cli as cli_module
+    from igni_core import cli as cli_module
 
     seen: dict[str, bool] = {}
 
@@ -580,7 +580,7 @@ def test_igni_m_without_trust_runs_the_session_untrusted(repo, monkeypatch):
 def test_igni_trust_command(repo, monkeypatch):
     from click.testing import CliRunner
 
-    from ember_code import cli as cli_module
+    from igni_core import cli as cli_module
 
     runner = CliRunner()
     result = runner.invoke(cli_module.cli, ["trust", str(repo)])

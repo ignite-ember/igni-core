@@ -19,15 +19,15 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.db.engine import (
+from igni_core.core.db.engine import (
     dispose_all,
     get_async_engine,
     get_async_sessionmaker,
     get_engine,
     get_sessionmaker,
 )
-from ember_code.core.db.urls import DatabaseUrl, Dialect
-from ember_code.core.paths import DEFAULT_DATA_DIR
+from igni_core.core.db.urls import DatabaseUrl, Dialect
+from igni_core.core.paths import DEFAULT_DATA_DIR
 
 _normalize_path = DatabaseUrl.normalize_path
 

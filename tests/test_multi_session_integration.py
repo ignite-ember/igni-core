@@ -32,13 +32,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.session_pool import (
+from igni_core.backend.session_pool import (
     SessionPool,
     SessionRuntime,
     SessionStampingTransport,
 )
-from ember_code.protocol import messages as msg
-from ember_code.transport.websocket import WebSocketServerTransport
+from igni_core.protocol import messages as msg
+from igni_core.transport.websocket import WebSocketServerTransport
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -578,7 +578,7 @@ async def test_handler_error_in_one_session_does_not_taint_another():
 
 @pytest.mark.asyncio
 async def test_real_handle_message_routes_two_sessions_through_production_path():
-    """Drives the real ``ember_code.backend.__main__._handle_message``
+    """Drives the real ``igni_core.backend.__main__._handle_message``
     (the production per-message dispatcher) under a multi-session pool
     with a real ``WebSocketServerTransport``. The earlier tests in this
     file use a fake dispatcher — this one closes that gap by routing
@@ -592,8 +592,8 @@ async def test_real_handle_message_routes_two_sessions_through_production_path()
     wrapper, the WS broadcast, the StreamEnd + UserMessageReceived
     book-ending) is real production code.
     """
-    from ember_code.backend.__main__ import _handle_message
-    from ember_code.backend.server import BackendServer
+    from igni_core.backend.__main__ import _handle_message
+    from igni_core.backend.server import BackendServer
 
     def _fake_backend(session_id: str) -> Any:
         """Real ``BackendServer`` instance with ``__init__`` skipped —

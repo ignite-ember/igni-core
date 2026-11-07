@@ -22,8 +22,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.server_auth import AuthController
-from ember_code.core.config.group_policy import (
+from igni_core.backend.server_auth import AuthController
+from igni_core.core.config.group_policy import (
     PACK_UNCHANGED,
     GroupPolicyCache,
     GroupPolicyEntry,
@@ -301,7 +301,7 @@ class TestRevalidationCannotStopASessionStarting:
 
     @pytest.mark.asyncio
     async def test_a_hanging_server_does_not_hang_the_caller(self, tmp_path: Path, monkeypatch):
-        import ember_code.backend.server_auth as sa
+        import igni_core.backend.server_auth as sa
 
         ctrl = _controller(tmp_path)
         monkeypatch.setattr(sa, "_NEW_DIALOGUE_REVALIDATE_TIMEOUT", 0.05)

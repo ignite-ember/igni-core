@@ -20,8 +20,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.core.session.compression import MeasuredCompression
-from ember_code.core.session.token_estimate import TokenEstimate
+from igni_core.core.session.compression import MeasuredCompression
+from igni_core.core.session.token_estimate import TokenEstimate
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLES = json.loads((ROOT / "tests" / "fixtures" / "o200k_token_counts.json").read_text())[
@@ -121,7 +121,7 @@ class TestCompressionTriggersWhereItDid:
 class TestNothingLoadsTiktoken:
     def test_no_igni_module_imports_it_or_asks_a_model_to_count(self) -> None:
         offenders: list[str] = []
-        for path in (ROOT / "src" / "ember_code").rglob("*.py"):
+        for path in (ROOT / "src" / "igni_core").rglob("*.py"):
             tree = ast.parse(path.read_text(), filename=str(path))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import | ast.ImportFrom):
@@ -137,7 +137,7 @@ class TestNothingLoadsTiktoken:
         assert offenders == []
 
     def test_the_session_builds_its_agent_with_the_measured_compression(self) -> None:
-        source = (ROOT / "src" / "ember_code" / "core" / "session" / "core.py").read_text()
+        source = (ROOT / "src" / "igni_core" / "core" / "session" / "core.py").read_text()
         assert "compression_cls=MeasuredCompression" in source
         assert "CompressionManager" not in source
 
@@ -146,7 +146,7 @@ class TestNothingLoadsTiktoken:
             "import sys\n"
             "from types import SimpleNamespace as N\n"
             "from agno.models.openai.like import OpenAILike\n"
-            "from ember_code.core.session.compression import MeasuredCompression\n"
+            "from igni_core.core.session.compression import MeasuredCompression\n"
             "m = OpenAILike(id='gpt-4o', api_key='x')\n"
             "msgs = [N(role='user', content='hi '*5000, compressed_content=None,"
             " tool_calls=None, metrics=N(input_tokens=0, output_tokens=0))]\n"

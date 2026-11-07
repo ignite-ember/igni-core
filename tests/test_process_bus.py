@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.tools.process_bus import ProcessEventBus
+from igni_core.core.tools.process_bus import ProcessEventBus
 
 
 class TestOnOff:

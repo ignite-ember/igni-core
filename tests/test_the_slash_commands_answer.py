@@ -27,8 +27,8 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.backend.schemas_config import ConfigView
-from ember_code.core.config.schemas.storage_and_paths import StorageConfig
+from igni_core.backend.schemas_config import ConfigView
+from igni_core.core.config.schemas.storage_and_paths import StorageConfig
 
 
 class _Settings:

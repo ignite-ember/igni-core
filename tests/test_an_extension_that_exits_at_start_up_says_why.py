@@ -17,13 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.core.mcp.stdio_binding import StdioMCPBinding
-from ember_code.extensions.health import ExtensionHealth
-from ember_code.extensions.installer import ExtensionInstaller
-from ember_code.extensions.origin import ExtensionOrigins
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.mcp.stdio_binding import StdioMCPBinding
+from igni_core.extensions.health import ExtensionHealth
+from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
 
 pytestmark = pytest.mark.asyncio
 
@@ -107,7 +107,7 @@ async def test_a_probe_and_a_failed_restart_keep_the_first_cause(wired, tmp_path
 
 async def test_a_server_that_is_not_an_extension_keeps_the_generic_wording(tmp_path):
     """The IDE hint is for the IDE's MCP server, which is where it came from."""
-    from ember_code.core.mcp.client import _no_tools_reason
+    from igni_core.core.mcp.client import _no_tools_reason
 
     assert "IDE" not in _no_tools_reason("ext:acme.crashy", stderr_tail="")
     assert "no tools" in _no_tools_reason("ide", stderr_tail="")

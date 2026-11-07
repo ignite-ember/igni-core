@@ -28,18 +28,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.backend import run_controller as run_controller_mod
-from ember_code.backend.prompt_builder import PromptBuilder
-from ember_code.backend.run_controller import RunController
-from ember_code.backend.schemas_run import (
+from igni_core.backend import run_controller as run_controller_mod
+from igni_core.backend.prompt_builder import PromptBuilder
+from igni_core.backend.run_controller import RunController
+from igni_core.backend.schemas_run import (
     HookGateResult,
     MediaAttachments,
     ModelConfig,
     PromptBuildResult,
     RunPhase,
 )
-from ember_code.core.utils.media_schemas import ResolvedText
-from ember_code.protocol import messages as msg
+from igni_core.core.utils.media_schemas import ResolvedText
+from igni_core.protocol import messages as msg
 
 # ── Fakes ────────────────────────────────────────────────────────────
 

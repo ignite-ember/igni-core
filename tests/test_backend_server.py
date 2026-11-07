@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-from ember_code.backend.server import BackendServer
-from ember_code.protocol import messages as msg
-from ember_code.protocol.registry import MessageRegistry
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.backend.server import BackendServer
+from igni_core.protocol import messages as msg
+from igni_core.protocol.registry import MessageRegistry
 
 
 class TestBackendServerCommands:
@@ -17,7 +17,7 @@ class TestBackendServerCommands:
 
     @pytest.mark.asyncio
     async def test_handle_command_returns_command_result(self):
-        with patch("ember_code.backend.server.BackendServer.__init__", return_value=None):
+        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
             server = BackendServer.__new__(BackendServer)
             server._session = MagicMock()
             server._settings = MagicMock()
@@ -29,11 +29,11 @@ class TestBackendServerCommands:
             # wire ``msg.CommandResult`` so no rebuild step is needed.
             # Feed the mock a real ``CommandResult`` so the ``isinstance``
             # + field assertions below still exercise the wire contract.
-            from ember_code.backend.command_result import CommandResult
+            from igni_core.backend.command_result import CommandResult
 
             mock_result = CommandResult.info("test output")
 
-            with patch("ember_code.backend.command_handler.CommandHandler") as MockHandler:
+            with patch("igni_core.backend.command_handler.CommandHandler") as MockHandler:
                 instance = MockHandler.return_value
                 instance.handle = AsyncMock(return_value=mock_result)
 
@@ -45,7 +45,7 @@ class TestBackendServerCommands:
 
     @pytest.mark.asyncio
     async def test_get_status(self):
-        with patch("ember_code.backend.server.BackendServer.__init__", return_value=None):
+        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
             server = BackendServer.__new__(BackendServer)
             server._settings = MagicMock()
             server._settings.models.default = "test-model"
@@ -77,11 +77,11 @@ class TestBackendServerCommands:
     @pytest.mark.asyncio
     async def test_switch_model(self):
         with (
-            patch("ember_code.backend.server.BackendServer.__init__", return_value=None),
+            patch("igni_core.backend.server.BackendServer.__init__", return_value=None),
             # The persistence side-effect now lives on
             # :class:`UserConfigStore` — patch the class method so the
             # real user config file isn't touched during the test.
-            patch("ember_code.core.config.user_config_store.UserConfigStore.set_default_model"),
+            patch("igni_core.core.config.user_config_store.UserConfigStore.set_default_model"),
         ):
             server = BackendServer.__new__(BackendServer)
             server._session = MagicMock()
@@ -241,7 +241,7 @@ class TestBackendServerRealConstruction:
         MagicMock so any `__init__` regression that only fires with
         real settings (missing field, wrong default, ordering bug)
         surfaces here."""
-        from ember_code.core.config.settings import load_settings
+        from igni_core.core.config.settings import load_settings
 
         settings = load_settings(project_dir=tmp_path)
 
@@ -274,7 +274,7 @@ class TestBackendServerRealConstruction:
         ``_init_agent_and_skill_pools`` →
         ``_init_mcp_client_manager`` → ``_init_lsp_and_monitors``.
         """
-        from ember_code.core.config.settings import load_settings
+        from igni_core.core.config.settings import load_settings
 
         settings = load_settings(project_dir=tmp_path)
         backend = BackendServer(settings, project_dir=tmp_path)
@@ -292,7 +292,7 @@ class TestBackendServerRealConstruction:
         assert session.event_log == []
         # BroadcastBus is composed in ``__init__`` — the class
         # invariant that replaces the old raw-list init.
-        from ember_code.core.session.broadcast import BroadcastBus
+        from igni_core.core.session.broadcast import BroadcastBus
 
         assert isinstance(session.broadcast_bus, BroadcastBus)
         assert not session.broadcast_bus.has_callbacks

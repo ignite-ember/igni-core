@@ -8,9 +8,9 @@ the same schema — a field the JSON loses is a member an SDK never gets.
 
 from __future__ import annotations
 
-from ember_code.extensions.host import published
-from ember_code.extensions.host.definition import HOST_SCHEMA, SCHEMA_VERSION
-from ember_code.extensions.host.spec import HostSchema
+from igni_core.extensions.host import published
+from igni_core.extensions.host.definition import HOST_SCHEMA, SCHEMA_VERSION
+from igni_core.extensions.host.spec import HostSchema
 
 
 def test_the_published_file_is_the_schema() -> None:

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.schemas import HookDefinition
-from ember_code.core.hooks.tool_hook import ToolEventHook, _preview, _safe_args
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.schemas import HookDefinition
+from igni_core.core.hooks.tool_hook import ToolEventHook, _preview, _safe_args
 
 
 class TestToolEventHookPassthrough:

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.backend.__main__ import SUPPORTED_PYTHON, warn_if_unsupported_python
+from igni_core.backend.__main__ import SUPPORTED_PYTHON, warn_if_unsupported_python
 from tests.siblings import IGNI_APP, needs_app
 
 _ROOT = Path(__file__).resolve().parent.parent

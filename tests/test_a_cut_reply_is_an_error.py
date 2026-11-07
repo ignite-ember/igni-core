@@ -21,14 +21,14 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 from agno.agent import Agent
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
-from ember_code.core.config.logging_model import LoggingModel
-from ember_code.core.config.settings import Settings
-from ember_code.core.guardrails.runner import GuardrailRunner
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.session.message_handler import SessionMessageHandler
-from ember_code.core.session.runner import run_single_message
-from ember_code.protocol import messages as msg
-from ember_code.protocol.serializer import serialize_event
+from igni_core.core.config.logging_model import LoggingModel
+from igni_core.core.config.settings import Settings
+from igni_core.core.guardrails.runner import GuardrailRunner
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.session.message_handler import SessionMessageHandler
+from igni_core.core.session.runner import run_single_message
+from igni_core.protocol import messages as msg
+from igni_core.protocol.serializer import serialize_event
 
 
 def chunk(content: str | None = None, finish: str | None = None, **extra: Any):
@@ -196,7 +196,7 @@ async def test_a_cut_non_streamed_reply_fails_the_headless_run():
     session.handle_message = handler.handle
     type(session).last_turn_failure = PropertyMock(side_effect=lambda: handler.last_failure)
 
-    with patch("ember_code.core.session.session_run.Session", return_value=session):
+    with patch("igni_core.core.session.session_run.Session", return_value=session):
         try:
             await run_single_message(MagicMock(), "Say hello")
             code = 0

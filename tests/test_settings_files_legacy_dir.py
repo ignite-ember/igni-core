@@ -1,7 +1,7 @@
 """The permission settings chain must see an unmigrated project.
 
 ``merge_plan.build_default`` resolves the project's config directory
-through :func:`ember_code.core.paths.project_config_dir`, which answers
+through :func:`igni_core.core.paths.project_config_dir`, which answers
 ``<project>/.ember`` while that is the directory actually on disk. It
 then loads ``<dir>/settings.json`` and ``<dir>/settings.local.json`` as
 JSON fragment tiers.
@@ -23,11 +23,11 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.config.tool_permissions.settings_files import (
+from igni_core.core.config.tool_permissions.settings_files import (
     SettingsFileLoader,
     SettingsFileWriter,
 )
-from ember_code.core.paths import project_config_dir
+from igni_core.core.paths import project_config_dir
 
 
 @pytest.fixture

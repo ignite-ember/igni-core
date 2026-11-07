@@ -35,7 +35,7 @@ from agno.db.schemas.memory import UserMemory
 from agno.session import Session
 from sqlalchemy import Table, select
 
-from ember_code.core.db.scope import StorageScope
+from igni_core.core.db.scope import StorageScope
 
 
 class ScopedAsyncPostgresDb(AsyncPostgresDb):

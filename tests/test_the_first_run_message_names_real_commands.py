@@ -35,7 +35,7 @@ else:  # pragma: no cover - the project pins 3.12
 
 import pytest
 
-from ember_code.cli.invocation import _HELP_TEXT, COMMAND
+from igni_core.cli.invocation import _HELP_TEXT, COMMAND
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _PYPROJECT = _ROOT / "pyproject.toml"

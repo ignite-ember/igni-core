@@ -36,9 +36,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ember_code.backend import command_handler as cmd_mod
-from ember_code.backend.builtin_command_registry import BuiltinCommandRegistry
-from ember_code.core.tools.slash import SlashCommandTool
+from igni_core.backend import command_handler as cmd_mod
+from igni_core.backend.builtin_command_registry import BuiltinCommandRegistry
+from igni_core.core.tools.slash import SlashCommandTool
 
 MODE_COMMANDS = ["/plan", "/accept", "/bypass"]
 
@@ -123,13 +123,13 @@ class TestTheBlockListStillMatchesTheRegistry:
         command added to ``cmd_modes`` and wired into the registry
         would otherwise ship reachable, which is how this one got in.
         """
-        from ember_code.core.tools.slash import _BLOCKED_MODE_COMMANDS
+        from igni_core.core.tools.slash import _BLOCKED_MODE_COMMANDS
 
         registry = BuiltinCommandRegistry()
         mode_builtins = {
             entry.slash
             for entry in registry.entries()
-            if entry.module == "ember_code.backend.cmd_modes"
+            if entry.module == "igni_core.backend.cmd_modes"
         }
 
         assert mode_builtins == set(MODE_COMMANDS), mode_builtins
@@ -140,7 +140,7 @@ class TestTheBlockListStillMatchesTheRegistry:
         (a long-running agent deciding to compact mid-turn is the
         feature), so a fix that just refused everything would pass the
         tests above and break the tool."""
-        from ember_code.core.tools.slash import _BLOCKED_COMMANDS, _BLOCKED_MODE_COMMANDS
+        from igni_core.core.tools.slash import _BLOCKED_COMMANDS, _BLOCKED_MODE_COMMANDS
 
         assert "/compact" not in _BLOCKED_COMMANDS | _BLOCKED_MODE_COMMANDS
         assert "/codeindex" not in _BLOCKED_COMMANDS | _BLOCKED_MODE_COMMANDS

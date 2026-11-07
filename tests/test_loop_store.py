@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.loop.models import LoopState
-from ember_code.core.loop.store import LoopProgressStore, LoopStore
+from igni_core.core.loop.models import LoopState
+from igni_core.core.loop.store import LoopProgressStore, LoopStore
 
 # ── LoopStore ──────────────────────────────────────────────────────
 

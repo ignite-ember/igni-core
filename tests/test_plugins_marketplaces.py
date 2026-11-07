@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.plugins.git import GitClient
-from ember_code.core.plugins.installer import PluginInstaller
-from ember_code.core.plugins.marketplaces import (
+from igni_core.core.plugins.git import GitClient
+from igni_core.core.plugins.installer import PluginInstaller
+from igni_core.core.plugins.marketplaces import (
     MarketplaceCatalog,
     MarketplacePluginEntry,
     MarketplaceRegistry,
@@ -114,7 +114,7 @@ def test_registry_roundtrip(tmp_path: Path) -> None:
             MarketplacePluginEntry(name="p1", source="https://x/y", version="1.0"),
         ],
     )
-    from ember_code.core.plugins.marketplaces import MarketplaceEntry
+    from igni_core.core.plugins.marketplaces import MarketplaceEntry
 
     registry = MarketplaceRegistry(
         marketplaces=[

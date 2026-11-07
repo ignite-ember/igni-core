@@ -16,9 +16,9 @@ from igni_cloud.guest.credential import CredentialState, StateChange
 from igni_cloud.layer import CloudLayer
 from websockets.asyncio.client import connect
 
-from ember_code.core.layer import Layer, Layers
-from ember_code.protocol import messages as msg
-from ember_code.transport.websocket import WebSocketServerTransport
+from igni_core.core.layer import Layer, Layers
+from igni_core.protocol import messages as msg
+from igni_core.transport.websocket import WebSocketServerTransport
 from tests.host_model_helpers import HostRig
 
 

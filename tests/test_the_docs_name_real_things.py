@@ -53,7 +53,7 @@ import subprocess
 
 import pytest
 
-from ember_code.core.config.settings import Settings
+from igni_core.core.config.settings import Settings
 from tests.siblings import IGNI_APP, IGNI_SDK
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -72,7 +72,7 @@ _TOP_LEVEL_KEY = re.compile(r"^([a-z][a-z0-9_]*):", re.M)
 #: * `ignite-ember` and `Ignite Ember` — the GitHub org and the company;
 #: * `ember-iac` — a sibling repository directory name; `ember-code` /
 #:   `ember-server` — the repositories' former names, still in package,
-#:   artifact and cache names; and `ember_code` the Python package;
+#:   artifact and cache names; and `igni_core` the Python package;
 #: * `ember-dev-…`, `ember-stage-…`, `ember-prod-…` — Google Cloud
 #:   resource names (projects, registries, service accounts) that ember-iac
 #:   created and docs must quote exactly;
@@ -82,7 +82,7 @@ _TOP_LEVEL_KEY = re.compile(r"^([a-z][a-z0-9_]*):", re.M)
 #:
 #: A bare "ember" anywhere else is not.
 _LEGITIMATE = re.compile(
-    r"ember[-_](?:code|server|iac)|ember-(?:dev|stage|prod|<env>)[-\w]*|ignite-ember|Ignite Ember|ember_code|\.ember\b"
+    r"ember[-_](?:code|server|iac)|ember-(?:dev|stage|prod|<env>)[-\w]*|ignite-ember|Ignite Ember|igni_core|\.ember\b"
 )
 _EMBER = re.compile(r"\bEmber\b|\bember\b")
 
@@ -144,8 +144,8 @@ class TestTheRulesMeasureSomething:
         found = {p for doc in _DOCS for p in _PATH.findall(doc.read_text())}
 
         assert len(found) > 30, sorted(found)
-        assert "src/ember_code/core/config/settings.py" in found or any(
-            f.startswith("src/ember_code/") for f in found
+        assert "src/igni_core/core/config/settings.py" in found or any(
+            f.startswith("src/igni_core/") for f in found
         ), sorted(found)[:20]
 
     def test_the_config_fence_pattern_finds_fences(self):
@@ -161,7 +161,7 @@ class TestTheRulesMeasureSomething:
         assert _EMBER.search(_LEGITIMATE.sub("", "the Ember Cloud gateway"))
         assert not _EMBER.search(_LEGITIMATE.sub("", "`ember-iac/infra`"))
         assert not _EMBER.search(_LEGITIMATE.sub("", "https://api.ignite-ember.sh"))
-        assert not _EMBER.search(_LEGITIMATE.sub("", "from ember_code.core import x"))
+        assert not _EMBER.search(_LEGITIMATE.sub("", "from igni_core.core import x"))
 
 
 def _exists(path: str) -> bool:
@@ -346,6 +346,6 @@ def test_the_readme_puts_the_server_in_the_user_config():
     section = readme[readme.index("To point it at your own igni server") :][:1200]
     assert "~/.igni/config.yaml" in section
     assert "portal_url" in section
-    from ember_code.core.config.merge_plan import ProjectYamlTier
+    from igni_core.core.config.merge_plan import ProjectYamlTier
 
     assert {"api_url", "portal_url"} <= set(ProjectYamlTier._NOT_FROM_A_PROJECT)

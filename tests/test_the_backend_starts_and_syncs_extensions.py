@@ -18,12 +18,12 @@ from typing import Any
 
 import pytest
 
-from ember_code.backend.app import BackendApp
-from ember_code.backend.login_coordinator import LoginCoordinator
-from ember_code.extensions.origin import ExtensionOrigins
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.extensions.store import ExtensionStore
+from igni_core.backend.app import BackendApp
+from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.store import ExtensionStore
 
 
 class StubMcp:

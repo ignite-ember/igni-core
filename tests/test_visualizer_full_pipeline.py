@@ -25,7 +25,7 @@ import pytest
 from agno.run import agent as agent_events
 from agno.run.agent import CustomEvent
 
-from ember_code.core.tools.orchestrate import _run_agent_streaming
+from igni_core.core.tools.orchestrate import _run_agent_streaming
 
 
 class TestFullStreamThroughOrchestrate:

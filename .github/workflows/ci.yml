@@ -42,7 +42,7 @@ jobs:
 
       - name: Mypy
         run: |
-          uv run --no-sync mypy src/ember_code/
+          uv run --no-sync mypy src/igni_core/
           uv run --no-sync mypy packages/igni-cloud/src/igni_cloud/
 
   # No matrix. The product ships one interpreter, so there is one job,
@@ -148,7 +148,7 @@ jobs:
           IGNI_APP_DIR: ${{ github.workspace }}/.siblings/igni-app
         run: >-
           uv run pytest tests/ -q -rs
-          --cov=ember_code --cov-branch --cov-report=
+          --cov=igni_core --cov-branch --cov-report=
           --cov-fail-under=86.5
 
       - name: The cloud layer's tests

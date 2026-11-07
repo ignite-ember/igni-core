@@ -36,10 +36,10 @@ from pathlib import Path
 import click
 from click.decorators import FC
 
-from ember_code.core.db.urls import DatabaseUrl
 from igni_cloud.db.producer_data import AdminCannotSeeRows, ProducerData
 from igni_cloud.db.rls import ProducerRoles
 from igni_cloud.producer import ProducerIncarnation, ProducerRef, UnknownProducer
+from igni_core.core.db.urls import DatabaseUrl
 
 #: The variable that names the database (``StorageConfig.DATABASE_URL_ENV``).
 DATABASE_URL_ENV = "IGNI_DATABASE_URL"

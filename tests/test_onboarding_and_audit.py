@@ -5,12 +5,12 @@ Covers: first-run initialization, audit log entries, CLAUDE.md loading.
 
 from unittest.mock import patch
 
-from ember_code.core.config.settings import Settings
-from ember_code.core.init import initialize_project
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.utils.audit import AuditEntry, AuditLogger
-from ember_code.core.utils.context import load_project_context
-from ember_code.core.utils.update_checker import UpdateInfo
+from igni_core.core.config.settings import Settings
+from igni_core.core.init import initialize_project
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.utils.audit import AuditEntry, AuditLogger
+from igni_core.core.utils.context import load_project_context
+from igni_core.core.utils.update_checker import UpdateInfo
 
 
 class TestFirstRunOnboarding:

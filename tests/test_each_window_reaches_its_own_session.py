@@ -44,16 +44,16 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from ember_code.backend.login_coordinator import LoginCoordinator
-from ember_code.backend.push_bridge import PushNotificationBridge
-from ember_code.backend.rpc_router import RpcRouter
-from ember_code.backend.schemas_sessions import AutoNameResult
-from ember_code.backend.session_orchestrator import SessionOrchestrator
-from ember_code.core.config.settings import Settings
-from ember_code.extensions.host.windows import WindowModelError
-from ember_code.extensions.service_events import DeliveryReceipt
-from ember_code.protocol import messages as msg
-from ember_code.protocol.rpc import RpcMethod
+from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.push_bridge import PushNotificationBridge
+from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.schemas_sessions import AutoNameResult
+from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.core.config.settings import Settings
+from igni_core.extensions.host.windows import WindowModelError
+from igni_core.extensions.service_events import DeliveryReceipt
+from igni_core.protocol import messages as msg
+from igni_core.protocol.rpc import RpcMethod
 from tests.host_model_helpers import manifest
 
 
@@ -180,7 +180,7 @@ class _Credential(BaseModel):
 @pytest.fixture(autouse=True)
 def _pooled_backends(monkeypatch):
     _Pooled.made = []
-    monkeypatch.setattr("ember_code.backend.server.BackendServer", _Pooled)
+    monkeypatch.setattr("igni_core.backend.server.BackendServer", _Pooled)
 
 
 def _orchestrator(
@@ -521,7 +521,7 @@ async def test_a_layer_can_take_platform_calls_from_its_control_connection_only(
     orchestrator, _, transport = _orchestrator(tmp_path)
     orchestrator.attach_event_inbox(_Inbox())
     monkeypatch.setattr(
-        "ember_code.core.layer.Layers.current", classmethod(lambda cls: _ControlOnly())
+        "igni_core.core.layer.Layers.current", classmethod(lambda cls: _ControlOnly())
     )
 
     await orchestrator.dispatch(_rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "w", events=[]))

@@ -17,17 +17,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ember_code.core.agents.loader import AgentDefinitionLoader
-from ember_code.core.agents.pool import AgentPool
-from ember_code.core.agents.schemas import AgentPriority
-from ember_code.core.config.settings import Settings
-from ember_code.core.prompts.contributions import (
+from igni_core.core.agents.loader import AgentDefinitionLoader
+from igni_core.core.agents.pool import AgentPool
+from igni_core.core.agents.schemas import AgentPriority
+from igni_core.core.config.settings import Settings
+from igni_core.core.prompts.contributions import (
     EditOp,
     PromptContributions,
     PromptEdit,
     PromptOverride,
 )
-from ember_code.core.prompts.document import Position
+from igni_core.core.prompts.document import Position
 
 PROJECT_S = (
     "---\nname: explorer\ndescription: the project's\n---\n\n"

@@ -21,17 +21,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.__main__ import _build_rpc_table
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.backend.server import BackendServer
-from ember_code.core.config.permission_eval import PermissionEvaluator, PermissionMode
-from ember_code.core.prompts.contributions import EditOp, PromptEdit, prompt_contributions
-from ember_code.core.session.broadcast import BroadcastBus as _BroadcastBus
-from ember_code.core.session.core import Session
-from ember_code.core.tools.orchestrate import OrchestrateTools
-from ember_code.core.tools.plan import PlanStore, PlanTool
-from ember_code.core.tools.todo import TodoItem, TodoStore, TodoTools
-from ember_code.protocol.rpc import RpcMethod
+from igni_core.backend.__main__ import _build_rpc_table
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.backend.server import BackendServer
+from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
+from igni_core.core.prompts.contributions import EditOp, PromptEdit, prompt_contributions
+from igni_core.core.session.broadcast import BroadcastBus as _BroadcastBus
+from igni_core.core.session.core import Session
+from igni_core.core.tools.orchestrate import OrchestrateTools
+from igni_core.core.tools.plan import PlanStore, PlanTool
+from igni_core.core.tools.todo import TodoItem, TodoStore, TodoTools
+from igni_core.protocol.rpc import RpcMethod
 
 # ── PlanStore ─────────────────────────────────────────────
 

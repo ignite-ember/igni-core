@@ -13,8 +13,8 @@ not a promise the OS will not keep.
 
 from __future__ import annotations
 
-from ember_code.core.tools.process_registry import ProcessRegistry
-from ember_code.core.tools.sleep_blocker import SleepBlocker
+from igni_core.core.tools.process_registry import ProcessRegistry
+from igni_core.core.tools.sleep_blocker import SleepBlocker
 
 
 class _FakeBlocker(SleepBlocker):

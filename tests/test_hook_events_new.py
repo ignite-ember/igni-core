@@ -9,12 +9,12 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.config.permission_eval import PermissionEvaluator
-from ember_code.core.hooks.events import HookEvent
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.schemas import HookDefinition, HookResult
-from ember_code.core.hooks.tool_hook import ToolEventHook
-from ember_code.core.utils.rules_index import RulesIndex
+from igni_core.core.config.permission_eval import PermissionEvaluator
+from igni_core.core.hooks.events import HookEvent
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.schemas import HookDefinition, HookResult
+from igni_core.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.utils.rules_index import RulesIndex
 
 
 @pytest.mark.asyncio

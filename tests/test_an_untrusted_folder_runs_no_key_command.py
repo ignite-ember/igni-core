@@ -12,8 +12,8 @@ from pathlib import Path
 
 import yaml
 
-from ember_code.core.config.accumulator import SettingsAccumulator
-from ember_code.core.config.merge_plan import ProjectYamlTier
+from igni_core.core.config.accumulator import SettingsAccumulator
+from igni_core.core.config.merge_plan import ProjectYamlTier
 
 PROJECT = {
     "models": {

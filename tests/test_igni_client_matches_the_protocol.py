@@ -1,7 +1,7 @@
 """igni-client speaks the protocol igni speaks — held here, where the protocol lives.
 
 igni-sdk's `packages/igni-client` mirrors igni's wire protocol by hand: it cannot
-import `ember_code` (a client must not install igni to talk to it). A
+import `igni_core` (a client must not install igni to talk to it). A
 mirror drifts the day a field is renamed on one side only, and the SDK's
 own tests, run against its own fake, would not notice. So every claim the
 client makes about the wire is checked against the real thing:
@@ -23,11 +23,11 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.backend.schemas_lockfile import LockfilePayload
-from ember_code.protocol import messages as msg_module
-from ember_code.protocol.rpc import RpcMethod
-from ember_code.protocol.schemas.envelope import Message
-from ember_code.transport import ws_auth
+from igni_core.backend.schemas_lockfile import LockfilePayload
+from igni_core.protocol import messages as msg_module
+from igni_core.protocol.rpc import RpcMethod
+from igni_core.protocol.schemas.envelope import Message
+from igni_core.transport import ws_auth
 from tests.siblings import IGNI_SDK, needs_sdk, skip_module_without_sdk
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -73,7 +73,7 @@ def test_the_run_events_igni_streams_are_all_modelled() -> None:
     # A run event the client does not model still arrives, as `Unknown` —
     # but `Session.send()` users match on the typed ones, so a new run
     # event should be added to the client, not discovered by a user.
-    from ember_code.protocol.schemas import be_events
+    from igni_core.protocol.schemas import be_events
 
     run_events = {
         cls.model_fields["type"].default

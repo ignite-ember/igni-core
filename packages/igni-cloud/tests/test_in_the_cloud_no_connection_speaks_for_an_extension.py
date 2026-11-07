@@ -15,8 +15,8 @@ from typing import Any
 
 from igni_cloud.layer import CloudLayer
 
-from ember_code.core.layer import Layer, Layers
-from ember_code.protocol import messages as msg
+from igni_core.core.layer import Layer, Layers
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import HostRig
 
 

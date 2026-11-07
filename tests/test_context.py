@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.config.managed_policy import ManagedPolicySource
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.utils import context as context_module
-from ember_code.core.utils.context import (
+from igni_core.core.config.managed_policy import ManagedPolicySource
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.utils import context as context_module
+from igni_core.core.utils.context import (
     _claude_project_memory_dir,
-    _ember_project_memory_dir,
+    _igni_project_memory_dir,
     _parse_frontmatter,
     _project_memory_slug,
     ensure_memory_dir,
@@ -24,7 +24,7 @@ from ember_code.core.utils.context import (
     load_user_rules,
     memory_writeback_instructions,
 )
-from ember_code.core.utils.context import (
+from igni_core.core.utils.context import (
     _platform_managed_rules_dir as _REAL_MANAGED_RULES_DIR,
 )
 
@@ -628,9 +628,9 @@ class TestPlatformManagedRulesDir:
         monkeypatch.setattr("sys.platform", platform)
         monkeypatch.setenv("PROGRAMDATA", r"C:\TestProgramData")
 
-        from ember_code.core.config.managed_policy import ManagedPolicySource
-        from ember_code.core.paths import managed_policy_dir
-        from ember_code.core.plugins.loader import _platform_managed_plugins_root
+        from igni_core.core.config.managed_policy import ManagedPolicySource
+        from igni_core.core.paths import managed_policy_dir
+        from igni_core.core.plugins.loader import _platform_managed_plugins_root
 
         shared = managed_policy_dir()
         assert shared is not None
@@ -652,7 +652,7 @@ class TestPlatformManagedRulesDir:
         exact bug it is named after. So: redirect the shared function and
         check the policy is actually read from where it now points.
         """
-        from ember_code.core.mcp import config as mcp_config
+        from igni_core.core.mcp import config as mcp_config
 
         monkeypatch.setattr(mcp_config, "managed_policy_dir", lambda: tmp_path)
         (tmp_path / "managed-settings.json").write_text(
@@ -666,7 +666,7 @@ class TestPlatformManagedRulesDir:
     def test_mcp_finds_nothing_when_the_shared_directory_is_empty(self, tmp_path, monkeypatch):
         """The other half: an empty managed directory must mean "no
         policy", not a policy that blocks everything."""
-        from ember_code.core.mcp import config as mcp_config
+        from igni_core.core.mcp import config as mcp_config
 
         monkeypatch.setattr(mcp_config, "managed_policy_dir", lambda: tmp_path)
 
@@ -818,18 +818,18 @@ def _redirect_memory_dirs(monkeypatch, tmp_path, *, with_claude=False):
     load the re-exports; ``load_memory_index`` looks up the source
     module's names. Patching only one leaves the other in place
     and the redirect silently doesn't apply."""
-    from ember_code.core.utils import context_memory as context_memory_module
+    from igni_core.core.utils import context_memory as context_memory_module
 
-    ember_dir = tmp_path / "ember_memory"
+    igni_dir = tmp_path / "ember_memory"
     claude_dir = tmp_path / "claude_memory" if with_claude else tmp_path / "no_claude_memory"
 
-    ember_fn = lambda _pd, _d=ember_dir: _d  # noqa: E731
+    ember_fn = lambda _pd, _d=igni_dir: _d  # noqa: E731
     claude_fn = lambda _pd, _d=claude_dir: _d  # noqa: E731
 
     for mod in (context_module, context_memory_module):
-        monkeypatch.setattr(mod, "_ember_project_memory_dir", ember_fn)
+        monkeypatch.setattr(mod, "_igni_project_memory_dir", ember_fn)
         monkeypatch.setattr(mod, "_claude_project_memory_dir", claude_fn)
-    return ember_dir, claude_dir
+    return igni_dir, claude_dir
 
 
 class TestProjectMemorySlug:
@@ -857,7 +857,7 @@ class TestProjectMemorySlug:
     def test_dir_paths_match_published_convention(self):
         """The ember and claude memory dirs are siblings under
         their respective home-dir bases."""
-        ember = _ember_project_memory_dir(Path("/Users/x/proj"))
+        ember = _igni_project_memory_dir(Path("/Users/x/proj"))
         claude = _claude_project_memory_dir(Path("/Users/x/proj"))
         assert ember.parts[-3:] == ("projects", "-Users-x-proj", "memory")
         assert claude.parts[-3:] == ("projects", "-Users-x-proj", "memory")
@@ -867,9 +867,9 @@ class TestProjectMemorySlug:
 
 class TestLoadMemoryIndex:
     def test_reads_ember_memory_md(self, tmp_path, monkeypatch):
-        ember_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
-        ember_dir.mkdir()
-        (ember_dir / "MEMORY.md").write_text("ONE\nTWO\nTHREE\n")
+        igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
+        igni_dir.mkdir()
+        (igni_dir / "MEMORY.md").write_text("ONE\nTWO\nTHREE\n")
         assert load_memory_index(tmp_path) == "ONE\nTWO\nTHREE\n"
 
     def test_returns_empty_when_no_index(self, tmp_path, monkeypatch):
@@ -877,11 +877,11 @@ class TestLoadMemoryIndex:
         assert load_memory_index(tmp_path) == ""
 
     def test_line_cap_at_200(self, tmp_path, monkeypatch):
-        ember_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
-        ember_dir.mkdir()
+        igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
+        igni_dir.mkdir()
         # 250 short lines — only the first 200 should load.
         body = "".join(f"line{i}\n" for i in range(250))
-        (ember_dir / "MEMORY.md").write_text(body)
+        (igni_dir / "MEMORY.md").write_text(body)
         out = load_memory_index(tmp_path)
         assert "line0" in out
         assert "line199" in out  # 200th line (zero-indexed)
@@ -889,11 +889,11 @@ class TestLoadMemoryIndex:
         assert out.count("\n") == 200
 
     def test_byte_cap_at_25kb(self, tmp_path, monkeypatch):
-        ember_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
-        ember_dir.mkdir()
+        igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
+        igni_dir.mkdir()
         # 30 KB on a single line (well under the 200-line cap).
         big = "x" * 30_000 + "\n"
-        (ember_dir / "MEMORY.md").write_text(big)
+        (igni_dir / "MEMORY.md").write_text(big)
         out = load_memory_index(tmp_path)
         assert len(out.encode("utf-8")) <= 25_000
         # Truncation drops the trailing newline; payload starts with x's.
@@ -903,12 +903,12 @@ class TestLoadMemoryIndex:
         """A multi-byte codepoint chopped at the byte cap must
         not produce invalid UTF-8 — ``errors='ignore'`` drops the
         partial sequence cleanly."""
-        ember_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
-        ember_dir.mkdir()
+        igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
+        igni_dir.mkdir()
         # Pad to just under 25_000 bytes, then add a 4-byte emoji
         # that straddles the cap boundary.
         padding = "a" * 24_998
-        (ember_dir / "MEMORY.md").write_text(padding + "🔥\n")
+        (igni_dir / "MEMORY.md").write_text(padding + "🔥\n")
         out = load_memory_index(tmp_path)
         # Result is valid UTF-8 (re-decoding doesn't raise).
         out.encode("utf-8").decode("utf-8")
@@ -934,10 +934,10 @@ class TestLoadMemoryIndex:
         """Ember-native is the preferred source. If both files
         exist, only the ember version loads — concatenation would
         duplicate near-identical memories during a mid-migration."""
-        ember_dir, claude_dir = _redirect_memory_dirs(monkeypatch, tmp_path, with_claude=True)
-        ember_dir.mkdir()
+        igni_dir, claude_dir = _redirect_memory_dirs(monkeypatch, tmp_path, with_claude=True)
+        igni_dir.mkdir()
         claude_dir.mkdir()
-        (ember_dir / "MEMORY.md").write_text("EMBER")
+        (igni_dir / "MEMORY.md").write_text("EMBER")
         (claude_dir / "MEMORY.md").write_text("CLAUDE")
         out = load_memory_index(tmp_path)
         assert "EMBER" in out
@@ -950,9 +950,9 @@ class TestMemoryIndexInContextOutput:
         Project Rules. Ensures the agent reads sysadmin
         directives first, then its own remembered context, then
         the rules layered on top."""
-        ember_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
-        ember_dir.mkdir()
-        (ember_dir / "MEMORY.md").write_text("REMEMBERED FACT")
+        igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
+        igni_dir.mkdir()
+        (igni_dir / "MEMORY.md").write_text("REMEMBERED FACT")
 
         managed_dir = tmp_path / "managed"
         managed_dir.mkdir()
@@ -972,8 +972,8 @@ class TestMemoryIndexInContextOutput:
         # ``tmp_path``.
         monkeypatch.setattr(
             context_module,
-            "_ember_project_memory_dir",
-            lambda _pd, _d=ember_dir: _d,
+            "_igni_project_memory_dir",
+            lambda _pd, _d=igni_dir: _d,
         )
 
         out = load_project_context(project)
@@ -1025,7 +1025,7 @@ class TestEnsureMemoryDir:
             raise OSError("read-only")
 
         monkeypatch.setattr(Path, "mkdir", _exploding_mkdir)
-        with caplog.at_level(logging.DEBUG, logger="ember_code.core.utils.context"):
+        with caplog.at_level(logging.DEBUG, logger="igni_core.core.utils.context"):
             target = ensure_memory_dir(tmp_path / "project")
         # Returns a path even on failure.
         assert isinstance(target, Path)

@@ -30,11 +30,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.run_controller import RunController as BackendRunController
-from ember_code.backend.schemas_lifecycle import InterruptedRunSummary
-from ember_code.backend.server import BackendServer
-from ember_code.backend.server_lifecycle import LifecycleController
-from ember_code.core.session.pending_messages import (
+from igni_core.backend.run_controller import RunController as BackendRunController
+from igni_core.backend.schemas_lifecycle import InterruptedRunSummary
+from igni_core.backend.server import BackendServer
+from igni_core.backend.server_lifecycle import LifecycleController
+from igni_core.core.session.pending_messages import (
     PendingMessage,
     PendingMessageStore,
 )
@@ -187,7 +187,7 @@ _CRASH_SCRIPT = textwrap.dedent("""
     import sys
     sys.path.insert(0, {repo_src!r})
     from pathlib import Path
-    from ember_code.core.session.pending_messages import PendingMessageStore
+    from igni_core.core.session.pending_messages import PendingMessageStore
 
     store = PendingMessageStore(Path({db!r}))
     store.record_received({session!r}, {text!r})

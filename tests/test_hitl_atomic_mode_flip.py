@@ -36,10 +36,10 @@ from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
-from ember_code.backend.hitl_controller import HitlController
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-from ember_code.backend.schemas_pause import PendingRequirement
-from ember_code.protocol import messages as msg
+from igni_core.backend.hitl_controller import HitlController
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.backend.schemas_pause import PendingRequirement
+from igni_core.protocol import messages as msg
 
 
 async def _empty_async_iter():

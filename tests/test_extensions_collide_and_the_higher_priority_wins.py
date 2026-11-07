@@ -18,8 +18,8 @@ from typing import Any
 
 import pytest
 
-from ember_code.extensions.impact import ExtensionImpact, ImpactResolver
-from ember_code.extensions.manifest import ExtensionManifest
+from igni_core.extensions.impact import ExtensionImpact, ImpactResolver
+from igni_core.extensions.manifest import ExtensionManifest
 
 FIXTURE = Path(__file__).parent / "fixtures" / "extension_impact_cases.json"
 CASES: dict[str, Any] = json.loads(FIXTURE.read_text())

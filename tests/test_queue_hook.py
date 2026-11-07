@@ -10,14 +10,14 @@ from agno.models.openai.like import OpenAILike
 from agno.run.agent import RunOutput
 from agno.utils.hooks import filter_hook_args
 
-from ember_code.core.hooks.queue import (
+from igni_core.core.hooks.queue import (
     USER_NOTE_HEADER,
     QueueBridge,
 )
-from ember_code.core.hooks.queue import (
+from igni_core.core.hooks.queue import (
     QueueInjectorHook as _RealQueueInjectorHook,
 )
-from ember_code.core.hooks.queue import (
+from igni_core.core.hooks.queue import (
     QueuePersisterHook as _RealQueuePersisterHook,
 )
 

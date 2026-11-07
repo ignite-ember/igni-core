@@ -33,7 +33,7 @@ from typing import Any
 
 import pytest
 
-from ember_code.backend.message_dispatcher import MessageDispatcher
+from igni_core.backend.message_dispatcher import MessageDispatcher
 
 
 class _Transport:

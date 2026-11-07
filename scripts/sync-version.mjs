@@ -2,7 +2,9 @@
 // Single source-of-truth version syncer.
 //
 // ``pyproject.toml`` is igni-core's version. This script copies it into
-// the one file that carries its own copy: the package's ``__init__.py``.
+// the files that carry their own copy: the package's ``__init__.py``, and
+// packages/ignite-ember (the old name), whose version and igni-core pins
+// are igni-core's.
 // igni-app's desktop shell is released under the same version, from its
 // own ``igni-core.version`` (its scripts/sync-version.mjs).
 //
@@ -45,8 +47,21 @@ const targets = [
   {
     kind: "patch",
     label: "Python package (__init__.py)",
-    path: join(repoRoot, "src/ember_code/__init__.py"),
+    path: join(repoRoot, "src/igni_core/__init__.py"),
     pattern: /(__version__\s*=\s*")[^"]+(")/,
+  },
+  {
+    kind: "patch",
+    label: "ignite-ember, the old name (its version)",
+    path: join(repoRoot, "packages/ignite-ember/pyproject.toml"),
+    pattern: /(^version\s*=\s*")[^"]+(")/m,
+  },
+  {
+    kind: "patch",
+    label: "ignite-ember, the old name (the igni-core it installs)",
+    path: join(repoRoot, "packages/ignite-ember/pyproject.toml"),
+    // Every ``igni-core…==X`` pin: the dependency and each extra's.
+    pattern: /(igni-core(?:\[[a-z]+\])?==)[^"]+(")/g,
   },
 ];
 

@@ -13,10 +13,10 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from ember_code.backend.schemas_history import ChatTurn, VisualizationTurn
-from ember_code.backend.server_history import ChatHistoryRebuilder
-from ember_code.backend.service_item_desk import ServiceView
-from ember_code.core.session.event_log_schema import SessionEvent
+from igni_core.backend.schemas_history import ChatTurn, VisualizationTurn
+from igni_core.backend.server_history import ChatHistoryRebuilder
+from igni_core.backend.service_item_desk import ServiceView
+from igni_core.core.session.event_log_schema import SessionEvent
 
 SPEC = {"root": "t", "elements": {"t": {"type": "Text", "props": {"text": "3 open"}}}}
 

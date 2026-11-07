@@ -23,9 +23,9 @@ from typing import Any
 import pytest
 import yaml
 
-from ember_code.core.config.permission_eval import PermissionMode
-from ember_code.core.config.settings import Settings, load_settings
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.config.permission_eval import PermissionMode
+from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.paths import CONFIG_DIR
 
 #: Enough of a model registry for a Session to construct.
 _STUB_MODEL: dict[str, Any] = {
@@ -73,7 +73,7 @@ def _settings(project: Path, *, home: Path) -> Settings:
 
 @pytest.fixture
 def session(tmp_path: Path):
-    from ember_code.core.session.core import Session
+    from igni_core.core.session.core import Session
 
     project = _repo(tmp_path / "proj")
     return Session(settings=_settings(project, home=tmp_path / "home"), project_dir=project)

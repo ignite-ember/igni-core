@@ -4,7 +4,7 @@
 by what holds a busy lease (``core/activity``). A task started any other
 way is invisible to that: the process could be suspended under it. So
 code under ``src/`` starts work only through
-:class:`~ember_code.core.activity.background.BackgroundTasks` — ``start``
+:class:`~igni_core.core.activity.background.BackgroundTasks` — ``start``
 for work that finishes (busy until it does), ``daemon`` for a loop that
 lives as long as its owner, ``thread`` for a thread.
 
@@ -22,9 +22,9 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.activity import ActivityRegistry, BackgroundTasks, BusyKind
+from igni_core.core.activity import ActivityRegistry, BackgroundTasks, BusyKind
 
-SRC = Path(__file__).resolve().parents[1] / "src" / "ember_code"
+SRC = Path(__file__).resolve().parents[1] / "src" / "igni_core"
 
 #: The calls that start work behind the caller's back.
 STARTERS = {
@@ -37,7 +37,7 @@ STARTERS = {
     "start_new_thread",
 }
 
-#: ``(path under src/ember_code, call)`` → why it may.
+#: ``(path under src/igni_core, call)`` → why it may.
 ALLOWED: dict[tuple[str, str], str] = {
     ("core/activity/background.py", "create_task"): "the helper itself",
     ("core/activity/background.py", "ensure_future"): "the helper itself",
@@ -75,7 +75,7 @@ def test_no_task_or_thread_is_started_outside_the_helper():
             if (relative, name) not in ALLOWED:
                 stray.append(f"{relative}:{line} {name}(...)")
     assert stray == [], (
-        "start background work through ember_code.core.activity.background "
+        "start background work through igni_core.core.activity.background "
         "(start / daemon / thread), or add a reviewed entry to ALLOWED:\n" + "\n".join(stray)
     )
 

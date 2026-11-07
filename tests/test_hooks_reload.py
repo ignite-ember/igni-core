@@ -2,11 +2,11 @@
 
 import pytest
 
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.core.config.settings import Settings
-from ember_code.core.hooks.registry import HookRegistry
-from ember_code.core.hooks.schemas import HookDefinition, HookLoadResult
-from ember_code.core.session.core import Session
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.config.settings import Settings
+from igni_core.core.hooks.registry import HookRegistry
+from igni_core.core.hooks.schemas import HookDefinition, HookLoadResult
+from igni_core.core.session.core import Session
 
 # Reuse the shared patching infrastructure
 from tests.test_session import _session_patches, _start_patches, _stop_patches

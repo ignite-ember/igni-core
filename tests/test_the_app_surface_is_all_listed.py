@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
-_RPC = _ROOT / "src/ember_code/protocol/rpc.py"
+_RPC = _ROOT / "src/igni_core/protocol/rpc.py"
 _MATRIX = _ROOT / "docs/APP_TEST_MATRIX.md"
 
 #: Statuses a row may carry. Anything else is a typo that would quietly

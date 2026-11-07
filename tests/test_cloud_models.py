@@ -22,11 +22,11 @@ from __future__ import annotations
 
 import httpx
 
-from ember_code.core.config.cloud_models import (
+from igni_core.core.config.cloud_models import (
     CloudModelCatalogClient,
     FetchReason,
 )
-from ember_code.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.model_entry import ModelRegistryEntry
 
 # ── CloudModelCatalogClient.fetch ─────────────────────────────────────
 

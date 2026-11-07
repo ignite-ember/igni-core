@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.server_auth import AuthController
-from ember_code.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.backend.server_auth import AuthController
+from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
 from tests.group_policy_signing import ISSUER, KEY, session_token
 
 #: Hydration verifies the pack against the person this token names.
@@ -121,7 +121,7 @@ async def test_hydrate_handles_none_pack(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_hydrate_skipped_when_cache_fresh(tmp_path: Path):
     """A pre-existing fresh cache must not trigger a network call."""
-    from ember_code.core.config.group_policy import GroupPolicyCache
+    from igni_core.core.config.group_policy import GroupPolicyCache
 
     # Pre-populate the cache with a fresh fetch_at
     cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy", data_dir=tmp_path)
@@ -143,7 +143,7 @@ async def test_hydrate_passes_plugin_installer_to_cache(tmp_path: Path):
     """The AuthController must hand the cache a real ``PluginInstaller``
     so ``source_url`` plugins get installed, not skipped-with-warning.
     """
-    from ember_code.core.plugins.installer import PluginInstaller
+    from igni_core.core.plugins.installer import PluginInstaller
 
     pack = GroupPolicyPack(
         group_id="g-1",
@@ -226,7 +226,7 @@ async def test_hydrate_logs_warning_on_failure(tmp_path, monkeypatch):
     Patching the bound method on the logger instance is immune to
     that — we own the recording surface regardless of global config.
     """
-    from ember_code.core.config import group_policy as gp_mod
+    from igni_core.core.config import group_policy as gp_mod
 
     messages: list[str] = []
     real_warning = gp_mod.logger.warning
@@ -256,7 +256,7 @@ async def test_hydrate_logs_info_on_success(tmp_path, monkeypatch):
     log records when admin pushes propagate. Same logger-patch
     rationale as the warning test (see ``caplog`` caveat there).
     """
-    from ember_code.backend import server_auth as auth_mod
+    from igni_core.backend import server_auth as auth_mod
 
     messages: list[str] = []
     real_info = auth_mod.logger.info

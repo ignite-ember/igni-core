@@ -27,9 +27,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from ember_code.core.loop.limits import LOOP_HARD_CAP
-from ember_code.core.loop.models import LoopState
-from ember_code.core.session.loop_ops import LoopController
+from igni_core.core.loop.limits import LOOP_HARD_CAP
+from igni_core.core.loop.models import LoopState
+from igni_core.core.session.loop_ops import LoopController
 
 
 def _make_controller() -> LoopController:
@@ -285,7 +285,7 @@ class TestPhaseTransitions:
 
     def test_idle_to_paused_raises(self):
         # IDLE (state is None) → PAUSED must raise.
-        from ember_code.core.session.schemas import LoopPhase
+        from igni_core.core.session.schemas import LoopPhase
 
         ctrl = _make_controller()
         with pytest.raises(ValueError, match="Illegal"):

@@ -10,7 +10,7 @@ streaming logic.
 
 from __future__ import annotations
 
-from ember_code.core.tools.subagent_stream import SubAgentStreamState
+from igni_core.core.tools.subagent_stream import SubAgentStreamState
 
 
 class TestDefaults:

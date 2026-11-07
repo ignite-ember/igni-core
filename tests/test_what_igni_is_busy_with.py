@@ -17,12 +17,12 @@ from typing import Any
 import httpx
 import pytest
 
-from ember_code.backend.activity import Activity, ActivityState, SessionActivity
-from ember_code.core.activity import ActivityRegistry, BusyKind
-from ember_code.core.activity.http import BusyAsyncClient, BusyClient
-from ember_code.core.scheduler.runner import SchedulerRunner
-from ember_code.extensions.busy import ExtensionBusy
-from ember_code.extensions.service import McpExtensionService
+from igni_core.backend.activity import Activity, ActivityState, SessionActivity
+from igni_core.core.activity import ActivityRegistry, BusyKind
+from igni_core.core.activity.http import BusyAsyncClient, BusyClient
+from igni_core.core.scheduler.runner import SchedulerRunner
+from igni_core.extensions.busy import ExtensionBusy
+from igni_core.extensions.service import McpExtensionService
 from tests.host_model_helpers import HostRig
 
 

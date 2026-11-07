@@ -20,8 +20,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ember_code.backend.server_scheduler import SchedulerController
-from ember_code.core.scheduler.prompt import wrap_scheduled_prompt
+from igni_core.backend.server_scheduler import SchedulerController
+from igni_core.core.scheduler.prompt import wrap_scheduled_prompt
 
 _DESCRIPTION = "check the error rate on the payments dashboard and summarise it"
 

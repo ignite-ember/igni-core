@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.backend.supervisor import BackendSupervisor
+from igni_core.backend.supervisor import BackendSupervisor
 
 
 class _Loop:

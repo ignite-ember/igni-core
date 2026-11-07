@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ember_code.backend.plugin_schemas import PluginContents
+from igni_core.backend.plugin_schemas import PluginContents
 
 
 def _write(path: Path, text: str) -> None:

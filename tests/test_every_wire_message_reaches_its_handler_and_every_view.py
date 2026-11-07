@@ -35,11 +35,11 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ember_code.backend.message_dispatcher import ExtensionMessage, MessageDispatcher
-from ember_code.backend.schemas_sessions import AutoNameResult
-from ember_code.core.activity import background
-from ember_code.extensions.registry import ExtensionRefused
-from ember_code.protocol import messages as msg
+from igni_core.backend.message_dispatcher import ExtensionMessage, MessageDispatcher
+from igni_core.backend.schemas_sessions import AutoNameResult
+from igni_core.core.activity import background
+from igni_core.extensions.registry import ExtensionRefused
+from igni_core.protocol import messages as msg
 
 
 class _Transport:

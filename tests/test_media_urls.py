@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from agno.media import Audio, File, Image, Video
 
-from ember_code.core.utils.media import _classify_extension, extract_media_urls
+from igni_core.core.utils.media import _classify_extension, extract_media_urls
 
 
 class TestClassifyExtension:

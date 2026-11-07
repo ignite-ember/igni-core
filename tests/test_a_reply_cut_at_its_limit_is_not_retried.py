@@ -30,11 +30,11 @@ from agno.agent import Agent
 from agno.exceptions import ModelProviderError
 from agno.run.base import RunStatus
 
-from ember_code.core.agents.builder import AgentBuilder
-from ember_code.core.agents.schemas import AgentBuildContext, AgentDefinition
-from ember_code.core.config.models import ModelRegistry
-from ember_code.core.config.reply_ending import ModelReplyCut, ReplyCutRetries
-from ember_code.core.config.settings import Settings
+from igni_core.core.agents.builder import AgentBuilder
+from igni_core.core.agents.schemas import AgentBuildContext, AgentDefinition
+from igni_core.core.config.models import ModelRegistry
+from igni_core.core.config.reply_ending import ModelReplyCut, ReplyCutRetries
+from igni_core.core.config.settings import Settings
 
 
 class Server:

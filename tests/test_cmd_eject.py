@@ -21,8 +21,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.backend.cmd_eject import EJECTABLE, EjectCommand
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.backend.cmd_eject import EJECTABLE, EjectCommand
+from igni_core.core.paths import CONFIG_DIR
 
 
 def _session(tmp_path: Path, group: dict[str, dict[str, str]] | None = None):
@@ -196,7 +196,7 @@ class TestTheKindTable:
             assert "{name}" in filename, kind
 
     def test_the_command_is_registered(self):
-        from ember_code.backend.builtin_command_registry import BUILTIN_REGISTRY
+        from igni_core.backend.builtin_command_registry import BUILTIN_REGISTRY
 
         assert "eject" in BUILTIN_REGISTRY.names()
         assert BUILTIN_REGISTRY.get("/eject") is not None

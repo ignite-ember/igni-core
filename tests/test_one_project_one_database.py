@@ -1,7 +1,7 @@
 """Every spelling of a project opens the same ``state.db``.
 
 The backend, ``igni migrate`` and every store name the project's database
-through :func:`ember_code.core.data_paths.canonical_project_dir`. Before,
+through :func:`igni_core.core.data_paths.canonical_project_dir`. Before,
 the backend resolved symlinks and ``igni migrate`` did not, so on macOS
 ``/var/x`` and ``/private/var/x`` hashed to two databases and a volume
 prepared by ``igni migrate`` was not the one the backend opened.
@@ -17,8 +17,8 @@ import textwrap
 import time
 from pathlib import Path
 
-from ember_code.core.data_paths import canonical_project_dir, resolve_project_id, state_db_path
-from ember_code.core.db.schema import HEAD_REVISION, SchemaRevision
+from igni_core.core.data_paths import canonical_project_dir, resolve_project_id, state_db_path
+from igni_core.core.db.schema import HEAD_REVISION, SchemaRevision
 
 
 def _project_with_alias(tmp_path: Path) -> tuple[Path, Path]:
@@ -66,7 +66,7 @@ def test_igni_migrate_from_elsewhere_prepares_the_named_projects_database(tmp_pa
     elsewhere.mkdir()
     real, aliased = _project_with_alias(tmp_path)
     subprocess.run(
-        [sys.executable, "-m", "ember_code", "migrate", "--project-dir", str(aliased)],
+        [sys.executable, "-m", "igni_core", "migrate", "--project-dir", str(aliased)],
         cwd=elsewhere,
         env=_env(tmp_path, home),
         check=True,
@@ -92,8 +92,8 @@ _RUNNER = textwrap.dedent(
         os.replace(out + ".tmp", out)
 
     threading.Thread(target=dump_when_asked, daemon=True).start()
-    sys.argv = ["ember_code.backend", "--ws-port", "0", "--project-dir", os.environ["PROJECT"]]
-    runpy.run_module("ember_code.backend", run_name="__main__", alter_sys=True)
+    sys.argv = ["igni_core.backend", "--ws-port", "0", "--project-dir", os.environ["PROJECT"]]
+    runpy.run_module("igni_core.backend", run_name="__main__", alter_sys=True)
     """
 )
 
@@ -114,7 +114,7 @@ def test_the_backend_opens_the_database_igni_migrate_prepared(tmp_path: Path):
     # Prepared through the alias, started through the real path, from a
     # directory that is neither.
     subprocess.run(
-        [sys.executable, "-m", "ember_code", "migrate", "--project-dir", str(aliased)],
+        [sys.executable, "-m", "igni_core", "migrate", "--project-dir", str(aliased)],
         cwd=elsewhere,
         env=env,
         check=True,

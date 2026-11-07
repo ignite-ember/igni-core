@@ -42,7 +42,7 @@ neo4j scaffolding.
     `d4e5f6a7b8c9` migration's module docstring (dropped the
     "PARKED" notice that explained why the file was renamed
     `.py.disabled`).
-14. `0995c52` — **jvm package**: `ember_code.jvm.ensure_jdk` sync
+14. `0995c52` — **jvm package**: `igni_core.jvm.ensure_jdk` sync
     wrapper for the IDE shells (Tauri / JetBrains / VSCode) that
     bootstrap a JDK as a subprocess.
 15. `d387c56` — **38 missing unit tests** for the neo4j scaffolding

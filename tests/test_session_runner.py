@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.session.runner import run_single_message
+from igni_core.core.session.runner import run_single_message
 
 
 def _make_mock_session():
@@ -33,7 +33,7 @@ def _make_mock_session():
 class TestRunSingleMessage:
     @pytest.mark.asyncio
     async def test_runs_message_and_prints_response(self, tmp_path):
-        with patch("ember_code.core.session.session_run.Session") as MockSession:
+        with patch("igni_core.core.session.session_run.Session") as MockSession:
             mock_session = _make_mock_session()
             MockSession.return_value = mock_session
 
@@ -45,7 +45,7 @@ class TestRunSingleMessage:
 
     @pytest.mark.asyncio
     async def test_fires_session_start_and_end_hooks(self, tmp_path):
-        with patch("ember_code.core.session.session_run.Session") as MockSession:
+        with patch("igni_core.core.session.session_run.Session") as MockSession:
             mock_session = _make_mock_session()
             mock_session.session_id = "s1"
             mock_session.handle_message = AsyncMock(return_value="ok")
@@ -60,7 +60,7 @@ class TestRunSingleMessage:
 
     @pytest.mark.asyncio
     async def test_passes_project_dir_and_additional_dirs(self):
-        with patch("ember_code.core.session.session_run.Session") as MockSession:
+        with patch("igni_core.core.session.session_run.Session") as MockSession:
             mock_session = _make_mock_session()
             mock_session.session_id = "s1"
             mock_session.handle_message = AsyncMock(return_value="ok")
@@ -103,7 +103,7 @@ class TestAnEmptyModelTurnIsNotSilence:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("empty", ["", "   ", "\n\n"])
     async def test_an_empty_response_says_so(self, empty):
-        with patch("ember_code.core.session.session_run.Session") as MockSession:
+        with patch("igni_core.core.session.session_run.Session") as MockSession:
             mock_session = _make_mock_session()
             mock_session.handle_message = AsyncMock(return_value=empty)
             MockSession.return_value = mock_session
@@ -121,7 +121,7 @@ class TestAnEmptyModelTurnIsNotSilence:
     async def test_a_real_response_is_still_rendered_normally(self):
         """Guards the guard: a warning on every turn would be worse
         than the silence it replaced."""
-        with patch("ember_code.core.session.session_run.Session") as MockSession:
+        with patch("igni_core.core.session.session_run.Session") as MockSession:
             mock_session = _make_mock_session()
             mock_session.handle_message = AsyncMock(return_value="the answer")
             MockSession.return_value = mock_session
@@ -139,7 +139,7 @@ class TestAnEmptyModelTurnIsNotSilence:
         string is truthy — and the user would still see a blank line
         and a timing figure.
         """
-        with patch("ember_code.core.session.session_run.Session") as MockSession:
+        with patch("igni_core.core.session.session_run.Session") as MockSession:
             mock_session = _make_mock_session()
             mock_session.handle_message = AsyncMock(return_value=" \n\t ")
             MockSession.return_value = mock_session

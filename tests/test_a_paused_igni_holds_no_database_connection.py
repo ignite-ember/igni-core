@@ -16,8 +16,8 @@ from typing import Any
 
 from sqlalchemy import event, text
 
-from ember_code.core.db.engine_registry import EngineRegistry, PostgresConnectionSetup
-from ember_code.core.db.urls import DatabaseUrl, Dialect
+from igni_core.core.db.engine_registry import EngineRegistry, PostgresConnectionSetup
+from igni_core.core.db.urls import DatabaseUrl, Dialect
 
 
 async def test_before_a_pause_every_connection_closes_and_the_next_query_opens_one(

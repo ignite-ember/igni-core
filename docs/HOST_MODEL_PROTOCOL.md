@@ -5,11 +5,11 @@
 and the SDK does the rest. This page is for whoever maintains those SDKs,
 or writes one for another language. The model itself — its objects,
 members, permissions and stages — is `docs/HOST_OBJECT_MODEL.md`, and is
-described once in `ember_code.extensions.host.definition`; the protocol
+described once in `igni_core.extensions.host.definition`; the protocol
 version below changes only when these messages do.
 
 There are two channels and one request shape. The host answers both
-through `HostModel.handle` (`src/ember_code/extensions/host/model.py`),
+through `HostModel.handle` (`src/igni_core/extensions/host/model.py`),
 so a request means the same thing on either.
 
 ## The process's channel: a loopback WebSocket
@@ -95,7 +95,7 @@ person does, so it has no limit.
 
 `code` is one of `not_granted`, `not_found`, `invalid`, `read_only`,
 `stage_2`, `refused`, `unavailable`, `failed` (`ErrorCode` in
-`ember_code.extensions.host.spec`). An SDK raises one error type carrying
+`igni_core.extensions.host.spec`). An SDK raises one error type carrying
 `code` and the message; the message is a sentence for the extension's
 author and is not meant to be parsed.
 

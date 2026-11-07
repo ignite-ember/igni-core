@@ -33,7 +33,7 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parent.parent
-_TOOLS = _ROOT / "src/ember_code/core/tools"
+_TOOLS = _ROOT / "src/igni_core/core/tools"
 _TESTS = _ROOT / "tests"
 
 #: Functions registered by igni's toolkits that no test names, with
@@ -205,7 +205,7 @@ class TestExecutionToolsAreGated:
         decision somebody makes on purpose, with the paragraph above
         in front of them.
         """
-        from ember_code.core.tools.tool_spec import ToolSpecCatalog
+        from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
         catalog = ToolSpecCatalog.default()
         assert "Python" not in catalog.registry_names_with_aliases
@@ -217,7 +217,7 @@ class TestExecutionToolsAreGated:
         them, so they granted nothing and could only be reached by a
         user-authored ephemeral — which ``create_agent``'s own
         docstring was still recommending."""
-        from ember_code.core.tools.tool_spec import ToolSpecCatalog
+        from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
         assert retired not in ToolSpecCatalog.default().registry_names_with_aliases
 
@@ -250,7 +250,7 @@ class TestExecutionToolsAreGated:
         """
         from pathlib import Path
 
-        from ember_code.core.tools.tool_spec import ToolBuildContext, ToolSpecCatalog
+        from igni_core.core.tools.tool_spec import ToolBuildContext, ToolSpecCatalog
 
         spec = next((s for s in ToolSpecCatalog.default().specs if s.name == spec_name), None)
         assert spec is not None, f"{spec_name} is no longer in the catalog"
@@ -289,7 +289,7 @@ class TestExecutionToolsAreGated:
         """
         from pathlib import Path
 
-        from ember_code.core.tools.tool_spec import ToolBuildContext, ToolSpecCatalog
+        from igni_core.core.tools.tool_spec import ToolBuildContext, ToolSpecCatalog
 
         read_only = {
             "read_file",
@@ -324,7 +324,7 @@ class TestExecutionToolsAreGated:
         )
 
     def test_the_ungated_list_is_still_true(self):
-        from ember_code.core.tools.tool_spec import ToolSpecCatalog
+        from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
         by_name = {s.name: s for s in ToolSpecCatalog.default().specs}
         wrong = sorted(

@@ -18,8 +18,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from ember_code.backend.hitl_stream_mux import HITLStreamMultiplexer
-from ember_code.protocol.schemas.be_events import ContentDelta
+from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
+from igni_core.protocol.schemas.be_events import ContentDelta
 
 
 @dataclass

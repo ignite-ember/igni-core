@@ -19,9 +19,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import ember_code.backend.workflow_runner as runner_mod
-from ember_code.backend.workflow_runner import WorkflowDiscovery, WorkflowRunner
-from ember_code.core.paths import CONFIG_DIR
+import igni_core.backend.workflow_runner as runner_mod
+from igni_core.backend.workflow_runner import WorkflowDiscovery, WorkflowRunner
+from igni_core.core.paths import CONFIG_DIR
 
 
 def _fake_exec_reporting_source(project: Path):

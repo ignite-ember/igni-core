@@ -14,10 +14,10 @@ from types import SimpleNamespace
 import pytest
 from click.testing import CliRunner
 
-from ember_code.backend.headless_extensions import HeadlessExtensions
-from ember_code.core.auth.credentials import Credentials, CredentialsStore
-from ember_code.extensions.distribution import OneShotSync
-from ember_code.extensions.store import ExtensionStore
+from igni_core.backend.headless_extensions import HeadlessExtensions
+from igni_core.core.auth.credentials import Credentials, CredentialsStore
+from igni_core.extensions.distribution import OneShotSync
+from igni_core.extensions.store import ExtensionStore
 from tests.extension_distribution_helpers import (
     API_URL,
     SESSION,
@@ -28,8 +28,8 @@ from tests.extension_distribution_helpers import (
     manifest,
 )
 
-# ``ember_code.cli`` re-exports the ``ext`` group under the module's name.
-ext_cli = importlib.import_module("ember_code.cli.ext")
+# ``igni_core.cli`` re-exports the ``ext`` group under the module's name.
+ext_cli = importlib.import_module("igni_core.cli.ext")
 
 
 class World:

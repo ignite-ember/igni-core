@@ -19,13 +19,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ember_code.core.config.settings import load_settings
-from ember_code.core.dir_migration import (
+from igni_core.core.config.settings import load_settings
+from igni_core.core.dir_migration import (
     migrate_directory,
     migrate_home,
     migrate_project,
 )
-from ember_code.core.paths import CONFIG_DIR, LEGACY_CONFIG_DIR, home_config_dir
+from igni_core.core.paths import CONFIG_DIR, LEGACY_CONFIG_DIR, home_config_dir
 
 
 def _legacy(parent: Path, **files: str) -> Path:

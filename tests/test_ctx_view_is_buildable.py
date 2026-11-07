@@ -16,8 +16,8 @@ front of a user, at the moment they type `/ctx`.
 
 from __future__ import annotations
 
-from ember_code.backend.schemas_context import ContextBreakdownView
-from ember_code.core.session.schemas import ContextBreakdown
+from igni_core.backend.schemas_context import ContextBreakdownView
+from igni_core.core.session.schemas import ContextBreakdown
 
 
 def _breakdown() -> ContextBreakdown:

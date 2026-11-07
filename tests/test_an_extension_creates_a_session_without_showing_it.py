@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from ember_code.protocol import messages as msg
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import FakeSession, HostRig
 
 WRITER = ["sessions", "chat.read", "chat.post", "sessions.post"]

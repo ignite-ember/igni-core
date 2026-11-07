@@ -29,21 +29,21 @@ from typing import Any
 
 import pytest
 
-from ember_code.cli.options import CliOptions
-from ember_code.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
-from ember_code.core.config.models import CliOverrides
-from ember_code.core.config.settings import load_settings
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.group_hook_gate import (
+from igni_core.cli.options import CliOptions
+from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.models import CliOverrides
+from igni_core.core.config.settings import load_settings
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.group_hook_gate import (
     APPROVAL_NAME,
     GroupHookDecisions,
     GroupHookGate,
 )
-from ember_code.core.hooks.loader import HookLoader
-from ember_code.core.hooks.registry import HookRegistry
-from ember_code.core.hooks.schemas import HookDefinition, HookLoadResult, MergeStrategy
+from igni_core.core.hooks.loader import HookLoader
+from igni_core.core.hooks.registry import HookRegistry
+from igni_core.core.hooks.schemas import HookDefinition, HookLoadResult, MergeStrategy
 
-SRC = Path(__file__).resolve().parents[1] / "src" / "ember_code"
+SRC = Path(__file__).resolve().parents[1] / "src" / "igni_core"
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ class TestTheSettingIsTheDevelopers:
         managed = tmp_path / "managed.yaml"
         managed.write_text("hooks:\n  group: run\n", encoding="utf-8")
         monkeypatch.setattr(
-            "ember_code.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
         _user_config("hooks:\n  group: ask\n")
@@ -241,7 +241,7 @@ class TestTheLoaderMarksTheGroupsHooks:
         assert not own_registry.for_event("Stop")[0].from_group
 
     def test_the_plugin_loader_passes_the_group_root(self, tmp_path: Path):
-        from ember_code.core.plugins.loader import GROUP_POLICY_ROOT, PluginLoader
+        from igni_core.core.plugins.loader import GROUP_POLICY_ROOT, PluginLoader
 
         seen: dict[str, bool] = {}
 
@@ -479,7 +479,7 @@ class TestNoPathAroundTheGate:
         assert source.count("group_hook_gate=self._group_hook_gate()") == constructions
 
     def test_the_sessions_gate_reads_the_live_setting(self):
-        from ember_code.core.session.core import Session
+        from igni_core.core.session.core import Session
 
         class Holder:
             settings = load_settings()
@@ -499,7 +499,7 @@ class TestNoPathAroundTheGate:
 
 class TestStrictSaysSo:
     def test_the_help_names_the_group_hooks(self):
-        from ember_code.cli import cli
+        from igni_core.cli import cli
 
         strict = next(p for p in cli.params if p.name == "strict")
         help_text = " ".join((strict.help or "").split())

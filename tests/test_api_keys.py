@@ -1,6 +1,6 @@
 """Tests for ModelRegistryEntry.resolve_api_key — API key resolution."""
 
-from ember_code.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.model_entry import ModelRegistryEntry
 
 
 def _entry(**fields) -> ModelRegistryEntry:

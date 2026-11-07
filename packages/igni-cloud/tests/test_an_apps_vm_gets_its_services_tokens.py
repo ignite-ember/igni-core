@@ -20,9 +20,9 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from ember_code.extensions.principal import PrincipalKind, SignedInPerson
-from ember_code.extensions.service_token import CredentialsSession, ServiceTokenExchange
-from ember_code.extensions.store import ExtensionStore
+from igni_core.extensions.principal import PrincipalKind, SignedInPerson
+from igni_core.extensions.service_token import CredentialsSession, ServiceTokenExchange
+from igni_core.extensions.store import ExtensionStore
 
 SERVICE = "https://index.acme.test"
 

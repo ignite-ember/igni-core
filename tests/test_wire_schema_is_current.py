@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 
-from ember_code.protocol.wire_schema import SNAPSHOT_PATH, build_schema, render
+from igni_core.protocol.wire_schema import SNAPSHOT_PATH, build_schema, render
 
 REGENERATE = "uv run python scripts/dump_wire_schema.py"
 
@@ -54,7 +54,7 @@ def test_the_generator_agrees_with_the_transport():
     ``type`` string into a class. A message it accepts but the schema
     omits is a message the frontend can receive and no test can check.
     """
-    from ember_code.protocol.registry import MessageRegistry
+    from igni_core.protocol.registry import MessageRegistry
 
     schema = build_schema()
     missing = set(MessageRegistry().known_types()) - set(schema["messages"])

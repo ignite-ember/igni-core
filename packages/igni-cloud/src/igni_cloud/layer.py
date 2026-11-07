@@ -1,7 +1,7 @@
 """The cloud layer: igni in a producer's microVM (``IGNI_PROFILE=cloud``).
 
 ``docs/CLOUD.md`` §9. Declared as the ``cloud`` entry point of the
-``igni.layers`` group, so the core's :class:`~ember_code.core.layer.Layers`
+``igni.layers`` group, so the core's :class:`~igni_core.core.layer.Layers`
 installs it when the image sets ``IGNI_PROFILE=cloud`` — for the backend,
 ``igni migrate`` and the CLI alike. What it changes:
 
@@ -35,14 +35,14 @@ import logging
 from pathlib import Path
 from typing import ClassVar
 
-from ember_code.core.auth.credentials import CredentialSource
-from ember_code.core.layer import BackendHooks, Layer
-from ember_code.core.mcp.approval import McpApprovalPolicy
 from igni_cloud.credentials import EnvironmentCredentials
 from igni_cloud.guest.contract import CloudGuest
 from igni_cloud.guest.paths import GuestPaths
 from igni_cloud.logs import StdoutLog
 from igni_cloud.mcp_approvals import CloudMcpApprovals
+from igni_core.core.auth.credentials import CredentialSource
+from igni_core.core.layer import BackendHooks, Layer
+from igni_core.core.mcp.approval import McpApprovalPolicy
 
 
 class CloudLayer(Layer):

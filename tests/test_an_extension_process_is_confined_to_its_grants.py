@@ -3,7 +3,7 @@
 Its ``permissions.egress`` and ``permissions.workspace`` were enforced on
 its pages and on what igni told it; the process itself could open any
 socket and read any file the person can. Now it starts in an OS sandbox
-(:mod:`ember_code.extensions.sandbox`): Seatbelt on macOS, bubblewrap on
+(:mod:`igni_core.extensions.sandbox`): Seatbelt on macOS, bubblewrap on
 Linux, with an egress proxy igni runs as the only way out.
 
 The macOS tests run the real sandbox and skip elsewhere; the Linux ones
@@ -26,13 +26,13 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.mcp.config import MCPServerConfig, MCPTransport
-from ember_code.core.network_policy import NetworkPolicy
-from ember_code.extensions.installer import ExtensionInstaller
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.extensions.sandbox import (
+from igni_core.core.mcp.config import MCPServerConfig, MCPTransport
+from igni_core.core.network_policy import NetworkPolicy
+from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.sandbox import (
     NO_PROXY,
     REQUIRE_SANDBOX_ENV,
     EgressProxy,
@@ -42,8 +42,8 @@ from ember_code.extensions.sandbox import (
     SandboxRefused,
     SandboxSettings,
 )
-from ember_code.extensions.sandbox.bubblewrap import PROXY_PORT, Bubblewrap
-from ember_code.extensions.sandbox.seatbelt import Seatbelt
+from igni_core.extensions.sandbox.bubblewrap import PROXY_PORT, Bubblewrap
+from igni_core.extensions.sandbox.seatbelt import Seatbelt
 
 pytestmark = pytest.mark.extension_sandbox
 
@@ -399,7 +399,7 @@ def test_require_sandbox_comes_from_managed_or_the_env_and_never_the_user(tmp_pa
 def group_pack(extensions: dict):
     from datetime import UTC, datetime
 
-    from ember_code.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+    from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
 
     return GroupPolicyPack(
         group_id="g1",
@@ -430,7 +430,7 @@ def test_a_verified_group_policy_may_require_the_sandbox_but_not_turn_it_off(tmp
 
 
 def test_a_group_policy_that_does_not_verify_requires_nothing(tmp_path):
-    from ember_code.core.config.group_policy import GroupPolicyUnavailable
+    from igni_core.core.config.group_policy import GroupPolicyUnavailable
 
     def unverified():
         raise GroupPolicyUnavailable("the pack on disk does not verify")
@@ -444,7 +444,7 @@ def test_a_group_policy_that_does_not_verify_requires_nothing(tmp_path):
 
 
 def test_the_backend_reads_the_group_policy_through_the_verifying_fetcher(monkeypatch):
-    from ember_code.core.config import group_policy
+    from igni_core.core.config import group_policy
 
     seen = []
 
@@ -844,7 +844,7 @@ server.run()
 
 @pytest.mark.skipif(not ON_MACOS, reason="Seatbelt is macOS")
 async def test_on_macos_an_installed_extension_speaks_mcp_from_inside(tmp_path):
-    from ember_code.core.mcp.client import MCPClientManager
+    from igni_core.core.mcp.client import MCPClientManager
 
     sandbox = ExtensionSandbox(settings=SandboxSettings())
     if (await sandbox.mechanism())[0] != "seatbelt":

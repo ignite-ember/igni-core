@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from ember_code.core.hooks.loader import HookLoader
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.hooks.loader import HookLoader
+from igni_core.core.paths import CONFIG_DIR
 
 
 class TestHooksCrossToolSupport:
@@ -88,9 +88,9 @@ class TestHooksCrossToolSupport:
         fake_home.mkdir()
 
         # Ember hook
-        ember_dir = tmp_path / CONFIG_DIR
+        igni_dir = tmp_path / CONFIG_DIR
         self._make_settings_file(
-            ember_dir / "settings.json",
+            igni_dir / "settings.json",
             {"PreToolUse": [{"type": "command", "command": "echo ember"}]},
         )
 
@@ -113,9 +113,9 @@ class TestHooksCrossToolSupport:
         fake_home = tmp_path / "home"
         fake_home.mkdir()
 
-        ember_dir = tmp_path / CONFIG_DIR
+        igni_dir = tmp_path / CONFIG_DIR
         self._make_settings_file(
-            ember_dir / "settings.json",
+            igni_dir / "settings.json",
             {"PreToolUse": [{"type": "command", "command": "echo ember"}]},
         )
 

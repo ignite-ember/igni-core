@@ -14,18 +14,18 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ember_code.core.db.database import Database
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.extensions.service_events import (
+from igni_core.core.db.database import Database
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.extensions.service_events import (
     DeliveredEvents,
     HandEvent,
     ServiceEvent,
     ServiceEventInbox,
     UnattendedPost,
 )
-from ember_code.extensions.service_items import ItemAttachment
-from ember_code.extensions.service_landing import Lander
-from ember_code.extensions.service_threads import HeldPosts, ServiceThreads
+from igni_core.extensions.service_items import ItemAttachment
+from igni_core.extensions.service_landing import Lander
+from igni_core.extensions.service_threads import HeldPosts, ServiceThreads
 from tests.storage_backends import Scopes
 
 #: The chat a person has open: nothing a service sends may land there.

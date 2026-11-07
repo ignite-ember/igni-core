@@ -36,7 +36,7 @@ import sys
 import tempfile
 import types
 
-from ember_code.core.activity import background
+from igni_core.core.activity import background
 
 logger = logging.getLogger(__name__)
 

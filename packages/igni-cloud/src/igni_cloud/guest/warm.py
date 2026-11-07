@@ -6,7 +6,7 @@ imported by then is in every VM already, in memory pages the restores
 share. Whatever it imports later, each producer's first request pays
 for, and holds a private copy of.
 
-Most of a bound backend is imported with ``ember_code.backend.app``.
+Most of a bound backend is imported with ``igni_core.backend.app``.
 :attr:`WarmImports.MODULES` is the rest: what the first bind, the first
 request and the first run import on top, as measured by
 ``scripts/measure_warm_base.py`` (bind to a PostgreSQL database, answer a
@@ -40,7 +40,7 @@ class WarmImports:
         "alembic.runtime.migration",
         "alembic.script",
         "mako.template",
-        "ember_code.core.db.migrations",
+        "igni_core.core.db.migrations",
         # A model call: the OpenAI client's request and streaming path,
         # and the async backend under httpx.
         "openai.resources.chat.completions.completions",
@@ -56,9 +56,9 @@ class WarmImports:
         "agno.agent._telemetry",
         "agno.utils.callables",
         "agno.utils.json_schema",
-        "ember_code.core.hooks.bypass_guard",
-        "ember_code.core.hooks.bypass_explainer",
-        "ember_code.backend.workflow_runner",
+        "igni_core.core.hooks.bypass_guard",
+        "igni_core.core.hooks.bypass_explainer",
+        "igni_core.backend.workflow_runner",
         # The standard library's share of the above.
         "concurrent.futures.thread",
         "ctypes",

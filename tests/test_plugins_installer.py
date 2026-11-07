@@ -19,13 +19,13 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.plugins.git import GitClient
-from ember_code.core.plugins.installer import (
+from igni_core.core.plugins.git import GitClient
+from igni_core.core.plugins.installer import (
     PluginError,
     PluginInstaller,
     _looks_like_sha,
 )
-from ember_code.core.plugins.state import load_state
+from igni_core.core.plugins.state import load_state
 
 # ── Auto-skip when git isn't available ──────────────────────────────
 
@@ -320,7 +320,7 @@ def test_install_with_malformed_manifest_cleans_up(tmp_path: Path) -> None:
     """A repo whose ``plugin.json`` exists but doesn't parse cleanly
     should error AND clean up the temp directory — a partial install
     must never appear in ``plugins/``."""
-    from ember_code.core.plugins.installer import PluginError
+    from igni_core.core.plugins.installer import PluginError
 
     sources = tmp_path / "sources"
     sources.mkdir()
@@ -434,7 +434,7 @@ def test_remove_drops_disabled_entry(tmp_path: Path) -> None:
     # contract).
     state = load_state(data_dir=tmp_path / "ember")
     state.disabled = ["eta"]
-    from ember_code.core.plugins.state import save_state
+    from igni_core.core.plugins.state import save_state
 
     save_state(state, data_dir=tmp_path / "ember")
 

@@ -372,7 +372,7 @@ in silence, anyone who copied that block got a config file that did
 nothing and no error telling them so.
 
 What actually decides what initialisation does is `InitConfig` in
-`src/ember_code/core/init/schemas.py`, and it is **not user-facing**:
+`src/igni_core/core/init/schemas.py`, and it is **not user-facing**:
 its options are set programmatically from the group policy your
 organisation ships.
 
@@ -390,7 +390,7 @@ question on the server, not a key in your config file.
 ## Project Structure
 
 ```
-src/ember_code/
+src/igni_core/
 ├── onboarding/
 │   ├── __init__.py
 │   ├── flow.py               # Main onboarding orchestration

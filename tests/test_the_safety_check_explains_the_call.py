@@ -16,15 +16,15 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-from ember_code.backend.hitl_controller import HitlController
-from ember_code.backend.hitl_stream_mux import HITLStreamMultiplexer
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-from ember_code.core.config.schemas.safety import BypassGuardConfig
-from ember_code.core.hooks.bypass_explainer import CallExplainer, clean
-from ember_code.core.hooks.bypass_guard import BypassGuard, Verdict, explained
-from ember_code.core.session.core import Session
-from ember_code.core.sub_agent_hitl import SubAgentHITLCoordinator
-from ember_code.protocol import messages as msg
+from igni_core.backend.hitl_controller import HitlController
+from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.core.config.schemas.safety import BypassGuardConfig
+from igni_core.core.hooks.bypass_explainer import CallExplainer, clean
+from igni_core.core.hooks.bypass_guard import BypassGuard, Verdict, explained
+from igni_core.core.session.core import Session
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
+from igni_core.protocol import messages as msg
 
 _SENTENCE = (
     "Overwrites main on origin with your local branch, discarding any commits "
@@ -184,7 +184,7 @@ class TestOneRequestOneAnswer:
 
 class TestNoSentenceMeansThePlainReason:
     def test_no_model_configured(self):
-        from ember_code.core.config.null_model import NoModelConfigured
+        from igni_core.core.config.null_model import NoModelConfigured
 
         explainer = CallExplainer(lambda: NoModelConfigured(id="none"))
         assert asyncio.run(explainer.explain("bash", {"command": "x"}, "why")) is None

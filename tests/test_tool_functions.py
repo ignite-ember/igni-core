@@ -9,8 +9,8 @@ import pytest
 from agno.tools.file import FileTools
 from agno.tools.shell import ShellTools
 
-from ember_code.core.config.tool_permissions import ToolPermissions
-from ember_code.core.tools.registry import ToolRegistry
+from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.tools.registry import ToolRegistry
 
 # ── Read (Agno FileTools) ────────────────────────────────────────
 
@@ -193,7 +193,7 @@ class TestToolRegistryResolveEdges:
 
     def test_bashoutput_aliases_to_bash_for_dedup(self):
         # ``BashOutput`` is a separate tool name (CC convention)
-        # but maps to the same EmberShellTools instance. Without
+        # but maps to the same IgniShellTools instance. Without
         # the canonical mapping, Agno would see two toolkits
         # exposing ``run_shell_command`` and the second
         # registration would either error or shadow the first.

@@ -23,7 +23,7 @@ import pathlib
 import re
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-_SRC = _ROOT / "src/ember_code"
+_SRC = _ROOT / "src/igni_core"
 
 _ALLOWED_HOSTS: dict[str, str] = {
     # ── The customer's own deployment, or a provider they connected ──
@@ -214,7 +214,7 @@ def test_every_host_is_allow_listed_with_a_reason():
     unknown = sorted(set(found) - set(_ALLOWED_HOSTS))
 
     assert not unknown, (
-        "these hosts are named in src/ember_code and are not on the allow-list:\n"
+        "these hosts are named in src/igni_core and are not on the allow-list:\n"
         + "\n".join(f"  {h} — in {sorted(found[h])}" for h in unknown)
         + "\n\nThis CLI runs on a developer machine with their source open. If the host "
         "is somewhere the customer chose to send data, or a one-time bootstrap download, "
@@ -278,8 +278,8 @@ def test_the_update_check_can_be_turned_off():
 
     import httpx
 
-    from ember_code.core.config.settings import Settings
-    from ember_code.core.utils.update_checker import UpdateChecker
+    from igni_core.core.config.settings import Settings
+    from igni_core.core.utils.update_checker import UpdateChecker
 
     calls: list[str] = []
 
@@ -317,10 +317,10 @@ def test_an_unconfigured_session_start_clones_no_marketplace(tmp_path):
     import subprocess
     from unittest.mock import patch
 
-    from ember_code.core.config.schemas import StorageConfig
-    from ember_code.core.config.settings import Settings
-    from ember_code.core.session.core import Session
-    from ember_code.core.session.startup.marketplace import MarketplaceWarmupPhase
+    from igni_core.core.config.schemas import StorageConfig
+    from igni_core.core.config.settings import Settings
+    from igni_core.core.session.core import Session
+    from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
 
     started: list[list[str]] = []
 
@@ -332,17 +332,17 @@ def test_an_unconfigured_session_start_clones_no_marketplace(tmp_path):
     assert settings.air_gapped is False
     session = Session.__new__(Session)
     session.settings = settings
-    with patch("ember_code.core.plugins.git.subprocess.run", no_git):
+    with patch("igni_core.core.plugins.git.subprocess.run", no_git):
         asyncio.run(MarketplaceWarmupPhase(session)._refresh_all())
 
     assert started == []
 
 
 def test_the_default_marketplace_is_registered_only_on_request(tmp_path):
-    from ember_code.core.config.schemas import PluginsConfig
-    from ember_code.core.config.settings import Settings
-    from ember_code.core.plugins.marketplace_store import DEFAULT_MARKETPLACES
-    from ember_code.core.plugins.source_policy import PluginSourcePolicy
+    from igni_core.core.config.schemas import PluginsConfig
+    from igni_core.core.config.settings import Settings
+    from igni_core.core.plugins.marketplace_store import DEFAULT_MARKETPLACES
+    from igni_core.core.plugins.source_policy import PluginSourcePolicy
 
     [(_name, official)] = DEFAULT_MARKETPLACES
     assert PluginSourcePolicy.from_settings(Settings()).marketplaces_to_register() == []
@@ -356,9 +356,9 @@ def test_the_web_asks_before_it_leaves_the_network(tmp_path):
     """WebSearch (DuckDuckGo) and WebFetch went out the moment the model
     called them: both defaulted to "allow". A request out of the customer's
     network now needs a person's yes unless the config says otherwise."""
-    from ember_code.core.config.schemas.permissions import PermissionsConfig
-    from ember_code.core.config.settings import Settings
-    from ember_code.core.config.tool_permissions import ToolPermissions
+    from igni_core.core.config.schemas.permissions import PermissionsConfig
+    from igni_core.core.config.settings import Settings
+    from igni_core.core.config.tool_permissions import ToolPermissions
 
     defaults = Settings().permissions
     assert (defaults.web_search, defaults.web_fetch) == ("ask", "ask")
@@ -380,16 +380,16 @@ def test_bypass_lets_the_web_through_unasked(tmp_path):
 
     What Bypass keeps: an explicit ``deny`` wins over it, and its guard still
     turns a fetch carrying what looks like a secret back into a prompt."""
-    import ember_code.cli as cli_module
-    from ember_code.cli.options import CliOptions
-    from ember_code.core.config.permission_eval import (
+    import igni_core.cli as cli_module
+    from igni_core.cli.options import CliOptions
+    from igni_core.core.config.permission_eval import (
         PermissionDecision,
         PermissionEvaluator,
         PermissionMode,
     )
-    from ember_code.core.config.tool_permissions import ToolPermissions
-    from ember_code.core.hooks.bypass_guard import READ_ONLY_TOOLS
-    from ember_code.core.hooks.bypass_rules import flag_url
+    from igni_core.core.config.tool_permissions import ToolPermissions
+    from igni_core.core.hooks.bypass_guard import READ_ONLY_TOOLS
+    from igni_core.core.hooks.bypass_rules import flag_url
 
     perms = cli_module.load_settings_from_options(CliOptions(auto_approve=True)).permissions
     assert perms.mode == "bypassPermissions"

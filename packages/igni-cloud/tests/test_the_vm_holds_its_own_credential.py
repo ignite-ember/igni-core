@@ -27,8 +27,8 @@ from igni_cloud.guest.credential import (
 from igni_cloud.guest.files import AtomicFile
 from igni_cloud.guest.resume import NextAnswer, RestoreWatch
 
-from ember_code.core.auth.http_auth import CloudTokenAuth
-from ember_code.protocol import messages as msg
+from igni_core.core.auth.http_auth import CloudTokenAuth
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import HostRig
 
 SESSION = "the-persons-session"

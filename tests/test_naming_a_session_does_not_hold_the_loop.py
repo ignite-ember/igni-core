@@ -32,9 +32,9 @@ from agno.models.response import ModelResponse
 from agno.run.agent import RunInput, RunOutput
 from agno.session.agent import AgentSession
 
-from ember_code.backend.server_sessions import SessionsController
-from ember_code.core.session.persistence import SessionPersistence
-from ember_code.core.session.persistence.title_asker import TitleAsker
+from igni_core.backend.server_sessions import SessionsController
+from igni_core.core.session.persistence import SessionPersistence
+from igni_core.core.session.persistence.title_asker import TitleAsker
 
 SESSION_ID = "sess-title"
 SYSTEM_PROMPT = "You are igni. " + "Rules for working with the user. " * 1500

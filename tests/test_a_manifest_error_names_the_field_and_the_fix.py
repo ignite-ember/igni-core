@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.extensions.manifest import ExtensionManifest, ManifestError
+from igni_core.extensions.manifest import ExtensionManifest, ManifestError
 
 BASE = {
     "id": "acme.tickets",

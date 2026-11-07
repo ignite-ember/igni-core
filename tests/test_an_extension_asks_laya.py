@@ -1,8 +1,8 @@
 """``host.decide``: an extension asks igni's decision model typed questions.
 
 Laya runs in igni's decisions service, shared with the Bypass guard,
-which goes first (``ember_code.decisions_server``); the backend asks
-it over HTTP (``ember_code.core.decisions.laya``). These drive the
+which goes first (``igni_core.decisions_server``); the backend asks
+it over HTTP (``igni_core.core.decisions.laya``). These drive the
 member through the host model, through the real client and the real
 service app, over a stand-in router — what an extension sends, what
 reaches Laya, what comes back, and what is refused — and, when the
@@ -21,12 +21,12 @@ from typing import Any
 import httpx
 import pytest
 
-from ember_code.core.decisions import Laya, Priority
-from ember_code.core.decisions.laya import RemoteDecisions
-from ember_code.core.decisions.schemas import DecisionRequest
-from ember_code.core.hooks.bypass_guard import QUESTIONS, HarmJudge
-from ember_code.decisions_server.app import DecisionsApp
-from ember_code.decisions_server.model import BUNDLE_REPO, HubCache, LayaModel, PriorityGate
+from igni_core.core.decisions import Laya, Priority
+from igni_core.core.decisions.laya import RemoteDecisions
+from igni_core.core.decisions.schemas import DecisionRequest
+from igni_core.core.hooks.bypass_guard import QUESTIONS, HarmJudge
+from igni_core.decisions_server.app import DecisionsApp
+from igni_core.decisions_server.model import BUNDLE_REPO, HubCache, LayaModel, PriorityGate
 from tests.host_model_helpers import HostRig
 
 TRIAGE = [

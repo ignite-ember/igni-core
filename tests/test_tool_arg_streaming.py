@@ -28,14 +28,14 @@ from agno.models.response import ModelResponse
 from agno.run import agent as agent_events
 from agno.run.agent import CustomEvent
 
-from ember_code.core.config.models import (
+from igni_core.core.config.models import (
     _aemit_tool_arg_deltas,
     _emit_tool_arg_delta_events,
     _ToolCallAccumulatorStore,
     _ToolCallFragment,
 )
-from ember_code.core.tools.orchestrate import _run_agent_streaming
-from ember_code.core.tools.orchestrate_events import (
+from igni_core.core.tools.orchestrate import _run_agent_streaming
+from igni_core.core.tools.orchestrate_events import (
     SubAgentRegistry,
     VisualizationDeltaEvent,
 )

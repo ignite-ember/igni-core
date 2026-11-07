@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.hooks.bypass_rules import flag_file_read, flag_shell
+from igni_core.core.hooks.bypass_rules import flag_file_read, flag_shell
 
 
 @pytest.mark.parametrize(

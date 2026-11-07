@@ -12,7 +12,7 @@
         3. ``uv venv``
         4. ``uv pip install ignite-ember`` (or -e <repo> for --local)
         5. Prefetch sentence-transformer model
-        6. Launch ``python -m ember_code.backend --ws-port 0`` and
+        6. Launch ``python -m igni_core.backend --ws-port 0`` and
            confirm the JSON ready line lands on stdout
 
     Mirrors the bash script's step-by-step output + per-step timings.
@@ -172,14 +172,14 @@ $Elapsed = [int]((Get-Date) - $StepStart).TotalSeconds
 Write-Host "  ignite-ember installed (${Elapsed}s)"
 
 # Sanity: import works.
-& $VenvPython -c "import ember_code; print(f'  ember_code v{ember_code.__version__}')"
-if ($LASTEXITCODE -ne 0) { throw "ember_code import failed" }
+& $VenvPython -c "import igni_core; print(f'  igni_core v{igni_core.__version__}')"
+if ($LASTEXITCODE -ne 0) { throw "igni_core import failed" }
 
 # ── Step 5: prefetch model ──────────────────────────────────────────
 $StepStart = Get-Date
 Write-Host "-> Step 5: prefetching embedding model"
 $env:HF_HOME = Join-Path $CacheDir "hf"
-& $VenvPython -m ember_code.prefetch_models
+& $VenvPython -m igni_core.prefetch_models
 if ($LASTEXITCODE -ne 0) { throw "prefetch_models failed" }
 $Elapsed = [int]((Get-Date) - $StepStart).TotalSeconds
 Write-Host "  model warmed (${Elapsed}s)"
@@ -195,7 +195,7 @@ New-Item -ItemType Directory -Path $ProjectDir | Out-Null
 $BeStdout = Join-Path $LogDir "be-stdout.log"
 $BeStderr = Join-Path $LogDir "be-stderr.log"
 $BeProc = Start-Process -FilePath $VenvPython `
-    -ArgumentList @("-m", "ember_code.backend", "--ws-port", "0", "--project-dir", $ProjectDir) `
+    -ArgumentList @("-m", "igni_core.backend", "--ws-port", "0", "--project-dir", $ProjectDir) `
     -RedirectStandardOutput $BeStdout `
     -RedirectStandardError $BeStderr `
     -NoNewWindow `

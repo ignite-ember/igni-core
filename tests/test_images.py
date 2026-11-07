@@ -1,6 +1,6 @@
-"""Tests for ember_code.utils.media — file resolution and media attachment."""
+"""Tests for igni_core.utils.media — file resolution and media attachment."""
 
-from ember_code.core.utils.media import attach_resolved_files, resolve_file_references
+from igni_core.core.utils.media import attach_resolved_files, resolve_file_references
 
 
 class TestResolveFileReferences:

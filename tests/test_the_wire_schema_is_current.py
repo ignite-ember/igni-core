@@ -47,7 +47,7 @@ import sys
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _SCRIPT = _ROOT / "scripts/dump_wire_schema.py"
-_MODULE = _ROOT / "src" / "ember_code" / "protocol" / "wire_schema.py"
+_MODULE = _ROOT / "src" / "igni_core" / "protocol" / "wire_schema.py"
 _SNAPSHOT = _ROOT / "docs/wire-schema.json"
 
 
@@ -82,7 +82,7 @@ class TestTheGeneratorStillFindsTheProtocol:
         in `protocol/schemas/*` and re-exported through `messages`, so a
         generator filtering on the defining module finds none of them.
         """
-        from ember_code.protocol import messages as msg
+        from igni_core.protocol import messages as msg
 
         defined_here = [
             name
@@ -102,7 +102,7 @@ class TestTheGeneratorStillFindsTheProtocol:
         output. Without this, the failure mode is a silent exit 0 and a
         three-line file where the contract was."""
         # The script is a thin wrapper now; the generator moved into
-        # ``ember_code.protocol.wire_schema`` so a test can run it. Read the
+        # ``igni_core.protocol.wire_schema`` so a test can run it. Read the
         # module, which is where the refusal has to be.
         source = (_MODULE if _MODULE.exists() else _SCRIPT).read_text()
 

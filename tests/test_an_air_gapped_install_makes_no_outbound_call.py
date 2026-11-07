@@ -28,28 +28,28 @@ from unittest.mock import patch
 
 import pytest
 
-from ember_code.backend.cmd_plugin.gateway import PluginBackendGateway
-from ember_code.core import air_gap
-from ember_code.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
-from ember_code.core.config.schemas import PluginsConfig, StorageConfig
-from ember_code.core.config.settings import Settings, SettingsLoader, load_settings
-from ember_code.core.config.tool_permissions import ToolPermissions
-from ember_code.core.decisions.schemas import DecisionsUnavailable
-from ember_code.core.plugins import marketplaces as _marketplaces
-from ember_code.core.plugins.installer import PluginError, PluginInstaller
-from ember_code.core.plugins.models import MarketplaceEntry, MarketplaceRegistry
-from ember_code.core.plugins.source_policy import PluginSourcePolicy
-from ember_code.core.plugins.state import load_state, save_state
-from ember_code.core.session.core import Session
-from ember_code.core.session.startup.marketplace import MarketplaceWarmupPhase
-from ember_code.core.tools.registry import ToolRegistry
-from ember_code.core.tools.tool_spec import (
+from igni_core.backend.cmd_plugin.gateway import PluginBackendGateway
+from igni_core.core import air_gap
+from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.schemas import PluginsConfig, StorageConfig
+from igni_core.core.config.settings import Settings, SettingsLoader, load_settings
+from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.decisions.schemas import DecisionsUnavailable
+from igni_core.core.plugins import marketplaces as _marketplaces
+from igni_core.core.plugins.installer import PluginError, PluginInstaller
+from igni_core.core.plugins.models import MarketplaceEntry, MarketplaceRegistry
+from igni_core.core.plugins.source_policy import PluginSourcePolicy
+from igni_core.core.plugins.state import load_state, save_state
+from igni_core.core.session.core import Session
+from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
+from igni_core.core.tools.registry import ToolRegistry
+from igni_core.core.tools.tool_spec import (
     ToolResolutionRequest,
     WebFetchSpec,
     WebSearchSpec,
 )
-from ember_code.core.utils.update_checker import UpdateChecker
-from ember_code.decisions_server import model as decisions_model
+from igni_core.core.utils.update_checker import UpdateChecker
+from igni_core.decisions_server import model as decisions_model
 
 OFFICIAL = "https://github.com/anthropics/claude-plugins-official"
 
@@ -165,7 +165,7 @@ class TestTheSwitch:
 
 class TestTheUpdateCheck:
     def test_no_http_client_is_created(self, tmp_path):
-        with patch("ember_code.core.utils.update_checker.httpx.AsyncClient") as client:
+        with patch("igni_core.core.utils.update_checker.httpx.AsyncClient") as client:
             result = asyncio.run(
                 UpdateChecker(settings=_air_gapped(tmp_path), cache_path=tmp_path / "c").check()
             )
@@ -175,7 +175,7 @@ class TestTheUpdateCheck:
     def test_a_ttl_cannot_turn_it_back_on(self, tmp_path):
         settings = _air_gapped(tmp_path)
         settings.update_check_ttl = 86400
-        with patch("ember_code.core.utils.update_checker.httpx.AsyncClient") as client:
+        with patch("igni_core.core.utils.update_checker.httpx.AsyncClient") as client:
             asyncio.run(UpdateChecker(settings=settings, cache_path=tmp_path / "c").check())
         client.assert_not_called()
 
@@ -189,7 +189,7 @@ class TestTheMarketplaceClone:
         git = GitRecorder()
         settings = _air_gapped(tmp_path, default_marketplace=True)
         phase = MarketplaceWarmupPhase(_session_with(settings))
-        with patch("ember_code.core.plugins.git.subprocess.run", git):
+        with patch("igni_core.core.plugins.git.subprocess.run", git):
             await phase._refresh_all()
         assert git.calls == []
 
@@ -199,7 +199,7 @@ class TestTheMarketplaceClone:
         settings = _air_gapped(tmp_path, default_marketplace=True)
         _register(Path(settings.storage.data_dir), MarketplaceEntry(name="official", url=OFFICIAL))
         git = GitRecorder()
-        with patch("ember_code.core.plugins.git.subprocess.run", git):
+        with patch("igni_core.core.plugins.git.subprocess.run", git):
             await MarketplaceWarmupPhase(_session_with(settings))._refresh_all()
         assert git.calls == []
 
@@ -209,7 +209,7 @@ class TestTheMarketplaceClone:
             plugins=PluginsConfig(default_marketplace=False),
         )
         git = GitRecorder()
-        with patch("ember_code.core.plugins.git.subprocess.run", git):
+        with patch("igni_core.core.plugins.git.subprocess.run", git):
             await MarketplaceWarmupPhase(_session_with(settings))._refresh_all()
         assert git.calls == []
 
@@ -217,7 +217,7 @@ class TestTheMarketplaceClone:
         repo = _local_marketplace(tmp_path)
         settings = _air_gapped(tmp_path, marketplaces=[str(repo)])
         git = GitRecorder(passthrough=True)
-        with patch("ember_code.core.plugins.git.subprocess.run", git):
+        with patch("igni_core.core.plugins.git.subprocess.run", git):
             await MarketplaceWarmupPhase(_session_with(settings))._refresh_all()
 
         assert git.clone_urls() == [str(repo)]
@@ -230,7 +230,7 @@ class TestTheMarketplaceClone:
             source_policy=PluginSourcePolicy.from_settings(_air_gapped(tmp_path)),
         )
         git = GitRecorder()
-        with patch("ember_code.core.plugins.git.subprocess.run", git):
+        with patch("igni_core.core.plugins.git.subprocess.run", git):
             added = gateway.add_marketplace(OFFICIAL)
             installed = gateway.install("git@github.com:acme/plugin.git", ref=None, subdir=None)
         assert git.calls == []
@@ -433,7 +433,7 @@ class TestPluginUpdate:
     def test_a_local_source_still_updates(self, installed):
         data, _repo = installed
         git = GitRecorder(passthrough=True)
-        with patch("ember_code.core.plugins.git.subprocess.run", git):
+        with patch("igni_core.core.plugins.git.subprocess.run", git):
             self._installer(data).update("acme-tool")
         assert any(c[:2] == ["git", "fetch"] for c in git.calls)
 
@@ -444,7 +444,7 @@ class TestPluginUpdate:
         save_state(state, data_dir=data)
         git = GitRecorder()
         with (
-            patch("ember_code.core.plugins.git.subprocess.run", git),
+            patch("igni_core.core.plugins.git.subprocess.run", git),
             pytest.raises(PluginError, match="air-gapped"),
         ):
             self._installer(data).update("acme-tool")
@@ -471,7 +471,7 @@ class TestPluginUpdate:
         )
         git = GitRecorder(passthrough=True)
         with (
-            patch("ember_code.core.plugins.git.subprocess.run", git),
+            patch("igni_core.core.plugins.git.subprocess.run", git),
             pytest.raises(PluginError, match="air-gapped"),
         ):
             self._installer(data).update("acme-tool")
@@ -486,7 +486,7 @@ class TestPluginUpdate:
     def test_install_itself_refuses_a_public_url(self, tmp_path):
         git = GitRecorder()
         with (
-            patch("ember_code.core.plugins.git.subprocess.run", git),
+            patch("igni_core.core.plugins.git.subprocess.run", git),
             pytest.raises(PluginError, match="air-gapped"),
         ):
             self._installer(tmp_path).install("https://github.com/acme/acme-tool")

@@ -1,7 +1,7 @@
 """Row-level security in the cloud: a producer's connection sees its rows only.
 
 ``docs/CLOUD.md`` section 9. The application already filters every query
-by org, producer and project (:class:`~ember_code.core.db.scope.StorageScope`).
+by org, producer and project (:class:`~igni_core.core.db.scope.StorageScope`).
 This is the second layer, held by PostgreSQL itself, so it holds when igni
 inside a producer's VM is buggy or compromised:
 
@@ -66,8 +66,8 @@ from pydantic import BaseModel
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.engine import make_url
 
-from ember_code.core.db.urls import DatabaseUrl, Dialect
 from igni_cloud.producer import ProducerIncarnation
+from igni_core.core.db.urls import DatabaseUrl, Dialect
 
 #: The group role every producer role takes its table privileges from.
 RUNTIME_ROLE = "igni_runtime"

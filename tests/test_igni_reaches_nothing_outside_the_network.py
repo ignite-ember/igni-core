@@ -64,13 +64,13 @@ from openai.types.chat.chat_completion_chunk import Choice as ChunkChoice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta
 from pydantic import BaseModel, ConfigDict
 
-from ember_code.cli.invocation import load_settings_from_options
-from ember_code.cli.options import CliOptions
-from ember_code.core.activity import background
-from ember_code.core.config.settings import Settings
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.session.core import Session
-from ember_code.core.utils.update_checker import check_for_update
+from igni_core.cli.invocation import load_settings_from_options
+from igni_core.cli.options import CliOptions
+from igni_core.core.activity import background
+from igni_core.core.config.settings import Settings
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.core import Session
+from igni_core.core.utils.update_checker import check_for_update
 from tests.egress_guard import EgressGuard, EgressLog, InternalNetwork
 
 #: Whether the schema has the one switch that would turn D11 off.

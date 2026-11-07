@@ -19,13 +19,13 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from ember_code.backend import server as server_mod
-from ember_code.backend.server import BackendServer
-from ember_code.core.config.managed_policy import ManagedPolicySource
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.plugins import state as state_mod
-from ember_code.core.plugins.loader import PluginLoader, _platform_managed_plugins_root
-from ember_code.core.plugins.models import (
+from igni_core.backend import server as server_mod
+from igni_core.backend.server import BackendServer
+from igni_core.core.config.managed_policy import ManagedPolicySource
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.plugins import state as state_mod
+from igni_core.core.plugins.loader import PluginLoader, _platform_managed_plugins_root
+from igni_core.core.plugins.models import (
     PluginDefinition,
     PluginInfo,
     PluginManifest,
@@ -101,7 +101,7 @@ class TestManagedDiscovery:
         managed = tmp_path / "managed"
         _make_plugin(managed / CONFIG_DIR / "plugins", "org-policy")
         monkeypatch.setattr(
-            "ember_code.core.plugins.loader._platform_managed_plugins_root",
+            "igni_core.core.plugins.loader._platform_managed_plugins_root",
             lambda: managed,
         )
         monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
@@ -121,7 +121,7 @@ class TestManagedDiscovery:
         managed = tmp_path / "managed"
         _make_plugin(managed / ".claude" / "plugins", "cross-tool-policy")
         monkeypatch.setattr(
-            "ember_code.core.plugins.loader._platform_managed_plugins_root",
+            "igni_core.core.plugins.loader._platform_managed_plugins_root",
             lambda: managed,
         )
         monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
@@ -142,7 +142,7 @@ class TestManagedDiscovery:
         _make_plugin(managed / CONFIG_DIR / "plugins", "shared", version="9.9.9")
         _make_plugin(project / CONFIG_DIR / "plugins", "shared", version="0.1.0")
         monkeypatch.setattr(
-            "ember_code.core.plugins.loader._platform_managed_plugins_root",
+            "igni_core.core.plugins.loader._platform_managed_plugins_root",
             lambda: managed,
         )
         monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
@@ -158,7 +158,7 @@ class TestManagedDiscovery:
         """If the platform returns ``None`` (unknown OS) the
         loader skips the managed tier without crashing."""
         monkeypatch.setattr(
-            "ember_code.core.plugins.loader._platform_managed_plugins_root",
+            "igni_core.core.plugins.loader._platform_managed_plugins_root",
             lambda: None,
         )
         monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
@@ -182,7 +182,7 @@ class TestManagedDiscovery:
         _make_plugin(tmp_path / "project" / ".claude" / "plugins", "pc")
         _make_plugin(tmp_path / "project" / CONFIG_DIR / "plugins", "pe")
         monkeypatch.setattr(
-            "ember_code.core.plugins.loader._platform_managed_plugins_root",
+            "igni_core.core.plugins.loader._platform_managed_plugins_root",
             lambda: None,
         )
         loader = PluginLoader()

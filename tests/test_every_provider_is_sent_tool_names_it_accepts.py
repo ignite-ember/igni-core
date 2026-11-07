@@ -9,7 +9,7 @@ a 400 from each of them, so no extension tool could be offered to a
 hosted model at all.
 
 Names are now rewritten at the provider boundary only
-(:mod:`ember_code.core.config.tool_names`) and the provider's calls are
+(:mod:`igni_core.core.config.tool_names`) and the provider's calls are
 mapped back before Agno looks the function up, so permissions, hints,
 hooks and transcripts all keep the registered name. These run each
 builder's model over its SDK with the network replaced, and read what
@@ -27,14 +27,14 @@ import httpx
 from agno.models.message import Message
 from google.genai import types as genai
 
-from ember_code.core.config.llm_call_logger import LlmCallLogger
-from ember_code.core.config.model_entry import ModelRegistryEntry
-from ember_code.core.config.provider_builders import (
+from igni_core.core.config.llm_call_logger import LlmCallLogger
+from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.provider_builders import (
     AnthropicBuilder,
     GeminiBuilder,
     OpenAILikeBuilder,
 )
-from ember_code.core.config.tool_names import ProviderToolNames, wire_name
+from igni_core.core.config.tool_names import ProviderToolNames, wire_name
 
 REGISTERED = "mcp_ext:acme.tickets_lookup_ticket"
 BUILT_IN = "read_file"

@@ -7,18 +7,18 @@ from pathlib import Path
 import pytest
 from dotenv import load_dotenv
 
-from ember_code.core.activity import ActivityRegistry
-from ember_code.core.approvals.events import approval_events
-from ember_code.core.config.schemas.storage_and_paths import StorageConfig
-from ember_code.core.config.settings import load_settings
-from ember_code.core.db.scope import tenancy
-from ember_code.core.db.urls import DatabaseUrl, Dialect
-from ember_code.core.hooks.extension_gate import ExtensionHookGate
-from ember_code.core.layer import Layers
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.extensions.faults import ExtensionFaults
-from ember_code.extensions.host.hooks import ExtensionHooks
-from ember_code.extensions.host.processes import ExtensionProcesses
+from igni_core.core.activity import ActivityRegistry
+from igni_core.core.approvals.events import approval_events
+from igni_core.core.config.schemas.storage_and_paths import StorageConfig
+from igni_core.core.config.settings import load_settings
+from igni_core.core.db.scope import tenancy
+from igni_core.core.db.urls import DatabaseUrl, Dialect
+from igni_core.core.hooks.extension_gate import ExtensionHookGate
+from igni_core.core.layer import Layers
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.extensions.faults import ExtensionFaults
+from igni_core.extensions.host.hooks import ExtensionHooks
+from igni_core.extensions.host.processes import ExtensionProcesses
 from tests.egress_guard import EgressGuard, InternalNetwork
 from tests.root_guard import RootGuard
 from tests.storage_backends import ThrowawayPostgres
@@ -100,7 +100,7 @@ def _extension_processes_unsandboxed(request: pytest.FixtureRequest, monkeypatch
     """
     if request.node.get_closest_marker(EXTENSION_SANDBOX):
         return
-    from ember_code.extensions.sandbox.settings import SandboxSettings
+    from igni_core.extensions.sandbox.settings import SandboxSettings
 
     monkeypatch.setattr(
         SandboxSettings,
@@ -124,7 +124,7 @@ def _workspace_trust(request: pytest.FixtureRequest) -> Iterator[None]:
     person who had trusted it would. A test marked
     ``@pytest.mark.workspace_trust`` gets the real decision, starting unset.
     """
-    from ember_code.core.workspace_trust import WorkspaceTrust
+    from igni_core.core.workspace_trust import WorkspaceTrust
 
     WorkspaceTrust.reset_shared(
         trust_everything=not request.node.get_closest_marker(WORKSPACE_TRUST)
@@ -259,10 +259,10 @@ def settings():
 @pytest.fixture
 def project_dir(tmp_path):
     """Temporary project directory with .igni/ structure."""
-    ember_dir = tmp_path / CONFIG_DIR
-    ember_dir.mkdir()
-    (ember_dir / "agents").mkdir()
-    (ember_dir / "skills").mkdir()
+    igni_dir = tmp_path / CONFIG_DIR
+    igni_dir.mkdir()
+    (igni_dir / "agents").mkdir()
+    (igni_dir / "skills").mkdir()
     return tmp_path
 
 

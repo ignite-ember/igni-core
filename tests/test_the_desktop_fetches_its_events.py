@@ -13,11 +13,11 @@ from typing import Any
 import httpx
 import pytest
 
-from ember_code.core.layer import Layer
-from ember_code.extensions.event_pull import PersonEventPull, PullFailed, PullRefused
-from ember_code.extensions.service_events import DeliveryReceipt, NotHandled, ServiceEvent
-from ember_code.extensions.service_token import IgniSession, NotSignedIn
-from ember_code.notifications.server_client import SignedInServer
+from igni_core.core.layer import Layer
+from igni_core.extensions.event_pull import PersonEventPull, PullFailed, PullRefused
+from igni_core.extensions.service_events import DeliveryReceipt, NotHandled, ServiceEvent
+from igni_core.extensions.service_token import IgniSession, NotSignedIn
+from igni_core.notifications.server_client import SignedInServer
 
 
 def _event(event_id: str) -> dict[str, Any]:

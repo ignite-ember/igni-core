@@ -22,7 +22,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from ember_code.protocol.agno_tool_formatter import AgnoToolEventFormatter
+from igni_core.protocol.agno_tool_formatter import AgnoToolEventFormatter
 
 # One formatter instance drives every test — no diff renderer is
 # injected because these tests deliberately exercise the non-diff

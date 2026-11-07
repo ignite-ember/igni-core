@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import json
 
-from ember_code.backend.schemas_rpc import CloudPlan
-from ember_code.core.auth.credentials import CloudCredentials
-from ember_code.core.auth.schemas import UserInfo
-from ember_code.core.session.cloud_auth import SessionCloudAuth
+from igni_core.backend.schemas_rpc import CloudPlan
+from igni_core.core.auth.credentials import CloudCredentials
+from igni_core.core.auth.schemas import UserInfo
+from igni_core.core.session.cloud_auth import SessionCloudAuth
 
 
 def _creds(tmp_path, **fields) -> CloudCredentials:

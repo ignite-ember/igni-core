@@ -32,9 +32,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ember_code.core.config.model_entry import ModelRegistryEntry
-from ember_code.core.config.secret_scan import scan_project_config
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.secret_scan import scan_project_config
+from igni_core.core.paths import CONFIG_DIR
 
 
 def _write(path: Path, payload: dict) -> None:
@@ -70,7 +70,7 @@ class TestTheMergeTheSplitRestsOn:
             },
         )
 
-        from ember_code.core.config.settings import load_settings
+        from igni_core.core.config.settings import load_settings
 
         settings = load_settings(project_dir=project)
         entry = settings.models.registry["m3"]
@@ -101,7 +101,7 @@ class TestTheMergeTheSplitRestsOn:
             {"models": {"registry": {"m3": {"model_id": "m", "context_window": 204800}}}},
         )
 
-        from ember_code.core.config.settings import load_settings
+        from igni_core.core.config.settings import load_settings
 
         settings = load_settings(project_dir=project)
         entry = settings.models.registry["m3"]

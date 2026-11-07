@@ -47,8 +47,8 @@ async def main() -> int:
     os.environ["HOME"] = str(home)
     os.environ["IGNI_NEO4J_DISABLED"] = "1"
 
-    from ember_code.core.auth.portal_client import PortalClient
-    from ember_code.core.config.group_policy import GroupPolicyCache
+    from igni_core.core.auth.portal_client import PortalClient
+    from igni_core.core.config.group_policy import GroupPolicyCache
 
     print(f"\nFetching the pack from {API}")
     pack = await PortalClient(api_url=API).fetch_group_pack(TOKEN)
@@ -65,8 +65,8 @@ async def main() -> int:
     cache.materialize(pack)
 
     print("\nBooting a Session")
-    from ember_code.core.config.settings import load_settings
-    from ember_code.core.session.core import Session
+    from igni_core.core.config.settings import load_settings
+    from igni_core.core.session.core import Session
 
     settings = load_settings(project_dir=project)
     settings.storage.data_dir = str(home / ".igni")
@@ -106,7 +106,7 @@ async def main() -> int:
         check(bool(session.rules_index.consume_path(project / "app" / "main.py")), "group rule fires on a .py file")
 
     if "commands" in by_kind:
-        from ember_code.core.utils.markdown_commands import MarkdownCommand
+        from igni_core.core.utils.markdown_commands import MarkdownCommand
 
         found = MarkdownCommand.discover(
             session.project_dir,

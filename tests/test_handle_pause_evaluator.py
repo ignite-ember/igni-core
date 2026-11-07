@@ -19,14 +19,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-from ember_code.backend.schemas_pause import PendingRequirement
-from ember_code.backend.server import BackendServer
-from ember_code.core.config.permission_eval import (
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.backend.schemas_pause import PendingRequirement
+from igni_core.backend.server import BackendServer
+from igni_core.core.config.permission_eval import (
     PermissionEvaluator,
     PermissionMode,
 )
-from ember_code.protocol import messages as msg
+from igni_core.protocol import messages as msg
 
 
 def _make_backend(evaluator: PermissionEvaluator | None) -> BackendServer:

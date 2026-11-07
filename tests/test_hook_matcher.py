@@ -11,8 +11,8 @@ through to regex. Malformed regex is treated as no-match.
 
 from __future__ import annotations
 
-from ember_code.core.hooks.executor import HookExecutor, _matcher_matches
-from ember_code.core.hooks.schemas import HookDefinition
+from igni_core.core.hooks.executor import HookExecutor, _matcher_matches
+from igni_core.core.hooks.schemas import HookDefinition
 
 # ── Helper directly ─────────────────────────────────────────────
 

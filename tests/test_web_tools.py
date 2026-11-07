@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.tools.http_fetcher import HttpFetcher
-from ember_code.core.tools.web import WebTools
+from igni_core.core.tools.http_fetcher import HttpFetcher
+from igni_core.core.tools.web import WebTools
 
 
 class TestWebTools:
@@ -198,7 +198,7 @@ class TestExtractTextFromHtmlDeepDive:
         mock_response.headers = {"content-type": "text/html"}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("ember_code.core.tools.http_fetcher.httpx.AsyncClient") as MockClient:
+        with patch("igni_core.core.tools.http_fetcher.httpx.AsyncClient") as MockClient:
             instance = AsyncMock()
             instance.get = AsyncMock(return_value=mock_response)
             instance.__aenter__ = AsyncMock(return_value=instance)
@@ -216,7 +216,7 @@ class TestExtractTextFromHtmlDeepDive:
         mock_response.headers = {"content-type": "text/plain"}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("ember_code.core.tools.http_fetcher.httpx.AsyncClient") as MockClient:
+        with patch("igni_core.core.tools.http_fetcher.httpx.AsyncClient") as MockClient:
             instance = AsyncMock()
             instance.get = AsyncMock(return_value=mock_response)
             instance.__aenter__ = AsyncMock(return_value=instance)
@@ -234,7 +234,7 @@ class TestExtractTextFromHtmlDeepDive:
         mock_response.headers = {"content-type": "application/json"}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("ember_code.core.tools.http_fetcher.httpx.AsyncClient") as MockClient:
+        with patch("igni_core.core.tools.http_fetcher.httpx.AsyncClient") as MockClient:
             instance = AsyncMock()
             instance.get = AsyncMock(return_value=mock_response)
             instance.__aenter__ = AsyncMock(return_value=instance)
@@ -250,7 +250,7 @@ class TestExtractTextFromHtmlDeepDive:
 
         tools = WebTools()
 
-        with patch("ember_code.core.tools.http_fetcher.httpx.AsyncClient") as MockClient:
+        with patch("igni_core.core.tools.http_fetcher.httpx.AsyncClient") as MockClient:
             instance = AsyncMock()
             # HttpFetcher narrows to ``httpx.HTTPError`` (Pattern 3) —
             # a real connect failure surfaces as ``httpx.ConnectError``

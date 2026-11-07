@@ -933,7 +933,7 @@ wheels = [
 ]
 
 [[package]]
-name = "ignite-ember"
+name = "igni-core"
 version = "1.0.3"
 source = { editable = "." }
 dependencies = [

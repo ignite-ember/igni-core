@@ -68,7 +68,7 @@ Contract in [EXTENSIBILITY.md](EXTENSIBILITY.md). A3 is the go/no-go: if the pan
 
 ### A1 — the static origin (≈2 days)
 
-**Done** — `src/ember_code/extensions/origin.py`, 21 tests.
+**Done** — `src/igni_core/extensions/origin.py`, 21 tests.
 
 `ExtensionOrigin` / `ExtensionOrigins`: one `asyncio` HTTP listener per extension on `127.0.0.1:0`, serving that extension's `ui/` read-only. GET and HEAD, one request per connection, no keep-alive, no body, a capped head with a deadline. Paths resolved and then checked against the resolved root, so a symlink out of the tree is refused like a `..`. Missing and forbidden answer alike. A directory is its index or a 404.
 

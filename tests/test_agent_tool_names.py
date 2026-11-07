@@ -13,8 +13,8 @@ do — treat an MCP name as a mistake, or stop a session from starting.
 
 from __future__ import annotations
 
-from ember_code.core.tools.registry import ToolRegistry
-from ember_code.core.tools.tool_spec import ToolResolutionRequest
+from igni_core.core.tools.registry import ToolRegistry
+from igni_core.core.tools.tool_spec import ToolResolutionRequest
 
 
 class TestWhatResolvesAndWhatDoesNot:
@@ -50,7 +50,7 @@ class TestTheSessionCheck:
     about."""
 
     def _session(self, tmp_path, agents):
-        from ember_code.core.session.core import Session
+        from igni_core.core.session.core import Session
 
         session = Session.__new__(Session)
         session.project_dir = tmp_path

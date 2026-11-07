@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-from ember_code.backend.service_item_desk import PoolChatDesk
-from ember_code.protocol import messages as msg
+from igni_core.backend.service_item_desk import PoolChatDesk
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import HostRig, Sink
 
 SERVICE = "svc-claims"

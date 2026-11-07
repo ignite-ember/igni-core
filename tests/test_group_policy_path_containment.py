@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.config.group_policy import (
+from igni_core.core.config.group_policy import (
     GroupPolicyCache,
     GroupPolicyEntry,
     GroupPolicyPack,
@@ -126,7 +126,7 @@ class TestMaterializeSkipsRatherThanDies:
             def emit(self, record: logging.LogRecord) -> None:
                 records.append(record)
 
-        module_logger = logging.getLogger("ember_code.core.config.group_policy")
+        module_logger = logging.getLogger("igni_core.core.config.group_policy")
         handler = _Collect()
         previous_level = module_logger.level
         # A local handler is used rather than ``caplog``: pytest's capture

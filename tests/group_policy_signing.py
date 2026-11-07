@@ -19,8 +19,8 @@ from typing import Any
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from ember_code.core.config.group_policy import GroupPolicyCache, GroupPolicyPack
-from ember_code.core.config.group_policy_signature import PACK_TYPE, PACK_USE, jwk_thumbprint
+from igni_core.core.config.group_policy import GroupPolicyCache, GroupPolicyPack
+from igni_core.core.config.group_policy_signature import PACK_TYPE, PACK_USE, jwk_thumbprint
 
 #: The ``api_url`` tests configure, and so the ``iss`` a pack must carry.
 ISSUER = "https://igni.example.invalid"

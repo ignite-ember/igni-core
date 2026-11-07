@@ -6,14 +6,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.config.settings import (
+from igni_core.core.config.settings import (
     GuardrailsConfig,
     PermissionsConfig,
     Settings,
 )
-from ember_code.core.paths import CONFIG_DIR, PROJECT_CONTEXT_FILE
-from ember_code.core.utils.tips import CONTEXTUAL_TIPS, GENERAL_TIPS, get_tip, random_tip
-from ember_code.core.utils.update_checker import (
+from igni_core.core.paths import CONFIG_DIR, PROJECT_CONTEXT_FILE
+from igni_core.core.utils.tips import CONTEXTUAL_TIPS, GENERAL_TIPS, get_tip, random_tip
+from igni_core.core.utils.update_checker import (
     UpdateCache,
     UpdateCacheEntry,
     UpdateError,
@@ -68,7 +68,7 @@ class TestTips:
         that went through it would pass or fail depending on the draw,
         which is worse than no test.
         """
-        from ember_code.core.utils.tips import NoProjectContextTip, TipContext
+        from igni_core.core.utils.tips import NoProjectContextTip, TipContext
 
         settings = Settings()
         settings.context.project_file = "TEAM_CONTEXT.md"
@@ -212,10 +212,10 @@ class TestCheckForUpdate:
         cache_file = tmp_path / ".update-check"
         mock_client = self._make_mock_client({"info": {"version": "0.1.0"}})
         with (
-            patch("ember_code.core.utils.update_checker.CACHE_FILE", cache_file),
-            patch("ember_code.core.utils.update_checker.__version__", "0.1.0"),
+            patch("igni_core.core.utils.update_checker.CACHE_FILE", cache_file),
+            patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
             patch(
-                "ember_code.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
+                "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
             ),
         ):
             info = await check_for_update()
@@ -226,10 +226,10 @@ class TestCheckForUpdate:
         cache_file = tmp_path / ".update-check"
         mock_client = self._make_mock_client({"info": {"version": "0.2.0"}})
         with (
-            patch("ember_code.core.utils.update_checker.CACHE_FILE", cache_file),
-            patch("ember_code.core.utils.update_checker.__version__", "0.1.0"),
+            patch("igni_core.core.utils.update_checker.CACHE_FILE", cache_file),
+            patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
             patch(
-                "ember_code.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
+                "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
             ),
         ):
             info = await check_for_update()
@@ -245,10 +245,10 @@ class TestCheckForUpdate:
         mock_client.get = AsyncMock(side_effect=Exception("timeout"))
 
         with (
-            patch("ember_code.core.utils.update_checker.CACHE_FILE", cache_file),
-            patch("ember_code.core.utils.update_checker.__version__", "0.1.0"),
+            patch("igni_core.core.utils.update_checker.CACHE_FILE", cache_file),
+            patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
             patch(
-                "ember_code.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
+                "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
             ),
         ):
             info = await check_for_update()
@@ -272,8 +272,8 @@ class TestCheckForUpdate:
         mock_settings.air_gapped = False
 
         with (
-            patch("ember_code.core.utils.update_checker.CACHE_FILE", cache_file),
-            patch("ember_code.core.utils.update_checker.__version__", "0.1.0"),
+            patch("igni_core.core.utils.update_checker.CACHE_FILE", cache_file),
+            patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
         ):
             # Should NOT hit the network — cache is fresh
             info = await check_for_update(settings=mock_settings)

@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.config.settings import Settings
-from ember_code.core.learn import LearnBootResult
-from ember_code.core.session.core import Session
-from ember_code.core.utils import context as ctx_mod
+from igni_core.core.config.settings import Settings
+from igni_core.core.learn import LearnBootResult
+from igni_core.core.session.core import Session
+from igni_core.core.utils import context as ctx_mod
 
 
 def _runs_db() -> MagicMock:
@@ -63,7 +63,7 @@ def _session_patches(**overrides):
 
     patches = []
     for name, rv in defaults.items():
-        target = f"ember_code.core.session.core.{name}"
+        target = f"igni_core.core.session.core.{name}"
         # For classes (uppercase first letter), don't set return_value so
         # the mock acts as a callable that returns a fresh MagicMock.
         if name[0].isupper():
@@ -140,7 +140,7 @@ class TestSessionConstruction:
         patches = _session_patches()
         _start_patches(patches)
         try:
-            from ember_code.core.session.core import CloudCredentials as cc_patched
+            from igni_core.core.session.core import CloudCredentials as cc_patched
 
             cc = cc_patched.return_value
             cc.is_authenticated = True
@@ -183,7 +183,7 @@ class TestSessionMessageHandling:
 
     @pytest.mark.asyncio
     async def test_handle_message_returns_response(self, session):
-        with patch("ember_code.core.session.core.extract_response_text", return_value="Hello!"):
+        with patch("igni_core.core.session.core.extract_response_text", return_value="Hello!"):
             result = await session.handle_message("Hi there")
             assert result == "Hello!"
             # Message includes a UTC timestamp prefix
@@ -398,7 +398,7 @@ def _patches_with_real_context_loader():
     }
     patches = []
     for name, rv in overrides.items():
-        target = f"ember_code.core.session.core.{name}"
+        target = f"igni_core.core.session.core.{name}"
         if name[0].isupper():
             patches.append(patch(target))
         else:
@@ -574,15 +574,15 @@ class TestRulesReachAgent:
         and reach the agent in a single session."""
         legacy = tmp_path / "rules.md"
         legacy.write_text("SENTINEL_TRIPLE_LEGACY")
-        ember_dir = tmp_path / "ember-rules"
-        ember_dir.mkdir()
-        (ember_dir / "one.md").write_text("SENTINEL_TRIPLE_EMBER")
+        igni_dir = tmp_path / "ember-rules"
+        igni_dir.mkdir()
+        (igni_dir / "one.md").write_text("SENTINEL_TRIPLE_EMBER")
         claude_dir = tmp_path / "claude-rules"
         claude_dir.mkdir()
         (claude_dir / "two.md").write_text("SENTINEL_TRIPLE_CLAUDE")
 
         monkeypatch.setattr(ctx_mod, "USER_RULES_PATH", legacy)
-        monkeypatch.setattr(ctx_mod, "USER_RULES_DIR", ember_dir)
+        monkeypatch.setattr(ctx_mod, "USER_RULES_DIR", igni_dir)
         monkeypatch.setattr(ctx_mod, "CLAUDE_USER_RULES_DIR", claude_dir)
 
         project = tmp_path / "proj"
@@ -744,7 +744,7 @@ class TestSessionMcpResolver:
 
 class TestSessionBroadcast:
     def _bare_session(self):
-        from ember_code.core.session.broadcast import BroadcastBus
+        from igni_core.core.session.broadcast import BroadcastBus
 
         session = Session.__new__(Session)
         session.broadcast_bus = BroadcastBus()

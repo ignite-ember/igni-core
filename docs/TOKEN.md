@@ -1,6 +1,6 @@
 # Credentials
 
-> Source: `src/ember_code/core/auth/credentials.py`
+> Source: `src/igni_core/core/auth/credentials.py`
 
 **What this document used to say.** It described a `Token` dataclass
 with `user_id` / `issued_at` / `expires_at` and a `Token.issue()`
@@ -31,7 +31,7 @@ Four things live in `credentials.py`:
 | `CloudCredentials.empty()` | A real instance whose load is a no-op, so "not signed in" is an object rather than `None` |
 
 The JWT claims are decoded by `JwtClaims` in
-`src/ember_code/core/auth/schemas.py`. Decoding is not verification —
+`src/igni_core/core/auth/schemas.py`. Decoding is not verification —
 the CLI reads the claims to show you which organisation you are in, and
 takes no security decision on them.
 
@@ -45,13 +45,13 @@ looking brand new.
 
 ## How a token gets there
 
-`src/ember_code/core/auth/portal_client.py` runs the browser-callback
+`src/igni_core/core/auth/portal_client.py` runs the browser-callback
 flow: it opens the portal at a URL derived from `api_url`, listens on a
 loopback port for the one-time code the portal sends back, and redeems
 that code against the server for the token it stores.
 
 Both ends of that come from one setting. `api_url` has **no default** —
-see `src/ember_code/core/config/endpoint.py` for why, and for what the
+see `src/igni_core/core/config/endpoint.py` for why, and for what the
 CLI says instead of building a malformed request.
 
 ## Expiry

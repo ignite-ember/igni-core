@@ -34,15 +34,15 @@ import sys
 import time
 from pathlib import Path
 
-# Make ember_code importable when run as a script
+# Make igni_core importable when run as a script
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from ember_code.core.code_index.chroma_client_factory import ChromaClientFactory  # noqa: E402
-from ember_code.core.code_index.paths import (  # noqa: E402
+from igni_core.core.code_index.chroma_client_factory import ChromaClientFactory  # noqa: E402
+from igni_core.core.code_index.paths import (  # noqa: E402
     commit_chroma_path,
     knowledge_chroma_path,
 )
-from ember_code.core.embeddings import EmbeddingFunction  # noqa: E402
+from igni_core.core.embeddings import EmbeddingFunction  # noqa: E402
 
 # Single source of truth — bump ``ChromaClientFactory.HNSW_METADATA``
 # and both the runtime and this rebuild script pick up the new values.

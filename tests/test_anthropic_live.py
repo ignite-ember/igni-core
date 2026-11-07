@@ -13,10 +13,10 @@ import os
 import pytest
 from agno.agent import Agent
 
-from ember_code.core.agents.schemas import AgentConstructorArgs
-from ember_code.core.config.llm_call_logger import LlmCallLogger
-from ember_code.core.config.model_entry import ModelRegistryEntry
-from ember_code.core.config.provider_builders import AnthropicBuilder
+from igni_core.core.agents.schemas import AgentConstructorArgs
+from igni_core.core.config.llm_call_logger import LlmCallLogger
+from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.provider_builders import AnthropicBuilder
 
 pytestmark = [
     pytest.mark.skipif(

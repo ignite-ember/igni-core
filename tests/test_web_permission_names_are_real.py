@@ -25,8 +25,8 @@ is exactly what the old tests did, which is why the drift survived.
 
 from __future__ import annotations
 
-from ember_code.core.config.tool_permissions.tool_name_resolver import ToolNameResolver
-from ember_code.core.tools.tool_spec import WebFetchSpec, WebSearchSpec
+from igni_core.core.config.tool_permissions.tool_name_resolver import ToolNameResolver
+from igni_core.core.tools.tool_spec import WebFetchSpec, WebSearchSpec
 
 
 class TestTheMapMatchesTheRegistry:

@@ -30,8 +30,8 @@ from agno.run.agent import (
 )
 from pydantic import BaseModel
 
-from ember_code.core.sub_agent_hitl import SubAgentHITLCoordinator, _PendingEntry
-from ember_code.core.tools.orchestrate import _run_agent_streaming
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator, _PendingEntry
+from igni_core.core.tools.orchestrate import _run_agent_streaming
 
 
 class _FakeRequirement:

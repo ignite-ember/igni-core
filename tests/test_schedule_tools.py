@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from ember_code.core.scheduler.models import ScheduledTask, TaskStatus
-from ember_code.core.tools.schedule import ScheduleTools
+from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
+from igni_core.core.tools.schedule import ScheduleTools
 
 
 class TestScheduleTools:

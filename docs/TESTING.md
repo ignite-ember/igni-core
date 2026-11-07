@@ -2,7 +2,7 @@
 
 ## Overview
 
-igni uses **pytest** with **pytest-asyncio** for all testing. Tests live in `tests/` and run against the source in `src/ember_code/`.
+igni uses **pytest** with **pytest-asyncio** for all testing. Tests live in `tests/` and run against the source in `src/igni_core/`.
 
 ```bash
 uv run pytest tests/ -v              # full suite
@@ -103,7 +103,7 @@ measurement and does not: the column that used to sit beside these still read
 written, because nothing regenerated it. Measure instead:
 
 ```bash
-uv run pytest tests/ --cov=ember_code --cov-report=term-missing   # or: make test-cov
+uv run pytest tests/ --cov=igni_core --cov-report=term-missing   # or: make test-cov
 ```
 
 | Area | Target |
@@ -120,7 +120,7 @@ uv run pytest tests/ --cov=ember_code --cov-report=term-missing   # or: make tes
 | **CLI** (cli.py, __main__.py) | 70% |
 | **Utils** (audit, context, display, response, tips) | 85% |
 
-No TUI row: there is no `tui/` package under `src/ember_code/` any more. The
+No TUI row: there is no `tui/` package under `src/igni_core/` any more. The
 user-facing surface lives in `clients/`, which CI typechecks and tests in its
 own job.
 
@@ -166,7 +166,7 @@ best.
 uv run pytest tests/ -v
 
 # With coverage report
-uv run pytest tests/ --cov=ember_code --cov-report=term-missing
+uv run pytest tests/ --cov=igni_core --cov-report=term-missing
 
 # Single module
 uv run pytest tests/test_auth.py -v

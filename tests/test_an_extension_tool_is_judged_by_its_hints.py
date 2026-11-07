@@ -15,16 +15,16 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.config.permission_eval import (
+from igni_core.core.config.permission_eval import (
     PermissionDecision,
     PermissionEvaluator,
     ToolCategoryCatalog,
 )
-from ember_code.core.hooks.permission_pipeline import BypassGuardStage, ToolCallContext
-from ember_code.core.mcp.hints import ToolHints, ToolHintsRegistry
-from ember_code.extensions.installer import ExtensionInstaller
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
+from igni_core.core.hooks.permission_pipeline import BypassGuardStage, ToolCallContext
+from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
+from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
 
 LOCAL_READ = ToolHints(read_only=True, destructive=False, idempotent=True, open_world=False)
 OUTSIDE_READ = ToolHints(read_only=True, destructive=False, idempotent=True, open_world=True)

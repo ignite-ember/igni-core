@@ -24,9 +24,9 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.config.tool_permissions import ToolPermissions
-from ember_code.core.tools.registry import ToolRegistry
-from ember_code.core.tools.visualize import VisualizeTools
+from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.tools.registry import ToolRegistry
+from igni_core.core.tools.visualize import VisualizeTools
 
 
 class TestVisualizeTool:

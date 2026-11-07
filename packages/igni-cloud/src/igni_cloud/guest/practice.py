@@ -20,7 +20,7 @@ sends first, answered as every request is before a producer is bound
 (:class:`~igni_cloud.guest.binding.UnboundRefusal`); then a clean close.
 It needs no producer, token or database, and leaves nothing: no session
 exists before binding, the transport forgets the connection
-(:meth:`~ember_code.transport.websocket.WebSocketServerTransport.forget_past_connections`),
+(:meth:`~igni_core.transport.websocket.WebSocketServerTransport.forget_past_connections`),
 and what it allocated is collected before the base is frozen and made
 immortal (:meth:`~igni_cloud.guest.contract.CloudGuest.bind`). What a
 bound igni does past the transport — the dispatch to a session — cannot
@@ -43,9 +43,9 @@ from typing import Any, ClassVar
 from pydantic import BaseModel
 from websockets.asyncio.client import connect
 
-from ember_code.core.activity import background
-from ember_code.protocol import messages as msg
 from igni_cloud.guest.binding import UnboundRefusal
+from igni_core.core.activity import background
+from igni_core.protocol import messages as msg
 
 logger = logging.getLogger(__name__)
 

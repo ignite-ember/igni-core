@@ -13,7 +13,7 @@ that state — its absence scrambled reasoning across bubbles.
 
 from __future__ import annotations
 
-from ember_code.core.text_tags import (
+from igni_core.core.text_tags import (
     INITIAL_STATE,
     ThinkParseState,
     split_inline_think_tags,

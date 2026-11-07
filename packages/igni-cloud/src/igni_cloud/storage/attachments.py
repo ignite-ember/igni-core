@@ -16,10 +16,10 @@ from pathlib import Path
 
 from sqlalchemy import delete, select, text
 
-from ember_code.core.db.database import Database
-from ember_code.core.db.urls import Dialect
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.utils.attachment_store import AttachmentModel, Attachments, StoredAttachment
+from igni_core.core.db.database import Database
+from igni_core.core.db.urls import Dialect
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.utils.attachment_store import AttachmentModel, Attachments, StoredAttachment
 
 
 class LargeObjectAttachments(Attachments):

@@ -29,7 +29,7 @@ the client trees. It does *not* check Python docstrings and comments,
 where "Ember Cloud" still appears about twenty times — those are internal
 prose, not something a user sees, and rewriting them is a separate
 cleanup. It also does not check identifiers: `EmberClient`,
-`EmberEditTools`, `ember_code` and friends are code, and renaming them is
+`IgniEditTools`, `igni_core` and friends are code, and renaming them is
 a refactor with no user-visible effect.
 
 Worth noting beyond the name: "Ember Cloud" described a hosted service,
@@ -64,12 +64,12 @@ _ALLOWED_TOKENS = frozenset(
         "ignite_ember",
         "IgniteEmber",
         "ember-code",
-        "ember_code",
+        "igni_core",
         "ember-server",
         "EmberClient",
         "EmberSpec",
-        "EmberEditTools",
-        "EmberShellTools",
+        "IgniEditTools",
+        "IgniShellTools",
         "EmberToolCall",
     }
 )

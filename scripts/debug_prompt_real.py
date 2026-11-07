@@ -25,8 +25,8 @@ def section(title: str) -> str:
 
 async def main() -> None:
     project = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
-    from ember_code.core.config.settings import load_settings
-    from ember_code.core.session.core import Session
+    from igni_core.core.config.settings import load_settings
+    from igni_core.core.session.core import Session
 
     settings = load_settings(project_dir=project)
     sess = Session(project_dir=project, settings=settings)

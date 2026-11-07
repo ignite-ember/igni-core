@@ -1,7 +1,7 @@
 """A window is a view of a model the host owns.
 
 ``docs/HOST_OBJECT_MODEL.md``, *The UI is part of the model*: everything
-a window shows is a field of its model (:mod:`ember_code.extensions.host.windows`),
+a window shows is a field of its model (:mod:`igni_core.extensions.host.windows`),
 the window's views bind to it, and they write to it by the same path an
 extension's ``host.ui`` does. So a write from an extension reaches the
 window (the ``window_model_changed`` push it applies), and a write from
@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from ember_code.extensions.host.windows import references
+from igni_core.extensions.host.windows import references
 from tests.host_model_helpers import HostRig, Sink
 
 

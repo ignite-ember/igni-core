@@ -17,12 +17,12 @@ from typing import Any
 
 import pytest
 
-from ember_code.backend.activity import ActivityState, SessionActivity
-from ember_code.core.approvals.events import ApprovalChange, ApprovalState, approval_events
-from ember_code.extensions.host.definition import HOST_SCHEMA
-from ember_code.extensions.host.spec import PropertySpec
-from ember_code.extensions.registry import ExtensionState
-from ember_code.protocol import messages as msg
+from igni_core.backend.activity import ActivityState, SessionActivity
+from igni_core.core.approvals.events import ApprovalChange, ApprovalState, approval_events
+from igni_core.extensions.host.definition import HOST_SCHEMA
+from igni_core.extensions.host.spec import PropertySpec
+from igni_core.extensions.registry import ExtensionState
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import HostRig, Sink
 
 EVERYTHING = [p.name for p in HOST_SCHEMA.permissions if p.name != "workspace"]

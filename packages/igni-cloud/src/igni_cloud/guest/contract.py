@@ -1,7 +1,7 @@
 """igni's half of the guest contract, as the backend runs it.
 
 ``docs/CLOUD.md`` §9 and ``igni__cloudvm``'s ``docs/guest-protocol.md``.
-The cloud layer's :class:`~ember_code.core.layer.BackendHooks`; the desktop
+The cloud layer's :class:`~igni_core.core.layer.BackendHooks`; the desktop
 never builds one. In boot order:
 
 1. :meth:`CloudGuest.starting` — a ``ready`` file left by an earlier igni
@@ -42,12 +42,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from ember_code.backend.activity import Activity
-from ember_code.core.activity import ActivityRegistry, background
-from ember_code.core.db.engine import cache
-from ember_code.core.db.scope import Tenant
-from ember_code.core.layer import BackendHooks
-from ember_code.protocol import messages as msg
 from igni_cloud.credentials import EnvironmentCredentials
 from igni_cloud.guest.activity_file import ActivityFile
 from igni_cloud.guest.binding import ProducerBinding
@@ -68,6 +62,12 @@ from igni_cloud.guest.suspend import SuspendWatch
 from igni_cloud.guest.warm import WarmImports
 from igni_cloud.guest.watch import DirectoryWatch
 from igni_cloud.logs import StdoutLog
+from igni_core.backend.activity import Activity
+from igni_core.core.activity import ActivityRegistry, background
+from igni_core.core.db.engine import cache
+from igni_core.core.db.scope import Tenant
+from igni_core.core.layer import BackendHooks
+from igni_core.protocol import messages as msg
 
 logger = logging.getLogger(__name__)
 

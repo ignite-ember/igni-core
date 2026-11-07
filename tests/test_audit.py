@@ -2,8 +2,8 @@
 
 import json
 
-from ember_code.core.config.settings import Settings
-from ember_code.core.utils.audit import AuditEntry, AuditLogger
+from igni_core.core.config.settings import Settings
+from igni_core.core.utils.audit import AuditEntry, AuditLogger
 
 
 class TestAuditLogger:

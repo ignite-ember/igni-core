@@ -13,7 +13,7 @@ from __future__ import annotations
 import json as _json
 from unittest.mock import AsyncMock, MagicMock
 
-from ember_code.core.session.core import Session
+from igni_core.core.session.core import Session
 
 
 def _bare_session() -> Session:

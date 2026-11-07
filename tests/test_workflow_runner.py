@@ -30,8 +30,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.workflow_runner import WorkflowDiscovery, WorkflowRunner, _RunState
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.backend.workflow_runner import WorkflowDiscovery, WorkflowRunner, _RunState
+from igni_core.core.paths import CONFIG_DIR
 
 
 def _meta_line(name: str = "smoke", phases: int = 2) -> str:
@@ -131,7 +131,7 @@ async def test_discovery_aggregates_and_caches(tmp_path: Path) -> None:
     # Patch the symbol where the runner uses it (its module's
     # local binding), NOT the asyncio module — direct attribute
     # assignment on asyncio leaks across other tests.
-    import ember_code.backend.workflow_runner as runner_mod
+    import igni_core.backend.workflow_runner as runner_mod
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(runner_mod.asyncio, "create_subprocess_exec", fake_exec)
@@ -200,7 +200,7 @@ async def test_user_layer_shadows_team_layer(tmp_path: Path) -> None:
         proc.returncode = 0
         return proc
 
-    import ember_code.backend.workflow_runner as runner_mod
+    import igni_core.backend.workflow_runner as runner_mod
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(runner_mod.asyncio, "create_subprocess_exec", fake_exec)
@@ -242,7 +242,7 @@ async def test_discovery_scans_both_layers_independently(tmp_path: Path) -> None
         proc.returncode = 0
         return proc
 
-    import ember_code.backend.workflow_runner as runner_mod
+    import igni_core.backend.workflow_runner as runner_mod
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(runner_mod.asyncio, "create_subprocess_exec", fake_exec)
@@ -358,7 +358,7 @@ async def test_agent_request_bridges_to_team(tmp_path: Path) -> None:
     assert event["type"] == "agent_request"
 
     # Invoke the bridge directly.
-    from ember_code.backend.schemas_workflows import WorkflowEvent
+    from igni_core.backend.schemas_workflows import WorkflowEvent
 
     ev = WorkflowEvent.model_validate_json(raw.decode("utf-8"))
     await runner._handle_agent_request(state, session, ev)  # type: ignore[attr-defined]
@@ -420,7 +420,7 @@ async def test_runner_spawns_user_layer_workflow_with_cwd_relative_path(
         captured["cwd"] = kwargs.get("cwd")
         return _FakeProcess([], exit_code=0)
 
-    import ember_code.backend.workflow_runner as runner_mod
+    import igni_core.backend.workflow_runner as runner_mod
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(runner_mod.asyncio, "create_subprocess_exec", fake_exec)
@@ -449,7 +449,7 @@ async def test_runner_cancel_sends_cancel_message_and_sends_sigterm(tmp_path: Pa
     escalation is covered separately by the subprocess integration
     tests (which need a real Node — outside the unit-test surface).
     """
-    from ember_code.backend.workflow_runner import (
+    from igni_core.backend.workflow_runner import (
         CANCEL_GRACE_SECONDS,
         WorkflowRunner,
     )
@@ -486,7 +486,7 @@ async def test_runner_cancel_sends_cancel_message_and_sends_sigterm(tmp_path: Pa
 
     # Patch asyncio.wait_for to call fake_wait directly (avoids
     # the actual asyncio.wait_for scheduling).
-    import ember_code.backend.workflow_runner as runner_mod
+    import igni_core.backend.workflow_runner as runner_mod
 
     real_wait_for = runner_mod.asyncio.wait_for
 
@@ -514,8 +514,8 @@ async def test_agent_bridge_timeout_fires_agent_response_error(
     and rejects the agent's promise — the workflow continues
     on the next event.
     """
-    import ember_code.backend.workflow_runner as runner_mod
-    from ember_code.backend.workflow_runner import (
+    import igni_core.backend.workflow_runner as runner_mod
+    from igni_core.backend.workflow_runner import (
         _RunState,
     )
 
@@ -621,7 +621,7 @@ async def test_runner_passes_args_to_subprocess_as_json_string(
         captured_args.append(args[i + 1])
         return _FakeProcess([], exit_code=0)
 
-    import ember_code.backend.workflow_runner as runner_mod
+    import igni_core.backend.workflow_runner as runner_mod
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(runner_mod.asyncio, "create_subprocess_exec", fake_exec)

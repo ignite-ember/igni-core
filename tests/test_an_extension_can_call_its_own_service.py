@@ -21,15 +21,15 @@ from typing import Any
 
 import pytest
 
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.registry import (
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.registry import (
     ExtensionMethod,
     ExtensionRefused,
     ExtensionRegistry,
     ExtensionState,
 )
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.extensions.service import ExtensionServiceError, McpExtensionService
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.service import ExtensionServiceError, McpExtensionService
 from tests.siblings import IGNI_SDK, needs_sdk
 
 pytestmark = needs_sdk

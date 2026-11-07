@@ -381,16 +381,16 @@ cases:
 
 ```bash
 # Run all evals (non-interactive, exit code 1 on failure)
-ignite-ember evals run --ci --output results.json
+igni evals run --ci --output results.json
 
 # Run only for agents changed in this PR
-ignite-ember evals run --changed --ci
+igni evals run --changed --ci
 
 # Fail if scores drop below baseline
-ignite-ember evals run --ci --check-baseline --fail-on-regression
+igni evals run --ci --check-baseline --fail-on-regression
 
 # Output as markdown (for PR comment bots)
-ignite-ember evals run --ci --format markdown > eval-report.md
+igni evals run --ci --format markdown > eval-report.md
 ```
 
 ### Python (Programmatic)
@@ -402,8 +402,8 @@ Since evals are Agno-native, you can also write them as pytest tests:
 import pytest
 from agno.eval.accuracy import AccuracyEval
 from agno.eval.reliability import ReliabilityEval
-from ember_code.pool import AgentPool
-from ember_code.config import Settings
+from igni_core.pool import AgentPool
+from igni_core.config import Settings
 
 @pytest.fixture
 def editor_agent():
@@ -621,7 +621,7 @@ Each field is a *default* that an individual case may override in its YAML:
 ## Project Structure
 
 ```
-src/ember_code/
+src/igni_core/
 ├── evals/
 │   ├── __init__.py
 │   ├── runner.py                 # Loads YAML, translates to Agno evals, executes

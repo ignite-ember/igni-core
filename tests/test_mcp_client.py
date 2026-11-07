@@ -4,16 +4,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.core.mcp.config import MCPPolicy
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.mcp.config import MCPPolicy
 
 
 class TestMCPClientManager:
     def _make_manager(self, configs=None):
         with (
-            patch("ember_code.core.mcp.client.MCPConfigLoader") as MockLoader,
-            patch("ember_code.core.mcp.client.MCPApprovalManager") as MockApproval,
-            patch("ember_code.core.mcp.config.MCPPolicy.from_managed_settings") as mock_from,
+            patch("igni_core.core.mcp.client.MCPConfigLoader") as MockLoader,
+            patch("igni_core.core.mcp.client.MCPApprovalManager") as MockApproval,
+            patch("igni_core.core.mcp.config.MCPPolicy.from_managed_settings") as mock_from,
         ):
             MockLoader.return_value.load.return_value = configs or {}
             # Auto-approve everything in existing tests
@@ -135,7 +135,7 @@ class TestMCPClientManager:
         # try/except ImportError guard (mirrors the ``pwd`` pattern in
         # ``frontend/tui/app.py``). Simulate the missing-dep case by
         # patching the module-local name to None.
-        with patch("ember_code.core.mcp.client._MCPTools", None):
+        with patch("igni_core.core.mcp.client._MCPTools", None):
             result = await mgr.connect("broken")
             assert result.ok is False
             assert "not installed" in result.reason.lower()
@@ -191,8 +191,8 @@ class TestBothTransportsNamespaceTheirTools:
         import inspect
         import re
 
-        from ember_code.core.mcp.client import MCPClientManager
-        from ember_code.core.mcp.stdio_binding import StdioMCPBinding
+        from igni_core.core.mcp.client import MCPClientManager
+        from igni_core.core.mcp.stdio_binding import StdioMCPBinding
 
         for method in (MCPClientManager._open_transport, StdioMCPBinding.open):
             source = inspect.getsource(method)
@@ -204,8 +204,8 @@ class TestBothTransportsNamespaceTheirTools:
     def test_both_transports_ask_for_the_prefix(self):
         import inspect
 
-        from ember_code.core.mcp.client import MCPClientManager
-        from ember_code.core.mcp.stdio_binding import StdioMCPBinding
+        from igni_core.core.mcp.client import MCPClientManager
+        from igni_core.core.mcp.stdio_binding import StdioMCPBinding
 
         for method in (MCPClientManager._open_transport, StdioMCPBinding.open):
             source = inspect.getsource(method)
@@ -219,7 +219,7 @@ class TestBothTransportsNamespaceTheirTools:
         and a manifest declares the server's own, so anything comparing the
         two has to convert — and ``permissions.tools`` did not, which is why
         it refused every tool it was ever asked about."""
-        from ember_code.core.mcp.naming import bare_tool_name, tool_name_prefix
+        from igni_core.core.mcp.naming import bare_tool_name, tool_name_prefix
 
         server = "ext:acme.scanner"
         registered = f"{tool_name_prefix(server)}_list"
@@ -229,7 +229,7 @@ class TestBothTransportsNamespaceTheirTools:
     def test_a_name_that_is_not_prefixed_is_left_alone(self):
         """Callers pass lists from mixed sources, and a bare name is
         already bare."""
-        from ember_code.core.mcp.naming import bare_tool_name
+        from igni_core.core.mcp.naming import bare_tool_name
 
         assert bare_tool_name("ext:acme.scanner", "list") == "list"
         assert bare_tool_name("ext:acme.scanner", "mcp_other_list") == "mcp_other_list"

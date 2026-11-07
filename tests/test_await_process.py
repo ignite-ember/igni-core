@@ -19,15 +19,15 @@ import re
 
 import pytest
 
-from ember_code.core.tools.process_supervisor import ProcessSupervisor
-from ember_code.core.tools.shell import EmberShellTools
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.shell import IgniShellTools
 
 
 @pytest.fixture
 def tools(tmp_path):
     """A toolkit on its own supervisor, so pids cannot collide with
     another test's registry."""
-    return EmberShellTools(base_dir=tmp_path, supervisor=ProcessSupervisor())
+    return IgniShellTools(base_dir=tmp_path, supervisor=ProcessSupervisor())
 
 
 #: Long enough to outlive ``run_shell_command``'s startup window —

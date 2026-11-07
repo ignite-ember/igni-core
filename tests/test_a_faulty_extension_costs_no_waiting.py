@@ -1,6 +1,6 @@
 """An extension that keeps not answering is faulty, and costs nobody any more waiting.
 
-:mod:`ember_code.extensions.faults`: three timeouts or crashes in a row —
+:mod:`igni_core.extensions.faults`: three timeouts or crashes in a row —
 hooks and tool calls alike — mark an extension faulty. It is restarted,
 the person is told, and while it is faulty its hooks are not waited on:
 a fail-closed event is refused at once, a fail-open one goes ahead
@@ -21,20 +21,20 @@ from typing import Any
 import pytest
 from agno.tools.function import ToolResult
 
-from ember_code.core.hooks.events import HookEvent
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.extension_gate import DECIDING, ExtensionHookGate
-from ember_code.core.hooks.tool_hook import ToolEventHook
-from ember_code.extensions.faults import ExtensionFaults
-from ember_code.extensions.health import ExtensionHealth
-from ember_code.extensions.host.hooks import ExtensionHooks
-from ember_code.extensions.host.processes import ExtensionProcesses
-from ember_code.extensions.host.wire import HookAnswer
-from ember_code.extensions.registry import ExtensionRefused, ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.extensions.service import ExtensionServiceError
-from ember_code.notifications.extension_notices import FaultNotices
-from ember_code.notifications.schemas import ExtensionNotice
+from igni_core.core.hooks.events import HookEvent
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.extension_gate import DECIDING, ExtensionHookGate
+from igni_core.core.hooks.tool_hook import ToolEventHook
+from igni_core.extensions.faults import ExtensionFaults
+from igni_core.extensions.health import ExtensionHealth
+from igni_core.extensions.host.hooks import ExtensionHooks
+from igni_core.extensions.host.processes import ExtensionProcesses
+from igni_core.extensions.host.wire import HookAnswer
+from igni_core.extensions.registry import ExtensionRefused, ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.service import ExtensionServiceError
+from igni_core.notifications.extension_notices import FaultNotices
+from igni_core.notifications.schemas import ExtensionNotice
 from tests.host_model_helpers import manifest
 
 CALL = {"session_id": "s-1", "tool_name": "run_shell_command", "tool_args": {"command": "ls"}}
@@ -211,7 +211,7 @@ async def test_a_tool_that_raises_its_own_error_answered(
     registry: ExtensionRegistry, faults: ExtensionFaults, hooks: ExtensionHooks
 ) -> None:
     """An MCP tool's error now arrives raised (``core/mcp/tool_errors``); it answered."""
-    from ember_code.core.mcp.tool_errors import MCPToolFailed
+    from igni_core.core.mcp.tool_errors import MCPToolFailed
 
     ExtensionHookGate.install(hooks)
     hook = _tools_only(registry)

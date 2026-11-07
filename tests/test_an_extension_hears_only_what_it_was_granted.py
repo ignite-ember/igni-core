@@ -20,11 +20,11 @@ from typing import Any
 
 import pytest
 
-from ember_code.extensions.events import HostTopic
-from ember_code.extensions.host.definition import HOST_SCHEMA
-from ember_code.extensions.host.wire import SignalMessage
-from ember_code.extensions.registry import ExtensionState
-from ember_code.protocol import messages as msg
+from igni_core.extensions.events import HostTopic
+from igni_core.extensions.host.definition import HOST_SCHEMA
+from igni_core.extensions.host.wire import SignalMessage
+from igni_core.extensions.registry import ExtensionState
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import HostRig, Sink
 
 STATE = HostTopic.EXTENSION_STATE_CHANGED.value

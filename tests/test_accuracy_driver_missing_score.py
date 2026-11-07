@@ -30,7 +30,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.core.evals.assertion_runner import AccuracyDriver, AssertionContext
+from igni_core.core.evals.assertion_runner import AccuracyDriver, AssertionContext
 
 
 def _ctx(*, threshold: float) -> AssertionContext:
@@ -66,7 +66,7 @@ def patched(monkeypatch):
     """Swap the agno eval the driver constructs for a stub."""
 
     def _install(result):
-        import ember_code.core.evals.assertion_runner as module
+        import igni_core.core.evals.assertion_runner as module
 
         monkeypatch.setattr(
             module,

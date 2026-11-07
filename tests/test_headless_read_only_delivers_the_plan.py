@@ -21,8 +21,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from ember_code.core.session.single_message_run import SingleMessageRun
-from ember_code.core.tools.plan.store import PlanStore
+from igni_core.core.session.single_message_run import SingleMessageRun
+from igni_core.core.tools.plan.store import PlanStore
 
 
 def _run_with(plan: str) -> list[str]:

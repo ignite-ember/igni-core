@@ -9,14 +9,14 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from ember_code.core.init import (
+from igni_core.core.init import (
     BUILT_IN_HOOKS,
     BuiltInHookSpec,
     HookDefinition,
     ProjectInitializer,
     initialize_project,
 )
-from ember_code.core.paths import CONFIG_DIR, PROJECT_CONTEXT_FILE
+from igni_core.core.paths import CONFIG_DIR, PROJECT_CONTEXT_FILE
 
 # All tests patch Path.home() so that ~/.igni/ writes go to tmp_path
 # instead of the real home directory.
@@ -65,13 +65,13 @@ class TestInitializeProject:
             assert (tmp_path / CONFIG_DIR).is_dir()
 
     def test_existing_ember_dir_not_destroyed(self, tmp_path):
-        ember_dir = tmp_path / CONFIG_DIR
-        ember_dir.mkdir()
-        (ember_dir / "custom.txt").write_text("keep me")
+        igni_dir = tmp_path / CONFIG_DIR
+        igni_dir.mkdir()
+        (igni_dir / "custom.txt").write_text("keep me")
 
         with _patch_home(tmp_path):
             initialize_project(tmp_path)
-            assert (ember_dir / "custom.txt").read_text() == "keep me"
+            assert (igni_dir / "custom.txt").read_text() == "keep me"
 
 
 class TestHomeModelMigration:
@@ -81,13 +81,13 @@ class TestHomeModelMigration:
     stripped on upgrade. User-customised entries are left alone."""
 
     def _write_home_config(self, tmp_path: Path, body: str) -> Path:
-        home_ember = tmp_path / "home" / CONFIG_DIR
-        home_ember.mkdir(parents=True, exist_ok=True)
+        home_igni = tmp_path / "home" / CONFIG_DIR
+        home_igni.mkdir(parents=True, exist_ok=True)
         # ``.initialized`` marker simulates a prior install so the
         # migration branch runs (not the first-run bootstrap).
-        (home_ember / ".initialized").touch()
-        (home_ember / "config.yaml").write_text(body)
-        return home_ember / "config.yaml"
+        (home_igni / ".initialized").touch()
+        (home_igni / "config.yaml").write_text(body)
+        return home_igni / "config.yaml"
 
     def test_legacy_m25_bundle_is_removed(self, tmp_path):
         """Old M2.5 bundled cloud entry is fully stripped. The
@@ -339,7 +339,7 @@ class TestTheProjectContextFile:
         """A team with one in git keeps it working — it joins the list
         of context filenames rather than being migrated, the same way
         ``CLAUDE.md`` has always been on that list."""
-        from ember_code.core.paths import PROJECT_CONTEXT_FILES
+        from igni_core.core.paths import PROJECT_CONTEXT_FILES
 
         assert "ember.md" in PROJECT_CONTEXT_FILES
         assert PROJECT_CONTEXT_FILES[0] == "igni.md", (

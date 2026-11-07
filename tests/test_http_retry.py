@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from ember_code.core.utils.http_retry import retry_with_backoff
+from igni_core.core.utils.http_retry import retry_with_backoff
 
 
 @pytest.mark.asyncio
@@ -204,7 +204,7 @@ async def test_retry_logs_debug_when_retries_occur():
         def emit(self, record: logging.LogRecord) -> None:
             records.append(record)
 
-    logger = logging.getLogger("ember_code.core.utils.http_retry")
+    logger = logging.getLogger("igni_core.core.utils.http_retry")
     handler = _Collect(level=logging.DEBUG)
     previous_level = logger.level
     # Two suppressions were once documented here, each enough on its own to

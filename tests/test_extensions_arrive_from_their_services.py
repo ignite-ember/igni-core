@@ -22,15 +22,15 @@ from typing import Any
 import httpx
 import pytest
 
-from ember_code.extensions.bundle_signature import BundleSignatureError, PublisherKeys
-from ember_code.extensions.distribution import ExtensionDistribution
-from ember_code.extensions.installer import ExtensionInstaller, InstallError
-from ember_code.extensions.launcher import ExtensionLauncher
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.extensions.service_token import IgniSession
-from ember_code.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.bundle_signature import BundleSignatureError, PublisherKeys
+from igni_core.extensions.distribution import ExtensionDistribution
+from igni_core.extensions.installer import ExtensionInstaller, InstallError
+from igni_core.extensions.launcher import ExtensionLauncher
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.service_token import IgniSession
+from igni_core.extensions.store import DistributionRecord, ExtensionStore
 from tests.extension_distribution_helpers import (
     API_URL,
     SESSION,

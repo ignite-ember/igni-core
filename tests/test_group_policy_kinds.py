@@ -21,12 +21,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.core.config.group_policy import (
+from igni_core.core.config.group_policy import (
     GroupPolicyCache,
     GroupPolicyEntry,
     GroupPolicyPack,
 )
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.paths import CONFIG_DIR
 
 
 def _pack(*entries: GroupPolicyEntry) -> GroupPolicyPack:
@@ -206,7 +206,7 @@ class TestTheLoadersFindThem:
     """Writing the file is half of it."""
 
     def test_a_skill_loads(self, cache: GroupPolicyCache):
-        from ember_code.core.skills.loader import SkillPool
+        from igni_core.core.skills.loader import SkillPool
 
         cache.materialize(
             _pack(
@@ -228,7 +228,7 @@ class TestTheLoadersFindThem:
         copy; the cache root is ranked below the project's instead, which
         gets the same outcome without putting the server's file in the
         repository."""
-        from ember_code.core.utils.markdown_commands import MarkdownCommand
+        from igni_core.core.utils.markdown_commands import MarkdownCommand
 
         cache.materialize(
             _pack(_entry("commands", "ship", "---\ndescription: Ship it\n---\nDo the thing."))
@@ -243,7 +243,7 @@ class TestTheLoadersFindThem:
         assert "ship" in found
 
     def test_an_output_style_loads(self, cache: GroupPolicyCache, tmp_path: Path):
-        from ember_code.core.output_styles.loader import discover_output_styles
+        from igni_core.core.output_styles.loader import discover_output_styles
 
         cache.materialize(
             _pack(
@@ -262,7 +262,7 @@ class TestTheLoadersFindThem:
         assert "terse" in styles
 
     def test_a_workflow_is_discovered(self, cache: GroupPolicyCache, tmp_path: Path):
-        from ember_code.backend.workflow_runner import WorkflowDiscovery
+        from igni_core.backend.workflow_runner import WorkflowDiscovery
 
         cache.materialize(
             _pack(
@@ -281,7 +281,7 @@ class TestTheLoadersFindThem:
         assert [p.stem for p in discovery._iter_paths()] == ["review"]
 
     def test_a_tool_is_scanned(self, cache: GroupPolicyCache, tmp_path: Path):
-        from ember_code.core.tools.custom_loader import CustomToolLoader
+        from igni_core.core.tools.custom_loader import CustomToolLoader
 
         cache.materialize(
             _pack(_entry("tools", "noop", "# nothing to register\n", content_type="python"))
@@ -296,7 +296,7 @@ class TestTheLoadersFindThem:
         assert not result.failed
 
     def test_a_hook_loads(self, cache: GroupPolicyCache, tmp_path: Path):
-        from ember_code.core.hooks.loader import HookLoader
+        from igni_core.core.hooks.loader import HookLoader
 
         cache.materialize(
             _pack(
@@ -319,7 +319,7 @@ class TestTheLoadersFindThem:
         assert result.registry.for_event("PreToolUse")
 
     def test_a_scoped_rule_is_indexed(self, cache: GroupPolicyCache, tmp_path: Path):
-        from ember_code.core.utils.rules_index import RulesIndex
+        from igni_core.core.utils.rules_index import RulesIndex
 
         cache.materialize(
             _pack(_entry("rules", "python", "---\npaths: ['**/*.py']\n---\nUse type hints."))
@@ -354,7 +354,7 @@ class TestWhatTheGroupStopsShipping:
 
 def test_the_session_knows_where_each_kind_lives(tmp_path: Path):
     """One method answers it, so eight loaders cannot disagree."""
-    from ember_code.core.session.core import Session
+    from igni_core.core.session.core import Session
 
     session = Session.__new__(Session)
     session._group_policy_dir = tmp_path / "group-policy"
@@ -371,7 +371,7 @@ class TestWhatIgniShipsStandsDown:
     def test_the_provisioner_can_write_scripts_without_registering(self, tmp_path: Path):
         """The scripts still have to exist: a group's hook declaration
         points at one by path."""
-        from ember_code.core.init.hook_provisioner import HookProvisioner
+        from igni_core.core.init.hook_provisioner import HookProvisioner
 
         project = tmp_path / "proj"
         (project / CONFIG_DIR).mkdir(parents=True)
@@ -382,7 +382,7 @@ class TestWhatIgniShipsStandsDown:
         assert not (project / CONFIG_DIR / "settings.json").exists()
 
     def test_it_registers_them_by_default(self, tmp_path: Path):
-        from ember_code.core.init.hook_provisioner import HookProvisioner
+        from igni_core.core.init.hook_provisioner import HookProvisioner
 
         project = tmp_path / "proj"
         (project / CONFIG_DIR).mkdir(parents=True)
@@ -405,7 +405,7 @@ class TestTheManagerGetsTheGroupDirectory:
     """
 
     def test_the_manager_loads_the_group_s_servers(self, cache: GroupPolicyCache, tmp_path: Path):
-        from ember_code.core.mcp.client import MCPClientManager
+        from igni_core.core.mcp.client import MCPClientManager
 
         cache.materialize(
             _pack(_entry("mcps", "case-law", '{"command": "case-law-mcp"}', content_type="json"))
@@ -419,7 +419,7 @@ class TestTheManagerGetsTheGroupDirectory:
         assert manager.configs["case-law"].command == "case-law-mcp"
 
     def test_without_one_it_reads_only_the_local_roots(self, tmp_path: Path):
-        from ember_code.core.mcp.client import MCPClientManager
+        from igni_core.core.mcp.client import MCPClientManager
 
         project = tmp_path / "proj"
         project.mkdir()
@@ -512,7 +512,7 @@ class TestBeingMovedToAnotherGroup:
         finding them, which is the same outcome with one fewer place for
         a stale file to survive.
         """
-        from ember_code.core.agents.loader import AgentDefinitionLoader
+        from igni_core.core.agents.loader import AgentDefinitionLoader
 
         project = tmp_path / "proj"
         (project / CONFIG_DIR).mkdir(parents=True)

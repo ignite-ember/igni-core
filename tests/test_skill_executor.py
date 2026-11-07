@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.skills.executor import SkillExecutor, SkillResult
+from igni_core.core.skills.executor import SkillExecutor, SkillResult
 
 
 def _mock_skill(name="test-skill", context="default", agent="editor"):
