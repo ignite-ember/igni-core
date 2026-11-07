@@ -25,9 +25,9 @@ from mcp import ClientSession
 from mcp.server.mcpserver import MCPServer
 from mcp.shared.message import SessionMessage
 
-from ember_code.core.hooks.untrusted import UntrustedOutputHook
-from ember_code.core.mcp.naming import tool_name_prefix
-from ember_code.extensions.installer import server_name
+from igni_core.core.hooks.untrusted import UntrustedOutputHook
+from igni_core.core.mcp.naming import tool_name_prefix
+from igni_core.extensions.installer import server_name
 
 _WRAPPED = re.compile(
     r"^<untrusted_tool_output nonce=([0-9a-f]+)>\n.*\n</untrusted_tool_output nonce=\1>$", re.S

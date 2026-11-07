@@ -22,10 +22,10 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-from ember_code.backend.__main__ import _build_rpc_table
-from ember_code.backend.server import BackendServer
-from ember_code.core.tools.process_supervisor_locator import supervisors
-from ember_code.protocol.rpc import RpcMethod
+from igni_core.backend.__main__ import _build_rpc_table
+from igni_core.backend.server import BackendServer
+from igni_core.core.tools.process_supervisor_locator import supervisors
+from igni_core.protocol.rpc import RpcMethod
 
 # ── Subscriber semantics ─────────────────────────────────────
 

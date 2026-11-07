@@ -18,19 +18,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.lsp import manager as manager_mod
-from ember_code.core.lsp.client import LspClient, LspClientError
-from ember_code.core.lsp.loader import LspConfigLoader, load_lsp_config
-from ember_code.core.lsp.manager import LspServerManager
-from ember_code.core.lsp.schemas import (
+from igni_core.core.lsp import manager as manager_mod
+from igni_core.core.lsp.client import LspClient, LspClientError
+from igni_core.core.lsp.loader import LspConfigLoader, load_lsp_config
+from igni_core.core.lsp.manager import LspServerManager
+from igni_core.core.lsp.schemas import (
     JsonRpcNotification,
     JsonRpcRequest,
     JsonRpcResponse,
     LspConfigFile,
     LspServerConfig,
 )
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.tools.lsp import LspTools
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.tools.lsp import LspTools
 
 # ── Config parsing ────────────────────────────────────────────
 

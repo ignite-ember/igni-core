@@ -21,7 +21,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from ember_code.backend.__main__ import _serialize
+from igni_core.backend.__main__ import _serialize
 
 
 class TestPrimitives:

@@ -188,7 +188,7 @@ and through Fleet with no change to igni or the gateway, and its
 contract with igni is held by `tests/test_igni_client_matches_the_protocol.py`.
 Typed host-model access for a producer's own client (`client.host`, with
 signals and properties, generated as a third target of
-`ember_code.extensions.host.codegen`) needs two things first: a host-model
+`igni_core.extensions.host.codegen`) needs two things first: a host-model
 endpoint that grants a producer's own client the model as the person,
 without an extension `caller`, and a window-only marker in the schema for
 apps.
@@ -202,7 +202,7 @@ Heavy, read-only things run **once per node**, not once per producer.
 
 | Service | Status |
 |---|---|
-| Decisions (Laya) | built in `4cdb3b1`: `src/ember_code/decisions_server` serves it; backends point at it with `IGNI_DECISIONS_URL` and `IGNI_DECISIONS_TOKEN`. A node-level deploy manifest is not written yet. |
+| Decisions (Laya) | built in `4cdb3b1`: `src/igni_core/decisions_server` serves it; backends point at it with `IGNI_DECISIONS_URL` and `IGNI_DECISIONS_TOKEN`. A node-level deploy manifest is not written yet. |
 | Embedders, if any producer-side feature needs one | proposed, same pattern |
 | Inference | unchanged: igni server's proxy |
 
@@ -224,12 +224,12 @@ one run) unless marked.
 Built:
 
 - slash commands load on first use: the registry
-  (`ember_code/backend/builtin_command_registry.py`) holds each built-in
+  (`igni_core/backend/builtin_command_registry.py`) holds each built-in
   as `"module:attr"` and imports it when it first runs, so an idle
   backend carries none of `/evals`, `/loop`, `/schedule`, `/plugin`;
 - migrations run at provisioning: a backend reads its database's
   revision with `sqlite3` and imports alembic only when the file is new
-  or behind (`ember_code/core/db/schema.py`). A producer's volume is
+  or behind (`igni_core/core/db/schema.py`). A producer's volume is
   prepared with `igni migrate`, so its backend starts current and never
   imports alembic.
   With PostgreSQL (section 9) this moves from "per producer's volume" to
@@ -268,7 +268,7 @@ Consequences:
 
 - **Hooks over the network.** Today `ExtensionManifest` refuses
   `permissions.hooks` for an extension with no process igni starts
-  (`_hooks_need_a_process` in `src/ember_code/extensions/manifest.py`).
+  (`_hooks_need_a_process` in `src/igni_core/extensions/manifest.py`).
   Proposed: allow them for remote extensions, with the same 2-second
   timeout (`ExtensionHooks.TIMEOUT_S`) and the same fault state
   (`ExtensionFaults`, three failures in a row).
@@ -565,7 +565,7 @@ on the producer's own database role, so a missing filter — or igni
 compromised inside a VM — returns nothing instead of someone else's
 rows (below).
 
-What moves where (audit of `src/ember_code`, 2026-10-26; built in
+What moves where (audit of `src/igni_core`, 2026-10-26; built in
 `ccbca59`, `9ef5eda`, `1e231c4`, `dac89aa`, `7fc48b0`, `66b6a36`,
 `7a99d1a`, `7c94a2a`, `fa78797`, `4ece789`, `23fdd06`, `3cf7bfe`,
 `21aac46` and `f6a932b` unless the row says otherwise):
@@ -585,7 +585,7 @@ What moves where (audit of `src/ember_code`, 2026-10-26; built in
 | Workspace files, `.igni` in the workspace, worktrees, process logs, installed packages | files | the producer's volume (section 10) |
 
 **One product: the core and a cloud layer.** The desktop igni
-(`ignite-ember`, `ember_code`) is the core; the cloud is a layer on top,
+(`ignite-ember`, `igni_core`) is the core; the cloud is a layer on top,
 its own package — `packages/igni-cloud` (`igni-cloud`, `igni_cloud`) —
 which the core never imports (a test holds it to that). The core asks
 seams instead of where it runs (`core/layer.py`): where logs go, where
@@ -599,7 +599,7 @@ names — `igni-cloud`'s `CloudLayer` — for the backend, `igni migrate` and
 the CLI alike, from the one setting the image already has; a desktop,
 which never sets it, never imports a line of cloud code, and a name no
 package declares is refused rather than run as a desktop. The image
-installs both packages (`pip install ignite-ember igni-cloud`); the
+installs both packages (`pip install igni-core igni-cloud`); the
 desktop's wheel depends on neither psycopg nor `agno[postgres]`.
 PostgreSQL storage — Agno's scoped storage, uploads as large objects,
 and what `igni migrate` prepares (Agno's tables, row-level security) —
@@ -1154,7 +1154,7 @@ subnet; 8 GB sparse image, loop device, dm-crypt `aes-xts-plain64`, p50 ms):
    group policy) turns it off along with every other outbound flow, and
    the session-start refresh then touches only local marketplaces and
    those listed in `plugins.marketplaces`
-   (`src/ember_code/core/plugins/source_policy.py`). See
+   (`src/igni_core/core/plugins/source_policy.py`). See
    `docs/CONFIGURATION.md`, "Air-gapped mode".
 6. **Linux arm64:** `ripgrep~=15.1.0` has no wheel there, so installing
    needs Rust. Fix before offering Graviton nodes?

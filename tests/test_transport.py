@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.protocol.messages import ContentDelta, Info, UserMessage
-from ember_code.protocol.registry import MessageRegistry
-from ember_code.transport.in_process import InProcessTransport
-from ember_code.transport.unix_socket import (
+from igni_core.protocol.messages import ContentDelta, Info, UserMessage
+from igni_core.protocol.registry import MessageRegistry
+from igni_core.transport.in_process import InProcessTransport
+from igni_core.transport.unix_socket import (
     UnixSocketClientTransport,
     UnixSocketServerTransport,
 )

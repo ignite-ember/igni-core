@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from ember_code.core.approvals.declined import declined_note
+from igni_core.core.approvals.declined import declined_note
 
 #: The corpus's refusal shape: ``Blocked:``, the tool in single quotes, a full stop.
 TRAINED = re.compile(r"^Blocked: [^\n]*'[a-z_]+'[^\n]*\.$")

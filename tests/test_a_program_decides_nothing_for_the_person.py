@@ -30,13 +30,13 @@ from websockets.datastructures import Headers
 from websockets.exceptions import InvalidStatus
 from websockets.http11 import Request
 
-from ember_code.backend import standing_policy
-from ember_code.backend.message_dispatcher import MessageDispatcher
-from ember_code.protocol import messages as msg
-from ember_code.protocol.rpc import RpcMethod
-from ember_code.protocol.schemas.envelope import Standing
-from ember_code.transport.websocket import WebSocketServerTransport
-from ember_code.transport.ws_auth import SUBPROTOCOL, TOKEN_PROTOCOL_PREFIX, HandshakeGuard
+from igni_core.backend import standing_policy
+from igni_core.backend.message_dispatcher import MessageDispatcher
+from igni_core.protocol import messages as msg
+from igni_core.protocol.rpc import RpcMethod
+from igni_core.protocol.schemas.envelope import Standing
+from igni_core.transport.websocket import WebSocketServerTransport
+from igni_core.transport.ws_auth import SUBPROTOCOL, TOKEN_PROTOCOL_PREFIX, HandshakeGuard
 from tests.host_model_helpers import HostRig
 
 SECRET = "the-launch-secret"

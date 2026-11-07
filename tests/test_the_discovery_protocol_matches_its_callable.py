@@ -34,14 +34,14 @@ import textwrap
 import tomllib
 from pathlib import Path
 
-from ember_code.backend.markdown_command_dispatcher import (
+from igni_core.backend.markdown_command_dispatcher import (
     DiscoverMarkdownCommands,
     MarkdownCommandDispatcher,
 )
-from ember_code.core.utils.markdown_commands import discover_markdown_commands
+from igni_core.core.utils.markdown_commands import discover_markdown_commands
 
 _ROOT = Path(__file__).resolve().parent.parent
-_MODULE = "ember_code.backend.markdown_command_dispatcher"
+_MODULE = "igni_core.backend.markdown_command_dispatcher"
 
 
 def _params(sig: inspect.Signature) -> list[tuple[str, inspect._ParameterKind, object, object]]:

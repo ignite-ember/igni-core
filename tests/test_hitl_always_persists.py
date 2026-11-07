@@ -32,9 +32,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from ember_code.backend.server import BackendServer
-from ember_code.core.config.permission_eval import PermissionDecision, PermissionEvaluator
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.backend.server import BackendServer
+from igni_core.core.config.permission_eval import PermissionDecision, PermissionEvaluator
+from igni_core.core.paths import CONFIG_DIR
 
 
 def _make_server(project_dir: Path, with_evaluator: bool = False) -> BackendServer:
@@ -46,7 +46,7 @@ def _make_server(project_dir: Path, with_evaluator: bool = False) -> BackendServ
     ``with_evaluator=True`` attaches a real ``PermissionEvaluator``
     to ``self._session.permission_evaluator`` so tests can verify
     the in-memory patch that stops the next-call re-prompt loop."""
-    from ember_code.backend.pending_requirements_store import PendingRequirementsStore
+    from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 
     server = BackendServer.__new__(BackendServer)
     evaluator = PermissionEvaluator.from_strings() if with_evaluator else None

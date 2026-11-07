@@ -43,10 +43,10 @@ import asyncio
 import inspect
 from pathlib import Path
 
-from ember_code.cli.options import CliOptions
-from ember_code.core.config.models import CliOverrides
-from ember_code.core.hooks.handlers.command import CommandHookHandler
-from ember_code.core.hooks.schemas import HookDefinition, HookPayload
+from igni_core.cli.options import CliOptions
+from igni_core.core.config.models import CliOverrides
+from igni_core.core.hooks.handlers.command import CommandHookHandler
+from igni_core.core.hooks.schemas import HookDefinition, HookPayload
 
 
 class TestStrictDeniesTheAgentsShell:
@@ -92,7 +92,7 @@ class TestTheFlagDoesNotOverpromise:
     """
 
     def test_strict_help_does_not_claim_to_cover_everything(self):
-        from ember_code.cli import cli
+        from igni_core.cli import cli
 
         strict = next(p for p in cli.params if p.name == "strict")
         help_text = (strict.help or "").lower()
@@ -105,7 +105,7 @@ class TestTheFlagDoesNotOverpromise:
     def test_strict_help_says_whose_actions_it_constrains(self):
         """Scoping it to the agent is the whole correction, so a future
         edit that drops the qualifier fails here."""
-        from ember_code.cli import cli
+        from igni_core.cli import cli
 
         strict = next(p for p in cli.params if p.name == "strict")
         help_text = (strict.help or "").lower()

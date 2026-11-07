@@ -19,7 +19,7 @@ Subtle invariants worth pinning:
 
 from __future__ import annotations
 
-from ember_code.core.utils.mentions import process_file_mentions
+from igni_core.core.utils.mentions import process_file_mentions
 
 
 class TestNoMentions:

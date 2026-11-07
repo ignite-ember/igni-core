@@ -44,12 +44,10 @@ import asyncio
 import os
 import signal
 import subprocess
-import sys
-import time
 from pathlib import Path
 
-from ember_code.core.tools.process_store import BackgroundProcessStore
-from ember_code.core.tools.process_store_schemas import BackgroundProcessRow
+from igni_core.core.tools.process_store import BackgroundProcessStore
+from igni_core.core.tools.process_store_schemas import BackgroundProcessRow
 
 # Anchor the script to the repo root — the project's .igni/ lives
 # there. ``scripts/seed_*.py`` always lives one level below root.

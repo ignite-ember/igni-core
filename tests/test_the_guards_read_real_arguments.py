@@ -6,7 +6,7 @@ argument under a key the tool does not have, got nothing, and concluded there
 was nothing to block:
 
 * ``BlockedCommandStage`` read ``args["args"]``, correct for agno's
-  ``ShellTools.run_shell_command(args: list[str])``. ``EmberShellTools``
+  ``ShellTools.run_shell_command(args: list[str])``. ``IgniShellTools``
   replaced it with ``run_shell_command(command: str)``. The deny list —
   ``rm -rf /``, the fork bomb — had never blocked anything.
 
@@ -34,13 +34,13 @@ import inspect
 
 import pytest
 
-from ember_code.core.hooks.permission_pipeline import (
+from igni_core.core.hooks.permission_pipeline import (
     PATH_ARG_KEYS,
     SHELL_ARG_KEYS,
     BlockedCommandStage,
     ProtectedPathStage,
 )
-from ember_code.core.tools.tool_spec import ToolSpecCatalog
+from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
 #: Imported, never restated. Writing the keys out here would make this file
 #: agree with itself rather than with the stage — which is the shape of the bug
@@ -166,6 +166,6 @@ def _ctx(name: str, args: dict):
     then calls ``func(**ctx.args)``. Nothing renames anything on the way, which
     is why the key a stage reads has to be a key the function declares.
     """
-    from ember_code.core.hooks.tool_hook import ToolCallContext
+    from igni_core.core.hooks.tool_hook import ToolCallContext
 
     return ToolCallContext(name=name, args=args, func=lambda **_: None)

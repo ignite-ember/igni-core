@@ -4,10 +4,10 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from ember_code.core.scheduler.models import ScheduledTask, TaskStatus
-from ember_code.core.scheduler.parser import parse_time
-from ember_code.core.scheduler.recurrence import Recurrence
-from ember_code.core.scheduler.store import TaskStore
+from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
+from igni_core.core.scheduler.parser import parse_time
+from igni_core.core.scheduler.recurrence import Recurrence
+from igni_core.core.scheduler.store import TaskStore
 
 # ── Time parser ─────────────────────────────────────────────────
 

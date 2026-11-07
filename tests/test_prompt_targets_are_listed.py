@@ -7,9 +7,9 @@ to them here, because a list kept by hand is a list that is wrong.
 
 To refresh it::
 
-    python -c "from pathlib import Path; from ember_code.core.prompts.document import \\
+    python -c "from pathlib import Path; from igni_core.core.prompts.document import \\
 PromptTargets; Path('docs/prompt-targets.json').write_text(PromptTargets.current(\\
-Path('src/ember_code/core/prompts'), Path('src/ember_code/bundled_agents'))\\
+Path('src/igni_core/core/prompts'), Path('src/igni_core/bundled_agents'))\\
 .model_dump_json(indent=2) + '\\n')"
 """
 
@@ -20,11 +20,11 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.prompts import PROMPTS_DIR
-from ember_code.core.prompts.document import PromptDocument, PromptTargets
+from igni_core.core.prompts import PROMPTS_DIR
+from igni_core.core.prompts.document import PromptDocument, PromptTargets
 
 REPO = Path(__file__).resolve().parents[1]
-AGENTS_DIR = REPO / "src" / "ember_code" / "bundled_agents"
+AGENTS_DIR = REPO / "src" / "igni_core" / "bundled_agents"
 LISTED = REPO / "docs" / "prompt-targets.json"
 SERVER_COPY = REPO.parent / "igni__server" / "app" / "services" / "identity" / "prompt_targets.json"
 

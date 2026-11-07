@@ -43,8 +43,8 @@ def build_explorer_agent(work_dir: Path):
     """Build explorer the same way the smoke runner does — bundled prompt + Bash."""
     from agno.agent import Agent
 
-    from ember_code.core.config.tool_permissions import ToolPermissions
-    from ember_code.core.tools.registry import ToolRegistry
+    from igni_core.core.config.tool_permissions import ToolPermissions
+    from igni_core.core.tools.registry import ToolRegistry
 
     md = Path("agents/explorer.md").read_text()
     fm_match = re.match(r"^---\n.*?\n---\n(.*)", md, re.DOTALL)
@@ -72,11 +72,11 @@ LONG_TASK = """\
 Explore the igni project architecture comprehensively. Read these
 files and directories:
 
-1. Read src/ember_code/backend/ directory listing and key files
+1. Read src/igni_core/backend/ directory listing and key files
    (server.py, command_handler.py)
-2. Read src/ember_code/core/ directory listing - list all
+2. Read src/igni_core/core/ directory listing - list all
    subdirectories and files
-3. Read src/ember_code/frontend/tui/ structure
+3. Read src/igni_core/frontend/tui/ structure
 4. Read pyproject.toml
 5. Read README.md
 6. Read ember.md

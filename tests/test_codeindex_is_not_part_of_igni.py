@@ -18,20 +18,20 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-_SRC = Path(__file__).resolve().parent.parent / "src" / "ember_code"
+_SRC = Path(__file__).resolve().parent.parent / "src" / "igni_core"
 
 #: Modules igni no longer has, and libraries it no longer uses.
 GONE = (
-    "ember_code.core.code_index",
-    "ember_code.core.tools.codeindex",
-    "ember_code.core.graph",
-    "ember_code.core.artifacts",
-    "ember_code.core.tools.artifacts",
-    "ember_code.core.embeddings",
-    "ember_code.backend.neo4j_runtime",
-    "ember_code.backend.jdk_bootstrap",
-    "ember_code.jvm",
-    "ember_code.extensions.capabilities",
+    "igni_core.core.code_index",
+    "igni_core.core.tools.codeindex",
+    "igni_core.core.graph",
+    "igni_core.core.artifacts",
+    "igni_core.core.tools.artifacts",
+    "igni_core.core.embeddings",
+    "igni_core.backend.neo4j_runtime",
+    "igni_core.backend.jdk_bootstrap",
+    "igni_core.jvm",
+    "igni_core.extensions.capabilities",
     "neo4j",
     "sentence_transformers",
 )

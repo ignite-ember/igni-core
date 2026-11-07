@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import json
 
-from ember_code.core.tools.orchestrate_events import VIS_SPEC_PREFIX
-from ember_code.core.tools.orchestrate_spawn import AgentSpawn
+from igni_core.core.tools.orchestrate_events import VIS_SPEC_PREFIX
+from igni_core.core.tools.orchestrate_spawn import AgentSpawn
 
 SPEC = {
     "root": "kpi",

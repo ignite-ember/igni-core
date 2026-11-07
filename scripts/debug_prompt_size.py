@@ -31,8 +31,8 @@ async def main() -> None:
         sys.exit(1)
 
     # Set up the same way the BE does at startup.
-    from ember_code.core.config.settings import Settings, load_settings
-    from ember_code.core.session.core import Session
+    from igni_core.core.config.settings import Settings, load_settings
+    from igni_core.core.session.core import Session
 
     settings: Settings = load_settings(project_dir=project)
 

@@ -27,8 +27,8 @@ import subprocess
 
 import pytest
 
-from ember_code.backend import supervisor as supervisor_mod
-from ember_code.backend.supervisor import BackendSupervisor, ParentProcessProbe
+from igni_core.backend import supervisor as supervisor_mod
+from igni_core.backend.supervisor import BackendSupervisor, ParentProcessProbe
 
 
 class _NullTransport:

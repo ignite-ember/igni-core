@@ -18,13 +18,13 @@ from typing import Any
 import httpx
 import pytest
 
-from ember_code.backend.login_coordinator import LoginCoordinator
-from ember_code.backend.schemas_rpc import LoginResult
-from ember_code.extensions.installer import ExtensionInstaller
-from ember_code.extensions.python_env import PythonEnvironments
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.extensions.service_token import (
+from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.schemas_rpc import LoginResult
+from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.python_env import PythonEnvironments
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.service_token import (
     ACCESS_TOKEN_TYPE,
     ENV_SERVICE_URL,
     ENV_TOKEN_SECRET,
@@ -36,7 +36,7 @@ from ember_code.extensions.service_token import (
     ServiceTokenExchange,
     TokenExchangeFailed,
 )
-from ember_code.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.store import DistributionRecord, ExtensionStore
 from tests.extension_distribution_helpers import API_URL, SESSION, FakeIgni, build_wheel, manifest
 
 NOTES = "https://notes.example.com"

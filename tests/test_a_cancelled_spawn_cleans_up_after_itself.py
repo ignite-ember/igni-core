@@ -20,8 +20,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.core.tools.orchestrate_budget import SpawnBudget
-from ember_code.core.tools.orchestrate_spawn import AgentSpawn, SpawnRunner
+from igni_core.core.tools.orchestrate_budget import SpawnBudget
+from igni_core.core.tools.orchestrate_spawn import AgentSpawn, SpawnRunner
 
 
 class _Runner(SpawnRunner):

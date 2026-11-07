@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from ember_code.cli.ext import ext
+from igni_core.cli.ext import ext
 
 HINTS = {
     "readOnlyHint": True,

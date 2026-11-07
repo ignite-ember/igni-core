@@ -23,17 +23,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.rpc_handlers.workflows import WorkflowsRpcHandler
-from ember_code.backend.schemas_workflows import WorkflowMetaEnvelope
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.protocol.rpc import RpcMethod
+from igni_core.backend.rpc_handlers.workflows import WorkflowsRpcHandler
+from igni_core.backend.schemas_workflows import WorkflowMetaEnvelope
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.protocol.rpc import RpcMethod
 
 
 def _envelope(
     name: str = "smoke", path: str = ".claude/workflows/smoke.mjs"
 ) -> WorkflowMetaEnvelope:
     """A canned discovery result the runner would emit."""
-    from ember_code.backend.schemas_workflows import WorkflowMeta
+    from igni_core.backend.schemas_workflows import WorkflowMeta
 
     return WorkflowMetaEnvelope(
         meta=WorkflowMeta(

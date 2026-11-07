@@ -22,8 +22,8 @@ def main():
 
     # Update URL version
     formula = re.sub(
-        r'url "https://files\.pythonhosted\.org/packages/source/e/ember-code/ember_code-.*?\.tar\.gz"',
-        f'url "https://files.pythonhosted.org/packages/source/e/ember-code/ember_code-{version}.tar.gz"',
+        r'url "https://files\.pythonhosted\.org/packages/source/e/ember-code/igni_core-.*?\.tar\.gz"',
+        f'url "https://files.pythonhosted.org/packages/source/e/ember-code/igni_core-{version}.tar.gz"',
         formula,
     )
 

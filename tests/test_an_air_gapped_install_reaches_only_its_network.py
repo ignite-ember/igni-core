@@ -5,7 +5,7 @@ the switch turns off outright. This file covers the three that still have
 to work inside the customer's network and must not work outside it:
 ``igni ext install`` from a repository, an MCP server reached by URL, and
 an ``http`` hook. All three ask one policy
-(:class:`~ember_code.core.network_policy.NetworkPolicy`) before they
+(:class:`~igni_core.core.network_policy.NetworkPolicy`) before they
 connect, so each test watches the seam the connection would go through —
 the ``git`` subprocess, the MCP transport, the HTTP client — and asserts
 nothing reached it, rather than trusting a return value that a failed
@@ -22,14 +22,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from ember_code.cli.ext import ext
-from ember_code.core.config.schemas import NetworkConfig, PluginsConfig
-from ember_code.core.config.settings import Settings, load_settings
-from ember_code.core.hooks.handlers.http import HttpHookHandler
-from ember_code.core.hooks.schemas import HookDefinition, HookPayload
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.core.mcp.config import MCPPolicy, MCPServerConfig, MCPTransport
-from ember_code.core.network_policy import NetworkPolicy
+from igni_core.cli.ext import ext
+from igni_core.core.config.schemas import NetworkConfig, PluginsConfig
+from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.hooks.handlers.http import HttpHookHandler
+from igni_core.core.hooks.schemas import HookDefinition, HookPayload
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.mcp.config import MCPPolicy, MCPServerConfig, MCPTransport
+from igni_core.core.network_policy import NetworkPolicy
 
 FIXTURE = Path(__file__).parent / "fixtures" / "dev_extension"
 PUBLIC = "https://github.com/acme/ext.git"
@@ -148,7 +148,7 @@ class TestWhereTheHostsComeFrom:
         assert not NetworkPolicy.from_settings(settings).allows("https://evil.example/x")
 
     def test_plugins_reach_a_host_named_in_internal_hosts(self):
-        from ember_code.core.plugins.source_policy import PluginSourcePolicy
+        from igni_core.core.plugins.source_policy import PluginSourcePolicy
 
         policy = PluginSourcePolicy(air_gapped=True, internal_hosts=["git.acme.internal"])
 
@@ -179,7 +179,7 @@ def mirror(tmp_path: Path) -> Path:
 class TestExtInstall:
     def test_a_repository_outside_the_network_is_refused_before_git_runs(self, dev_flag, tmp_path):
         _write_user_config("air_gapped: true\n")
-        with patch("ember_code.core.plugins.git.subprocess.run") as git:
+        with patch("igni_core.core.plugins.git.subprocess.run") as git:
             done = CliRunner().invoke(ext, ["install", PUBLIC, "--root", str(tmp_path / "s")])
         git.assert_not_called()
         assert done.exit_code != 0
@@ -197,7 +197,7 @@ class TestExtInstall:
 
     def test_without_the_switch_the_clone_is_attempted(self, dev_flag, tmp_path):
         failed = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="no route")
-        with patch("ember_code.core.plugins.git.subprocess.run", return_value=failed) as git:
+        with patch("igni_core.core.plugins.git.subprocess.run", return_value=failed) as git:
             done = CliRunner().invoke(ext, ["install", PUBLIC, "--root", str(tmp_path / "s")])
         assert any(call.args[0][:2] == ["git", "clone"] for call in git.call_args_list)
         assert "air-gapped" not in done.output
@@ -208,8 +208,8 @@ class TestExtInstall:
 
 def _manager(configs: dict[str, MCPServerConfig], network: NetworkPolicy) -> MCPClientManager:
     with (
-        patch("ember_code.core.mcp.client.MCPConfigLoader") as loader,
-        patch("ember_code.core.mcp.client.MCPApprovalManager") as approval,
+        patch("igni_core.core.mcp.client.MCPConfigLoader") as loader,
+        patch("igni_core.core.mcp.client.MCPApprovalManager") as approval,
     ):
         loader.return_value.load.return_value = configs
         approval.return_value.check_approval.return_value = True
@@ -230,7 +230,7 @@ def _live_tools() -> MagicMock:
 class TestMCPServers:
     async def test_a_url_outside_the_network_is_refused_before_connecting(self):
         mgr = _manager({"remote": _sse("https://mcp.vendor.com/sse")}, GAPPED)
-        with patch("ember_code.core.mcp.client._MCPTools") as transport:
+        with patch("igni_core.core.mcp.client._MCPTools") as transport:
             result = await mgr.connect("remote")
         transport.assert_not_called()
         mgr._approval.check_approval.assert_not_called()
@@ -240,7 +240,7 @@ class TestMCPServers:
 
     async def test_a_url_on_an_internal_host_connects(self):
         mgr = _manager({"remote": _sse("https://mcp.corp.example/sse")}, GAPPED)
-        with patch("ember_code.core.mcp.client._MCPTools", return_value=_live_tools()) as t:
+        with patch("igni_core.core.mcp.client._MCPTools", return_value=_live_tools()) as t:
             result = await mgr.connect("remote")
         assert result.ok is True
         assert t.call_args.kwargs["url"] == "https://mcp.corp.example/sse"
@@ -257,7 +257,7 @@ class TestMCPServers:
 
     async def test_without_the_switch_any_url_connects(self):
         mgr = _manager({"remote": _sse("https://mcp.vendor.com/sse")}, NetworkPolicy())
-        with patch("ember_code.core.mcp.client._MCPTools", return_value=_live_tools()):
+        with patch("igni_core.core.mcp.client._MCPTools", return_value=_live_tools()):
             result = await mgr.connect("remote")
         assert result.ok is True
 
@@ -290,7 +290,7 @@ def _http_client(response: MagicMock) -> MagicMock:
 class TestHttpHooks:
     async def test_a_url_outside_the_network_is_not_sent(self):
         handler = HttpHookHandler(network_policy=GAPPED)
-        with patch("ember_code.core.hooks.handlers.http.httpx.AsyncClient") as client:
+        with patch("igni_core.core.hooks.handlers.http.httpx.AsyncClient") as client:
             result = await handler.run(
                 _hook("https://hooks.vendor.com/x"), "PreToolUse", _payload()
             )
@@ -301,20 +301,20 @@ class TestHttpHooks:
     async def test_a_url_on_an_internal_host_is_sent(self):
         handler = HttpHookHandler(network_policy=GAPPED)
         client = _http_client(_ok_response())
-        with patch("ember_code.core.hooks.handlers.http.httpx.AsyncClient", return_value=client):
+        with patch("igni_core.core.hooks.handlers.http.httpx.AsyncClient", return_value=client):
             await handler.run(_hook("https://audit.corp.example/hook"), "PreToolUse", _payload())
         assert client.post.await_args.args[0] == "https://audit.corp.example/hook"
 
     async def test_loopback_is_sent(self):
         handler = HttpHookHandler(network_policy=NetworkPolicy(air_gapped=True))
         client = _http_client(_ok_response())
-        with patch("ember_code.core.hooks.handlers.http.httpx.AsyncClient", return_value=client):
+        with patch("igni_core.core.hooks.handlers.http.httpx.AsyncClient", return_value=client):
             await handler.run(_hook("http://127.0.0.1:9000/hook"), "PreToolUse", _payload())
         client.post.assert_awaited_once()
 
     async def test_without_the_switch_any_url_is_sent(self):
         handler = HttpHookHandler()
         client = _http_client(_ok_response())
-        with patch("ember_code.core.hooks.handlers.http.httpx.AsyncClient", return_value=client):
+        with patch("igni_core.core.hooks.handlers.http.httpx.AsyncClient", return_value=client):
             await handler.run(_hook("https://hooks.vendor.com/x"), "PreToolUse", _payload())
         client.post.assert_awaited_once()

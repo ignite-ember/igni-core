@@ -123,7 +123,7 @@ release notes below that mention them are history.
 
 ### Rebrand + signed desktop app (v0.7.0 → v0.7.1)
 
-- **Rebrand to `igni`.** Shorter, single-word product name — the Tauri window, the macOS Dock, the VSCode + JetBrains marketplace listings, the welcome screen, the agent's self-identification all read `igni`. Internal identifiers (PyPI package `ignite-ember`, Python module `ember_code`, Tauri bundle id `sh.ignite-ember.desktop`, VSCode/JetBrains plugin slugs) are preserved so existing installs keep auto-updating without breakage.
+- **Rebrand to `igni`.** Shorter, single-word product name — the Tauri window, the macOS Dock, the VSCode + JetBrains marketplace listings, the welcome screen, the agent's self-identification all read `igni`. Internal identifiers (PyPI package `ignite-ember`, Python module `igni_core`, Tauri bundle id `sh.ignite-ember.desktop`, VSCode/JetBrains plugin slugs) are preserved so existing installs keep auto-updating without breakage.
 - **`igni` CLI alias.** The terminal command is now `igni` (the old `ignite-ember` invocation still works for back-compat).
 - **Apple Developer ID signing + notarization** on the macOS desktop app. First-launch no longer triggers the "unidentified developer" Gatekeeper warning; the notarization ticket is stapled into the `.app` so offline first-launch works too. The auto-updater pulls a fully signed + notarized bundle.
 - **Mermaid diagrams in the chat.** Fenced ` ```mermaid ` blocks render as SVG (sequence / flowchart / state / ER / pie / gantt / mindmap / xy-chart / quadrant / timeline). Mermaid lazy-loads — first diagram in a session triggers the download.
@@ -221,7 +221,7 @@ The Textual terminal UI was removed in v0.9.7, and the VS Code and JetBrains
 extensions are no longer shipped. igni ships the desktop app (Tauri), the web
 client and the CLI. The desktop app and the web client share one web UI,
 both in [igni-app](https://github.com/ignite-ember/igni-app); the desktop app talks to the backend over a Unix socket
-(`python -m ember_code.backend --socket <path>`). Features: streaming
+(`python -m igni_core.backend --socket <path>`). Features: streaming
 responses, agent tree visualization, token tracking, session picker, keyboard
 shortcuts, HITL confirmation dialogs. In a terminal, `igni -m` and `igni -p`
 run one task.
@@ -230,7 +230,7 @@ run one task.
 
 igni acts as an MCP *client*: configure external MCP servers via `/mcp` or the MCP panel and their tools become available to the agent.
 
-> *Exposing igni itself as an MCP server (so any MCP-compatible IDE — Cursor, Windsurf, etc. — can connect to it) is on the roadmap; the `ignite-ember mcp serve` subcommand isn't shipped yet.*
+> *Exposing igni itself as an MCP server (so any MCP-compatible IDE — Cursor, Windsurf, etc. — can connect to it) is on the roadmap; the `igni mcp serve` subcommand isn't shipped yet.*
 
 ## Key Features
 

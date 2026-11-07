@@ -181,8 +181,8 @@ async def main() -> int:
     )
     args = parser.parse_args()
 
-    ember_code_dir = Path(__file__).resolve().parent.parent
-    yaml_path = ember_code_dir / "evals" / f"{args.suite}.yaml"
+    igni_core_dir = Path(__file__).resolve().parent.parent
+    yaml_path = igni_core_dir / "evals" / f"{args.suite}.yaml"
     target_dir = args.target_project_dir.resolve()
     if not target_dir.exists():
         print(f"target dir does not exist: {target_dir}", file=sys.stderr)
@@ -191,12 +191,12 @@ async def main() -> int:
         print(f"suite yaml not found: {yaml_path}", file=sys.stderr)
         return 1
 
-    if str(ember_code_dir) not in sys.path:
-        sys.path.insert(0, str(ember_code_dir))
+    if str(igni_core_dir) not in sys.path:
+        sys.path.insert(0, str(igni_core_dir))
 
-    from ember_code.core.config.settings import Settings
-    from ember_code.core.evals.loader import load_eval_file
-    from ember_code.core.session.core import ModelRegistry
+    from igni_core.core.config.settings import Settings
+    from igni_core.core.evals.loader import load_eval_file
+    from igni_core.core.session.core import ModelRegistry
 
     suite = load_eval_file(yaml_path)
     if suite is None:
@@ -205,7 +205,7 @@ async def main() -> int:
 
     # Auto-source .env so the judge can connect — same pattern as run_codeindex_eval.
     if not os.environ.get("IGNI_TEST_LLM_API_KEY"):
-        env_path = ember_code_dir / ".env"
+        env_path = igni_core_dir / ".env"
         if env_path.exists():
             for line in env_path.read_text().splitlines():
                 line = line.strip()

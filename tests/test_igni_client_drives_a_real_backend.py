@@ -28,9 +28,9 @@ from agno.models.base import Model
 from agno.models.message import Message
 from agno.models.response import ModelResponse
 
-from ember_code.backend.app import BackendApp
-from ember_code.backend.schemas_rpc import LifecyclePhase
-from ember_code.core.config.models import ModelRegistry
+from igni_core.backend.app import BackendApp
+from igni_core.backend.schemas_rpc import LifecyclePhase
+from igni_core.core.config.models import ModelRegistry
 from tests.siblings import IGNI_SDK, needs_sdk, skip_module_without_sdk
 
 skip_module_without_sdk()

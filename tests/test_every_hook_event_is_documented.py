@@ -30,11 +30,11 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.hooks.events import HookEvent
+from igni_core.core.hooks.events import HookEvent
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DOC = _ROOT / "docs/HOOKS.md"
-_SRC = _ROOT / "src/ember_code"
+_SRC = _ROOT / "src/igni_core"
 
 
 def _events() -> list[str]:

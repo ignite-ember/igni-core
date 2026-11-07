@@ -20,21 +20,21 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.prompts import load_prompt
-from ember_code.core.prompts.contributions import (
+from igni_core.core.prompts import load_prompt
+from igni_core.core.prompts.contributions import (
     EditOp,
     PromptContributions,
     PromptEdit,
     PromptOverride,
 )
-from ember_code.core.prompts.document import (
+from igni_core.core.prompts.document import (
     EditRefused,
     Position,
     PromptDocument,
     PromptTarget,
 )
-from ember_code.core.session.agent_builder.plan_mode_nudge import PlanModeNudge
-from ember_code.core.session.agent_builder.prompt_builder import PromptBuilder
+from igni_core.core.session.agent_builder.plan_mode_nudge import PlanModeNudge
+from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
 
 
 class _Settings:

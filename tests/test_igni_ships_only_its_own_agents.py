@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-#: What ships — ``src/ember_code/bundled_agents/`` is what the wheel carries and
+#: What ships — ``src/igni_core/bundled_agents/`` is what the wheel carries and
 #: what a user's session loads. The repo-root ``agents/`` directory is the
 #: editing copy, and it is asserted identical so the two cannot drift.
-AGENTS_DIR = Path(__file__).resolve().parent.parent / "src" / "ember_code" / "bundled_agents"
+AGENTS_DIR = Path(__file__).resolve().parent.parent / "src" / "igni_core" / "bundled_agents"
 REPO_AGENTS_DIR = Path(__file__).resolve().parent.parent / "agents"
 
 

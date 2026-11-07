@@ -8,7 +8,7 @@ isolation so a future refactor of the pipeline can't silently drift
 them.
 """
 
-from ember_code.core.hooks.permission_pipeline import (
+from igni_core.core.hooks.permission_pipeline import (
     BlockedCommandStage,
     ProtectedPathStage,
     ToolCallContext,

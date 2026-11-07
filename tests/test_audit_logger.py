@@ -28,7 +28,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ember_code.core.utils.audit import AuditEntry, AuditLogger
+from igni_core.core.utils.audit import AuditEntry, AuditLogger
 
 
 def _make_logger(tmp_path: Path) -> AuditLogger:
@@ -154,7 +154,7 @@ class TestOSErrorSwallow:
         # sessions on disk-full scenarios.
         logger = _make_logger(tmp_path)
         # Patch open() to raise OSError unconditionally.
-        with patch("ember_code.core.utils.audit.open", side_effect=OSError("disk full")):
+        with patch("igni_core.core.utils.audit.open", side_effect=OSError("disk full")):
             # Must NOT raise.
             result = logger.log(AuditEntry.success(session_id="s1", agent_name="a", tool_name="t"))
         assert result.ok is False

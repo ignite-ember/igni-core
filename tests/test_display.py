@@ -4,7 +4,7 @@ from io import StringIO
 
 from rich.console import Console
 
-from ember_code.core.utils.display import DisplayManager, RunStats, ToolCallDisplay
+from igni_core.core.utils.display import DisplayManager, RunStats, ToolCallDisplay
 
 
 class TestDisplayManager:

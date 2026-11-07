@@ -18,22 +18,22 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.cli.options import CliOptions
-from ember_code.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
-from ember_code.core.config.models import CliOverrides
-from ember_code.core.config.permission_eval import (
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.cli.options import CliOptions
+from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.models import CliOverrides
+from igni_core.core.config.permission_eval import (
     PermissionDecision,
     PermissionEvaluator,
     PermissionMode,
 )
-from ember_code.core.config.permission_eval.mode_policy import ModePolicy, is_at_least_as_strict
-from ember_code.core.config.settings import Settings, load_settings
-from ember_code.core.config.settings_loader import SettingsLoader
-from ember_code.core.session.broadcast import BroadcastBus
-from ember_code.core.session.core import Session
-from ember_code.core.tools.slash import SlashCommandTool
-from ember_code.protocol.messages import CommandResultKind
+from igni_core.core.config.permission_eval.mode_policy import ModePolicy, is_at_least_as_strict
+from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
+from igni_core.core.session.broadcast import BroadcastBus
+from igni_core.core.session.core import Session
+from igni_core.core.tools.slash import SlashCommandTool
+from igni_core.protocol.messages import CommandResultKind
 
 
 @pytest.fixture(autouse=True)
@@ -347,7 +347,7 @@ class TestTheStricterTierWins:
 
 class TestAutoApproveIsIgnoredWhenBypassIsOff:
     def test_the_flag_loosens_nothing(self, tmp_path, monkeypatch, capsys):
-        from ember_code.cli.invocation import load_settings_from_options
+        from igni_core.cli.invocation import load_settings_from_options
 
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: false\n")
         monkeypatch.chdir(tmp_path)
@@ -360,7 +360,7 @@ class TestAutoApproveIsIgnoredWhenBypassIsOff:
         assert "--auto-approve is turned off" in capsys.readouterr().err
 
     def test_other_flags_still_apply(self, tmp_path, monkeypatch):
-        from ember_code.cli.invocation import load_settings_from_options
+        from igni_core.cli.invocation import load_settings_from_options
 
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: false\n")
         monkeypatch.chdir(tmp_path)
@@ -369,7 +369,7 @@ class TestAutoApproveIsIgnoredWhenBypassIsOff:
         assert settings.permissions.web_fetch == "deny"
 
     def test_without_the_policy_the_flag_is_untouched(self, tmp_path, monkeypatch):
-        from ember_code.cli.invocation import load_settings_from_options
+        from igni_core.cli.invocation import load_settings_from_options
 
         monkeypatch.chdir(tmp_path)
         settings = load_settings_from_options(CliOptions(auto_approve=True))
@@ -386,10 +386,10 @@ class TestARefusedFlipFromAnApprovalReachesThePerson:
         from types import SimpleNamespace
         from unittest.mock import AsyncMock, MagicMock
 
-        from ember_code.backend.hitl_controller import HitlController
-        from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-        from ember_code.backend.schemas_pause import PendingRequirement
-        from ember_code.protocol import messages as msg
+        from igni_core.backend.hitl_controller import HitlController
+        from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+        from igni_core.backend.schemas_pause import PendingRequirement
+        from igni_core.protocol import messages as msg
 
         async def nothing():
             if False:

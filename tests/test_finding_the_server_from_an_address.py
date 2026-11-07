@@ -20,8 +20,8 @@ import json
 import httpx
 import pytest
 
-from ember_code.core.auth import discovery
-from ember_code.core.auth.discovery import Discovered, discover, domain_of
+from igni_core.core.auth import discovery
+from igni_core.core.auth.discovery import Discovered, discover, domain_of
 
 
 def _answering(handler) -> None:
@@ -388,8 +388,8 @@ class TestWritingTheServerDown:
     def _controller(tmp_path, monkeypatch):
         from types import SimpleNamespace
 
-        from ember_code.backend import server_auth
-        from ember_code.core.config.user_config_store import UserConfigStore
+        from igni_core.backend import server_auth
+        from igni_core.core.config.user_config_store import UserConfigStore
 
         store = UserConfigStore(tmp_path / "config.yaml")
         monkeypatch.setattr(server_auth, "UserConfigStore", lambda *a, **k: store)

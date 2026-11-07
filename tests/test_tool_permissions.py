@@ -11,13 +11,13 @@ tests below exercise the same behaviours through the class API.
 import json
 from unittest.mock import patch
 
-from ember_code.core.config.tool_permissions import (
+from igni_core.core.config.tool_permissions import (
     FUNC_TO_TOOL,
     PermissionRule,
     ToolInvocationArgs,
     ToolPermissions,
 )
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.paths import CONFIG_DIR
 
 
 class TestParseRule:
@@ -185,8 +185,8 @@ class TestToolPermissions:
 
     def test_save_rule(self, tmp_path):
         # Ensure ~/.igni exists for save
-        home_ember = tmp_path / "home_ember"
-        home_ember.mkdir()
+        home_igni = tmp_path / "home_igni"
+        home_igni.mkdir()
 
         perms = ToolPermissions(project_dir=tmp_path)
         # ``SettingsFileWriter`` reads ``Path.home()`` when no
@@ -196,7 +196,7 @@ class TestToolPermissions:
         # covered the home-fallback branch — the writer must not
         # accidentally hit the real home directory during CI.
         with patch(
-            "ember_code.core.config.tool_permissions.settings_files.Path.home",
+            "igni_core.core.config.tool_permissions.settings_files.Path.home",
             return_value=tmp_path,
         ):
             perms.save_rule("Bash(git push)", "allow")

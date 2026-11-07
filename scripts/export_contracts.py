@@ -12,8 +12,8 @@
 
 from __future__ import annotations
 
-from ember_code.extensions.host import published
-from ember_code.protocol import wire_schema
+from igni_core.extensions.host import published
+from igni_core.protocol import wire_schema
 
 
 def main() -> None:

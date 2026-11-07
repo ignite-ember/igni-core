@@ -34,14 +34,14 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ember_code.core.config.group_policy import (
+from igni_core.core.config.group_policy import (
     CachedSettingsFetcher,
     GroupPolicyCache,
     GroupPolicyEntry,
     GroupPolicyPack,
     PackTrust,
 )
-from ember_code.core.config.settings import load_settings
+from igni_core.core.config.settings import load_settings
 from tests.group_policy_signing import ISSUER, sign_in, store
 
 
@@ -181,7 +181,7 @@ class TestTheCachedFetcher:
         does not apply at all — ops has to be able to tell which happened."""
         _publish({"learning": {"enabled": False}}, group_name="Legal")
 
-        with caplog.at_level(logging.INFO, logger="ember_code.core.config.group_policy"):
+        with caplog.at_level(logging.INFO, logger="igni_core.core.config.group_policy"):
             _fetcher()()
 
         assert any(
@@ -241,7 +241,7 @@ class TestItDegradesInsteadOfFailing:
         path = cache_dir / GroupPolicyCache.SIGNED_PACK_FILE
         path.write_text(path.read_text()[:40], encoding="utf-8")
 
-        with caplog.at_level(logging.WARNING, logger="ember_code.core.config.group_policy"):
+        with caplog.at_level(logging.WARNING, logger="igni_core.core.config.group_policy"):
             settings = load_settings(project_dir=tmp_path, group_policy_fetcher=_fetcher())
 
         assert settings.learning.enabled is True
@@ -291,7 +291,7 @@ class TestTheEntryPointsBuildOne:
         """``BackendApp`` — the process that owns the session, holds the
         token, and starts once. This is the settings object handed to
         ``BackendServer`` and to every runtime in the pool."""
-        from ember_code.backend.app import BackendApp
+        from igni_core.backend.app import BackendApp
 
         _publish({"learning": {"enabled": False}})
         app = BackendApp(
@@ -305,7 +305,7 @@ class TestTheEntryPointsBuildOne:
         assert app._load_settings_with_group_policy().learning.enabled is False
 
     def test_the_backend_still_boots_without_a_policy(self, tmp_path: Path):
-        from ember_code.backend.app import BackendApp
+        from igni_core.backend.app import BackendApp
 
         app = BackendApp(
             socket_path=None,
@@ -320,8 +320,8 @@ class TestTheEntryPointsBuildOne:
     def test_the_cli_applies_group_policy_too(self):
         """``igni -m`` runs a real session in this process, so a policy that
         held in the app and not on the command line would be half-enforced."""
-        from ember_code.cli.invocation import load_settings_from_options
-        from ember_code.cli.options import CliOptions
+        from igni_core.cli.invocation import load_settings_from_options
+        from igni_core.cli.options import CliOptions
 
         _publish({"learning": {"enabled": False}})
 
@@ -330,10 +330,10 @@ class TestTheEntryPointsBuildOne:
     def test_a_group_still_cannot_loosen_what_the_cli_denied(self):
         """The ratchet holds through the production path, not just the
         hand-built plan — this is the combination an operator relies on."""
-        from ember_code.cli.invocation import load_settings_from_options
-        from ember_code.cli.options import CliOptions
-        from ember_code.core.config.permission_eval import PermissionDecision
-        from ember_code.core.config.permission_eval.pipeline import PermissionEvaluator
+        from igni_core.cli.invocation import load_settings_from_options
+        from igni_core.cli.options import CliOptions
+        from igni_core.core.config.permission_eval import PermissionDecision
+        from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 
         _publish({"permissions": {"shell_execute": "allow", "read_only": False}})
 

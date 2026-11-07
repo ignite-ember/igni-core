@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ember_code.core.plugins.git import GitClient, GitError
+from igni_core.core.plugins.git import GitClient, GitError
 
 # ── is_available ───────────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ def test_is_available_false_when_subprocess_fails() -> None:
     swallowed by ``is_available`` so the installer's precondition
     check has a non-raising boolean to consult."""
     with patch(
-        "ember_code.core.plugins.git.subprocess.run",
+        "igni_core.core.plugins.git.subprocess.run",
         side_effect=FileNotFoundError,
     ):
         assert GitClient().is_available() is False
@@ -44,7 +44,7 @@ def test_is_available_false_on_nonzero_exit() -> None:
     instead of breaking ember startup."""
     err = subprocess.CalledProcessError(1, ["git", "--version"])
     with patch(
-        "ember_code.core.plugins.git.subprocess.run",
+        "igni_core.core.plugins.git.subprocess.run",
         side_effect=err,
     ):
         assert GitClient().is_available() is False
@@ -65,7 +65,7 @@ def test_run_raises_giterror_on_nonzero_exit() -> None:
     )
     with (
         patch(
-            "ember_code.core.plugins.git.subprocess.run",
+            "igni_core.core.plugins.git.subprocess.run",
             return_value=result,
         ),
         pytest.raises(GitError, match="not a git repository"),
@@ -84,7 +84,7 @@ def test_run_falls_back_to_stdout_when_stderr_empty() -> None:
     )
     with (
         patch(
-            "ember_code.core.plugins.git.subprocess.run",
+            "igni_core.core.plugins.git.subprocess.run",
             return_value=result,
         ),
         pytest.raises(GitError, match="from stdout"),
@@ -98,7 +98,7 @@ def test_run_raises_giterror_on_timeout() -> None:
     raise the timeout or check the network."""
     with (
         patch(
-            "ember_code.core.plugins.git.subprocess.run",
+            "igni_core.core.plugins.git.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd=["git", "x"], timeout=1),
         ),
         pytest.raises(GitError, match="timed out"),
@@ -113,7 +113,7 @@ def test_run_raises_giterror_when_git_not_on_path() -> None:
     called directly."""
     with (
         patch(
-            "ember_code.core.plugins.git.subprocess.run",
+            "igni_core.core.plugins.git.subprocess.run",
             side_effect=FileNotFoundError,
         ),
         pytest.raises(GitError, match="not found"),
@@ -148,7 +148,7 @@ def test_current_sha_returns_stripped_hash() -> None:
         stderr="",
     )
     with patch(
-        "ember_code.core.plugins.git.subprocess.run",
+        "igni_core.core.plugins.git.subprocess.run",
         return_value=result,
     ):
         assert GitClient().current_sha(Path("/tmp")) == "abcdef1234"

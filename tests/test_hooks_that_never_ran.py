@@ -30,12 +30,12 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.hooks.events import HookEvent
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.hook_firer import HookFirer
-from ember_code.core.hooks.permission_pipeline import ToolCallContext
-from ember_code.core.hooks.schemas import HookDefinition
-from ember_code.core.hooks.tool_call_invoker import ToolCallInvoker
+from igni_core.core.hooks.events import HookEvent
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.hook_firer import HookFirer
+from igni_core.core.hooks.permission_pipeline import ToolCallContext
+from igni_core.core.hooks.schemas import HookDefinition
+from igni_core.core.hooks.tool_call_invoker import ToolCallInvoker
 
 
 async def _cancel_sweep() -> None:

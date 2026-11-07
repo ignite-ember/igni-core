@@ -25,8 +25,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ember_code.backend.server import BackendServer
-from ember_code.core.tools.todo import TodoStore, TodoTools, _coerce_items
+from igni_core.backend.server import BackendServer
+from igni_core.core.tools.todo import TodoStore, TodoTools, _coerce_items
 
 
 class _CapturingPersistence:

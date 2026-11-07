@@ -27,12 +27,12 @@ import pytest
 from agno.agent import Agent
 from agno.models.openai.like import OpenAILike
 
-from ember_code.cli.invocation import load_settings_from_options
-from ember_code.cli.options import CliOptions
-from ember_code.core.agents.schemas import AgentConstructorArgs
-from ember_code.core.agno_telemetry import AgnoTelemetry
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.session.core import Session
+from igni_core.cli.invocation import load_settings_from_options
+from igni_core.cli.options import CliOptions
+from igni_core.core.agents.schemas import AgentConstructorArgs
+from igni_core.core.agno_telemetry import AgnoTelemetry
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.core import Session
 from tests.egress_guard import EgressGuard, EgressLog, InternalNetwork
 from tests.test_igni_reaches_nothing_outside_the_network import StubModel
 

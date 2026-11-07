@@ -28,7 +28,6 @@ import argparse
 import asyncio
 import json
 import os
-import statistics
 import subprocess
 import sys
 import tempfile
@@ -36,7 +35,6 @@ import time
 from pathlib import Path
 
 import websockets
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
@@ -153,7 +151,7 @@ async def _run(sessions: int, duration: float, interval: float, rate: float) -> 
         [
             str(PYTHON),
             "-m",
-            "ember_code.backend",
+            "igni_core.backend",
             "--ws-port",
             "0",
             "--project-dir",

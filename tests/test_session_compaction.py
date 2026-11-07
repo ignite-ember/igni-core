@@ -19,13 +19,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.hooks.schemas import HookResult
-from ember_code.core.session.compaction import (
+from igni_core.core.hooks.schemas import HookResult
+from igni_core.core.session.compaction import (
     CompactionCoordinator,
     FallbackSummariser,
     TranscriptMessage,
 )
-from ember_code.core.session.schemas import CompactResult, ContextBreakdown
+from igni_core.core.session.schemas import CompactResult, ContextBreakdown
 
 
 def _runs_db() -> MagicMock:

@@ -36,14 +36,14 @@ from agno.models.response import ToolExecution
 from agno.run.agent import RunCompletedEvent, RunContentEvent, RunPausedEvent
 from agno.run.requirement import RunRequirement
 
-from ember_code.backend.hitl_stream_mux import HITLStreamMultiplexer
-from ember_code.backend.hitl_tracer import HITLTracer
-from ember_code.backend.pause_handler import PauseHandler
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-from ember_code.backend.schemas_pause import PendingRequirement
-from ember_code.core.config.permission_eval import PermissionEvaluator, PermissionMode
-from ember_code.core.sub_agent_hitl import SubAgentHITLCoordinator
-from ember_code.protocol import messages as msg
+from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
+from igni_core.backend.hitl_tracer import HITLTracer
+from igni_core.backend.pause_handler import PauseHandler
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.backend.schemas_pause import PendingRequirement
+from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
+from igni_core.protocol import messages as msg
 
 
 class _Bus:

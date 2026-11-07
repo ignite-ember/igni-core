@@ -19,16 +19,16 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.plugins.loader import PluginLoader
-from ember_code.core.plugins.models import PluginManifest
-from ember_code.core.plugins.state import (
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.plugins.loader import PluginLoader
+from igni_core.core.plugins.models import PluginManifest
+from igni_core.core.plugins.state import (
     PluginsState,
     load_state,
     save_state,
     state_path,
 )
-from ember_code.core.skills.loader import SkillPool
+from igni_core.core.skills.loader import SkillPool
 
 # ── Helpers ─────────────────────────────────────────────────────────
 

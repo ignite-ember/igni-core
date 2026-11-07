@@ -21,24 +21,24 @@ import pytest
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.shared.message import SessionMessage
 
-from ember_code.core.auth.credentials import Credentials, CredentialsStore
-from ember_code.core.hooks.events import HookEvent
-from ember_code.core.hooks.extension_gate import DECIDING
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.core.mcp.config import MCPServerConfig, MCPTransport
-from ember_code.core.mcp.request_meta import RequestMetaSession
-from ember_code.extensions.host.hooks import ExtensionHooks
-from ember_code.extensions.host.wire import HookAnswer
-from ember_code.extensions.principal import Principal, PrincipalKind, SignedInPerson
-from ember_code.extensions.registry import ExtensionRegistry
-from ember_code.extensions.service_token import (
+from igni_core.core.auth.credentials import Credentials, CredentialsStore
+from igni_core.core.hooks.events import HookEvent
+from igni_core.core.hooks.extension_gate import DECIDING
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.mcp.config import MCPServerConfig, MCPTransport
+from igni_core.core.mcp.request_meta import RequestMetaSession
+from igni_core.extensions.host.hooks import ExtensionHooks
+from igni_core.extensions.host.wire import HookAnswer
+from igni_core.extensions.principal import Principal, PrincipalKind, SignedInPerson
+from igni_core.extensions.registry import ExtensionRegistry
+from igni_core.extensions.service_token import (
     ENV_TOKEN_SECRET,
     ENV_TOKEN_URL,
     IgniSession,
     ServiceTokenEndpoint,
     ServiceTokenExchange,
 )
-from ember_code.extensions.store import ExtensionStore
+from igni_core.extensions.store import ExtensionStore
 from tests.extension_distribution_helpers import API_URL, SESSION, FakeIgni
 from tests.host_model_helpers import manifest
 

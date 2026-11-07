@@ -1249,4 +1249,4 @@ Status legend:
 
 Primary sources: code.claude.com/docs/en/{hooks,settings,memory,plugins-reference,
 skills,agent-sdk/permissions,agent-sdk/slash-commands,agent-sdk/mcp}. Ember-code
-claims cross-checked against `src/ember_code/` and `clients/`.
+claims cross-checked against `src/igni_core/` and `clients/`.

@@ -22,17 +22,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.session.schemas import McpInitResult
-from ember_code.core.session.startup import SessionStartupCoordinator
+from igni_core.core.session.schemas import McpInitResult
+from igni_core.core.session.startup import SessionStartupCoordinator
 
 
 def _bare_session():
     """Session-shaped stub carrying only what the startup phases read."""
     session = SimpleNamespace()
-    from ember_code.core.config.settings import Settings
+    from igni_core.core.config.settings import Settings
 
     session.settings = Settings()
-    from ember_code.core.mcp.schemas import MCPConnectResult
+    from igni_core.core.mcp.schemas import MCPConnectResult
 
     session.mcp_manager = SimpleNamespace()
     session.mcp_manager.list_servers = MagicMock(return_value=[])
@@ -98,7 +98,7 @@ class TestEnsureMcp:
 
     @pytest.mark.asyncio
     async def test_connect_success_rebuilds_agents(self):
-        from ember_code.core.mcp.schemas import MCPConnectResult
+        from igni_core.core.mcp.schemas import MCPConnectResult
 
         s = _bare_session()
         s.mcp_manager.list_servers = MagicMock(return_value=["srv-a"])
@@ -118,7 +118,7 @@ class TestEnsureMcp:
     async def test_connect_failure_skips_rebuild(self):
         # Every connect returned an ``ok=False`` Result → no
         # clients → no rebuild.
-        from ember_code.core.mcp.schemas import MCPConnectResult
+        from igni_core.core.mcp.schemas import MCPConnectResult
 
         s = _bare_session()
         s.mcp_manager.list_servers = MagicMock(return_value=["srv-a"])

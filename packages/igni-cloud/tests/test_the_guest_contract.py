@@ -42,23 +42,23 @@ from igni_cloud.layer import CloudLayer
 from igni_cloud.producer import ProducerIncarnation
 from websockets.asyncio.client import connect
 
-from ember_code.backend.activity import Activity, ActivityState, SessionActivity
-from ember_code.backend.app import BackendApp
-from ember_code.core.activity import ActivityRegistry
-from ember_code.core.config.schemas.storage_and_paths import StorageConfig
-from ember_code.core.config.settings import load_settings
-from ember_code.core.db.engine import cache
-from ember_code.core.db.engine_registry import EngineRegistry
-from ember_code.core.db.locator import StorageLocator
-from ember_code.core.db.scope import Tenant, tenancy
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.layer import BackendHooks, Layer
-from ember_code.core.session.pending_messages import PendingMessageStore
-from ember_code.extensions.host.broadcasts import BroadcastSignals
-from ember_code.extensions.host.model import HostState
-from ember_code.notifications.stream import NotificationStreamFollower
-from ember_code.protocol import messages as msg
-from ember_code.transport.websocket import WebSocketServerTransport
+from igni_core.backend.activity import Activity, ActivityState, SessionActivity
+from igni_core.backend.app import BackendApp
+from igni_core.core.activity import ActivityRegistry
+from igni_core.core.config.schemas.storage_and_paths import StorageConfig
+from igni_core.core.config.settings import load_settings
+from igni_core.core.db.engine import cache
+from igni_core.core.db.engine_registry import EngineRegistry
+from igni_core.core.db.locator import StorageLocator
+from igni_core.core.db.scope import Tenant, tenancy
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.layer import BackendHooks, Layer
+from igni_core.core.session.pending_messages import PendingMessageStore
+from igni_core.extensions.host.broadcasts import BroadcastSignals
+from igni_core.extensions.host.model import HostState
+from igni_core.notifications.stream import NotificationStreamFollower
+from igni_core.protocol import messages as msg
+from igni_core.transport.websocket import WebSocketServerTransport
 
 ORG = "org-acme"
 PRODUCER = "person:u-ada"

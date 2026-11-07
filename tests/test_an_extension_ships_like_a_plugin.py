@@ -33,13 +33,13 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from ember_code.cli.ext import ext
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.extensions.installer import ExtensionInstaller
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.origin import ExtensionOrigins
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
+from igni_core.cli.ext import ext
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
 
 FIXTURE = Path(__file__).parent / "fixtures" / "dev_extension"
 

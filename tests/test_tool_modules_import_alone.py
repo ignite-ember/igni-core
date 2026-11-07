@@ -1,16 +1,16 @@
 """Every tool module imports on its own.
 
-``ember_code.core.tools.plan`` did not. Importing it raised
+``igni_core.core.tools.plan`` did not. Importing it raised
 
     ImportError: cannot import name 'PlanTool' from partially initialized
-    module 'ember_code.core.tools.plan'
+    module 'igni_core.core.tools.plan'
 
 because ``plan/submission.py`` imported ``BroadcastEvent`` from
 ``core.session.broadcast_schema``, and importing any submodule of
 ``core.session`` runs that package's ``__init__``, which reaches
 ``core → agent_builder → tools_builder`` and back into ``plan``. A tool
 importing the session is the wrong direction; the schema was simply in the wrong
-package, and it is a leaf with no ``ember_code`` imports of its own, so it now
+package, and it is a leaf with no ``igni_core`` imports of its own, so it now
 lives at ``core.broadcast_schema`` where anything may import it.
 
 It worked in the app, which is why it went unnoticed: the real entry points pull
@@ -32,7 +32,7 @@ import pkgutil
 
 import pytest
 
-import ember_code.core.tools as tools_pkg
+import igni_core.core.tools as tools_pkg
 
 _MODULES = sorted(
     m.name for m in pkgutil.walk_packages(tools_pkg.__path__, tools_pkg.__name__ + ".")
@@ -69,10 +69,10 @@ def test_the_plan_package_specifically(subprocess_python=None):  # noqa: ARG001
     import sys
 
     result = subprocess.run(  # noqa: S603
-        [sys.executable, "-c", "import ember_code.core.tools.plan"],
+        [sys.executable, "-c", "import igni_core.core.tools.plan"],
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, (
-        f"ember_code.core.tools.plan does not import on its own:\n{result.stderr.strip()[-600:]}"
+        f"igni_core.core.tools.plan does not import on its own:\n{result.stderr.strip()[-600:]}"
     )

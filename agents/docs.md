@@ -101,9 +101,9 @@ Documentation must reflect the code, not the other way around. Before writing ab
 
 - For agents: read `agents/*.md` definition files
 - For skills: read `skills/*/SKILL.md` definition files
-- For configuration: read `src/ember_code/config/` source files
-- For tools: read `src/ember_code/tools/` source files
-- For TUI: read `src/ember_code/tui/` source files
+- For configuration: read `src/igni_core/config/` source files
+- For tools: read `src/igni_core/tools/` source files
+- For TUI: read `src/igni_core/tui/` source files
 - For any feature: find and read the relevant source code
 
 ### Step 5: Make the updates
@@ -200,7 +200,7 @@ One file per feature module. Auto-generate by scanning the module's source code,
 ```markdown
 # <Feature Name>
 
-> Module: `src/ember_code/<module>/` | Status: In Progress | Completion: 75%
+> Module: `src/igni_core/<module>/` | Status: In Progress | Completion: 75%
 
 ## Overview
 One-paragraph description of what this feature does, derived from reading the source code.

@@ -21,9 +21,9 @@ Every assertion here fails on the pre-fix tree: ``category_rules()`` returned
 
 from __future__ import annotations
 
-from ember_code.core.config.permission_eval import PermissionEvaluator
-from ember_code.core.config.schemas.permissions import PermissionsConfig
-from ember_code.core.config.settings import Settings
+from igni_core.core.config.permission_eval import PermissionEvaluator
+from igni_core.core.config.schemas.permissions import PermissionsConfig
+from igni_core.core.config.settings import Settings
 
 
 def _decide(perms: PermissionsConfig, command: str) -> str:

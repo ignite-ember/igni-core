@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.config.permission_eval import PermissionDecision
-from ember_code.core.config.permission_eval.pipeline import PermissionEvaluator
-from ember_code.core.config.permission_eval.read_only_shell import command_parts
+from igni_core.core.config.permission_eval import PermissionDecision
+from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
+from igni_core.core.config.permission_eval.read_only_shell import command_parts
 
 
 def _decide(command: str, **rules: list[str]) -> PermissionDecision:

@@ -2,7 +2,7 @@
 
 Not a test module: no ``test_`` prefix, so pytest collects nothing.
 
-:class:`HostRig` is the backend the way :class:`~ember_code.backend.app.BackendApp`
+:class:`HostRig` is the backend the way :class:`~igni_core.backend.app.BackendApp`
 assembles it — a real :class:`SessionOrchestrator` over a real session
 pool, real RPC tables built by the real :class:`RpcRouter`, the root
 transport wrapped by the real :class:`ObservedTransport`, the host model
@@ -22,27 +22,27 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ember_code.backend.command_result import CommandResult
-from ember_code.backend.host_backend import HostModelWiring, ObservedTransport
-from ember_code.backend.login_coordinator import LoginCoordinator
-from ember_code.backend.push_bridge import PushNotificationBridge
-from ember_code.backend.rpc_router import RpcRouter
-from ember_code.backend.schemas_panels import OutputStyleInfo, OutputStylesResult
-from ember_code.backend.schemas_rpc import GroupPolicyPackResult
-from ember_code.backend.session_orchestrator import SessionOrchestrator
-from ember_code.backend.session_pool import SessionRuntime
-from ember_code.backend.session_stamping_transport import SessionStampingTransport
-from ember_code.core.config.schemas.display import DisplayConfig
-from ember_code.core.session.event_log_schema import SessionEvent
-from ember_code.core.session.schemas import PersistResult
-from ember_code.extensions.host.channel import HostChannel
-from ember_code.extensions.host.model import HostModel
-from ember_code.extensions.host.wire import Op, Request
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.extensions.store import ExtensionStore
-from ember_code.protocol import messages as msg
+from igni_core.backend.command_result import CommandResult
+from igni_core.backend.host_backend import HostModelWiring, ObservedTransport
+from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.push_bridge import PushNotificationBridge
+from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.schemas_panels import OutputStyleInfo, OutputStylesResult
+from igni_core.backend.schemas_rpc import GroupPolicyPackResult
+from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.backend.session_pool import SessionRuntime
+from igni_core.backend.session_stamping_transport import SessionStampingTransport
+from igni_core.core.config.schemas.display import DisplayConfig
+from igni_core.core.session.event_log_schema import SessionEvent
+from igni_core.core.session.schemas import PersistResult
+from igni_core.extensions.host.channel import HostChannel
+from igni_core.extensions.host.model import HostModel
+from igni_core.extensions.host.wire import Op, Request
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.store import ExtensionStore
+from igni_core.protocol import messages as msg
 from tests.siblings import IGNI_SDK
 
 REPO = Path(__file__).resolve().parent.parent
@@ -227,7 +227,7 @@ class FakeSession:
         return [{"name": "main"}]
 
     def promote_ephemeral_agent(self, name: str, target: str = "project") -> Any:
-        from ember_code.backend.schemas_panels import PromoteEphemeralResult
+        from igni_core.backend.schemas_panels import PromoteEphemeralResult
 
         self.promoted.append((name, target))
         subdir = "agents" if target == "project" else "agents.local"

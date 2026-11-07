@@ -21,9 +21,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.session.broadcast import BroadcastBus
-from ember_code.core.session.plan_ops import PlanCoordinator
-from ember_code.core.tools.plan import PlanDecision, PlanDecisionsBlob
+from igni_core.core.session.broadcast import BroadcastBus
+from igni_core.core.session.plan_ops import PlanCoordinator
+from igni_core.core.tools.plan import PlanDecision, PlanDecisionsBlob
 
 
 def _bare_session(*, has_persistence: bool = True):

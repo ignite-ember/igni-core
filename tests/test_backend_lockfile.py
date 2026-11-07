@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.backend.lockfile import (
+from igni_core.backend.lockfile import (
     BackendDiscovery,
     Lockfile,
 )
-from ember_code.backend.schemas_lockfile import (
+from igni_core.backend.schemas_lockfile import (
     DiscoveryOutcome,
     LiveBackend,
     LockfilePayload,

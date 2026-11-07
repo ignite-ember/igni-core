@@ -15,9 +15,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.core.session.persistence import SessionPersistence
-from ember_code.protocol.messages import CommandAction
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.session.persistence import SessionPersistence
+from igni_core.protocol.messages import CommandAction
 
 
 def _run(run_id: str) -> SimpleNamespace:

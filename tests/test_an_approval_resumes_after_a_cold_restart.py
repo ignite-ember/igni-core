@@ -41,22 +41,22 @@ from agno.run import agent as agent_events
 from agno.run.base import RunStatus
 from agno.tools import tool
 
-from ember_code.backend.activity import Activity, ActivityState, SessionActivity
-from ember_code.backend.cold_spawn_resume import ColdSpawnResume
-from ember_code.backend.hitl_controller import HitlController
-from ember_code.backend.pause_handler import PauseHandler
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-from ember_code.core.approvals.journal import ApprovalJournal
-from ember_code.core.config.settings import Settings
-from ember_code.core.db.database import Database
-from ember_code.core.db.providers import SharedStorages
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.hooks.turn_results import TurnResultHook
-from ember_code.core.sub_agent_hitl import SubAgentHITLCoordinator
-from ember_code.core.tools.orchestrate import OrchestrateTools
-from ember_code.core.tools.orchestrate_budget import SpawnBudget
-from ember_code.core.tools.spawn_context import ParentCall
-from ember_code.protocol import messages as msg
+from igni_core.backend.activity import Activity, ActivityState, SessionActivity
+from igni_core.backend.cold_spawn_resume import ColdSpawnResume
+from igni_core.backend.hitl_controller import HitlController
+from igni_core.backend.pause_handler import PauseHandler
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.core.approvals.journal import ApprovalJournal
+from igni_core.core.config.settings import Settings
+from igni_core.core.db.database import Database
+from igni_core.core.db.providers import SharedStorages
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.hooks.turn_results import TurnResultHook
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
+from igni_core.core.tools.orchestrate import OrchestrateTools
+from igni_core.core.tools.orchestrate_budget import SpawnBudget
+from igni_core.core.tools.spawn_context import ParentCall
+from igni_core.protocol import messages as msg
 from tests.storage_backends import Scopes
 
 _TAG = re.compile(
@@ -865,7 +865,7 @@ async def test_a_paused_team_is_continued_after_a_restart(
     rebuilds the team and continues its stored run — the writer keeps its
     stored result and is not run again, the cleaner is continued — and the
     team's answer becomes the main agent's ``spawn_team`` result."""
-    monkeypatch.setattr("ember_code.core.tools.orchestrate.ModelRegistry", LeaderRegistry)
+    monkeypatch.setattr("igni_core.core.tools.orchestrate.ModelRegistry", LeaderRegistry)
     side = Side()
     store = Store(database_url, tmp_path)
     before = Backend(store, side, main_script=_main_spawns_team, with_spawn=True)
@@ -944,7 +944,7 @@ async def test_a_team_members_approval_is_answered_without_a_restart(
     """The live path the cold one mirrors: the team's own pause is what
     is continued, so the approval reaches the member and the leader
     finishes with both members' results."""
-    monkeypatch.setattr("ember_code.core.tools.orchestrate.ModelRegistry", LeaderRegistry)
+    monkeypatch.setattr("igni_core.core.tools.orchestrate.ModelRegistry", LeaderRegistry)
     side = Side()
     backend = Backend(
         Store(database_url, tmp_path), side, main_script=_main_spawns_team, with_spawn=True

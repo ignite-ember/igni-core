@@ -35,12 +35,12 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.tools.tool_spec import ToolSpecCatalog
+from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
 PROMPT_ROOTS = (
-    "src/ember_code/core/prompts",
-    "src/ember_code/bundled_agents",
-    "src/ember_code/bundled_skills",
+    "src/igni_core/core/prompts",
+    "src/igni_core/bundled_agents",
+    "src/igni_core/bundled_skills",
 )
 
 #: Removed from the registry, so nothing is left to derive them from.

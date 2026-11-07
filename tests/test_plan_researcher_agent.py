@@ -34,13 +34,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-# Agent definitions live in ``src/ember_code/bundled_agents/`` —
+# Agent definitions live in ``src/igni_core/bundled_agents/`` —
 # that's the shipped location (pip package includes them, git
 # tracks them). The runtime copies them into a user's
 # ``<project>/.igni/agents/`` on first launch via
 # ``core.init.sync_bundled_content``. Tests read from the source
 # so they don't depend on the gitignored ``.igni/`` staging dir.
-PROJECT_AGENT_DIR = Path(__file__).resolve().parent.parent / "src" / "ember_code" / "bundled_agents"
+PROJECT_AGENT_DIR = Path(__file__).resolve().parent.parent / "src" / "igni_core" / "bundled_agents"
 
 # The CodeIndex version ships in CodeIndex's extension plugin and replaces
 # the plain one while it runs. Checked against the sibling checkout.

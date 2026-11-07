@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ember_code.core.session.session_directories import SessionDirectoryStore
+from igni_core.core.session.session_directories import SessionDirectoryStore
 
 
 def test_set_then_get(tmp_path):

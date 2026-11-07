@@ -36,8 +36,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.core.tools.managed_process import ManagedProcess, process_group_of
-from ember_code.core.tools.process_registry import ProcessRegistry
+from igni_core.core.tools.managed_process import ManagedProcess, process_group_of
+from igni_core.core.tools.process_registry import ProcessRegistry
 
 
 @pytest.fixture

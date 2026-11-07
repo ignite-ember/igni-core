@@ -332,7 +332,7 @@ storage:
   memory_db: "~/.igni/memory.db"      # SQLite path (when backend=sqlite)
   # Remote backend example (uncomment to sync across devices):
   # backend: "postgres"
-  # db_url: "postgresql://user:pass@host:5432/ember_code"
+  # db_url: "postgresql://user:pass@host:5432/igni_core"
   audit_log: "~/.igni/audit.log"      # Tool execution log
   max_history_runs: 10000              # Effectively unlimited (auto-compact handles context)
 
@@ -774,14 +774,14 @@ On first launch the desktop app downloads uv, CPython and `ignite-ember`,
 which an air-gapped network cannot do. Provision them yourself and tell the app
 where they are:
 
-1. From your package mirror, install `ignite-ember[decisions]` at the app's
+1. From your package mirror, install `igni-core[decisions]` at the app's
    version into a Python 3.12 interpreter, e.g.
-   `python3.12 -m venv /opt/igni/venv && /opt/igni/venv/bin/pip install --index-url https://pypi.example.internal/simple "ignite-ember[decisions]==<version>"`.
+   `python3.12 -m venv /opt/igni/venv && /opt/igni/venv/bin/pip install --index-url https://pypi.example.internal/simple "igni-core[decisions]==<version>"`.
 2. Set `runtime_python: /opt/igni/venv/bin/python` in `~/.igni/config.yaml`
    or the managed-settings file, or `IGNI_RUNTIME_PYTHON` in the environment
    (which wins). No `IGNITE_EMBER_DEV` is needed. The app uses it as is and
    downloads nothing; an interpreter that is missing or cannot import
-   `ember_code` is refused with a message naming the setting.
+   `igni_core` is refused with a message naming the setting.
 3. Pre-seed the decision model (next section).
 
 ### Pre-seeding the decision model
@@ -789,8 +789,8 @@ where they are:
 igni's decision model (Laya, `convaiinnovations/laya` on Hugging Face) answers
 Bypass mode's last check and `host.decide`. Air-gapped, it is loaded only from
 the local Hugging Face cache. On a machine that can reach huggingface.co, run
-`HF_HOME=/tmp/laya python -m ember_code.prefetch_models` (with
-`ignite-ember[decisions]` installed), then copy
+`HF_HOME=/tmp/laya python -m igni_core.prefetch_models` (with
+`igni-core[decisions]` installed), then copy
 `/tmp/laya/hub/models--convaiinnovations--laya` into the target machine's
 cache (`~/.cache/huggingface/hub` by default), or set `HF_HOME` or
 `HF_HUB_CACHE` to a local copy for the decisions service. A missing or
@@ -802,7 +802,7 @@ rather than allows.
 igni can send traces and metrics to **your own** OpenTelemetry collector, over
 OTLP. It is off by default and there is **no default endpoint**: with none
 configured nothing is exported, and the OpenTelemetry SDK is not set up at all.
-It needs the `otel` extra (`pip install 'ignite-ember[otel]'`); without it a
+It needs the `otel` extra (`pip install 'igni-core[otel]'`); without it a
 configured endpoint is ignored with a warning.
 
 ```yaml
@@ -885,11 +885,11 @@ provisioned interpreter (above).
 
 | Variable | Where | Meaning |
 |---|---|---|
-| `IGNI_DECISIONS_URL` | backend | The node's shared decisions service. Unset: the backend starts its own on first use (needs `ignite-ember[decisions]`). |
+| `IGNI_DECISIONS_URL` | backend | The node's shared decisions service. Unset: the backend starts its own on first use (needs `igni-core[decisions]`). |
 | `IGNI_DECISIONS_TOKEN` | backend | The secret sent to that service. |
 | `IGNI_DECISIONS_SECRET` | service | The secret the service requires; it will not start without one. |
 
-Run the shared service with `python -m ember_code.decisions_server --host 0.0.0.0 --port 8730` (installed with the `decisions` extra). A backend image needs neither the extra nor torch.
+Run the shared service with `python -m igni_core.decisions_server --host 0.0.0.0 --port 8730` (installed with the `decisions` extra). A backend image needs neither the extra nor torch.
 
 **The project database.** A backend migrates a project's `state.db` itself when it is new or behind, so on a desktop there is nothing to do. Where a backend's volume is prepared ahead of time (the cloud), run `igni migrate` in the project directory (or with `--project-dir`, `--data-dir`) at provisioning: the backend then starts with a current database and never imports alembic.
 
@@ -897,33 +897,33 @@ Run the shared service with `python -m ember_code.decisions_server --host 0.0.0.
 
 ```bash
 # Model selection
-ignite-ember --model MiniMax-M2.7
-ignite-ember --model MiniMax-M2.7-highspeed  # faster variant
-ignite-ember --model gpt-4o                  # use OpenAI
+igni --model MiniMax-M2.7
+igni --model MiniMax-M2.7-highspeed  # faster variant
+igni --model gpt-4o                  # use OpenAI
 
 # Safety modes
-ignite-ember --no-web                # disable web access
-ignite-ember --read-only             # reads files and the web; anything that changes is refused
+igni --no-web                # disable web access
+igni --read-only             # reads files and the web; anything that changes is refused
 
 # Display
-ignite-ember --verbose               # show routing + reasoning
-ignite-ember --quiet                 # minimal output
-ignite-ember --no-color              # disable colors
+igni --verbose               # show routing + reasoning
+igni --quiet                 # minimal output
+igni --no-color              # disable colors
 
 # TUI mode (default — use --no-tui to fall back to plain Rich CLI)
-ignite-ember --no-tui                # disable TUI, use plain Rich CLI output
+igni --no-tui                # disable TUI, use plain Rich CLI output
 
 # Session
-ignite-ember --resume                # resume last session
-ignite-ember --resume <session-id>   # resume specific session
+igni --resume                # resume last session
+igni --resume <session-id>   # resume specific session
 
 # Direct execution
-ignite-ember -m "add tests for auth module"   # non-interactive single task
-cat src/auth.py | ignite-ember -p              # pipe stdin as context
+igni -m "add tests for auth module"   # non-interactive single task
+cat src/auth.py | igni -p              # pipe stdin as context
 
 # Workspace trust
-ignite-ember -m "…" --trust          # trust this folder for this run
-ignite-ember trust [--revoke|--list] # record, forget or list decisions
+igni -m "…" --trust          # trust this folder for this run
+igni trust [--revoke|--list] # record, forget or list decisions
 ```
 
 ## Project Instructions (Hierarchical Rules)
@@ -1062,18 +1062,18 @@ Quick permission presets for common scenarios:
 
 ```bash
 # Default — asks for writes and shell commands
-ignite-ember
+igni
 
 # Permissive — auto-allows edits, asks for shell
-ignite-ember --accept-edits
+igni --accept-edits
 
 # Strict — denies the agent anything without an allow rule, reads included,
 # and asks before a hook your organisation's group policy ships runs
 # (hooks.group: ask; headless, an unapproved one does not run)
-ignite-ember --strict
+igni --strict
 
 # CI/CD — auto-allows everything (use with caution)
-ignite-ember --auto-approve
+igni --auto-approve
 ```
 
 ## Custom Agents

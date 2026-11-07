@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.config.permission_eval.read_only_shell import is_read_only
+from igni_core.core.config.permission_eval.read_only_shell import is_read_only
 
 
 @pytest.mark.parametrize(

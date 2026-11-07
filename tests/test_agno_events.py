@@ -19,7 +19,7 @@ The two pure surfaces worth pinning:
 
 from __future__ import annotations
 
-from ember_code.protocol.agno_tool_formatter import AgnoToolEventFormatter
+from igni_core.protocol.agno_tool_formatter import AgnoToolEventFormatter
 
 # Shared coordinator + friendly-name view — one instance per test
 # module is enough since neither has mutable per-call state.

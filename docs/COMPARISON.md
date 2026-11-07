@@ -49,7 +49,7 @@ Claude Code has no equivalent — it's always "single agent decides everything, 
 |---|---|---|---|
 | Read | Yes | Yes (FileTools) | Same concept |
 | Write | Yes | Yes (FileTools) | Same concept |
-| Edit | Yes (targeted string replacement) | Yes (EmberEditTools) | Same approach — requires prior Read |
+| Edit | Yes (targeted string replacement) | Yes (IgniEditTools) | Same approach — requires prior Read |
 | Bash | Yes | Yes (ShellTools) | Same concept |
 | Grep | Yes (ripgrep-based) | Yes (GrepTools, ripgrep) | Same backend |
 | Glob | Yes | Yes (GlobTools) | Same concept |

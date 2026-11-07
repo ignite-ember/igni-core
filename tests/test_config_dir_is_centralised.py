@@ -23,7 +23,7 @@ import re
 
 import pytest
 
-from ember_code.core.paths import (
+from igni_core.core.paths import (
     CONFIG_DIR,
     DEFAULT_DATA_DIR,
     LEGACY_CONFIG_DIR,
@@ -31,7 +31,7 @@ from ember_code.core.paths import (
     project_config_dir,
 )
 
-SRC = pathlib.Path(__file__).resolve().parent.parent / "src" / "ember_code"
+SRC = pathlib.Path(__file__).resolve().parent.parent / "src" / "igni_core"
 
 #: The spellings that mean "the configuration directory" and that a
 #: constant should have replaced.
@@ -107,7 +107,7 @@ class TestNothingSpellsItOutInCode:
                     break
         assert not offenders, (
             "these spell the config directory out instead of importing CONFIG_DIR "
-            f"or DEFAULT_DATA_DIR from ember_code.core.paths: {sorted(set(offenders))}"
+            f"or DEFAULT_DATA_DIR from igni_core.core.paths: {sorted(set(offenders))}"
         )
 
     @pytest.mark.parametrize("pattern", [_BARE, _HOME])
@@ -168,4 +168,4 @@ class TestTheConstantsBehave:
             if isinstance(node, ast.Import)
             for alias in node.names
         ]
-        assert not [m for m in imported if m.startswith("ember_code")], imported
+        assert not [m for m in imported if m.startswith("igni_core")], imported

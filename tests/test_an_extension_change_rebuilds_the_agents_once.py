@@ -11,8 +11,8 @@ import asyncio
 
 import pytest
 
-from ember_code.backend.agent_refresh import AgentRefresh
-from ember_code.core.prompts.contributions import EditOp, PromptContributions, PromptEdit
+from igni_core.backend.agent_refresh import AgentRefresh
+from igni_core.core.prompts.contributions import EditOp, PromptContributions, PromptEdit
 
 pytestmark = pytest.mark.asyncio
 

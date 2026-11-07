@@ -29,11 +29,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ember_code.core.auth.credentials import Credentials, CredentialsStore
-from ember_code.core.config.context_window import ContextWindowResolver
-from ember_code.core.config.model_entry import ModelRegistryEntry
-from ember_code.core.config.models import ModelRegistry
-from ember_code.core.config.settings import load_settings
+from igni_core.core.auth.credentials import Credentials, CredentialsStore
+from igni_core.core.config.context_window import ContextWindowResolver
+from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.models import ModelRegistry
+from igni_core.core.config.settings import load_settings
 
 
 def _token() -> str:

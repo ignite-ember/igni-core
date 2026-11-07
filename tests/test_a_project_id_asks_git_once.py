@@ -10,7 +10,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from ember_code.core.data_paths import ProjectIds
+from igni_core.core.data_paths import ProjectIds
 
 
 class GitCalls:

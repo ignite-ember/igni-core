@@ -277,7 +277,7 @@
 ### @file mention autocomplete
 - [x] Type `@` — file picker dropdown appears above input
 - [x] Type `@src/` — filters to files under src/
-- [x] Fuzzy matching works (e.g., `@s/u/m` matches `src/ember_code/core/utils/media.py`)
+- [x] Fuzzy matching works (e.g., `@s/u/m` matches `src/igni_core/core/utils/media.py`)
 - [x] Up/Down arrows navigate the picker
 - [x] Tab selects file and inserts path after `@`
 - [x] Enter selects file (does NOT submit message)

@@ -28,13 +28,13 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from ember_code.core.config import group_policy as gp_mod
-from ember_code.core.config.group_policy import (
+from igni_core.core.config import group_policy as gp_mod
+from igni_core.core.config.group_policy import (
     GroupPolicyCache,
     GroupPolicyEntry,
     GroupPolicyPack,
 )
-from ember_code.core.plugins.loader import PluginLoader
+from igni_core.core.plugins.loader import PluginLoader
 
 # ── Pydantic surface ──────────────────────────────────────────
 
@@ -571,7 +571,7 @@ async def test_refresh_if_stale_treats_empty_token_as_noop(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_module_level_refresh_helper(tmp_path: Path):
     """The top-level ``refresh`` constructs a one-shot cache."""
-    from ember_code.core.config.group_policy import refresh
+    from igni_core.core.config.group_policy import refresh
 
     pack = _make_pack(fetched_at=datetime.now(timezone.utc))
 

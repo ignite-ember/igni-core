@@ -56,7 +56,7 @@ def _backend_commands() -> set[str]:
     # The registry imports nothing behind its entries, so it can be the
     # first import: the cycle through ``cmd_context`` that once made it
     # depend on ``core.session`` being imported first is gone.
-    from ember_code.backend.builtin_command_registry import BUILTIN_REGISTRY
+    from igni_core.backend.builtin_command_registry import BUILTIN_REGISTRY
 
     return {f"/{name.lstrip('/')}" for name in BUILTIN_REGISTRY.names()}
 

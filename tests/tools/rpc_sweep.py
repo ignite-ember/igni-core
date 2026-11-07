@@ -2,7 +2,7 @@
 
 Not a test — a probe, run by hand against a live backend::
 
-    python -m ember_code.backend --ws-port 0        # note the ws_url
+    python -m igni_core.backend --ws-port 0        # note the ws_url
     python tests/tools/rpc_sweep.py ws://127.0.0.1:PORT
 
 Why this exists: the app's surface is 104 RPC methods, and driving
@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
-_RPC_SOURCE = _ROOT / "src/ember_code/protocol/rpc.py"
+_RPC_SOURCE = _ROOT / "src/igni_core/protocol/rpc.py"
 
 #: Arguments for methods that need them. Anything absent is called
 #: with ``{}`` — which is itself worth knowing, since a method that

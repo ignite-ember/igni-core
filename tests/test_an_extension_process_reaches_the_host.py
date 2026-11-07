@@ -20,8 +20,8 @@ import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
-from ember_code.extensions.host.channel import ENV_HOST_SECRET, ENV_HOST_URL
-from ember_code.protocol import messages as msg
+from igni_core.extensions.host.channel import ENV_HOST_SECRET, ENV_HOST_URL
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import PYTHON, HostRig, extension_process_env
 from tests.siblings import needs_sdk
 

@@ -17,8 +17,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ember_code.core.config.group_policy import CachedSettingsFetcher
-from ember_code.core.config.settings import load_settings
+from igni_core.core.config.group_policy import CachedSettingsFetcher
+from igni_core.core.config.settings import load_settings
 
 
 def _repository_moving_the_policy(root: Path, forged: dict) -> Path:

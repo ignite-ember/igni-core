@@ -19,11 +19,11 @@ import re
 
 import pytest
 
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.tool_hook import ToolEventHook
-from ember_code.core.tools.output_tail import OutputTail
-from ember_code.core.tools.process_supervisor import ProcessSupervisor
-from ember_code.core.tools.shell import EmberShellTools
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.tools.output_tail import OutputTail
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.shell import IgniShellTools
 
 #: The 6,000-line log of the run that found this, one ERROR in the middle.
 LOG_LINES = [
@@ -35,7 +35,7 @@ LOG_LINES = [
 def tools(tmp_path):
     (tmp_path / "app.log").write_text("\n".join(LOG_LINES) + "\n")
     (tmp_path / "short.log").write_text("\n".join(LOG_LINES[:50]) + "\n")
-    return EmberShellTools(base_dir=tmp_path, supervisor=ProcessSupervisor())
+    return IgniShellTools(base_dir=tmp_path, supervisor=ProcessSupervisor())
 
 
 def _omitted_chars(lines: list[str]) -> int:
@@ -100,9 +100,9 @@ def _restored(kind: str, tmp_path, lines: list[str]):
     import os
     import time
 
-    from ember_code.core.tools.finished_process import FinishedProcess
-    from ember_code.core.tools.orphan_process import OrphanProcess
-    from ember_code.core.tools.process_log import ProcessLogStore
+    from igni_core.core.tools.finished_process import FinishedProcess
+    from igni_core.core.tools.orphan_process import OrphanProcess
+    from igni_core.core.tools.process_log import ProcessLogStore
 
     store = ProcessLogStore(tmp_path)
     pid = os.getpid()
@@ -125,7 +125,7 @@ async def test_a_process_from_before_a_restart_says_when_it_is_cut(kind, tmp_pat
     so. A finished one read back nothing at all: it asked the log store
     for a method it does not have, and the error was taken for "no log"."""
     supervisor = ProcessSupervisor()
-    shell = EmberShellTools(base_dir=tmp_path, supervisor=supervisor)
+    shell = IgniShellTools(base_dir=tmp_path, supervisor=supervisor)
     pid, process = _restored(kind, tmp_path, LOG_LINES)
     supervisor.registry.add(process)
 
@@ -141,7 +141,7 @@ async def test_a_process_from_before_a_restart_says_when_it_is_cut(kind, tmp_pat
 @pytest.mark.parametrize("kind", ["orphan", "finished"])
 async def test_a_restored_log_that_fits_is_returned_whole(kind, tmp_path):
     supervisor = ProcessSupervisor()
-    shell = EmberShellTools(base_dir=tmp_path, supervisor=supervisor)
+    shell = IgniShellTools(base_dir=tmp_path, supervisor=supervisor)
     pid, process = _restored(kind, tmp_path, LOG_LINES[:50])
     supervisor.registry.add(process)
 

@@ -30,10 +30,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 from agno.session.agent import AgentSession
 
-from ember_code.backend.server import BackendServer
-from ember_code.core.session.persistence import SessionPersistence
-from ember_code.core.tools.plan import PlanStore
-from ember_code.core.tools.todo import TodoStore
+from igni_core.backend.server import BackendServer
+from igni_core.core.session.persistence import SessionPersistence
+from igni_core.core.tools.plan import PlanStore
+from igni_core.core.tools.todo import TodoStore
 
 
 def _make_db(tmp_path: Path):

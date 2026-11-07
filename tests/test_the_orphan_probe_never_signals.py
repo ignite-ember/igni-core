@@ -21,7 +21,7 @@ import sys
 
 import pytest
 
-from ember_code.core.tools.orphan_process import OrphanProcess
+from igni_core.core.tools.orphan_process import OrphanProcess
 
 
 @pytest.fixture

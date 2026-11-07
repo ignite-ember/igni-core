@@ -1,7 +1,7 @@
 # igni-cloud
 
 igni's cloud layer. The desktop igni (`ignite-ember`, import name
-`ember_code`) is the core; this package is a layer on top of it that runs
+`igni_core`) is the core; this package is a layer on top of it that runs
 igni in a producer's microVM, with its state in PostgreSQL. The core never
 imports it — it finds it through two entry points:
 
@@ -10,7 +10,7 @@ imports it — it finds it through two entry points:
 | `igni.layers` | `cloud` | `igni_cloud.layer:CloudLayer` | `IGNI_PROFILE=cloud` |
 | `igni.storage` | `postgresql` | `igni_cloud.storage.postgres:PostgresStorage` | a `postgresql://` database URL |
 
-The layer replaces the core's seams (`ember_code/core/layer.py`): logs as
+The layer replaces the core's seams (`igni_core/core/layer.py`): logs as
 JSON lines on standard output, credentials from the token the VM keeps
 from its own credential, settings only from the image and igni server,
 state required in `IGNI_DATABASE_URL`, the extension listing kept in the
@@ -48,7 +48,7 @@ nor `agno[postgres]`.
   and drops its role, printing the audit summary. Idempotent.
 - `IGNI_PROFILE=cloud igni migrate --database-url <admin>` — igni's tables,
   Agno's tables and row-level security.
-- `IGNI_PROFILE=cloud python -m ember_code.backend --ws-port …` — the
+- `IGNI_PROFILE=cloud python -m igni_core.backend --ws-port …` — the
   backend, with the layer installed.
 
 ## Tests

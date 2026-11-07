@@ -24,22 +24,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.protocol.messages import CommandAction, CommandResultKind
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.protocol.messages import CommandAction, CommandResultKind
 
 # The dispatcher reads ``discover_markdown_commands`` via the
 # ``command_handler`` reference injected at construction time, so
 # the primary patch path is
-# ``ember_code.backend.command_handler.discover_markdown_commands``.
+# ``igni_core.backend.command_handler.discover_markdown_commands``.
 # The legacy
-# ``ember_code.backend.markdown_command_dispatcher.discover_markdown_commands``
+# ``igni_core.backend.markdown_command_dispatcher.discover_markdown_commands``
 # patch is stacked as defensive belt-and-braces in case a future
 # refactor re-introduces a module-level alias here. With the
 # constructor-injected design, that path is currently dead — but
 # the helper costs nothing and protects against regressions.
 _DISCOVERY_PATCH_TARGETS = (
-    "ember_code.backend.command_handler.discover_markdown_commands",
-    "ember_code.backend.markdown_command_dispatcher.discover_markdown_commands",
+    "igni_core.backend.command_handler.discover_markdown_commands",
+    "igni_core.backend.markdown_command_dispatcher.discover_markdown_commands",
 )
 
 

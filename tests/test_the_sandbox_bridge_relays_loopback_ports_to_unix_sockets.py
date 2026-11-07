@@ -1,6 +1,6 @@
 """The Linux sandbox's bridge relays loopback ports to unix sockets and runs the command.
 
-:mod:`ember_code.extensions.sandbox.bridge` is the first process inside
+:mod:`igni_core.extensions.sandbox.bridge` is the first process inside
 ``bwrap --unshare-net``: the extension can reach nothing but its own
 loopback, and the bridge listens there for each ``--forward PORT=SOCKET``
 and relays every connection to a unix socket igni serves outside. The
@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.extensions.sandbox import bridge
+from igni_core.extensions.sandbox import bridge
 
 pytestmark = pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="needs unix sockets")
 

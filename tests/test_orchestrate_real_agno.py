@@ -27,7 +27,7 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.tools.orchestrate import _run_agent_streaming
+from igni_core.core.tools.orchestrate import _run_agent_streaming
 
 
 def _make_stub_model(content: str):

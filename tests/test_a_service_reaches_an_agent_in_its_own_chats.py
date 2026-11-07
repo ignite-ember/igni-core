@@ -16,12 +16,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ember_code.backend.activity import ActivityState
-from ember_code.backend.server_files import FilesController
-from ember_code.backend.service_item_desk import HeldPostFlusher, PoolChatDesk
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.utils.mentions import process_file_mentions
-from ember_code.extensions.service_events import EventHandling, ServiceEvent
+from igni_core.backend.activity import ActivityState
+from igni_core.backend.server_files import FilesController
+from igni_core.backend.service_item_desk import HeldPostFlusher, PoolChatDesk
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.utils.mentions import process_file_mentions
+from igni_core.extensions.service_events import EventHandling, ServiceEvent
 from tests.service_item_rig import OPEN, Files, Inbox, item, message
 
 CLAIM = "claim:CL-20431"

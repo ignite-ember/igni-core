@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ember_code.core.mcp.approval import _USER_GLOBAL_MCP, MCPApprovalManager
+from igni_core.core.mcp.approval import _USER_GLOBAL_MCP, MCPApprovalManager
 
 
 @pytest.fixture
@@ -71,21 +71,21 @@ class TestTheGateIsReachable:
     def test_project_config_prompts(self, mgr):
         with (
             patch.object(MCPApprovalManager, "_can_prompt", staticmethod(lambda: True)),
-            patch("ember_code.core.mcp.approval.Confirm.ask", return_value=True) as ask,
+            patch("igni_core.core.mcp.approval.Confirm.ask", return_value=True) as ask,
         ):
             granted = mgr.check_approval("srv", "/home/u/repo/.mcp.json")
 
         assert ask.call_count == 1, "the prompt was skipped for a project .mcp.json"
         assert granted is True
         # And once answered, it is remembered — no prompt the second time.
-        with patch("ember_code.core.mcp.approval.Confirm.ask") as ask2:
+        with patch("igni_core.core.mcp.approval.Confirm.ask") as ask2:
             assert mgr.check_approval("srv", "/home/u/repo/.mcp.json") is True
         ask2.assert_not_called()
 
     def test_declining_a_project_config_denies_the_connect(self, mgr):
         with (
             patch.object(MCPApprovalManager, "_can_prompt", staticmethod(lambda: True)),
-            patch("ember_code.core.mcp.approval.Confirm.ask", return_value=False),
+            patch("igni_core.core.mcp.approval.Confirm.ask", return_value=False),
         ):
             assert mgr.check_approval("srv", "/home/u/repo/.mcp.json") is False
         assert mgr.is_approved("srv", "/home/u/repo/.mcp.json") is False
@@ -102,7 +102,7 @@ class TestNoTerminalMeansNo:
     def test_denies_without_a_tty_and_never_prompts(self, mgr):
         with (
             patch.object(MCPApprovalManager, "_can_prompt", staticmethod(lambda: False)),
-            patch("ember_code.core.mcp.approval.Confirm.ask") as ask,
+            patch("igni_core.core.mcp.approval.Confirm.ask") as ask,
         ):
             assert mgr.check_approval("srv", "/home/u/repo/.mcp.json") is False
         ask.assert_not_called()
@@ -120,12 +120,12 @@ class TestNoTerminalMeansNo:
         The detector must answer "cannot ask" there rather than raise
         out of the connect path.
         """
-        with patch("ember_code.core.mcp.approval.sys.stdin", None):
+        with patch("igni_core.core.mcp.approval.sys.stdin", None):
             assert MCPApprovalManager._can_prompt() is False
 
     def test_detector_survives_a_closed_stdin(self, tmp_path):
         """A closed stream raises ValueError from isatty()."""
         with open(tmp_path / "x", "w") as handle:
             pass
-        with patch("ember_code.core.mcp.approval.sys.stdin", handle):
+        with patch("igni_core.core.mcp.approval.sys.stdin", handle):
             assert MCPApprovalManager._can_prompt() is False

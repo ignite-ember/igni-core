@@ -1,4 +1,4 @@
-"""Tests for :mod:`ember_code.core.utils.context_frontmatter` —
+"""Tests for :mod:`igni_core.core.utils.context_frontmatter` —
 the extracted YAML-frontmatter parser + path-glob matcher.
 
 The parent-module tests (test_context.py) already exercise the
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ember_code.core.utils.context_frontmatter import (
+from igni_core.core.utils.context_frontmatter import (
     matches_paths,
     parse_frontmatter,
 )

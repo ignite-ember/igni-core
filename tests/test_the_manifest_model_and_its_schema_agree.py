@@ -2,7 +2,7 @@
 
 ``docs/extension-manifest.schema.json`` is what an extension author
 writes against and what their editor checks.
-:class:`~ember_code.extensions.manifest.ExtensionManifest` is what the
+:class:`~igni_core.extensions.manifest.ExtensionManifest` is what the
 backend installs through. Both describe the same document, and
 nothing but this file stops them diverging.
 
@@ -36,9 +36,9 @@ import pytest
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ValidationError
 
-from ember_code.core.mcp.hints import ToolHints
-from ember_code.extensions.assets import ExtensionAsset
-from ember_code.extensions.manifest import (
+from igni_core.core.mcp.hints import ToolHints
+from igni_core.extensions.assets import ExtensionAsset
+from igni_core.extensions.manifest import (
     CommandContribution,
     Contributes,
     DevCommand,

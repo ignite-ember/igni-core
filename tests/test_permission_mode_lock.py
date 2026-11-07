@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import threading
 
-from ember_code.core.config.permission_eval import (
+from igni_core.core.config.permission_eval import (
     PermissionDecision,
     PermissionEvaluator,
     PermissionMode,

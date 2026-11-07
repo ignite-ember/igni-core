@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from ember_code.core.session.event_log_schema import SessionEvent
+from igni_core.core.session.event_log_schema import SessionEvent
 
 
 class TestBuild:

@@ -31,9 +31,9 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.config.settings import PermissionsConfig
-from ember_code.core.config.tool_permissions import ToolPermissions
-from ember_code.core.tools.tool_spec import ToolSpecCatalog
+from igni_core.core.config.settings import PermissionsConfig
+from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
 
 def _auto_approve_permissions() -> ToolPermissions:
@@ -103,7 +103,7 @@ def test_agent_builder_passes_settings_permissions_to_the_registry() -> None:
     first write paused and ``SubAgentHITLCoordinator.wait_resolved``
     blocked until the 1800s spawn timeout.
     """
-    from ember_code.core.agents import builder as builder_module
+    from igni_core.core.agents import builder as builder_module
 
     seen: dict[str, Any] = {}
 
@@ -162,7 +162,7 @@ def test_paused_run_raises_instead_of_being_returned_as_the_answer() -> None:
     pause handling lived only behind the React client's RPC. On this path
     the placeholder content was extracted and printed as the response.
     """
-    from ember_code.core.session.message_handler import SessionMessageHandler
+    from igni_core.core.session.message_handler import SessionMessageHandler
 
     class PausedToolCall:
         tool_name = "web_search"
@@ -179,7 +179,7 @@ def test_paused_run_raises_instead_of_being_returned_as_the_answer() -> None:
 
 
 def test_a_normal_run_is_left_alone() -> None:
-    from ember_code.core.session.message_handler import SessionMessageHandler
+    from igni_core.core.session.message_handler import SessionMessageHandler
 
     class CompletedResponse:
         status = "completed"
@@ -200,7 +200,7 @@ def test_database_startup_does_not_seize_the_root_logger() -> None:
     whatever the application had put there (which silently redirected
     ``--debug``'s file handler to stderr).
     """
-    from ember_code.core.db.database import Database
+    from igni_core.core.db.database import Database
 
     sentinel = logging.NullHandler()
     logging.root.addHandler(sentinel)
@@ -231,7 +231,7 @@ def test_transport_loggers_do_not_propagate_to_root() -> None:
     loggers', so while they propagated, root's WARNING did not filter
     them and every one reached whatever handler root had.
     """
-    from ember_code.core.config.llm_call_logger import LlmCallLogger
+    from igni_core.core.config.llm_call_logger import LlmCallLogger
 
     previous = {name: logging.getLogger(name).propagate for name in ("httpx", "httpcore")}
     try:
@@ -251,7 +251,7 @@ def test_pipe_mode_with_m_does_not_read_a_tty() -> None:
     looked at ``-m``, so ``-p -m "..."`` from a terminal blocked in
     ``read()`` forever with zero bytes on either stream.
     """
-    from ember_code.cli.invocation import CliInvocation
+    from igni_core.cli.invocation import CliInvocation
 
     class Tty(io.StringIO):
         def isatty(self) -> bool:
@@ -274,7 +274,7 @@ def test_pipe_mode_with_m_does_not_read_a_tty() -> None:
 def test_a_real_pipe_is_still_read_and_combined() -> None:
     """The fix is scoped to a tty: genuine ``cat file | ember -p -m "..."``
     must still concatenate both."""
-    from ember_code.cli.invocation import CliInvocation
+    from igni_core.cli.invocation import CliInvocation
 
     class Pipe(io.StringIO):
         def isatty(self) -> bool:
@@ -308,7 +308,7 @@ def test_drain_cancels_leftover_tasks_and_returns() -> None:
     """
     import asyncio
 
-    from ember_code.cli import _run_then_drain
+    from igni_core.cli import _run_then_drain
 
     leaked: list[asyncio.Task[None]] = []
 
@@ -329,7 +329,7 @@ def test_drain_gives_up_on_a_task_that_ignores_cancellation() -> None:
     abandoned, not waited on."""
     import asyncio
 
-    from ember_code.cli import _run_then_drain
+    from igni_core.cli import _run_then_drain
 
     async def scenario() -> None:
         async def stubborn() -> None:
@@ -341,7 +341,7 @@ def test_drain_gives_up_on_a_task_that_ignores_cancellation() -> None:
         asyncio.create_task(stubborn())
         await asyncio.sleep(0)
 
-    import ember_code.cli as cli_module
+    import igni_core.cli as cli_module
 
     original = cli_module._DRAIN_TIMEOUT_SECONDS
     cli_module._DRAIN_TIMEOUT_SECONDS = 0.05
@@ -352,16 +352,16 @@ def test_drain_gives_up_on_a_task_that_ignores_cancellation() -> None:
 
 
 def test_the_body_logger_does_not_propagate_either() -> None:
-    """``ember_code.llm_calls`` writes full request *and* response
+    """``igni_core.llm_calls`` writes full request *and* response
     bodies — the reason llm_calls.log reaches hundreds of MB. Fixing only
     httpx/httpcore left the larger producer pointed at root, which is the
     same wedge with more bytes behind it.
     """
     import logging
 
-    from ember_code.core.config.llm_call_logger import LlmCallLogger
+    from igni_core.core.config.llm_call_logger import LlmCallLogger
 
-    logger = logging.getLogger("ember_code.llm_calls")
+    logger = logging.getLogger("igni_core.llm_calls")
     previous_propagate, previous_handlers = logger.propagate, list(logger.handlers)
     try:
         logger.handlers.clear()

@@ -32,15 +32,15 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
-from ember_code.cli.migrate import SchemaMigration
-from ember_code.core.db.database import Database
-from ember_code.core.db.engine import cache
-from ember_code.core.db.locator import StorageLocator
-from ember_code.core.db.scope import StorageScope, Tenant
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.memory.manager import StorageManager
-from ember_code.core.session.client_state import ClientStateStore
-from ember_code.core.session.pending_messages import PendingMessageStore
+from igni_core.cli.migrate import SchemaMigration
+from igni_core.core.db.database import Database
+from igni_core.core.db.engine import cache
+from igni_core.core.db.locator import StorageLocator
+from igni_core.core.db.scope import StorageScope, Tenant
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.memory.manager import StorageManager
+from igni_core.core.session.client_state import ClientStateStore
+from igni_core.core.session.pending_messages import PendingMessageStore
 from tests.storage_backends import ThrowawayPostgres
 
 # ── Naming one ─────────────────────────────────────────────────────

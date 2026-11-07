@@ -19,9 +19,9 @@ from agno.models.message import Message
 from agno.run.agent import RunInput, RunOutput
 from agno.session.agent import AgentSession
 
-from ember_code.core.db.agno_schema import AgnoSchema
-from ember_code.core.session.persistence.forker import SessionForker
-from ember_code.core.session.persistence.run_history import RunHistory
+from igni_core.core.db.agno_schema import AgnoSchema
+from igni_core.core.session.persistence.forker import SessionForker
+from igni_core.core.session.persistence.run_history import RunHistory
 
 SESSION = "sess-history"
 

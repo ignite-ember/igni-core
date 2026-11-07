@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.session.commands import InteractiveCommandDispatcher
+from igni_core.core.session.commands import InteractiveCommandDispatcher
 
 
 async def dispatch(session, command):
@@ -81,10 +81,10 @@ class TestDispatch:
     @pytest.mark.asyncio
     async def test_dispatch_config(self):
         session = _make_session()
-        from ember_code.core.auth.schemas import LoadCredentialsResult
+        from igni_core.core.auth.schemas import LoadCredentialsResult
 
         with patch(
-            "ember_code.core.auth.credentials.CredentialsStore.load",
+            "igni_core.core.auth.credentials.CredentialsStore.load",
             return_value=LoadCredentialsResult(ok=False, reason="no_file"),
         ):
             result = await dispatch(session, "/config")
@@ -120,7 +120,7 @@ class TestDispatch:
     @pytest.mark.asyncio
     async def test_dispatch_compact(self):
         session = _make_session()
-        from ember_code.core.session.schemas import CompactResult
+        from igni_core.core.session.schemas import CompactResult
 
         session.force_compact = AsyncMock(
             return_value=CompactResult(

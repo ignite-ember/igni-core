@@ -36,7 +36,7 @@ import click
 import httpx
 import pytest
 
-from ember_code.core.config.group_policy import (
+from igni_core.core.config.group_policy import (
     CachedSettingsFetcher,
     GroupPolicyCache,
     GroupPolicyEntry,
@@ -45,14 +45,14 @@ from ember_code.core.config.group_policy import (
     GroupPolicyUnavailable,
     PackVerifier,
 )
-from ember_code.core.config.group_policy_signature import (
+from igni_core.core.config.group_policy_signature import (
     REQUIRED_ENV,
     TRUSTED_KEYS_ENV,
     PackRejected,
     verify_pack,
 )
-from ember_code.core.config.settings import load_settings
-from ember_code.core.config.settings_loader import SettingsLoader
+from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from tests.group_policy_signing import ISSUER, KEY, PERSON, ServerKey, session_token, sign_in, store
 
 #: A key igni server never held — what a forger signs with.
@@ -274,7 +274,7 @@ class TestRequiredFailsClosed:
         store(_cache_dir(), _pack(), key=STRANGER, jwks=KEY.jwks)
         # Signed in, so igni tries igni server first; it is unreachable.
         monkeypatch.setattr(
-            "ember_code.core.config.group_policy.fetch_signed_pack_now", lambda *a, **k: False
+            "igni_core.core.config.group_policy.fetch_signed_pack_now", lambda *a, **k: False
         )
 
         with pytest.raises(GroupPolicyUnavailable, match="Connect to"):
@@ -293,7 +293,7 @@ class TestRequiredFailsClosed:
             assert request.headers["authorization"] == f"Bearer {session_token()}"
             return httpx.Response(200, json={"group_id": "g1", "signed_pack": signed})
 
-        from ember_code.core.activity import http as busy_http
+        from igni_core.core.activity import http as busy_http
 
         real_client = busy_http.BusyClient
         monkeypatch.setattr(
@@ -316,7 +316,7 @@ class TestRequiredFailsClosed:
         _configure()
         store(_cache_dir(), _pack(), key=STRANGER, jwks=KEY.jwks)
 
-        with caplog.at_level("WARNING", logger="ember_code.core.config.group_policy"):
+        with caplog.at_level("WARNING", logger="igni_core.core.config.group_policy"):
             settings = _settings(tmp_path)
 
         assert settings.learning.enabled is True
@@ -325,9 +325,9 @@ class TestRequiredFailsClosed:
     def test_the_backend_boots_but_runs_no_agent(self, tmp_path, monkeypatch):
         """The backend has to come up — signing in is how a valid pack is
         fetched — but no run starts, and the refusal says what to do."""
-        from ember_code.backend.app import BackendApp
-        from ember_code.backend.run_controller import RunController
-        from ember_code.protocol import messages as msg
+        from igni_core.backend.app import BackendApp
+        from igni_core.backend.run_controller import RunController
+        from igni_core.protocol import messages as msg
 
         _configure(signed_in_as=None)
         _managed(tmp_path, monkeypatch, "group_policy:\n  required: true\n")
@@ -344,7 +344,7 @@ class TestRequiredFailsClosed:
         assert GroupPolicyGate.reason() and "sign in" in GroupPolicyGate.reason()
         controller = RunController.__new__(RunController)
         controller._phase = __import__(
-            "ember_code.backend.run_controller", fromlist=["RunPhase"]
+            "igni_core.backend.run_controller", fromlist=["RunPhase"]
         ).RunPhase.idle
         controller._session = MagicMock()
 
@@ -357,7 +357,7 @@ class TestRequiredFailsClosed:
         controller._session.main_team.arun.assert_not_called()
 
     def test_the_cli_starts_no_session(self, monkeypatch, tmp_path):
-        from ember_code.cli import cli
+        from igni_core.cli import cli
 
         _configure(signed_in_as=None)
         _managed(tmp_path, monkeypatch, "group_policy:\n  required: true\n")
@@ -433,7 +433,7 @@ class TestTheFetchIsVerifiedToo:
     """``AuthController._hydrate_group_policy`` writes nothing it cannot verify."""
 
     def _controller(self, tmp_path: Path, *, api_url: str = ISSUER, pins: list | None = None):
-        from ember_code.backend.server_auth import AuthController
+        from igni_core.backend.server_auth import AuthController
 
         ctrl = AuthController.__new__(AuthController)
         ctrl._settings = SimpleNamespace(

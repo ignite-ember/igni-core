@@ -40,8 +40,8 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-import ember_code.cli as cli_module
-from ember_code.cli.options import CliOptions
+import igni_core.cli as cli_module
+from igni_core.cli.options import CliOptions
 
 
 @pytest.fixture
@@ -299,7 +299,7 @@ class TestEveryOptionIsCovered:
         from pathlib import Path
 
         source = (
-            Path(__file__).resolve().parent.parent / "src/ember_code/cli/__init__.py"
+            Path(__file__).resolve().parent.parent / "src/igni_core/cli/__init__.py"
         ).read_text()
         return set(re.findall(r'@click\.option\([^)]*?"(--[a-z0-9-]+)"', source, re.S))
 

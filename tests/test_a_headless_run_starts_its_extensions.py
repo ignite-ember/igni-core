@@ -14,11 +14,11 @@ from typing import Any
 
 import pytest
 
-from ember_code.backend.headless_extensions import HeadlessExtensions
-from ember_code.core.hooks.events import HookEvent
-from ember_code.core.hooks.extension_gate import ExtensionHookGate, PreToolUseValue
-from ember_code.extensions.registry import ExtensionState
-from ember_code.extensions.store import ExtensionStore
+from igni_core.backend.headless_extensions import HeadlessExtensions
+from igni_core.core.hooks.events import HookEvent
+from igni_core.core.hooks.extension_gate import ExtensionHookGate, PreToolUseValue
+from igni_core.extensions.registry import ExtensionState
+from igni_core.extensions.store import ExtensionStore
 
 
 class Mcp:

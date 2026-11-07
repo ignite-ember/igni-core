@@ -23,9 +23,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ember_code.core.plugins.models import MarketplaceCatalog, MarketplaceEntry
-from ember_code.core.session.core import Session
-from ember_code.core.session.startup.marketplace import MarketplaceWarmupPhase
+from igni_core.core.plugins.models import MarketplaceCatalog, MarketplaceEntry
+from igni_core.core.session.core import Session
+from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
 
 # Async tests pick up the asyncio mark via pytest-asyncio's auto mode.
 # Module-level mark would also (incorrectly) tag
@@ -68,8 +68,8 @@ async def test_refresh_calls_refresh_marketplace_for_each_entry(
     fake_registry.marketplaces = [e1, e2]
 
     with (
-        patch("ember_code.core.plugins.marketplaces.load_registry") as mock_load,
-        patch("ember_code.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
+        patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load,
+        patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
     ):
         mock_load.return_value = fake_registry
         mock_refresh.return_value = MagicMock()
@@ -110,8 +110,8 @@ async def test_refresh_continues_past_failures(tmp_path: Path) -> None:
         return MagicMock()
 
     with (
-        patch("ember_code.core.plugins.marketplaces.load_registry") as mock_load,
-        patch("ember_code.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
+        patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load,
+        patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
     ):
         mock_load.return_value = fake_registry
         mock_refresh.side_effect = _side_effect
@@ -138,8 +138,8 @@ async def test_refresh_no_marketplaces_is_noop(tmp_path: Path) -> None:
     fake_registry.marketplaces = []
 
     with (
-        patch("ember_code.core.plugins.marketplaces.load_registry") as mock_load,
-        patch("ember_code.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
+        patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load,
+        patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
     ):
         mock_load.return_value = fake_registry
         sess = _make_session_stub(tmp_path)
@@ -185,12 +185,12 @@ async def test_refresh_passes_data_dir_through(tmp_path: Path) -> None:
     expected_data_dir = str(tmp_path / "ember")
 
     with (
-        patch("ember_code.core.plugins.marketplaces.load_registry") as mock_load,
-        patch("ember_code.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
+        patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load,
+        patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
         # Auto-register step would otherwise hit the real ``add_marketplace``
         # and try to git-clone the official catalog. Stub it out so the
         # test stays hermetic.
-        patch("ember_code.core.plugins.marketplaces.add_marketplace") as mock_add,
+        patch("igni_core.core.plugins.marketplaces.add_marketplace") as mock_add,
     ):
         mock_load.return_value = fake_registry
         mock_refresh.return_value = MagicMock()
@@ -223,7 +223,7 @@ async def test_a_catalog_fetched_recently_is_not_fetched_again(tmp_path: Path) -
     registry.marketplaces = [fresh, stale]
     phase = MarketplaceWarmupPhase(_make_session_stub(tmp_path))
     with patch(
-        "ember_code.core.plugins.marketplaces.refresh_marketplace", return_value=None
+        "igni_core.core.plugins.marketplaces.refresh_marketplace", return_value=None
     ) as refresh:
         await phase._refresh_registered(registry, tmp_path)
     assert [c.args[0] for c in refresh.call_args_list] == ["stale"]

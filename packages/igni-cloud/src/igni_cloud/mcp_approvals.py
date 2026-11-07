@@ -24,11 +24,11 @@ from typing import ClassVar
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
-from ember_code.core.activity.http import busy_call
-from ember_code.core.auth.credentials import CloudCredentials
-from ember_code.core.config.group_policy import group_policy_dir
-from ember_code.core.config.settings import load_settings
-from ember_code.core.mcp.approval import McpApprovalPolicy
+from igni_core.core.activity.http import busy_call
+from igni_core.core.auth.credentials import CloudCredentials
+from igni_core.core.config.group_policy import group_policy_dir
+from igni_core.core.config.settings import load_settings
+from igni_core.core.mcp.approval import McpApprovalPolicy
 
 logger = logging.getLogger(__name__)
 

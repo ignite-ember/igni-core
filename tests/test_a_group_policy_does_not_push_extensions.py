@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.config.group_policy import (
+from igni_core.core.config.group_policy import (
     GroupPolicyCache,
     GroupPolicyEntry,
     GroupPolicyPack,

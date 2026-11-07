@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import logging
 
-from ember_code.backend import logging_setup
+from igni_core.backend import logging_setup
 
 
 def _detach() -> None:
-    pkg = logging.getLogger("ember_code")
+    pkg = logging.getLogger("igni_core")
     for h in list(pkg.handlers):
         if getattr(h, logging_setup._HANDLER_MARK, False):
             h.close()
@@ -28,7 +28,7 @@ def test_a_log_is_written_with_nothing_set(tmp_path, monkeypatch):
     path = tmp_path / "logs" / "backend.log"
     try:
         assert logging_setup.configure_logging(path=path) == path
-        logging.getLogger("ember_code.something").info("hello from the backend")
+        logging.getLogger("igni_core.something").info("hello from the backend")
         assert "hello from the backend" in path.read_text()
     finally:
         _detach()
@@ -51,7 +51,7 @@ def test_debug_records_are_kept_out_of_the_default_log(tmp_path, monkeypatch):
     path = tmp_path / "backend.log"
     try:
         logging_setup.configure_logging(path=path)
-        log = logging.getLogger("ember_code.noisy")
+        log = logging.getLogger("igni_core.noisy")
         log.debug("chatter")
         log.warning("something worth keeping")
         text = path.read_text()
@@ -69,7 +69,7 @@ def test_configuring_twice_does_not_double_every_line(tmp_path, monkeypatch):
     try:
         logging_setup.configure_logging(path=path)
         logging_setup.configure_logging(path=path)
-        logging.getLogger("ember_code.once").warning("only once")
+        logging.getLogger("igni_core.once").warning("only once")
         assert path.read_text().count("only once") == 1
     finally:
         _detach()
@@ -112,7 +112,7 @@ def test_the_log_rotates(tmp_path, monkeypatch):
         logging_setup.configure_logging(path=path)
         handler = next(
             h
-            for h in logging.getLogger("ember_code").handlers
+            for h in logging.getLogger("igni_core").handlers
             if getattr(h, logging_setup._HANDLER_MARK, False)
         )
         assert handler.maxBytes > 0

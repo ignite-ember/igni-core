@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.worktree import WorktreeManager, WorktreeRoot
+from igni_core.core.worktree import WorktreeManager, WorktreeRoot
 
 
 def _init_git_repo(path: Path) -> None:

@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.mcp.schemas import MCPConnectResult
-from ember_code.core.session.mcp_ops import (
+from igni_core.core.mcp.schemas import MCPConnectResult
+from igni_core.core.session.mcp_ops import (
     McpLifecycleCoordinator,
     McpLifecycleDeps,
 )

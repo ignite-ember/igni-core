@@ -22,13 +22,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.agents import (
+from igni_core.core.agents import (
     AgentDefinition,
     AgentMarkdownFile,
     AgentPool,
     PluginRestrictionPolicy,
 )
-from ember_code.core.tools.orchestrate import OrchestrateTools
+from igni_core.core.tools.orchestrate import OrchestrateTools
 
 
 def _apply_plugin_restrictions(
@@ -67,7 +67,7 @@ def captured_pool_warnings(monkeypatch):
     ``logger`` — both are the same singleton but the canonical
     path is grep-friendly for future maintainers.
     """
-    from ember_code.core.agents import plugin_policy as _plugin_policy_mod
+    from igni_core.core.agents import plugin_policy as _plugin_policy_mod
 
     messages: list[str] = []
     real_warning = _plugin_policy_mod.logger.warning
@@ -271,7 +271,7 @@ def _mock_stream(content: str):
 
 
 def _mock_pool_with_definition(definition: AgentDefinition):
-    from ember_code.core.tools.orchestrate_budget import SpawnBudget
+    from igni_core.core.tools.orchestrate_budget import SpawnBudget
 
     pool = MagicMock()
     agent = MagicMock()

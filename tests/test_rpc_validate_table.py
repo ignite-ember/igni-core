@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.protocol.rpc import RpcMethod, validate_rpc_table
+from igni_core.protocol.rpc import RpcMethod, validate_rpc_table
 
 
 def _all_method_values() -> set[str]:

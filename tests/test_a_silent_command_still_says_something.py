@@ -16,16 +16,16 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.tools.process_supervisor import (
+from igni_core.core.tools.process_supervisor import (
     NO_OUTPUT_PLACEHOLDER,
     ProcessSupervisor,
 )
-from ember_code.core.tools.shell import EmberShellTools
+from igni_core.core.tools.shell import IgniShellTools
 
 
 @pytest.fixture
 def tools(tmp_path):
-    return EmberShellTools(base_dir=tmp_path, supervisor=ProcessSupervisor())
+    return IgniShellTools(base_dir=tmp_path, supervisor=ProcessSupervisor())
 
 
 @pytest.mark.parametrize("command", ["true", "cd .", "mkdir -p made-a-dir", "touch a-file"])

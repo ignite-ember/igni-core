@@ -14,7 +14,7 @@ actual extracted strings.
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from ember_code.core.utils.response import extract_response_text
+from igni_core.core.utils.response import extract_response_text
 
 
 class TestExtractResponseText:

@@ -18,9 +18,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend import command_handler as cmd_mod
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.tools.slash import SlashCommandTool
+from igni_core.backend import command_handler as cmd_mod
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.tools.slash import SlashCommandTool
 
 
 def _write(p: Path, text: str) -> None:

@@ -19,13 +19,13 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.config.permission_eval import (
+from igni_core.core.config.permission_eval import (
     PermissionDecision,
     PermissionEvaluator,
 )
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.schemas import HookDefinition, HookResult
-from ember_code.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.schemas import HookDefinition, HookResult
+from igni_core.core.hooks.tool_hook import ToolEventHook
 
 
 class _SilentExecutor(HookExecutor):

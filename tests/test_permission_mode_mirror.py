@@ -2,10 +2,10 @@
 :class:`PermissionMode` (domain) stay in sync.
 
 The wire enum lives in
-:mod:`ember_code.protocol.schemas.enums.PermissionModeName` — a
+:mod:`igni_core.protocol.schemas.enums.PermissionModeName` — a
 copy kept in the protocol leaf module so the wire schema doesn't
 have to import the domain layer. The domain enum lives in
-:mod:`ember_code.core.config.permission_eval.PermissionMode`.
+:mod:`igni_core.core.config.permission_eval.PermissionMode`.
 
 If either enum grows a new member without the mirror being
 updated, this test fails at import time — a much friendlier
@@ -15,8 +15,8 @@ starts emitting an un-mirrored mode name.
 
 from __future__ import annotations
 
-from ember_code.core.config.permission_eval import PermissionMode
-from ember_code.protocol.schemas.enums import PermissionModeName
+from igni_core.core.config.permission_eval import PermissionMode
+from igni_core.protocol.schemas.enums import PermissionModeName
 
 
 def test_permission_mode_wire_and_domain_stay_in_sync() -> None:

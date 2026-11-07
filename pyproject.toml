@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ignite-ember"
+name = "igni-core"
 version = "1.0.3"
-description = "AI coding assistant with multi-agent orchestration — desktop app, web client and CLI"
+description = "igni's backend and CLI: an AI coding assistant with multi-agent orchestration"
 readme = "README.md"
 license = "Apache-2.0"
 # 3.12 exactly, not a floor. The desktop app installs 3.12 and only
@@ -91,11 +91,11 @@ Issues = "https://github.com/ignite-ember/igni-app/issues"
 Changelog = "https://github.com/ignite-ember/igni-core/releases"
 
 [project.optional-dependencies]
-# igni's decisions service (``python -m ember_code.decisions_server``):
+# igni's decisions service (``python -m igni_core.decisions_server``):
 # Laya, for Bypass mode's last check and ``host.decide``. It runs in its
 # own process — beside a desktop backend, or once per cloud node — so a
 # backend image leaves this out and never carries torch. The desktop app
-# installs ``ignite-ember[decisions]``.
+# installs ``igni-core[decisions]``.
 decisions = [
     "laya~=0.4.20",
     "starlette~=1.10.0",
@@ -148,14 +148,16 @@ otel = [
 ]
 
 [project.scripts]
-# ``ignite-ember`` kept for backwards compatibility — existing user
-# shell aliases / docs / scripts continue to work. ``igni`` is the
-# canonical command going forward; both point at the same entrypoint.
-ignite-ember = "ember_code.__main__:main"
-igni = "ember_code.__main__:main"
+# ``igni`` is the command. ``ignite-ember`` is kept for backwards
+# compatibility — existing shell aliases, scripts and the Homebrew
+# formula's link keep working; both point at the same entrypoint. The
+# package was called ``ignite-ember`` too, and still is on PyPI as a
+# release that only depends on this one (packages/ignite-ember).
+ignite-ember = "igni_core.__main__:main"
+igni = "igni_core.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ember_code"]
+packages = ["src/igni_core"]
 
 # The sdist otherwise includes everything git does not ignore, which
 # makes a release build depend on how tidy the working tree happens to
@@ -166,7 +168,7 @@ packages = ["src/ember_code"]
 exclude = [
   "/.venv*",
   "/.git",
-  "/clients",
+  "/packages",
   "/evals",
   "/scripts",
   "/docs",
@@ -260,7 +262,7 @@ disable_error_code = ["union-attr", "annotation-unchecked", "arg-type", "return-
 # dependency whose stubs move on their own release schedule, and a
 # stub-side breakage there is not a signal about this codebase. Removing
 # it is safe with the currently pinned numpy — dropping it and
-# re-running ``mypy src/ember_code/`` still reports success — so if it
+# re-running ``mypy src/igni_core/`` still reports success — so if it
 # ever starts hiding a real error, delete it rather than work around it.
 [[tool.mypy.overrides]]
 module = ["numpy", "numpy.*"]
@@ -281,5 +283,5 @@ follow_imports_for_stubs = true
 # own pass. The number is recorded here so that pass starts from a known
 # size instead of re-discovering it.
 [[tool.mypy.overrides]]
-module = ["ember_code.backend.markdown_command_dispatcher"]
+module = ["igni_core.backend.markdown_command_dispatcher"]
 enable_error_code = ["call-arg"]

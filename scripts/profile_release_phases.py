@@ -43,7 +43,6 @@ from pathlib import Path
 
 import websockets
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 
@@ -117,9 +116,9 @@ async def _drive(args) -> None:
     proc = subprocess.Popen(
         [str(PYTHON), "-c",
          "import logging; logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s %(message)s'); "
-         "logging.getLogger('ember_code').setLevel(logging.INFO); "
-         "import sys; sys.argv = ['ember_code.backend'] + sys.argv[1:]; "
-         "from ember_code.backend.__main__ import main; main()",
+         "logging.getLogger('igni_core').setLevel(logging.INFO); "
+         "import sys; sys.argv = ['igni_core.backend'] + sys.argv[1:]; "
+         "from igni_core.backend.__main__ import main; main()",
          "--ws-port", "0", "--project-dir", str(project)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT,
         env=env_overrides,

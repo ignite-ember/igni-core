@@ -18,10 +18,10 @@ import uuid
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 
-from ember_code.core.db.database import Database
-from ember_code.core.db.engine import cache
-from ember_code.core.db.scope import StorageScope, Tenant
-from ember_code.core.db.urls import DatabaseUrl
+from igni_core.core.db.database import Database
+from igni_core.core.db.engine import cache
+from igni_core.core.db.scope import StorageScope, Tenant
+from igni_core.core.db.urls import DatabaseUrl
 
 
 class ThrowawayPostgres:

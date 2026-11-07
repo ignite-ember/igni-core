@@ -21,14 +21,15 @@ import os
 import tempfile
 from pathlib import Path
 
-from ember_code.core.auth.portal_client import PortalClient  # noqa: E402
-from ember_code.core.config.group_policy import GroupPolicyCache  # noqa: E402
-from ember_code.core.hooks.loader import HookLoader  # noqa: E402
-from ember_code.core.init.group_agent_sync import SYNCED_KINDS, GroupAgentSync  # noqa: E402
-from ember_code.core.output_styles.loader import discover_output_styles  # noqa: E402
-from ember_code.core.skills.loader import SkillPool  # noqa: E402
-from ember_code.core.utils.markdown_commands import MarkdownCommand  # noqa: E402
-from ember_code.core.utils.rules_index import RulesIndex  # noqa: E402
+from igni_core.core.init.group_agent_sync import SYNCED_KINDS, GroupAgentSync  # noqa: E402
+
+from igni_core.core.auth.portal_client import PortalClient  # noqa: E402
+from igni_core.core.config.group_policy import GroupPolicyCache  # noqa: E402
+from igni_core.core.hooks.loader import HookLoader  # noqa: E402
+from igni_core.core.output_styles.loader import discover_output_styles  # noqa: E402
+from igni_core.core.skills.loader import SkillPool  # noqa: E402
+from igni_core.core.utils.markdown_commands import MarkdownCommand  # noqa: E402
+from igni_core.core.utils.rules_index import RulesIndex  # noqa: E402
 
 API = os.environ.get("IGNI_API", "http://localhost:7777")
 TOKEN = os.environ.get("IGNI_TOKEN", "local-bypass")
@@ -130,7 +131,7 @@ async def main() -> int:
             check(bool(matched), "a path-scoped rule fires on a matching file")
 
         if "workflows" in by_kind:
-            from ember_code.backend.workflow_runner import WorkflowDiscovery
+            from igni_core.backend.workflow_runner import WorkflowDiscovery
 
             discovery = WorkflowDiscovery(project_dir=project)
             names = {p.stem for p in discovery._iter_paths()}

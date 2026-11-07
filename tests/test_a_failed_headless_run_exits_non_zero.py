@@ -19,13 +19,13 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 from agno.agent import Agent
 
-from ember_code.core.config.null_model import NoModelConfigured
-from ember_code.core.config.settings import Settings
-from ember_code.core.guardrails.runner import GuardrailRunner
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.session.message_handler import SessionMessageHandler
-from ember_code.core.session.runner import run_single_message
-from ember_code.core.session.single_message_run import SingleMessageRun
+from igni_core.core.config.null_model import NoModelConfigured
+from igni_core.core.config.settings import Settings
+from igni_core.core.guardrails.runner import GuardrailRunner
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.session.message_handler import SessionMessageHandler
+from igni_core.core.session.runner import run_single_message
+from igni_core.core.session.single_message_run import SingleMessageRun
 
 
 class _Team:
@@ -66,7 +66,7 @@ def _session(team: Any) -> MagicMock:
 
 async def _run(team: Any) -> tuple[int, MagicMock]:
     session = _session(team)
-    with patch("ember_code.core.session.session_run.Session", return_value=session):
+    with patch("igni_core.core.session.session_run.Session", return_value=session):
         try:
             await run_single_message(MagicMock(), "change config.toml")
         except SystemExit as exit_:
@@ -121,7 +121,7 @@ async def test_a_bare_help_prints_the_commands():
     """B35: a bare ``/help`` opens a panel in the clients, so its result has
     no content, and ``igni -m /help`` printed nothing."""
     session = _session(_Team(None))
-    with patch("ember_code.core.session.session_run.Session", return_value=session):
+    with patch("igni_core.core.session.session_run.Session", return_value=session):
         await run_single_message(MagicMock(), "/help")
 
     printed = "\n".join(c.args[0] for c in session.display.print_markdown.call_args_list)
@@ -134,7 +134,7 @@ async def test_login_says_where_to_sign_in():
     content: ``igni -m /login`` printed nothing and exited 0, and the only
     other hint named a TUI and a ``--no-tui`` flag removed in v0.9.7."""
     session = _session(_Team(None))
-    with patch("ember_code.core.session.session_run.Session", return_value=session):
+    with patch("igni_core.core.session.session_run.Session", return_value=session):
         await run_single_message(MagicMock(), "/login")
 
     printed = "\n".join(c.args[0] for c in session.display.print_info.call_args_list)

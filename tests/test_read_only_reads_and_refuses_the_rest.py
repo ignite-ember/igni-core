@@ -23,12 +23,12 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.cli.options import CliOptions
-from ember_code.core.config.models import CliOverrides
-from ember_code.core.config.permission_eval import PermissionDecision, PermissionMode
-from ember_code.core.config.permission_eval.pipeline import PermissionEvaluator
-from ember_code.core.config.settings import load_settings
-from ember_code.core.mcp.hints import ToolHints, ToolHintsRegistry
+from igni_core.cli.options import CliOptions
+from igni_core.core.config.models import CliOverrides
+from igni_core.core.config.permission_eval import PermissionDecision, PermissionMode
+from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
+from igni_core.core.config.settings import load_settings
+from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
 
 
 def _read_only_evaluator() -> PermissionEvaluator:
@@ -206,7 +206,7 @@ def test_the_shell_is_not_reported_as_off_entirely():
     """The denial used to add "Shell access is off in this session" — true
     then, false now: reads still work, and saying otherwise costs the model
     the moves it has."""
-    from ember_code.core.hooks.permission_pipeline import PermissionEvaluatorStage
+    from igni_core.core.hooks.permission_pipeline import PermissionEvaluatorStage
 
     stage = PermissionEvaluatorStage(_read_only_evaluator(), firer=None)  # type: ignore[arg-type]
     assert stage._tool_is_off_entirely("run_shell_command") is False
@@ -215,7 +215,7 @@ def test_the_shell_is_not_reported_as_off_entirely():
 def test_the_session_evaluator_carries_the_flag(tmp_path):
     from unittest.mock import MagicMock
 
-    from ember_code.core.session.tool_hook_factory import ToolEventHookFactory
+    from igni_core.core.session.tool_hook_factory import ToolEventHookFactory
 
     payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
     factory = ToolEventHookFactory(

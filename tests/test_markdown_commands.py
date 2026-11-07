@@ -13,14 +13,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import ValidationError
 
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.utils.markdown_commands import (
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.utils.markdown_commands import (
     MarkdownCommand,
     _parse_frontmatter,
     discover_markdown_commands,
 )
-from ember_code.protocol.messages import CommandAction
+from igni_core.protocol.messages import CommandAction
 
 
 def _write(p: Path, text: str) -> None:

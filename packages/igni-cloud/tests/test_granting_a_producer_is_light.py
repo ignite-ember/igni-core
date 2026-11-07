@@ -18,17 +18,17 @@ from igni_cloud.cli import main
 from igni_cloud.db.admin_cli import db
 from sqlalchemy import create_engine, text
 
-from ember_code.cli.migrate import SchemaMigration
-from ember_code.core.db.locator import StorageLocator
-from ember_code.core.db.urls import DatabaseUrl
+from igni_core.cli.migrate import SchemaMigration
+from igni_core.core.db.locator import StorageLocator
+from igni_core.core.db.urls import DatabaseUrl
 from tests.storage_backends import ThrowawayPostgres
 
 
 def test_the_command_imports_none_of_the_rest_of_igni():
     probe = (
         "import sys, igni_cloud.db.admin_cli\n"
-        "heavy = [m for m in ('agno', 'ember_code.cli', 'ember_code.core.config.settings', "
-        "'ember_code.backend', 'openai', 'mcp') if m in sys.modules]\n"
+        "heavy = [m for m in ('agno', 'igni_core.cli', 'igni_core.core.config.settings', "
+        "'igni_core.backend', 'openai', 'mcp') if m in sys.modules]\n"
         "print(heavy)\n"
     )
     out = subprocess.run(

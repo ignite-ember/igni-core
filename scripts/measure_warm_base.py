@@ -40,9 +40,9 @@ from igni_cloud.guest import WarmImports
 from igni_cloud.guest.binding import ProducerBinding
 from websockets.asyncio.client import connect
 
-from ember_code.backend.app import BackendApp
-from ember_code.backend.logging_setup import configure_logging
-from ember_code.core.config.managed_policy import ManagedPolicySource
+from igni_core.backend.app import BackendApp
+from igni_core.backend.logging_setup import configure_logging
+from igni_core.core.config.managed_policy import ManagedPolicySource
 
 
 class FakeModel(BaseHTTPRequestHandler):

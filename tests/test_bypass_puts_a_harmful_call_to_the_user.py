@@ -15,9 +15,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.core.config.schemas.safety import BypassGuardConfig
-from ember_code.core.hooks.bypass_guard import BypassGuard
-from ember_code.core.hooks.bypass_rules import flag_shell, flag_write
+from igni_core.core.config.schemas.safety import BypassGuardConfig
+from igni_core.core.hooks.bypass_guard import BypassGuard
+from igni_core.core.hooks.bypass_rules import flag_shell, flag_write
 
 
 @pytest.fixture
@@ -84,7 +84,7 @@ def test_deleting_inside_the_project_is_work_and_outside_it_is_not(project):
 
 
 def test_a_secret_in_a_url_is_flagged():
-    from ember_code.core.hooks.bypass_rules import flag_url
+    from igni_core.core.hooks.bypass_rules import flag_url
 
     assert flag_url("https://x.example/c?token=$GITHUB_TOKEN")
     assert flag_url("https://x.example/hook?api_key=abc123")
@@ -177,8 +177,8 @@ class TestARejectedCallLooksRejected:
     """Not ✓ (it never ran) and not ✗ (nothing failed): its own state."""
 
     def test_the_guards_wording_is_what_the_card_recognises(self):
-        from ember_code.core.hooks.bypass_guard import NOT_RUN
-        from ember_code.protocol.tool_error_conventions import ToolResultErrorDetector
+        from igni_core.core.hooks.bypass_guard import NOT_RUN
+        from igni_core.protocol.tool_error_conventions import ToolResultErrorDetector
 
         detector = ToolResultErrorDetector.default()
         result = f"{NOT_RUN} the user rejected this call when asked to approve it."
@@ -186,7 +186,7 @@ class TestARejectedCallLooksRejected:
         assert not detector.is_error(result)
 
     def test_ordinary_results_are_not_rejections(self):
-        from ember_code.protocol.tool_error_conventions import ToolResultErrorDetector
+        from igni_core.protocol.tool_error_conventions import ToolResultErrorDetector
 
         detector = ToolResultErrorDetector.default()
         assert not detector.is_rejected("Error: no such file")
@@ -195,8 +195,8 @@ class TestARejectedCallLooksRejected:
     def test_the_live_card_and_the_restored_card_both_say_so(self):
         from types import SimpleNamespace
 
-        from ember_code.backend.server_history_walker import ToolResultErrorDetector as Walked
-        from ember_code.protocol.event_handlers import ToolCompletedHandler
+        from igni_core.backend.server_history_walker import ToolResultErrorDetector as Walked
+        from igni_core.protocol.event_handlers import ToolCompletedHandler
 
         assert Walked.default().is_rejected("Not run: the user rejected this call.")
         handler = ToolCompletedHandler.__new__(ToolCompletedHandler)
@@ -208,7 +208,7 @@ class TestARejectedCallLooksRejected:
                 diff_rows=None,
             )
         )
-        from ember_code.protocol.tool_error_conventions import ToolResultErrorDetector
+        from igni_core.protocol.tool_error_conventions import ToolResultErrorDetector
 
         handler._error_detector = ToolResultErrorDetector.default()
         message = handler.build(SimpleNamespace(run_id="r"))
@@ -265,7 +265,7 @@ class TestARejectedCallLooksRejected:
 
 
 def test_the_pipeline_runs_it_last_and_blocks_on_its_word(project):
-    from ember_code.core.hooks.permission_pipeline import (
+    from igni_core.core.hooks.permission_pipeline import (
         Block,
         BypassGuardStage,
         Continue,
@@ -288,8 +288,8 @@ class TestAskingThroughTheSessionsApprovalChannel:
     def _session(self):
         from types import SimpleNamespace
 
-        from ember_code.core.session.core import Session
-        from ember_code.core.sub_agent_hitl import SubAgentHITLCoordinator
+        from igni_core.core.session.core import Session
+        from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 
         session = SimpleNamespace(sub_agent_hitl=SubAgentHITLCoordinator())
         return session, Session._ask_about_tool_call
@@ -317,9 +317,9 @@ class TestAskingThroughTheSessionsApprovalChannel:
         assert asyncio.run(scenario("reject")) is False
 
     def test_the_dialog_is_told_why(self):
-        from ember_code.backend.hitl_stream_mux import HITLStreamMultiplexer
-        from ember_code.core.session.core import _GuardRequirement
-        from ember_code.core.sub_agent_hitl import _PendingEntry
+        from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
+        from igni_core.core.session.core import _GuardRequirement
+        from igni_core.core.sub_agent_hitl import _PendingEntry
 
         entry = _PendingEntry(
             requirement=_GuardRequirement(
@@ -339,14 +339,14 @@ class TestAskingThroughTheSessionsApprovalChannel:
 
 
 def _model_cached() -> bool:
-    from ember_code.decisions_server.model import BUNDLE_REPO, HubCache
+    from igni_core.decisions_server.model import BUNDLE_REPO, HubCache
 
     return HubCache.has(BUNDLE_REPO)
 
 
 @pytest.mark.skipif(not _model_cached(), reason="laya-typed-decisions is not in the local cache")
 def test_the_real_model_separates_a_harmful_call_from_an_ordinary_one():
-    from ember_code.core.hooks.bypass_guard import HarmJudge
+    from igni_core.core.hooks.bypass_guard import HarmJudge
 
     judge = HarmJudge()
     harmful, _ = asyncio.run(judge.score("Bash: kubectl delete namespace production"))
@@ -363,12 +363,12 @@ def test_the_real_model_separates_a_harmful_call_from_an_ordinary_one():
 # counted itself from inside its own task, so a tool call that asked at
 # once found no relay and was refused as "nobody to ask".
 
-from ember_code.backend.hitl_controller import HitlController  # noqa: E402
-from ember_code.backend.hitl_stream_mux import HITLStreamMultiplexer  # noqa: E402
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore  # noqa: E402
-from ember_code.core.session.core import Session  # noqa: E402
-from ember_code.core.sub_agent_hitl import SubAgentHITLCoordinator  # noqa: E402
-from ember_code.protocol import messages as msg  # noqa: E402
+from igni_core.backend.hitl_controller import HitlController  # noqa: E402
+from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer  # noqa: E402
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore  # noqa: E402
+from igni_core.core.session.core import Session  # noqa: E402
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator  # noqa: E402
+from igni_core.protocol import messages as msg  # noqa: E402
 
 
 class NoJudge:
@@ -434,8 +434,8 @@ def test_a_nested_resume_takes_over_the_relay():
     guard's question in a queue nobody read — a deadlock and no dialog,
     found clicking through Bypass in the real UI. The outer relay now
     stands down and hands back whatever it had taken."""
-    from ember_code.backend.schemas_pause import SubagentPause, TeamStreamEvent
-    from ember_code.core.sub_agent_hitl import _PendingEntry
+    from igni_core.backend.schemas_pause import SubagentPause, TeamStreamEvent
+    from igni_core.core.sub_agent_hitl import _PendingEntry
 
     async def scenario():
         coordinator = SubAgentHITLCoordinator()
@@ -473,7 +473,7 @@ class TestTheDialogSaysWhy:
     """
 
     def test_a_rule_reads_as_a_sentence(self):
-        from ember_code.core.hooks.bypass_guard import Verdict, explain
+        from igni_core.core.hooks.bypass_guard import Verdict, explain
 
         text = explain(
             "run_shell_command",
@@ -483,7 +483,7 @@ class TestTheDialogSaysWhy:
         assert "Bypass mode skips approvals" in text
 
     def test_the_model_says_it_judged_and_how_strongly(self):
-        from ember_code.core.hooks.bypass_guard import Verdict, explain
+        from igni_core.core.hooks.bypass_guard import Verdict, explain
 
         text = explain(
             "write_file",

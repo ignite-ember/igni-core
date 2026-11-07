@@ -4,7 +4,7 @@ Small on purpose: a handful of tools, one of which fails, so the
 test can prove a tool result reaches an extension's UI *and* that a
 failure reaches it as a sentence rather than as a crash.
 
-Run by :mod:`ember_code.extensions.installer` as a subprocess over
+Run by :mod:`igni_core.extensions.installer` as a subprocess over
 stdio, exactly the way a development extension is.
 """
 

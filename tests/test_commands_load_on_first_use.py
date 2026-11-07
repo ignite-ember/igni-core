@@ -21,20 +21,20 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.backend.builtin_command_registry import BUILTIN_REGISTRY
+from igni_core.backend.builtin_command_registry import BUILTIN_REGISTRY
 
 #: Loaded by commands (or by migrations), never by an idle backend.
 NOT_AT_START = (
     "alembic",
-    "ember_code.core.evals",
-    "ember_code.core.db.migrations",
-    "ember_code.backend.cmd_evals",
-    "ember_code.backend.cmd_loop",
-    "ember_code.backend.cmd_schedule",
-    "ember_code.backend.cmd_plugin",
-    "ember_code.backend.cmd_auth",
-    "ember_code.backend.cmd_agents",
-    "ember_code.backend.cmd_memory",
+    "igni_core.core.evals",
+    "igni_core.core.db.migrations",
+    "igni_core.backend.cmd_evals",
+    "igni_core.backend.cmd_loop",
+    "igni_core.backend.cmd_schedule",
+    "igni_core.backend.cmd_plugin",
+    "igni_core.backend.cmd_auth",
+    "igni_core.backend.cmd_agents",
+    "igni_core.backend.cmd_memory",
 )
 
 
@@ -46,11 +46,11 @@ def test_listing_and_describing_import_no_command():
     script = textwrap.dedent(
         """
         import json, sys
-        from ember_code.backend.builtin_command_registry import BUILTIN_REGISTRY
+        from igni_core.backend.builtin_command_registry import BUILTIN_REGISTRY
         names = BUILTIN_REGISTRY.names()
         described = [BUILTIN_REGISTRY.describe(n) for n in names]
         assert all(described), "every built-in has a description"
-        print(json.dumps(sorted(m for m in sys.modules if m.startswith("ember_code.backend.cmd_"))))
+        print(json.dumps(sorted(m for m in sys.modules if m.startswith("igni_core.backend.cmd_"))))
         """
     )
     out = subprocess.run(
@@ -64,7 +64,7 @@ def test_every_entry_resolves_to_a_coroutine_shim(entry):
     shim = entry.resolve()
     assert inspect.iscoroutinefunction(shim), entry.target
     assert entry.resolve() is shim, "resolved once and kept"
-    assert entry.module.startswith("ember_code.backend.cmd_")
+    assert entry.module.startswith("igni_core.backend.cmd_")
 
 
 def test_a_shim_that_takes_no_args_is_called_without_them():
@@ -89,8 +89,8 @@ _RUNNER = textwrap.dedent(
         os.replace(out + ".tmp", out)
 
     threading.Thread(target=dump_when_asked, daemon=True).start()
-    sys.argv = ["ember_code.backend", "--ws-port", "0"]
-    runpy.run_module("ember_code.backend", run_name="__main__", alter_sys=True)
+    sys.argv = ["igni_core.backend", "--ws-port", "0"]
+    runpy.run_module("igni_core.backend", run_name="__main__", alter_sys=True)
     """
 )
 
@@ -111,7 +111,7 @@ def test_an_idle_backend_has_not_loaded_the_commands_or_alembic(tmp_path: Path):
     # Prepared as the cloud prepares a volume, so the start finds its
     # database current and has no reason to migrate.
     subprocess.run(
-        [sys.executable, "-m", "ember_code", "migrate"],
+        [sys.executable, "-m", "igni_core", "migrate"],
         cwd=project,
         env=env,
         check=True,
@@ -140,6 +140,6 @@ def test_an_idle_backend_has_not_loaded_the_commands_or_alembic(tmp_path: Path):
         backend.kill()
         backend.wait(10)
 
-    assert _loaded(modules, "ember_code.backend.app"), "it really started"
+    assert _loaded(modules, "igni_core.backend.app"), "it really started"
     leaked = [name for name in NOT_AT_START if _loaded(modules, name)]
     assert leaked == [], f"loaded at start: {leaked}"

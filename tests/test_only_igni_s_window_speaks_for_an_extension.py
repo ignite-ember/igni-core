@@ -33,10 +33,10 @@ from typing import Any
 
 from websockets.asyncio.client import connect
 
-from ember_code.protocol import messages as msg
-from ember_code.protocol.rpc import RpcMethod
-from ember_code.transport.in_process import InProcessTransport
-from ember_code.transport.websocket import CompositeTransport, WebSocketServerTransport
+from igni_core.protocol import messages as msg
+from igni_core.protocol.rpc import RpcMethod
+from igni_core.transport.in_process import InProcessTransport
+from igni_core.transport.websocket import CompositeTransport, WebSocketServerTransport
 from tests.host_model_helpers import HostRig
 
 # ── The transport ─────────────────────────────────────────────────

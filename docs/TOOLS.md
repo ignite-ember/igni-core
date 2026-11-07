@@ -20,12 +20,12 @@ The actual tool list registered on the main team at session boot:
 
 | Tool Name | Agno Toolkit | Description |
 |---|---|---|
-| `Bash` | `EmberShellTools` (custom) | Non-blocking shell with process management. Handles read (`cat`), search (`rg`), list (`ls`/`find`), and arbitrary commands. |
+| `Bash` | `IgniShellTools` (custom) | Non-blocking shell with process management. Handles read (`cat`), search (`rg`), list (`ls`/`find`), and arbitrary commands. |
 | `Write` | `FileTools()` | Create/overwrite files. Kept as a dedicated toolkit because `heredoc` rewrites are fragile. |
-| `Edit` | `EmberEditTools` (custom) | Targeted string-replacement editing. Kept dedicated because `sed` is fragile. |
+| `Edit` | `IgniEditTools` (custom) | Targeted string-replacement editing. Kept dedicated because `sed` is fragile. |
 | `Schedule` | `ScheduleTools` (custom) | Schedule tasks for later or recurring execution. |
 | `NotebookEdit` | `NotebookTools` (custom) | Read and edit Jupyter notebook cells. |
-| `WebSearch` | `DuckDuckGoTools` | Web search (when `permissions.web_search != "deny"` and the `web` extra — `pip install ignite-ember[web]` — is installed). |
+| `WebSearch` | `DuckDuckGoTools` | Web search (when `permissions.web_search != "deny"` and the `web` extra — `pip install igni-core[web]` — is installed). |
 | `WebFetch` | `WebTools` (custom) | Fetch and extract URL content (when `permissions.web_fetch != "deny"`). |
 | `Orchestrate` | `OrchestrateTools` (custom) | Spawn sub-teams from the agent pool. |
 
@@ -118,15 +118,15 @@ FileTools(
 
 **Functions:** `save_file` — and only `save_file`.
 
-### Edit (EmberEditTools)
+### Edit (IgniEditTools)
 
 Targeted string-replacement editing (inspired by Claude Code's Edit tool). Instead of rewriting entire files, it replaces specific text spans — producing minimal, reviewable diffs.
 
 ```python
-from ember_code.tools.edit import EmberEditTools
+from igni_core.tools.edit import IgniEditTools
 
 # Performs old_string → new_string replacement
-edit_tools = EmberEditTools(base_dir="/path/to/project")
+edit_tools = IgniEditTools(base_dir="/path/to/project")
 ```
 
 **Functions:**
@@ -157,14 +157,14 @@ document do not exist in the codebase.
 
 ## Shell Execution
 
-### Bash (EmberShellTools)
+### Bash (IgniShellTools)
 
 Non-blocking shell execution with background process management. Replaces Agno's built-in `ShellTools` with an implementation that handles long-running commands (servers, watchers) without blocking the agent.
 
 ```python
-from ember_code.core.tools.shell import EmberShellTools
+from igni_core.core.tools.shell import IgniShellTools
 
-shell = EmberShellTools(base_dir="/path/to/project")
+shell = IgniShellTools(base_dir="/path/to/project")
 ```
 
 **Functions:**
@@ -237,7 +237,7 @@ approval prompt.
 Fetch and extract content from URLs.
 
 ```python
-from ember_code.tools.web import WebTools
+from igni_core.tools.web import WebTools
 
 web_tools = WebTools()
 ```
@@ -269,7 +269,7 @@ confirmation rules, instead of a second interpreter that bypasses them.
 Read and edit individual cells in Jupyter notebooks (`.ipynb`). Operates on the notebook's JSON structure directly -- no `nbformat` dependency required. Preserves all metadata, outputs, and formatting.
 
 ```python
-from ember_code.core.tools.notebook import NotebookTools
+from igni_core.core.tools.notebook import NotebookTools
 
 notebook_tools = NotebookTools(base_dir="/path/to/project")
 ```
@@ -285,7 +285,7 @@ notebook_tools = NotebookTools(base_dir="/path/to/project")
 
 ## Git & GitHub
 
-Git operations are handled via `EmberShellTools` with git/gh commands. The Git Agent wraps these with safety checks:
+Git operations are handled via `IgniShellTools` with git/gh commands. The Git Agent wraps these with safety checks:
 
 - **Pre-push confirmation** — always asks before pushing
 - **Force-push protection** — warns and requires explicit confirmation
@@ -381,7 +381,7 @@ Loops never run in the background. Each iteration is a real conversation turn, s
 Enables agents to spawn sub-teams at runtime. Any agent with `can_orchestrate: true` (the default) gets access to this tool.
 
 ```python
-from ember_code.tools.orchestrate import OrchestrateTools
+from igni_core.tools.orchestrate import OrchestrateTools
 
 orchestrate = OrchestrateTools(pool=agent_pool, config=settings)
 ```

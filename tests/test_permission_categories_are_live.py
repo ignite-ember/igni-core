@@ -25,8 +25,8 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.config.permission_eval import PermissionEvaluator
-from ember_code.core.config.schemas.permissions import PermissionsConfig
+from igni_core.core.config.permission_eval import PermissionEvaluator
+from igni_core.core.config.schemas.permissions import PermissionsConfig
 
 
 def _decide(perms: PermissionsConfig, tool: str, args: dict) -> str:
@@ -112,9 +112,9 @@ class TestReadOnlyIsAWall:
     """
 
     def test_reads_run_and_writes_are_denied(self):
-        from ember_code.cli.options import CliOptions
-        from ember_code.core.config.models import CliOverrides
-        from ember_code.core.config.settings import load_settings
+        from igni_core.cli.options import CliOptions
+        from igni_core.core.config.models import CliOverrides
+        from igni_core.core.config.settings import load_settings
 
         payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
         perms = load_settings(cli_overrides=payload).permissions
@@ -131,10 +131,10 @@ class TestReadOnlyIsAWall:
         ``--read-only`` runs reads. igni does not know which
         extension it is, only what the tool says it is.
         """
-        from ember_code.cli.options import CliOptions
-        from ember_code.core.config.models import CliOverrides
-        from ember_code.core.config.settings import load_settings
-        from ember_code.core.mcp.hints import ToolHints, ToolHintsRegistry
+        from igni_core.cli.options import CliOptions
+        from igni_core.core.config.models import CliOverrides
+        from igni_core.core.config.settings import load_settings
+        from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
 
         payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
         perms = load_settings(cli_overrides=payload).permissions
@@ -161,7 +161,7 @@ class TestReadOnlyIsAWall:
         with no stated way forward, and a model given no alternative retries the
         same call in a new costume. It names no extension: igni does not know
         which tools an installed extension gives the session."""
-        from ember_code.core.hooks.permission_pipeline import _denial_message
+        from igni_core.core.hooks.permission_pipeline import _denial_message
 
         message = _denial_message("run_shell_command")
 
@@ -171,7 +171,7 @@ class TestReadOnlyIsAWall:
 
     def test_an_ordinary_denial_stays_terse(self):
         """Only the case that strands the model gets the extra paragraph."""
-        from ember_code.core.hooks.permission_pipeline import _denial_message
+        from igni_core.core.hooks.permission_pipeline import _denial_message
 
         assert _denial_message("edit_file") == "Blocked: permission policy denied 'edit_file'."
 

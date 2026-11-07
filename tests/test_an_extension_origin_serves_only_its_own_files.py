@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.extensions import ExtensionOrigin, ExtensionOrigins
+from igni_core.extensions import ExtensionOrigin, ExtensionOrigins
 
 pytestmark = pytest.mark.asyncio
 

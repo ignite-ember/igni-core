@@ -16,13 +16,13 @@ By the time it was audited it was wrong in every direction at once:
   repository, with nothing on the page to suggest it might not be.
 - **A whole section described a package that no longer exists.** "TUI
   (263 tests)" listed seven `tui/` modules; there is no `tui/` package
-  under `src/ember_code/` at all.
+  under `src/igni_core/` at all.
 - **The safety row was false three ways over.** It claimed
   `config/permissions.py` was covered and that the tests exercised a
   `PermissionGuard` class. `config/permissions/` is now a package of
   `__init__.py` and `schemas.py`, `PermissionGuard` is gone, the guard's
   job belongs to `PermissionEvaluator` in
-  `src/ember_code/core/config/permission_eval/pipeline.py`, and the test
+  `src/igni_core/core/config/permission_eval/pipeline.py`, and the test
   file named in the row is gone too — all of it in the row a reader would
   check first when asking whether the permission system is tested.
 
@@ -37,7 +37,7 @@ uv run pytest tests/ --collect-only -q
 ls tests/
 
 # Line coverage, per module, with the uncovered lines named
-uv run pytest tests/ --cov=ember_code --cov-report=term-missing
+uv run pytest tests/ --cov=igni_core --cov-report=term-missing
 # or: make test-cov
 ```
 
@@ -63,8 +63,8 @@ Verified against the tree, not carried over from the old table:
 
 | Module | What's missing |
 |---|---|
-| `src/ember_code/core/session/interactive.py` | The interactive REPL loop and its input handling — driven by a live terminal, hard to unit test |
-| `src/ember_code/core/session/core.py` | The full message → team → response flow: system-prompt assembly and tool injection are covered only through their pieces |
+| `src/igni_core/core/session/interactive.py` | The interactive REPL loop and its input handling — driven by a live terminal, hard to unit test |
+| `src/igni_core/core/session/core.py` | The full message → team → response flow: system-prompt assembly and tool injection are covered only through their pieces |
 
 `tests/test_docs_describe_the_suite_that_exists.py` holds the rules that
 keep this page, `TESTING.md` and `DEVELOPMENT.md` from rotting the same way

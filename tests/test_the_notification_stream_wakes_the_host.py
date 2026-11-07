@@ -17,10 +17,10 @@ import asyncio
 
 import pytest
 
-from ember_code.notifications.center import NotificationCenter
-from ember_code.notifications.local_store import LocalNotificationStore
-from ember_code.notifications.schemas import NotificationCounts
-from ember_code.notifications.stream import (
+from igni_core.notifications.center import NotificationCenter
+from igni_core.notifications.local_store import LocalNotificationStore
+from igni_core.notifications.schemas import NotificationCounts
+from igni_core.notifications.stream import (
     Backoff,
     NotificationStreamFollower,
     SseParser,

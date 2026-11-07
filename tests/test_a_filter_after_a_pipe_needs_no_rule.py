@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.config.permission_eval import PermissionDecision
-from ember_code.core.config.permission_eval.pipe_filters import PIPE_FILTERS, is_pipe_filter
-from ember_code.core.config.permission_eval.pipeline import PermissionEvaluator
-from ember_code.core.config.permission_eval.read_only_shell import is_read_only
+from igni_core.core.config.permission_eval import PermissionDecision
+from igni_core.core.config.permission_eval.pipe_filters import PIPE_FILTERS, is_pipe_filter
+from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
+from igni_core.core.config.permission_eval.read_only_shell import is_read_only
 
 
 def _decide(command: str, **rules: list[str]) -> PermissionDecision:

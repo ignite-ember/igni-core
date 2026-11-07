@@ -32,13 +32,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ember_code.core.config.settings import Settings
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.session.interactive_loop import InteractiveSessionLoop
-from ember_code.core.skills.loader import SkillPool
-from ember_code.core.utils.update_checker_schemas import UpdateError, UpdateInfo
+from igni_core.core.config.settings import Settings
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.session.interactive_loop import InteractiveSessionLoop
+from igni_core.core.skills.loader import SkillPool
+from igni_core.core.utils.update_checker_schemas import UpdateError, UpdateInfo
 
-LOOP = "ember_code.core.session.interactive_loop"
+LOOP = "igni_core.core.session.interactive_loop"
 
 
 class _Pool:
@@ -122,7 +122,7 @@ def make_loop(tmp_path: Path, monkeypatch) -> Iterator[Any]:
 
         monkeypatch.setattr(f"{LOOP}.Prompt.ask", ask)
         monkeypatch.setattr(f"{LOOP}.check_for_update", check)
-        with patch("ember_code.core.session.session_run.Session", return_value=session):
+        with patch("igni_core.core.session.session_run.Session", return_value=session):
             loop = InteractiveSessionLoop(Settings(), resume_session_id=resume)
         return _Run(loop, session, events)
 

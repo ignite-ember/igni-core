@@ -26,10 +26,10 @@ from igni_cloud.guest.watch import DirectoryWatch
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from sqlalchemy import event
 
-from ember_code.core.db.engine import cache
-from ember_code.core.db.scope import StorageScope, Tenant
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.memory.manager import StorageManager
+from igni_core.core.db.engine import cache
+from igni_core.core.db.scope import StorageScope, Tenant
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.memory.manager import StorageManager
 
 
 def test_agnos_tables_are_looked_up_once_per_process(postgres_url: str):

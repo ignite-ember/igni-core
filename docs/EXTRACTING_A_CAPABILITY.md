@@ -104,7 +104,7 @@ document, §10 settles it: telling people things is the floor's job, not an
 extension's. A service posts to igni server, which resolves who and
 records delivery and read state; an extension's own process tells this
 machine with the MCP notification `notifications/igni/notify`, kept
-locally. `src/ember_code/notifications/` merges both, follows igni
+locally. `src/igni_core/notifications/` merges both, follows igni
 server's stream (no timer), and answers `notifications_list`,
 `notifications_counts` and `notifications_mark_read`; the
 `notifications_changed` push feeds the bell and the per-extension
@@ -207,8 +207,8 @@ imports it.
 This section said two, and named them:
 
 ```
-core/agents/builder.py      from ember_code.core.tools.artifacts import ArtifactTools
-core/tools/tool_spec.py     from ember_code.core.tools.codeindex import CodeIndexTools
+core/agents/builder.py      from igni_core.core.tools.artifacts import ArtifactTools
+core/tools/tool_spec.py     from igni_core.core.tools.codeindex import CodeIndexTools
 ```
 
 Both are real. Neither is the problem. Measured with an AST walk

@@ -12,7 +12,7 @@ exists / the shell metacharacter is executed rather than carried.
 
 import pytest
 
-from ember_code.core.utils.markdown_commands import MarkdownCommand
+from igni_core.core.utils.markdown_commands import MarkdownCommand
 
 
 class TestArgumentsAreNotRescanned:

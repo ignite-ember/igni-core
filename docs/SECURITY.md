@@ -116,10 +116,10 @@ needs its rule, and a deny or ask rule naming a filter still applies to it.
 | Mode | What It Does |
 |---|---|
 | `ignite-ember` (default) | Asks for writes and shell commands |
-| `ignite-ember --accept-edits` | Auto-approves file edits, asks for shell |
-| `ignite-ember --strict` | Denies anything without an explicit allow rule, including reads — it never asks about the agent's tools. Hooks your organisation's group policy ships run only once you approve them (`hooks.group: ask`), and not at all headless |
-| `ignite-ember --read-only` | Reads files and the web, never changes anything: read-only shell commands, web search and URL fetches run without asking; edits and every other shell command are refused, not asked (see below) |
-| `ignite-ember --auto-approve` | Auto-approves everything (use with caution) |
+| `igni --accept-edits` | Auto-approves file edits, asks for shell |
+| `igni --strict` | Denies anything without an explicit allow rule, including reads — it never asks about the agent's tools. Hooks your organisation's group policy ships run only once you approve them (`hooks.group: ask`), and not at all headless |
+| `igni --read-only` | Reads files and the web, never changes anything: read-only shell commands, web search and URL fetches run without asking; edits and every other shell command are refused, not asked (see below) |
+| `igni --auto-approve` | Auto-approves everything (use with caution) |
 
 #### The last check before `--auto-approve` runs a call
 
@@ -130,13 +130,13 @@ then Laya, a small typed-decision model, for what no rule names. A call
 either flags is turned back into the ordinary approval prompt.
 
 Laya does not run inside the backend. It runs in **igni's decisions
-service** (`python -m ember_code.decisions_server`), which brings torch and
+service** (`python -m igni_core.decisions_server`), which brings torch and
 the model's checkpoints:
 
 - **On a desktop** the backend starts it on first use as its own process,
   on a loopback port, with a secret generated for that run; it exits when
   the backend exits, or after 15 minutes unused, and is started again when
-  next needed. The desktop app installs it (`ignite-ember[decisions]`).
+  next needed. The desktop app installs it (`igni-core[decisions]`).
 - **In the cloud** one service runs per node and every backend on the node
   points `IGNI_DECISIONS_URL` at it, sending `IGNI_DECISIONS_TOKEN` (the
   service's `IGNI_DECISIONS_SECRET`). The service answers approvals before
@@ -381,7 +381,7 @@ on `127.0.0.1`, on a port picked at launch and published in
 person's own browser: browsers apply no CORS to WebSockets, so any page they
 open could connect and drive an agent that has shell and file access. Two
 checks run at the handshake, before the connection is upgraded
-(`src/ember_code/transport/ws_auth.py`); a refused connection gets
+(`src/igni_core/transport/ws_auth.py`); a refused connection gets
 `403 Forbidden` and a log line that names the reason (`foreign origin`,
 `no token`, `wrong token`) but never the token.
 
@@ -409,7 +409,7 @@ right one. `X-Igni-Gateway: control` does not stand in for the token: on a
 desktop anybody can send that header.
 
 **Where there is no token.** A backend started by hand
-(`python -m ember_code.backend --ws-port …`) gets no token, so only the
+(`python -m igni_core.backend --ws-port …`) gets no token, so only the
 Origin check applies: web pages are kept out, local processes of the same
 user are not. In the cloud the backend listens inside the producer's VM, reachable only through the node agent's
 vsock stream, and the gateway authenticates every client (an igni bearer

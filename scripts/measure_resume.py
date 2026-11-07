@@ -478,7 +478,7 @@ class Igni:
             [
                 sys.executable,
                 "-m",
-                "ember_code.backend",
+                "igni_core.backend",
                 "--ws-port",
                 str(self.port),
                 "--project-dir",

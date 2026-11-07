@@ -2,16 +2,16 @@
 
 import pytest
 
-from ember_code.core.config.model_entry import ModelRegistryEntry
-from ember_code.core.config.models import (
+from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.models import (
     DEFAULT_CONTEXT_WINDOW,
     ContextWindowResolver,
     ModelRegistry,
 )
-from ember_code.core.config.null_model import NoModelConfigured
-from ember_code.core.config.permissions import AllowlistPattern
-from ember_code.core.config.provider_builders import ProviderClientBuilder
-from ember_code.core.config.settings import ModelsConfig, Settings, load_settings
+from igni_core.core.config.null_model import NoModelConfigured
+from igni_core.core.config.permissions import AllowlistPattern
+from igni_core.core.config.provider_builders import ProviderClientBuilder
+from igni_core.core.config.settings import ModelsConfig, Settings, load_settings
 
 
 @pytest.fixture
@@ -346,7 +346,7 @@ class TestContextWindowFetchOutcome:
 
     @pytest.mark.asyncio
     async def test_missing_key_when_payload_omits_context_field(self, monkeypatch):
-        from ember_code.core.config import context_window as cw
+        from igni_core.core.config import context_window as cw
 
         async def fake_get(self, url, headers=None):  # type: ignore[no-untyped-def]
             class Resp:
@@ -365,7 +365,7 @@ class TestContextWindowFetchOutcome:
 
     @pytest.mark.asyncio
     async def test_bad_status_when_endpoint_returns_non_200(self, monkeypatch):
-        from ember_code.core.config import context_window as cw
+        from igni_core.core.config import context_window as cw
 
         async def fake_get(self, url, headers=None):  # type: ignore[no-untyped-def]
             class Resp:
@@ -384,7 +384,7 @@ class TestContextWindowFetchOutcome:
 
     @pytest.mark.asyncio
     async def test_http_error_when_network_fails(self, monkeypatch):
-        from ember_code.core.config import context_window as cw
+        from igni_core.core.config import context_window as cw
 
         async def fake_get(self, url, headers=None):  # type: ignore[no-untyped-def]
             raise cw.httpx.ConnectError("boom")
@@ -397,7 +397,7 @@ class TestContextWindowFetchOutcome:
 
     @pytest.mark.asyncio
     async def test_decode_error_when_payload_not_int_coercible(self, monkeypatch):
-        from ember_code.core.config import context_window as cw
+        from igni_core.core.config import context_window as cw
 
         async def fake_get(self, url, headers=None):  # type: ignore[no-untyped-def]
             class Resp:
@@ -416,7 +416,7 @@ class TestContextWindowFetchOutcome:
 
     @pytest.mark.asyncio
     async def test_ok_when_context_window_present(self, monkeypatch):
-        from ember_code.core.config import context_window as cw
+        from igni_core.core.config import context_window as cw
 
         async def fake_get(self, url, headers=None):  # type: ignore[no-untyped-def]
             class Resp:

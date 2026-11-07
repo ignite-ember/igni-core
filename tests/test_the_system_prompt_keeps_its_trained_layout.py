@@ -13,8 +13,8 @@ from agno.agent import Agent
 from agno.learn.config import LearningMode, UserMemoryConfig
 from agno.models.openai.like import OpenAILike
 
-from ember_code.core.agents.trained_layout import TrainedLayout
-from ember_code.core.learn import TrainedUserMemoryStore
+from igni_core.core.agents.trained_layout import TrainedLayout
+from igni_core.core.learn import TrainedUserMemoryStore
 
 BASE = "You are igni.\n\n## Working with the User\n\nAsk when unsure."
 SKILLS = "Available skills:\n- /pr"

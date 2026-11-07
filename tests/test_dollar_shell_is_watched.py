@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.backend.captured_shell_runner import CapturedShellRunner
-from ember_code.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.backend.captured_shell_runner import CapturedShellRunner
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ async def test_a_finished_command_stays_in_the_history(tmp_path, supervisor):
 async def test_the_history_row_reports_how_it_ended(tmp_path, supervisor):
     """A row that says nothing about the exit code is not history, it
     is a list of names."""
-    from ember_code.backend.server_processes import ProcessesController
+    from igni_core.backend.server_processes import ProcessesController
 
     await _runner(tmp_path, supervisor).run("exit 4")
 

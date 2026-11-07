@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.utils.rules_index import RulesIndex
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.utils.rules_index import RulesIndex
 
 
 def _write(p: Path, text: str = "") -> None:
@@ -360,11 +360,11 @@ def test_dual_namespace_independent_rules_both_fire(tmp_path: Path) -> None:
     each other). Confirms the "broader namespace" claim on row 16
     isn't just notional: a project can layer ember-native rules
     AND cross-tool Claude rules at the same path scope."""
-    ember_dir = tmp_path / CONFIG_DIR / "rules"
+    igni_dir = tmp_path / CONFIG_DIR / "rules"
     claude_dir = tmp_path / ".claude" / "rules"
-    ember_dir.mkdir(parents=True)
+    igni_dir.mkdir(parents=True)
     claude_dir.mkdir(parents=True)
-    (ember_dir / "x.md").write_text("---\npaths:\n  - 'svc/**'\n---\nEMBER-RULE")
+    (igni_dir / "x.md").write_text("---\npaths:\n  - 'svc/**'\n---\nEMBER-RULE")
     (claude_dir / "x.md").write_text("---\npaths:\n  - 'svc/**'\n---\nCLAUDE-RULE")
     target = tmp_path / "svc" / "x.py"
     target.parent.mkdir(parents=True)

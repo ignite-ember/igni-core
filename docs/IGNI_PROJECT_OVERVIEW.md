@@ -37,7 +37,7 @@
 | **Cross-tool compatibility** | Reads `CLAUDE.md`, `.claude/agents/*.md`, `.claude/skills/`, `.mcp.json` out of the box when `cross_tool_support` is enabled — explicit positioning for Claude Code refugees. |
 | **Org-level Groups (zero-install departmental rollout)** | Org admins curate per-department override packs — agents (markdown), MCPs (JSON), plugins (git-source or YAML), settings (deep-merged). The end-user CLI fetches the pack at login and materializes it to `~/.igni/group-policy/` at priority 4.5. No per-machine deployment needed; admins push, users receive on next fetch. See [Groups](#org-level-groups-and-overrides) for the full story. |
 
-Source: `README.md:1-251`, `QUICKSTART.md:1-483`, `CLAUDE_CODE_PARITY.md:13-66` (parity tally table), `docs/ARCHITECTURE.md:1-120`, `igni__code-index/docs/igni-integration.md`, `docs/NEO4J_MIGRATION_DONE.md`, `pyproject.toml:38-67`. (Internal module is still `ember_code` and project-context file is still `igni.md` — preserved per the v0.7.0 rebrand for back-compat with existing installs.)
+Source: `README.md:1-251`, `QUICKSTART.md:1-483`, `CLAUDE_CODE_PARITY.md:13-66` (parity tally table), `docs/ARCHITECTURE.md:1-120`, `igni__code-index/docs/igni-integration.md`, `docs/NEO4J_MIGRATION_DONE.md`, `pyproject.toml:38-67`. (Internal module is still `igni_core` and project-context file is still `igni.md` — preserved per the v0.7.0 rebrand for back-compat with existing installs.)
 
 ### 2.2 Architecture shape
 

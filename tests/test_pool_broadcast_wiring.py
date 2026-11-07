@@ -22,10 +22,10 @@ import asyncio
 import inspect
 from typing import Any
 
-from ember_code.backend.session_pool import SessionStampingTransport
-from ember_code.core.session.broadcast import BroadcastBus
-from ember_code.core.session.core import Session
-from ember_code.protocol import messages as msg
+from igni_core.backend.session_pool import SessionStampingTransport
+from igni_core.core.session.broadcast import BroadcastBus
+from igni_core.core.session.core import Session
+from igni_core.protocol import messages as msg
 
 
 class _CapturingTransport:
@@ -55,7 +55,7 @@ class _StubSession:
         self.broadcast_bus.register(cb)
 
     def broadcast(self, channel: str, payload: dict) -> None:
-        from ember_code.core.broadcast_schema import BroadcastEvent
+        from igni_core.core.broadcast_schema import BroadcastEvent
 
         self.broadcast_bus.emit(BroadcastEvent(channel=channel, payload=payload))
 
@@ -190,7 +190,7 @@ class TestOrchestratorAndAppWiring:
     ``rt_bridge.bind_to_broadcast_bus``)."""
 
     def test_boot_wires_broadcast_via_push_bridge(self) -> None:
-        from ember_code.backend.push_bridge import PushNotificationBridge
+        from igni_core.backend.push_bridge import PushNotificationBridge
 
         # ``wire_all`` is what ``BackendApp.setup`` calls — must
         # include the broadcast-bus bind for the default runtime.
@@ -200,7 +200,7 @@ class TestOrchestratorAndAppWiring:
         )
 
     def test_pool_runtime_binds_broadcast_via_runtime_bridge(self) -> None:
-        from ember_code.backend.session_orchestrator import SessionOrchestrator
+        from igni_core.backend.session_orchestrator import SessionOrchestrator
 
         create_src = inspect.getsource(SessionOrchestrator._create_runtime)
         # Pool sessions get a runtime-scoped ``rt_bridge`` bound to

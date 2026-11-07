@@ -10,14 +10,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ember_code.backend.__main__ import _build_rpc_table
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.backend.server import BackendServer
-from ember_code.core.output_styles import OutputStyle, discover_output_styles
-from ember_code.core.output_styles.loader import _parse_frontmatter
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.session.core import Session
-from ember_code.protocol.rpc import RpcMethod
+from igni_core.backend.__main__ import _build_rpc_table
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.backend.server import BackendServer
+from igni_core.core.output_styles import OutputStyle, discover_output_styles
+from igni_core.core.output_styles.loader import _parse_frontmatter
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.core import Session
+from igni_core.protocol.rpc import RpcMethod
 
 
 def _write(p: Path, body: str) -> None:
@@ -135,7 +135,7 @@ class TestSetOutputStyle:
             ),
         }
         session._active_output_style = "default"
-        from ember_code.core.session.broadcast import BroadcastBus
+        from igni_core.core.session.broadcast import BroadcastBus
 
         session.broadcast_bus = BroadcastBus()
         session.main_team = None  # patch path tolerated
@@ -217,7 +217,7 @@ class TestOutputStyleSlashCommand:
             ),
         }
         session._active_output_style = "default"
-        from ember_code.core.session.broadcast import BroadcastBus
+        from igni_core.core.session.broadcast import BroadcastBus
 
         session.broadcast_bus = BroadcastBus()
         session.main_team = None

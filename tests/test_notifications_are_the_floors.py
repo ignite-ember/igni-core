@@ -17,26 +17,26 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ember_code.backend.push_bridge import PushNotificationBridge
-from ember_code.backend.rpc_handlers.base import RpcHandlerContext
-from ember_code.backend.rpc_handlers.notifications import NotificationsRpcHandler
-from ember_code.extensions.service_token import IgniSession
-from ember_code.notifications.center import NotificationCenter
-from ember_code.notifications.local_store import LocalNotificationStore
-from ember_code.notifications.schemas import (
+from igni_core.backend.push_bridge import PushNotificationBridge
+from igni_core.backend.rpc_handlers.base import RpcHandlerContext
+from igni_core.backend.rpc_handlers.notifications import NotificationsRpcHandler
+from igni_core.extensions.service_token import IgniSession
+from igni_core.notifications.center import NotificationCenter
+from igni_core.notifications.local_store import LocalNotificationStore
+from igni_core.notifications.schemas import (
     ExtensionNotice,
     MarkReadRequest,
     NotificationCounts,
     NotificationOrigin,
     NotificationTarget,
 )
-from ember_code.notifications.server_client import (
+from igni_core.notifications.server_client import (
     IgniNotificationsClient,
     NotificationsUnavailable,
     SignedInServer,
 )
-from ember_code.protocol.rpc import RpcMethod
-from ember_code.protocol.schemas.enums import PushChannel
+from igni_core.protocol.rpc import RpcMethod
+from igni_core.protocol.schemas.enums import PushChannel
 from tests.notification_helpers import (
     API_URL,
     SESSION,

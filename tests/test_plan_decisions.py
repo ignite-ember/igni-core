@@ -28,10 +28,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.server import BackendServer
-from ember_code.core.config.permission_eval import PermissionMode
-from ember_code.core.session.core import Session
-from ember_code.core.tools.plan import PlanDecisionsBlob, PlanStore
+from igni_core.backend.server import BackendServer
+from igni_core.core.config.permission_eval import PermissionMode
+from igni_core.core.session.core import Session
+from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore
 
 # ── PlanStore.decisions ─────────────────────────────────────
 
@@ -171,7 +171,7 @@ def _build_session() -> object:
     ``approve_plan`` / ``dismiss_plan`` touch. Skips Agno
     initialisation — keeps the test fast and isolated from
     schema drift in the storage layer."""
-    from ember_code.core.session.broadcast import BroadcastBus
+    from igni_core.core.session.broadcast import BroadcastBus
 
     session = Session.__new__(Session)
     session.broadcast_bus = BroadcastBus()
@@ -480,7 +480,7 @@ class TestPostRunBroadcastRunIdStamp:
     loop stamps it at drain time."""
 
     def _bus_session(self):
-        from ember_code.core.session.broadcast import BroadcastBus
+        from igni_core.core.session.broadcast import BroadcastBus
 
         session = Session.__new__(Session)
         session.broadcast_bus = BroadcastBus()

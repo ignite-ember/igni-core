@@ -40,24 +40,24 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.backend.server import BackendServer
-from ember_code.core.db.database import Database
-from ember_code.core.tools import process_store as ps_mod
-from ember_code.core.tools.orphan_process import OrphanProcess
-from ember_code.core.tools.orphan_rehydrator import (
+from igni_core.backend.server import BackendServer
+from igni_core.core.db.database import Database
+from igni_core.core.tools import process_store as ps_mod
+from igni_core.core.tools.orphan_process import OrphanProcess
+from igni_core.core.tools.orphan_rehydrator import (
     OrphanRehydrator,
     build_rehydrator,
 )
-from ember_code.core.tools.process_registry import ProcessRegistry
-from ember_code.core.tools.process_store import (
+from igni_core.core.tools.process_registry import ProcessRegistry
+from igni_core.core.tools.process_store import (
     BackgroundProcessRow,
     BackgroundProcessStore,
 )
-from ember_code.core.tools.process_supervisor_locator import supervisors
-from ember_code.core.tools.shell_orphan import (
+from igni_core.core.tools.process_supervisor_locator import supervisors
+from igni_core.core.tools.shell_orphan import (
     rehydrate_orphan_processes,
 )
-from ember_code.core.tools.shell_orphan_schemas import RehydrateResult
+from igni_core.core.tools.shell_orphan_schemas import RehydrateResult
 
 # ── BackgroundProcessStore round-trip ────────────────────────
 

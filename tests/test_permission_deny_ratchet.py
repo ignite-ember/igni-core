@@ -26,11 +26,11 @@ from __future__ import annotations
 import json
 import logging
 
-from ember_code.cli.options import CliOptions
-from ember_code.core.config.accumulator import SettingsAccumulator
-from ember_code.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
-from ember_code.core.config.merge_plan import CliTier, GroupPolicyTier
-from ember_code.core.config.models import CliOverrides
+from igni_core.cli.options import CliOptions
+from igni_core.core.config.accumulator import SettingsAccumulator
+from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.merge_plan import CliTier, GroupPolicyTier
+from igni_core.core.config.models import CliOverrides
 
 BASELINE = {
     "permissions": {
@@ -129,7 +129,7 @@ class TestTheRatchetHolds:
             def emit(self, record: logging.LogRecord) -> None:
                 records.append(record)
 
-        module_logger = logging.getLogger("ember_code.core.config.merge_plan")
+        module_logger = logging.getLogger("igni_core.core.config.merge_plan")
         handler = _Collect()
         previous_level = module_logger.level
         assert not module_logger.disabled, (
@@ -231,7 +231,7 @@ class TestTheManagedTierStillOutranksEverything:
         """
         import inspect
 
-        from ember_code.core.config import merge_plan
+        from igni_core.core.config import merge_plan
 
         source = inspect.getsource(merge_plan.SettingsMergePlan.default)
         managed_at = source.index("ManagedTier(")

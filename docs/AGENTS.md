@@ -111,8 +111,8 @@ fails to resolve, which is silent — the agent simply does not get that tool.
 | Registry name | Toolkit | Functions the model sees | Requestable in `tools:` |
 |---|---|---|---|
 | `Write` | `FileTools` | `save_file` | yes |
-| `Edit` | `EmberEditTools` | `create_file`, `edit_file`, `edit_file_replace_all` | yes |
-| `Bash` (alias `BashOutput`) | `EmberShellTools` | `run_shell_command` | yes |
+| `Edit` | `IgniEditTools` | `create_file`, `edit_file`, `edit_file_replace_all` | yes |
+| `Bash` (alias `BashOutput`) | `IgniShellTools` | `run_shell_command` | yes |
 | `WebSearch` | `DuckDuckGoTools` | `web_search`, `search_news` | yes |
 | `WebFetch` | `WebTools` | `fetch_url`, `fetch_json` | yes |
 | `Schedule` | `ScheduleTools` | `schedule_task`, `list_scheduled_tasks`, `cancel_scheduled_task` | yes |

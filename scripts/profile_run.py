@@ -31,32 +31,32 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections import Counter
 import json
 import logging
-from pathlib import Path
 import statistics
 import sys
 import time
+from collections import Counter
+from pathlib import Path
 
 # Repo-local import without install
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ember_code.backend.server import BackendServer  # noqa: E402
-from ember_code.core.config.settings import load_settings  # noqa: E402
+from igni_core.backend.server import BackendServer  # noqa: E402
+from igni_core.core.config.settings import load_settings  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 # Event types that carry actual model-generated content (vs. metadata).
 # Used to define "the tail": time from the last content-bearing event to
-# stream close. Names map to classes in ``ember_code.protocol.messages``.
+# stream close. Names map to classes in ``igni_core.protocol.messages``.
 _CONTENT_EVENTS = {"ContentDelta", "ToolCompleted"}
 
 
 async def _ensure_cloud_models(settings) -> None:
     """Mirror the TUI startup that pulls hosted models into the registry."""
-    from ember_code.core.auth.credentials import CloudCredentials
-    from ember_code.core.config.cloud_models import CloudModelCatalogClient
+    from igni_core.core.auth.credentials import CloudCredentials
+    from igni_core.core.config.cloud_models import CloudModelCatalogClient
 
     token = CloudCredentials(settings.auth.credentials_file).access_token
     if not token:
@@ -93,7 +93,7 @@ async def _profile_raw_agno(
     ``ModelRequestCompleted`` (visible response done) and the stream
     closing, which is the gap we're investigating.
     """
-    from ember_code.core.session import Session
+    from igni_core.core.session import Session
 
     sess = Session(settings, project_dir=project_dir)
     team = sess.main_team

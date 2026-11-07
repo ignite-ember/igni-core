@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.config.settings import Settings
-from ember_code.core.session.memory_ops import SessionMemoryManager
+from igni_core.core.config.settings import Settings
+from igni_core.core.session.memory_ops import SessionMemoryManager
 
 
 class TestSessionMemoryManager:

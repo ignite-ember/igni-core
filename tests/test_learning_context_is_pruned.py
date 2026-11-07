@@ -17,7 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.core.session.learning_ops import SessionLearningManager
+from igni_core.core.session.learning_ops import SessionLearningManager
 
 #: Shaped like the real thing: ``LearningMachine.abuild_context`` joins
 #: its stores' contexts, and ``UserMemoryStore`` opens with this tag.

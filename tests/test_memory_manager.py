@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from ember_code.core.config.settings import Settings
-from ember_code.core.data_paths import state_db_path
-from ember_code.core.memory.manager import StorageManager
+from igni_core.core.config.settings import Settings
+from igni_core.core.data_paths import state_db_path
+from igni_core.core.memory.manager import StorageManager
 
 
 class TestStorageManager:

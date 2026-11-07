@@ -12,7 +12,7 @@
 #   4. Install ignite-ember at the pinned version (or from a local
 #      source tree, see ``--local``).
 #   5. Prefetch the sentence-transformer embedding model.
-#   6. Spawn ``python -m ember_code.backend --ws-port 0`` and confirm
+#   6. Spawn ``python -m igni_core.backend --ws-port 0`` and confirm
 #      the ready JSON line lands on stdout.
 #
 # If any step fails the script exits non-zero with the failing step's
@@ -187,12 +187,12 @@ STEP_TIME=$(($(date +%s) - STEP_START))
 echo "  ignite-ember installed (${STEP_TIME}s)"
 
 # Sanity: import works.
-"$VENV_PYTHON" -c "import ember_code; print(f'  ember_code v{ember_code.__version__}')"
+"$VENV_PYTHON" -c "import igni_core; print(f'  igni_core v{igni_core.__version__}')"
 
 # ── Step 5: prefetch model ──────────────────────────────────────────
 STEP_START=$(date +%s)
 echo "→ Step 5: prefetching embedding model"
-HF_HOME="$CACHE_DIR/hf" "$VENV_PYTHON" -m ember_code.prefetch_models
+HF_HOME="$CACHE_DIR/hf" "$VENV_PYTHON" -m igni_core.prefetch_models
 STEP_TIME=$(($(date +%s) - STEP_START))
 echo "  model warmed (${STEP_TIME}s)"
 
@@ -208,7 +208,7 @@ PROJECT_DIR="$(mktemp -d -t ember-be-test-XXXXXX)"
 # cache on a failing run while still handing the logs to CI.
 BE_STDOUT="$LOG_DIR/be-stdout.log"
 BE_STDERR="$LOG_DIR/be-stderr.log"
-HF_HOME="$CACHE_DIR/hf" "$VENV_PYTHON" -m ember_code.backend \
+HF_HOME="$CACHE_DIR/hf" "$VENV_PYTHON" -m igni_core.backend \
     --ws-port 0 \
     --project-dir "$PROJECT_DIR" \
     >"$BE_STDOUT" 2>"$BE_STDERR" &

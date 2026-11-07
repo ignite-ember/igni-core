@@ -28,21 +28,21 @@ import pytest
 from agno.agent import Agent
 from agno.media import File, Image
 
-from ember_code.backend.model_http_client_manager import ModelHttpClientManager
-from ember_code.cli.invocation import load_settings_from_options
-from ember_code.cli.options import CliOptions
-from ember_code.core.agents.schemas import AgentConstructorArgs
-from ember_code.core.agno_telemetry import AgnoTelemetry
-from ember_code.core.auth.credentials import Credentials, CredentialsStore
-from ember_code.core.auth.http_auth import CloudTokenAuth
-from ember_code.core.config.llm_call_logger import LlmCallLogger
-from ember_code.core.config.model_entry import CLOUD_TOKEN_SENTINEL, ModelRegistryEntry
-from ember_code.core.config.models import ModelRegistry
-from ember_code.core.config.provider_builders import AnthropicBuilder
-from ember_code.core.config.provider_catalog import ProviderCatalog
-from ember_code.core.config.settings import ModelsConfig, Settings
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.session.core import Session
+from igni_core.backend.model_http_client_manager import ModelHttpClientManager
+from igni_core.cli.invocation import load_settings_from_options
+from igni_core.cli.options import CliOptions
+from igni_core.core.agents.schemas import AgentConstructorArgs
+from igni_core.core.agno_telemetry import AgnoTelemetry
+from igni_core.core.auth.credentials import Credentials, CredentialsStore
+from igni_core.core.auth.http_auth import CloudTokenAuth
+from igni_core.core.config.llm_call_logger import LlmCallLogger
+from igni_core.core.config.model_entry import CLOUD_TOKEN_SENTINEL, ModelRegistryEntry
+from igni_core.core.config.models import ModelRegistry
+from igni_core.core.config.provider_builders import AnthropicBuilder
+from igni_core.core.config.provider_catalog import ProviderCatalog
+from igni_core.core.config.settings import ModelsConfig, Settings
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.core import Session
 from tests.anthropic_stub import Reply, StubMessagesApi, ToolUse
 from tests.egress_guard import EgressGuard, InternalNetwork
 
@@ -161,7 +161,7 @@ def test_an_install_without_the_sdk_still_starts(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setitem(sys.modules, "anthropic", None)  # import anthropic -> ImportError
     for name in [m for m in sys.modules if m.startswith("agno.models.anthropic")]:
         monkeypatch.delitem(sys.modules, name)
-    monkeypatch.delitem(sys.modules, "ember_code.core.config.logging_claude", raising=False)
+    monkeypatch.delitem(sys.modules, "igni_core.core.config.logging_claude", raising=False)
 
     builder = AnthropicBuilder()
     assert builder.available is False
@@ -223,7 +223,7 @@ async def test_a_rotated_cloud_token_is_retried_once_after_a_401(tmp_path: Path)
     """CloudTokenAuth's rule, kept on the httpx2 client SDK 2 needs."""
     import httpx2
 
-    from ember_code.core.config.anthropic_auth import AnthropicKeyAuth
+    from igni_core.core.config.anthropic_auth import AnthropicKeyAuth
 
     creds = tmp_path / "credentials.json"
     store = CredentialsStore(str(creds))
@@ -326,7 +326,7 @@ async def test_temperature_is_not_sent_and_says_so(caplog: pytest.LogCaptureFixt
 
 async def test_the_sdk_is_handed_igni_s_client() -> None:
     """Not the SDK's own: that one has neither the busy lease nor the auth."""
-    from ember_code.core.activity.http2 import BusyAsyncClient as BusyAsyncClient2
+    from igni_core.core.activity.http2 import BusyAsyncClient as BusyAsyncClient2
 
     model = build(entry("http://127.0.0.1:9"))
     assert isinstance(model.http_client, BusyAsyncClient2)
@@ -425,7 +425,7 @@ async def test_a_second_run_after_the_client_is_replaced(tmp_path: Path) -> None
     The replacement is igni's client again, auth included: an ``httpx``
     one would be refused by the SDK and swapped, by Agno, for the SDK's
     own, and the second run would go out without igni server's token."""
-    from ember_code.core.activity.http2 import BusyAsyncClient as BusyAsyncClient2
+    from igni_core.core.activity.http2 import BusyAsyncClient as BusyAsyncClient2
 
     creds = tmp_path / "credentials.json"
     CredentialsStore(str(creds)).save(Credentials.new("tok-now", "ada@acme.test"))

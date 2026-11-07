@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.tools.orchestrate import OrchestrateTools
+from igni_core.core.tools.orchestrate import OrchestrateTools
 
 
 async def _mock_stream(content="agent response"):
@@ -27,7 +27,7 @@ async def _mock_stream(content="agent response"):
 
 
 def _mock_pool(content: str = "agent response"):
-    from ember_code.core.tools.orchestrate_budget import SpawnBudget
+    from igni_core.core.tools.orchestrate_budget import SpawnBudget
 
     pool = MagicMock()
     agent = MagicMock()
@@ -112,10 +112,10 @@ class TestOrchestrateTools:
             # at ``orchestrate.py``'s module top (iter 30 Rule-2 sweep),
             # so we patch the local bindings. Patching the source module
             # wouldn't affect the names captured at import time.
-            patch("ember_code.core.tools.orchestrate.Team"),
-            patch("ember_code.core.tools.orchestrate.ModelRegistry") as MockReg,
+            patch("igni_core.core.tools.orchestrate.Team"),
+            patch("igni_core.core.tools.orchestrate.ModelRegistry") as MockReg,
             patch(
-                "ember_code.core.tools.orchestrate._run_team_streaming",
+                "igni_core.core.tools.orchestrate._run_team_streaming",
                 new=AsyncMock(return_value=("team result", [])),
             ),
         ):

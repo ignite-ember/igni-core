@@ -6,13 +6,13 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ember_code.core.auth.credentials import (
+from igni_core.core.auth.credentials import (
     CloudCredentials,
     Credentials,
     CredentialsStore,
 )
-from ember_code.core.auth.schemas import JwtClaims
-from ember_code.core.paths import CONFIG_DIR, DEFAULT_DATA_DIR
+from igni_core.core.auth.schemas import JwtClaims
+from igni_core.core.paths import CONFIG_DIR, DEFAULT_DATA_DIR
 
 
 def _make_jwt(payload: dict) -> str:

@@ -22,13 +22,13 @@ from igni_cloud.storage.attachments import LargeObjectAttachments
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from sqlalchemy import text
 
-from ember_code.backend.server_files import FilesController
-from ember_code.core.db.database import Database
-from ember_code.core.db.engine import cache
-from ember_code.core.db.locator import StorageLocator
-from ember_code.core.db.scope import StorageScope, Tenant, tenancy
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.utils.attachment_store import (
+from igni_core.backend.server_files import FilesController
+from igni_core.core.db.database import Database
+from igni_core.core.db.engine import cache
+from igni_core.core.db.locator import StorageLocator
+from igni_core.core.db.scope import StorageScope, Tenant, tenancy
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.utils.attachment_store import (
     AttachmentReferences,
     Attachments,
     Base64Chunks,

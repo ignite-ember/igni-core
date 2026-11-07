@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ember_code.core.tools.tool_spec import ToolBuildContext, WebSearchSpec
+from igni_core.core.tools.tool_spec import ToolBuildContext, WebSearchSpec
 
 
 @pytest.fixture

@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.tools.orchestrate import OrchestrateTools
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.tools.orchestrate import OrchestrateTools
 
 
 def _settings():
@@ -18,7 +18,7 @@ def _settings():
 
 
 def _pool(*agents):
-    from ember_code.core.tools.orchestrate_budget import SpawnBudget
+    from igni_core.core.tools.orchestrate_budget import SpawnBudget
 
     pool = MagicMock()
     m = {a.name: a for a in agents}
@@ -51,7 +51,7 @@ class TestSubagentStartStop:
         t = OrchestrateTools(pool=p, settings=_settings(), hook_executor=executor, session_id="s1")
 
         with patch(
-            "ember_code.core.tools.orchestrate._run_agent_streaming",
+            "igni_core.core.tools.orchestrate._run_agent_streaming",
             new=AsyncMock(return_value=("done", [])),
         ):
             result = await t.spawn_agent(task="code", agent_name="coder")
@@ -73,7 +73,7 @@ class TestSubagentStartStop:
         t = OrchestrateTools(pool=p, settings=_settings(), hook_executor=executor, session_id="s1")
 
         with patch(
-            "ember_code.core.tools.orchestrate._run_agent_streaming",
+            "igni_core.core.tools.orchestrate._run_agent_streaming",
             new=AsyncMock(side_effect=RuntimeError("crash")),
         ):
             result = await t.spawn_agent(task="stuff", agent_name="buggy")
@@ -85,7 +85,7 @@ class TestSubagentStartStop:
         agent.name = "coder"
         t = OrchestrateTools(pool=_pool(agent), settings=_settings())
         with patch(
-            "ember_code.core.tools.orchestrate._run_agent_streaming",
+            "igni_core.core.tools.orchestrate._run_agent_streaming",
             new=AsyncMock(return_value=("ok", [])),
         ):
             result = await t.spawn_agent(task="code", agent_name="coder")
@@ -106,10 +106,10 @@ class TestSubagentStartStop:
         with (
             # Post-refactor these are at ``orchestrate.py``'s module
             # top (iter 30) — patch the local bindings.
-            patch("ember_code.core.tools.orchestrate.Team"),
-            patch("ember_code.core.tools.orchestrate.ModelRegistry") as MockReg,
+            patch("igni_core.core.tools.orchestrate.Team"),
+            patch("igni_core.core.tools.orchestrate.ModelRegistry") as MockReg,
             patch(
-                "ember_code.core.tools.orchestrate._run_team_streaming",
+                "igni_core.core.tools.orchestrate._run_team_streaming",
                 new=AsyncMock(return_value=("team done", [])),
             ),
         ):

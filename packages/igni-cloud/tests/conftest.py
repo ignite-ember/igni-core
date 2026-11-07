@@ -8,7 +8,7 @@ import pytest
 from igni_cloud.layer import CloudLayer
 from igni_cloud.logs import StdoutLog
 
-from ember_code.core.layer import Layers
+from igni_core.core.layer import Layers
 from tests.conftest import (  # noqa: F401 - fixtures, registered by being here
     _a_fresh_activity_registry,
     _desktop_storage,

@@ -42,12 +42,12 @@ that will become D if untouched). B-tier addressed on-demand.
 |---|------|--------------|--------|-------|
 | **D-tier — highest priority** ||||
 | 1 | `clients/web/src/App.tsx` — `runPhase` state model | D → **C+ (partial)** | **done** | New `chat/runPhase.ts` module (typed enum + derived getters + pure legacy adapter). Migrated all 8 `setProc/setFinalizing` sites, both cancel-button handlers, and the Escape key. Cancel now transitions phase locally → spinner clears immediately (STOP-button bug fixed). 17 new unit tests. FE typecheck clean; 544 vitest / 7 playwright pass. File is still D on total-LoC/god-class grounds but the state model is now proper — full D→B will require the composer/panels/hooks-per-concern split in items #9-#10. |
-| 2 | `backend/command_handler.py` — extract `SlashRouter` | D → **C+ (partial)** | **in progress** — Rule 2 done | Iter 46: hoisted **all 30 inline imports** to module top — `auth.credentials` (4 names), `config.permission_eval` (3 sites of the same name), `evals.reporter`+`evals.runner`, `loop.wrap_iteration_prompt`, `plugins.git.GitError`, `plugins.installer` (`PluginInstaller`+`PluginError`), `plugins.marketplaces` (5 names), `plugins.state.save_state`, `scheduler.models`+`scheduler.parser`+`scheduler.store` (5 names), `utils.markdown_commands.discover_markdown_commands`, stdlib `asyncio`/`uuid`/`webbrowser`. Dropped all `_alias` prefixes (`_PluginError`, `_add`, `_load`, `_refresh`, etc.) — call sites now use the canonical names. **Test patch-target migration:** 57 test-patch sites rewritten across 5 test files to target the local `ember_code.backend.command_handler.*` binding; then reverted the 2 files whose tests exercise `BackendServer` (test_plugins_backend.py) or `Session` (test_plugins_background_refresh.py) instead of `CommandHandler`. 97 slash/plugin tests pass. Full D → B+ still needs the `SlashRouter` per-command class split (2039 LoC across ~50 `_cmd_*` methods). |
+| 2 | `backend/command_handler.py` — extract `SlashRouter` | D → **C+ (partial)** | **in progress** — Rule 2 done | Iter 46: hoisted **all 30 inline imports** to module top — `auth.credentials` (4 names), `config.permission_eval` (3 sites of the same name), `evals.reporter`+`evals.runner`, `loop.wrap_iteration_prompt`, `plugins.git.GitError`, `plugins.installer` (`PluginInstaller`+`PluginError`), `plugins.marketplaces` (5 names), `plugins.state.save_state`, `scheduler.models`+`scheduler.parser`+`scheduler.store` (5 names), `utils.markdown_commands.discover_markdown_commands`, stdlib `asyncio`/`uuid`/`webbrowser`. Dropped all `_alias` prefixes (`_PluginError`, `_add`, `_load`, `_refresh`, etc.) — call sites now use the canonical names. **Test patch-target migration:** 57 test-patch sites rewritten across 5 test files to target the local `igni_core.backend.command_handler.*` binding; then reverted the 2 files whose tests exercise `BackendServer` (test_plugins_backend.py) or `Session` (test_plugins_background_refresh.py) instead of `CommandHandler`. 97 slash/plugin tests pass. Full D → B+ still needs the `SlashRouter` per-command class split (2039 LoC across ~50 `_cmd_*` methods). |
 | 3 | `backend/server.py` — extract subsystems | D → B | pending | 4541 LoC god-file. Split into `Session`+`RpcRouter`+`StreamMux`+`ToolResultDispatcher`+`HookEventFanout`+`ChatHistorySplicer`. Multi-iteration. |
 | 4 | `core/session/core.py` — compose stores | D → B | pending | 2760 LoC. Session composes sub-stores instead of owning everything. |
 | 5 | `core/tools/orchestrate.py` — extract `SubAgentStreamState` (11 nonlocals → Pydantic) | D → **C+ (partial)** | **done** (state extraction) | New `core/tools/subagent_stream.py` — Pydantic model holds every field the `_handle` closure tracked. All 11 nonlocals removed; every read/write in `_run_agent_streaming` + `_handle` goes through `state.<field>`. 16 new state-model tests, 53 orchestrate/streaming tests pass. Next iteration: convert `_handle`'s if/elif chain to dispatch table (still D on total-LoC grounds until that lands + team-streaming path is de-duplicated). |
 | 6 | `core/tools/shell.py` — `ProcessManager` class | D → **C+ (partial)** | **in progress** — bus extracted + Rule 2 done | Iter 11: `ProcessEventBus` extracted. **Iter 61**: all 4 remaining inline imports resolved — `process_store.{BackgroundProcessRow, BackgroundProcessStore, now_epoch}` (3 sites) + `process_log` (3 sites) all hoisted to module top. Deleted the "avoid an import cycle" comment — stale (verified no back-import from process_store/process_log to shell). `shell.py` now has **zero inline imports**. 42 process-tests pass. Full D → B still needs: kill the `set_process_store` setter-DI + module-level `_registry` singleton (both are wide refactors requiring caller migration across the tools stack). |
-| 7 | `frontend/tui/app.py` — split into `EmberApp` + sub-managers | D → **D (rule 2 partial)** | **in progress** — stdlib imports fixed | Iteration 22: 11 inline stdlib imports resolved (`subprocess`, `pwd`, `signal`, `random` ×3, `webbrowser`, `escape` from `rich.markup`, plus 4 redundant `os` / `sys` re-imports that were already at module top). Added POSIX-only `pwd` guard at module top (`try/except ImportError: pwd = None`) — callers guard with `if pwd is not None`. Removed the `_wb` alias for `webbrowser`. 193 TUI/widget tests pass. Full D → B still needs the big work: split into `EmberApp` + sub-manager files per Pattern 4. 5 heavy `ember_code.*` inline imports (CloudCredentials, cloud_models, BackendProcess) remain intentionally lazy — same reasoning as `cli.py` iter 21. |
+| 7 | `frontend/tui/app.py` — split into `EmberApp` + sub-managers | D → **D (rule 2 partial)** | **in progress** — stdlib imports fixed | Iteration 22: 11 inline stdlib imports resolved (`subprocess`, `pwd`, `signal`, `random` ×3, `webbrowser`, `escape` from `rich.markup`, plus 4 redundant `os` / `sys` re-imports that were already at module top). Added POSIX-only `pwd` guard at module top (`try/except ImportError: pwd = None`) — callers guard with `if pwd is not None`. Removed the `_wb` alias for `webbrowser`. 193 TUI/widget tests pass. Full D → B still needs the big work: split into `EmberApp` + sub-manager files per Pattern 4. 5 heavy `igni_core.*` inline imports (CloudCredentials, cloud_models, BackendProcess) remain intentionally lazy — same reasoning as `cli.py` iter 21. |
 | 8 | `core/utils/context.py` — split per-source | D → **A-** | **done** | Seven modules extracted (memory / managed / user / project / frontmatter / @-imports / readers). context.py **778 → 341 LoC (-56%)**. Remaining in context.py: re-exports for backwards compat + the `load_project_context` orchestrator + a handful of thin wrapper functions. Grade D → A- (single-responsibility orchestrator; per-source logic elsewhere). |
 | **C-tier** ||||
 | 9 | `clients/web/src/components/ChatItems.tsx` | C → B+ | pending | 1563-line god-switch. Per-kind components. |
@@ -56,16 +56,16 @@ that will become D if untouched). B-tier addressed on-demand.
 | 12 | `panels/CodeIndexPanel.tsx` | C → B+ | pending | 930 LoC panel. |
 | 13 | `panels/KnowledgePanel.tsx` | C → B+ | pending | 725 LoC panel. |
 | 14 | `clients/jetbrains/.../EmberToolWindowFactory.kt` | C → B+ | pending | 716 LoC. |
-| 15 | `frontend/tui/backend_client.py` | C → **C+ (partial)** | **in progress** — Rule 2 fixed | Iteration 15: fixed 3 Rule-2 violations. Two `from types import SimpleNamespace` inline imports (in `RemoteSkillPool.list_skills` and `get_scheduled_tasks`) hoisted to module top. Redundant `from ember_code.protocol import messages as msg` in `cancel_login` deleted — the same alias is already imported at module top line 16 (was a defensive re-import from an old merge that no longer applies). No test additions — the 49 backend_client-adjacent tests + full BE sweep cover the behaviour and nothing changed semantically. Full C → B+ requires migrating the 19 `list[dict]` / `dict` RPC return types to typed pydantic messages in `protocol/messages.py` (Pattern 7 — wire vs. domain); that's a multi-iteration project with broad TUI-caller impact and gets its own row when scheduled. |
+| 15 | `frontend/tui/backend_client.py` | C → **C+ (partial)** | **in progress** — Rule 2 fixed | Iteration 15: fixed 3 Rule-2 violations. Two `from types import SimpleNamespace` inline imports (in `RemoteSkillPool.list_skills` and `get_scheduled_tasks`) hoisted to module top. Redundant `from igni_core.protocol import messages as msg` in `cancel_login` deleted — the same alias is already imported at module top line 16 (was a defensive re-import from an old merge that no longer applies). No test additions — the 49 backend_client-adjacent tests + full BE sweep cover the behaviour and nothing changed semantically. Full C → B+ requires migrating the 19 `list[dict]` / `dict` RPC return types to typed pydantic messages in `protocol/messages.py` (Pattern 7 — wire vs. domain); that's a multi-iteration project with broad TUI-caller impact and gets its own row when scheduled. |
 | 16 | `frontend/tui/widgets/_messages.py` | C → **A- ✓** | **done** | Iters 39, 40, 41, 42: full per-widget split. `_messages.py` now **39 LoC** (was 681, **-94%**), pure backwards-compat re-export shim. Canonical files: `_agent_tree_widget.py`, `_mcp_call_widget.py`, `_message_widget.py`, `_streaming_message_widget.py`, `_tool_call_widget.py`, `_tool_call_live_widget.py`, plus `_messages_common.py` for the shared `TOOL_FRIENDLY_NAMES` dict. `widgets/__init__.py` imports each from its canonical location. All 6 identity checks pass. Same trajectory as `_dialogs.py` (#17) and `_chrome.py` (#18): 4 iterations, ends at ~39 LoC shim. Third audit-table item fully closed this loop. |
 | 17 | `frontend/tui/widgets/_dialogs.py` | C → **A- ✓** | **done** | Iters 19, 31, 32, 33, 34: full per-widget split. `_dialogs.py` now **37 LoC** (was 641 — **-94%**), pure backwards-compat re-export shim. Canonical structure: `_session_info.py` (schema), `_login_widget.py`, `_model_picker.py`, `_session_picker.py`, `_permission_dialog.py` (one dialog per file, avg ~140 LoC), plus `_dialogs_common.py` (shared `_is_inside` walker). `widgets/__init__.py` imports each from its canonical location. All identity checks pass (`widgets.X is _dialogs.X is _<file>.X`) — no code path across the codebase sees a different class object. 193 targeted TUI tests pass, full BE sweep green. |
 | 18 | `frontend/tui/widgets/_chrome.py` | C+ → **A- ✓** | **done** | Iters 35, 36, 37, 38: full per-widget split. `_chrome.py` now **37 LoC** (was 584, **-94%**), pure backwards-compat re-export shim. Canonical files: `_welcome_banner.py`, `_tip_bar.py`, `_update_bar.py` (with `_upgrade_command` helper), `_spinner_widget.py`, `_queue_panel.py`, `_status_bar.py`. `widgets/__init__.py` imports each from its canonical location. All 6 identity checks pass. 193 targeted TUI tests + full BE sweep green. Same completion trajectory as `_dialogs.py` — 4 iterations, ends at ~37 LoC shim. |
-| 19 | `frontend/tui/run_controller.py` | C+ → **C+ (rule 2 done)** | **in progress** — inline imports fixed | Iteration 20: 6 inline imports hoisted (`time as _time`, `CloudCredentials`, three `from ember_code.protocol import messages as pmsg` + one `as msg` — unified to single top-level `msg` alias, and `_build_diff_table` from `agno_events`). Removed the `_time` local alias and use `time.monotonic()` directly at 3 sites. All `pmsg.` references renamed to `msg.` for consistency (was inconsistent split between `pmsg` and `msg` aliases in the same file). 130 run_controller-adjacent tests pass. Full C+ → B+ still requires the AP3 fix: `_processing` (5 setter sites) → `RunPhase` enum (Pattern 1); deferred as a dedicated iteration because it also touches existing tests that assign `ctrl._processing = True/False` directly. |
-| 20 | `core/evals/runner.py` | C+ → **B+ (partial)** | **done** — rule violations fixed | Iteration 14: fixed **7 Rule-2 violations** (6 inline `import` / `from ... import`: `time as _time`, `importlib`, `inspect`, `from agno.eval.reliability import ReliabilityEval`, `from agno.eval.accuracy import AccuracyEval`, `import copy as _copy`, `from copy import copy as _shallow_copy`, `from ember_code.core.config.models import ModelRegistry`). Fixed **Rule 1**: `CaseResult.tool_trace: list[dict]` → `list[ToolTraceEntry]` (new frozen model, `extra="forbid"` so Agno drift fails loud). `_check_tool_arg_assertions` signature migrated to `list[ToolTraceEntry]`. `tool_args` sanitized to `dict` before construction so a MagicMock (or Agno version drift returning a non-dict) surfaces as `args=None` instead of a validation crash. 7 new tests (defaults, extra-fields rejection, dump-shape parity, assertion match/miss, malformed-assertion skip, none-args). Extract of eval-step handlers deferred — separate iteration once loader.py's `list[dict]` fields also migrate. |
+| 19 | `frontend/tui/run_controller.py` | C+ → **C+ (rule 2 done)** | **in progress** — inline imports fixed | Iteration 20: 6 inline imports hoisted (`time as _time`, `CloudCredentials`, three `from igni_core.protocol import messages as pmsg` + one `as msg` — unified to single top-level `msg` alias, and `_build_diff_table` from `agno_events`). Removed the `_time` local alias and use `time.monotonic()` directly at 3 sites. All `pmsg.` references renamed to `msg.` for consistency (was inconsistent split between `pmsg` and `msg` aliases in the same file). 130 run_controller-adjacent tests pass. Full C+ → B+ still requires the AP3 fix: `_processing` (5 setter sites) → `RunPhase` enum (Pattern 1); deferred as a dedicated iteration because it also touches existing tests that assign `ctrl._processing = True/False` directly. |
+| 20 | `core/evals/runner.py` | C+ → **B+ (partial)** | **done** — rule violations fixed | Iteration 14: fixed **7 Rule-2 violations** (6 inline `import` / `from ... import`: `time as _time`, `importlib`, `inspect`, `from agno.eval.reliability import ReliabilityEval`, `from agno.eval.accuracy import AccuracyEval`, `import copy as _copy`, `from copy import copy as _shallow_copy`, `from igni_core.core.config.models import ModelRegistry`). Fixed **Rule 1**: `CaseResult.tool_trace: list[dict]` → `list[ToolTraceEntry]` (new frozen model, `extra="forbid"` so Agno drift fails loud). `_check_tool_arg_assertions` signature migrated to `list[ToolTraceEntry]`. `tool_args` sanitized to `dict` before construction so a MagicMock (or Agno version drift returning a non-dict) surfaces as `args=None` instead of a validation crash. 7 new tests (defaults, extra-fields rejection, dump-shape parity, assertion match/miss, malformed-assertion skip, none-args). Extract of eval-step handlers deferred — separate iteration once loader.py's `list[dict]` fields also migrate. |
 | 21 | `clients/vscode/src/extension.ts` | C+ → B+ | pending | 783 LoC. Split webview lifecycle. |
 | 22 | `clients/tauri/src-tauri/src/lib.rs` | C+ → B | pending | 1453 LoC Rust. Split into modules. |
 | 23 | `core/init.py` | C+ → **A- (partial)** | **in progress** — templates + checksums + json io extracted | Iter 13: rule fixes. Iter 43: templates → `init_templates.py` (183 LoC). Iter 48: checksums → `init_checksums.py` (90 LoC), json helpers → `init_json_io.py` (27 LoC). `init.py` now **378 LoC** (was 618, **-39%**). File now holds only: pydantic hook models, `BUILT_IN_HOOKS` constant, `initialize_project` orchestrator, home-config migration, hook provisioning, and the small starter-file writers. Every extracted piece stands alone — checksum sync ops don't touch templates or migration state, JSON IO doesn't know about anything else. Still-remaining split candidates (home_config migration, hook_provisioning) share `initialize_project`'s coordination context and don't gain much from being pulled out. |
-| 24 | `core/utils/markdown_commands.py` | C+ → **B+** | **done** | Iteration 12: `MarkdownCommand` migrated `dataclass(frozen=True)` → `BaseModel` (Rule 1 — pydantic over dataclasses/dicts). Added `MarkdownCommand.discover()` classmethod as the preferred public API (per [[feedback_classes_over_functions]]); module-level `discover_markdown_commands` retained as thin delegate so existing `monkeypatch("ember_code.core.utils.markdown_commands.discover_markdown_commands")` sites in three tests stay green. Extracted `_parse_allowed_tools`, `_resolve_at_path`, `_at_path_allowed` helpers — flattened `_substitute_files`'s 3-level nested try/except / relative_to double-wrap into a single flat `if not allowed: return literal` guard. 6 new tests (classmethod parity, delegate equivalence, frozen model, defaults, value equality). |
+| 24 | `core/utils/markdown_commands.py` | C+ → **B+** | **done** | Iteration 12: `MarkdownCommand` migrated `dataclass(frozen=True)` → `BaseModel` (Rule 1 — pydantic over dataclasses/dicts). Added `MarkdownCommand.discover()` classmethod as the preferred public API (per [[feedback_classes_over_functions]]); module-level `discover_markdown_commands` retained as thin delegate so existing `monkeypatch("igni_core.core.utils.markdown_commands.discover_markdown_commands")` sites in three tests stay green. Extracted `_parse_allowed_tools`, `_resolve_at_path`, `_at_path_allowed` helpers — flattened `_substitute_files`'s 3-level nested try/except / relative_to double-wrap into a single flat `if not allowed: return literal` guard. 6 new tests (classmethod parity, delegate equivalence, frozen model, defaults, value equality). |
 | 25 | `codeindex/query_service.py` | C+ (verify) | pending | 540 LoC. Already B+ per audit — may be no-op. |
 | **Cross-cutting refactors** ||||
 | 26 | Consolidate 3 BE-spawn implementations | — | pending | Replace `runtime.rs` + `EmberRuntime.kt` + `runtime.ts` with `ember-code backend --spawn`. Deletes ~1500 LoC. |
@@ -205,7 +205,7 @@ a straight assignment.
   `plugins: list[MarketplacePluginInfo]` is parsed
   automatically by Pydantic's field typing.
 - `MarketplaceInfo` imported from
-  `ember_code.core.plugins.models`.
+  `igni_core.core.plugins.models`.
 - `plugin_handlers.build_plugin_state`: the parse list-comp
   drops out entirely — `marketplaces = await ...` is now
   the whole line.
@@ -240,7 +240,7 @@ push the parse into the wire wrapper.
   dict via `PendingMessage(**r)` with `isinstance(r, dict)`
   guard.
 - `PendingMessage` imported from
-  `ember_code.backend.server_context` at module top of
+  `igni_core.backend.server_context` at module top of
   `backend_client.py` (same layer-crossing pattern used for
   `AgentInfo` / `PluginInfo` — pragmatic; the wire schema
   lives on the BE side).
@@ -389,7 +389,7 @@ category (after agents iter 262 + skills iter 263).
 **Changes:**
 - `BackendClient.get_plugin_details()` return type: `list[dict]`
   → `list[PluginInfo]`.
-- `PluginInfo` imported from `ember_code.core.plugins.models`.
+- `PluginInfo` imported from `igni_core.core.plugins.models`.
 - `plugin_handlers.py::_build_plugin_state` collapses from a
   2-line fetch + list-comp to a 1-line assignment.
 
@@ -412,7 +412,7 @@ category (after agents iter 262 + skills iter 263).
 - `BackendClient.get_skill_details()` return type: `list[dict]`
   → `list[SkillInfo]`. Wrapper parses via `SkillInfo(**d)`.
 - `SkillInfo` imported at module top from
-  `ember_code.core.skills.parser` (canonical location).
+  `igni_core.core.skills.parser` (canonical location).
 - `agent_handlers.build_skill_list` collapses to a 1-line
   delegate, same shape as `build_agent_list`.
 
@@ -438,7 +438,7 @@ the client wrapper, same as iters 256-258's status RPCs.
   dict via `AgentInfo(**d)` with an `isinstance(d, dict)`
   guard against wire-shape weirdness.
 - `AgentInfo` imported at module top of `backend_client.py`
-  from `ember_code.core.pool` (the canonical location the
+  from `igni_core.core.pool` (the canonical location the
   FE re-exports).
 - `agent_handlers.build_agent_list` collapses from a 3-line
   fetch + list-comp to a 1-line delegate.
@@ -2001,7 +2001,7 @@ a shape-less dict.
   `tests/test_plugins_backend.py`: the shared `_make_backend`
   helper's default mock return and 3 per-test overrides all
   now construct `PluginReloadCounts(...)` instead of dict
-  literals. `from ember_code.core.session.core import
+  literals. `from igni_core.core.session.core import
   PluginReloadCounts` added at the test module top.
 - **session/core.py**: 1341 → 1355 LoC (+14 — Pydantic model
   class + its docstring).
@@ -2067,7 +2067,7 @@ handler. Six concerns in one function → Pattern 4 candidate.
 method was a 2-line delegate:
 ```
     async def foo(self, ...) -> ...:
-        from ember_code.backend.server_xxx import foo
+        from igni_core.backend.server_xxx import foo
 
         return await foo(self, ...)
 ```
@@ -2075,13 +2075,13 @@ Rule 2 says all imports at module top; these had stayed inline
 through the extraction sequence.
 
 **Circular-dep check:** Every `server_*.py` sibling module
-guards its `from ember_code.backend.server import BackendServer`
+guards its `from igni_core.backend.server import BackendServer`
 import under `TYPE_CHECKING`. Verified across all 18 sibling
 modules — no runtime cycle.
 
 **Changes:**
 - Added a single module-import block at server.py top:
-  `from ember_code.backend import (server_auth, …, server_sessions)`
+  `from igni_core.backend import (server_auth, …, server_sessions)`
   — 18 sibling modules imported as modules.
 - Rewrote every delegate to call through the module namespace:
   `server_xxx.foo(self, …)` instead of the two-line inline-
@@ -2096,7 +2096,7 @@ modules — no runtime cycle.
 
 **Tests:**
 - Module imports cleanly (`python -c "from
-  ember_code.backend.server import BackendServer"`).
+  igni_core.backend.server import BackendServer"`).
 - 50 focused tests pass unchanged
   (`test_backend_server`, `test_backend_serialize`,
   `test_session_data_real_db`).
@@ -2116,7 +2116,7 @@ modules — no runtime cycle.
 identical shape:
 ```
     async def _foo(self) -> None:
-        from ember_code.frontend.tui.xxx_handlers import foo
+        from igni_core.frontend.tui.xxx_handlers import foo
 
         await foo(self)
 ```
@@ -2124,7 +2124,7 @@ Every one of those 90 methods carried an inline import of a
 sibling handler module. Rule 2 mandates module-top imports;
 these had been kept inline through the iter 180-187 EmberApp
 extraction sequence and the iter 22 partial sweep, but the
-audit note ("5 heavy ember_code.* inline imports remain
+audit note ("5 heavy igni_core.* inline imports remain
 intentionally lazy") was stale — the actual count was 90
 across 12 handler modules.
 
@@ -2133,13 +2133,13 @@ across 12 handler modules.
 `knowledge_handlers`, `lifecycle_handlers`, `loop_handlers`,
 `mcp_handlers`, `mode_handlers`, `picker_handlers`,
 `plugin_handlers`, `scheduler_handlers`) guards its
-`from ember_code.frontend.tui.app import EmberApp` under
+`from igni_core.frontend.tui.app import EmberApp` under
 `TYPE_CHECKING`, so there's no runtime cycle. Verified across
 all 12 files.
 
 **Changes:**
 - Added a single module-import block at module top:
-  `from ember_code.frontend.tui import (agent_handlers, …)` —
+  `from igni_core.frontend.tui import (agent_handlers, …)` —
   12 sibling modules.
 - Rewrote every delegate to call through the module namespace:
   `xxx_handlers.foo(self, …)` instead of the two-line inline-
@@ -2179,12 +2179,12 @@ module top (only exception: genuine circular breakers).
 - `import uuid` (was `import uuid as _uuid` at TWO sites,
   lines 1104 + 1134 — alias dropped; both call sites use
   `uuid.uuid4()`)
-- `from ember_code.protocol import messages as msg` (four
+- `from igni_core.protocol import messages as msg` (four
   duplicates — inside `_build_rpc_table`,
   `_start_scheduler_with_push`, `_run`, and `_handle_message`)
-- `from ember_code.protocol.messages import Message` (was
+- `from igni_core.protocol.messages import Message` (was
   inside `_handle_message`)
-- `from ember_code.protocol.rpc import validate_rpc_table`
+- `from igni_core.protocol.rpc import validate_rpc_table`
   (was a mixed inline import inside `_build_rpc_table`;
   `RpcMethod` was already at module top so the inline import
   was redundant on that half)
@@ -2203,7 +2203,7 @@ init order, or lazy-only paths):
   paths — post-transport init.
 
 **Tests:**
-- Module imports cleanly (`python -c "from ember_code.backend
+- Module imports cleanly (`python -c "from igni_core.backend
   import __main__"`).
 - 51 backend tests pass unchanged (`test_backend_server`,
   `test_backend_serialize`, `test_backend_lockfile`).
@@ -2643,7 +2643,7 @@ across production + tests.
 ### Iteration 58 — `test_codeindex_sync_manager.py`: Rule 2 sweep
 
 **Target:** ad-hoc — 16 inline imports, ALL the same
-(`from ember_code.core.code_index import sync_manager as sm`
+(`from igni_core.core.code_index import sync_manager as sm`
 repeated in 16 different test methods).
 
 **Changes:**
@@ -2808,7 +2808,7 @@ Renamed `_json` alias uses to `json` (dropped the underscore).
 
 **Changes:**
 - Hoisted 3 top-level names: `yaml`, `init_mod` (module import
-  as `import ember_code.core.init as init_mod`), `pytest`.
+  as `import igni_core.core.init as init_mod`), `pytest`.
 - Deleted 9 inline duplicates (`yaml` 3x, `init_mod` 5x, `pytest`
   1x).
 
@@ -3110,7 +3110,7 @@ block handled by scanning until `)`).
 was a docstring `from the in-loop handler` (natural language).
 
 **Changes:** merged the three separate inline `from
-ember_code.core.tools.orchestrate import (...)` blocks into a
+igni_core.core.tools.orchestrate import (...)` blocks into a
 single module-top import that adds `OrchestrateTools` alongside
 the already-hoisted names.
 
@@ -3334,7 +3334,7 @@ duplicates.
 
 ### Iteration 106 — `test_slash_command_tool.py`: Rule 2 sweep
 
-**Target:** 2 inline imports (both `from ember_code.backend
+**Target:** 2 inline imports (both `from igni_core.backend
 import command_handler as cmd_mod`).
 
 **Changes:** hoisted `cmd_mod` alias to module top; deleted
@@ -3611,7 +3611,7 @@ in `_inject_learnings` (already imported at module top).
 **Changes:**
 - Added `fetch_cloud_models`, `merge_into_registry` to
   module-top imports.
-- Dropped the inline `from ember_code.core.mcp.config import
+- Dropped the inline `from igni_core.core.mcp.config import
   MCPConfigLoader` in `reload_plugins` (already at line 30).
 - Dropped the redundant inline `ModelRegistry` re-import in
   `_inject_learnings`.
@@ -3628,14 +3628,14 @@ sweep pending.
 
 ### Iteration 210 — `session/core.py`: hoist final inline import
 
-**Target:** the last `from ember_code.core.config.permission_eval
+**Target:** the last `from igni_core.core.config.permission_eval
 import PermissionEvaluator` inline import in
 `Session._create_tool_event_hook` — one holdout after iter
 192's Rule 2 sweep on `__init__`.
 
 **Changes:**
 - Added `PermissionEvaluator` to the module-top
-  `ember_code.core.config.*` import block (alphabetical after
+  `igni_core.core.config.*` import block (alphabetical after
   `models`).
 - Dropped the inline import in `_create_tool_event_hook`.
 - File LoC unchanged (net −1 for the removed inline import,
@@ -3768,7 +3768,7 @@ scan since the interesting part (`_run_team_streaming`) sits
 
 ### Iteration 203 — `tools/shell.py`: split `run_shell_command` into bg/fg helpers
 
-**Target:** the 82-LoC `EmberShellTools.run_shell_command` tool
+**Target:** the 82-LoC `IgniShellTools.run_shell_command` tool
 method had two distinct execution branches after the initial
 spawn (background auto-watch vs foreground wait) inlined into
 a single body. The `background` boolean flag branched deep in
@@ -3877,7 +3877,7 @@ tests") applies whether the import is at the top or the middle
 — it's a re-export shim either way.
 
 **Changes:**
-- Moved the 7-symbol `from ember_code.core.config.model_stream
+- Moved the 7-symbol `from igni_core.core.config.model_stream
   import (...)` block from line ~131 to alphabetical position
   in the module-top imports.
 - Dropped the `# noqa: E402` marker.
@@ -4015,7 +4015,7 @@ pending.
 ### Iteration 192 — `session/core.py`: Rule 2 sweep on __init__
 
 **Target:** the 384-LoC `Session.__init__` constructor has 10
-inline `from ember_code....` imports scattered through its
+inline `from igni_core....` imports scattered through its
 body — a Rule 2 violation (imports at module top). Extracting
 the constructor itself is too risky (tight side-effect
 ordering), but hoisting the imports is a safe win.
@@ -4660,8 +4660,8 @@ total. Non-adjacent in the file but conceptually one cluster
   functions taking `BackendServer` as arg.
 - Rule 2 sweep: 3 inline imports pulled to module top:
   * `from agno.run.base import RunStatus`
-  * `from ember_code.core.hooks.events import HookEvent`
-  * `from ember_code.core.tools.shell import EmberShellTools`
+  * `from igni_core.core.hooks.events import HookEvent`
+  * `from igni_core.core.tools.shell import IgniShellTools`
 - 3 methods in `server.py` became one-line delegates.
 - Down from 2196 → 2080 LoC in `server.py`.
 
@@ -4717,7 +4717,7 @@ locally. Full sweep running.
 
 **Testability preserved:** first pass moved all imports to
 module top (Rule 2), which broke 14 tests that patched
-`ember_code.core.plugins.installer.PluginInstaller` /
+`igni_core.core.plugins.installer.PluginInstaller` /
 `marketplaces.*` / `state.save_state` at the source module —
 `from ...installer import PluginInstaller` at module top binds
 the class at import time, so mock patches on the source module
@@ -4725,7 +4725,7 @@ no longer propagate. Fix: switched to **module-level imports
 with attribute lookup at call time**:
 
 ```python
-from ember_code.core.plugins import installer as _plugin_installer
+from igni_core.core.plugins import installer as _plugin_installer
 ...
 installer = _plugin_installer.PluginInstaller(data_dir=...)
 ```
@@ -4759,13 +4759,13 @@ backend-server tests now pass.
   status-update callback so the signature reads cleanly.
 - Rule 2 sweep landed with the extract:
   * inline `import webbrowser` → module-top
-  * inline `from ember_code.core.auth.client import (...)` →
+  * inline `from igni_core.core.auth.client import (...)` →
     module-top
-  * inline `from ember_code.core.auth.credentials import (...)` →
+  * inline `from igni_core.core.auth.credentials import (...)` →
     module-top
   * inline `from datetime import datetime, timezone` →
     module-top
-  * inline `from ember_code.core.auth.client import DEFAULT_API_URL,
+  * inline `from igni_core.core.auth.client import DEFAULT_API_URL,
     validate_token` (in `get_cloud_plan`) → module-top
 - 4 methods in `server.py` became one-line delegates.
 - Down from 2709 → 2619 LoC in `server.py`.
@@ -4834,7 +4834,7 @@ methods covering ~330 LoC: `codeindex_status` (148 LoC),
 - 7 methods in `server.py` became one-line delegates.
 
 **Recovery event mid-iter:** A `git checkout HEAD --
-src/ember_code/backend/server.py` command intended to inspect
+src/igni_core/backend/server.py` command intended to inspect
 diff stats instead REVERTED server.py to HEAD (pre-iter-160),
 losing all in-flight delegate replacements. Recovery consisted
 of re-applying every iter-160-through-165 delegate
@@ -5281,7 +5281,7 @@ regression from iter 150's plugin extract.
 instead of the `command_handler` module's classmethod-carrying
 wrapper — this broke 36 tests. Fixed by:
 
-- Changing extracts to `from ember_code.backend import
+- Changing extracts to `from igni_core.backend import
   command_handler as _handler; CommandResult = _handler.CommandResult`
   inside each function (late lookup so post-import patches
   propagate).
@@ -5683,7 +5683,7 @@ state at all.
   now only in `agent_factory.py`.
 - Kept `_create_reasoning_tools` / `_create_guardrails` in
   `session/core.py` as backwards-compat aliases so
-  `test_session.py`'s `patch("ember_code.core.session.core.
+  `test_session.py`'s `patch("igni_core.core.session.core.
   _create_reasoning_tools", None)` fixture keeps working
   unchanged. Session code calls the underscored names so
   monkeypatch takes effect.
@@ -5819,7 +5819,7 @@ the extraction work from iters 39–42 was already complete.
   `core/utils/rules_index.py`, `core/utils/tips.py`,
   `core/utils/update_checker.py`, `core/embeddings.py`,
   `core/learn.py`, `protocol/agno_events.py`,
-  `protocol/serializer.py`, `src/ember_code/cli.py`.
+  `protocol/serializer.py`, `src/igni_core/cli.py`.
 - Frontend `panels/McpPanel.tsx`, `panels/WatcherPanel.tsx`,
   `dev/OrchestrateDemo.tsx` **B → A-**.
 
@@ -5870,7 +5870,7 @@ own async cache and HTTP fallback.
 - Created `core/config/context_window.py` with
   `ContextWindowResolver` + `DEFAULT_CONTEXT_WINDOW` constant.
 - `models.py` re-exports both — backward compat for
-  `from ember_code.core.config.models import
+  `from igni_core.core.config.models import
   ContextWindowResolver, DEFAULT_CONTEXT_WINDOW`.
 - Down from 514 → 462 LoC. New module is 85 LoC.
 
@@ -5955,7 +5955,7 @@ scratchpad (`LoopProgressTool`) in one 335-line module.
 
 **Tests:** 83 loop-related tests pass; the two existing
 consumers (`session/core.py`, `backend/server.py`) both
-import from `ember_code.core.tools.loop`, which still resolves
+import from `igni_core.core.tools.loop`, which still resolves
 both names.
 
 **Audit-table changes:**
@@ -6008,10 +6008,10 @@ tools.reasoning). None are patched by tests at the source
 module (verified in the iter 48 sweep — all still green).
 
 **Deferred:** the remaining 30 inline imports are all
-`ember_code.core.*` internal modules. Many are patched by tests
+`igni_core.core.*` internal modules. Many are patched by tests
 at their source module (session tests patch things like
-`ember_code.core.tools.orchestrate.OrchestrateTools`,
-`ember_code.core.plugins.marketplaces.*`, etc.). Hoisting them
+`igni_core.core.tools.orchestrate.OrchestrateTools`,
+`igni_core.core.plugins.marketplaces.*`, etc.). Hoisting them
 would trigger the same source-vs-local-binding gotcha that
 iter 46 hit in `command_handler.py` — dozens of test patches
 to rewrite. Higher-value item is the composition split, not the
@@ -6029,7 +6029,7 @@ mechanical hoist.
 
 **Iter 47** — Fixed 5 test regressions caught by the iter 46
 sweep. `test_handle_markdown_command.py` patched
-`ember_code.core.utils.markdown_commands.discover_markdown_commands`
+`igni_core.core.utils.markdown_commands.discover_markdown_commands`
 at the source module; iter 46's hoist made `command_handler.py`
 capture the name at import time, so 8 patch sites needed the
 now-standard local-binding swap. Straight sed rewrite; 9/9
@@ -6088,11 +6088,11 @@ wrapper, etc.
 
 **Test patch-target migration (57 rewrites):**
 - Same gotcha as iters 14 / 29 / 30 — patches at the source
-  module (`ember_code.core.plugins.marketplaces.refresh_marketplace`)
+  module (`igni_core.core.plugins.marketplaces.refresh_marketplace`)
   don't affect the names now captured at import time in
   `command_handler.py`.
 - Ran a bulk regex-rewrite across 5 test files to swap patch
-  targets to `ember_code.backend.command_handler.*`. Total: 57
+  targets to `igni_core.backend.command_handler.*`. Total: 57
   patch-target rewrites.
 - Then reverted 2 test files where the rewrite was wrong: the
   test hit `BackendServer` methods (which still inline-import the
@@ -6114,7 +6114,7 @@ iteration or CI stays red.
 **Results:**
 - 97 slash/plugin/scheduler tests pass.
 - Full BE sweep: **3313 passed, 5 failed** (iter 47 caught + fixed:
-  `test_handle_markdown_command.py` 8 `patch("ember_code.core.utils.markdown_commands.discover_markdown_commands", ...)`
+  `test_handle_markdown_command.py` 8 `patch("igni_core.core.utils.markdown_commands.discover_markdown_commands", ...)`
   sites needed the same local-binding rewrite. Iter 47 sed-swap
   brought that file to 9/9 pass — full sweep now 3313 → 3318+
   once iter 47 sweep completes).
@@ -6663,10 +6663,10 @@ refactor: `WorktreeManager` from `core.worktree`, `Team` from
 - Two tests (`test_orchestrate.py::test_spawn_team_success`,
   `test_orchestrate_hooks.py::test_spawn_team_fires_hooks`) were
   patching the imports at their *source* modules
-  (`agno.team.team.Team`, `ember_code.core.config.models.ModelRegistry`).
+  (`agno.team.team.Team`, `igni_core.core.config.models.ModelRegistry`).
   After the hoist, those patches don't affect the local bindings
   captured at import time. Updated both tests to patch the local
-  names in `ember_code.core.tools.orchestrate.*` — inline comment
+  names in `igni_core.core.tools.orchestrate.*` — inline comment
   in each test explains why.
 
 **Learning:** the pattern of "test patches at source module vs.
@@ -6699,7 +6699,7 @@ old inline import.
 
 The test `test_connect_import_error` was patching
 `agno.tools.mcp.MCPTools` at the module source — needs to patch
-the local name (`ember_code.core.mcp.client.MCPTools`) now that
+the local name (`igni_core.core.mcp.client.MCPTools`) now that
 the import is at the client's own module top. Updated the test
 with an inline comment explaining the change.
 
@@ -6777,7 +6777,7 @@ apart).
   - `FileIndex` from `utils.file_index`.
   - `RpcMethod` from `protocol.rpc`.
   - Combined the two `update_checker` imports into
-    `from ember_code.core.utils.update_checker import _PKG_NAME, check_for_update`.
+    `from igni_core.core.utils.update_checker import _PKG_NAME, check_for_update`.
 - Dropped the `_gc` and `_re` aliases — no shadowing risk in
   their enclosing scopes.
 - Deleted 9 corresponding inline imports.
@@ -6864,7 +6864,7 @@ never got cleaned up.
   relying on the outer `except Exception` catch.
 
 **Deferred (documented for a future iteration):**
-- 5 heavy `ember_code.*` inline imports remain: `CloudCredentials`
+- 5 heavy `igni_core.*` inline imports remain: `CloudCredentials`
   (×2), `cloud_models.{fetch_cloud_models,merge_into_registry,...}`
   (×2), and `frontend.tui.process_manager.BackendProcess`. Same
   reasoning as `cli.py` iter 21 — these pull in heavier subsystems
@@ -6895,7 +6895,7 @@ addressing.
 **Why:** `cli.py` is a genuine Rule-2 grey area — it's the CLI
 entry point where startup latency directly hits the user
 (`ember --version`, `ember --help`). The heavier
-`from ember_code.<...>` imports (`EmberApp`, `SessionPersistence`,
+`from igni_core.<...>` imports (`EmberApp`, `SessionPersistence`,
 `WorktreeManager`, `run_single_message`, `setup_db`) are legit
 lazy loads — hoisting them means every invocation pulls the
 whole Textual framework and session subsystem. Rule 2's "genuine
@@ -6917,7 +6917,7 @@ imports its heavy deps at its own module top.
   setup, worktree branch, add-dir branch, and pipe-mode branch.
 
 **Deferred (documented for a future iteration):**
-- 7 heavy `ember_code.*` inline imports remain intentionally
+- 7 heavy `igni_core.*` inline imports remain intentionally
   inline. Full Rule-2 compliance requires splitting `cli.py` into
   a `cli/__init__.py` + per-subcommand modules
   (`cli/pipe.py`, `cli/single_message.py`, `cli/tui.py`,
@@ -6957,7 +6957,7 @@ the other was 50/50 wrong depending on section.
   - `CloudCredentials` from `core.auth.credentials`.
   - `msg` from `protocol.messages` — the canonical alias.
   - `_build_diff_table` from `protocol.agno_events`.
-- Deleted 4 inline `from ember_code.protocol import messages as pmsg`
+- Deleted 4 inline `from igni_core.protocol import messages as pmsg`
   reimports of the same module.
 - Renamed all `pmsg.` → `msg.` (4 sites) so the whole file uses
   one alias.
@@ -7069,7 +7069,7 @@ violations spotted while surveying it as a dependency of iter 14.
 Not an explicit audit-table row (the file is already B on the
 rubric), but the standards apply universally so worth fixing.
 
-**Why:** three `from ember_code.core.<...>` inline imports:
+**Why:** three `from igni_core.core.<...>` inline imports:
 - `CloudCredentials` from `auth.credentials` at line 472
   (in `ModelRegistry.__init__`)
 - `resolve_api_key` from `config.api_keys` at line 649
@@ -7112,7 +7112,7 @@ multi-iteration undertaking with broad caller impact across
 
 The 3 inline imports, however, are a clean sweep — the two
 `from types import SimpleNamespace` occurrences appear one method
-apart and the third (`from ember_code.protocol import messages as msg`)
+apart and the third (`from igni_core.protocol import messages as msg`)
 is redundant with a module-top import at line 16 that already
 provides the same alias.
 
@@ -7120,7 +7120,7 @@ provides the same alias.
 - `from types import SimpleNamespace` hoisted to module top.
 - Both `SimpleNamespace` inline imports (lines 31, 669) deleted
   in favour of the module-top name.
-- Redundant `from ember_code.protocol import messages as msg` in
+- Redundant `from igni_core.protocol import messages as msg` in
   `cancel_login` (line 536) deleted — the module-top import
   covers it.
 
@@ -7276,7 +7276,7 @@ it a fast, self-contained win:
   classmethod. Module-level `discover_markdown_commands` retained
   as a thin delegate — mandatory for backward compat because
   three tests monkey-patch the dotted path
-  (`ember_code.core.utils.markdown_commands.discover_markdown_commands`).
+  (`igni_core.core.utils.markdown_commands.discover_markdown_commands`).
 - Extracted `_parse_allowed_tools(raw) -> tuple[str, ...]` —
   isolates the CC-parity comma-string-or-list normalisation.
 - Extracted `_resolve_at_path(token, source) -> (Path, trailing)`
@@ -7310,7 +7310,7 @@ own list + lock + subscribe/unsubscribe pair. That's Anti-Pattern
 AP1 in CODE_STANDARDS.md.
 
 **Changes:**
-- New `src/ember_code/core/tools/process_bus.py` (128 lines) —
+- New `src/igni_core/core/tools/process_bus.py` (128 lines) —
   `ProcessEventBus` with `on(event, cb)` / `off(event, cb)` /
   `emit(event, payload)` / `subscriber_count(event)` / `reset()`.
   Idempotent registrations, fail-soft emit, thread-safe.
@@ -7349,7 +7349,7 @@ should tackle the remaining module-level globals — `_registry` +
 After this iteration, item #8 is complete.
 
 **Changes:**
-- New `src/ember_code/core/utils/context_readers.py` (142 lines) —
+- New `src/igni_core/core/utils/context_readers.py` (142 lines) —
   `read_if_exists`, `read_with_imports`, `rules_filenames`,
   `read_rules_dir`, `read_rules_dir_files`. Every caller in the
   codebase reaches these through context.py's legacy leading-
@@ -7379,7 +7379,7 @@ is B+ or better on its own.
 constants + depth cap.
 
 **Changes:**
-- New `src/ember_code/core/utils/context_imports.py` (181 lines) —
+- New `src/igni_core/core/utils/context_imports.py` (181 lines) —
   `AT_IMPORT_RE`, `IMPORT_MAX_DEPTH`, `FENCED_BLOCK_RE`,
   `INLINE_CODE_RE`, `CODE_SENTINEL_RE` constants; `resolve_at_path`,
   `mask_code_regions`, `unmask_code_regions`, `resolve_imports`
@@ -7412,7 +7412,7 @@ so this makes the parent module smaller without changing the
 loader wiring.
 
 **Changes:**
-- New `src/ember_code/core/utils/context_frontmatter.py` (110 lines) —
+- New `src/igni_core/core/utils/context_frontmatter.py` (110 lines) —
   `parse_frontmatter` and `matches_paths`. Pure functions, zero
   I/O. Renamed from the leading-`_` private form to public
   spellings since they're now the module's exports; context.py
@@ -7442,7 +7442,7 @@ frontmatter is elsewhere).
 loaders that share the same DI-friendly shape.
 
 **Changes:**
-- New `src/ember_code/core/utils/context_project.py` (149 lines) —
+- New `src/igni_core/core/utils/context_project.py` (149 lines) —
   `load_project_rules` (root file), `load_project_rules_dirs`
   (project ``rules/`` directories), `load_subdirectory_rules`
   (subdir walk). All three take injected helpers.
@@ -7479,7 +7479,7 @@ independent of any specific rule source).
 **Target:** #8 (continuing). Third slice out of the god-file.
 
 **Changes:**
-- New `src/ember_code/core/utils/context_user.py` (83 lines) —
+- New `src/igni_core/core/utils/context_user.py` (83 lines) —
   `USER_RULES_PATH`, `USER_RULES_DIR`, `CLAUDE_USER_RULES_DIR`
   constants + `load_user_rules(...)` with DI'd helpers AND DI'd
   path constants. The path pass-through preserves the test
@@ -7528,7 +7528,7 @@ captures the LOOKUP at call time so `monkeypatch.setattr(context,
 we needed for the memory extraction.
 
 **Changes:**
-- New `src/ember_code/core/utils/context_managed.py` (98 lines) —
+- New `src/igni_core/core/utils/context_managed.py` (98 lines) —
   `_platform_managed_rules_dir()` + `load_managed_rules(...)` with
   DI'd helpers.
 - `context.py`: 616 → 597 LoC. Deleted the two functions, added
@@ -7553,14 +7553,14 @@ SQLite services (not Postgres), per the audit call-out. Renaming to
 `db/` matches what the code actually does.
 
 **Changes:**
-- `git mv src/ember_code/core/code_index/pg → .../db`.
+- `git mv src/igni_core/core/code_index/pg → .../db`.
 - `sed` across every caller that referenced the old path:
-  `src/ember_code/migrations/env.py`,
-  `src/ember_code/core/code_index/index.py`,
-  `src/ember_code/core/code_index/delta.py`,
-  `src/ember_code/core/db/__init__.py` (docstring),
-  `src/ember_code/core/code_index/db/file_reference.py`,
-  `src/ember_code/core/code_index/db/commit_metadata.py`,
+  `src/igni_core/migrations/env.py`,
+  `src/igni_core/core/code_index/index.py`,
+  `src/igni_core/core/code_index/delta.py`,
+  `src/igni_core/core/db/__init__.py` (docstring),
+  `src/igni_core/core/code_index/db/file_reference.py`,
+  `src/igni_core/core/code_index/db/commit_metadata.py`,
   `tests/test_code_index_delta.py`.
 - Renamed `tests/test_code_index_pg.py` → `tests/test_code_index_db.py`
   (via `git mv`) to match the new module name.
@@ -7581,21 +7581,21 @@ audit.
 Pattern 8 (small modules, one responsibility).
 
 **Changes:**
-- New `src/ember_code/core/utils/context_memory.py` (241 lines) —
+- New `src/igni_core/core/utils/context_memory.py` (241 lines) —
   constants (`_MEMORY_INDEX_NAME`, size caps), path helpers
-  (`_project_memory_slug`, `_ember_project_memory_dir`,
+  (`_project_memory_slug`, `_igni_project_memory_dir`,
   `_claude_project_memory_dir`, `_read_memory_index`), public API
   (`ensure_memory_dir`, `memory_writeback_instructions`,
   `load_memory_index`). Every function moved verbatim from
   `context.py` — same signatures, same docstrings, same behaviour.
 - `context.py`: deleted the moved block (778 → 616 LoC). Added
   re-exports at the top for backwards compat — every existing
-  caller (`from ember_code.core.utils.context import
+  caller (`from igni_core.core.utils.context import
   ensure_memory_dir`) works unchanged.
 - `tests/test_context.py::_redirect_memory_dirs` — updated to
   patch BOTH modules. The re-exports work as name-lookups but
   `load_memory_index` inside `context_memory.py` calls its OWN
-  local `_ember_project_memory_dir`, not the re-export. Test
+  local `_igni_project_memory_dir`, not the re-export. Test
   helper now patches both.
 
 **Results:**
@@ -7615,7 +7615,7 @@ sources into their own modules following the same pattern.
 + Anti-Pattern AP2 (>5 nonlocals in a function).
 
 **Changes:**
-- New `src/ember_code/core/tools/subagent_stream.py` (129 lines) —
+- New `src/igni_core/core/tools/subagent_stream.py` (129 lines) —
   `SubAgentStreamState(BaseModel)` with 14 fields grouped by concern
   (identity, activity log, content preview, visualizer streaming, Agno
   run identity, completion tracking). Every field has a docstring

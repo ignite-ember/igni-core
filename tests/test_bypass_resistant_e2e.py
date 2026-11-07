@@ -27,15 +27,15 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.core.config.permission_eval import (
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.config.permission_eval import (
     PermissionDecision,
     PermissionEvaluator,
     PermissionMode,
 )
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.tool_hook import ToolEventHook
-from ember_code.core.session.core import Session
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.session.core import Session
 
 # ── Slash command → mode flip → evaluator denies ─────────────
 
@@ -53,7 +53,7 @@ class TestSlashBypassThenDenyRule:
             mode="default",
             deny=deny or [],
         )
-        from ember_code.core.session.broadcast import BroadcastBus
+        from igni_core.core.session.broadcast import BroadcastBus
 
         session.broadcast_bus = BroadcastBus()
         return session

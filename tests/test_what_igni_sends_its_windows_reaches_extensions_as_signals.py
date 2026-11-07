@@ -1,6 +1,6 @@
 """What igni sends its windows reaches an entitled extension as the model's signals.
 
-:class:`~ember_code.extensions.host.broadcasts.BroadcastSignals` is the
+:class:`~igni_core.extensions.host.broadcasts.BroadcastSignals` is the
 translation from igni's private wire (run events, push channels, RPC
 writes) to the host model's published signals. A field renamed on the
 wire is meant to be fixed there, once — so each translation is pinned
@@ -21,11 +21,11 @@ from typing import Any
 
 import pytest
 
-from ember_code.extensions.host.broadcasts import BroadcastSignals
-from ember_code.extensions.host.definition import HOST_SCHEMA
-from ember_code.protocol import messages as msg
-from ember_code.protocol.rpc import RpcMethod
-from ember_code.protocol.schemas.be_events import TaskSnapshot
+from igni_core.extensions.host.broadcasts import BroadcastSignals
+from igni_core.extensions.host.definition import HOST_SCHEMA
+from igni_core.protocol import messages as msg
+from igni_core.protocol.rpc import RpcMethod
+from igni_core.protocol.schemas.be_events import TaskSnapshot
 from tests.host_model_helpers import HostRig, Sink
 
 EVERYTHING = [p.name for p in HOST_SCHEMA.permissions if p.name != "workspace"]

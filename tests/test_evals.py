@@ -7,20 +7,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.core.evals.assertion_runner import ToolArgDriver
-from ember_code.core.evals.assertions import check_file_assertion, check_unexpected_tool_calls
-from ember_code.core.evals.loader import EvalCase, EvalSuite, load_eval_file
-from ember_code.core.evals.reporter import format_results
-from ember_code.core.evals.runner import (
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.evals.assertion_runner import ToolArgDriver
+from igni_core.core.evals.assertions import check_file_assertion, check_unexpected_tool_calls
+from igni_core.core.evals.loader import EvalCase, EvalSuite, load_eval_file
+from igni_core.core.evals.reporter import format_results
+from igni_core.core.evals.runner import (
     CaseResult,
     CaseRunner,
     SuiteResult,
     SuiteRunner,
     ToolTraceEntry,
 )
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.session.commands import InteractiveCommandDispatcher
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.commands import InteractiveCommandDispatcher
 
 
 async def dispatch(session, command):

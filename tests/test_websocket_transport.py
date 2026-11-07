@@ -13,9 +13,9 @@ import time
 
 import pytest
 
-from ember_code.protocol import messages as msg
-from ember_code.transport.in_process import InProcessTransport
-from ember_code.transport.websocket import (
+from igni_core.protocol import messages as msg
+from igni_core.transport.in_process import InProcessTransport
+from igni_core.transport.websocket import (
     CompositeTransport,
     WebSocketServerTransport,
 )

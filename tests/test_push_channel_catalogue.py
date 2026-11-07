@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.enums import PushChannel
 
 #: channel wire string -> the module that emits it.
 PRODUCED_CHANNELS = {

@@ -40,7 +40,7 @@ jobs:
 
       # The release has two version universes and nothing used to make
       # them agree (igni-app's release checks the same for the desktop app). Tag-derived: latest.json's ``version`` field and the
-      # ``pip install 'ignite-ember==…'`` line in the release body.
+      # ``pip install 'igni-core==…'`` line in the release body.
       # Commit-derived: pyproject.toml, which hatchling stamps onto the
       # wheel and sync-version.mjs copies into tauri.conf.json /
       # Cargo.toml (``CARGO_PKG_VERSION``, what the updater plugin
@@ -70,7 +70,7 @@ jobs:
         uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
 
       # Belt-and-suspenders: ``pyproject.toml`` is the SoT, but
-      # ``src/ember_code/__init__.py``'s ``__version__`` lives outside
+      # ``src/igni_core/__init__.py``'s ``__version__`` lives outside
       # the build backend's reach. If a release goes out without the
       # author having run ``scripts/sync-version.mjs`` locally, this
       # step makes sure the published wheel exposes the right
@@ -94,8 +94,13 @@ jobs:
             exit 1
           fi
 
-      - name: Build package
-        run: uv build
+      # igni-core, and ignite-ember: the old name, empty, depending on
+      # igni-core at this version (packages/ignite-ember). Both go to PyPI;
+      # each project's trusted publisher names this workflow.
+      - name: Build packages
+        run: |
+          uv build
+          uv build --out-dir dist packages/ignite-ember
 
       # The same bytes PyPI gets, for release-evidence: it attaches them to
       # the GitHub release (for installs that cannot reach PyPI), lists them
@@ -203,14 +208,14 @@ jobs:
       # ── SBOMs: one per kind of thing a user installs ─────────────────
       #
       # The wheel's from uv.lock, every extra but `dev` — what `pip install
-      # 'ignite-ember[…]'` can bring in. Development dependencies are left
+      # 'igni-core[…]'` can bring in. Development dependencies are left
       # out: they do not ship. The desktop app is released, with its own
       # SBOM, from ignite-ember/igni-app.
       - name: SBOM — Python package
         run: |
           uv export --frozen --no-dev --all-extras --no-extra dev \
             --format cyclonedx1.5 --preview-features sbom-export \
-            -o "dist/release/ignite-ember-${{ steps.v.outputs.version }}.cdx.json"
+            -o "dist/release/igni-core-${{ steps.v.outputs.version }}.cdx.json"
 
       - name: SHA256SUMS
         run: |
@@ -312,7 +317,7 @@ jobs:
           # Tag is ``v0.6.0`` / ``v0.6.0-rc.1`` etc. ``pip_version``
           # is the PyPI-installable form (no leading ``v``); previous
           # body used ``${{ github.ref_name }}`` directly, which gave
-          # the broken ``pip install ignite-ember==v0.6.0-rc.1`` snippet
+          # the broken ``pip install igni-core==v0.6.0-rc.1`` snippet
           # (pip rejects the ``v`` prefix).
           PIP_VERSION="${GITHUB_REF#refs/tags/v}"
           echo "pip_version=$PIP_VERSION" >> "$GITHUB_OUTPUT"
@@ -362,9 +367,9 @@ jobs:
 
           **Python (CLI / library):**
           ```bash
-          pip install 'ignite-ember[decisions]==${{ steps.notes.outputs.pip_version }}'
+          pip install 'igni-core[decisions]==${{ steps.notes.outputs.pip_version }}'
           # or
-          uv pip install 'ignite-ember[decisions]==${{ steps.notes.outputs.pip_version }}'
+          uv pip install 'igni-core[decisions]==${{ steps.notes.outputs.pip_version }}'
           # ``[decisions]`` adds igni's decisions service (Laya, torch) for
           # Bypass mode's last check and ``host.decide``; leave it out on a
           # backend that points IGNI_DECISIONS_URL at a shared one.
@@ -401,7 +406,7 @@ jobs:
     # actually publish a new PyPI sdist (the version in
     # ``pyproject.toml`` is the SoT, ``skip-existing: true`` silently
     # no-ops the publish on RC tags). The homebrew job would 404 on
-    # the non-existent ``ignite_ember-X.Y.Zrc1.tar.gz`` file. Run
+    # the non-existent ``igni_core-X.Y.Zrc1.tar.gz`` file. Run
     # only on tags WITHOUT a hyphen (i.e. ``v1.2.3`` not
     # ``v1.2.3-rc.1``).
     if: ${{ !contains(github.ref_name, '-') }}
@@ -413,7 +418,7 @@ jobs:
       - name: Get tag version
         id: version
         # ``version``  is the raw tag (used for the Brew formula's
-        # ``ignite-ember==X`` pin — pip normalises during install so
+        # ``igni-core==X`` pin — pip normalises during install so
         # both forms work). ``pypi_version`` is the PEP-440-normalised
         # form used in the PyPI sdist URL: ``files.pythonhosted.org``
         # serves files under the normalised name, so ``0.6.0-rc.1``
@@ -444,7 +449,7 @@ jobs:
         # download step on that instead of blindly retrying curl.
         run: |
           VERSION="${{ steps.version.outputs.pypi_version }}"
-          URL="https://pypi.org/pypi/ignite-ember/${VERSION}/json"
+          URL="https://pypi.org/pypi/igni-core/${VERSION}/json"
           for i in $(seq 1 20); do
             if curl -fsSL -o /dev/null "$URL"; then
               echo "pypi visible after $((i*30 - 30))s"
@@ -453,14 +458,14 @@ jobs:
             echo "  attempt $i/20 — not yet, waiting 30s"
             sleep 30
           done
-          echo "::error::PyPI JSON index never returned 200 for ignite-ember==$VERSION after 10 minutes"
+          echo "::error::PyPI JSON index never returned 200 for igni-core==$VERSION after 10 minutes"
           exit 1
 
       - name: Download sdist and compute SHA
         id: sha
         run: |
           VERSION="${{ steps.version.outputs.pypi_version }}"
-          URL="https://files.pythonhosted.org/packages/source/i/ignite-ember/ignite_ember-${VERSION}.tar.gz"
+          URL="https://files.pythonhosted.org/packages/source/i/igni-core/igni_core-${VERSION}.tar.gz"
           # JSON index is up (previous step gated on that), but the
           # sdist file itself can lag a beat longer on the CDN. Keep
           # a shorter retry loop here as a safety net rather than the
@@ -487,7 +492,9 @@ jobs:
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/ignite-ember/homebrew-tap.git" /tmp/homebrew-tap
           cd /tmp/homebrew-tap
 
-          # Simple formula: create venv, pip install from PyPI (uses wheels)
+          # Simple formula: create venv, pip install igni-core from PyPI (uses
+          # wheels). The formula keeps the name ``ignite-ember`` — what
+          # existing users ``brew upgrade`` — and installs igni-core.
           # NOTE: Homebrew derives the class name from the formula file
           # via ``Formula.class_s``: ``ignite-ember`` → ``IgniteEmber``
           # (PascalCase, hyphens dropped). A lowercase leading letter
@@ -518,7 +525,7 @@ jobs:
 
             def install
               venv = virtualenv_create(libexec, "python3.12")
-              system libexec/"bin/python3.12", "-m", "pip", "install", "--prefer-binary", "ignite-ember==PLACEHOLDER_VERSION"
+              system libexec/"bin/python3.12", "-m", "pip", "install", "--prefer-binary", "igni-core==PLACEHOLDER_VERSION"
               # Both console scripts from pyproject's [project.scripts].
               # ``igni`` is the canonical command and the one README and
               # QUICKSTART tell brew users to type; for every release up
@@ -549,7 +556,7 @@ jobs:
           # Fix heredoc indentation and replace placeholders
           sed -i 's/^          //' Formula/ignite-ember.rb
           PYPI_VERSION="${{ steps.version.outputs.pypi_version }}"
-          sed -i "s|PLACEHOLDER_URL|https://files.pythonhosted.org/packages/source/i/ignite-ember/ignite_ember-${PYPI_VERSION}.tar.gz|" Formula/ignite-ember.rb
+          sed -i "s|PLACEHOLDER_URL|https://files.pythonhosted.org/packages/source/i/igni-core/igni_core-${PYPI_VERSION}.tar.gz|" Formula/ignite-ember.rb
           sed -i "s|PLACEHOLDER_SHA|${SHA}|" Formula/ignite-ember.rb
           sed -i "s|PLACEHOLDER_VERSION|${VERSION}|" Formula/ignite-ember.rb
 

@@ -3,7 +3,7 @@ pool management.
 
 Historically these tests targeted the ``core/pool.py``
 backward-compat shim; they now import directly from
-:mod:`ember_code.core.agents` and use
+:mod:`igni_core.core.agents` and use
 :class:`AgentBuilder`'s ClassVar test seams
 (``_agent_cls`` / ``_model_registry_cls`` / ``_tool_registry_cls``)
 in place of module-level patch decorators.
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ember_code.core.agents import (
+from igni_core.core.agents import (
     AgentBuildContext,
     AgentBuilder,
     AgentDefinition,
@@ -21,7 +21,7 @@ from ember_code.core.agents import (
     AgentPool,
     AgentPriority,
 )
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.paths import CONFIG_DIR
 
 
 def parse_agent_file(path):

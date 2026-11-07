@@ -20,13 +20,13 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ember_code.backend.command_handler import (
+from igni_core.backend.command_handler import (
     CommandHandler,
 )
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.plugins.loader import PluginLoader
-from ember_code.core.plugins.state import PluginsState, load_state
-from ember_code.core.session.core import PluginReloadCounts
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.plugins.loader import PluginLoader
+from igni_core.core.plugins.state import PluginsState, load_state
+from igni_core.core.session.core import PluginReloadCounts
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -190,7 +190,7 @@ def test_plugin_install_url_calls_installer(tmp_path: Path) -> None:
     """`/plugin install <git-url>` routes to ``PluginInstaller.install``
     with the URL verbatim and no ``ref``."""
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         manifest = MagicMock()
@@ -210,7 +210,7 @@ def test_plugin_install_extracts_ref_flag(tmp_path: Path) -> None:
     """``--ref <value>`` is parsed out and forwarded to the installer
     regardless of position relative to the URL."""
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.install.return_value = MagicMock(name="m", version="", model_construct=None)
@@ -225,15 +225,15 @@ def test_plugin_install_marketplace_ref_resolves_first(tmp_path: Path) -> None:
     registry into a git URL *before* hitting the installer. The
     catalog's ``branch`` field flows through as ``--ref`` when no
     explicit ``--ref`` was given on the command line."""
-    from ember_code.core.plugins.marketplaces import ResolvedSource
+    from igni_core.core.plugins.marketplaces import ResolvedSource
 
     h = _make_handler(tmp_path)
     fake_entry = MagicMock()
     fake_entry.branch = "release-1"
 
     with (
-        patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls,
-        patch("ember_code.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
+        patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls,
+        patch("igni_core.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
     ):
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
@@ -264,15 +264,15 @@ def test_plugin_install_marketplace_explicit_ref_wins(tmp_path: Path) -> None:
     """If the user passes ``--ref X`` on a marketplace install, it
     takes precedence over the catalog's default branch — explicit
     user choice always wins over inferred metadata."""
-    from ember_code.core.plugins.marketplaces import ResolvedSource
+    from igni_core.core.plugins.marketplaces import ResolvedSource
 
     h = _make_handler(tmp_path)
     fake_entry = MagicMock()
     fake_entry.branch = "default-branch"
 
     with (
-        patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls,
-        patch("ember_code.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
+        patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls,
+        patch("igni_core.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
     ):
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
@@ -302,8 +302,8 @@ def test_plugin_install_marketplace_unresolved_errors(tmp_path: Path) -> None:
     invoked at all."""
     h = _make_handler(tmp_path)
     with (
-        patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls,
-        patch("ember_code.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
+        patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls,
+        patch("igni_core.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
     ):
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
@@ -319,7 +319,7 @@ def test_plugin_install_no_git_short_circuits(tmp_path: Path) -> None:
     """When ``git`` isn't on PATH we don't even attempt the install
     — surface a clear hint to install git."""
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = False
         result = _run(h.handle("/plugin install https://x/y.git"))
@@ -347,10 +347,10 @@ def test_plugin_install_too_many_args_errors(tmp_path: Path) -> None:
 def test_plugin_install_surfaces_git_error(tmp_path: Path) -> None:
     """A ``GitError`` from the installer bubbles up verbatim with a
     ``git error:`` prefix so the user knows what layer failed."""
-    from ember_code.core.plugins.git import GitError
+    from igni_core.core.plugins.git import GitError
 
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.install.side_effect = GitError("auth required")
@@ -364,10 +364,10 @@ def test_plugin_install_surfaces_plugin_error(tmp_path: Path) -> None:
     """A ``PluginError`` (already-installed, missing manifest, etc.)
     bubbles up directly — these messages are already user-friendly so
     no extra prefix is added."""
-    from ember_code.core.plugins.installer import PluginError
+    from igni_core.core.plugins.installer import PluginError
 
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.install.side_effect = PluginError("already installed")
@@ -381,7 +381,7 @@ def test_plugin_install_surfaces_plugin_error(tmp_path: Path) -> None:
 
 def test_plugin_update_calls_installer(tmp_path: Path) -> None:
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.update.return_value = "a" * 40
@@ -393,7 +393,7 @@ def test_plugin_update_calls_installer(tmp_path: Path) -> None:
 
 def test_plugin_update_with_ref(tmp_path: Path) -> None:
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.update.return_value = "b" * 40
@@ -413,7 +413,7 @@ def test_plugin_update_missing_name_errors(tmp_path: Path) -> None:
 
 def test_plugin_remove_calls_installer(tmp_path: Path) -> None:
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         result = _run(h.handle("/plugin remove foo"))
@@ -425,10 +425,10 @@ def test_plugin_remove_calls_installer(tmp_path: Path) -> None:
 def test_plugin_remove_missing_returns_error(tmp_path: Path) -> None:
     """The installer raises ``PluginError`` for a missing plugin —
     bubbled up to the user verbatim."""
-    from ember_code.core.plugins.installer import PluginError
+    from igni_core.core.plugins.installer import PluginError
 
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.installer.PluginInstaller") as mock_cls:
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.remove.side_effect = PluginError("not installed")
@@ -446,7 +446,7 @@ def test_plugin_marketplace_add_calls_add_marketplace(tmp_path: Path) -> None:
     fake_entry.name = "mkt"
     fake_entry.cached = MagicMock()
     fake_entry.cached.plugins = [MagicMock(), MagicMock(), MagicMock()]
-    with patch("ember_code.core.plugins.marketplaces.add_marketplace") as mock_add:
+    with patch("igni_core.core.plugins.marketplaces.add_marketplace") as mock_add:
         mock_add.return_value = fake_entry
         result = _run(h.handle("/plugin marketplace add https://m/k.git"))
     mock_add.assert_called_once()
@@ -485,7 +485,7 @@ def test_plugin_marketplace_list_renders_entries(tmp_path: Path) -> None:
     fake_entry.cached = MagicMock()
     fake_entry.cached.plugins = [MagicMock(), MagicMock()]
     fake_registry.marketplaces = [fake_entry]
-    with patch("ember_code.core.plugins.marketplaces.load_registry") as mock_load:
+    with patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load:
         mock_load.return_value = fake_registry
         result = _run(h.handle("/plugin marketplace list"))
     assert result.kind == "markdown"
@@ -496,7 +496,7 @@ def test_plugin_marketplace_list_renders_entries(tmp_path: Path) -> None:
 
 def test_plugin_marketplace_remove_calls_remove(tmp_path: Path) -> None:
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.marketplaces.remove_marketplace") as mock_remove:
+    with patch("igni_core.core.plugins.marketplaces.remove_marketplace") as mock_remove:
         mock_remove.return_value = True
         result = _run(h.handle("/plugin marketplace remove mkt"))
     mock_remove.assert_called_once()
@@ -506,7 +506,7 @@ def test_plugin_marketplace_remove_calls_remove(tmp_path: Path) -> None:
 
 def test_plugin_marketplace_remove_unknown_errors(tmp_path: Path) -> None:
     h = _make_handler(tmp_path)
-    with patch("ember_code.core.plugins.marketplaces.remove_marketplace") as mock_remove:
+    with patch("igni_core.core.plugins.marketplaces.remove_marketplace") as mock_remove:
         mock_remove.return_value = False
         result = _run(h.handle("/plugin marketplace remove ghost"))
     assert result.kind == "error"
@@ -519,7 +519,7 @@ def test_plugin_marketplace_refresh_one(tmp_path: Path) -> None:
     fake_entry.name = "mkt"
     fake_entry.cached = MagicMock()
     fake_entry.cached.plugins = [MagicMock(), MagicMock()]
-    with patch("ember_code.core.plugins.marketplaces.refresh_marketplace") as mock_refresh:
+    with patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh:
         mock_refresh.return_value = fake_entry
         result = _run(h.handle("/plugin marketplace refresh mkt"))
     assert result.kind == "info"
@@ -541,8 +541,8 @@ def test_plugin_marketplace_refresh_all(tmp_path: Path) -> None:
     e2.name = "m2"
     fake_registry.marketplaces = [e1, e2]
     with (
-        patch("ember_code.core.plugins.marketplaces.load_registry") as mock_load,
-        patch("ember_code.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
+        patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load,
+        patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
     ):
         mock_load.return_value = fake_registry
         result = _run(h.handle("/plugin marketplace refresh"))

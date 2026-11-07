@@ -17,9 +17,9 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from ember_code.core.config.settings import Settings
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.session.core import Session
+from igni_core.core.config.settings import Settings
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.core import Session
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -116,7 +116,7 @@ def test_session_loads_plugin_state(tmp_path: Path) -> None:
     ``_disabled_plugins`` honors prior user toggles immediately —
     no race window where a disabled plugin's contents would briefly
     activate."""
-    from ember_code.core.plugins.state import PluginsState, save_state
+    from igni_core.core.plugins.state import PluginsState, save_state
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     _write_plugin(user_ember, "alpha")
@@ -165,7 +165,7 @@ def test_session_disabled_plugin_contents_are_skipped(tmp_path: Path) -> None:
     (visible to the panel) but its skills/agents are NOT loaded into
     the pools. This is the contract that powers ``/plugins disable
     <name>`` — the next session start sees a clean pool."""
-    from ember_code.core.plugins.state import PluginsState, save_state
+    from igni_core.core.plugins.state import PluginsState, save_state
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     _write_plugin(user_ember, "alpha", with_skill=True, with_agent=True)

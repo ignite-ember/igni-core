@@ -10,7 +10,7 @@ the run_id stamping policy on drain.
 
 from unittest.mock import MagicMock
 
-from ember_code.core.session.broadcast import BroadcastBus, BroadcastEvent
+from igni_core.core.session.broadcast import BroadcastBus, BroadcastEvent
 
 
 def _bus_with_callback(cb):

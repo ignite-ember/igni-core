@@ -24,7 +24,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ember_code.protocol.schemas.enums import CommandAction
+from igni_core.protocol.schemas.enums import CommandAction
 from tests.siblings import IGNI_APP, needs_app
 
 pytestmark = needs_app

@@ -11,11 +11,11 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from ember_code.core.scheduler.db_models import ScheduledTaskModel
-from ember_code.core.scheduler.models import ScheduledTask, TaskStatus
-from ember_code.core.scheduler.recurrence import Recurrence
-from ember_code.core.scheduler.runner import SchedulerRunner
-from ember_code.core.scheduler.store import TaskStore
+from igni_core.core.scheduler.db_models import ScheduledTaskModel
+from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
+from igni_core.core.scheduler.recurrence import Recurrence
+from igni_core.core.scheduler.runner import SchedulerRunner
+from igni_core.core.scheduler.store import TaskStore
 
 
 @pytest.fixture

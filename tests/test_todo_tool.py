@@ -15,15 +15,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ember_code.backend.__main__ import _build_rpc_table
-from ember_code.backend.server import BackendServer
-from ember_code.core.tools.todo import (
+from igni_core.backend.__main__ import _build_rpc_table
+from igni_core.backend.server import BackendServer
+from igni_core.core.tools.todo import (
     TodoItem,
     TodoStore,
     TodoTools,
     _coerce_items,
 )
-from ember_code.protocol.rpc import RpcMethod
+from igni_core.protocol.rpc import RpcMethod
 
 # ── Pure data layer ───────────────────────────────────────────
 

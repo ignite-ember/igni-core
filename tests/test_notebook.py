@@ -2,7 +2,7 @@
 
 import json
 
-from ember_code.core.tools.notebook import NotebookTools
+from igni_core.core.tools.notebook import NotebookTools
 
 
 def _make_notebook(cells=None, kernel="python3"):

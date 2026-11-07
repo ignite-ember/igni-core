@@ -1,6 +1,6 @@
 """Migrations run only for a database that is new or behind.
 
-:class:`ember_code.core.db.schema.SchemaKeeper` reads a database's
+:class:`igni_core.core.db.schema.SchemaKeeper` reads a database's
 revision through SQLAlchemy and imports alembic only when it has to.
 :data:`HEAD_REVISION` is its copy of alembic's head, so the first test
 here is the one that fails when a migration is added without it.
@@ -20,18 +20,18 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-import ember_code
-from ember_code.core.db.schema import HEAD_REVISION, SchemaKeeper, SchemaRevision
-from ember_code.core.db.urls import DatabaseUrl
+import igni_core
+from igni_core.core.db.schema import HEAD_REVISION, SchemaKeeper, SchemaRevision
+from igni_core.core.db.urls import DatabaseUrl
 
-PACKAGE = Path(ember_code.__file__).resolve().parent
+PACKAGE = Path(igni_core.__file__).resolve().parent
 
 
 def test_the_head_constant_is_alembics_head():
     config = Config(str(PACKAGE / "alembic.ini"))
     heads = ScriptDirectory.from_config(config).get_heads()
     assert heads == [HEAD_REVISION], (
-        f"a migration was added: set HEAD_REVISION in ember_code/core/db/schema.py to {heads}"
+        f"a migration was added: set HEAD_REVISION in igni_core/core/db/schema.py to {heads}"
     )
 
 
@@ -72,7 +72,7 @@ def test_a_current_file_never_imports_alembic(tmp_path: Path):
     script = textwrap.dedent(
         f"""
         import json, sys
-        from ember_code.core.db.database import Database
+        from igni_core.core.db.database import Database
         Database({str(path)!r})
         print(json.dumps(sorted(m for m in sys.modules if m.split(".")[0] == "alembic")))
         """
@@ -87,7 +87,7 @@ def test_igni_migrate_prepares_the_projects_database(tmp_path: Path):
     project.mkdir()
     env = dict(os.environ, HOME=str(home))
     first = subprocess.run(
-        [sys.executable, "-m", "ember_code", "migrate"],
+        [sys.executable, "-m", "igni_core", "migrate"],
         cwd=project,
         env=env,
         capture_output=True,
@@ -96,7 +96,7 @@ def test_igni_migrate_prepares_the_projects_database(tmp_path: Path):
     ).stdout
     assert f"new -> {HEAD_REVISION}" in first
     again = subprocess.run(
-        [sys.executable, "-m", "ember_code", "migrate"],
+        [sys.executable, "-m", "igni_core", "migrate"],
         cwd=project,
         env=env,
         capture_output=True,

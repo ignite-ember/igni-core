@@ -25,25 +25,25 @@ import pytest
 from pydantic import ValidationError
 from websockets.asyncio.client import connect
 
-from ember_code.backend.run_hook_gate import RunHookGate
-from ember_code.core.hooks.events import HookEvent
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.hooks.extension_gate import (
+from igni_core.backend.run_hook_gate import RunHookGate
+from igni_core.core.hooks.events import HookEvent
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.extension_gate import (
     DECIDING,
     ExtensionHookGate,
     ExtensionHookSpec,
     ExtensionHookVerdict,
     HookFailMode,
 )
-from ember_code.core.hooks.schemas import HookDefinition
-from ember_code.core.hooks.tool_hook import ToolEventHook
-from ember_code.core.tools.plan.store import PlanStore
-from ember_code.core.tools.plan.submission import PlanTransactionCoordinator
-from ember_code.extensions.host.hooks import ExtensionHooks
-from ember_code.extensions.host.wire import HookAnswer, Op, Request
-from ember_code.extensions.impact import ExtensionImpact, ImpactHook
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.core.hooks.schemas import HookDefinition
+from igni_core.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.tools.plan.store import PlanStore
+from igni_core.core.tools.plan.submission import PlanTransactionCoordinator
+from igni_core.extensions.host.hooks import ExtensionHooks
+from igni_core.extensions.host.wire import HookAnswer, Op, Request
+from igni_core.extensions.impact import ExtensionImpact, ImpactHook
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from tests.host_model_helpers import HostRig, manifest
 
 CALL = {"session_id": "s-1", "tool_name": "run_shell_command", "tool_args": {"command": "ls"}}

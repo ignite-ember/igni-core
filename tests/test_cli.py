@@ -4,14 +4,14 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from ember_code.cli import cli
+from igni_core.cli import cli
 
 
 def _patch_cli():
     """Return patches for the common CLI dependencies."""
     return (
-        patch("ember_code.core.config.settings.load_settings"),
-        patch("ember_code.cli.asyncio.run"),
+        patch("igni_core.core.config.settings.load_settings"),
+        patch("igni_core.cli.asyncio.run"),
     )
 
 
@@ -27,8 +27,8 @@ class TestCLIFlags:
     def test_model_override(self):
         runner = CliRunner()
         with (
-            patch("ember_code.core.config.settings.load_settings") as mock_load,
-            patch("ember_code.cli.asyncio.run"),
+            patch("igni_core.core.config.settings.load_settings") as mock_load,
+            patch("igni_core.cli.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--model", "gpt-4", "-m", "hi"], catch_exceptions=False)
@@ -38,8 +38,8 @@ class TestCLIFlags:
     def test_verbose_flag(self):
         runner = CliRunner()
         with (
-            patch("ember_code.core.config.settings.load_settings") as mock_load,
-            patch("ember_code.cli.asyncio.run"),
+            patch("igni_core.core.config.settings.load_settings") as mock_load,
+            patch("igni_core.cli.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--verbose", "-m", "hi"], catch_exceptions=False)
@@ -49,8 +49,8 @@ class TestCLIFlags:
     def test_quiet_flag(self):
         runner = CliRunner()
         with (
-            patch("ember_code.core.config.settings.load_settings") as mock_load,
-            patch("ember_code.cli.asyncio.run"),
+            patch("igni_core.core.config.settings.load_settings") as mock_load,
+            patch("igni_core.cli.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--quiet", "-m", "hi"], catch_exceptions=False)
@@ -60,8 +60,8 @@ class TestCLIFlags:
     def test_read_only_flag(self):
         runner = CliRunner()
         with (
-            patch("ember_code.core.config.settings.load_settings") as mock_load,
-            patch("ember_code.cli.asyncio.run"),
+            patch("igni_core.core.config.settings.load_settings") as mock_load,
+            patch("igni_core.cli.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--read-only", "-m", "hi"], catch_exceptions=False)
@@ -75,8 +75,8 @@ class TestCLIFlags:
     def test_auto_approve_flag(self):
         runner = CliRunner()
         with (
-            patch("ember_code.core.config.settings.load_settings") as mock_load,
-            patch("ember_code.cli.asyncio.run"),
+            patch("igni_core.core.config.settings.load_settings") as mock_load,
+            patch("igni_core.cli.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--auto-approve", "-m", "hi"], catch_exceptions=False)
@@ -87,8 +87,8 @@ class TestCLIFlags:
     def test_strict_flag(self):
         runner = CliRunner()
         with (
-            patch("ember_code.core.config.settings.load_settings") as mock_load,
-            patch("ember_code.cli.asyncio.run"),
+            patch("igni_core.core.config.settings.load_settings") as mock_load,
+            patch("igni_core.cli.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--strict", "-m", "hi"], catch_exceptions=False)
@@ -98,8 +98,8 @@ class TestCLIFlags:
     def test_no_web_flag(self):
         runner = CliRunner()
         with (
-            patch("ember_code.core.config.settings.load_settings") as mock_load,
-            patch("ember_code.cli.asyncio.run"),
+            patch("igni_core.core.config.settings.load_settings") as mock_load,
+            patch("igni_core.cli.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--no-web", "-m", "hi"], catch_exceptions=False)
@@ -114,8 +114,8 @@ class TestCLIModes:
     def test_message_mode_calls_run_single_message(self):
         runner = CliRunner()
         with (
-            patch("ember_code.core.config.settings.load_settings", return_value=MagicMock()),
-            patch("ember_code.cli.asyncio.run") as mock_run,
+            patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()),
+            patch("igni_core.cli.asyncio.run") as mock_run,
         ):
             runner.invoke(cli, ["-m", "hello world"], catch_exceptions=False)
             mock_run.assert_called_once()
@@ -123,23 +123,23 @@ class TestCLIModes:
     def test_pipe_mode_reads_stdin(self):
         runner = CliRunner()
         with (
-            patch("ember_code.core.config.settings.load_settings", return_value=MagicMock()),
-            patch("ember_code.cli.asyncio.run") as mock_run,
+            patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()),
+            patch("igni_core.cli.asyncio.run") as mock_run,
         ):
             runner.invoke(cli, ["--pipe"], input="test input", catch_exceptions=False)
             mock_run.assert_called_once()
 
     def test_pipe_mode_no_input_errors(self):
         runner = CliRunner()
-        with patch("ember_code.core.config.settings.load_settings", return_value=MagicMock()):
+        with patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()):
             result = runner.invoke(cli, ["--pipe"], input="", catch_exceptions=False)
             assert result.exit_code != 0
 
     def test_pipe_mode_combines_message_and_stdin(self):
         runner = CliRunner()
         with (
-            patch("ember_code.core.config.settings.load_settings", return_value=MagicMock()),
-            patch("ember_code.cli.asyncio.run") as mock_run,
+            patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()),
+            patch("igni_core.cli.asyncio.run") as mock_run,
         ):
             runner.invoke(
                 cli, ["--pipe", "-m", "prefix"], input="stdin data", catch_exceptions=False
@@ -151,11 +151,11 @@ class TestCLIModes:
         instructions pointing users at the non-interactive modes and
         the React clients."""
         runner = CliRunner()
-        with patch("ember_code.core.config.settings.load_settings", return_value=MagicMock()):
+        with patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()):
             result = runner.invoke(cli, [], catch_exceptions=False)
             assert result.exit_code == 0
             assert "React client" in result.output
-            assert "python -m ember_code.backend" in result.output
+            assert "python -m igni_core.backend" in result.output
 
 
 class TestWorktreeCleanup:
@@ -179,13 +179,13 @@ class TestWorktreeCleanup:
         wm.info = None
         # Reuse the real method against a mock — same isinstance
         # check the production code performs.
-        from ember_code.core.worktree import WorktreeManager
+        from igni_core.core.worktree import WorktreeManager
 
         WorktreeManager.report_cleanup(wm, echo=lambda *_a, **_kw: None)
         wm.cleanup.assert_not_called()
 
     def test_cleanup_cleaned(self):
-        from ember_code.core.worktree import WorktreeCleanupResult, WorktreeManager
+        from igni_core.core.worktree import WorktreeCleanupResult, WorktreeManager
 
         wm = MagicMock()
         wm.info = MagicMock(worktree_path="/tmp/wt", branch_name="wt-branch")
@@ -194,7 +194,7 @@ class TestWorktreeCleanup:
         wm.cleanup.assert_called_once()
 
     def test_cleanup_preserved(self):
-        from ember_code.core.worktree import WorktreeCleanupResult, WorktreeManager
+        from igni_core.core.worktree import WorktreeCleanupResult, WorktreeManager
 
         wm = MagicMock()
         wm.info = MagicMock(worktree_path="/tmp/wt", branch_name="wt-branch")

@@ -216,8 +216,8 @@ Plugins built for Claude Code work in igni with no changes — same manifest, sa
 
 ## Reference
 
-- Plugin loader: [`core/plugins/loader.py`](../src/ember_code/core/plugins/loader.py)
-- Installer (git operations): [`core/plugins/installer.py`](../src/ember_code/core/plugins/installer.py)
-- Marketplace registry: [`core/plugins/marketplaces.py`](../src/ember_code/core/plugins/marketplaces.py)
+- Plugin loader: [`core/plugins/loader.py`](../src/igni_core/core/plugins/loader.py)
+- Installer (git operations): [`core/plugins/installer.py`](../src/igni_core/core/plugins/installer.py)
+- Marketplace registry: [`core/plugins/marketplaces.py`](../src/igni_core/core/plugins/marketplaces.py)
 - State files: `~/.igni/plugins.json`, `~/.igni/marketplaces.json`
-- TUI panel: [`frontend/tui/widgets/_plugins_panel.py`](../src/ember_code/frontend/tui/widgets/_plugins_panel.py)
+- TUI panel: [`frontend/tui/widgets/_plugins_panel.py`](../src/igni_core/frontend/tui/widgets/_plugins_panel.py)

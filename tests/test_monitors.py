@@ -17,18 +17,18 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.monitors import (
+from igni_core.core.monitors import (
     MonitorControlResult,
     MonitorHandle,
     MonitorManager,
 )
-from ember_code.core.monitors.config import (
+from igni_core.core.monitors.config import (
     MonitorConfig,
     _parse_monitors_dict,
     load_monitor_config,
 )
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.tools.monitors import MonitorTools
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.tools.monitors import MonitorTools
 
 # ── Config parsing ────────────────────────────────────────────
 

@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from ember_code.core.mcp import config as mcp_config
-from ember_code.core.mcp.config import MCPPolicy
-from ember_code.core.paths import managed_policy_dir
+from igni_core.core.mcp import config as mcp_config
+from igni_core.core.mcp.config import MCPPolicy
+from igni_core.core.paths import managed_policy_dir
 
 
 class TestMCPPolicy:
@@ -65,7 +65,7 @@ class TestFromManagedSettings:
     the path is wrong.
 
     Now the directory comes from
-    :func:`ember_code.core.paths.managed_policy_dir`, so pointing these
+    :func:`igni_core.core.paths.managed_policy_dir`, so pointing these
     at a temp directory is one line, and the shared-directory question is
     asserted where it belongs (``test_context.py``).
     """

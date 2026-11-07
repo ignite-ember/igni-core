@@ -12,8 +12,8 @@ current file list inside any of them, `ls` it.
 
 ```
 igni/
-├── src/ember_code/         # the Python package (import name stays `ember_code`)
-│   ├── __main__.py         # entry point behind `igni`, `ignite-ember`, `python -m ember_code`
+├── src/igni_core/         # the Python package (import name stays `igni_core`)
+│   ├── __main__.py         # entry point behind `igni`, `ignite-ember`, `python -m igni_core`
 │   ├── cli/                # non-interactive command surface: flags, `-m`, pipe mode, resume
 │   ├── backend/            # the long-lived server the GUI clients speak to — slash-command
 │   │   │                   # and RPC dispatch, run streaming, HITL, session pool, panels
@@ -73,7 +73,7 @@ igni/
 
 There is no `tui/` package. The Textual TUI was removed; interactive
 chat lives in the React clients under `clients/`, which talk to the
-backend started by `python -m ember_code.backend`.
+backend started by `python -m igni_core.backend`.
 
 ## Setup
 
@@ -99,13 +99,13 @@ make install
 # uv pip install -e packages/igni-cloud   (tests: packages/igni-cloud/tests)
 
 # Verify
-ignite-ember --version
+igni --version
 make check
 ```
 
 ### Running the web client against a backend
 
-A backend you start by hand (`python -m ember_code.backend --ws-port 8765
+A backend you start by hand (`python -m igni_core.backend --ws-port 8765
 --project-dir .`) requires no WebSocket token, so `npm --prefix clients/web
 run dev` reaches it as before; only pages from a foreign `Origin` are
 refused. A backend the desktop app spawns requires its per-launch token
@@ -149,10 +149,10 @@ The `make check` target is the single command to verify everything is clean befo
 
 **Optional** — one bullet per extra in `[project.optional-dependencies]`, and no others. There is no `knowledge` extra, and no graph database or embedder in igni at all: CodeIndex's local index (Neo4j per commit, a sentence-transformer) is its extension's, installed from its bundle.
 
-- `mcp` — Model Context Protocol (`pip install "ignite-ember[mcp]"`)
-- `google-genai` — Gemini models (`pip install "ignite-ember[gemini]"`)
-- `anthropic` — Claude over the native Messages API (`pip install "ignite-ember[anthropic]"`)
-- `duckduckgo-search` — Web search (`pip install "ignite-ember[web]"`)
+- `mcp` — Model Context Protocol (`pip install "igni-core[mcp]"`)
+- `google-genai` — Gemini models (`pip install "igni-core[gemini]"`)
+- `anthropic` — Claude over the native Messages API (`pip install "igni-core[anthropic]"`)
+- `duckduckgo-search` — Web search (`pip install "igni-core[web]"`)
 
 **Dev:**
 - `pytest` + `pytest-asyncio` — Testing
@@ -281,7 +281,7 @@ only the entries. `tests/test_commands_load_on_first_use.py` checks
 every entry resolves and that an idle backend has not loaded them.
 
 **Adding a database migration.** Add the alembic revision under
-`ember_code/migrations/versions/`, then set `HEAD_REVISION` in
+`igni_core/migrations/versions/`, then set `HEAD_REVISION` in
 `core/db/schema.py` to it. A backend compares a database's revision with
 that constant to decide whether to migrate at all;
 `tests/test_migrations_stay_off_the_start_path.py` fails until they agree.
@@ -320,7 +320,7 @@ A fixed Router → Agent hierarchy forces you to pre-decide what agents exist an
 The interactive surface is a GUI client, not a terminal app — `igni`
 and `ignite-ember` are the non-interactive CLI, and chat happens in the
 clients under `clients/`, which connect to the server started by
-`python -m ember_code.backend`. Splitting the front-end out means the
+`python -m igni_core.backend`. Splitting the front-end out means the
 same backend serves the desktop app and the web client over one wire
 protocol. Inside the backend, `BackendApp` is a thin shell that
 delegates to the controllers listed above; each stays testable in

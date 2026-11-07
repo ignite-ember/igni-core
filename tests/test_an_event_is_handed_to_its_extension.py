@@ -14,14 +14,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ember_code.backend.activity import ActivityState
-from ember_code.backend.service_event_delivery import ExtensionEventHandler
-from ember_code.backend.service_item_desk import PoolChatDesk
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.extensions.host.hooks import ExtensionHooks
-from ember_code.extensions.host.wire import HookAnswer, Outcome
-from ember_code.extensions.service_events import EventHandling, NotHandled, ServiceEvent
-from ember_code.protocol import messages as msg
+from igni_core.backend.activity import ActivityState
+from igni_core.backend.service_event_delivery import ExtensionEventHandler
+from igni_core.backend.service_item_desk import PoolChatDesk
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.extensions.host.hooks import ExtensionHooks
+from igni_core.extensions.host.wire import HookAnswer, Outcome
+from igni_core.extensions.service_events import EventHandling, NotHandled, ServiceEvent
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import HostRig
 from tests.service_item_rig import Inbox
 

@@ -19,8 +19,8 @@ from typing import Any
 
 import pytest
 
-from ember_code.backend.activity import ActivityState, SessionActivity
-from ember_code.protocol import messages as msg
+from igni_core.backend.activity import ActivityState, SessionActivity
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import FakeSession, HostRig
 
 WRITER = ["chat.read", "chat.post", "chat.append", "sessions.post"]

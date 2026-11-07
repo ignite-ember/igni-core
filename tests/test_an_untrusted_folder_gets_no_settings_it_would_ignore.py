@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.init.project_initializer import ProjectInitializer
+from igni_core.core.init.project_initializer import ProjectInitializer
 
 pytestmark = pytest.mark.workspace_trust
 
@@ -24,7 +24,7 @@ def test_an_untrusted_folder_gets_no_permissions_file(tmp_path):
 
 
 def test_a_trusted_folder_still_gets_its_starter_permissions(tmp_path):
-    from ember_code.core.workspace_trust import WorkspaceTrust
+    from igni_core.core.workspace_trust import WorkspaceTrust
 
     project = tmp_path / "project"
     project.mkdir()

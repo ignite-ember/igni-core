@@ -23,27 +23,27 @@ from typing import Any
 import httpx
 import pytest
 
-from ember_code.backend.session_orchestrator import SessionOrchestrator
-from ember_code.extensions.installer import ExtensionInstaller
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.origin import ExtensionOrigins
-from ember_code.extensions.permissions import (
+from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.permissions import (
     Egress,
     PermissionDenied,
     Permissions,
     ServiceOrigin,
 )
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.extensions.service_token import (
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.service_token import (
     IgniSession,
     NoService,
     PageServiceTokens,
     ServiceTokenExchange,
 )
-from ember_code.extensions.store import ExtensionStore
-from ember_code.protocol import messages as msg
-from ember_code.protocol.rpc import RpcMethod
+from igni_core.extensions.store import ExtensionStore
+from igni_core.protocol import messages as msg
+from igni_core.protocol.rpc import RpcMethod
 from tests.extension_distribution_helpers import API_URL, SESSION, FakeIgni
 
 NOTES = "https://notes.example.com"
@@ -118,7 +118,7 @@ def test_a_local_http_service_outside_development_says_how_to_reach_it(caplog):
     ``igni -m`` printed that it was "not this machine in development" —
     it is this machine; what was missing was IGNI_DEV_EXTENSIONS=1, and
     the line did not say so, or that the page's ext.<id>.* calls still work."""
-    with caplog.at_level("INFO", logger="ember_code.extensions.permissions"):
+    with caplog.at_level("INFO", logger="igni_core.extensions.permissions"):
         assert ServiceOrigin.parse("http://tickets.localhost:8201") is None
     text = caplog.text
     assert "IGNI_DEV_EXTENSIONS=1" in text
@@ -156,7 +156,7 @@ def test_a_sandboxed_process_reaches_dot_localhost_through_the_proxy():
     ``tickets.localhost`` directly fails to resolve it: "nodename nor
     servname provided" on the tutorial's walk-through. The proxy resolves
     it outside, and its allow-list already holds the extension's service."""
-    from ember_code.extensions.sandbox import NO_PROXY
+    from igni_core.extensions.sandbox import NO_PROXY
 
     assert ".localhost" not in NO_PROXY.split(",")
 

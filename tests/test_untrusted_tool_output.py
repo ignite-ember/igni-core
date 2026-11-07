@@ -9,7 +9,7 @@ quarantined — this pins that split, plus idempotency and the nonce.
 
 from __future__ import annotations
 
-from ember_code.core.hooks.untrusted import should_wrap, wrap_untrusted
+from igni_core.core.hooks.untrusted import should_wrap, wrap_untrusted
 
 
 def test_wraps_with_a_nonce_on_both_tags():

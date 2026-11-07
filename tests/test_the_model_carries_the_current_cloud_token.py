@@ -20,12 +20,12 @@ from typing import Any
 import httpx
 import pytest
 
-from ember_code.backend.model_http_client_manager import ModelHttpClientManager
-from ember_code.core.auth.credentials import Credentials, CredentialsStore
-from ember_code.core.auth.http_auth import CloudTokenAuth
-from ember_code.core.config.llm_call_logger import LlmCallLogger
-from ember_code.core.config.model_entry import CLOUD_TOKEN_SENTINEL, ModelRegistryEntry
-from ember_code.core.config.provider_builders import OpenAILikeBuilder
+from igni_core.backend.model_http_client_manager import ModelHttpClientManager
+from igni_core.core.auth.credentials import Credentials, CredentialsStore
+from igni_core.core.auth.http_auth import CloudTokenAuth
+from igni_core.core.config.llm_call_logger import LlmCallLogger
+from igni_core.core.config.model_entry import CLOUD_TOKEN_SENTINEL, ModelRegistryEntry
+from igni_core.core.config.provider_builders import OpenAILikeBuilder
 
 
 def _token(sub: str) -> str:

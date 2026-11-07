@@ -21,9 +21,9 @@ from pathlib import Path
 import pytest
 from agno.tools.function import FunctionCall
 
-from ember_code.core.mcp.approval import MCPApprovalManager
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.core.mcp.config import MCPPolicy
+from igni_core.core.mcp.approval import MCPApprovalManager
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.mcp.config import MCPPolicy
 
 pytestmark = pytest.mark.asyncio
 
@@ -114,7 +114,7 @@ def agno_output():
 @pytest.fixture
 def debug_log():
     records = _Records()
-    ours = logging.getLogger("ember_code.core.mcp.tool_errors")
+    ours = logging.getLogger("igni_core.core.mcp.tool_errors")
     before = ours.level
     ours.addHandler(records)
     ours.setLevel(logging.DEBUG)

@@ -22,11 +22,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.config.permission_eval.pipeline import PermissionEvaluator
-from ember_code.core.config.settings import Settings
-from ember_code.core.guardrails.runner import GuardrailRunner
-from ember_code.core.hooks.executor import HookExecutor
-from ember_code.core.session.message_handler import SessionMessageHandler
+from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
+from igni_core.core.config.settings import Settings
+from igni_core.core.guardrails.runner import GuardrailRunner
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.session.message_handler import SessionMessageHandler
 
 
 class _Requirement:
@@ -157,7 +157,7 @@ async def test_no_evaluator_changes_nothing(evaluator: Any):
 def test_the_session_hands_its_evaluator_through_a_callable():
     import inspect
 
-    from ember_code.core.session.core import Session
+    from igni_core.core.session.core import Session
 
     construction = inspect.getsource(Session.__init__).split("SessionMessageHandler(")[1]
     assert "permission_evaluator_ref=lambda:" in construction

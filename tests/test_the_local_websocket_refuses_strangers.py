@@ -19,11 +19,11 @@ import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
-from ember_code.backend.lockfile import Lockfile
-from ember_code.backend.schemas_lockfile import LockfilePayload
-from ember_code.protocol import messages as msg
-from ember_code.transport.websocket import WebSocketServerTransport
-from ember_code.transport.ws_auth import (
+from igni_core.backend.lockfile import Lockfile
+from igni_core.backend.schemas_lockfile import LockfilePayload
+from igni_core.protocol import messages as msg
+from igni_core.transport.websocket import WebSocketServerTransport
+from igni_core.transport.ws_auth import (
     DEV_NO_TOKEN_ENV,
     TOKEN_ENV,
     origin_allowed,
@@ -118,7 +118,7 @@ async def test_the_control_header_does_not_stand_in_for_the_token(guarded):
 
 
 async def test_a_refusal_is_logged_without_the_token(guarded, caplog):
-    caplog.set_level(logging.WARNING, logger="ember_code.transport.ws_auth")
+    caplog.set_level(logging.WARNING, logger="igni_core.transport.ws_auth")
     await _refused(guarded.port, token=TOKEN + "x")
     assert "wrong token" in caplog.text
     assert TOKEN not in caplog.text
@@ -206,7 +206,7 @@ def test_the_token_is_taken_out_of_the_environment():
 
 def test_the_dev_switch_drops_the_token_loudly(caplog):
     env = {TOKEN_ENV: TOKEN, DEV_NO_TOKEN_ENV: "1"}
-    with caplog.at_level(logging.WARNING, logger="ember_code.transport.ws_auth"):
+    with caplog.at_level(logging.WARNING, logger="igni_core.transport.ws_auth"):
         assert take_token_from_environment(env) is None
     assert DEV_NO_TOKEN_ENV in caplog.text
     assert TOKEN_ENV not in env

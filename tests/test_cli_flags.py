@@ -6,8 +6,8 @@ CLI invocation tests are in test_cli.py.
 
 from click.testing import CliRunner
 
-from ember_code.cli import cli
-from ember_code.core.config.settings import Settings
+from igni_core.cli import cli
+from igni_core.core.config.settings import Settings
 
 
 class TestCLIFlagBehaviors:

@@ -13,7 +13,7 @@ brew install ignite-ember/tap/ignite-ember
 **pip:**
 
 ```bash
-pip install ignite-ember
+pip install igni-core
 ```
 
 **From source** (Python 3.12 — `pyproject.toml` pins `>=3.12,<3.13`; `uv`
@@ -408,7 +408,7 @@ Web search and URL fetching ask before each request by default — each is a
 request out of your network. To install them and let them run without asking:
 
 ```bash
-pip install "ignite-ember[web]"
+pip install "igni-core[web]"
 ```
 
 ```yaml

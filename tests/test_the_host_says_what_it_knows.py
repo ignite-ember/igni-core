@@ -31,16 +31,16 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from ember_code.backend.workspace_signals import WorkspaceSignals
-from ember_code.backend.workspace_watch import (
+from igni_core.backend.workspace_signals import WorkspaceSignals
+from igni_core.backend.workspace_watch import (
     FileStamp,
     GitWorkspace,
     Head,
     WorkspaceWatcher,
 )
-from ember_code.extensions.events import HostTopic
-from ember_code.extensions.host.definition import HOST_SCHEMA
-from ember_code.extensions.manifest import ExtensionManifest
+from igni_core.extensions.events import HostTopic
+from igni_core.extensions.host.definition import HOST_SCHEMA
+from igni_core.extensions.manifest import ExtensionManifest
 from tests.host_model_helpers import HostRig, Sink
 
 FILES = HostTopic.WORKSPACE_FILES_CHANGED.value

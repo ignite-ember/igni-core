@@ -20,9 +20,9 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from ember_code.cli.ext import ext
-from ember_code.core.plugins.marketplace_store import MarketplaceRegistryStore
-from ember_code.core.plugins.models import (
+from igni_core.cli.ext import ext
+from igni_core.core.plugins.marketplace_store import MarketplaceRegistryStore
+from igni_core.core.plugins.models import (
     InstallRef,
     MarketplaceCatalog,
     MarketplaceEntry,

@@ -29,7 +29,7 @@ from pathlib import Path
 from agno.db.base import SessionType
 from agno.session.agent import AgentSession
 
-from ember_code.core.session.persistence import SessionPersistence
+from igni_core.core.session.persistence import SessionPersistence
 
 
 def _make_db(tmp_path: Path):

@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.paths import CONFIG_DIR
 from tests.test_igni_reaches_nothing_outside_the_network import StubModel
 
 REPLY = "Deployed to staging."
@@ -63,7 +63,7 @@ def igni(home: Path, project: Path, message: str) -> subprocess.CompletedProcess
     env = {**os.environ, "HOME": str(home), "NO_COLOR": "1"}
     env.pop("IGNI_AIR_GAPPED", None)
     return subprocess.run(
-        [sys.executable, "-m", "ember_code", "-m", message],
+        [sys.executable, "-m", "igni_core", "-m", message],
         cwd=project,
         env=env,
         capture_output=True,

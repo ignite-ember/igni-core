@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from click.testing import CliRunner
 
-from ember_code.cli import cli
-from ember_code.core.config.permission_eval import (
+from igni_core.cli import cli
+from igni_core.core.config.permission_eval import (
     PermissionDecision,
     PermissionEvaluator,
     PermissionMode,
@@ -56,7 +56,7 @@ def _settings_from_flags(**flags: bool):
 
 
 def _settings_with_overrides(**overrides):
-    from ember_code.core.config.settings import load_settings
+    from igni_core.core.config.settings import load_settings
 
     return load_settings(cli_overrides={"permissions": overrides})
 
@@ -65,7 +65,7 @@ def _settings_with_overrides(**overrides):
 
 
 def test_default_mode_is_default() -> None:
-    from ember_code.core.config.settings import load_settings
+    from igni_core.core.config.settings import load_settings
 
     s = load_settings()
     assert s.permissions.mode == "default"
@@ -208,7 +208,7 @@ def test_the_strict_help_does_not_promise_reads_survive() -> None:
     shell. Whether ``--strict`` should mean something gentler is a policy call;
     until it is made, the help must not describe a behaviour the flag lacks.
     """
-    from ember_code.cli import cli as cli_main
+    from igni_core.cli import cli as cli_main
 
     strict = next(p for p in cli_main.params if "--strict" in p.opts)
     help_text = (strict.help or "").lower()

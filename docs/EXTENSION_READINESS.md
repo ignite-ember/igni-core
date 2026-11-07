@@ -83,7 +83,7 @@ the extension boundary is a security boundary or a comment.
 
 **`egress` and `workspace` now bind the process, not only its pages.**
 Every process igni starts for an extension starts in an OS sandbox
-(`ember_code/extensions/sandbox/`), with the extension's grants as its
+(`igni_core/extensions/sandbox/`), with the extension's grants as its
 profile:
 
 | | macOS — Seatbelt (`sandbox-exec`) | Linux — bubblewrap (`bwrap`) | Windows |

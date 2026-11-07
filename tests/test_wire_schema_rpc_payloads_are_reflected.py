@@ -20,10 +20,10 @@ field added to any of the three cannot go missing.
 
 from __future__ import annotations
 
-from ember_code.backend.schemas_context import PendingMessage
-from ember_code.backend.schemas_loop import LoopStatusSnapshot
-from ember_code.backend.schemas_mcp import MCPServerSnapshot
-from ember_code.protocol.wire_schema import build_schema
+from igni_core.backend.schemas_context import PendingMessage
+from igni_core.backend.schemas_loop import LoopStatusSnapshot
+from igni_core.backend.schemas_mcp import MCPServerSnapshot
+from igni_core.protocol.wire_schema import build_schema
 
 _MODELS = {
     "loop_status": LoopStatusSnapshot,

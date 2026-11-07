@@ -24,7 +24,7 @@ from datetime import datetime
 import httpx
 import pytest
 
-from ember_code.core.auth.portal_client import PortalClient
+from igni_core.core.auth.portal_client import PortalClient
 
 # ── helpers ────────────────────────────────────────────────────────────
 
@@ -511,7 +511,7 @@ async def test_full_e2e_pack_to_cache(tmp_path, monkeypatch):
     """Round-trip: stub igni server → PortalClient → GroupPolicyCache.materialize →
     the on-disk cache contains the materialized agents + MCP envelopes + meta.
     """
-    from ember_code.core.config.group_policy import GroupPolicyCache, refresh
+    from igni_core.core.config.group_policy import GroupPolicyCache, refresh
 
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_sample_pack_body())
@@ -591,7 +591,7 @@ async def test_a_304_answers_unchanged_not_none(monkeypatch):
     """``None`` means "I could not tell you" and leaves the cache alone;
     this means "I checked, you are current". Conflating them would make
     a failed request look like a confirmation."""
-    from ember_code.core.config.group_policy import PACK_UNCHANGED
+    from igni_core.core.config.group_policy import PACK_UNCHANGED
 
     portal, patched = _stub_client(lambda req: httpx.Response(304))
     monkeypatch.setattr("httpx.AsyncClient", patched)

@@ -19,8 +19,8 @@ from typing import Any
 
 import httpx
 
-from ember_code.extensions.service_token import IgniSession
-from ember_code.notifications.server_client import SignedInServer
+from igni_core.extensions.service_token import IgniSession
+from igni_core.notifications.server_client import SignedInServer
 
 API_URL = "https://igni.test"
 SESSION = "session-token-of-the-person"

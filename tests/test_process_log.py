@@ -27,10 +27,10 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.tools.orphan_process import OrphanProcess
-from ember_code.core.tools.process_log import ProcessLogStore
-from ember_code.core.tools.process_supervisor_locator import supervisors
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.tools.orphan_process import OrphanProcess
+from igni_core.core.tools.process_log import ProcessLogStore
+from igni_core.core.tools.process_supervisor_locator import supervisors
 
 
 class TestLogPathResolution:

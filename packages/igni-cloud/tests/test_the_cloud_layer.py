@@ -21,22 +21,22 @@ from igni_cloud.layer import CloudLayer
 from igni_cloud.logs import StdoutLog
 from igni_cloud.mcp_approvals import CloudMcpApprovals, PersonMcpApprovals
 
-from ember_code.backend.hitl_tracer import HITLTracer
-from ember_code.backend.logging_setup import configure_logging
-from ember_code.core.auth.credentials import (
+from igni_core.backend.hitl_tracer import HITLTracer
+from igni_core.backend.logging_setup import configure_logging
+from igni_core.core.auth.credentials import (
     CloudCredentials,
     Credentials,
     CredentialsStore,
 )
-from ember_code.core.config.llm_call_logger import LlmCallLogger
-from ember_code.core.config.managed_policy import ManagedPolicySource
-from ember_code.core.config.settings import Settings, load_settings
-from ember_code.core.db.locator import StorageLocator
-from ember_code.core.layer import Layer, Layers, UnknownLayer
-from ember_code.core.mcp.approval import MCPApprovalManager
-from ember_code.core.utils.audit import AuditLogger
-from ember_code.core.utils.audit_schemas import AuditEntry
-from ember_code.extensions.store import ExtensionStore, StoredGroup
+from igni_core.core.config.llm_call_logger import LlmCallLogger
+from igni_core.core.config.managed_policy import ManagedPolicySource
+from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.db.locator import StorageLocator
+from igni_core.core.layer import Layer, Layers, UnknownLayer
+from igni_core.core.mcp.approval import MCPApprovalManager
+from igni_core.core.utils.audit import AuditLogger
+from igni_core.core.utils.audit_schemas import AuditEntry
+from igni_core.extensions.store import ExtensionStore, StoredGroup
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ def cloud(cloud_layer: CloudLayer) -> CloudLayer:
 
 @pytest.fixture
 def clean_loggers() -> Iterator[None]:
-    names = ("ember_code", "ember_code.llm_calls", "httpx", "httpcore")
+    names = ("igni_core", "igni_core.llm_calls", "httpx", "httpcore")
     saved = {n: list(logging.getLogger(n).handlers) for n in names}
     # A handler another test left behind would answer for the one
     # under test (``LlmCallLogger`` installs only when there is none).
@@ -81,12 +81,12 @@ def test_the_backend_logs_json_lines_to_stdout_and_writes_no_file(
     cloud, clean_loggers, capsys, tmp_path: Path
 ):
     assert configure_logging(path=tmp_path / "backend.log") is None
-    logging.getLogger("ember_code.backend.test").warning("hello %s", "cloud")
+    logging.getLogger("igni_core.backend.test").warning("hello %s", "cloud")
     StdoutLog.flush()
     line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert line["message"] == "hello cloud"
     assert line["level"] == "WARNING"
-    assert line["logger"] == "ember_code.backend.test"
+    assert line["logger"] == "igni_core.backend.test"
     assert not (tmp_path / "backend.log").exists()
 
 
@@ -120,7 +120,7 @@ def test_the_audit_log_is_a_json_line_on_stdout(cloud, clean_loggers, capsys, tm
 def test_llm_calls_have_no_log_file(cloud, clean_loggers, tmp_path: Path):
     LlmCallLogger(log_dir=tmp_path).ensure_configured()
     assert not (tmp_path / "llm_calls.log").exists()
-    assert StdoutLog.handler() in logging.getLogger("ember_code.llm_calls").handlers
+    assert StdoutLog.handler() in logging.getLogger("igni_core.llm_calls").handlers
 
 
 def test_credentials_come_from_the_environment_and_are_never_written(

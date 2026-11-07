@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.config.settings import (
+from igni_core.core.config.settings import (
     ModelsConfig,
     PermissionsConfig,
     Settings,
     SettingsLoader,
     load_settings,
 )
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.paths import CONFIG_DIR
 
 # The pre-refactor module exposed ``_deep_merge`` / ``_load_yaml`` as
 # free-function shims. They have been promoted to staticmethods on
@@ -38,7 +38,7 @@ def _isolate_managed_settings(monkeypatch):
     ``_REAL_PLATFORM_PATH`` so platform-detail tests can still reach
     it past this stub."""
     monkeypatch.setattr(
-        "ember_code.core.config.settings.SettingsLoader.platform_managed_settings_path",
+        "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
         staticmethod(lambda: None),
     )
 
@@ -136,9 +136,9 @@ class TestSettings:
 
 class TestLoadSettings:
     def test_load_with_project_config(self, tmp_path):
-        ember_dir = tmp_path / CONFIG_DIR
-        ember_dir.mkdir()
-        config = ember_dir / "config.yaml"
+        igni_dir = tmp_path / CONFIG_DIR
+        igni_dir.mkdir()
+        config = igni_dir / "config.yaml"
         config.write_text("models:\n  default: custom-from-project\n")
 
         s = load_settings(project_dir=tmp_path)
@@ -152,9 +152,9 @@ class TestLoadSettings:
         assert s.models.default == "cli-model"
 
     def test_cli_overrides_beat_project(self, tmp_path):
-        ember_dir = tmp_path / CONFIG_DIR
-        ember_dir.mkdir()
-        config = ember_dir / "config.yaml"
+        igni_dir = tmp_path / CONFIG_DIR
+        igni_dir.mkdir()
+        config = igni_dir / "config.yaml"
         config.write_text("models:\n  default: project-model\n")
 
         s = load_settings(
@@ -164,10 +164,10 @@ class TestLoadSettings:
         assert s.models.default == "cli-model"
 
     def test_local_config_beats_project(self, tmp_path):
-        ember_dir = tmp_path / CONFIG_DIR
-        ember_dir.mkdir()
-        (ember_dir / "config.yaml").write_text("models:\n  default: project\n")
-        (ember_dir / "config.local.yaml").write_text("models:\n  default: local\n")
+        igni_dir = tmp_path / CONFIG_DIR
+        igni_dir.mkdir()
+        (igni_dir / "config.yaml").write_text("models:\n  default: project\n")
+        (igni_dir / "config.local.yaml").write_text("models:\n  default: local\n")
 
         s = load_settings(project_dir=tmp_path)
         assert s.models.default == "local"
@@ -228,7 +228,7 @@ class TestFiveTierPrecedence:
         managed = tmp_path / "managed.yaml"
         managed.write_text(f"models:\n  default: managed-{tier_label}\n")
         monkeypatch.setattr(
-            "ember_code.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
 
@@ -309,20 +309,20 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("models:\n  default: org-pinned\n")
         monkeypatch.setattr(
-            "ember_code.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
         s = load_settings(project_dir=tmp_path)
         assert s.models.default == "org-pinned"
 
     def test_managed_overrides_project(self, tmp_path, monkeypatch):
-        ember_dir = tmp_path / CONFIG_DIR
-        ember_dir.mkdir()
-        (ember_dir / "config.yaml").write_text("models:\n  default: project-model\n")
+        igni_dir = tmp_path / CONFIG_DIR
+        igni_dir.mkdir()
+        (igni_dir / "config.yaml").write_text("models:\n  default: project-model\n")
         managed = tmp_path / "managed.yaml"
         managed.write_text("models:\n  default: org-pinned\n")
         monkeypatch.setattr(
-            "ember_code.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
         s = load_settings(project_dir=tmp_path)
@@ -334,7 +334,7 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("permissions:\n  mode: dontAsk\nmodels:\n  default: org-pinned\n")
         monkeypatch.setattr(
-            "ember_code.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
         s = load_settings(
@@ -352,7 +352,7 @@ class TestManagedSettings:
         # Point at a path that doesn't exist — loader should fall
         # back to lower tiers without raising.
         monkeypatch.setattr(
-            "ember_code.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: tmp_path / "does-not-exist.yaml"),
         )
         s = load_settings(
@@ -368,7 +368,7 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("permissions:\n  mode: dontAsk\n")
         monkeypatch.setattr(
-            "ember_code.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
         s = load_settings(
@@ -387,7 +387,7 @@ class TestManagedSettings:
             '{"permissions": {"mode": "dontAsk"}, "models": {"default": "json-model"}}'
         )
         monkeypatch.setattr(
-            "ember_code.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
         s = load_settings(project_dir=tmp_path)
@@ -398,7 +398,7 @@ class TestManagedSettings:
         """Unknown platform (no managed location defined) → managed
         tier is silently skipped without error."""
         monkeypatch.setattr(
-            "ember_code.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: None),
         )
         s = load_settings(
@@ -421,9 +421,9 @@ class TestSettingsJsonLifted:
 
     def test_user_settings_json_deny_reaches_evaluator(self, tmp_path, monkeypatch) -> None:
         user_home = tmp_path / "home"
-        ember_dir = user_home / CONFIG_DIR
-        ember_dir.mkdir(parents=True)
-        (ember_dir / "settings.json").write_text('{"permissions": {"deny": ["Bash(rm -rf /)"]}}')
+        igni_dir = user_home / CONFIG_DIR
+        igni_dir.mkdir(parents=True)
+        (igni_dir / "settings.json").write_text('{"permissions": {"deny": ["Bash(rm -rf /)"]}}')
         monkeypatch.setattr("pathlib.Path.home", lambda: user_home)
 
         s = load_settings(project_dir=tmp_path)
@@ -459,9 +459,9 @@ class TestSettingsJsonLifted:
         # Best-effort: a hand-edited file with a syntax error
         # must NOT take down the BE on startup. Skip + defaults.
         user_home = tmp_path / "home"
-        ember_dir = user_home / CONFIG_DIR
-        ember_dir.mkdir(parents=True)
-        (ember_dir / "settings.json").write_text("{not valid json")
+        igni_dir = user_home / CONFIG_DIR
+        igni_dir.mkdir(parents=True)
+        (igni_dir / "settings.json").write_text("{not valid json")
         monkeypatch.setattr("pathlib.Path.home", lambda: user_home)
 
         s = load_settings(project_dir=tmp_path)
@@ -474,9 +474,9 @@ class TestSettingsJsonLifted:
         # there'd be two competing sources of truth. Confirm we
         # skip it entirely.
         user_home = tmp_path / "home"
-        ember_dir = user_home / CONFIG_DIR
-        ember_dir.mkdir(parents=True)
-        (ember_dir / "settings.json").write_text(
+        igni_dir = user_home / CONFIG_DIR
+        igni_dir.mkdir(parents=True)
+        (igni_dir / "settings.json").write_text(
             """{"hooks": {"PreToolUse": [{"type": "command", "command": "x"}]},
                 "permissions": {"deny": ["Bash(rm *)"]}}"""
         )

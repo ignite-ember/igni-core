@@ -14,13 +14,13 @@ from types import SimpleNamespace
 import pytest
 from click.testing import CliRunner
 
-from ember_code.backend.schemas_rpc import LoginResult
-from ember_code.cli import cli
-from ember_code.core.auth.credentials import CredentialsStore
-from ember_code.core.auth.portal_client import PortalClient
-from ember_code.core.auth.schemas import UserInfo, ValidateResult
+from igni_core.backend.schemas_rpc import LoginResult
+from igni_core.cli import cli
+from igni_core.core.auth.credentials import CredentialsStore
+from igni_core.core.auth.portal_client import PortalClient
+from igni_core.core.auth.schemas import UserInfo, ValidateResult
 
-login_cli = importlib.import_module("ember_code.cli.login")
+login_cli = importlib.import_module("igni_core.cli.login")
 
 
 @pytest.fixture

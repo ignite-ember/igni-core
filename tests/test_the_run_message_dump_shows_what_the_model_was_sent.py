@@ -14,9 +14,9 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.session.run_debug import RunMessagesDebugDumper
+from igni_core.core.session.run_debug import RunMessagesDebugDumper
 
-LOGGER = "ember_code.core.session.run_debug"
+LOGGER = "igni_core.core.session.run_debug"
 
 
 class _Message:

@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ember_code.core.mcp.tool_filter import MCPToolFilter
-from ember_code.core.mcp.tool_state import MCPToolStateStore
+from igni_core.core.mcp.tool_filter import MCPToolFilter
+from igni_core.core.mcp.tool_state import MCPToolStateStore
 
 
 @dataclass

@@ -25,14 +25,14 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.core.mcp.naming import bare_tool_name
-from ember_code.extensions.installer import ExtensionInstaller, InstallError
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.origin import ExtensionOrigins
-from ember_code.extensions.permissions import PermissionDenied, Permissions
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.mcp.naming import bare_tool_name
+from igni_core.extensions.installer import ExtensionInstaller, InstallError
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.permissions import PermissionDenied, Permissions
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
 
 FIXTURE = Path(__file__).parent / "fixtures" / "dev_extension"
 

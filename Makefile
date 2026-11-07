@@ -24,7 +24,7 @@ test-v: ## Run tests with verbose output
 	$(VENV)/python -m pytest tests/ -v
 
 test-cov: ## Run tests with coverage
-	$(VENV)/python -m pytest tests/ --cov=ember_code --cov-report=term-missing
+	$(VENV)/python -m pytest tests/ --cov=igni_core --cov-report=term-missing
 
 lint: ## Run ruff linter
 	$(VENV)/ruff check src/ tests/
@@ -36,7 +36,7 @@ format-check: ## Check formatting without making changes
 	$(VENV)/ruff format --check src/ tests/
 
 typecheck: ## Run mypy type checking
-	$(VENV)/mypy src/ember_code/
+	$(VENV)/mypy src/igni_core/
 
 check: lint format-check typecheck test ## Run all checks (lint + format + typecheck + test)
 

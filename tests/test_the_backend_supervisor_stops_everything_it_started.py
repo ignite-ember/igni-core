@@ -25,16 +25,16 @@ from pathlib import Path
 
 import pytest
 
-from ember_code import __version__
-from ember_code.backend import supervisor as supervisor_mod
-from ember_code.backend.lockfile import Lockfile
-from ember_code.backend.schemas_rpc import LifecyclePhase
-from ember_code.backend.schemas_sessions import (
+from igni_core import __version__
+from igni_core.backend import supervisor as supervisor_mod
+from igni_core.backend.lockfile import Lockfile
+from igni_core.backend.schemas_rpc import LifecyclePhase
+from igni_core.backend.schemas_sessions import (
     EvictedRuntimeReport,
     EvictionReport,
     ShutdownReport,
 )
-from ember_code.backend.supervisor import BackendSupervisor
+from igni_core.backend.supervisor import BackendSupervisor
 
 POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
 

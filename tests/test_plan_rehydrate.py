@@ -14,9 +14,9 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock  # noqa: F401  (used in tests)
 
-from ember_code.backend.restore_content import AssistantContentRestorer
-from ember_code.backend.server import BackendServer
-from ember_code.core.tools.plan import PlanStore
+from igni_core.backend.restore_content import AssistantContentRestorer
+from igni_core.backend.server import BackendServer
+from igni_core.core.tools.plan import PlanStore
 
 
 def _assistant_msg_with_tool_call(name: str, args: dict | str) -> SimpleNamespace:

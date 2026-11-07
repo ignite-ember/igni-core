@@ -27,9 +27,9 @@ from typing import Any
 
 import pytest
 
-from ember_code.core.tools.orchestrate_budget import SpawnBudget
-from ember_code.core.tools.orchestrate_events import SpawnDeps
-from ember_code.core.tools.orchestrate_spawn import AgentSpawn, TeamSpawn
+from igni_core.core.tools.orchestrate_budget import SpawnBudget
+from igni_core.core.tools.orchestrate_events import SpawnDeps
+from igni_core.core.tools.orchestrate_spawn import AgentSpawn, TeamSpawn
 
 
 class _Pool:

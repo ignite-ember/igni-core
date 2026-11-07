@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.guardrails.base import Guardrail, GuardrailResult
+from igni_core.core.guardrails.base import Guardrail, GuardrailResult
 
 
 class _AlwaysFlags(Guardrail):
@@ -50,7 +50,7 @@ def runner():
     config flags, and inventing a flag for a test guardrail would mean editing
     ``GuardrailsConfig`` to test it.
     """
-    from ember_code.core.guardrails.runner import GuardrailRunner
+    from igni_core.core.guardrails.runner import GuardrailRunner
 
     made = GuardrailRunner.__new__(GuardrailRunner)
     made._guardrails = [_AlwaysFlags()]
@@ -81,7 +81,7 @@ class TestEveryEntryPointUsesIt:
         """
         import inspect
 
-        from ember_code.core.session.message_handler import SessionMessageHandler
+        from igni_core.core.session.message_handler import SessionMessageHandler
 
         source = inspect.getsource(SessionMessageHandler._guardrail_prefix)
 
@@ -98,7 +98,7 @@ class TestEveryEntryPointUsesIt:
         """The portal path must reach the runner before ``team.arun``."""
         import inspect
 
-        from ember_code.backend.run_controller import RunController
+        from igni_core.backend.run_controller import RunController
 
         # Comments stripped first. The initial version of this test matched the
         # explanatory comment above the fix, which names ``team.arun`` in prose,

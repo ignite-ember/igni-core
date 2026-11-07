@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ember_code.core.config.settings import Settings, load_settings
-from ember_code.core.paths import CONFIG_DIR, LEGACY_CONFIG_DIR, home_config_dir
+from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.paths import CONFIG_DIR, LEGACY_CONFIG_DIR, home_config_dir
 
 
 def _home(monkeypatch, root: Path) -> None:

@@ -27,7 +27,7 @@ It is still wrong for this product:
   Statement of Applicability. An auditor finding an undeclared
   processor is a finding regardless of payload.
 
-The switch is ``AGNO_TELEMETRY``, set by ``ember_code/__init__`` before
+The switch is ``AGNO_TELEMETRY``, set by ``igni_core/__init__`` before
 anything imports Agno (``core/agno_telemetry.py``):
 ``agno.agent._init.set_telemetry`` re-reads the variable on every run and
 overrides whatever the constructor said, so the environment covers
@@ -51,12 +51,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ember_code.core.agents.schemas import AgentConstructorArgs
-from ember_code.core.agno_telemetry import AgnoTelemetry
-from ember_code.core.session.agent_builder.agent_build_spec import AgentBuildSpec
-from ember_code.extensions.installer import ExtensionInstaller
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.permissions import Permissions
+from igni_core.core.agents.schemas import AgentConstructorArgs
+from igni_core.core.agno_telemetry import AgnoTelemetry
+from igni_core.core.session.agent_builder.agent_build_spec import AgentBuildSpec
+from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.permissions import Permissions
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -65,7 +65,7 @@ def _env_after_import(preset: dict[str, str] | None = None) -> str | None:
     """``AGNO_TELEMETRY`` as it stands after importing the package.
 
     Run in a subprocess because the import is a one-time side effect:
-    ``ember_code`` is already imported in this process, so asserting
+    ``igni_core`` is already imported in this process, so asserting
     against the current environment would only measure whatever the
     test runner happened to inherit.
     """
@@ -78,7 +78,7 @@ def _env_after_import(preset: dict[str, str] | None = None) -> str | None:
         [
             sys.executable,
             "-c",
-            "import os, ember_code; print(os.environ.get('AGNO_TELEMETRY', '<unset>'))",
+            "import os, igni_core; print(os.environ.get('AGNO_TELEMETRY', '<unset>'))",
         ],
         capture_output=True,
         text=True,
@@ -94,7 +94,7 @@ class TestTheDefaultIsSilence:
         value = _env_after_import()
 
         assert value != "<unset>", (
-            "importing `ember_code` no longer sets AGNO_TELEMETRY. Agno's default is "
+            "importing `igni_core` no longer sets AGNO_TELEMETRY. Agno's default is "
             "on, so every run will POST to os-api.agno.com."
         )
         # Agno's check is `telemetry_env.lower() == "true"`, so anything
@@ -165,7 +165,7 @@ class TestTheConstructorsSayItToo:
         assert kwargs["telemetry"] is False
 
     def test_a_sub_team_passes_it(self):
-        source = (_ROOT / "src/ember_code/core/tools/orchestrate_spawn.py").read_text()
+        source = (_ROOT / "src/igni_core/core/tools/orchestrate_spawn.py").read_text()
         assert '"telemetry": AgnoTelemetry.CONSTRUCTOR_VALUE' in source
 
     def test_an_extension_service_is_handed_it_and_cannot_turn_it_on(self, tmp_path, monkeypatch):

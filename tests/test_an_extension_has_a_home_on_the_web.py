@@ -12,12 +12,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ember_code.backend.rpc_handlers.base import RpcHandlerContext
-from ember_code.backend.rpc_handlers.extensions import ExtensionsRpcHandler
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
-from ember_code.extensions.store import DistributionRecord, ExtensionStore
-from ember_code.extensions.web_home import ExtensionWebHome
+from igni_core.backend.rpc_handlers.base import RpcHandlerContext
+from igni_core.backend.rpc_handlers.extensions import ExtensionsRpcHandler
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.web_home import ExtensionWebHome
 from tests.host_model_helpers import manifest
 
 

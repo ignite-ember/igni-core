@@ -14,8 +14,8 @@ from pathlib import Path
 
 from igni_cloud.guest import ActivityFile
 
-from ember_code.backend.activity import Activity
-from ember_code.core.activity import ActivityRegistry, BusyKind
+from igni_core.backend.activity import Activity
+from igni_core.core.activity import ActivityRegistry, BusyKind
 
 
 def test_the_activity_file_carries_busy_and_wake_at(tmp_path: Path):

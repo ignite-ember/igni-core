@@ -3,13 +3,13 @@
 No extension can have one of them: the dispatcher runs igni's first, so
 an extension's ``/clear`` would never run. igni server reads its copy of
 this list to refuse such a bundle at upload, and the host switches the
-claim off (:class:`~ember_code.extensions.impact.IgniCommands`). Held to
+claim off (:class:`~igni_core.extensions.impact.IgniCommands`). Held to
 the dispatcher here, because a list kept by hand is a list that is wrong.
 
 To refresh it::
 
-    python -c "from pathlib import Path; from ember_code.backend.command_handler import \\
-CommandHandler; from ember_code.extensions.impact import IgniCommands; \\
+    python -c "from pathlib import Path; from igni_core.backend.command_handler import \\
+CommandHandler; from igni_core.extensions.impact import IgniCommands; \\
 Path('docs/igni-commands.json').write_text(IgniCommands.of(CommandHandler.builtin_names())\\
 .model_dump_json(indent=2) + '\\n')"
 """
@@ -20,11 +20,11 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.backend.command_handler import CommandHandler
-from ember_code.extensions.contributions import ExtensionContributions
-from ember_code.extensions.impact import ExtensionImpact, IgniCommands, ImpactResolver
-from ember_code.extensions.manifest import ExtensionManifest
-from ember_code.extensions.registry import ExtensionRegistry
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.extensions.contributions import ExtensionContributions
+from igni_core.extensions.impact import ExtensionImpact, IgniCommands, ImpactResolver
+from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.registry import ExtensionRegistry
 
 REPO = Path(__file__).resolve().parents[1]
 LISTED = REPO / "docs" / "igni-commands.json"

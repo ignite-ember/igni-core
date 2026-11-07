@@ -23,12 +23,12 @@ import os
 import re
 import sys
 import tempfile
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
 # Quiet down agno logs that flood the smoke output
 logging.getLogger("agno").setLevel(logging.ERROR)
-logging.getLogger("ember_code").setLevel(logging.WARNING)
+logging.getLogger("igni_core").setLevel(logging.WARNING)
 
 
 def _install_websearch_stub() -> None:
@@ -142,8 +142,8 @@ def _build_editor_agent(model, project_dir: Path):
     """
     from agno.agent import Agent
 
-    from ember_code.core.config.tool_permissions import ToolPermissions
-    from ember_code.core.tools.registry import ToolRegistry
+    from igni_core.core.config.tool_permissions import ToolPermissions
+    from igni_core.core.tools.registry import ToolRegistry
 
     md = Path("agents/editor.md").read_text()
     fm_match = re.match(r"^---\n.*?\n---\n(.*)", md, re.DOTALL)
@@ -179,8 +179,8 @@ def _build_mcp_test_agent(model, project_dir: Path):
 
     from agno.agent import Agent
 
-    from ember_code.core.config.tool_permissions import ToolPermissions
-    from ember_code.core.tools.registry import ToolRegistry
+    from igni_core.core.config.tool_permissions import ToolPermissions
+    from igni_core.core.tools.registry import ToolRegistry
 
     sys.path.insert(0, str(Path("evals").resolve()))
     from _mcp_stubs import MCPStubTools  # type: ignore[import-not-found]
@@ -220,8 +220,8 @@ def _build_main_agent(model, project_dir: Path):
     populated AgentPool to dispatch to specialists. We point Session at a
     temp project_dir so we don't touch the real .igni/ workspace.
     """
-    from ember_code.core.config.settings import load_settings
-    from ember_code.core.session.core import Session
+    from igni_core.core.config.settings import load_settings
+    from igni_core.core.session.core import Session
 
     # Override the default model to use our live test model
     os.environ["IGNI_TEST_LLM_API_KEY_OVERRIDE"] = os.environ["IGNI_TEST_LLM_API_KEY"]
@@ -272,7 +272,8 @@ async def _run_case(
     raise, so the suite always finishes.
     """
     import uuid as _uuid
-    from ember_code.core.evals.runner import CaseResult, run_eval_case
+
+    from igni_core.core.evals.runner import CaseResult, run_eval_case
 
     last_error: str | None = None
     attempts = 1 + max(0, case_retries)
@@ -344,8 +345,8 @@ async def _run_suite(
     """
     import shutil
 
-    from ember_code.core.evals.loader import load_eval_file
-    from ember_code.core.evals.runner import _setup_fixtures
+    from igni_core.core.evals.loader import load_eval_file
+    from igni_core.core.evals.runner import _setup_fixtures
 
     suite = load_eval_file(suite_path)
     if not suite:
@@ -603,14 +604,14 @@ async def main():
         Session — caller decides whether to use ``main_team`` or
         ``pool.get(name)``.
         """
-        from ember_code.core.config.settings import load_settings
-        from ember_code.core.session.core import Session
-
         import json as _json
 
-        ember_dir = project_dir / ".igni"
-        ember_dir.mkdir(parents=True, exist_ok=True)
-        (ember_dir / "settings.local.json").write_text(
+        from igni_core.core.config.settings import load_settings
+        from igni_core.core.session.core import Session
+
+        igni_dir = project_dir / ".igni"
+        igni_dir.mkdir(parents=True, exist_ok=True)
+        (igni_dir / "settings.local.json").write_text(
             _json.dumps(
                 {
                     "permissions": {

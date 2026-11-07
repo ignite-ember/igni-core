@@ -85,7 +85,7 @@ runs the same ones, and a pull request is merged only when they pass.
 ```bash
 uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
-uv run mypy src/ember_code/
+uv run mypy src/igni_core/
 uv run pytest tests/ -q          # the whole Python suite
 ```
 
@@ -94,11 +94,11 @@ that reaches the internet fails unless it carries the `reaches_the_internet`
 marker. It also fails the run if a test leaves files in the repository root.
 
 CI measures coverage too, and fails below a floor that only goes up: line and
-branch coverage of `src/ember_code` (`--cov-fail-under` in the `test` job).
+branch coverage of `src/igni_core` (`--cov-fail-under` in the `test` job).
 To see where you stand:
 
 ```bash
-uv run pytest tests/ -q --cov=ember_code --cov-branch --cov-report=term-missing
+uv run pytest tests/ -q --cov=igni_core --cov-branch --cov-report=term-missing
 ```
 
 ## What a change needs

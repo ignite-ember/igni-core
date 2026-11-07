@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from agno.tools import tool
 
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.tools.custom_loader import CustomToolkit, load_custom_tools
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.tools.custom_loader import CustomToolkit, load_custom_tools
 
 
 @pytest.fixture

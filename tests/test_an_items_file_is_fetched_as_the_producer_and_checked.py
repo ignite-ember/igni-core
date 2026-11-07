@@ -16,8 +16,8 @@ import hashlib
 import httpx
 import pytest
 
-from ember_code.extensions.service_attachments import AttachmentUnavailable, ServerAttachments
-from ember_code.extensions.service_items import ItemAttachment
+from igni_core.extensions.service_attachments import AttachmentUnavailable, ServerAttachments
+from igni_core.extensions.service_items import ItemAttachment
 from tests.notification_helpers import API_URL, SESSION, signed_in
 
 CONTENT = b"quarterly figures\n"

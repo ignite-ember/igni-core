@@ -23,12 +23,12 @@ from unittest.mock import patch
 
 import pytest
 
-from ember_code.core.config.schemas import PluginsConfig, StorageConfig
-from ember_code.core.config.settings import Settings
-from ember_code.core.plugins.marketplace_store import DEFAULT_MARKETPLACES
-from ember_code.core.plugins.models import MarketplaceCatalog, MarketplaceEntry, MarketplaceRegistry
-from ember_code.core.session.core import Session
-from ember_code.core.session.startup.marketplace import MarketplaceWarmupPhase
+from igni_core.core.config.schemas import PluginsConfig, StorageConfig
+from igni_core.core.config.settings import Settings
+from igni_core.core.plugins.marketplace_store import DEFAULT_MARKETPLACES
+from igni_core.core.plugins.models import MarketplaceCatalog, MarketplaceEntry, MarketplaceRegistry
+from igni_core.core.session.core import Session
+from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
 
 [(OFFICIAL_NAME, OFFICIAL_URL)] = DEFAULT_MARKETPLACES
 STALE = "2020-01-01T00:00:00+00:00"
@@ -57,7 +57,7 @@ def _clones_at_start(data_dir: Path, **plugins: bool) -> list[str]:
     )
     session = Session.__new__(Session)
     session.settings = settings
-    with patch("ember_code.core.plugins.git.subprocess.run", no_git):
+    with patch("igni_core.core.plugins.git.subprocess.run", no_git):
         asyncio.run(MarketplaceWarmupPhase(session)._refresh_all())
     return cloned
 
@@ -119,7 +119,7 @@ def test_who_added_it_is_kept_across_a_re_add(before, again, after):
 def test_marketplace_add_records_the_person(tmp_path):
     """``/plugin marketplace add`` goes through the store's ``add``, which
     marks the entry as the person's unless told otherwise."""
-    from ember_code.core.plugins.marketplace_store import MarketplaceRegistryStore
+    from igni_core.core.plugins.marketplace_store import MarketplaceRegistryStore
 
     store = MarketplaceRegistryStore(tmp_path / "data")
     catalog = MarketplaceCatalog(name=OFFICIAL_NAME, plugins=[])

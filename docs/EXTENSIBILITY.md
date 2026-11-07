@@ -252,7 +252,7 @@ await ext.host.agents.promote_ephemeral("api-auditor", target="personal")
 ```
 
 **One schema, two SDKs.** The model is described once
-(`ember_code.extensions.host.definition`, versioned under §8) and both
+(`igni_core.extensions.host.definition`, versioned under §8) and both
 SDKs' `host` objects are generated from it: igni-core publishes it as
 `docs/host-schema.json` (`make contracts`) and igni-sdk generates both
 from its copy. A test in each repository fails when its file is stale, and another fails when igni gains an RPC, a
@@ -709,7 +709,7 @@ Optional, and packaging-independent *within a single-user backend*: the client i
 
   `notify` means a message in *igni's* chrome. An extension's own toasts, inside its own frame, are published as `ToastHost`/`useToast` — the two are not interchangeable, and only something the user must see after navigating away belongs to the host.
 
-  `notify` is not a bridge call and will not be one: notifications are the floor's (igni server's service identity document, §10). An extension's *service* tells other people through igni server (`POST /v1/service-notifications`); an extension's *process* tells the person at this machine with the MCP notification `notifications/igni/notify` on its stdio connection — `{kind, title, body, target: {page, params}, event_key}`, `target.page` one of its own pages, kept on this machine once per `event_key` and never sent to igni server. igni shows both in one notifications panel, opens a row by going to `target.page` with `target.params` as launch params, and puts the unread count per extension on its sidebar entry and chips. An extension does not compute a badge of its own (`src/ember_code/notifications/`).
+  `notify` is not a bridge call and will not be one: notifications are the floor's (igni server's service identity document, §10). An extension's *service* tells other people through igni server (`POST /v1/service-notifications`); an extension's *process* tells the person at this machine with the MCP notification `notifications/igni/notify` on its stdio connection — `{kind, title, body, target: {page, params}, event_key}`, `target.page` one of its own pages, kept on this machine once per `event_key` and never sent to igni server. igni shows both in one notifications panel, opens a row by going to `target.page` with `target.params` as launch params, and puts the unread count per extension on its sidebar entry and chips. An extension does not compute a badge of its own (`src/igni_core/notifications/`).
 
   `storage` stays missing, but it is no longer the only way to keep a place. Each extension gets an ephemeral port, a port is part of an origin, so `localStorage` is wiped whenever the backend restarts. `setLocation` is the supported way to be restorable: the guest says where it is, the host folds that into its own URL and replays it in the next `hello`. Strings only, and small — it ends up in an address bar.
 
@@ -894,7 +894,7 @@ These three are a promise. **Everything else about igni's appearance is not**, a
 
 ## Not in the floor
 
-- Importing anything from `ember_code.*` — the contributions are the interface, not the package.
+- Importing anything from `igni_core.*` — the contributions are the interface, not the package.
 - **Any CSS class not defined in `igni-ui.css`**, any component not exported from `@ignite-ember/ui-react`, any token not in `PUBLISHED_TOKENS`. Naming a class is not the same as publishing it: an extension that reaches for `.kb-row` because it saw it in the DOM has taken a dependency we never offered.
 - The markup those classes are applied to — which element, which nesting. The class is the contract; the tree under it is ours.
 - `RpcMethod` members not namespaced to a capability.
@@ -975,11 +975,11 @@ Authorisation is decided before the service is consulted, and that ordering is t
 ## Reference
 
 - Closed unions to open: [`clients/web/src/chat/pageStack.ts`](../clients/web/src/chat/pageStack.ts), [`clients/web/src/App.tsx`](../clients/web/src/App.tsx)
-- Permissions: [`core/config/permission_eval/`](../src/ember_code/core/config/permission_eval), [`core/config/tool_permissions/`](../src/ember_code/core/config/tool_permissions)
-- Group tier: [`core/config/group_policy.py`](../src/ember_code/core/config/group_policy.py)
-- Store seams: [`core/db/urls.py`](../src/ember_code/core/db/urls.py), [`core/db/engine_registry.py`](../src/ember_code/core/db/engine_registry.py), [`core/session/_sqlite_utils.py`](../src/ember_code/core/session/_sqlite_utils.py)
-- MCP: [`core/mcp/config.py`](../src/ember_code/core/mcp/config.py), [`docs/MCP.md`](MCP.md)
-- Prompt placeholder to generalise: [`core/prompts/__init__.py`](../src/ember_code/core/prompts/__init__.py), [`core/agents/loader.py`](../src/ember_code/core/agents/loader.py)
+- Permissions: [`core/config/permission_eval/`](../src/igni_core/core/config/permission_eval), [`core/config/tool_permissions/`](../src/igni_core/core/config/tool_permissions)
+- Group tier: [`core/config/group_policy.py`](../src/igni_core/core/config/group_policy.py)
+- Store seams: [`core/db/urls.py`](../src/igni_core/core/db/urls.py), [`core/db/engine_registry.py`](../src/igni_core/core/db/engine_registry.py), [`core/session/_sqlite_utils.py`](../src/igni_core/core/session/_sqlite_utils.py)
+- MCP: [`core/mcp/config.py`](../src/igni_core/core/mcp/config.py), [`docs/MCP.md`](MCP.md)
+- Prompt placeholder to generalise: [`core/prompts/__init__.py`](../src/igni_core/core/prompts/__init__.py), [`core/agents/loader.py`](../src/igni_core/core/agents/loader.py)
 - Air-gap enforcement: [`tests/test_nothing_phones_home.py`](../tests/test_nothing_phones_home.py)
 
 ## Changelog

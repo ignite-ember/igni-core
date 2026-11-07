@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ember_code.core.mcp.tool_state import MCPToolStateStore
-from ember_code.core.paths import CONFIG_DIR
+from igni_core.core.mcp.tool_state import MCPToolStateStore
+from igni_core.core.paths import CONFIG_DIR
 
 
 class TestPath:

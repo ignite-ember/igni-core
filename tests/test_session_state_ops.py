@@ -13,10 +13,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from ember_code.core.config.permission_eval import PermissionEvaluator, PermissionMode
-from ember_code.core.output_styles import OutputStyle
-from ember_code.core.session.broadcast import BroadcastBus
-from ember_code.core.session.state_ops import RuntimeModeCoordinator
+from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
+from igni_core.core.output_styles import OutputStyle
+from igni_core.core.session.broadcast import BroadcastBus
+from igni_core.core.session.state_ops import RuntimeModeCoordinator
 
 
 def _bare_session(styles: dict[str, OutputStyle] | None = None):

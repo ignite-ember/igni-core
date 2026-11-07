@@ -36,7 +36,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-_AGENT_DIR = Path(__file__).resolve().parent.parent / "src/ember_code/bundled_agents"
+_AGENT_DIR = Path(__file__).resolve().parent.parent / "src/igni_core/bundled_agents"
 
 #: CodeIndex's versions of these agents replace them while it runs, so
 #: they are held to the same contract — checked against the sibling
@@ -70,7 +70,7 @@ def tools_the_prompt_asks_for(path: Path) -> set[str]:
     skipped — a prompt quoting shell output is not asking for a
     toolkit.
     """
-    from ember_code.core.tools.tool_spec import ToolSpecCatalog
+    from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
     body = re.sub(r"```.*?```", "", path.read_text().split("---", 2)[-1], flags=re.S)
     declared = declared_tools(path)
@@ -89,7 +89,7 @@ class TestTheScanMeasuredSomething:
         assert len(sorted(_AGENT_DIR.glob("*.md"))) >= 10
 
     def test_the_catalog_knows_function_names(self):
-        from ember_code.core.tools.tool_spec import ToolSpecCatalog
+        from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
         assert len(ToolSpecCatalog.default().agno_to_registry) >= 15
 
@@ -125,7 +125,7 @@ class TestEveryAgentDeclaresWhatItUses:
         registry skips what it cannot resolve — so the agent quietly
         launches with fewer tools than its author intended.
         """
-        from ember_code.core.tools.tool_spec import ToolSpecCatalog
+        from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
         valid = ToolSpecCatalog.default().registry_names_with_aliases
         unknown = sorted(t for t in declared_tools(path) if t not in valid)
@@ -155,7 +155,7 @@ class TestCreateAgentAdvertisesTheRealList:
     def _advertised() -> set[str]:
         import re
 
-        from ember_code.core.tools.orchestrate import OrchestrateTools
+        from igni_core.core.tools.orchestrate import OrchestrateTools
 
         doc = OrchestrateTools.create_agent.__doc__ or ""
         line = re.search(r"Valid:\s*(.+?)\.\s", doc, re.S)
@@ -163,7 +163,7 @@ class TestCreateAgentAdvertisesTheRealList:
         return {t.strip() for t in re.split(r"[,\s]+", line.group(1)) if t.strip()}
 
     def test_it_offers_exactly_what_an_ephemeral_agent_may_request(self):
-        from ember_code.core.tools.tool_spec import ToolSpecCatalog
+        from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
         advertised = self._advertised()
         allowed = set(ToolSpecCatalog.default().valid_ephemeral_names)

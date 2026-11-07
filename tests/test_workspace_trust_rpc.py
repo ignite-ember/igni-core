@@ -19,16 +19,16 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import yaml
 
-from ember_code.backend.rpc_handlers.workspace_trust import WorkspaceTrustRpcHandler
-from ember_code.backend.workspace_trust_controller import (
+from igni_core.backend.rpc_handlers.workspace_trust import WorkspaceTrustRpcHandler
+from igni_core.backend.workspace_trust_controller import (
     WorkspaceTrustController,
     WorkspaceTrustRefusedError,
     reload_settings,
 )
-from ember_code.core.config.schemas.workspace_trust import WorkspaceTrustConfig
-from ember_code.core.paths import CONFIG_DIR
-from ember_code.core.workspace_trust import WorkspaceIdentity, WorkspaceTrust
-from ember_code.protocol.rpc import RpcMethod
+from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
+from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.workspace_trust import WorkspaceIdentity, WorkspaceTrust
+from igni_core.protocol.rpc import RpcMethod
 
 pytestmark = pytest.mark.workspace_trust
 
@@ -170,7 +170,7 @@ def _project(tmp_path: Path) -> Path:
 
 
 async def test_a_running_session_picks_up_trust_and_its_revocation(tmp_path: Path) -> None:
-    from ember_code.core.session.core import Session
+    from igni_core.core.session.core import Session
 
     project = _project(tmp_path)
     session = Session(settings=reload_settings(project), project_dir=project)

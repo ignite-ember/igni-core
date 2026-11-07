@@ -19,14 +19,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.backend.message_dispatcher import MessageDispatcher
-from ember_code.backend.pause_handler import PauseHandler
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-from ember_code.core.config.permission_eval import (
+from igni_core.backend.message_dispatcher import MessageDispatcher
+from igni_core.backend.pause_handler import PauseHandler
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.core.config.permission_eval import (
     PermissionEvaluator,
     PermissionMode,
 )
-from ember_code.protocol import messages as msg
+from igni_core.protocol import messages as msg
 
 # The pending-paused-run resume path the xfail tests below specify is NOT
 # yet implemented: ``MessageDispatcher._on_user_message`` goes straight to

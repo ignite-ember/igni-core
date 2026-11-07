@@ -14,8 +14,8 @@ import httpx
 import pytest
 from click.testing import CliRunner
 
-from ember_code.cli.ext import ext
-from ember_code.extensions.origin import ExtensionOrigin
+from igni_core.cli.ext import ext
+from igni_core.extensions.origin import ExtensionOrigin
 
 TOOLS_MANIFEST = {
     "id": "acme.tickets",

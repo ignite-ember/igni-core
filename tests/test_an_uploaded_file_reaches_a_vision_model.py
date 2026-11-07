@@ -28,12 +28,12 @@ import pytest
 from agno.agent import Agent
 from agno.models.openai.like import OpenAILike
 
-from ember_code.backend.prompt_builder import PromptBuilder
-from ember_code.backend.schemas_run import PromptBuildResult
-from ember_code.backend.server_files import FilesController
-from ember_code.backend.service_item_desk import PoolChatDesk
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.utils.media import MediaResolver
+from igni_core.backend.prompt_builder import PromptBuilder
+from igni_core.backend.schemas_run import PromptBuildResult
+from igni_core.backend.server_files import FilesController
+from igni_core.backend.service_item_desk import PoolChatDesk
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.utils.media import MediaResolver
 from tests.service_item_rig import Desk, Files, Inbox, message
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32

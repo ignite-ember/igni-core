@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from ember_code.core.prompts.fragments import PromptFragments
+from igni_core.core.prompts.fragments import PromptFragments
 
 
 @pytest.fixture
@@ -125,6 +125,6 @@ def test_igni_supplies_no_anchors_of_its_own():
     """The table starts empty: every anchor is an installed extension's.
     ``{{CODEINDEX_GRAPH_SCHEMA}}`` used to be filled by igni importing
     the schema; CodeIndex supplies it now, from its ``graph_schema`` tool."""
-    from ember_code.core.prompts.fragments import PromptFragments
+    from igni_core.core.prompts.fragments import PromptFragments
 
     assert PromptFragments().anchors() == []

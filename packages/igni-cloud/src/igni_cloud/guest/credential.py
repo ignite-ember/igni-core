@@ -63,11 +63,11 @@ from typing import ClassVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from ember_code.core.activity import ActivityRegistry, background
-from ember_code.core.activity.http import BusyAsyncClient
 from igni_cloud.guest.files import AtomicFile
 from igni_cloud.guest.watch import DirectoryWatch
 from igni_cloud.producer import ProducerRef, UnknownProducer
+from igni_core.core.activity import ActivityRegistry, background
+from igni_core.core.activity.http import BusyAsyncClient
 
 logger = logging.getLogger(__name__)
 

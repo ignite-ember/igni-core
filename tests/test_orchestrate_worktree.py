@@ -21,9 +21,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ember_code.core.tools import orchestrate as orch_mod
-from ember_code.core.tools.orchestrate import OrchestrateTools
-from ember_code.core.tools.orchestrate_sandbox import SpawnSandbox
+from igni_core.core.tools import orchestrate as orch_mod
+from igni_core.core.tools.orchestrate import OrchestrateTools
+from igni_core.core.tools.orchestrate_sandbox import SpawnSandbox
 
 # ── Shared fixtures (mirrored from test_orchestrate.py) ──────
 
@@ -46,7 +46,7 @@ def _mock_stream(content: str):
 
 
 def _mock_pool(content: str = "agent response", agent_tools: list | None = None):
-    from ember_code.core.tools.orchestrate_budget import SpawnBudget
+    from igni_core.core.tools.orchestrate_budget import SpawnBudget
 
     pool = MagicMock()
     agent = MagicMock()

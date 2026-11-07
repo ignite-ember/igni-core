@@ -26,7 +26,7 @@ from igni_cloud.guest.credential import (
 )
 from igni_cloud.producer import ProducerKind, ProducerRef, UnknownProducer
 
-from ember_code.core.db.scope import Tenant
+from igni_core.core.db.scope import Tenant
 
 
 def _token(**claims: Any) -> str:

@@ -40,7 +40,6 @@ from pathlib import Path
 
 import websockets
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 
@@ -135,7 +134,7 @@ async def _drive(args) -> None:
         "IGNI_SESSION_IDLE_TIMEOUT": "1",
     }
     proc = subprocess.Popen(
-        [str(PYTHON), "-m", "ember_code.backend",
+        [str(PYTHON), "-m", "igni_core.backend",
          "--ws-port", "0", "--project-dir", str(project)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT, env=env,
     )

@@ -23,17 +23,17 @@ from typing import Any
 from agno.models.response import ToolExecution
 from agno.run.requirement import RunRequirement
 
-from ember_code.backend.hitl_controller import HitlController
-from ember_code.backend.pause_handler import PauseHandler
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-from ember_code.backend.session_orchestrator import SessionOrchestrator
-from ember_code.core.approvals.journal import ApprovalJournal
-from ember_code.core.db.database import Database
-from ember_code.core.db.urls import DatabaseUrl
-from ember_code.core.hooks.queue import QueueBridge
-from ember_code.core.session.queued_messages import DurableMessageQueue, QueuedMessageStore
-from ember_code.core.sub_agent_hitl import SubAgentHITLCoordinator
-from ember_code.protocol import messages as msg
+from igni_core.backend.hitl_controller import HitlController
+from igni_core.backend.pause_handler import PauseHandler
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.core.approvals.journal import ApprovalJournal
+from igni_core.core.db.database import Database
+from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.hooks.queue import QueueBridge
+from igni_core.core.session.queued_messages import DurableMessageQueue, QueuedMessageStore
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
+from igni_core.protocol import messages as msg
 from tests.storage_backends import Scopes
 
 SESSION = "s1"

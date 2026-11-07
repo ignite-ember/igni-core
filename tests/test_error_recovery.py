@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ember_code.backend.hitl_tracer import HITLTracer
-from ember_code.backend.pending_requirements_store import PendingRequirementsStore
-from ember_code.backend.run_controller import RunController as BackendRunController
-from ember_code.backend.server import BackendServer
-from ember_code.protocol import messages as msg
-from ember_code.protocol.messages import Error
+from igni_core.backend.hitl_tracer import HITLTracer
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.backend.run_controller import RunController as BackendRunController
+from igni_core.backend.server import BackendServer
+from igni_core.protocol import messages as msg
+from igni_core.protocol.messages import Error
 
 
 def _wire_backend_runs(server: BackendServer) -> None:
@@ -35,7 +35,7 @@ class TestBackendRunMessageErrors:
     @pytest.mark.asyncio
     async def test_agno_exception_yields_error(self):
         """Agno runtime error should yield an Error protocol message."""
-        with patch("ember_code.backend.server.BackendServer.__init__", return_value=None):
+        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
             server = BackendServer.__new__(BackendServer)
             server._session = MagicMock()
             server._session.main_team = MagicMock()
@@ -93,7 +93,7 @@ class TestBackendRunMessageErrors:
     @pytest.mark.asyncio
     async def test_hook_blocks_message(self):
         """UserPromptSubmit hook blocking should yield error, not crash."""
-        with patch("ember_code.backend.server.BackendServer.__init__", return_value=None):
+        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
             server = BackendServer.__new__(BackendServer)
             server._session = MagicMock()
             server._session._inject_learnings = AsyncMock()
@@ -139,7 +139,7 @@ class TestBackendCancelRun:
 
     def test_cancel_run_no_crash_when_no_team(self):
         """cancel_run should not crash even if no team/run active."""
-        with patch("ember_code.backend.server.BackendServer.__init__", return_value=None):
+        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
             server = BackendServer.__new__(BackendServer)
             server._session = MagicMock()
             server._session.main_team = MagicMock(spec=[])  # no run_id attr

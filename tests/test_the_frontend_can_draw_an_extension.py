@@ -22,13 +22,13 @@ from pathlib import Path
 
 import pytest
 
-from ember_code.backend.rpc_handlers.base import RpcHandlerContext
-from ember_code.backend.rpc_handlers.extensions import ExtensionsRpcHandler
-from ember_code.core.mcp.client import MCPClientManager
-from ember_code.extensions.installer import ExtensionInstaller
-from ember_code.extensions.origin import ExtensionOrigins
-from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
-from ember_code.extensions.rpc import ExtensionRpc
+from igni_core.backend.rpc_handlers.base import RpcHandlerContext
+from igni_core.backend.rpc_handlers.extensions import ExtensionsRpcHandler
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
+from igni_core.extensions.rpc import ExtensionRpc
 
 pytestmark = pytest.mark.asyncio
 
