@@ -9,8 +9,8 @@ Four concerns:
 2. The runtime's stdout/stdin protocol lives in
    :mod:`igni_core.backend.schemas_workflow_events`.
 
-3. The RPC contracts: ``WorkflowListItem`` (one ``LIST_WORKFLOWS``
-   row), ``WorkflowRunRequest`` / ``WorkflowRunResponse``
+3. The RPC contracts: ``WorkflowListRequest`` / ``WorkflowListItem``
+   (``LIST_WORKFLOWS``), ``WorkflowRunRequest`` / ``WorkflowRunResponse``
    (``RUN_WORKFLOW``) and ``WorkflowCancelRequest`` /
    ``WorkflowCancelResponse`` (``CANCEL_WORKFLOW``).
 
@@ -104,7 +104,7 @@ class WorkflowListItem(BaseModel):
     path: str
 
 
-# ── RPC contracts (RUN_WORKFLOW / CANCEL_WORKFLOW) ─────────────────
+# ── RPC contracts (LIST / RUN / CANCEL_WORKFLOW) ───────────────────
 
 
 class _RpcParams(BaseModel):
@@ -140,6 +140,13 @@ class _RpcParams(BaseModel):
             got = type(args.get(field)).__name__
             return f"{cls.rpc_name}: '{field}' must be a dict, got {got}"
         return f"{cls.rpc_name}: '{field}': {error['msg']}"
+
+
+class WorkflowListRequest(_RpcParams):
+    """``LIST_WORKFLOWS`` params: none. Whatever the caller sends
+    (``session_id`` and the like) is ignored."""
+
+    rpc_name: ClassVar[str] = "list_workflows"
 
 
 class WorkflowRunRequest(_RpcParams):
@@ -181,6 +188,10 @@ class WorkflowCancelRequest(_RpcParams):
     rpc_name: ClassVar[str] = "cancel_workflow"
 
     workflow_run_id: str = Field(min_length=1)
+
+    def answer(self, cancelled: bool) -> WorkflowCancelResponse:
+        """The response to this request, echoing the id it named."""
+        return WorkflowCancelResponse(cancelled=cancelled, workflow_run_id=self.workflow_run_id)
 
 
 class WorkflowCancelResponse(BaseModel):
@@ -254,17 +265,18 @@ class WorkflowStartResult(BaseModel):
 
     A miss is an expected outcome, so it is a result rather than a raise;
     the RPC boundary turns it back into the exception callers have always
-    seen (:meth:`to_exception`).
+    seen (:meth:`to_response`).
     """
 
     ok: bool
     reason: str = ""
     failure: Literal["not_found", "runtime_missing"] | None = None
     workflow_run_id: str = ""
+    name: str = ""
 
     @classmethod
-    def started(cls, workflow_run_id: str) -> WorkflowStartResult:
-        return cls(ok=True, workflow_run_id=workflow_run_id)
+    def started(cls, identity: WorkflowRunIdentity) -> WorkflowStartResult:
+        return cls(ok=True, workflow_run_id=identity.workflow_run_id, name=identity.name)
 
     @classmethod
     def not_found(cls, reason: str) -> WorkflowStartResult:
@@ -274,7 +286,23 @@ class WorkflowStartResult(BaseModel):
     def runtime_missing(cls, reason: str) -> WorkflowStartResult:
         return cls(ok=False, reason=reason, failure="runtime_missing")
 
-    def to_exception(self) -> Exception:
+    def to_response(self) -> WorkflowRunResponse:
+        """The ``RUN_WORKFLOW`` response for a started run; raises on a miss.
+
+        This is the RPC boundary, and the raise is deliberate. Both
+        dispatch paths read failure from the exception: the message
+        dispatcher turns it into ``RPCResponse.fail``, and the extension
+        host's ``HostBackendGateway`` maps ``FileNotFoundError`` to a
+        REFUSED error while letting ``RuntimeError`` through as a
+        failure. Returning a failure model here would reach the
+        extension host as a success. Stop raising only once both paths
+        understand a typed RPC failure model.
+        """
+        if not self.ok:
+            raise self._as_exception()
+        return WorkflowRunResponse(workflow_run_id=self.workflow_run_id, name=self.name)
+
+    def _as_exception(self) -> Exception:
         if self.failure == "not_found":
             return FileNotFoundError(self.reason)
         return RuntimeError(self.reason)

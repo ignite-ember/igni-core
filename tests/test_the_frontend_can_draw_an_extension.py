@@ -50,6 +50,7 @@ def handler(extensions: ExtensionRpc | None, origins: ExtensionOrigins | None):
         transport=None,
         login=None,  # type: ignore[arg-type]
         push=None,  # type: ignore[arg-type]
+        workflows=None,  # type: ignore[arg-type]
         extensions=extensions,
         origins=origins,
     )

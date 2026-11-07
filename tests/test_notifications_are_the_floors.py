@@ -73,6 +73,7 @@ class Floor:
                 transport=None,
                 login=MagicMock(),
                 push=MagicMock(),
+                workflows=MagicMock(),
                 notifications=self.center,
             )
         )
@@ -324,7 +325,13 @@ def test_the_counts_reach_the_client_on_their_own_channel():
 
 def test_the_three_rpcs_are_the_handlers():
     handler = NotificationsRpcHandler(
-        RpcHandlerContext(backend=None, transport=None, login=MagicMock(), push=MagicMock())
+        RpcHandlerContext(
+            backend=None,
+            transport=None,
+            login=MagicMock(),
+            push=MagicMock(),
+            workflows=MagicMock(),
+        )
     )
 
     assert set(handler.methods()) == {
@@ -336,7 +343,13 @@ def test_the_three_rpcs_are_the_handlers():
 
 async def test_a_backend_without_a_center_answers_empty():
     handler = NotificationsRpcHandler(
-        RpcHandlerContext(backend=None, transport=None, login=MagicMock(), push=MagicMock())
+        RpcHandlerContext(
+            backend=None,
+            transport=None,
+            login=MagicMock(),
+            push=MagicMock(),
+            workflows=MagicMock(),
+        )
     )
 
     assert (await handler.notifications_list({})).notifications == []

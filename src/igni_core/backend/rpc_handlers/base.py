@@ -4,7 +4,7 @@ Every handler class subclasses :class:`RpcHandler` and tags each
 method with :func:`rpc` — the decorator stashes the :class:`RpcMethod`
 enum entry on the function object. :meth:`RpcHandler.methods` walks
 the class at instance-init time and returns a
-``dict[RpcMethod, Callable[[dict], Any]]`` — real bound-method refs
+``dict[RpcMethod, Callable[[dict[str, Any]], Any]]`` — real bound-method refs
 that mypy/pyright see through, replacing the stringly-typed
 ``getattr(self, name)`` lookup the old router used.
 """
@@ -42,7 +42,7 @@ def rpc(method: RpcMethod) -> Callable[[_F], _F]:
     return decorator
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RpcHandlerContext:
     """Bundle of collaborators every handler subclass needs.
 
@@ -64,7 +64,8 @@ class RpcHandlerContext:
     shell_runner: Any = None
     # The session's workflow runner — one per router, rooted at the
     # backend's project and pushing through the router's bridge.
-    workflows: WorkflowRunner | None = None
+    # Always supplied: :class:`RpcRouter` builds it with the context.
+    workflows: WorkflowRunner
     # The extension surfaces. ``extensions`` is the shared
     # :class:`~igni_core.extensions.rpc.ExtensionRpc`, which owns the
     # registry every dispatcher authorises against; ``origins`` knows
@@ -91,12 +92,12 @@ class RpcHandler:
     def __init__(self, ctx: RpcHandlerContext) -> None:
         self._ctx = ctx
 
-    def methods(self) -> dict[RpcMethod, Callable[[dict], Any]]:
+    def methods(self) -> dict[RpcMethod, Callable[[dict[str, Any]], Any]]:
         """Return ``{RpcMethod.X: self._x}`` for every ``@rpc``-tagged
         method on this class. Walks the class (not the instance) so
         inherited tags come through the MRO correctly.
         """
-        table: dict[RpcMethod, Callable[[dict], Any]] = {}
+        table: dict[RpcMethod, Callable[[dict[str, Any]], Any]] = {}
         for name in dir(self):
             # Skip dunders + explicit private attrs that aren't
             # handler candidates (avoids the cost of getattr on

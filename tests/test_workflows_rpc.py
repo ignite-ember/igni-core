@@ -27,6 +27,7 @@ from igni_core.backend.schemas_workflows import (
     WorkflowMeta,
     WorkflowMetaEnvelope,
     WorkflowPhase,
+    WorkflowRunIdentity,
     WorkflowRunRequest,
     WorkflowStartResult,
 )
@@ -50,13 +51,19 @@ def _envelope(
     )
 
 
-def _context(runner: WorkflowRunner | None, session: object) -> RpcHandlerContext:
+def _context(runner: WorkflowRunner, session: object) -> RpcHandlerContext:
     return RpcHandlerContext(
         backend=SimpleNamespace(session=session),
         transport=None,
         login=MagicMock(),
         push=MagicMock(),
         workflows=runner,
+    )
+
+
+def _started(workflow_run_id: str, name: str) -> WorkflowStartResult:
+    return WorkflowStartResult.started(
+        WorkflowRunIdentity(workflow_run_id=workflow_run_id, name=name)
     )
 
 
@@ -94,12 +101,21 @@ async def test_list_workflows_returns_discovery_output() -> None:
     ]
 
 
+async def test_list_workflows_ignores_the_routing_session_id() -> None:
+    handler, runner = _make_handler()
+    runner.list_workflows.return_value = [_envelope("alpha")]
+
+    out = await handler.list_workflows({"session_id": "s"})
+
+    assert [item.name for item in out] == ["alpha"]
+
+
 async def test_run_workflow_returns_workflow_run_id_without_blocking() -> None:
     """``run_workflow`` returns the id the runner emitted; the run
     itself streams events later."""
     session = object()
     handler, runner = _make_handler(session)
-    runner.run.return_value = WorkflowStartResult.started("wf_abc123def456")
+    runner.run.return_value = _started("wf_abc123def456", "refactor-to-standards")
 
     out = await handler.run_workflow(
         {
@@ -126,7 +142,7 @@ async def test_run_workflow_runs_in_the_routed_session_whatever_the_session_id()
     have, so every call with a session id failed."""
     session = object()
     handler, runner = _make_handler(session)
-    runner.run.return_value = WorkflowStartResult.started("wf_1")
+    runner.run.return_value = _started("wf_1", "smoke")
 
     for session_id in ("", "sess_known", "sess_unknown"):
         await handler.run_workflow({"name": "smoke", "session_id": session_id})
@@ -135,7 +151,7 @@ async def test_run_workflow_runs_in_the_routed_session_whatever_the_session_id()
 
 async def test_run_workflow_defaults_args_to_empty_dict() -> None:
     handler, runner = _make_handler()
-    runner.run.return_value = WorkflowStartResult.started("wf_q")
+    runner.run.return_value = _started("wf_q", "smoke")
 
     await handler.run_workflow({"name": "smoke", "args": None})
 
@@ -186,7 +202,7 @@ async def test_run_workflow_rejects_non_dict_args() -> None:
 
 async def test_run_workflow_takes_a_numeric_name_as_text() -> None:
     handler, runner = _make_handler()
-    runner.run.return_value = WorkflowStartResult.started("wf_n")
+    runner.run.return_value = _started("wf_n", "7")
 
     out = await handler.run_workflow({"name": 7})
 
@@ -233,11 +249,21 @@ async def test_cancel_workflow_rejects_a_missing_id(args: dict) -> None:
     runner.cancel.assert_not_called()
 
 
-async def test_a_context_without_a_runner_is_a_wiring_bug() -> None:
-    handler = WorkflowsRpcHandler(_context(None, object()))
+def test_a_started_result_answers_with_the_runs_id_and_name() -> None:
+    out = _started("wf_ok", "smoke").to_response()
 
-    with pytest.raises(RuntimeError, match="without a WorkflowRunner"):
-        await handler.list_workflows({})
+    assert _serialize(out) == {"workflow_run_id": "wf_ok", "name": "smoke"}
+
+
+def test_a_missing_workflow_result_raises_file_not_found() -> None:
+    """``FileNotFoundError`` is what the extension host maps to REFUSED."""
+    with pytest.raises(FileNotFoundError, match="nope"):
+        WorkflowStartResult.not_found("nope").to_response()
+
+
+def test_a_missing_runtime_result_raises_runtime_error() -> None:
+    with pytest.raises(RuntimeError, match="no runtime"):
+        WorkflowStartResult.runtime_missing("no runtime").to_response()
 
 
 def test_rpc_method_enum_values_match_wire_string() -> None:

@@ -98,7 +98,7 @@ class WorkflowRunner:
             reason="a workflow",
             name=f"workflow-await-{run_id}",
         )
-        return WorkflowStartResult.started(run_id)
+        return WorkflowStartResult.started(identity)
 
     async def cancel(self, workflow_run_id: str) -> bool:
         """Stop a run. False when no such run is live."""

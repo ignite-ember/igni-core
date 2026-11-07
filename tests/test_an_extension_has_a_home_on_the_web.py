@@ -70,6 +70,7 @@ async def test_the_extension_list_carries_it_for_the_window() -> None:
         transport=None,
         login=None,
         push=None,
+        workflows=None,  # type: ignore[arg-type]
         extensions=ExtensionRpc(registry),  # type: ignore[arg-type]
     )
 
