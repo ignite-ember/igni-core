@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model
 
+from igni_core.extensions.host.plain import plain
 from igni_core.extensions.host.spec import HostSchema, TypeExpr
 
 
@@ -37,6 +38,10 @@ class SchemaTypes:
     def validate(self, expression: str, value: Any) -> Any:
         """``value`` as the expression describes it, or :class:`ValidationError`."""
         return self.adapter(expression).validate_python(value)
+
+    def validate_plain(self, expression: str, value: Any) -> Any:
+        """``value`` validated as the expression, then back to plain JSON data."""
+        return plain(self.validate(expression, value))
 
     def check(self, expression: str, value: Any) -> str | None:
         """``None`` when ``value`` fits; otherwise why not."""

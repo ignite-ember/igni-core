@@ -60,7 +60,9 @@ def listening(rig: HostRig, extension_id: str, *signals: str) -> Sink:
     """`extension_id`'s process, subscribed to `signals`."""
     assert rig.model is not None
     sink = Sink()
-    rig.model.bus.subscribe(rig.model.bus.attach(extension_id, sink), list(signals))
+    rig.model.services.bus.subscribe(
+        rig.model.services.bus.attach(extension_id, sink), list(signals)
+    )
     return sink
 
 

@@ -154,14 +154,40 @@ class _Transport:
             yield m
 
 
-class _HostModel:
-    def handle_window(self, request: Any) -> Any:
+class _WindowAnswer(BaseModel):
+    window: str
+    op: str
+
+
+class _PageAnswer(BaseModel):
+    caller: str
+    args: dict[str, Any]
+
+
+class _WindowRpc:
+    def handle(self, request: Any) -> _WindowAnswer:
         if request.field == "nope":
             raise WindowModelError("no field 'nope'")
-        return {"window": request.window, "op": request.op}
+        return _WindowAnswer(window=request.window, op=request.op)
 
-    async def handle_page(self, caller: str, args: dict) -> Any:
-        return {"caller": caller, "args": args}
+
+class _Windows:
+    def by_connection(self, connection_id: str) -> str | None:
+        return None
+
+
+class _HostServices:
+    def __init__(self) -> None:
+        self.window_rpc = _WindowRpc()
+        self.windows = _Windows()
+
+
+class _HostModel:
+    def __init__(self) -> None:
+        self.services = _HostServices()
+
+    async def handle_page(self, caller: str, args: dict) -> _PageAnswer:
+        return _PageAnswer(caller=caller, args=args)
 
 
 class _Inbox:

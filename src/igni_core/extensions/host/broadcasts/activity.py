@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from igni_core.extensions.host.broadcasts.signal import Emit
+from igni_core.extensions.host.signal_values import Emit
 
 logger = logging.getLogger(__name__)
 

@@ -23,6 +23,7 @@ the collaborators it needs, and their message tables are merged into one.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -38,16 +39,21 @@ from igni_core.extensions.host.broadcasts.rpc_writes import (
     RpcWriteSignals,
 )
 from igni_core.extensions.host.broadcasts.run_signals import RunSignals
-from igni_core.extensions.host.broadcasts.signal import Emitter, Handler, merged
+from igni_core.extensions.host.broadcasts.signal import Handler, merged
 from igni_core.extensions.host.broadcasts.status import StatusSignals
 from igni_core.extensions.host.broadcasts.task_signals import TaskSignals
 from igni_core.extensions.host.broadcasts.views import ViewShown
+from igni_core.extensions.host.signal_values import Emitter
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 from igni_core.protocol.schemas.enums import PushChannel
 
 if TYPE_CHECKING:
-    from igni_core.extensions.host.model import HostModel
+    # A genuine cycle: the services are built from this package's parts
+    # (ActivityWatch, the approval mirror, the run ledger).
+    from igni_core.extensions.host.services import HostServices
+
+logger = logging.getLogger(__name__)
 
 
 class BroadcastSignals:
@@ -67,23 +73,23 @@ class BroadcastSignals:
         }
     )
 
-    def __init__(self, model: HostModel, *, display: Callable[[str], Awaitable[Any]]) -> None:
+    def __init__(self, host: HostServices, *, display: Callable[[str], Awaitable[Any]]) -> None:
         """
         Args:
             display: Reads ``app.display`` for a session, as
                 ``AppMembers.display_value`` does.
         """
-        emitter = Emitter(model.emit)
-        state = model.state
-        backend = model.backend
-        self._activity = model.activity_watch
+        emitter = Emitter(host.bus.emit)
+        state = host.state
+        backend = host.backend
+        self._activity = host.activity_watch
         self.approvals = ApprovalSignals(emitter, state.approvals, self._activity)
         reads = DeferredReads(
-            model.bus.wanted,
-            model.spawn,
+            host.bus.wanted,
+            host.work.spawn,
             emitter,
             SessionReaders(
-                account=lambda sid: model.account(sid),
+                account=lambda sid: host.gateway.account(sid),
                 display=display,
                 loop=lambda sid: backend.rpc(RpcMethod.LOOP_STATUS, {}, session_id=sid),
                 default_session=lambda: backend.default_session(),
@@ -94,22 +100,29 @@ class BroadcastSignals:
             lambda sid: backend.project_dir_of(sid), lambda: backend.default_session()
         )
         runs = RunSignals(emitter, state.runs, state.approvals, root)
-        self._push = PushSignals(emitter, runs, tasks, reads, model.counts_for)
+        self._push = PushSignals(emitter, runs, tasks, reads)
         self._rpc = RpcWriteSignals(
             emitter,
             reads,
             tasks,
-            ExtensionSettings(model.registry, model.store),
-            model.session_switched,
+            ExtensionSettings(host.extensions.registry, host.extensions.store),
+            host.observations.session_switched,
         )
         self._handlers: dict[type[msg.Message], Handler] = merged(
-            ChatSignals(emitter, model.windows, model.session_info).handlers(),
+            ChatSignals(emitter, host.windows).handlers(),
             runs.handlers(),
             self.approvals.handlers(),
-            StatusSignals(emitter, state.status, model.status_of, model.account_of).handlers(),
+            StatusSignals(emitter, state.status).handlers(),
             tasks.handlers(),
             {msg.PushNotification: self._push.push},
         )
+
+    def outbound(self, message: msg.Message) -> None:
+        """Every message igni sends its windows; a translator's failure is logged, not raised."""
+        try:
+            self.observe(message)
+        except Exception:
+            logger.exception("host model: observing %s failed", getattr(message, "type", "?"))
 
     def observe(self, m: msg.Message) -> None:
         """One message igni sends its windows."""

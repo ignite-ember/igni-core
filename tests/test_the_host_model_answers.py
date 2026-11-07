@@ -136,7 +136,7 @@ class TestTheSchemaIsTheAuthority:
         unbuilt = tuple(
             p.model_copy(update={"stage": 2}) if p.name == "version" else p for p in app.properties
         )
-        rig.model.schema = HOST_SCHEMA.model_copy(
+        rig.model.binder.schema = HOST_SCHEMA.model_copy(
             update={
                 "objects": tuple(
                     o.model_copy(update={"properties": unbuilt}) if o.path == "app" else o
@@ -167,8 +167,8 @@ class TestChatPost:
         ext = rig.install(host=["chat.post", "chat.read"])
         sink = Sink()
         assert rig.model is not None
-        subscriber = rig.model.bus.attach(ext, sink)
-        rig.model.bus.subscribe(subscriber, ["chat.message_added", "chat.run_completed"])
+        subscriber = rig.model.services.bus.attach(ext, sink)
+        rig.model.services.bus.subscribe(subscriber, ["chat.message_added", "chat.run_completed"])
 
         ok(await rig.ask(ext, "call", "chat.post", text="Two issues in auth.py."))
         await rig.settle()
@@ -282,7 +282,9 @@ class TestApprovals:
         ext = rig.install(host=["chat.approvals"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["chat.approvals.requested"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["chat.approvals.requested"]
+        )
         await rig.transport.send(
             msg.RunPaused(
                 session_id="boot",
@@ -341,7 +343,9 @@ class TestApprovals:
         ext = rig.install(host=["chat.approvals"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["chat.approvals.changed"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["chat.approvals.changed"]
+        )
         for state in (ApprovalState.WAITING, ApprovalState.RESOLVED):
             approval_events.announce(
                 ApprovalChange(
@@ -369,7 +373,9 @@ class TestActivity:
 
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["app.activity_changed"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["app.activity_changed"]
+        )
         rig.session.activity = lambda: SessionActivity(
             session_id="boot", state=ActivityState.WAITING, waiting_approvals=1
         )
@@ -408,13 +414,13 @@ class TestWindowsAndUi:
         ext = rig.install(host=["ui"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(
-            rig.model.bus.attach(ext, sink), ["windows.opened", "windows.closed"]
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["windows.opened", "windows.closed"]
         )
         await rig.window("w-1", connection="ws-a")
         [window] = ok(await rig.ask(ext, "get", "windows.list"))
         assert window["id"] == "w-1" and window["kind"] == "tauri"
-        rig.model.connection_closed("ws-a")
+        rig.model.services.windows.detached("ws-a")
         assert ok(await rig.ask(ext, "get", "windows.list")) == []
         assert [v["id"] for v in sink.values("windows.opened")] == ["w-1"]
         assert [v["id"] for v in sink.values("windows.closed")] == ["w-1"]
@@ -434,8 +440,9 @@ class TestWindowsAndUi:
         ext = rig.install(host=["ui", "sessions"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(
-            rig.model.bus.attach(ext, sink), ["ui.sidebar_changed", "session.switched", "changed"]
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink),
+            ["ui.sidebar_changed", "session.switched", "changed"],
         )
         await rig.window("w-1")
         await rig.window_writes("w-1", "sidebar", {"open": True})
@@ -531,7 +538,9 @@ class TestSignals:
         ext = rig.install(host=["chat.read"], workspace="read", workspacePaths=["src/**"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["chat.run_completed"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["chat.run_completed"]
+        )
         await rig.transport.send(msg.RunStarted(session_id="boot", run_id="r1"))
         await rig.transport.send(
             msg.PushNotification(
@@ -559,8 +568,8 @@ class TestSignals:
         ext = rig.install(host=[])
         assert rig.model is not None
         sink = Sink()
-        outcome = rig.model.bus.subscribe(
-            rig.model.bus.attach(ext, sink), ["chat.run_started", "chat.nope"]
+        outcome = rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["chat.run_started", "chat.nope"]
         )
         assert outcome == {
             "subscribed": [],
@@ -577,11 +586,13 @@ class TestSignals:
         watcher = rig.install("acme.two", host=["extensions"])
         assert rig.model is not None
         own, all_ = Sink(), Sink()
-        rig.model.bus.subscribe(
-            rig.model.bus.attach(mine, own), ["self.state_changed", "extension.state-changed"]
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(mine, own),
+            ["self.state_changed", "extension.state-changed"],
         )
-        rig.model.bus.subscribe(
-            rig.model.bus.attach(watcher, all_), ["extension.state-changed", "self.state_changed"]
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(watcher, all_),
+            ["extension.state-changed", "self.state_changed"],
         )
         rig.registry.set_state(mine, ExtensionState.FAILED, "its service died")
         assert own.values("self.state_changed") == [
@@ -595,7 +606,9 @@ class TestSignals:
         ext = rig.install(host=["models"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["models.changed"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["models.changed"]
+        )
         assert rig.orchestrator is not None
         await rig.orchestrator.dispatch(
             msg.RPCRequest(id="fe-1", method="switch_model", args={"model_name": "large"})
@@ -618,7 +631,9 @@ class TestExtensionsAndTheirWebHome:
         ext = rig.install()
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["self.settings_changed"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["self.settings_changed"]
+        )
         ok(await rig.ask(ext, "set", "self.settings", to={"serviceUrl": "https://x.test"}))
         assert ok(await rig.ask(ext, "get", "self.settings"))["serviceUrl"] == "https://x.test"
         assert sink.values("self.settings_changed") == [

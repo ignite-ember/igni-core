@@ -8,7 +8,6 @@ holds :meth:`PushSignals.channels` to ``coverage.PUSH``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any, ClassVar
 
 from igni_core.extensions.host.broadcasts.deferred_reads import DeferredReads
@@ -21,17 +20,15 @@ from igni_core.extensions.host.broadcasts.push_payloads import (
     VisualizationDelta,
 )
 from igni_core.extensions.host.broadcasts.run_signals import RunSignals
-from igni_core.extensions.host.broadcasts.signal import Emitter, PushHandler, Signal, merged
+from igni_core.extensions.host.broadcasts.signal import PushHandler, merged
 from igni_core.extensions.host.broadcasts.task_signals import TaskSignals
 from igni_core.extensions.host.broadcasts.views import ViewAction, ViewShown
-from igni_core.extensions.host.grants import HostGrants
+from igni_core.extensions.host.signal_values import Emitter, Signal
+from igni_core.extensions.host.values import NotificationCounts
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.enums import PushChannel
 
 NOTIFICATIONS_CHANGED = "notifications.changed"
-
-#: :meth:`HostModel.counts_for`: the counts one listener may see.
-CountsFor = Callable[[HostGrants, dict[str, Any]], dict[str, Any]]
 
 
 class AgentEvent(Signal):
@@ -113,10 +110,8 @@ class PushSignals:
         runs: RunSignals,
         tasks: TaskSignals,
         reads: DeferredReads,
-        counts_for: CountsFor,
     ) -> None:
         self._emitter = emitter
-        self._counts_for = counts_for
         self._table: dict[PushChannel, PushHandler] = merged(
             {
                 PushChannel.ORCHESTRATE_PROGRESS: self._progress,
@@ -190,7 +185,11 @@ class PushSignals:
     def _notifications_changed(self, m: msg.PushNotification) -> None:
         counts = NotificationsPush.model_validate(m.payload).counts
         self._emitter.value(
-            NOTIFICATIONS_CHANGED, None, content=lambda grants: self._counts_for(grants, counts)
+            NOTIFICATIONS_CHANGED,
+            None,
+            content=lambda grants: (
+                NotificationCounts.from_counts(counts).visible_to(grants).model_dump()
+            ),
         )
 
     def _view_action(self, m: msg.PushNotification) -> None:

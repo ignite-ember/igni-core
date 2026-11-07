@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import ClassVar
 
-from igni_core.extensions.host.broadcasts.signal import Emitter, Handler, Signal
+from igni_core.extensions.host.broadcasts.signal import Handler
+from igni_core.extensions.host.signal_values import Emitter, Signal
+from igni_core.extensions.host.values import Account, SessionStatus
 from igni_core.protocol import messages as msg
-
-STATUS_CHANGED = "chat.status_changed"
-ACCOUNT_CHANGED = "account.changed"
 
 
 class Connection(Signal):
@@ -39,17 +37,9 @@ class StatusMemory:
 class StatusSignals:
     """Translates ``status_update``: the status, and what it says moved."""
 
-    def __init__(
-        self,
-        emitter: Emitter,
-        memory: StatusMemory,
-        status_of: Callable[[dict[str, Any], str], dict[str, Any]],
-        account_of: Callable[[dict[str, Any]], dict[str, Any]],
-    ) -> None:
+    def __init__(self, emitter: Emitter, memory: StatusMemory) -> None:
         self._emitter = emitter
         self._memory = memory
-        self._status_of = status_of
-        self._account_of = account_of
 
     def handlers(self) -> dict[type[msg.Message], Handler]:
         return {msg.StatusUpdate: self.status_update}
@@ -57,13 +47,13 @@ class StatusSignals:
     def status_update(self, m: msg.StatusUpdate) -> None:
         previous = self._memory.remember(m)
         status = m.model_dump()
-        self._emitter.value(STATUS_CHANGED, self._status_of(status, m.session_id))
+        self._emitter.send(SessionStatus.from_status(status, m.session_id))
         connection = Connection.of_status(m)
-        account = self._account_of(status)
+        account = Account.from_status(status)
         if previous is None or Connection.of_status(previous) != connection:
             self._emitter.send(connection)
-        if previous is None or self._account_of(previous.model_dump()) != account:
-            self._emitter.value(ACCOUNT_CHANGED, account)
+        if previous is None or Account.from_status(previous.model_dump()) != account:
+            self._emitter.send(account)
 
 
 __all__ = ["Connection", "StatusMemory", "StatusSignals"]

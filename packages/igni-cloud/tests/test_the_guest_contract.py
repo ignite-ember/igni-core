@@ -692,8 +692,7 @@ async def test_serving_keeps_the_file_and_reconnects_after_a_restore(run_dir: Pa
 
     class Model:
         def __init__(self) -> None:
-            self.backend = self
-            self.activity_watch = self
+            self.services = types.SimpleNamespace(backend=self, activity_watch=self)
             self.listeners: list[Any] = []
 
         def activity(self) -> dict[str, Any]:
@@ -753,8 +752,7 @@ async def test_bound_before_any_sign_in_says_so_to_the_windows_and_the_node_agen
 
     class Model:
         def __init__(self) -> None:
-            self.backend = self
-            self.activity_watch = self
+            self.services = types.SimpleNamespace(backend=self, activity_watch=self)
 
         def activity(self) -> dict[str, Any]:
             return Activity.of([]).model_dump(mode="json")

@@ -617,7 +617,6 @@ class BackendApp:
             registry=self._extensions.registry,
             project_dir=self._project_dir,
             store=ExtensionStore(),
-            notifications=self._notifications,
             notices=self._notices,
             workspace_signals=self._workspace_signals,
         )

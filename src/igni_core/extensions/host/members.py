@@ -27,18 +27,27 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from igni_core import __version__
 from igni_core.backend.file_opener import FileOpener
+from igni_core.backend.workspace_watch import GitWorkspace
 from igni_core.core.decisions import DecisionRequest, DecisionsUnavailable, DecisionTooLong
 from igni_core.extensions.host.definition import OPENABLE_SUFFIXES
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.grants import WORKSPACE, HostGrants
+from igni_core.extensions.host.services import HostServices
 from igni_core.extensions.host.spec import ErrorCode
+from igni_core.extensions.host.values import (
+    HeadInfo,
+    NotificationCounts,
+    NotificationEntry,
+    SessionInfo,
+    SessionStatus,
+    UpdateInfo,
+)
 from igni_core.extensions.host.windows import WindowModelError, references
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 
 if TYPE_CHECKING:
     from igni_core.extensions.host.broadcasts.approvals import ApprovalMirror
-    from igni_core.extensions.host.model import HostModel
 
 _TAG = "_host_member"
 
@@ -87,11 +96,11 @@ def _tag(op: str, path: str) -> Callable[[_F], _F]:
 
 
 class Members:
-    """Base: the model, and the table of this class's members."""
+    """Base: the host's services, and the table of this class's members."""
 
-    def __init__(self, model: HostModel) -> None:
-        self.model = model
-        self.backend = model.backend
+    def __init__(self, host: HostServices) -> None:
+        self.host = host
+        self.backend = host.backend
 
     def table(self) -> dict[tuple[str, str], Impl]:
         out: dict[tuple[str, str], Impl] = {}
@@ -108,7 +117,7 @@ class Members:
         return out
 
     async def rpc(self, method: RpcMethod, args: dict[str, Any] | None = None, *, c: Call) -> Any:
-        return await self.model.rpc(method, args or {}, session_id=c.session_id)
+        return await self.host.gateway.rpc(method, args or {}, session_id=c.session_id)
 
 
 # ── host.app ──────────────────────────────────────────────────────
@@ -116,8 +125,10 @@ class Members:
 
 class AppMembers(Members):
     async def display_value(self, session_id: str) -> dict[str, Any]:
-        config = await self.model.rpc(RpcMethod.GET_DISPLAY_CONFIG, {}, session_id=session_id)
-        styles = await self.model.rpc(RpcMethod.GET_OUTPUT_STYLES, {}, session_id=session_id)
+        config = await self.host.gateway.rpc(
+            RpcMethod.GET_DISPLAY_CONFIG, {}, session_id=session_id
+        )
+        styles = await self.host.gateway.rpc(RpcMethod.GET_OUTPUT_STYLES, {}, session_id=session_id)
         return {
             "verbose": bool(config.get("show_routing", False)),
             "output_style": str(styles.get("active") or ""),
@@ -137,7 +148,7 @@ class AppMembers(Members):
 
     @get("app.update_available")
     async def update_available(self, c: Call) -> Any:
-        return self.model.state.update
+        return self.host.state.update
 
     @get("app.activity")
     async def activity(self, c: Call) -> Any:
@@ -164,27 +175,19 @@ class AppMembers(Members):
         name = str(c.params["name"]).strip()
         if not name or any(ch.isspace() for ch in name):
             raise HostModelError(ErrorCode.INVALID, f"{name!r} is not an output style name")
-        outcome = await self.model.command(f"/output-style {name}", session_id=c.session_id)
-        if outcome.get("kind") == "error":
-            raise HostModelError(ErrorCode.REFUSED, str(outcome.get("content") or "refused"))
+        outcome = await self.host.gateway.command(f"/output-style {name}", session_id=c.session_id)
+        if outcome.kind == "error":
+            raise HostModelError(ErrorCode.REFUSED, str(outcome.content or "refused"))
         display = await self.display_value(c.session_id)
-        self.model.emit("app.display_changed", display)
+        self.host.bus.emit("app.display_changed", display)
         return display
 
     @call("app.check_for_update")
     async def check_for_update(self, c: Call) -> Any:
         found = await self.rpc(RpcMethod.CHECK_FOR_UPDATE, c=c)
-        update = (
-            {
-                "current_version": found["current_version"],
-                "latest_version": found["latest_version"],
-                "download_url": found["download_url"],
-            }
-            if isinstance(found, dict) and found.get("available")
-            else None
-        )
-        self.model.state.update = update
-        self.model.emit("app.update_changed", update)
+        update = UpdateInfo.from_check(found)
+        self.host.state.record_update(update)
+        self.host.bus.emit("app.update_changed", update.model_dump() if update else None)
         return update
 
     @call("app.open_external")
@@ -195,7 +198,7 @@ class AppMembers(Members):
             link = ExternalLink(url=c.params["url"])
         except ValidationError as exc:
             raise HostModelError(ErrorCode.INVALID, exc.errors()[0]["msg"]) from None
-        self.model.open_external(c.window, link.url, source=c.extension_id)
+        self.host.pushes.open_external(c.window, link.url, source=c.extension_id)
 
 
 class ExternalLink(BaseModel):
@@ -248,7 +251,7 @@ class AppStateMembers(Members):
         if not key:
             raise HostModelError(ErrorCode.INVALID, "a state key cannot be empty")
         self.backend.client_state.set_value(self.client_id(c), key, str(c.params["value"]))
-        self.model.emit(
+        self.host.bus.emit(
             "app.state.changed",
             {"key": key, "value": str(c.params["value"])},
             only=c.extension_id,
@@ -258,7 +261,7 @@ class AppStateMembers(Members):
     async def delete_value(self, c: Call) -> Any:
         key = str(c.params["key"])
         self.backend.client_state.delete_value(self.client_id(c), key)
-        self.model.emit("app.state.changed", {"key": key, "value": None}, only=c.extension_id)
+        self.host.bus.emit("app.state.changed", {"key": key, "value": None}, only=c.extension_id)
 
 
 # ── host.windows, host.ui ─────────────────────────────────────────
@@ -267,11 +270,11 @@ class AppStateMembers(Members):
 class WindowMembers(Members):
     @get("windows.list")
     async def window_list(self, c: Call) -> Any:
-        return self.model.windows.describe_all()
+        return self.host.windows.describe_all()
 
     @get("windows.focused")
     async def focused(self, c: Call) -> Any:
-        return self.model.windows.focused()
+        return self.host.windows.focused()
 
 
 class UiMembers(Members):
@@ -286,15 +289,15 @@ class UiMembers(Members):
         return c.window
 
     def read(self, c: Call, name: str) -> Any:
-        return self.model.windows.get(self.window(c), name)
+        return self.host.windows.get(self.window(c), name)
 
     def write(self, c: Call, name: str, value: Any) -> Any:
         window = self.window(c)
         try:
-            self.model.windows.write(window, name, value)
+            self.host.windows.write(window, name, value)
         except WindowModelError as exc:
             raise HostModelError(ErrorCode.INVALID, str(exc)) from None
-        return self.model.windows.get(window, name)
+        return self.host.windows.get(window, name)
 
     # ── route ─────────────────────────────────────────────────────
 
@@ -446,7 +449,7 @@ class UiMembers(Members):
             raise HostModelError(
                 ErrorCode.INVALID, f"toast kind {kind!r}: one of {', '.join(TOAST_KINDS)}"
             )
-        return self.model.windows.toast(
+        return self.host.windows.toast(
             self.window(c),
             {
                 "text": c.params["text"],
@@ -461,12 +464,12 @@ class UiMembers(Members):
     async def dismiss_toast(self, c: Call) -> Any:
         window = self.window(c)
         toast_id = str(c.params["toast_id"])
-        found = self.model.windows.toast_of(window, toast_id)
+        found = self.host.windows.toast_of(window, toast_id)
         if found is None:
             raise HostModelError(ErrorCode.NOT_FOUND, f"no toast {toast_id!r} is on screen")
         if found.get("source") != c.extension_id:
             raise HostModelError(ErrorCode.REFUSED, "an extension dismisses only its own toasts")
-        self.model.windows.dismiss_toast(window, toast_id)
+        self.host.windows.dismiss_toast(window, toast_id)
 
     # ── dialog ────────────────────────────────────────────────────
 
@@ -477,9 +480,7 @@ class UiMembers(Members):
     @call("ui.show_dialog")
     async def show_dialog(self, c: Call) -> Any:
         spec = DialogSpec.of(c.params["spec"])
-        _dialog, answer = self.model.windows.open_dialog(
-            self.window(c), spec, source=c.extension_id
-        )
+        _dialog, answer = self.host.windows.open_dialog(self.window(c), spec, source=c.extension_id)
         return await answer
 
     # ── scroll ────────────────────────────────────────────────────
@@ -550,7 +551,7 @@ class SessionMembers(Members):
     async def session_list(self, c: Call) -> Any:
         result = await self.rpc(RpcMethod.LIST_SESSIONS, c=c)
         sessions = result.get("sessions", []) if isinstance(result, dict) else result
-        return [self.model.session_info(s) for s in sessions or []]
+        return [SessionInfo.from_entry(s) for s in sessions or []]
 
     @get("sessions.current")
     async def current(self, c: Call) -> Any:
@@ -570,21 +571,21 @@ class SessionMembers(Members):
         if c.window is None:
             # No window is open: the TUI's way, which switches the boot
             # session itself.
-            info = await self.model.rpc(
+            info = await self.host.gateway.rpc(
                 RpcMethod.SWITCH_SESSION, {"session_id": session_id}, session_id=c.session_id
             )
             if isinstance(info, dict) and info.get("type") == "error":
                 raise HostModelError(ErrorCode.REFUSED, str(info.get("text") or "refused"))
-            self.model.session_switched(session_id, None)
+            self.host.observations.session_switched(session_id, None)
             return {"session_id": session_id, "window": None}
         # A window binds a session as the window does: attach (which
         # refuses another project's session), then the window's state.
-        attached = await self.model.attach(session_id, None)
+        attached = await self.host.gateway.attach(session_id, None)
         window = c.window
         # The window's model says which session it shows; the write is
         # the signal (``session.switched``) and what moves the window.
-        self.model.windows.write(window, "session", attached["session_id"])
-        return {"session_id": attached["session_id"], "window": window}
+        self.host.windows.write(window, "session", attached.session_id)
+        return {"session_id": attached.session_id, "window": window}
 
     @call("sessions.create")
     async def create(self, c: Call) -> Any:
@@ -592,25 +593,27 @@ class SessionMembers(Members):
         if title is not None and not str(title).strip():
             raise HostModelError(ErrorCode.INVALID, "sessions.create(title): an empty title")
         project_dir = c.params.get("project_dir") or str(self.backend.project_dir)
-        attached = await self.model.attach("", project_dir)
+        attached = await self.host.gateway.attach("", project_dir)
         if title is not None:
             # Before anything runs in it, as a service's new chat is
             # titled, so no auto-name replaces it.
-            titled = await self.backend.title(session_id=attached["session_id"], title=str(title))
+            titled = await self.backend.title(session_id=attached.session_id, title=str(title))
             if not titled.ok:
                 raise HostModelError(
                     ErrorCode.FAILED,
-                    f"session {attached['session_id']} was created but not titled: {titled.error}",
+                    f"session {attached.session_id} was created but not titled: {titled.error}",
                 )
         if c.params.get("focus") and c.window is not None:
             # The folder first: a window moving to the session reads it.
-            self.model.windows.write(c.window, "project_dir", attached["project_dir"])
-            self.model.windows.write(c.window, "session", attached["session_id"])
+            self.host.windows.write(c.window, "project_dir", attached.project_dir)
+            self.host.windows.write(c.window, "session", attached.session_id)
         return attached
 
     @call("sessions.attach")
     async def attach(self, c: Call) -> Any:
-        return await self.model.attach(str(c.params["session_id"]), c.params.get("project_dir"))
+        return await self.host.gateway.attach(
+            str(c.params["session_id"]), c.params.get("project_dir")
+        )
 
 
 # ── host.chat ─────────────────────────────────────────────────────
@@ -635,7 +638,7 @@ class ChatMembers(Members):
 
     @get("chat.status")
     async def status(self, c: Call) -> Any:
-        return self.model.status_of(await self.rpc(RpcMethod.GET_STATUS, c=c), c.session_id)
+        return SessionStatus.from_status(await self.rpc(RpcMethod.GET_STATUS, c=c), c.session_id)
 
     @get("chat.timeout")
     async def timeout(self, c: Call) -> Any:
@@ -698,13 +701,13 @@ class ChatMembers(Members):
     async def append(self, c: Call) -> Any:
         view_id = f"ext-{uuid.uuid4().hex[:12]}"
         await self.show(c, view_id, c.params["view"], str(c.params.get("title") or ""))
-        self.model.state.view_owner[view_id] = c.extension_id
+        self.host.state.view_owners.own(view_id, c.extension_id)
         return view_id
 
     @call("chat.replace")
     async def replace(self, c: Call) -> Any:
         view_id = str(c.params["view_id"])
-        owner = self.model.state.view_owner.get(view_id)
+        owner = self.host.state.view_owners.owner_of(view_id)
         if owner is None:
             raise HostModelError(ErrorCode.NOT_FOUND, f"no view {view_id!r} was appended")
         if owner != c.extension_id:
@@ -731,7 +734,7 @@ class ChatMembers(Members):
         await self.backend.show_view(
             session_id=c.session_id,
             payload=payload,
-            run_id=self.model.state.runs.last_run_of(c.session_id),
+            run_id=self.host.state.runs.last_run_of(c.session_id),
         )
 
     @call("chat.search")
@@ -809,7 +812,7 @@ class ApprovalMembers(Members):
     def _mirror(self, session_id: str) -> ApprovalMirror:
         """The approval mirror, the session read from the backend's database the
         first time — after a restart nothing has been broadcast yet."""
-        mirror = self.model.state.approvals
+        mirror = self.host.state.approvals
         if not mirror.knows(session_id):
             mirror.restore(session_id, self.backend.waiting_approvals(session_id))
         return mirror
@@ -950,7 +953,7 @@ class CommandMembers(Members):
         command = str(c.params["command"]).strip()
         if not command.startswith("/"):
             raise HostModelError(ErrorCode.INVALID, f"{command!r} is not a slash command")
-        return await self.model.command(command, session_id=c.session_id)
+        return await self.host.gateway.command(command, session_id=c.session_id)
 
 
 class AgentMembers(Members):
@@ -1087,7 +1090,8 @@ class WorkspaceMembers(Members):
 
     @get("workspace.head")
     async def head(self, c: Call) -> Any:
-        return self.model.head(self.root(c))
+        head = GitWorkspace(self.root(c)).head()
+        return None if head is None else HeadInfo.of(head)
 
     @call("workspace.read")
     async def read(self, c: Call) -> Any:
@@ -1291,11 +1295,11 @@ class PluginMembers(Members):
 class ExtensionMembers(Members):
     @get("extensions.installed")
     async def installed(self, c: Call) -> Any:
-        return self.model.extensions_installed()
+        return self.host.extensions.installed()
 
     @call("extensions.set_settings")
     async def set_settings(self, c: Call) -> Any:
-        return await self.model.save_settings(c.extension_id, dict(c.params["values"]))
+        return await self.host.extensions.save_settings(c.extension_id, dict(c.params["values"]))
 
 
 class SelfMembers(Members):
@@ -1305,21 +1309,21 @@ class SelfMembers(Members):
 
     @get("self.settings")
     async def settings(self, c: Call) -> Any:
-        return self.model.settings_of(c.extension_id)
+        return self.host.extensions.settings_of(c.extension_id)
 
     @put("self.settings")
     async def set_settings(self, c: Call) -> Any:
         if not isinstance(c.value, dict):
             raise HostModelError(ErrorCode.INVALID, "settings are an object of key to value")
-        await self.model.save_settings(c.extension_id, dict(c.value))
+        await self.host.extensions.save_settings(c.extension_id, dict(c.value))
 
     @get("self.state")
     async def state(self, c: Call) -> Any:
-        return self.model.extension_info(c.extension_id)
+        return self.host.extensions.info(c.extension_id)
 
     @get("self.web_url")
     async def web_url(self, c: Call) -> Any:
-        return self.model.extension_info(c.extension_id).get("web_url")
+        return self.host.extensions.info(c.extension_id).web_url
 
     @call("self.busy")
     async def busy(self, c: Call) -> Any:
@@ -1329,12 +1333,12 @@ class SelfMembers(Members):
         ttl = c.params.get("ttl_seconds")
         if ttl is not None and not isinstance(ttl, int | float):
             raise HostModelError(ErrorCode.INVALID, "ttl_seconds is a number of seconds")
-        lease = self.model.extension_busy.busy(c.extension_id, reason, ttl)
+        lease = self.host.busy.busy(c.extension_id, reason, ttl)
         return lease.model_dump(mode="json")
 
     @call("self.done")
     async def done(self, c: Call) -> Any:
-        self.model.extension_busy.done(c.extension_id, str(c.params.get("reason", "")))
+        self.host.busy.done(c.extension_id, str(c.params.get("reason", "")))
 
 
 class HookMembers(Members):
@@ -1388,7 +1392,7 @@ class PolicyMembers(Members):
 class AccountMembers(Members):
     @get("account.status")
     async def status(self, c: Call) -> Any:
-        return await self.model.account(c.session_id)
+        return await self.host.gateway.account(c.session_id)
 
     @call("account.sign_in")
     async def sign_in(self, c: Call) -> Any:
@@ -1399,7 +1403,7 @@ class AccountMembers(Members):
     @call("account.sign_out")
     async def sign_out(self, c: Call) -> Any:
         await self.rpc(RpcMethod.CLEAR_CLOUD_CREDENTIALS, c=c)
-        return await self.model.account(c.session_id)
+        return await self.host.gateway.account(c.session_id)
 
 
 class NotificationMembers(Members):
@@ -1407,19 +1411,19 @@ class NotificationMembers(Members):
     async def notification_list(self, c: Call) -> Any:
         found = await self.rpc(RpcMethod.NOTIFICATIONS_LIST, c=c)
         rows = found.get("notifications", []) if isinstance(found, dict) else []
-        mine = [self.model.notification(r) for r in rows]
+        mine = [NotificationEntry.from_row(r) for r in rows]
         if c.grants.allows("notifications"):
             return mine
-        return [n for n in mine if n["source"] == c.extension_id]
+        return [n for n in mine if n.source == c.extension_id]
 
     @get("notifications.unread")
     async def unread(self, c: Call) -> Any:
         counts = await self.rpc(RpcMethod.NOTIFICATIONS_COUNTS, c=c)
-        return self.model.counts_for(c.grants, counts)
+        return NotificationCounts.from_counts(counts).visible_to(c.grants)
 
     @call("notifications.notify")
     async def notify(self, c: Call) -> Any:
-        self.model.notify(c.extension_id, c.params["notification"])
+        self.host.notices.notify(c.extension_id, c.params["notification"])
 
     @call("notifications.mark_read")
     async def mark_read(self, c: Call) -> Any:
@@ -1450,7 +1454,7 @@ class NotificationMembers(Members):
             RpcMethod.NOTIFICATIONS_MARK_READ, {"ids": ids, "source": source}, c=c
         )
         counts = found.get("counts", {}) if isinstance(found, dict) else {}
-        return self.model.counts_for(c.grants, counts)
+        return NotificationCounts.from_counts(counts).visible_to(c.grants)
 
 
 # ── host.decide ───────────────────────────────────────────────────
@@ -1478,7 +1482,7 @@ class DecisionMembers(Members):
                 ErrorCode.INVALID, f"{where}: {first['msg']}" if where else first["msg"]
             ) from None
         try:
-            decided = await self.model.decisions.decide(request)
+            decided = await self.host.decisions.decide(request)
         except DecisionTooLong as exc:
             raise HostModelError(ErrorCode.INVALID, str(exc)) from None
         except DecisionsUnavailable as exc:

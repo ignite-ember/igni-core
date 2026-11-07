@@ -67,7 +67,7 @@ async def test_a_titled_session_is_created_and_the_window_stays(rig: HostRig) ->
     ]
     assert named == [{"session_id": new_id, "name": "Index: acme/api"}]
     assert rig.model is not None
-    assert rig.model.windows.session(window) == "boot"
+    assert rig.model.services.windows.session(window) == "boot"
     assert await session_moves(rig, window) == before, "no window was moved"
 
 
@@ -109,7 +109,7 @@ async def test_focus_shows_it_in_the_callers_window(rig: HostRig) -> None:
     await rig.settle()
 
     assert rig.model is not None
-    assert rig.model.windows.session(window) == created["session_id"]
+    assert rig.model.services.windows.session(window) == created["session_id"]
     assert session(rig, created["session_id"]).titles == ["Review"]
 
 

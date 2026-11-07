@@ -7,7 +7,8 @@ from typing import ClassVar
 from igni_core.core.approvals.events import ApprovalChange
 from igni_core.extensions.host.broadcasts.activity import ActivityWatch
 from igni_core.extensions.host.broadcasts.approvals import Approval, ApprovalMirror
-from igni_core.extensions.host.broadcasts.signal import Emitter, Handler, Signal
+from igni_core.extensions.host.broadcasts.signal import Handler
+from igni_core.extensions.host.signal_values import Emitter, Signal
 from igni_core.protocol import messages as msg
 
 APPROVALS_CHANGED = "chat.approvals.changed"

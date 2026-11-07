@@ -34,7 +34,7 @@ from igni_core.extensions.events import HostTopic
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DOC = _ROOT / "docs/EXTENSIBILITY.md"
-_PRODUCERS = _ROOT / "src/igni_core/extensions/host/model.py"
+_PRODUCERS = _ROOT / "src/igni_core/extensions/host/observations.py"
 _SRC = _ROOT / "src/igni_core"
 _VOCABULARY = _SRC / "extensions/events.py"
 
@@ -92,13 +92,13 @@ class TestEveryTopicHasAProducer:
     def test_something_emits_each_one(self):
         """A topic nothing fires is an extension waiting forever.
 
-        ``HostModel`` is where they are emitted, so "is there a
+        ``HostObservations`` is where they are emitted, so "is there a
         producer" is answerable by reading one file.
         """
         produced = _PRODUCERS.read_text()
         missing = [topic.name for topic in HostTopic if f"HostTopic.{topic.name}" not in produced]
         assert not missing, (
-            f"no producer in host/model.py for: {sorted(missing)}. Publishing "
+            f"no producer in host/observations.py for: {sorted(missing)}. Publishing "
             "a topic nothing fires is worse than not publishing it — the "
             "extension waits instead of polling."
         )

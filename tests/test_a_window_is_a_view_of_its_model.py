@@ -48,7 +48,7 @@ def refused(reply: Any, code: str) -> str:
 def listen(rig: HostRig, extension_id: str, *wires: str) -> Sink:
     assert rig.model is not None
     sink = Sink()
-    rig.model.bus.subscribe(rig.model.bus.attach(extension_id, sink), list(wires))
+    rig.model.services.bus.subscribe(rig.model.services.bus.attach(extension_id, sink), list(wires))
     return sink
 
 
@@ -367,7 +367,7 @@ class TestFocus:
         await rig.window("w-1", connection="ws-a")
         await rig.window_writes("w-1", "focused", True)
         assert rig.model is not None
-        rig.model.connection_closed("ws-a")
+        rig.model.services.windows.detached("ws-a")
         assert ok(await rig.ask(ext, "get", "windows.focused")) is None
 
 

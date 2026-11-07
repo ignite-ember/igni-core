@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from igni_core.extensions.host.broadcasts.signal import Emitter
+from igni_core.extensions.host.signal_values import Emitter
 
 ACCOUNT_CHANGED = "account.changed"
 DISPLAY_CHANGED = "app.display_changed"
@@ -27,7 +27,7 @@ class SessionReaders(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    #: ``Account``, as :meth:`HostModel.account` reads it.
+    #: ``Account``, as :meth:`HostBackendGateway.account` reads it.
     account: SessionRead
     #: ``Display``, as ``AppMembers.display_value`` reads it.
     display: SessionRead

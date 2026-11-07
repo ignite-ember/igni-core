@@ -500,10 +500,9 @@ class Windows:
 
     def _valid(self, name: str, expression: str, value: Any) -> Any:
         try:
-            validated = self._types.validate(expression, _unset_nones(value))
+            return self._types.validate_plain(expression, _unset_nones(value))
         except ValidationError as exc:
             raise WindowModelError(f"{name}: expected {expression}: {exc}") from None
-        return _plain(validated)
 
     def _set(self, window_id: str, name: str, value: Any) -> None:
         if name == "session":
@@ -663,16 +662,6 @@ def _unset_nones(value: Any) -> Any:
         return {k: _unset_nones(v) for k, v in value.items() if v is not None}
     if isinstance(value, list):
         return [_unset_nones(v) for v in value]
-    return value
-
-
-def _plain(value: Any) -> Any:
-    if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")
-    if isinstance(value, list):
-        return [_plain(v) for v in value]
-    if isinstance(value, dict):
-        return {k: _plain(v) for k, v in value.items()}
     return value
 
 

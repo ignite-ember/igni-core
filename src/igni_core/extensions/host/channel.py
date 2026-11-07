@@ -195,12 +195,14 @@ class HostChannel:
             return
         self._connections.setdefault(extension_id, set()).add(connection)
         sink = _SocketSink()
-        subscriber = self._model.bus.attach(extension_id, sink)
-        grants = self._model.grants_for(extension_id)
+        subscriber = self._model.services.bus.attach(extension_id, sink)
+        grants = self._model.services.extensions.grants_for(extension_id)
         hello = Hello(
-            schema_version=self._model.schema.version,
+            schema_version=self._model.services.host_schema.version,
             extension_id=extension_id,
-            granted=grants.granted(self._model.schema.permission_names()) if grants else [],
+            granted=grants.granted(self._model.services.host_schema.permission_names())
+            if grants
+            else [],
         )
         writer = background.daemon(
             self._write(connection, sink), name=f"host-channel-{extension_id}"
@@ -226,7 +228,7 @@ class HostChannel:
             logger.debug("host channel: %s's connection ended: %s", extension_id, exc)
         finally:
             self._hooks.disconnect(extension_id, sink.send)
-            self._model.bus.detach(subscriber)
+            self._model.services.bus.detach(subscriber)
             self._connections.get(extension_id, set()).discard(connection)
             for task in pending:
                 task.cancel()

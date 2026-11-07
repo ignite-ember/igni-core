@@ -358,7 +358,7 @@ class PushChannel(StrEnum):
     #: An extension asked a window to open a link in the person's
     #: browser (``host.app.open_external``). Every window gets it; the
     #: one it names opens it. The payload is
-    #: :class:`~igni_core.extensions.host.model.ExternalOpen`.
+    #: :class:`~igni_core.extensions.host.pushes.ExternalOpen`.
     OPEN_EXTERNAL = "open_external"
     #: The folder's workspace-trust status (``core/workspace_trust``): sent
     #: after someone answers the trust dialog, so every window showing it for

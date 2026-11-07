@@ -21,12 +21,13 @@ else: the same grants, the same behaviour.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel
 
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.grants import HostGrants
+from igni_core.extensions.host.services import HostServices
 from igni_core.extensions.host.spec import (
     ErrorCode,
     MethodSpec,
@@ -36,9 +37,6 @@ from igni_core.extensions.host.spec import (
 )
 from igni_core.extensions.host.wire import Op, Request
 from igni_core.protocol.rpc import RpcMethod
-
-if TYPE_CHECKING:
-    from igni_core.extensions.host.model import HostModel
 
 
 class SessionTarget(BaseModel):
@@ -51,8 +49,8 @@ class SessionTarget(BaseModel):
 class SessionTargets:
     """Resolves ``Request.session`` against the grants and the project."""
 
-    def __init__(self, model: HostModel) -> None:
-        self._model = model
+    def __init__(self, host: HostServices) -> None:
+        self._host = host
 
     async def resolve(
         self,
@@ -73,8 +71,8 @@ class SessionTargets:
         self._may_reach(grants, member, request)
         if not await self._known(wanted, on_screen):
             raise HostModelError(ErrorCode.NOT_FOUND, f"no session {wanted!r} in this project")
-        attached = await self._model.attach(wanted, None)
-        return SessionTarget(session_id=attached["session_id"], on_screen=False)
+        attached = await self._host.gateway.attach(wanted, None)
+        return SessionTarget(session_id=attached.session_id, on_screen=False)
 
     @staticmethod
     def _may_reach(
@@ -108,12 +106,10 @@ class SessionTargets:
         Asked of the session on screen, never of ``session_id`` itself:
         asking a session that does not exist would create it.
         """
-        if session_id in self._model.backend.live_sessions():
+        if session_id in self._host.backend.live_sessions():
             return True
         try:
-            listed = await self._model.backend.rpc(
-                RpcMethod.LIST_SESSIONS, {}, session_id=on_screen
-            )
+            listed = await self._host.backend.rpc(RpcMethod.LIST_SESSIONS, {}, session_id=on_screen)
         except HostModelError:
             return False
         return session_id in self._ids(listed)

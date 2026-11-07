@@ -90,7 +90,7 @@ class TestPostingWhereNobodyIsLooking:
         # showing another one do not draw.
         assert all(m.session_id == "s-2" for m in rig.windows.of(msg.RunStarted))
         assert rig.model is not None
-        assert rig.model.windows.session(window) == "boot"
+        assert rig.model.services.windows.session(window) == "boot"
         moved = [p for p in await rig.window_pushes(window) if p["field"] == "session"]
         assert moved == moved_before, "no window was moved"
 

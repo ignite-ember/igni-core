@@ -395,7 +395,7 @@ class SessionOrchestrator:
             if getattr(message, "from_client", ""):
                 args["connection_id"] = message.from_client
             request = WindowRequest.model_validate(args)
-            result = self._host_model.handle_window(request)
+            result = self._host_model.services.window_rpc.handle(request).model_dump()
         except (ValidationError, WindowModelError) as exc:
             await self._reply(
                 message, msg.RPCResponse(id=message.id or "", error=f"window_model: {exc}")
@@ -426,16 +426,18 @@ class SessionOrchestrator:
         # The page's window is the one framing it — the window on the
         # connection that forwarded this — not whatever the request says.
         # The argument stands only until that window has said who it is.
-        windows = getattr(self._host_model, "windows", None)
+        windows = self._host_model.services.windows
         framing = (
             windows.by_connection(message.from_client)
-            if windows is not None and getattr(message, "from_client", "")
+            if getattr(message, "from_client", "")
             else None
         )
         if framing:
             args["home_window"] = framing
         reply = await self._host_model.handle_page(caller, args)
-        await self._reply(message, msg.RPCResponse(id=message.id or "", result=reply))
+        await self._reply(
+            message, msg.RPCResponse(id=message.id or "", result=reply.model_dump(mode="json"))
+        )
 
     async def _handle_service_token(self, message: Any) -> None:
         """``extension_service_token``: a page's token for its own service.

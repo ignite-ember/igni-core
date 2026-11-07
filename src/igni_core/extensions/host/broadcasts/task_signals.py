@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from igni_core.extensions.host.broadcasts.push_payloads import SchedulerPush, TodosPush
-from igni_core.extensions.host.broadcasts.signal import Emitter, Handler, PushHandler, Signal
+from igni_core.extensions.host.broadcasts.signal import Handler, PushHandler
+from igni_core.extensions.host.signal_values import Emitter, Signal
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.be_events import TaskSnapshot
 from igni_core.protocol.schemas.enums import PushChannel

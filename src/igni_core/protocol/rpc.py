@@ -298,7 +298,8 @@ class RpcMethod(StrEnum):
     # like ``attach_session``: the model spans every session.
     HOST_MODEL = "host_model"
     # How a *window* reaches its own part of the host model: it hydrates
-    # its model, and writes every change its views make, here — the
+    # its model, and writes every change its views make, here
+    # (:class:`~igni_core.extensions.host.window_rpc.WindowModelRpc`) — the
     # same :class:`~igni_core.extensions.host.windows.Windows` an
     # extension's ``host.ui`` writes. Pool-level: a window spans
     # sessions. See ``clients/web/src/clientState.ts``.

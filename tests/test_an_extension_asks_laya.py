@@ -137,7 +137,7 @@ class TestDecide:
     ) -> None:
         router = FakeRouter()
         assert rig.model is not None
-        rig.model.decisions = laya_over(router)
+        rig.model.services.decisions = laya_over(router)
         ext = rig.install(host=["decide"])
 
         decision = ok(
@@ -160,7 +160,7 @@ class TestDecide:
     ) -> None:
         router = FakeRouter()
         assert rig.model is not None
-        rig.model.decisions = laya_over(router)
+        rig.model.services.decisions = laya_over(router)
         ext = rig.install(host=["decide"])
 
         ok(await rig.ask(ext, "call", "decide", context={"text": "x"}, questions=TRIAGE))
@@ -182,7 +182,7 @@ class TestDecide:
     async def test_a_batch_answers_each_context_in_order(self, rig: HostRig) -> None:
         router = FakeRouter()
         assert rig.model is not None
-        rig.model.decisions = laya_over(router)
+        rig.model.services.decisions = laya_over(router)
         ext = rig.install(host=["decide"])
 
         decisions = ok(
@@ -200,7 +200,7 @@ class TestDecide:
 
     async def test_it_needs_the_decide_grant(self, rig: HostRig) -> None:
         assert rig.model is not None
-        rig.model.decisions = laya_over(FakeRouter())
+        rig.model.services.decisions = laya_over(FakeRouter())
         ext = rig.install(host=["app"])
         refused(
             await rig.ask(ext, "call", "decide", context={"text": "x"}, questions=TRIAGE),
@@ -211,7 +211,7 @@ class TestDecide:
         self, rig: HostRig
     ) -> None:
         assert rig.model is not None
-        rig.model.decisions = laya_over(FakeRouter(truncated=True))
+        rig.model.services.decisions = laya_over(FakeRouter(truncated=True))
         ext = rig.install(host=["decide"])
         message = refused(
             await rig.ask(ext, "call", "decide", context={"text": "x"}, questions=TRIAGE),
@@ -227,7 +227,7 @@ class TestDecide:
 
         model._build = broken  # type: ignore[method-assign]
         assert rig.model is not None
-        rig.model.decisions = service_over(model)
+        rig.model.services.decisions = service_over(model)
         ext = rig.install(host=["decide"])
         refused(
             await rig.ask(ext, "call", "decide", context={"text": "x"}, questions=TRIAGE),
@@ -265,7 +265,7 @@ class TestDecide:
     ) -> None:
         router = FakeRouter()
         assert rig.model is not None
-        rig.model.decisions = laya_over(router)
+        rig.model.services.decisions = laya_over(router)
         ext = rig.install(host=["decide"])
         message = refused(
             await rig.ask(ext, "call", "decide", context=context, questions=questions), "invalid"
@@ -275,7 +275,7 @@ class TestDecide:
 
     async def test_more_than_sixteen_contexts_is_refused(self, rig: HostRig) -> None:
         assert rig.model is not None
-        rig.model.decisions = laya_over(FakeRouter())
+        rig.model.services.decisions = laya_over(FakeRouter())
         ext = rig.install(host=["decide"])
         refused(
             await rig.ask(

@@ -33,6 +33,7 @@ from typing import Any
 
 from websockets.asyncio.client import connect
 
+from igni_core.extensions.host.wire import Reply
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 from igni_core.transport.in_process import InProcessTransport
@@ -270,8 +271,8 @@ async def test_a_window_s_connection_is_the_one_it_spoke_on(tmp_path: Path):
             _from("ws-a", RpcMethod.WINDOW_MODEL, op="hydrate", window="w-1", connection_id="ws-x")
         )
 
-        assert rig.model.windows.by_connection("ws-a") == "w-1"
-        assert rig.model.windows.by_connection("ws-x") is None
+        assert rig.model.services.windows.by_connection("ws-a") == "w-1"
+        assert rig.model.services.windows.by_connection("ws-x") is None
     finally:
         await rig.stop()
 
@@ -287,7 +288,7 @@ async def test_a_page_s_home_window_is_the_window_framing_it(tmp_path: Path, mon
         seen: list[dict[str, Any]] = []
         real = rig.model.handle_page
 
-        async def recording(caller: str, args: dict[str, Any]) -> Any:
+        async def recording(caller: str, args: dict[str, Any]) -> Reply:
             seen.append(dict(args))
             return await real(caller, args)
 

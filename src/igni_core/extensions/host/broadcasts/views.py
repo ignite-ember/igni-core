@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from igni_core.extensions.host.broadcasts.push_payloads import ViewActionPush, VisualizationDelta
-from igni_core.extensions.host.broadcasts.signal import Signal
+from igni_core.extensions.host.signal_values import Signal
 
 
 class ViewShown(Signal):

@@ -196,7 +196,7 @@ class CloudGuest(BackendHooks):
             clients=self._clients,
             credential=self._credential_state,
         )
-        model.activity_watch.listen(self.activity.changed)
+        model.services.activity_watch.listen(self.activity.changed)
         # A window coming or going changes ``clients``.
         watch_connections = getattr(
             getattr(transport, "inner", transport), "watch_connections", None
@@ -267,7 +267,7 @@ class CloudGuest(BackendHooks):
             logger.debug("cannot clear %s: %s", self.ready.path, exc)
 
     def _current_activity(self) -> Activity:
-        return Activity.model_validate(self._model.backend.activity())
+        return Activity.model_validate(self._model.services.backend.activity())
 
     def _clients(self) -> int:
         inner = getattr(self._transport, "inner", self._transport)

@@ -113,4 +113,4 @@ async def test_the_handler_opens_a_titled_chat_and_its_post_starts_the_run(start
     assert echo.extension_id == EXTENSION and echo.service_client_id == ""
     # Nothing moved the person.
     assert rig.session.ran == []
-    assert rig.model.windows.session(window) == "boot"
+    assert rig.model.services.windows.session(window) == "boot"

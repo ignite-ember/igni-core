@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import Field
 
-from igni_core.extensions.host.broadcasts.signal import Emitter, Handler, RunRef, Signal
+from igni_core.extensions.host.broadcasts.signal import Handler, RunRef
+from igni_core.extensions.host.signal_values import Emitter, Signal
+from igni_core.extensions.host.values import SessionInfo
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
@@ -102,8 +103,7 @@ class ModelCompletedSignal(RunRef):
 class SessionsListed(Signal):
     WIRE: ClassVar[str] = "sessions.listed"
 
-    #: Each a ``SessionInfo``, as :meth:`HostModel.session_info` makes it.
-    sessions: list[dict[str, Any]]
+    sessions: list[SessionInfo]
 
 
 class SessionsCleared(Signal):
@@ -117,15 +117,9 @@ class SessionsCleared(Signal):
 class ChatSignals:
     """Translates what the conversation says; touches the window it was said in."""
 
-    def __init__(
-        self,
-        emitter: Emitter,
-        windows: Windows,
-        session_info: Callable[[dict[str, Any]], dict[str, Any]],
-    ) -> None:
+    def __init__(self, emitter: Emitter, windows: Windows) -> None:
         self._emitter = emitter
         self._windows = windows
-        self._session_info = session_info
 
     def handlers(self) -> dict[type[msg.Message], Handler]:
         send_of: dict[type[msg.Message], type[Signal]] = {
@@ -164,7 +158,7 @@ class ChatSignals:
             self._windows.touch(window)
 
     def session_list_result(self, m: msg.SessionListResult) -> None:
-        sessions = [self._session_info(s.model_dump()) for s in m.sessions]
+        sessions = [SessionInfo.from_entry(s.model_dump()) for s in m.sessions]
         self._emitter.send(SessionsListed(sessions=sessions))
 
 

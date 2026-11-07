@@ -42,6 +42,7 @@ from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.extensions.service_events import UnattendedPost
 from igni_core.extensions.store import ExtensionStore
+from igni_core.notifications.extension_notices import ExtensionNoticeReceiver
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 
@@ -304,7 +305,7 @@ class ActivityNudge:
     def _look(self) -> None:
         with self._lock:
             self._pending = False
-        self._model.activity_watch.moved()
+        self._model.services.activity_watch.moved()
 
 
 class HostModelWiring:
@@ -324,8 +325,7 @@ class HostModelWiring:
         registry: ExtensionRegistry,
         project_dir: Path,
         store: ExtensionStore | None = None,
-        notifications: Any = None,
-        notices: Any = None,
+        notices: ExtensionNoticeReceiver | None = None,
         workspace_signals: Any = None,
         strict: bool = False,
     ) -> HostModel:
@@ -339,18 +339,17 @@ class HostModelWiring:
             backend=backend,
             registry=registry,
             store=store,
-            notifications=notifications,
             notices=notices,
             strict=strict,
         )
         orchestrator.attach_host_model(model)
         # igni's hook events reach the extensions that hook them.
         ExtensionHookGate.install(ExtensionHooks.wire(registry))
-        transport.observe(model.outbound)
+        transport.observe(model.broadcasts.outbound)
         watch = RpcWatch(model.broadcasts.after_rpc)
         orchestrator.watch_inbound(watch.inbound)
         transport.observe(watch.outbound)
-        registry.watch(model.extension_changed)
+        registry.watch(model.services.observations.extension_changed)
         # An app following approvals through the API is told of every
         # one that appears or goes away, wherever it was answered.
         approval_events.watch(model.broadcasts.approval_changed)
@@ -364,7 +363,7 @@ class HostModelWiring:
 
             def closed(event: str, connection_id: str) -> None:
                 if event == "detached":
-                    model.connection_closed(connection_id)
+                    model.services.windows.detached(connection_id)
 
             watch_connections(closed)
         return model

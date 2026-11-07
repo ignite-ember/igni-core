@@ -13,8 +13,9 @@ from typing import Any, ClassVar
 from pydantic import BaseModel
 
 from igni_core.extensions.host.broadcasts.deferred_reads import DeferredReads
-from igni_core.extensions.host.broadcasts.signal import Emitter, Signal, merged
+from igni_core.extensions.host.broadcasts.signal import merged
 from igni_core.extensions.host.broadcasts.task_signals import TaskSignals
+from igni_core.extensions.host.signal_values import Emitter, Signal
 from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.extensions.store import ExtensionStore
 from igni_core.protocol.rpc import RpcMethod

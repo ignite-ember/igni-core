@@ -91,7 +91,7 @@ async def test_a_signal_arrives_and_its_handler_reads_and_writes_the_model(start
     assert rig.model is not None
 
     # The person moves to another session: igni's own path for that.
-    rig.model.session_switched("s-42", None)
+    rig.model.services.observations.session_switched("s-42", None)
     seen = await process.line()
     assert seen["signal"] == "current_changed"
     assert seen["session_id"] == "s-42"

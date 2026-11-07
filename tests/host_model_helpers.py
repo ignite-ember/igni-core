@@ -410,7 +410,7 @@ class HostRig:
         if self.channel is not None:
             await self.channel.stop()
         if self.model is not None:
-            await self.model.drain()
+            await self.model.services.work.drain()
 
     def install(self, extension_id: str = "acme.reviewer", **permissions: Any) -> str:
         self.registry.install(manifest(extension_id, **permissions), state=ExtensionState.READY)
@@ -493,7 +493,7 @@ class HostRig:
         tasks = [t for t in self.orchestrator._in_flight if not t.done()]
         if tasks:
             await asyncio.wait(tasks, timeout=5)
-        await self.model.drain()
+        await self.model.services.work.drain()
         for _ in range(5):
             await asyncio.sleep(0)
 

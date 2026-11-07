@@ -23,8 +23,8 @@ import pytest
 
 from igni_core.extensions.host import coverage
 from igni_core.extensions.host.broadcasts import RpcWrite, ViewShown
-from igni_core.extensions.host.broadcasts.signal import Signal
 from igni_core.extensions.host.definition import HOST_SCHEMA
+from igni_core.extensions.host.signal_values import Signal
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 from igni_core.protocol.schemas.be_events import TaskSnapshot
@@ -49,7 +49,7 @@ def heard(rig: HostRig) -> Sink:
     assert rig.model is not None
     extension = rig.install("acme.all", host=EVERYTHING, workspace="read")
     sink = Sink()
-    rig.model.bus.subscribe(rig.model.bus.attach(extension, sink), ALL_SIGNALS)
+    rig.model.services.bus.subscribe(rig.model.services.bus.attach(extension, sink), ALL_SIGNALS)
     return sink
 
 
@@ -137,7 +137,7 @@ async def test_a_failed_run_drops_what_it_was_waiting_on(rig, heard):
     )
 
     assert heard.values("chat.run_error") == [{"session_id": "boot", "error": "model went away"}]
-    assert not rig.model.state.approvals.knows("boot")
+    assert not rig.model.services.state.approvals.knows("boot")
 
 
 async def test_messages_typing_info_and_errors_are_told(rig, heard):
@@ -188,7 +188,7 @@ async def test_an_approval_is_requested_detailed_and_resolved(rig, heard):
     (paused,) = heard.values("chat.run_paused")
     assert paused["requirements"][0]["tool_args"] == {"command": "ls"}
     assert heard.values("chat.approvals.requested")[0]["friendly_name"] == "Bash"
-    (waiting,) = rig.model.state.approvals.waiting("boot")
+    (waiting,) = rig.model.services.state.approvals.waiting("boot")
     assert waiting.details == "lists files"
     assert len(heard.values("chat.approvals.details")) == 2
 
@@ -197,8 +197,8 @@ async def test_an_approval_is_requested_detailed_and_resolved(rig, heard):
     assert heard.values("chat.approvals.resolved") == [
         {"session_id": "boot", "requirement_id": "q1"}
     ]
-    assert rig.model.state.approvals.knows("boot")
-    assert rig.model.state.approvals.waiting("boot") == []
+    assert rig.model.services.state.approvals.knows("boot")
+    assert rig.model.services.state.approvals.waiting("boot") == []
 
 
 async def test_approvals_waiting_after_a_restart_are_taken_back_quietly(rig, heard):
@@ -207,10 +207,10 @@ async def test_approvals_waiting_after_a_restart_are_taken_back_quietly(rig, hea
         msg.Info(text="not an approval"),
     ]
 
-    rig.model.state.approvals.restore("boot", waiting)
-    rig.model.state.approvals.restore("boot", waiting)
+    rig.model.services.state.approvals.restore("boot", waiting)
+    rig.model.services.state.approvals.restore("boot", waiting)
 
-    assert [a.requirement_id for a in rig.model.state.approvals.waiting("boot")] == ["q1"]
+    assert [a.requirement_id for a in rig.model.services.state.approvals.waiting("boot")] == ["q1"]
     assert heard.values("chat.approvals.requested") == []
 
 
@@ -372,7 +372,7 @@ async def test_a_sign_in_and_an_output_style_are_read_again_and_told(rig, heard)
 async def test_nothing_is_read_again_when_nobody_listens(rig):
     await _send(rig, _push("login_status"), _push("output_style_changed"))
 
-    assert rig.model._tasks == set()
+    assert rig.model.services.work.idle()
 
 
 # ── Writes made through RPC ───────────────────────────────────────
@@ -431,8 +431,8 @@ async def test_writes_that_need_a_fresh_read_are_read_and_told(rig, heard):
 
 async def test_an_extensions_own_settings_write_is_told_to_it_alone(rig, heard):
     other = Sink()
-    rig.model.bus.subscribe(
-        rig.model.bus.attach(rig.install("acme.other", host=EVERYTHING), other),
+    rig.model.services.bus.subscribe(
+        rig.model.services.bus.attach(rig.install("acme.other", host=EVERYTHING), other),
         ["self.settings_changed"],
     )
     rig.store.save_settings(rig.registry.get("acme.all").manifest, {"serviceUrl": "https://s"})
@@ -459,8 +459,8 @@ async def test_a_failing_activity_listener_does_not_stop_the_others(rig, heard):
     def broken(_activity: Any) -> None:
         raise RuntimeError("listener bug")
 
-    rig.model.activity_watch.listen(broken)
-    rig.model.activity_watch.listen(told.append)
+    rig.model.services.activity_watch.listen(broken)
+    rig.model.services.activity_watch.listen(told.append)
     rig.session.processing = True
 
     await _send(rig, msg.RunStarted(session_id="boot", run_id="r1"))
@@ -473,7 +473,7 @@ async def test_an_activity_that_cannot_be_read_is_not_told(rig, heard, monkeypat
     def unavailable() -> Any:
         raise RuntimeError("backend gone")
 
-    monkeypatch.setattr(rig.model.backend, "activity", unavailable)
+    monkeypatch.setattr(rig.model.services.backend, "activity", unavailable)
 
     await _send(rig, msg.RunStarted(session_id="boot", run_id="r1"))
 
@@ -572,4 +572,4 @@ async def test_what_is_heard_fits_the_schema(rig, heard):
 
     assert heard.got
     for wire, value in heard.got:
-        assert rig.model.types.check(types[wire], value) is None, (wire, value)
+        assert rig.model.services.types.check(types[wire], value) is None, (wire, value)
