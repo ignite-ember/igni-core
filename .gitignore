@@ -247,3 +247,6 @@ clients/web/pnpm-workspace.yaml
 
 # A test formatted an object into a filename; the repr became a real file.
 <*object at 0x*>
+
+# igni-sdk and igni-app, checked out beside this repository by CI (tests/siblings.py).
+.siblings/

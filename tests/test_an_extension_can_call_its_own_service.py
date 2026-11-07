@@ -30,9 +30,12 @@ from ember_code.extensions.registry import (
 )
 from ember_code.extensions.rpc import ExtensionRpc
 from ember_code.extensions.service import ExtensionServiceError, McpExtensionService
+from tests.siblings import IGNI_SDK, needs_sdk
+
+pytestmark = needs_sdk
 
 REPO = Path(__file__).resolve().parents[1]
-REFERENCE = REPO / "examples" / "reference-extension" / "manifest.json"
+REFERENCE = IGNI_SDK / "examples" / "reference-extension" / "manifest.json"
 
 
 class FakeService:

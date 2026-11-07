@@ -22,9 +22,12 @@ by reading the TypeScript and comparing it to the Python.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-COMPOSER = Path(__file__).parent.parent / "clients" / "web" / "src" / "components" / "Composer.tsx"
+from tests.siblings import IGNI_APP, needs_app
+
+pytestmark = needs_app
+
+COMPOSER = IGNI_APP / "clients" / "web" / "src" / "components" / "Composer.tsx"
 
 
 def _fallback_commands() -> set[str]:

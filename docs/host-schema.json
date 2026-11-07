@@ -1,0 +1,5844 @@
+{
+  "version": "1.11.0",
+  "permissions": [
+    {
+      "name": "app",
+      "doc": "igni's display settings, version and connection."
+    },
+    {
+      "name": "decide",
+      "doc": "Ask igni's local decision model (Laya) typed questions about text it sends. Runs on this machine; nothing leaves it."
+    },
+    {
+      "name": "links",
+      "doc": "Open https links in the person's browser, from the window it is asked about."
+    },
+    {
+      "name": "files.open",
+      "doc": "Open a document in the project with the application this machine opens it with, as the person would by double-clicking it. Only a file the workspace grant reaches, and only a document (`host.workspace.open`)."
+    },
+    {
+      "name": "ui",
+      "doc": "The windows and what is on screen in them: page, sidebar, composer, and so on."
+    },
+    {
+      "name": "sessions",
+      "doc": "The list of sessions, and which one is open."
+    },
+    {
+      "name": "sessions.post",
+      "doc": "Post messages and show blocks in any session of this project, not only the one on screen — labelled as this extension, without switching what the person sees. Needed besides `chat.post` or `chat.append`."
+    },
+    {
+      "name": "chat.read",
+      "doc": "The conversation: messages, runs, status, todos."
+    },
+    {
+      "name": "chat.post",
+      "doc": "Post messages in the chat, labelled as this extension, for the agent to answer."
+    },
+    {
+      "name": "chat.append",
+      "doc": "Show its own blocks in the transcript (never sent to the model), and see the chat's interactive views."
+    },
+    {
+      "name": "chat.control",
+      "doc": "Steer a run: cancel, truncate, compact, approve a plan, drive /loop."
+    },
+    {
+      "name": "chat.approvals",
+      "doc": "See and answer the agent's requests to act."
+    },
+    {
+      "name": "commands",
+      "doc": "Slash commands and skills: list and run them."
+    },
+    {
+      "name": "agents",
+      "doc": "Agent definitions; promote or discard ephemeral ones."
+    },
+    {
+      "name": "workflows",
+      "doc": "List, run and cancel workflows."
+    },
+    {
+      "name": "scheduler",
+      "doc": "Scheduled tasks: list, start, run now, cancel."
+    },
+    {
+      "name": "processes",
+      "doc": "Background shells: list, tail, stop, run."
+    },
+    {
+      "name": "workspace",
+      "doc": "The project, through the host. Granted by `permissions.workspace` (read or write), limited to `workspacePaths` — not by a `permissions.host` entry."
+    },
+    {
+      "name": "models",
+      "doc": "The model registry, and which model is in use."
+    },
+    {
+      "name": "mcp",
+      "doc": "MCP servers: status, connect, disconnect, tools."
+    },
+    {
+      "name": "plugins",
+      "doc": "Plugins and marketplaces: read, install, remove."
+    },
+    {
+      "name": "extensions",
+      "doc": "Every installed extension and its state. Read-only: an extension only ever changes its own settings."
+    },
+    {
+      "name": "hooks",
+      "doc": "Hook details; reload hooks."
+    },
+    {
+      "name": "permissions",
+      "doc": "Permission rules and mode; check and save rules."
+    },
+    {
+      "name": "policy",
+      "doc": "The group policy in force."
+    },
+    {
+      "name": "account",
+      "doc": "Whether someone is signed in, and starting or ending the person's own sign-in. Never the session or any credential."
+    },
+    {
+      "name": "notifications",
+      "doc": "Every notification, from every source. Without it an extension sees and marks only its own."
+    }
+  ],
+  "types": [
+    {
+      "name": "Change",
+      "doc": "One change anywhere in the model, as `host.changed` reports it.",
+      "fields": [
+        {
+          "name": "path",
+          "type": "str",
+          "doc": "The member that changed, `object.member`.",
+          "optional": false
+        },
+        {
+          "name": "value",
+          "type": "json",
+          "doc": "Its new value.",
+          "optional": false
+        },
+        {
+          "name": "window",
+          "type": "str | None",
+          "doc": "The window, for a per-window member.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "Display",
+      "doc": "How igni presents the conversation.",
+      "fields": [
+        {
+          "name": "verbose",
+          "type": "bool",
+          "doc": "Whether routing detail is shown.",
+          "optional": false
+        },
+        {
+          "name": "output_style",
+          "type": "str",
+          "doc": "The active output style; empty for none.",
+          "optional": false
+        },
+        {
+          "name": "output_styles",
+          "type": "list[str]",
+          "doc": "The styles that can be chosen.",
+          "optional": false
+        },
+        {
+          "name": "color_theme",
+          "type": "str",
+          "doc": "`auto`, `light` or `dark`.",
+          "optional": false
+        },
+        {
+          "name": "show_reasoning",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "show_tool_calls",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Connection",
+      "doc": "Whether igni can reach a model and its server.",
+      "fields": [
+        {
+          "name": "cloud_connected",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "model_configured",
+          "type": "bool",
+          "doc": "False when runs would reach no model.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "UpdateInfo",
+      "doc": "A newer igni than the one running.",
+      "fields": [
+        {
+          "name": "current_version",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "latest_version",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "download_url",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "StateChange",
+      "doc": "One key of an extension's own state.",
+      "fields": [
+        {
+          "name": "key",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "value",
+          "type": "str | None",
+          "doc": "`None` when the key was deleted.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "WindowInfo",
+      "doc": "One igni window: a desktop window or a browser tab.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "doc": "Stable across reloads of the same window.",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "`tauri` or `web`.",
+          "optional": false
+        },
+        {
+          "name": "connected",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "focused",
+          "type": "bool",
+          "doc": "Whether the person is using this window: it has focus.",
+          "optional": false
+        },
+        {
+          "name": "session_id",
+          "type": "str | None",
+          "doc": "The session it shows.",
+          "optional": true
+        },
+        {
+          "name": "project_dir",
+          "type": "str | None",
+          "doc": "",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "Page",
+      "doc": "One level of a window's page stack.",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "`plugins`, `extensions`, an extension's page kind, …",
+          "optional": false
+        },
+        {
+          "name": "label",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "params",
+          "type": "dict[str, str]",
+          "doc": "",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "Route",
+      "doc": "Where a window is: its page stack, empty for the chat.",
+      "fields": [
+        {
+          "name": "window",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "pages",
+          "type": "list[Page]",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Panel",
+      "doc": "The panel open over a window's chat: `notifications`, `search` (find in the conversation), `login` or `dir-picker`. One at a time.",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "params",
+          "type": "dict[str, json]",
+          "doc": "",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "PanelChange",
+      "doc": "A window's panel opened or closed.",
+      "fields": [
+        {
+          "name": "window",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "panel",
+          "type": "Panel | None",
+          "doc": "",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "Sidebar",
+      "doc": "A window's sidebar.",
+      "fields": [
+        {
+          "name": "open",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "width",
+          "type": "int | None",
+          "doc": "Its width in pixels; `None` for igni's own.",
+          "optional": true
+        },
+        {
+          "name": "section",
+          "type": "str | None",
+          "doc": "The part of it in view: `links` (the destinations) or `sessions`.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "SidebarChange",
+      "doc": "A window's sidebar changed.",
+      "fields": [
+        {
+          "name": "window",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "sidebar",
+          "type": "Sidebar",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Preview",
+      "doc": "The file previewed in a window.",
+      "fields": [
+        {
+          "name": "path",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PreviewChange",
+      "doc": "A window's preview changed.",
+      "fields": [
+        {
+          "name": "window",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "preview",
+          "type": "Preview | None",
+          "doc": "",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "SelectionState",
+      "doc": "What is selected in a window. Each part is independent; `None` for nothing.",
+      "fields": [
+        {
+          "name": "message_id",
+          "type": "str | None",
+          "doc": "The highlighted message, by the run it belongs to (`run_id` in `chat.messages` and the run signals).",
+          "optional": true
+        },
+        {
+          "name": "text",
+          "type": "str | None",
+          "doc": "Text selected in the transcript.",
+          "optional": true
+        },
+        {
+          "name": "file",
+          "type": "str | None",
+          "doc": "The file last picked: a file pill, a reference.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "SelectionChange",
+      "doc": "A window's selection changed.",
+      "fields": [
+        {
+          "name": "window",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "selection",
+          "type": "SelectionState",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Composer",
+      "doc": "A window's composer.",
+      "fields": [
+        {
+          "name": "text",
+          "type": "str",
+          "doc": "The draft, without the mode's `/` or `$`.",
+          "optional": false
+        },
+        {
+          "name": "attachments",
+          "type": "list[str]",
+          "doc": "The files the draft refers to (`@path`), in order.",
+          "optional": true
+        },
+        {
+          "name": "mode",
+          "type": "str | None",
+          "doc": "`chat`, `command` (a slash command) or `shell` (a `$` line).",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "ComposerChange",
+      "doc": "A window's draft changed.",
+      "fields": [
+        {
+          "name": "window",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "composer",
+          "type": "Composer",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Toast",
+      "doc": "A transient message on screen.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "text",
+          "type": "str",
+          "doc": "Its first line.",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "`info`, `success`, `warning` or `error`.",
+          "optional": false
+        },
+        {
+          "name": "body",
+          "type": "str | None",
+          "doc": "A second line.",
+          "optional": true
+        },
+        {
+          "name": "target",
+          "type": "Page | None",
+          "doc": "Where clicking it goes.",
+          "optional": true
+        },
+        {
+          "name": "source",
+          "type": "str | None",
+          "doc": "The extension that showed it; `None` for igni.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "ToastChange",
+      "doc": "A toast appeared or went away.",
+      "fields": [
+        {
+          "name": "window",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "toast",
+          "type": "Toast",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Dialog",
+      "doc": "A dialog on screen: igni's own (`spec.kind` is `update`) or an extension's (`show_dialog`). One at a time; a new one replaces the last, which closes unanswered.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "spec",
+          "type": "json",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "source",
+          "type": "str | None",
+          "doc": "The extension that asked; `None` for igni.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "DialogChange",
+      "doc": "A dialog opened or closed.",
+      "fields": [
+        {
+          "name": "window",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "dialog",
+          "type": "Dialog",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "answer",
+          "type": "json",
+          "doc": "What the person answered, when it closed: `{button, value}`; `None` when it was dismissed or replaced.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "Scroll",
+      "doc": "Where a window's transcript is scrolled to.",
+      "fields": [
+        {
+          "name": "message_id",
+          "type": "str | None",
+          "doc": "The message at the top of the view, by its run; `None` for none.",
+          "optional": true
+        },
+        {
+          "name": "at_bottom",
+          "type": "bool",
+          "doc": "Following the newest message.",
+          "optional": false
+        },
+        {
+          "name": "window",
+          "type": "str | None",
+          "doc": "The window, in a signal.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "SessionInfo",
+      "doc": "One session, as the session list shows it.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "updated_at",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "run_count",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "summary",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "agent_name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SessionChange",
+      "doc": "A window moved to another session.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "window",
+          "type": "str | None",
+          "doc": "",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "SessionList",
+      "doc": "The session list, as it was just read.",
+      "fields": [
+        {
+          "name": "sessions",
+          "type": "list[SessionInfo]",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SessionCleared",
+      "doc": "`/clear`: a session carries on under a new id.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "new_session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "summary",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SessionNamed",
+      "doc": "A session was given its name.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SessionAttached",
+      "doc": "A session bound, and the folder it works in.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "project_dir",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ChatMessage",
+      "doc": "A message posted in a chat.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "text",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "queued",
+          "type": "bool",
+          "doc": "For the next turn rather than now.",
+          "optional": false
+        },
+        {
+          "name": "from_extension",
+          "type": "str | None",
+          "doc": "The extension that posted it, or whose service sent it; `None` for the person.",
+          "optional": true
+        },
+        {
+          "name": "from_service",
+          "type": "str | None",
+          "doc": "The client id of the service that sent it, when the extension's service did (a message item, posted as sent); `None` for a post an extension made itself and for the person's.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "HistoryChange",
+      "doc": "Turns were removed from a session's history.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "what",
+          "type": "str",
+          "doc": "`truncated` or `discarded`.",
+          "optional": false
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "The run removed from, or the message discarded.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ContentDelta",
+      "doc": "A piece of the agent's answer as it streams.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "text",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "thinking",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "RunRef",
+      "doc": "Which run.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "parent_run_id",
+          "type": "str",
+          "doc": "Set for a sub-agent's run.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "RunStart",
+      "doc": "A run started.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "parent_run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "agent_name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "model",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Run",
+      "doc": "A finished run.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "parent_run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "input_tokens",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "output_tokens",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "reasoning_tokens",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "duration",
+          "type": "float",
+          "doc": "Seconds.",
+          "optional": false
+        },
+        {
+          "name": "changed_files",
+          "type": "list[str]",
+          "doc": "Files the run edited, relative to the project — only those within the extension's workspace grant, and none without one.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "RunFailure",
+      "doc": "A run stopped with an error.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "error",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Approval",
+      "doc": "The agent asking to act.",
+      "fields": [
+        {
+          "name": "requirement_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "tool_name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "friendly_name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "tool_args",
+          "type": "json",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "details",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "agent_path",
+          "type": "list[str]",
+          "doc": "Which sub-agent is asking, outermost first.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "RunPause",
+      "doc": "A run waiting on approvals.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "requirements",
+          "type": "list[Approval]",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ApprovalResolved",
+      "doc": "An approval was answered, by anyone.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "requirement_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ApprovalChange",
+      "doc": "An approval began or stopped waiting on a person — however it ended: answered in a window or through the API, after a restart, or dropped with its run.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "requirement_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "state",
+          "type": "str",
+          "doc": "`waiting` or `resolved`.",
+          "optional": false
+        },
+        {
+          "name": "origin",
+          "type": "str",
+          "doc": "`main` (the main agent) or `sub_agent`.",
+          "optional": false
+        },
+        {
+          "name": "tool_name",
+          "type": "str",
+          "doc": "The tool asked about; empty when resolved.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SessionActivity",
+      "doc": "One session's share of `Activity`.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "state",
+          "type": "str",
+          "doc": "`idle`, `waiting` or `running`.",
+          "optional": false
+        },
+        {
+          "name": "waiting_approvals",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Activity",
+      "doc": "Whether igni is doing anything. A run waiting only on a person — on an approval, its own or a sub-agent's — is `waiting`, not `running`: nothing happens until the decision, so the process may be suspended and the decision wakes it.",
+      "fields": [
+        {
+          "name": "state",
+          "type": "str",
+          "doc": "`idle`, `waiting` or `running`.",
+          "optional": false
+        },
+        {
+          "name": "suspendable",
+          "type": "bool",
+          "doc": "Nothing is running and nothing is busy.",
+          "optional": false
+        },
+        {
+          "name": "waiting_approvals",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "sessions",
+          "type": "list[SessionActivity]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "busy",
+          "type": "list[BusyLease]",
+          "doc": "What holds igni busy outside a run's turn: calls out, scheduled tasks, processes, extensions that said they are working (`self.busy`).",
+          "optional": false
+        },
+        {
+          "name": "wake_at",
+          "type": "str | None",
+          "doc": "When something is next due while nothing runs (ISO 8601, UTC): when a suspended igni should be woken.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "BusyLease",
+      "doc": "One thing igni is busy with. A lease with `expires_at` stops counting then, whether or not it was let go.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "`post_run`, `model_call`, `http_call`, `mcp_call`, `extension_call`, `scheduled_task`, `process`, `monitor`, `extension` or `background`.",
+          "optional": false
+        },
+        {
+          "name": "holder",
+          "type": "str",
+          "doc": "Who holds it: an extension id, a server, a task.",
+          "optional": false
+        },
+        {
+          "name": "reason",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "since",
+          "type": "str",
+          "doc": "ISO 8601.",
+          "optional": false
+        },
+        {
+          "name": "expires_at",
+          "type": "str | None",
+          "doc": "ISO 8601; `None` until let go.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ApprovalDetails",
+      "doc": "The reason for an approval, arriving after it.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "requirement_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "details",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ApprovalAnswer",
+      "doc": "One answer to one approval.",
+      "fields": [
+        {
+          "name": "requirement_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "action",
+          "type": "str",
+          "doc": "`confirm` or `reject`.",
+          "optional": false
+        },
+        {
+          "name": "choice",
+          "type": "str",
+          "doc": "`once`, `always` or `similar`; empty with `reject`.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "ToolCall",
+      "doc": "The agent started calling a tool.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "parent_run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "tool_name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "friendly_name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "args_summary",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ToolResult",
+      "doc": "A tool call finished.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "parent_run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "summary",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "is_error",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "is_rejected",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ToolFailure",
+      "doc": "A tool call failed.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "parent_run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "error",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ModelUsage",
+      "doc": "One model call's tokens.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "parent_run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "input_tokens",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "output_tokens",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Typing",
+      "doc": "Someone's draft in a session, live.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "text",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "window",
+          "type": "str | None",
+          "doc": "",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "Status",
+      "doc": "A session's status line.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "model",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "model_configured",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "permission_mode",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "input_tokens",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "output_tokens",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "context_tokens",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "max_context",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Notice",
+      "doc": "An info or error line in a session.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "text",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ContextUsage",
+      "doc": "How full the context is, and with what.",
+      "fields": [
+        {
+          "name": "tokens",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "max",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "breakdown",
+          "type": "json",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "FileEdited",
+      "doc": "The agent wrote a file.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "path",
+          "type": "str",
+          "doc": "Relative to the project; only within the workspace grant.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "AgentEvent",
+      "doc": "Progress of a sub-agent or a team, as the transcript shows it.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Retry",
+      "doc": "A network call being retried, and whether it recovered.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "`attempt` or `succeeded`.",
+          "optional": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "View",
+      "doc": "A json-render block in the transcript.",
+      "fields": [
+        {
+          "name": "view_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "title",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "spec",
+          "type": "json",
+          "doc": "A json-render spec: `{root, elements}`.",
+          "optional": false
+        },
+        {
+          "name": "source",
+          "type": "str",
+          "doc": "`visualizer`, or the extension that appended it.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ViewAction",
+      "doc": "The person used a control inside a view.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "action",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "params",
+          "type": "json",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Plan",
+      "doc": "The plan the agent proposed in plan mode.",
+      "fields": [
+        {
+          "name": "latest",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "history",
+          "type": "list[str]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "tasks",
+          "type": "list[json]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "state",
+          "type": "str",
+          "doc": "`pending`, or empty when there is none.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PlanChange",
+      "doc": "A plan was submitted or decided.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "`submitted` or `decided`.",
+          "optional": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "TaskEvent",
+      "doc": "A sub-agent task created or updated.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "task_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "title",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "assignee",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "status",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "TaskIteration",
+      "doc": "A task loop's iteration count.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "iteration",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "max_iterations",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "TaskSnapshot",
+      "doc": "Every task, as it now stands.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "tasks",
+          "type": "list[json]",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Todos",
+      "doc": "The agent's todo list.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "todos",
+          "type": "list[json]",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "LoopStatus",
+      "doc": "`/loop`, as it stands.",
+      "fields": [
+        {
+          "name": "active",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "paused",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "prompt",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "iteration_index",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "iterations_remaining",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "cap_explicit",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "CommandOutcome",
+      "doc": "What a slash command answered.",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "content",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "display_content",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "CollectionChange",
+      "doc": "Something in a collection changed; read it again.",
+      "fields": [
+        {
+          "name": "what",
+          "type": "str",
+          "doc": "What happened: `connected`, `installed`, `event`, …",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "str | None",
+          "doc": "Which item, when there is one.",
+          "optional": true
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "doc": "The host's report of it.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "WorkflowRun",
+      "doc": "A workflow started.",
+      "fields": [
+        {
+          "name": "workflow_run_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SchedulerEvent",
+      "doc": "A scheduled task started, finished or changed.",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "task_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "result",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ProcessEvent",
+      "doc": "A background shell started, printed, or exited.",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "`started`, `line`, `exited` or `done`.",
+          "optional": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Head",
+      "doc": "The project's git HEAD.",
+      "fields": [
+        {
+          "name": "commit_sha",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "FilesChanged",
+      "doc": "Files git sees as changed, within the extension's workspace grant.",
+      "fields": [
+        {
+          "name": "paths",
+          "type": "list[str]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "truncated",
+          "type": "bool",
+          "doc": "The list was capped: rescan rather than trust it.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ModelChange",
+      "doc": "The model in use changed.",
+      "fields": [
+        {
+          "name": "current",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ExtensionInfo",
+      "doc": "An installed extension.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "version",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "state",
+          "type": "str",
+          "doc": "`PREPARING`, `READY`, `FAILED` or `DISABLED`.",
+          "optional": false
+        },
+        {
+          "name": "reason",
+          "type": "str",
+          "doc": "Why it is not READY, and what to do.",
+          "optional": false
+        },
+        {
+          "name": "web_url",
+          "type": "str | None",
+          "doc": "Its home on the web — its service's URL, which is the service's `client_uri` — when one is known.",
+          "optional": true
+        },
+        {
+          "name": "switched_off",
+          "type": "list[Withheld]",
+          "doc": "What it does not get: a collision with an extension higher in the super admin's priority order (the reason begins `lower priority than <extension>`), or an override whose text lacks the sections its manifest declares.",
+          "optional": false
+        },
+        {
+          "name": "dropped",
+          "type": "list[Withheld]",
+          "doc": "Its prompt edits that land nowhere: another extension overrides that prompt, and its override has no section the edit names.",
+          "optional": false
+        },
+        {
+          "name": "faulty",
+          "type": "str",
+          "doc": "Why it is faulty — its calls timed out or crashed three times in a row, so igni restarted it and does not wait on its hooks — or empty while it answers. The first answer after the restart clears it.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Withheld",
+      "doc": "One thing an extension declared and does not get, and why.",
+      "fields": [
+        {
+          "name": "claim",
+          "type": "str",
+          "doc": "`prompt:main`, `prompt:main#workflow`, `prompt:agent:explorer+notes`, `command:/review`, `anchor:NAME`.",
+          "optional": false
+        },
+        {
+          "name": "reason",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ExtensionStateChange",
+      "doc": "An extension's health moved.",
+      "fields": [
+        {
+          "name": "extension_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "state",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "reason",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PermissionModeChange",
+      "doc": "The session's permission mode changed.",
+      "fields": [
+        {
+          "name": "mode",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "previous",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Account",
+      "doc": "Who is signed in to igni, without any credential.",
+      "fields": [
+        {
+          "name": "signed_in",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "email",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "org",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "NotificationTarget",
+      "doc": "Where opening a notification goes: one of an extension's pages.",
+      "fields": [
+        {
+          "name": "page",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "params",
+          "type": "dict[str, str]",
+          "doc": "",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "NotificationEntry",
+      "doc": "One notification, from igni server or from an extension on this machine.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "origin",
+          "type": "str",
+          "doc": "`server` or `local`.",
+          "optional": false
+        },
+        {
+          "name": "source",
+          "type": "str",
+          "doc": "The extension it belongs to.",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "title",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "body",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "actor",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "target",
+          "type": "NotificationTarget | None",
+          "doc": "",
+          "optional": true
+        },
+        {
+          "name": "created_at",
+          "type": "str | None",
+          "doc": "ISO 8601.",
+          "optional": true
+        },
+        {
+          "name": "read",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "NotificationCounts",
+      "doc": "Unread notifications, in all and per extension.",
+      "fields": [
+        {
+          "name": "unread",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "by_source",
+          "type": "dict[str, int]",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "LocalNotification",
+      "doc": "Something to tell the person at this machine. It never leaves it.",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "The extension's word for what happened.",
+          "optional": false
+        },
+        {
+          "name": "title",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "body",
+          "type": "str",
+          "doc": "One line.",
+          "optional": true
+        },
+        {
+          "name": "target",
+          "type": "NotificationTarget",
+          "doc": "One of this extension's pages.",
+          "optional": false
+        },
+        {
+          "name": "event_key",
+          "type": "str",
+          "doc": "The same event is shown once, however often it is sent.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SettingsChange",
+      "doc": "An extension's settings, as now configured.",
+      "fields": [
+        {
+          "name": "values",
+          "type": "dict[str, json]",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "DecisionQuestion",
+      "doc": "One typed question about a context. It quotes the context's fields by name in backticks, as in: Is `diff` only a refactor?",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "doc": "Its name in the answers: a lowercase name.",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "`choice` (one of `options`), `score` (one of `levels`, lowest first) or `noul` (yes or no — Laya's name for it).",
+          "optional": false
+        },
+        {
+          "name": "question",
+          "type": "str",
+          "doc": "The question, up to 500 characters.",
+          "optional": false
+        },
+        {
+          "name": "options",
+          "type": "dict[str, str] | None",
+          "doc": "`choice` only: 2–20 labels, each to what it means (empty when the label says it).",
+          "optional": true
+        },
+        {
+          "name": "levels",
+          "type": "list[str] | None",
+          "doc": "`score` only: 2–10 level labels, lowest first.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "DecisionAnswer",
+      "doc": "One question's answer, with the probabilities it came from.",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "answer",
+          "type": "str",
+          "doc": "The option chosen, the level reached, or `yes` / `no`.",
+          "optional": false
+        },
+        {
+          "name": "confidence",
+          "type": "float",
+          "doc": "The probability of that answer.",
+          "optional": false
+        },
+        {
+          "name": "probabilities",
+          "type": "dict[str, float]",
+          "doc": "Every option's, level's, or `yes` and `no`'s probability.",
+          "optional": false
+        },
+        {
+          "name": "score",
+          "type": "float | None",
+          "doc": "`score` only: the expected level, 0 the lowest.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "Decision",
+      "doc": "Every question's answer about one context.",
+      "fields": [
+        {
+          "name": "answers",
+          "type": "dict[str, DecisionAnswer]",
+          "doc": "By question id.",
+          "optional": false
+        },
+        {
+          "name": "model",
+          "type": "str",
+          "doc": "The Laya checkpoint that answered: `english` or `multilingual`.",
+          "optional": false
+        }
+      ]
+    }
+  ],
+  "objects": [
+    {
+      "path": "",
+      "doc": "The root. `changed` reports every change anywhere in the model, for an extension that wants to see all of it; each delivery needs the grant of the member that changed.",
+      "permission": null,
+      "per_window": false,
+      "per_session": false,
+      "properties": [],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "Change",
+          "doc": "Anything changed. Carries the member's path and its new value.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "decide",
+          "params": [
+            {
+              "name": "context",
+              "type": "dict[str, str]",
+              "doc": "Named text fields.",
+              "optional": false
+            },
+            {
+              "name": "questions",
+              "type": "list[DecisionQuestion]",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "Decision",
+          "doc": "Ask igni's local decision model (Laya) typed questions about a context, in one pass on this machine. `context` is named text fields — at most 8, 6,000 characters in all — that the questions quote in backticks; `questions` are 1–16 `DecisionQuestion`s. A context the model would have to cut is refused (`invalid`), never answered from part of it; a model that cannot be loaded answers `unavailable`. Zero-shot accuracy is modest: measure it on your own data before acting on an answer, and use the probabilities, not just the answer.",
+          "permission": "decide",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "decide_batch",
+          "params": [
+            {
+              "name": "contexts",
+              "type": "list[dict[str, str]]",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "questions",
+              "type": "list[DecisionQuestion]",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "list[Decision]",
+          "doc": "`decide` for up to 16 contexts at once, sharing forward passes. One decision per context, in order.",
+          "permission": "decide",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "app",
+      "doc": "igni itself: how it presents things, which version, whether it is connected.",
+      "permission": "app",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "display",
+          "type": "Display",
+          "doc": "Theme, verbosity, output style.",
+          "writable": false,
+          "changed_by": [
+            "display_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "version",
+          "type": "str",
+          "doc": "The igni version running.",
+          "writable": false,
+          "changed_by": [],
+          "constant": true,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "update_available",
+          "type": "UpdateInfo | None",
+          "doc": "A newer igni, as last checked; `None` when there is none or it was not checked yet.",
+          "writable": false,
+          "changed_by": [
+            "update_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "connection",
+          "type": "Connection",
+          "doc": "Model and server reachability.",
+          "writable": false,
+          "changed_by": [
+            "connection_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "activity",
+          "type": "Activity",
+          "doc": "Running, waiting on a person, or idle — what decides whether igni's process may be suspended.",
+          "writable": false,
+          "changed_by": [
+            "activity_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "display_changed",
+          "type": "Display",
+          "doc": "Verbosity or output style changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "connection_changed",
+          "type": "Connection",
+          "doc": "The connection changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "update_changed",
+          "type": "UpdateInfo | None",
+          "doc": "An update check answered.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "activity_changed",
+          "type": "Activity",
+          "doc": "igni started or stopped doing something.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "set_verbose",
+          "params": [
+            {
+              "name": "on",
+              "type": "bool",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "Display",
+          "doc": "Show or hide routing detail.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "set_output_style",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "Display",
+          "doc": "Switch the output style, as `/output-style <name>` does.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "check_for_update",
+          "params": [],
+          "result": "UpdateInfo | None",
+          "doc": "Ask whether a newer igni exists.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "open_external",
+          "params": [
+            {
+              "name": "url",
+              "type": "str",
+              "doc": "The link: `https://` only.",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Open an https link in the person's browser, the way igni opens every link outside it. The window asked about opens it: a page's own, else the active one. Anything but an absolute `https://` URL with a host and no credentials in it is refused (`invalid`).",
+          "permission": "links",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "app.state",
+      "doc": "Key–value state of the extension's own, kept by the host across restarts. An extension sees only its own keys.",
+      "permission": null,
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "values",
+          "type": "dict[str, str]",
+          "doc": "Every key and value.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "StateChange",
+          "doc": "A key was set or deleted.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "get",
+          "params": [
+            {
+              "name": "key",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "str | None",
+          "doc": "One value, or `None`.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "set",
+          "params": [
+            {
+              "name": "key",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Store one value.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "delete",
+          "params": [
+            {
+              "name": "key",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Remove one key.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "windows",
+      "doc": "Every open igni window. Address one window's UI with `host.windows.ui(id)`.",
+      "permission": "ui",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "list",
+          "type": "list[WindowInfo]",
+          "doc": "Every window connected now.",
+          "writable": false,
+          "changed_by": [
+            "opened",
+            "closed",
+            "focus_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "focused",
+          "type": "str | None",
+          "doc": "The window the person is using — the one with focus; `None` when igni is in the background.",
+          "writable": false,
+          "changed_by": [
+            "focus_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "opened",
+          "type": "WindowInfo",
+          "doc": "A window connected.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "closed",
+          "type": "WindowInfo",
+          "doc": "A window went away.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "focus_changed",
+          "type": "WindowInfo",
+          "doc": "A window took focus or lost it; `focused` says which.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": []
+    },
+    {
+      "path": "ui",
+      "doc": "What a window shows — the model its views bind to. `host.ui` is the active window, the one the person last used; `host.windows.ui(id)` any window. igni's own views write here too, by the same path, so every change below is a signal whoever made it.",
+      "permission": "ui",
+      "per_window": true,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "route",
+          "type": "list[Page]",
+          "doc": "The page stack; empty when the chat is showing. Writable: setting it navigates.",
+          "writable": true,
+          "changed_by": [
+            "navigated"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "panel",
+          "type": "Panel | None",
+          "doc": "The panel open over the chat. Writable: setting it opens one, `None` closes it.",
+          "writable": true,
+          "changed_by": [
+            "panel_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "sidebar",
+          "type": "Sidebar",
+          "doc": "The sidebar. Writable.",
+          "writable": true,
+          "changed_by": [
+            "sidebar_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "preview",
+          "type": "Preview | None",
+          "doc": "The file previewed. Writable: `None` closes it.",
+          "writable": true,
+          "changed_by": [
+            "preview_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "selection",
+          "type": "SelectionState",
+          "doc": "What is selected. Writable.",
+          "writable": true,
+          "changed_by": [
+            "selection_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "composer",
+          "type": "Composer",
+          "doc": "The composer: draft, the files it refers to, its mode. Writable.",
+          "writable": true,
+          "changed_by": [
+            "composer_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "toasts",
+          "type": "list[Toast]",
+          "doc": "Toasts on screen, oldest first.",
+          "writable": false,
+          "changed_by": [
+            "toast_shown",
+            "toast_dismissed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "dialog",
+          "type": "Dialog | None",
+          "doc": "The open dialog.",
+          "writable": false,
+          "changed_by": [
+            "dialog_opened",
+            "dialog_closed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "scroll",
+          "type": "Scroll",
+          "doc": "Where the transcript is.",
+          "writable": false,
+          "changed_by": [
+            "scrolled"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "navigated",
+          "type": "Route",
+          "doc": "The page stack changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "panel_changed",
+          "type": "PanelChange",
+          "doc": "A panel opened or closed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "sidebar_changed",
+          "type": "SidebarChange",
+          "doc": "The sidebar changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "preview_changed",
+          "type": "PreviewChange",
+          "doc": "The preview opened, changed or closed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "selection_changed",
+          "type": "SelectionChange",
+          "doc": "The selection changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "composer_changed",
+          "type": "ComposerChange",
+          "doc": "The draft changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "toast_shown",
+          "type": "ToastChange",
+          "doc": "A toast appeared.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "toast_dismissed",
+          "type": "ToastChange",
+          "doc": "A toast went away.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "dialog_opened",
+          "type": "DialogChange",
+          "doc": "A dialog opened.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "dialog_closed",
+          "type": "DialogChange",
+          "doc": "A dialog closed, with the answer.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "scrolled",
+          "type": "Scroll",
+          "doc": "The transcript came to rest somewhere else, or started or stopped following the newest message.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "navigate",
+          "params": [
+            {
+              "name": "page",
+              "type": "str",
+              "doc": "A page kind: `plugins`, `extensions`, an extension's page.",
+              "optional": false
+            },
+            {
+              "name": "params",
+              "type": "dict[str, str]",
+              "doc": "The page's parameters.",
+              "optional": true
+            }
+          ],
+          "result": "list[Page]",
+          "doc": "Open a page at the top of the stack, as a header link does.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "back",
+          "params": [],
+          "result": "list[Page]",
+          "doc": "Go back one level; at the root, back to the chat.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "open_panel",
+          "params": [
+            {
+              "name": "kind",
+              "type": "str",
+              "doc": "`notifications`, `search`, `login` or `dir-picker`.",
+              "optional": false
+            },
+            {
+              "name": "params",
+              "type": "dict[str, json]",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "Panel",
+          "doc": "Open a panel over the chat, closing the one that was open.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "close_panel",
+          "params": [],
+          "result": "None",
+          "doc": "Close the panel.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "set_sidebar",
+          "params": [
+            {
+              "name": "open",
+              "type": "bool",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "width",
+              "type": "int",
+              "doc": "In pixels, 180 to 600.",
+              "optional": true
+            },
+            {
+              "name": "section",
+              "type": "str",
+              "doc": "`links` or `sessions`.",
+              "optional": true
+            }
+          ],
+          "result": "Sidebar",
+          "doc": "Open or close the sidebar, and size it or bring a section into view.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "open_preview",
+          "params": [
+            {
+              "name": "path",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "Preview",
+          "doc": "Preview a file of the project. (`preview` is the property.)",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "close_preview",
+          "params": [],
+          "result": "None",
+          "doc": "Close the preview.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "select",
+          "params": [
+            {
+              "name": "selection",
+              "type": "SelectionState",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "SelectionState",
+          "doc": "Select a message, text or file. The parts left out are cleared.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "set_composer",
+          "params": [
+            {
+              "name": "text",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "attachments",
+              "type": "list[str]",
+              "doc": "Files to refer to: each becomes an `@path` the draft does not already have.",
+              "optional": true
+            },
+            {
+              "name": "mode",
+              "type": "str",
+              "doc": "`chat`, `command` or `shell`; unchanged if left out.",
+              "optional": true
+            }
+          ],
+          "result": "Composer",
+          "doc": "Replace the draft.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "toast",
+          "params": [
+            {
+              "name": "text",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "kind",
+              "type": "str",
+              "doc": "`info` (default), `success`, `warning`, `error`.",
+              "optional": true
+            },
+            {
+              "name": "body",
+              "type": "str",
+              "doc": "A second line.",
+              "optional": true
+            },
+            {
+              "name": "target",
+              "type": "Page",
+              "doc": "Where clicking it goes.",
+              "optional": true
+            }
+          ],
+          "result": "Toast",
+          "doc": "Show a transient message, labelled as this extension's.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "dismiss_toast",
+          "params": [
+            {
+              "name": "toast_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Take one of this extension's toasts away.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "show_dialog",
+          "params": [
+            {
+              "name": "spec",
+              "type": "json",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Show a dialog and wait for the person's answer. `spec` is `{title, body, buttons: [{id, label, primary}], input: {label, placeholder, value}}` — `buttons` defaults to one OK, `input` is optional. Answers `{button, value}`, or `None` when the dialog was dismissed, or replaced by another. (`dialog` is the property.)",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "scroll_to",
+          "params": [
+            {
+              "name": "message_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "Scroll",
+          "doc": "Scroll the transcript to a message, by its run; `bottom` for the newest.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "sessions",
+      "doc": "The sessions of this project, and which one the active window shows. Reach any session's chat, without showing it, with `host.sessions.chat(id)`.",
+      "permission": "sessions",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "list",
+          "type": "list[SessionInfo]",
+          "doc": "Every session, newest first.",
+          "writable": false,
+          "changed_by": [
+            "listed",
+            "cleared",
+            "named"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "current",
+          "type": "str",
+          "doc": "The session the active window shows. Writable: setting it switches, and is refused where the person's switch would be.",
+          "writable": true,
+          "changed_by": [
+            "current_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "current_changed",
+          "type": "SessionChange",
+          "doc": "A window moved to another session.",
+          "wire": "session.switched",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "listed",
+          "type": "SessionList",
+          "doc": "The session list was read.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "cleared",
+          "type": "SessionCleared",
+          "doc": "`/clear` renewed a session.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "named",
+          "type": "SessionNamed",
+          "doc": "A session got its name.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "open",
+          "params": [
+            {
+              "name": "session_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "SessionChange",
+          "doc": "Show a session in the active window.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "create",
+          "params": [
+            {
+              "name": "project_dir",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            },
+            {
+              "name": "title",
+              "type": "str",
+              "doc": "Its name in the session list.",
+              "optional": true
+            },
+            {
+              "name": "focus",
+              "type": "bool",
+              "doc": "Show it in the caller's window — a page's own, else the active one. False by default.",
+              "optional": true
+            }
+          ],
+          "result": "SessionAttached",
+          "doc": "Start a new session, in a folder or in this project. It moves no window unless `focus` is true: reach it with `host.sessions.chat(session_id)`. A `title` names it at once, kept as a service's chat title is, so no auto-name replaces it.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "attach",
+          "params": [
+            {
+              "name": "session_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "project_dir",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "SessionAttached",
+          "doc": "Make sure a session is live, without showing it.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "chat",
+      "doc": "The conversation in the current session. Signals carry the session they happened in, and arrive for every live session. `host.sessions.chat(id)` is the same object for any session of this project, without showing it: its properties read that session, and `post`, `queue`, `append` and `replace` write there (with `sessions.post` as well). A message posted there starts a run, or waits for the run already going there — never answering an approval. Its other methods act only on the session on screen.",
+      "permission": "chat.read",
+      "per_window": false,
+      "per_session": true,
+      "properties": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "The current session.",
+          "writable": false,
+          "changed_by": [
+            "sessions.current_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "messages",
+          "type": "list[json]",
+          "doc": "The transcript, turn by turn.",
+          "writable": false,
+          "changed_by": [
+            "message_added",
+            "run_completed",
+            "history_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "pending",
+          "type": "list[json]",
+          "doc": "Messages waiting for a turn.",
+          "writable": false,
+          "changed_by": [
+            "message_added",
+            "run_started"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "processing",
+          "type": "bool",
+          "doc": "Whether a run is going.",
+          "writable": false,
+          "changed_by": [
+            "run_started",
+            "streaming_done",
+            "run_error"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "status",
+          "type": "Status",
+          "doc": "The status line.",
+          "writable": false,
+          "changed_by": [
+            "status_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "timeout",
+          "type": "int",
+          "doc": "Seconds a run may take.",
+          "writable": false,
+          "changed_by": [
+            "sessions.current_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "interrupted_runs",
+          "type": "list[json]",
+          "doc": "Runs that stopped part-way.",
+          "writable": false,
+          "changed_by": [
+            "run_error",
+            "run_started",
+            "history_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "context",
+          "type": "ContextUsage",
+          "doc": "Token counts and what fills them.",
+          "writable": false,
+          "changed_by": [
+            "status_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "message_added",
+          "type": "ChatMessage",
+          "doc": "A message was posted — by the person, an extension, or an extension's service (`from_service`).",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "content_delta",
+          "type": "ContentDelta",
+          "doc": "The agent's answer, streaming.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "reasoning_started",
+          "type": "RunRef",
+          "doc": "The agent started thinking.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "run_started",
+          "type": "RunStart",
+          "doc": "A run started.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "run_completed",
+          "type": "Run",
+          "doc": "A run finished, with the files it changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "run_error",
+          "type": "RunFailure",
+          "doc": "A run stopped with an error.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "run_paused",
+          "type": "RunPause",
+          "doc": "A run is waiting for approvals.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "streaming_done",
+          "type": "RunRef",
+          "doc": "The answer finished streaming.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "typing",
+          "type": "Typing",
+          "doc": "Somebody's draft, live.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "status_changed",
+          "type": "Status",
+          "doc": "The status line changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "info",
+          "type": "Notice",
+          "doc": "An info line.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "error",
+          "type": "Notice",
+          "doc": "An error line.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "tool_started",
+          "type": "ToolCall",
+          "doc": "The agent called a tool.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "tool_completed",
+          "type": "ToolResult",
+          "doc": "A tool call finished.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "tool_error",
+          "type": "ToolFailure",
+          "doc": "A tool call failed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "model_completed",
+          "type": "ModelUsage",
+          "doc": "A model call finished.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "file_edited",
+          "type": "FileEdited",
+          "doc": "The agent wrote a file.",
+          "wire": null,
+          "permission": "workspace",
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "agent_event",
+          "type": "AgentEvent",
+          "doc": "A sub-agent or team moved on.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "retry",
+          "type": "Retry",
+          "doc": "A network call is being retried.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "history_changed",
+          "type": "HistoryChange",
+          "doc": "Turns were truncated or discarded.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "post",
+          "params": [
+            {
+              "name": "text",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "attachments",
+              "type": "dict[str, str]",
+              "doc": "Path → content.",
+              "optional": true
+            }
+          ],
+          "result": "None",
+          "doc": "Post a message in the chat, labelled as this extension. The agent sees it and answers in the chat as usual. In a session that is not on screen it starts a run, or is queued for the run going there (working or waiting on an approval) — then without attachments.",
+          "permission": "chat.post",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": "sessions.post"
+        },
+        {
+          "name": "queue",
+          "params": [
+            {
+              "name": "text",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Post a message for the next turn, labelled as this extension.",
+          "permission": "chat.post",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": "sessions.post"
+        },
+        {
+          "name": "append",
+          "params": [
+            {
+              "name": "view",
+              "type": "json",
+              "doc": "A json-render spec: `{root, elements}`.",
+              "optional": false
+            },
+            {
+              "name": "title",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "str",
+          "doc": "Show a json-render block in the transcript. Shown to the person, never sent to the model. Returns its id.",
+          "permission": "chat.append",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": "sessions.post"
+        },
+        {
+          "name": "replace",
+          "params": [
+            {
+              "name": "view_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "view",
+              "type": "json",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "title",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "None",
+          "doc": "Replace a block this extension appended.",
+          "permission": "chat.append",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": "sessions.post"
+        },
+        {
+          "name": "search",
+          "params": [
+            {
+              "name": "query",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "limit",
+              "type": "int",
+              "doc": "At most this many; 50 by default.",
+              "optional": true
+            }
+          ],
+          "result": "list[json]",
+          "doc": "Search the transcript.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": "chat.read"
+        },
+        {
+          "name": "cancel",
+          "params": [],
+          "result": "None",
+          "doc": "Stop the run.",
+          "permission": "chat.control",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "cancel_agent",
+          "params": [
+            {
+              "name": "run_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Stop one sub-agent's run.",
+          "permission": "chat.control",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "truncate",
+          "params": [
+            {
+              "name": "run_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Remove a run and everything after it.",
+          "permission": "chat.control",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "compact",
+          "params": [],
+          "result": "SessionCleared | None",
+          "doc": "Compact the conversation if it needs it, as igni does after a run.",
+          "permission": "chat.control",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "extract_learnings",
+          "params": [
+            {
+              "name": "user_msg",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "assistant_msg",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Have the agent note what a turn taught it.",
+          "permission": "chat.control",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "discard_interrupted",
+          "params": [
+            {
+              "name": "message_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Forget an interrupted run.",
+          "permission": "chat.control",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "upload",
+          "params": [
+            {
+              "name": "filename",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "content_base64",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Upload an attachment for a later `post`.",
+          "permission": "chat.post",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "chat.approvals",
+      "doc": "The agent asking to act, and the answers. Through `host.sessions.chat(id)` `waiting` reads that session; an approval is answered only in the session on screen.",
+      "permission": "chat.approvals",
+      "per_window": false,
+      "per_session": true,
+      "properties": [
+        {
+          "name": "waiting",
+          "type": "list[Approval]",
+          "doc": "Requests not yet answered.",
+          "writable": false,
+          "changed_by": [
+            "requested",
+            "resolved",
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "requested",
+          "type": "Approval",
+          "doc": "The agent asked.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "resolved",
+          "type": "ApprovalResolved",
+          "doc": "Somebody answered.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "details",
+          "type": "ApprovalDetails",
+          "doc": "The reason arrived.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "changed",
+          "type": "ApprovalChange",
+          "doc": "An approval appeared or went away, whoever answered and whenever — including after a restart. For an app following approvals through the API.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "answer",
+          "params": [
+            {
+              "name": "requirement_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "action",
+              "type": "str",
+              "doc": "`confirm` or `reject`.",
+              "optional": false
+            },
+            {
+              "name": "choice",
+              "type": "str",
+              "doc": "`once`, `always` or `similar`.",
+              "optional": true
+            }
+          ],
+          "result": "None",
+          "doc": "Answer one request, as the person's dialog does.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "answer_all",
+          "params": [
+            {
+              "name": "answers",
+              "type": "list[ApprovalAnswer]",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Answer every request of a pause at once.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "chat.views",
+      "doc": "json-render blocks in the transcript — the visualizer's and extensions'. Through `host.sessions.chat(id)` `list` reads that session; `dispatch` acts only in the session on screen.",
+      "permission": "chat.append",
+      "per_window": false,
+      "per_session": true,
+      "properties": [
+        {
+          "name": "list",
+          "type": "list[View]",
+          "doc": "The views in the current session.",
+          "writable": false,
+          "changed_by": [
+            "shown"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "shown",
+          "type": "View",
+          "doc": "A view appeared or was replaced.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "action",
+          "type": "ViewAction",
+          "doc": "The person used a control in a view.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "dispatch",
+          "params": [
+            {
+              "name": "view_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "action",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "params",
+              "type": "dict[str, json]",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "json",
+          "doc": "Act on a view as if the person had.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "plan",
+      "doc": "Plan mode: the plan the agent proposed.",
+      "permission": "chat.control",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "latest",
+          "type": "Plan",
+          "doc": "The latest plan.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "PlanChange",
+          "doc": "A plan was submitted or decided.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "approve",
+          "params": [
+            {
+              "name": "run_id",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "json",
+          "doc": "Approve the plan.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "dismiss",
+          "params": [
+            {
+              "name": "run_id",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "json",
+          "doc": "Send the plan back.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "tasks",
+      "doc": "The agent's todo list and its sub-agent tasks.",
+      "permission": "chat.read",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "todos",
+          "type": "list[json]",
+          "doc": "The todo list.",
+          "writable": false,
+          "changed_by": [
+            "todos_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "created",
+          "type": "TaskEvent",
+          "doc": "A task was created.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "updated",
+          "type": "TaskEvent",
+          "doc": "A task changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "iteration",
+          "type": "TaskIteration",
+          "doc": "A task loop moved on.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "snapshot",
+          "type": "TaskSnapshot",
+          "doc": "Every task, as it now stands.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "todos_changed",
+          "type": "Todos",
+          "doc": "The todo list changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": []
+    },
+    {
+      "path": "loop",
+      "doc": "`/loop`: a prompt repeated until done.",
+      "permission": "chat.control",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "status",
+          "type": "LoopStatus",
+          "doc": "Where it is.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "LoopStatus",
+          "doc": "It paused, resumed, advanced or stopped.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "pause",
+          "params": [],
+          "result": "bool",
+          "doc": "Pause after this iteration.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "resume",
+          "params": [],
+          "result": "str",
+          "doc": "Carry on.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "cancel_pending",
+          "params": [],
+          "result": "bool",
+          "doc": "Stop the loop.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "pop_pending",
+          "params": [],
+          "result": "json",
+          "doc": "Take the next iteration.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "commands",
+      "doc": "Slash commands and skills.",
+      "permission": "commands",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "list",
+          "type": "list[json]",
+          "doc": "Every slash command.",
+          "writable": false,
+          "changed_by": [
+            "plugins.changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "skills",
+          "type": "list[str]",
+          "doc": "Skill names.",
+          "writable": false,
+          "changed_by": [
+            "plugins.changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "skill_definitions",
+          "type": "list[json]",
+          "doc": "Each skill's description and prompt.",
+          "writable": false,
+          "changed_by": [
+            "plugins.changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "skill_details",
+          "type": "list[json]",
+          "doc": "Each skill's details.",
+          "writable": false,
+          "changed_by": [
+            "plugins.changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [],
+      "methods": [
+        {
+          "name": "run",
+          "params": [
+            {
+              "name": "command",
+              "type": "str",
+              "doc": "With its slash: `/ctx`.",
+              "optional": false
+            }
+          ],
+          "result": "CommandOutcome",
+          "doc": "Run a slash command, as the extension. The answer comes back here.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "agents",
+      "doc": "Agent definitions.",
+      "permission": "agents",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "details",
+          "type": "list[json]",
+          "doc": "Every agent.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "CollectionChange",
+          "doc": "An agent was promoted or discarded.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "promote_ephemeral",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "target",
+              "type": "str",
+              "doc": "`project` (the default): `.igni/agents/`, committed and the team's, as `--project`; or `personal`: `.igni/agents.local/`, kept out of git and yours only, as `--personal`.",
+              "optional": true
+            }
+          ],
+          "result": "json",
+          "doc": "Keep an agent made for one task, as `/agents promote` does.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "discard_ephemeral",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Drop an agent made for one task.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "workflows",
+      "doc": "Workflows: scripted runs.",
+      "permission": "workflows",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "list",
+          "type": "list[json]",
+          "doc": "Every workflow.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "CollectionChange",
+          "doc": "A workflow run moved on.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "run",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "input",
+              "type": "dict[str, json]",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "WorkflowRun",
+          "doc": "Start a workflow.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "cancel",
+          "params": [
+            {
+              "name": "workflow_run_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "bool",
+          "doc": "Stop a workflow run.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "scheduler",
+      "doc": "Scheduled tasks.",
+      "permission": "scheduler",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "tasks",
+          "type": "list[json]",
+          "doc": "Every scheduled task.",
+          "writable": false,
+          "changed_by": [
+            "event"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "event",
+          "type": "SchedulerEvent",
+          "doc": "A task started, finished or changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "start",
+          "params": [],
+          "result": "None",
+          "doc": "Start the scheduler.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "run_now",
+          "params": [
+            {
+              "name": "task_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "str",
+          "doc": "Run a scheduled task now.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "cancel",
+          "params": [
+            {
+              "name": "task_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Cancel a scheduled task.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "processes",
+      "doc": "Background shells.",
+      "permission": "processes",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "list",
+          "type": "list[json]",
+          "doc": "Every background shell.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "ProcessEvent",
+          "doc": "A shell started, printed or exited.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "tail",
+          "params": [
+            {
+              "name": "pid",
+              "type": "int",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "lines",
+              "type": "int",
+              "doc": "200 by default.",
+              "optional": true
+            }
+          ],
+          "result": "json",
+          "doc": "A shell's last lines.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "stop",
+          "params": [
+            {
+              "name": "pid",
+              "type": "int",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Stop a shell.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "run",
+          "params": [
+            {
+              "name": "command",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Run a command in the project and wait for it.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "workspace",
+      "doc": "The project, as far as the extension's workspace grant reaches.",
+      "permission": "workspace",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "root",
+          "type": "str",
+          "doc": "The project directory.",
+          "writable": false,
+          "changed_by": [
+            "sessions.current_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "head",
+          "type": "Head | None",
+          "doc": "Git HEAD; `None` outside a repository.",
+          "writable": false,
+          "changed_by": [
+            "head_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "head_changed",
+          "type": "Head",
+          "doc": "HEAD moved.",
+          "wire": "workspace.head-changed",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "files_changed",
+          "type": "FilesChanged",
+          "doc": "Files changed, as git sees them, within the grant.",
+          "wire": "workspace.files-changed",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "read",
+          "params": [
+            {
+              "name": "path",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Read a file in the project.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "list",
+          "params": [
+            {
+              "name": "dir",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "json",
+          "doc": "List a directory in the project.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "complete",
+          "params": [
+            {
+              "name": "prefix",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Complete a path, as `@` does.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "search",
+          "params": [
+            {
+              "name": "query",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Search the code.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "pick_dir",
+          "params": [],
+          "result": "json",
+          "doc": "Ask the person to pick a folder.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "open",
+          "params": [
+            {
+              "name": "path",
+              "type": "str",
+              "doc": "Relative to the project, or absolute inside it.",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Open a file in the project with the application this machine opens it with — what an extension whose process is sandboxed cannot do itself. Only a file the workspace grant reaches (`refused` outside the project, `not_granted` outside `workspacePaths`), and only a document: `.csv`, `.gif`, `.htm`, `.html`, `.jpeg`, `.jpg`, `.md`, `.pdf`, `.png`, `.svg`, `.txt`, `.webp` (`invalid` otherwise, and for an executable file). `failed` when nothing here opened it.",
+          "permission": "files.open",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "models",
+      "doc": "Models.",
+      "permission": "models",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "registry",
+          "type": "json",
+          "doc": "Every model igni knows.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "current",
+          "type": "str",
+          "doc": "The model in use. Writable: setting it switches.",
+          "writable": true,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "ModelChange",
+          "doc": "The model in use changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": []
+    },
+    {
+      "path": "mcp",
+      "doc": "MCP servers.",
+      "permission": "mcp",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "servers",
+          "type": "list[json]",
+          "doc": "Every server.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "status",
+          "type": "list[json]",
+          "doc": "Each server's status.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "details",
+          "type": "list[json]",
+          "doc": "Each server's tools and details.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "CollectionChange",
+          "doc": "A server connected, disconnected or changed tools.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "connect",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Connect a server.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "disconnect",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Disconnect a server.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "ensure",
+          "params": [],
+          "result": "json",
+          "doc": "Start the servers that should be running.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "set_tool_enabled",
+          "params": [
+            {
+              "name": "server",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "tool",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "on",
+              "type": "bool",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Offer or withhold one tool.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "plugins",
+      "doc": "Plugins and marketplaces.",
+      "permission": "plugins",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "installed",
+          "type": "list[json]",
+          "doc": "Every installed plugin.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "marketplaces",
+          "type": "list[json]",
+          "doc": "Every marketplace.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "CollectionChange",
+          "doc": "A plugin or marketplace changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "contents",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "What a plugin carries.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "preview",
+          "params": [
+            {
+              "name": "source",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "branch",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            },
+            {
+              "name": "subdir",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "json",
+          "doc": "What a plugin would install.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "install",
+          "params": [
+            {
+              "name": "ref",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "install_ref",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "None",
+          "doc": "Install a plugin.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "update",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "install_ref",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "None",
+          "doc": "Update a plugin.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "remove",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Remove a plugin.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "set_enabled",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "on",
+              "type": "bool",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Enable or disable a plugin.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "add_marketplace",
+          "params": [
+            {
+              "name": "url",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Add a marketplace.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "remove_marketplace",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Remove a marketplace.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "refresh_marketplaces",
+          "params": [
+            {
+              "name": "name",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "None",
+          "doc": "Refresh marketplaces.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "extensions",
+      "doc": "Installed extensions. Read-only, apart from this extension's own settings.",
+      "permission": "extensions",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "installed",
+          "type": "list[ExtensionInfo]",
+          "doc": "Every installed extension.",
+          "writable": false,
+          "changed_by": [
+            "state_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "state_changed",
+          "type": "ExtensionStateChange",
+          "doc": "An extension's health moved.",
+          "wire": "extension.state-changed",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "set_settings",
+          "params": [
+            {
+              "name": "values",
+              "type": "dict[str, json]",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "SettingsChange",
+          "doc": "Change this extension's own settings.",
+          "permission": null,
+          "inherit_permission": false,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "hooks",
+      "doc": "Hooks.",
+      "permission": "hooks",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "details",
+          "type": "list[json]",
+          "doc": "Every hook.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "CollectionChange",
+          "doc": "Hooks were reloaded.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "reload",
+          "params": [],
+          "result": "None",
+          "doc": "Reload hooks.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "fire_session_start",
+          "params": [],
+          "result": "None",
+          "doc": "Run the session-start hooks.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "permissions",
+      "doc": "What the agent may do without asking.",
+      "permission": "permissions",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "mode",
+          "type": "str",
+          "doc": "`default`, `plan`, `acceptEdits` or `bypassPermissions`.",
+          "writable": false,
+          "changed_by": [
+            "mode_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "mode_changed",
+          "type": "PermissionModeChange",
+          "doc": "The mode changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "check",
+          "params": [
+            {
+              "name": "tool_name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "func_name",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "tool_args",
+              "type": "dict[str, json]",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "json",
+          "doc": "Would this tool call be allowed, asked or denied?",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "save_rule",
+          "params": [
+            {
+              "name": "rule",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "level",
+              "type": "str",
+              "doc": "`allow`, `ask` or `deny`.",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Save a permission rule.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "policy",
+      "doc": "The group policy in force.",
+      "permission": "policy",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "pack",
+          "type": "json",
+          "doc": "The group's policy pack.",
+          "writable": false,
+          "changed_by": [
+            "account.changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [],
+      "methods": []
+    },
+    {
+      "path": "account",
+      "doc": "Whether the person is signed in to igni. Never their session or a credential.",
+      "permission": "account",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "status",
+          "type": "Account",
+          "doc": "Who is signed in.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "Account",
+          "doc": "Someone signed in or out.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "sign_in",
+          "params": [],
+          "result": "None",
+          "doc": "Start the person's own sign-in. Its result is theirs.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "sign_out",
+          "params": [],
+          "result": "Account",
+          "doc": "Sign the person out.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "notifications",
+      "doc": "The floor's notifications. Its own always; everyone's with `notifications`.",
+      "permission": "notifications",
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "list",
+          "type": "list[NotificationEntry]",
+          "doc": "Newest first.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": false,
+          "stage": 1
+        },
+        {
+          "name": "unread",
+          "type": "NotificationCounts",
+          "doc": "Unread counts.",
+          "writable": false,
+          "changed_by": [
+            "changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": false,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "changed",
+          "type": "NotificationCounts",
+          "doc": "The counts moved.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": false,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "notify",
+          "params": [
+            {
+              "name": "notification",
+              "type": "LocalNotification",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Tell the person at this machine something. It never leaves the machine.",
+          "permission": null,
+          "inherit_permission": false,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "mark_read",
+          "params": [
+            {
+              "name": "ids",
+              "type": "list[str]",
+              "doc": "",
+              "optional": true
+            },
+            {
+              "name": "source",
+              "type": "str",
+              "doc": "",
+              "optional": true
+            }
+          ],
+          "result": "NotificationCounts",
+          "doc": "Mark notifications read: these ids, one source, or all of them.",
+          "permission": null,
+          "inherit_permission": false,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    },
+    {
+      "path": "self",
+      "doc": "This extension, as the host sees it.",
+      "permission": null,
+      "per_window": false,
+      "per_session": false,
+      "properties": [
+        {
+          "name": "id",
+          "type": "str",
+          "doc": "Its manifest id.",
+          "writable": false,
+          "changed_by": [],
+          "constant": true,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "settings",
+          "type": "dict[str, json]",
+          "doc": "Its settings. Writable.",
+          "writable": true,
+          "changed_by": [
+            "settings_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "state",
+          "type": "ExtensionInfo",
+          "doc": "Its own entry.",
+          "writable": false,
+          "changed_by": [
+            "state_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "web_url",
+          "type": "str | None",
+          "doc": "Its home on the web: its service's URL, when it has one.",
+          "writable": false,
+          "changed_by": [
+            "settings_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "settings_changed",
+          "type": "SettingsChange",
+          "doc": "Its settings changed.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "state_changed",
+          "type": "ExtensionStateChange",
+          "doc": "Its health moved.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        }
+      ],
+      "methods": [
+        {
+          "name": "busy",
+          "params": [
+            {
+              "name": "reason",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "ttl_seconds",
+              "type": "float",
+              "doc": "Default and at most 600.",
+              "optional": true
+            }
+          ],
+          "result": "BusyLease",
+          "doc": "Say this extension is working inside igni's process, so the process is not suspended under it (in the cloud, its VM). A lease for `reason`: it expires after `ttl_seconds` (default and at most 600) unless renewed by calling again with the same reason, so an extension that stops answering cannot keep igni awake. Shown in `app.activity`'s `busy`.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "done",
+          "params": [
+            {
+              "name": "reason",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "None",
+          "doc": "Let go of the lease `busy` took for `reason`. Nothing happens if there is none.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        }
+      ]
+    }
+  ]
+}

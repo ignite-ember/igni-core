@@ -77,38 +77,6 @@ jobs:
       - name: pip-audit
         run: uv run --with pip-audit pip-audit
 
-  # npm and cargo: the web UI every client bundles, the VS Code extension,
-  # and the desktop shell's crates. Unlike pip-audit above this gates on
-  # CRITICAL only, with named exceptions in
-  # .github/dependency-audit-allowlist.toml — every advisory is still
-  # printed. The first run found one critical in each tree: DOMPurify
-  # (fixed by a patch bump in the lockfile) and zip's RUSTSEC-2026-0369,
-  # which is Windows-only here and on the allowlist with the reasoning.
-  # docs/VULNERABILITY_MANAGEMENT.md, V-2 and V-3.
-  dependency-audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "20"
-
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-
-      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
-        with:
-          tool: cargo-audit
-
-      # Reads the lockfiles only; nothing is installed.
-      - name: npm audit (web UI)
-        run: uv run --no-project --with 'cvss>=3,<4' python scripts/dependency_audit.py npm clients/web .
-
-      - name: cargo audit (desktop shell)
-        run: uv run --no-project --with 'cvss>=3,<4' python scripts/dependency_audit.py cargo clients/tauri/src-tauri
-
   test:
     runs-on: ubuntu-latest
     steps:
@@ -121,6 +89,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # igni-sdk and igni-app, beside this checkout (tests/siblings.py): the
+      # tests that drive a real extension built with the SDK, read its
+      # examples, or hold the web client and the desktop shell to what the
+      # backend says run against them. Under CI they fail rather than skip
+      # when a checkout is missing. Their main, as this repository's main
+      # is: the three are developed in lockstep.
+      - name: igni-sdk
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ignite-ember/igni-sdk
+          path: .siblings/igni-sdk
+          persist-credentials: false
+
+      - name: igni-app
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ignite-ember/igni-app
+          path: .siblings/igni-app
+          persist-credentials: false
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -137,15 +125,16 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev --extra otel
 
-      # The tests `igni ext init --service` writes need both SDKs, which
-      # igni's own environment does not carry; without an interpreter
+      # The tests `igni ext init --service` writes need both SDKs (from the
+      # igni-sdk checkout), which igni's own environment does not carry; without an interpreter
       # that has them the test that runs them skipped here, so it never
       # ran anywhere (and under CI it now fails instead of skipping).
       - name: An interpreter with both SDKs, for the scaffold's tests
         run: |
           uv venv /tmp/igni-sdks
           uv pip install --python /tmp/igni-sdks/bin/python \
-            ./packages/igni-extension ./packages/igni-service pytest anyio httpx
+            ./.siblings/igni-sdk/packages/igni-extension ./.siblings/igni-sdk/packages/igni-service \
+            pytest anyio httpx
 
       # Line and branch coverage over the core, with a floor: the total
       # when it was set (87.6%, T6, 2026-11-03), minus one point, so it can only
@@ -155,6 +144,8 @@ jobs:
       - name: Run tests
         env:
           IGNI_SDK_PYTHON: /tmp/igni-sdks/bin/python
+          IGNI_SDK_DIR: ${{ github.workspace }}/.siblings/igni-sdk
+          IGNI_APP_DIR: ${{ github.workspace }}/.siblings/igni-app
         run: >-
           uv run pytest tests/ -q -rs
           --cov=ember_code --cov-branch --cov-report=
@@ -254,249 +245,3 @@ jobs:
           tests/test_approvals_and_queued_messages_survive_a_restart.py
           tests/test_an_approval_resumes_after_a_cold_restart.py
           packages/igni-cloud/tests
-
-  # The Python SDKs under packages/ (igni-service, igni-extension) have
-  # dependencies of their own and are checked in their own environments,
-  # the way `make packages-check` does locally.
-  packages:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version-file: .python-version
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
-
-      - name: Lint, type-check and test the SDKs
-        run: make packages-check
-
-      # examples/ticket-lookup is what docs/YOUR_FIRST_EXTENSION.md builds,
-      # file for file. Its tests, and the extension docs' code blocks that
-      # need the SDKs (tests/test_the_extension_docs_run.py, which skips
-      # them in the test job), run here against both SDKs from this
-      # checkout — what a developer has before the SDKs are on PyPI.
-      - name: The tutorial's example and the extension docs' code blocks
-        env:
-          IGNI_DOCS_REQUIRE_SDKS: "1"
-        run: |
-          (cd examples/ticket-lookup && uv run --no-project \
-            --with ../../packages/igni-extension --with ../../packages/igni-service \
-            --with pytest --with anyio --with httpx pytest -q -rs)
-          uv run --no-project --with ./packages/igni-extension --with ./packages/igni-service \
-            --with pytest --with jsonschema \
-            pytest --noconftest -q -rs tests/test_the_extension_docs_run.py
-
-  # Shared web UI lives under ``clients/web`` and is consumed by the
-  # Tauri desktop shell and served as the web client. Typecheck + tests
-  # run on every platform so a path-separator or shell-quoting regression doesn't
-  # ride through to a release build undetected.
-  web:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    defaults:
-      run:
-        working-directory: clients/web
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # Node 24: vitest 5 wants ^22.12 and jsdom 30 ^22.22.2, and Node 20
-      # is past end of life. On 20, every jsdom worker died at start-up
-      # ("Cannot read properties of undefined (reading 'bind')").
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "24"
-          cache: "npm"
-          cache-dependency-path: clients/web/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Typecheck
-        run: npx tsc -b --noEmit
-
-      # Coverage once, on Linux: the numbers do not depend on the OS, and
-      # the other two runners keep their plain, faster run. The floor is
-      # ``coverage.thresholds`` in vite.config.ts.
-      - name: Unit tests
-        if: runner.os != 'Linux'
-        run: npx vitest run
-
-      - name: Unit tests, with the coverage floor
-        if: runner.os == 'Linux'
-        run: npx vitest run --coverage
-
-  # The browser suite is its own job, in a container.
-  #
-  # It used to be five Linux-gated steps inside the three-OS matrix
-  # above, which meant `playwright install --with-deps chromium` on a
-  # bare runner. That is a different Chromium build and a different set
-  # of fonts from the image the visual baselines were generated in
-  # (E5), and a pixel comparison against a renderer it was not
-  # baselined on fails forever on antialiasing. A container cannot be
-  # attached to a macOS or Windows runner, so the split is not
-  # cosmetic.
-  #
-  # The image is pinned to the *lockfile's* Playwright version, not the
-  # range in package.json: they differ — ^1.61.0 against 1.61.1 — and
-  # Playwright refuses a browser build that does not match its library.
-  # Bump this together with `scripts/baselines-linux.sh`, which derives
-  # the same version the same way.
-  web-e2e:
-    name: Web E2E
-    runs-on: ubuntu-latest
-    container: mcr.microsoft.com/playwright:v1.64.1-noble
-    defaults:
-      run:
-        working-directory: clients/web
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # No setup-node and no `playwright install`: the image ships both
-      # Node and the matching browsers, and installing a second copy of
-      # either is how the renderer stops matching the baselines.
-      - name: Install dependencies
-        run: npm ci
-
-      # The backend is prepared BEFORE the e2e step. There used to be
-      # two e2e steps: a bare `npx playwright test` that ran 41 tests
-      # and silently skipped 7, then a second one that set
-      # IGNI_E2E_REAL_BE=1 for a single spec. The other six were gated
-      # on IGNI_LIVE_WS, which nothing here ever set, so the only tests
-      # covering the backend's RPC dispatch table ran nowhere. F128.
-      #
-      # `e2e/fixtures/live-be.ts` spawns a backend whenever this venv
-      # exists, so preparing it is what enables that coverage.
-      - name: Install uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
-
-      - name: Install the backend for the live-backend E2E
-        working-directory: .
-        run: uv sync --all-extras
-
-      # IGNI_E2E_STRICT=1 turns an *undeclared* skip into a failure, so
-      # coverage cannot go quiet again without this job going red. F130.
-      - name: E2E tests
-        env:
-          IGNI_E2E_STRICT: "1"
-        run: npx playwright test
-
-      - name: Upload Playwright report on failure
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: playwright-report
-          path: clients/web/playwright-report/
-          retention-days: 7
-
-  # Tauri Rust shell: the desktop bridge between the system WebView
-  # and the BE process. Most of the code is Tauri framework glue;
-  # what's worth testing is the BE-stdout ready-line parser
-  # (``parse_ready_line``). Webview-DOM tests would need
-  # ``tauri-driver`` — separate setup, deferred.
-  tauri-rust:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install Linux WebKitGTK deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
-            libayatana-appindicator3-dev librsvg2-dev
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch, 2026-10-16
-        with:
-          toolchain: stable
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: clients/tauri/src-tauri
-
-      # `--lib` is gone. It runs the library's unit tests and *only*
-      # those — `tests/spawn_smoke.rs` was never compiled here, so the
-      # one test that boots the shell end to end had no CI coverage of
-      # any kind, not even "does it still build".
-      #
-      # It had rotted exactly as you would expect: it looked for
-      # `target/debug/ember-code-app`, a binary this crate stopped
-      # producing at the rename, and it set `IGNI_DEV_BACKEND` without
-      # the `IGNITE_EMBER_DEV` acknowledgement that `runtime.rs` later
-      # started requiring. Its own docstring claimed "CI sets the env
-      # var on the macOS runner", and no workflow has ever set it.
-      #
-      # The smoke test does not run here — it needs macOS, a built
-      # binary, the venv and the web bundle — but it compiles, which is
-      # the decay that was actually happening. It is `#[ignore]`d rather
-      # than returning early on an env var, so the summary reads
-      # `1 ignored` instead of `1 passed`: this job now reports what it
-      # covered rather than counting a no-op as a pass.
-      - name: Cargo test
-        run: |
-          cd clients/tauri/src-tauri
-          cargo test --no-default-features
-
-  # The Tauri shell, run: `tests/spawn_smoke.rs` boots the built binary,
-  # waits for its backend child to bind a loopback port, quits the shell
-  # and checks the parent-PID watchdog takes the backend down with it.
-  # The job above only compiles it; until this job it had been run once,
-  # by hand, on a Mac. Linux, because a webview there needs only a
-  # virtual display (xvfb) and a session bus, both of which a runner can
-  # have — the macOS runners are the ones that sit queued.
-  tauri-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install Linux WebKitGTK deps and a virtual display
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
-            libayatana-appindicator3-dev librsvg2-dev \
-            xvfb dbus-x11 lsof
-
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version-file: .python-version
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
-
-      # The test points the shell at this venv (IGNI_DEV_BACKEND), so no
-      # managed-runtime download happens.
-      - name: The backend's venv
-        run: uv sync
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "24"
-          cache: "npm"
-          cache-dependency-path: clients/web/package-lock.json
-
-      - name: The web bundle
-        run: |
-          cd clients/web
-          npm ci
-          npm run build
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch, 2026-10-16
-        with:
-          toolchain: stable
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: clients/tauri/src-tauri
-
-      - name: Spawn smoke
-        run: |
-          cd clients/tauri/src-tauri
-          dbus-run-session -- xvfb-run -a \
-            cargo test --no-default-features --test spawn_smoke -- --ignored --nocapture

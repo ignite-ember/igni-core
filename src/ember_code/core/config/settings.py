@@ -135,7 +135,7 @@ class Settings(BaseModel):
     update_check_ttl: int = 86400
     # DEC-11. Where the desktop app looks for releases. Empty means the
     # endpoint compiled into `tauri.conf.json`,
-    # `github.com/ignite-ember/igni/releases` — the one outbound host a
+    # `github.com/ignite-ember/igni-app/releases` — the one outbound host a
     # default install has, which sits awkwardly beside DP-5 and is
     # unreachable from an air-gapped network. Set this to your own
     # mirror and the app asks yours instead.

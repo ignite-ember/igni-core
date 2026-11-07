@@ -29,17 +29,12 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           # Commits that, with their ancestors, are not re-checked: history
-          # made before the check existed, one author's, unsigned. Every
-          # commit not reachable from one of them is checked.
-          #   ae595086 — feat/extensions, the last commit before the check.
-          #   91ad5d46 — tip of chore/supply-chain-evidence, branched off
-          #              before the check and merged into feat/extensions
-          #              (6466831e); its seven commits are unsigned.
-          # Space-separated. Add one only for already-pushed history that is
-          # merged rather than rewritten, never for new work.
-          SIGNED_OFF_FROM: >-
-            ae5950868eae46e406b88e4221e24fd1c785c9ac
-            91ad5d46dc8b23af116765165d86618cb768988d
+          # made before the check existed. None in this repository: it was
+          # cut from ignite-ember/igni's main, whose unsigned history no pull
+          # request here can reach. Space-separated. Add one only for
+          # already-pushed history that is merged rather than rewritten,
+          # never for new work.
+          SIGNED_OFF_FROM: ""
         run: |
           set -- "${BASE}..${HEAD}"
           for cutoff in ${SIGNED_OFF_FROM}; do

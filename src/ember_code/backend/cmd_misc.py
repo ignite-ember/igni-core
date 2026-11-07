@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 class BugCommand:
     """``/bug`` — open the issue tracker in the user's browser."""
 
-    BUG_URL: str = "https://github.com/ignite-ember/igni/issues"
+    BUG_URL: str = "https://github.com/ignite-ember/igni-app/issues"
 
     def open(self) -> CommandResult:
         BrowserOpener.open(self.BUG_URL)

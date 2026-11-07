@@ -34,6 +34,8 @@ from __future__ import annotations
 import pathlib
 import re
 
+from tests.siblings import IGNI_APP, needs_app
+
 #: Anything that is not source: caches, build output, vendored code, and the
 #: eval transcripts that are data rather than code.
 _SKIP = (
@@ -147,6 +149,7 @@ class TestTheScanCanActuallyFail:
         assert not _scan(), "IGNITE_EMBER_* and IGNI_* must both pass"
 
 
+@needs_app
 class TestTheCrossProcessContractAgrees:
     """The specific pairs where a missed rename is silent.
 
@@ -159,7 +162,7 @@ class TestTheCrossProcessContractAgrees:
     def test_parent_pid_is_spelled_the_same_on_both_sides(self):
         root = _repo_root()
         reader = (root / "src/ember_code/backend/supervisor.py").read_text()
-        setter = (root / "clients/tauri/src-tauri/src/lib.rs").read_text()
+        setter = (IGNI_APP / "clients/tauri/src-tauri/src/lib.rs").read_text()
 
         assert "IGNI_PARENT_PID" in reader, "the backend no longer reads it"
         assert "IGNI_PARENT_PID" in setter, "the Tauri client no longer sets it"
@@ -168,14 +171,13 @@ class TestTheCrossProcessContractAgrees:
 
     def test_every_client_that_sets_parent_pid_uses_the_new_name(self):
         """The desktop shell and the web e2e harness both set it."""
-        root = _repo_root()
         setters = [
             "clients/tauri/src-tauri/src/lib.rs",
             "clients/web/e2e/fixtures/live-be.ts",
             "clients/web/e2e/real-be-thinking.mjs",
         ]
         for rel in setters:
-            body = (root / rel).read_text()
+            body = (IGNI_APP / rel).read_text()
             if "PARENT_PID" not in body:
                 continue
             assert "IGNI_PARENT_PID" in body, f"{rel} sets the old name"

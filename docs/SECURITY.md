@@ -575,7 +575,7 @@ true` turns every one of these off ([CONFIGURATION.md](CONFIGURATION.md),
 |---|---|---|
 | The model endpoints and igni server you configure | On | The product: nothing is configured, so nothing is contacted until you name one |
 | Update check (`pypi.org`) | On, daily | How a fix reaches you: the Cyber Resilience Act asks for security updates to be on by default with an opt-out. `update_check_ttl: 0` turns it off |
-| Desktop updater (`github.com/ignite-ember/igni/releases`, or `update_endpoint`) | On (desktop app) | The same reason; it checks with `update_check_ttl` (0 turns it off) and installs only a signed release, when you press Install |
+| Desktop updater (`github.com/ignite-ember/igni-app/releases`, or `update_endpoint`) | On (desktop app) | The same reason; it checks with `update_check_ttl` (0 turns it off) and installs only a signed release, when you press Install |
 | Desktop first launch (uv, CPython, `ignite-ember`, the decision model) | Once, at install | Installing the app; a pre-provisioned `runtime_python` skips it |
 | Decision model (Laya, from Hugging Face) | On first use | Used by Bypass mode's guard and by extensions that ask; loaded from the local cache when it is there |
 | Web search (DuckDuckGo) and URL fetch | **Asks each time** | A request the model decides on, out of your network: it waits for your yes. `permissions.web_search` / `web_fetch: allow` lets them run unasked; `deny` removes them |

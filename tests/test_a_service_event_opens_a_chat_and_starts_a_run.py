@@ -25,6 +25,9 @@ from ember_code.backend.service_event_delivery import ExtensionEventHandler
 from ember_code.extensions.service_events import EventHandling, ServiceEvent
 from ember_code.protocol import messages as msg
 from tests.host_model_helpers import PYTHON, FakeSession, HostRig, extension_process_env
+from tests.siblings import needs_sdk
+
+pytestmark = needs_sdk
 
 FIXTURE = Path(__file__).parent / "fixtures" / "host_extension" / "indexer.py"
 EXTENSION = "acme.indexer"

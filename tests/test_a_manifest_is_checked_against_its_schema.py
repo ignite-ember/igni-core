@@ -26,10 +26,11 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from tests.manifest_corpus import BASE, REFUSALS
+from tests.siblings import IGNI_SDK, needs_sdk
 
 REPO = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = REPO / "docs" / "extension-manifest.schema.json"
-EXAMPLES = REPO / "examples"
+EXAMPLES = IGNI_SDK / "examples"
 
 
 @pytest.fixture(scope="module")
@@ -51,6 +52,7 @@ def test_the_schema_is_a_schema(schema: dict) -> None:
     Draft202012Validator.check_schema(schema)
 
 
+@needs_sdk
 def test_there_is_at_least_one_example() -> None:
     """Guards the parametrisation below from passing on an empty set."""
     assert _manifests(), f"no manifest.json under {EXAMPLES}"
@@ -103,6 +105,7 @@ def test_the_base_manifest_is_valid(validator: Draft202012Validator) -> None:
     assert not list(validator.iter_errors(BASE))
 
 
+@needs_sdk
 def test_the_reference_manifest_would_fail_if_broken(
     validator: Draft202012Validator,
 ) -> None:

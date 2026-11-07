@@ -724,7 +724,7 @@ What it turns off:
 | Flow | Without the switch | With `air_gapped: true` |
 |---|---|---|
 | Update check (PyPI) | `pypi.org`, every `update_check_ttl` seconds | No request |
-| Desktop updater | `github.com/ignite-ember/igni/releases`, or `update_endpoint` | `update_endpoint` only; no request if none is set |
+| Desktop updater | `github.com/ignite-ember/igni-app/releases`, or `update_endpoint` | `update_endpoint` only; no request if none is set |
 | Desktop first launch | Downloads uv, CPython, `ignite-ember` and the decision model | No download; the app runs on `runtime_python` (below), or refuses with a message naming it |
 | Decision model (Laya, Hugging Face) | Downloaded on first use if not cached | Loaded only from the local cache, with the hub offline; refused with a message saying how to pre-seed it |
 | Plugin marketplace at session start | Only `plugins.marketplaces`; `github.com/anthropics/claude-plugins-official` too if `plugins.default_marketplace: true` (off by default) | Not registered or refreshed; only local paths and `plugins.marketplaces` |

@@ -1,8 +1,9 @@
-"""Dump the FE-facing wire schema to clients/web/src/protocol/wire-schema.json.
+"""Write the FE-facing wire schema igni-core publishes, docs/wire-schema.json.
 
 Covers (a) every pydantic protocol message and (b) the ad-hoc dict
-payloads returned by RPCs the web client consumes. The web test suite
-asserts the field names it reads against this file, so a BE rename
+payloads returned by RPCs the web client consumes. igni-app copies it
+beside the web client, whose suite asserts the field names it reads
+against that copy, so a BE rename
 breaks a test instead of silently blanking the UI (the DiffRow /
 is_ephemeral / loop_status / p.content bug class).
 

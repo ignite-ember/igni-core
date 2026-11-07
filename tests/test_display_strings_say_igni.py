@@ -46,6 +46,8 @@ import re
 
 import pytest
 
+from tests.siblings import IGNI_APP, needs_app
+
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # Directories whose strings a user can see.
@@ -102,13 +104,14 @@ def _offenders(source: str) -> list[str]:
 def _client_files() -> list[pathlib.Path]:
     out: list[pathlib.Path] = []
     for tree, suffixes in _CLIENT_TREES:
-        base = _ROOT / tree
+        base = IGNI_APP / tree
         if not base.exists():
             continue
         out.extend(p for p in base.rglob("*") if p.suffix in suffixes)
     return sorted(out)
 
 
+@needs_app
 def test_the_client_trees_exist():
     """A guard that silently scans nothing is worse than no guard — this is
     the shape of mistake that made two leak sweeps in the production review
@@ -120,12 +123,12 @@ def test_the_client_trees_exist():
     )
 
 
-@pytest.mark.parametrize("path", _client_files(), ids=lambda p: str(p.relative_to(_ROOT)))
+@pytest.mark.parametrize("path", _client_files(), ids=lambda p: str(p.relative_to(IGNI_APP)))
 def test_no_bare_ember_in_a_display_string(path: pathlib.Path):
     offenders = _offenders(path.read_text(encoding="utf-8", errors="replace"))
 
     assert not offenders, (
-        f'{path.relative_to(_ROOT)} has user-visible text saying "Ember".\n'
+        f'{path.relative_to(IGNI_APP)} has user-visible text saying "Ember".\n'
         f"  {chr(10).join('  ' + o for o in offenders)}\n"
         '  Use "igni" (or "ignite-ember"). If this is an identifier rather '
         "than display text, add the exact token to _ALLOWED_TOKENS."

@@ -1,7 +1,8 @@
 """The FE↔BE wire snapshot must match the protocol it describes.
 
-`clients/web/src/protocol/wire-contract.test.ts` asserts that every
-field the web client reads exists in `wire-schema.json`. It was written
+igni-app's `clients/web/src/protocol/wire-contract.test.ts` asserts that
+every field the web client reads exists in its copy of the
+`docs/wire-schema.json` igni-core publishes. It was written
 because four of eleven bugs in one verification sweep were silent
 field-name mismatches — a renamed BE field, a blank panel, no error
 anywhere.
@@ -47,7 +48,7 @@ import sys
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _SCRIPT = _ROOT / "scripts/dump_wire_schema.py"
 _MODULE = _ROOT / "src" / "ember_code" / "protocol" / "wire_schema.py"
-_SNAPSHOT = _ROOT / "clients/web/src/protocol/wire-schema.json"
+_SNAPSHOT = _ROOT / "docs/wire-schema.json"
 
 
 def _fresh() -> dict:
@@ -119,28 +120,4 @@ class TestTheSnapshotIsCurrent:
             "the fields it reads against this file, so while it is stale that check is "
             "against a memory of the protocol rather than the protocol. Regenerate with "
             "`uv run python scripts/dump_wire_schema.py`."
-        )
-
-    def test_the_snapshot_covers_what_the_web_test_reads(self):
-        """The two halves have to be about the same thing.
-
-        The web test lists, per message type, the fields it consumes. If
-        it names a type the snapshot does not have, it is asserting
-        nothing for that type — and it would pass.
-        """
-        contract = (_ROOT / "clients/web/src/protocol/wire-contract.test.ts").read_text()
-        snapshot = json.loads(_SNAPSHOT.read_text())
-
-        import re
-
-        # `  type_name: ["field", ...],` inside the MESSAGE_READS map.
-        block = contract.split("MESSAGE_READS")[1].split("};")[0]
-        named = set(re.findall(r"^\s{2}(\w+):\s*\[", block, re.M))
-
-        assert named, "no message types parsed out of the web test — has it changed shape?"
-        missing = sorted(named - set(snapshot["messages"]))
-
-        assert not missing, (
-            f"the web test names {missing}, which the snapshot does not describe — so those "
-            f"assertions check nothing."
         )

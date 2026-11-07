@@ -147,7 +147,7 @@ The same bytes on PyPI and npmjs carry the registries' own evidence:
 * **PyPI** — published with trusted publishing, which uploads PEP 740
   attestations; pypi.org shows them on each file's page. To check one:
   `pip install pypi-attestations` then
-  `pypi-attestations verify pypi --repository https://github.com/ignite-ember/igni pypi:<filename>`.
+  `pypi-attestations verify pypi --repository https://github.com/ignite-ember/igni-core pypi:<filename>`.
 * **npmjs** — published with `--provenance`; `npm audit signatures` in a
   project that installs them verifies the registry signatures and
   provenance.

@@ -175,8 +175,23 @@ Clients of that API:
 | Client | Notes |
 |---|---|
 | igni's web UI | a person's windows; extension pages load here |
-| `igni-client` (proposed Python SDK) | built from the same generated host-model code as the extension SDKs, plus sign-in as an app or a person |
+| `igni-client` (Python SDK, `packages/igni-client`) | built: connects as a person, an app or a space; sessions, runs, approvals, any RPC; commands and identity through the gateway. Speaks igni's client protocol, not yet the host object model (below) |
 | Apps | have no windows; window-only members stay app-only, sessions and messages work without a window |
+
+**What the gateway relays today is igni's client protocol** — the
+`user_message` / run-event / `rpc_request` protocol the web UI speaks —
+not the host object model. The model is reachable on that socket only
+through the `host_model` RPC made for an extension's page, and in the
+cloud no connection speaks for an extension ([SECURITY.md](SECURITY.md)
+§10). So `igni-client` 0.1 is built on the client protocol, which works locally
+and through Fleet with no change to igni or the gateway, and its
+contract with igni is held by `tests/test_igni_client_matches_the_protocol.py`.
+Typed host-model access for a producer's own client (`client.host`, with
+signals and properties, generated as a third target of
+`ember_code.extensions.host.codegen`) needs two things first: a host-model
+endpoint that grants a producer's own client the model as the person,
+without an extension `caller`, and a window-only marker in the schema for
+apps.
 
 Once outside apps depend on the host object model, its schema is a
 public contract: breaking changes need a major version.

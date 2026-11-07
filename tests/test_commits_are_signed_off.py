@@ -150,8 +150,9 @@ def test_a_merged_branch_s_old_history_is_exempt_by_its_tip(repo: Path):
 
 
 def test_every_cutoff_is_a_real_commit_of_this_repository():
-    cutoffs = _check_step()["env"]["SIGNED_OFF_FROM"].split()
-    assert cutoffs
+    # None is a fine answer: a repository cut from another's main has no
+    # pre-check history a pull request can reach.
+    cutoffs = (_check_step()["env"]["SIGNED_OFF_FROM"] or "").split()
     for cutoff in cutoffs:
         assert re.fullmatch(r"[0-9a-f]{40}", cutoff)
         probe = subprocess.run(

@@ -53,15 +53,25 @@ if it does, and a new outbound call is off by default.
 
 ## Setting up
 
-You need Python 3.12 (the version in `.python-version`),
-[uv](https://docs.astral.sh/uv/), and Node 20 if you work on the clients.
+You need Python 3.12 (the version in `.python-version`) and
+[uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/ignite-ember/igni.git
-cd igni
+git clone https://github.com/ignite-ember/igni-core.git
+cd igni-core
 uv sync --extra dev
 uv run igni              # the CLI from your checkout
 ```
+
+This repository is igni's backend, its CLI and its cloud layer. The desktop
+app and the web UI are [igni-app](https://github.com/ignite-ember/igni-app);
+the SDKs are [igni-sdk](https://github.com/ignite-ember/igni-sdk). Some tests
+here hold igni against those two, and run against checkouts of them beside
+this one (`../igni-sdk`, `../igni-app`, or `IGNI_SDK_DIR` / `IGNI_APP_DIR`):
+without them those tests skip, and CI checks both out. When a change crosses
+the line — a protocol field the web client reads, a host-model member the
+SDKs generate — publish the contract (`make contracts`) and open the
+matching pull request there.
 
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) covers the layout of the
 repository and the clients in more detail.
@@ -76,18 +86,6 @@ uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 uv run mypy src/ember_code/
 uv run pytest tests/ -q          # the whole Python suite
-make packages-check              # the Python SDKs under packages/, each in its own env
-```
-
-If you touch the web UI (`clients/web`, which the desktop app loads and which
-is the web client):
-
-```bash
-cd clients/web
-npm ci
-npx tsc -b --noEmit
-npx vitest run
-npx playwright test              # the browser suite
 ```
 
 The Python suite runs every test as if inside a customer's network: a test
@@ -95,13 +93,11 @@ that reaches the internet fails unless it carries the `reaches_the_internet`
 marker. It also fails the run if a test leaves files in the repository root.
 
 CI measures coverage too, and fails below a floor that only goes up: line and
-branch coverage of `src/ember_code` (`--cov-fail-under` in the `test` job),
-and the web suite's `coverage.thresholds` in `clients/web/vite.config.ts`
-(`npx vitest run --coverage`). To see where you stand:
+branch coverage of `src/ember_code` (`--cov-fail-under` in the `test` job).
+To see where you stand:
 
 ```bash
 uv run pytest tests/ -q --cov=ember_code --cov-branch --cov-report=term-missing
-cd clients/web && npx vitest run --coverage
 ```
 
 ## What a change needs

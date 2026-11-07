@@ -23,6 +23,9 @@ from websockets.exceptions import InvalidStatus
 from ember_code.extensions.host.channel import ENV_HOST_SECRET, ENV_HOST_URL
 from ember_code.protocol import messages as msg
 from tests.host_model_helpers import PYTHON, HostRig, extension_process_env
+from tests.siblings import needs_sdk
+
+pytestmark = needs_sdk
 
 FIXTURE = Path(__file__).parent / "fixtures" / "host_extension" / "reviewer.py"
 

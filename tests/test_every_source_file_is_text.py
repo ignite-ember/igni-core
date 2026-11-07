@@ -31,6 +31,8 @@ import subprocess
 
 import pytest
 
+from tests.siblings import IGNI_APP, needs_app
+
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 #: Text formats we author. Binary assets are excluded by extension
@@ -96,9 +98,7 @@ def test_the_scan_found_the_source_tree():
     files = _source_files()
 
     assert len(files) > 500, len(files)
-    assert any(f.suffix == ".tsx" for f in files), "no TSX files found; the web client is missing"
     assert any(f.suffix == ".py" for f in files), "no Python files found"
-    assert any(f.suffix == ".rs" for f in files), "no Rust files found; the desktop app is missing"
 
 
 def test_no_source_file_contains_a_control_byte():
@@ -117,6 +117,7 @@ def test_no_source_file_contains_a_control_byte():
     )
 
 
+@needs_app
 @pytest.mark.parametrize(
     "path",
     ["clients/web/src/components/panels/HooksPanel.tsx"],
@@ -129,7 +130,7 @@ def test_the_file_that_motivated_this_is_readable(path):
     field boundary would collide on the joined key. The escape keeps the
     byte and loses the problem, and this asserts both halves.
     """
-    text = (_ROOT / path).read_text(encoding="utf-8")
+    text = (IGNI_APP / path).read_text(encoding="utf-8")
 
     assert "\\u0000" in text, "the escaped separator is gone; has the dedup key changed?"
     assert "\x00" not in text, "the raw NUL is back, and the file is binary again"

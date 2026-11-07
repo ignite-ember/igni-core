@@ -43,9 +43,10 @@ from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
 from ember_code.extensions.rpc import ExtensionRpc
 from ember_code.extensions.store import ExtensionStore
 from ember_code.protocol import messages as msg
+from tests.siblings import IGNI_SDK
 
 REPO = Path(__file__).resolve().parent.parent
-SDK_SRC = REPO / "packages" / "igni-extension" / "src"
+SDK_SRC = IGNI_SDK / "packages" / "igni-extension" / "src"
 
 
 class CapturingTransport:

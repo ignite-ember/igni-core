@@ -31,15 +31,11 @@ from typing import Any
 
 from ember_code.protocol import messages as msg
 
-#: Where the frontend reads it from.
-SNAPSHOT_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "clients"
-    / "web"
-    / "src"
-    / "protocol"
-    / "wire-schema.json"
-)
+#: Where igni-core publishes it. igni-app keeps a copy beside the web
+#: client (``clients/web/src/protocol/wire-schema.json``) and tests its
+#: reads against that copy; refreshing the copy is how igni-app takes a
+#: new protocol.
+SNAPSHOT_PATH = Path(__file__).resolve().parents[3] / "docs" / "wire-schema.json"
 
 
 def _rpc_payload_fields() -> dict[str, list[str]]:

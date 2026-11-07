@@ -1,16 +1,16 @@
 """The host object model: every object, property, signal and method.
 
 This is the description ``docs/HOST_OBJECT_MODEL.md`` promises — the
-one place the model is written down. The Python SDK
-(``packages/igni-extension``) and the TypeScript bridge
-(``packages/extension-bridge``) are generated from it by
-:mod:`ember_code.extensions.host.codegen`, and
+one place the model is written down. igni-core publishes it as
+``docs/host-schema.json`` (:mod:`ember_code.extensions.host.published`);
+igni-sdk generates the Python SDK (``packages/igni-extension``) and the
+TypeScript bridge (``packages/extension-bridge``) from its copy, and
 ``tests/test_the_host_model_covers_the_app.py`` holds it against every
 RPC method, UI action and broadcast igni has.
 
 **Changing this file is changing a promise** (EXTENSIBILITY §8). Bump
 :data:`SCHEMA_VERSION`: minor for an added member, major for a changed
-or removed one, and regenerate the SDKs (``make host-sdks``).
+or removed one, publish it (``make contracts``) and refresh igni-sdk's copy.
 
 Types written ``json`` are the host's report of something whose shape
 is not part of the promise yet — a plugin's details, an MCP server's

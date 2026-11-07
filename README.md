@@ -1,6 +1,6 @@
 # igni
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ignite-ember/igni/badge)](https://scorecard.dev/viewer/?uri=github.com/ignite-ember/igni)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ignite-ember/igni-core/badge)](https://scorecard.dev/viewer/?uri=github.com/ignite-ember/igni-core)
 
 **One spark ignites a team.** An AI coding assistant built with [Agno](https://github.com/agno-agi/agno) orchestration.
 
@@ -219,8 +219,8 @@ brew uninstall ignite-ember && brew untap ignite-ember/tap && brew tap ignite-em
 
 The Textual terminal UI was removed in v0.9.7, and the VS Code and JetBrains
 extensions are no longer shipped. igni ships the desktop app (Tauri), the web
-client and the CLI. The desktop app and the web client share one web UI
-(`clients/web`); the desktop app talks to the backend over a Unix socket
+client and the CLI. The desktop app and the web client share one web UI,
+both in [igni-app](https://github.com/ignite-ember/igni-app); the desktop app talks to the backend over a Unix socket
 (`python -m ember_code.backend --socket <path>`). Features: streaming
 responses, agent tree visualization, token tracking, session picker, keyboard
 shortcuts, HITL confirmation dialogs. In a terminal, `igni -m` and `igni -p`
@@ -278,7 +278,7 @@ Agents can pause execution to request confirmation or user input before proceedi
 - [Hooks](docs/HOOKS.md) — Pre/post tool execution hooks
 - [Extensibility Floor](docs/EXTENSIBILITY.md) — The contract extensions build against, and what it guarantees them
 - [Platform Plan](docs/PLATFORM_PLAN.md) — What has to be built for the single-user and shared backends, in order
-- [UI package](clients/ui/README.md) — The tokens, classes and components an extension builds against
+- [UI package](https://github.com/ignite-ember/igni-sdk/tree/main/clients/ui) — The tokens, classes and components an extension builds against (in igni-sdk)
 - [Design System](docs/DESIGN_SYSTEM.md) — The scales, the primitives, and what still needs a human eye
 - [Build Plan](docs/BUILD_PLAN.md) — The same work as ordered items, with the files they touch and how each one is verified
 - [Migration](docs/MIGRATION.md) — Coming from Claude Code or Codex

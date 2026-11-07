@@ -144,8 +144,9 @@ window, another extension, or this one.
   versioned under the compatibility floor (EXTENSIBILITY §8): a new
   member is a minor version, a changed or removed one a major. The Python
   SDK (`igni-extension`, `igni_extension.host_model`) and the TypeScript
-  bridge (`hostModel.generated.ts`) are generated from it by `make
-  host-sdks`, and a test fails when what is checked in is stale.
+  bridge (`hostModel.generated.ts`) are generated from it in igni-sdk,
+  from its copy of the `docs/host-schema.json` igni-core publishes (`make
+  contracts`); a test in each repository fails when its file is stale.
 - **Granted per object.** Every object has one permission per row below.
   It is declared in the manifest (`permissions.host`) and shown on the
   Services page before a super admin approves, and by `igni ext install`.

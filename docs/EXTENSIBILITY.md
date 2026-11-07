@@ -2,7 +2,7 @@
 
 How CodeIndex, Artifacts and third-party capabilities attach to igni — and what igni promises not to break underneath them.
 
-> **Status: specification.** Parts are built; [Milestones](#milestones) is the only statement of which. To build one, start with [Your first extension](YOUR_FIRST_EXTENSION.md), which goes from an empty directory to an extension and its service running in igni.
+> **Status: specification.** Parts are built; [Milestones](#milestones) is the only statement of which. To build one, start with [Your first extension](https://github.com/ignite-ember/igni-sdk/blob/main/docs/YOUR_FIRST_EXTENSION.md) (in igni-sdk), which goes from an empty directory to an extension and its service running in igni.
 >
 > **"Remote" always means inside the customer's own network.** igni hosts nothing. A laptop talking to an on-prem Artifacts service is still fully air-gapped.
 
@@ -253,8 +253,9 @@ await ext.host.agents.promote_ephemeral("api-auditor", target="personal")
 
 **One schema, two SDKs.** The model is described once
 (`ember_code.extensions.host.definition`, versioned under §8) and both
-SDKs' `host` objects are generated from it (`make host-sdks`); a test
-fails when they are stale, and another fails when igni gains an RPC, a
+SDKs' `host` objects are generated from it: igni-core publishes it as
+`docs/host-schema.json` (`make contracts`) and igni-sdk generates both
+from its copy. A test in each repository fails when its file is stale, and another fails when igni gains an RPC, a
 UI action or a broadcast with no member in the model and no reason it
 has none.
 
@@ -903,7 +904,7 @@ These three are a promise. **Everything else about igni's appearance is not**, a
 
 ## 9. Developing one
 
-- **Start with [Your first extension](YOUR_FIRST_EXTENSION.md).** It is task-ordered — write an extension and its service, bundle it, run the service, approve it, switch it on for a group, sync, use it in chat and on its page, ask for a VM profile, answer export and erasure, and test it all on the SDKs' fakes — and every file it shows is a file in `examples/ticket-lookup/`, whose tests run in CI.
+- **Start with [Your first extension](https://github.com/ignite-ember/igni-sdk/blob/main/docs/YOUR_FIRST_EXTENSION.md) (in igni-sdk).** It is task-ordered — write an extension and its service, bundle it, run the service, approve it, switch it on for a group, sync, use it in chat and on its page, ask for a VM profile, answer export and erasure, and test it all on the SDKs' fakes — and every file it shows is a file in `examples/ticket-lookup/`, whose tests run in CI.
 - **The reference extension is `examples/reference-extension/`** — a compliance scanner, around 200 lines, written against the published surface and nothing else. Anything it has to hand-roll is something the floor is missing, and its README keeps that list.
 - **`igni ext init <dir>`** scaffolds one that runs as written. `igni ext doctor` checks a bundle and prints the contract version this igni implements; `igni ext install` (development only, behind `IGNI_DEV_EXTENSIONS=1`) copies it into `<data>/extensions/<id>/` and prints the permissions it is being granted; a backend starts it at its next start-up. `igni ext sync` installs, updates and removes what igni server distributes to the signed-in person, as start-up and sign-in do. `list` says where each one came from, and `remove` does what it says — one igni distributed comes back at the next sync while its service is approved and switched on for your group.
 - **An install outlives the process that made it**, which is why the CLI writes to a store rather than talking to a running backend: a CLI that needed one could install nothing before it started, and nothing would survive it stopping.

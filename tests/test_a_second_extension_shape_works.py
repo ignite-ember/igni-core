@@ -35,10 +35,11 @@ from ember_code.extensions.manifest import ExtensionManifest
 from ember_code.extensions.origin import ExtensionOrigins
 from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
 from ember_code.extensions.rpc import ExtensionRpc
+from tests.siblings import IGNI_SDK, needs_sdk
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [needs_sdk, pytest.mark.asyncio]
 
-EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "release-notes"
+EXAMPLE = IGNI_SDK / "examples" / "release-notes"
 
 
 def bundle_at(tmp_path: Path) -> Path:

@@ -25,9 +25,12 @@ from ember_code.backend.message_dispatcher import MessageDispatcher
 from ember_code.extensions.manifest import ExtensionManifest
 from ember_code.extensions.registry import ExtensionRegistry, ExtensionState
 from ember_code.extensions.rpc import ExtensionRpc
+from tests.siblings import IGNI_SDK, needs_sdk
+
+pytestmark = needs_sdk
 
 REPO = Path(__file__).resolve().parents[1]
-REFERENCE = REPO / "examples" / "reference-extension" / "manifest.json"
+REFERENCE = IGNI_SDK / "examples" / "reference-extension" / "manifest.json"
 
 
 class _Transport:

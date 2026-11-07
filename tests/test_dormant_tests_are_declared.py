@@ -30,6 +30,23 @@ DECLARED_GATES: dict[str, str] = {
         "packages/ — so the test skips without one. CI's test job builds "
         "one and sets it, and under CI the test fails rather than skip."
     ),
+    "IGNI_SDK_DIR": (
+        "Where igni-sdk is checked out (tests/siblings.py). The tests that drive "
+        "a real extension built with the SDK, or read its example extensions, "
+        "need it; they skip without one locally. CI checks igni-sdk out, and "
+        "under CI they fail rather than skip."
+    ),
+    "IGNI_APP_DIR": (
+        "Where igni-app is checked out (tests/siblings.py). The tests that hold "
+        "the web client and the desktop shell to what the backend says need it; "
+        "they skip without one locally. CI checks igni-app out, and under CI "
+        "they fail rather than skip."
+    ),
+    "CI": (
+        "Not a way to switch tests off but the opposite: set by every CI "
+        "runner, it makes the tests that need igni-sdk or igni-app fail "
+        "rather than skip when a checkout is missing (tests/siblings.py)."
+    ),
     "IGNI_TEST_LLM_API_KEY": (
         "Live model calls, which cost money per run. Not in the per-push "
         "CI: .github/workflows/live-model.yml runs them weekly and on "
@@ -123,7 +140,9 @@ def _gating_variables() -> set[str]:
     """
     found: set[str] = set()
     # ``conftest.py`` too: a fixture that skips gates every test using it.
-    for path in sorted([*TESTS_DIR.rglob("test_*.py"), *TESTS_DIR.rglob("conftest.py")]):
+    # ``siblings.py`` too: its marks gate every test that needs igni-sdk or igni-app.
+    scanned = [*TESTS_DIR.rglob("test_*.py"), *TESTS_DIR.rglob("conftest.py")]
+    for path in sorted([*scanned, TESTS_DIR / "siblings.py"]):
         if path.name == Path(__file__).name:
             continue
         source = path.read_text(encoding="utf-8")

@@ -25,9 +25,12 @@ import re
 from pathlib import Path
 
 from ember_code.protocol.schemas.enums import CommandAction
+from tests.siblings import IGNI_APP, needs_app
+
+pytestmark = needs_app
 
 _ROOT = Path(__file__).resolve().parent.parent
-_MESSAGES = _ROOT / "clients/web/src/protocol/messages.ts"
+_MESSAGES = IGNI_APP / "clients/web/src/protocol/messages.ts"
 
 
 def _declared_in_typescript() -> set[str]:

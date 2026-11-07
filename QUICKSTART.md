@@ -20,7 +20,7 @@ pip install ignite-ember
 fetches it if you do not have it):
 
 ```bash
-git clone https://github.com/ignite-ember/igni.git
+git clone https://github.com/ignite-ember/igni-core.git
 cd igni
 uv venv                         # .venv on Python 3.12
 uv pip install -e ".[dev]"      # `uv pip` needs the venv: without it, "No virtual environment found"

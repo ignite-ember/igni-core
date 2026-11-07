@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Single source-of-truth version syncer.
 //
-// ``pyproject.toml`` is the canonical version for the entire igni
-// project. This script copies it into the files that carry their own
-// copy: the Python package's ``__init__.py`` and the Tauri shell's
-// ``tauri.conf.json`` and ``Cargo.toml``.
+// ``pyproject.toml`` is igni-core's version. This script copies it into
+// the one file that carries its own copy: the package's ``__init__.py``.
+// igni-app's desktop shell is released under the same version, from its
+// own ``igni-core.version`` (its scripts/sync-version.mjs).
 //
 // Run from anywhere — the script resolves paths relative to itself.
 //
@@ -47,24 +47,6 @@ const targets = [
     label: "Python package (__init__.py)",
     path: join(repoRoot, "src/ember_code/__init__.py"),
     pattern: /(__version__\s*=\s*")[^"]+(")/,
-  },
-  {
-    kind: "patch",
-    label: "Tauri config (tauri.conf.json)",
-    path: join(repoRoot, "clients/tauri/src-tauri/tauri.conf.json"),
-    // Anchor on the top-level ``"version"`` key. The schema places
-    // it directly under the root object, so the first match wins.
-    pattern: /("version"\s*:\s*")[^"]+(")/,
-  },
-  {
-    kind: "patch",
-    label: "Tauri Cargo crate (Cargo.toml)",
-    path: join(repoRoot, "clients/tauri/src-tauri/Cargo.toml"),
-    // The Cargo package version doubles as ``CARGO_PKG_VERSION``
-    // in ``runtime.rs`` — the value pinned in
-    // ``uv pip install ignite-ember==<X>``. Drift here means the
-    // Tauri shell installs a wrong ignite version on first launch.
-    pattern: /(^version\s*=\s*")[^"]+(")/m,
   },
 ];
 

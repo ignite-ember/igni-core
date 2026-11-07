@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from ember_code.backend.__main__ import SUPPORTED_PYTHON, warn_if_unsupported_python
+from tests.siblings import IGNI_APP, needs_app
 
 _ROOT = Path(__file__).resolve().parent.parent
 _PYPROJECT = tomllib.loads((_ROOT / "pyproject.toml").read_text())
@@ -43,9 +44,10 @@ def test_mypy_checks_the_version_that_ships():
     assert _PYPROJECT["tool"]["mypy"]["python_version"] == _VERSION
 
 
+@needs_app
 def test_the_tauri_runtime_installs_the_same_version():
     """The one that actually reaches a user."""
-    runtime = (_ROOT / "clients/tauri/src-tauri/src/runtime.rs").read_text()
+    runtime = (IGNI_APP / "clients/tauri/src-tauri/src/runtime.rs").read_text()
     match = re.search(r'const PYTHON_VERSION: &str = "([^"]+)"', runtime)
 
     assert match, "PYTHON_VERSION is gone from runtime.rs"

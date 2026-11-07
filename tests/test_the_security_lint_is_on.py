@@ -20,8 +20,6 @@ _ROOT = Path(__file__).resolve().parent.parent
     "pyproject",
     [
         "pyproject.toml",
-        "packages/igni-service/pyproject.toml",
-        "packages/igni-extension/pyproject.toml",
     ],
 )
 def test_bandit_rules_are_selected_and_only_assert_is_off(pyproject: str):

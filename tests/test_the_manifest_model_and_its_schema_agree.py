@@ -62,10 +62,11 @@ from ember_code.extensions.manifest import (
     VmRequest,
 )
 from tests.manifest_corpus import BASE, REFUSALS
+from tests.siblings import IGNI_SDK, needs_sdk
 
 REPO = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = REPO / "docs" / "extension-manifest.schema.json"
-EXAMPLES = REPO / "examples"
+EXAMPLES = IGNI_SDK / "examples"
 
 SCHEMA: dict[str, Any] = json.loads(SCHEMA_PATH.read_text())
 VALIDATOR = Draft202012Validator(SCHEMA)
@@ -212,6 +213,7 @@ def test_the_model_accepts_every_example(path: Path) -> None:
     ExtensionManifest.load(path)
 
 
+@needs_sdk
 def test_a_round_trip_keeps_what_it_was_given() -> None:
     """Dumping by alias reproduces the file.
 

@@ -10,39 +10,14 @@
 # together.
 version: 2
 updates:
-  # The CLI / backend (uv.lock) and the two Python SDKs, each with its own lock.
+  # The CLI / backend (uv.lock).
   - package-ecosystem: uv
-    directories:
-      - /
-      - /packages/igni-service
-      - /packages/igni-extension
+    directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
       python-minor-and-patch:
-        update-types: [minor, patch]
-
-  # The web UI every client bundles, and the root package.json.
-  - package-ecosystem: npm
-    directories:
-      - /
-      - /clients/web
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      npm-minor-and-patch:
-        update-types: [minor, patch]
-
-  # The desktop shell.
-  - package-ecosystem: cargo
-    directory: /clients/tauri/src-tauri
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      cargo-minor-and-patch:
         update-types: [minor, patch]
 
   # Actions too: minor and patch grouped, each major its own pull request.

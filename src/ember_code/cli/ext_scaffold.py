@@ -301,7 +301,7 @@ too, with the same flag.
 Nobody else installs it from here: `dev` packaging runs only on this
 machine. An extension reaches people's machines from its service,
 through igni server — `igni ext init --service` scaffolds that shape,
-and igni's `docs/YOUR_FIRST_EXTENSION.md` walks through it. Once the
+and igni-sdk's `docs/YOUR_FIRST_EXTENSION.md` walks through it. Once the
 service is running, two people decide: a **super admin** approves the
 service in igni's portal (Services), and an **organisation admin**
 switches the extension on for a group (Extensions). Then everyone in
@@ -532,7 +532,7 @@ _SERVICE_WORKSPACE = """# The development environment for the extension and its 
 #
 # Until igni-extension and igni-service are on PyPI, build their wheels
 # from an igni checkout and add `--find-links <that directory>` to
-# `uv sync` (igni's docs/YOUR_FIRST_EXTENSION.md, step 0).
+# `uv sync` (igni-sdk's docs/YOUR_FIRST_EXTENSION.md, step 0).
 [project]
 name = "{{DIST}}-workspace"
 version = "0.1.0"
@@ -558,7 +558,7 @@ testpaths = ["tests"]
 _SERVICE_README = """# {{TITLE}}
 
 An igni extension and the service that ships it, scaffolded by
-`igni ext init --service`. igni's `docs/YOUR_FIRST_EXTENSION.md` walks
+`igni ext init --service`. igni-sdk's `docs/YOUR_FIRST_EXTENSION.md` walks
 through every step below.
 
 ```

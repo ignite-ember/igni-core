@@ -54,6 +54,7 @@ import subprocess
 import pytest
 
 from ember_code.core.config.settings import Settings
+from tests.siblings import IGNI_APP, IGNI_SDK
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _DOCS = sorted((_ROOT / "docs").glob("*.md")) + sorted(_ROOT.glob("*.md"))
@@ -163,6 +164,25 @@ class TestTheRulesMeasureSomething:
         assert not _EMBER.search(_LEGITIMATE.sub("", "from ember_code.core import x"))
 
 
+def _exists(path: str) -> bool:
+    """Whether a quoted path is real, in the repository that holds it.
+
+    ``clients/ui`` (the stylesheet) is igni-sdk's and the rest of
+    ``clients/`` igni-app's, so each is looked up in that checkout
+    (``tests/siblings.py``); without one, it is taken on trust rather than
+    reported as gone.
+    """
+    if path == "clients/ui" or path.startswith("clients/ui/"):
+        if not (IGNI_SDK / "clients").is_dir():
+            return True
+        return (IGNI_SDK / path).exists()
+    if path.startswith("clients/"):
+        if not (IGNI_APP / "clients").is_dir():
+            return True
+        return (IGNI_APP / path).exists()
+    return (_ROOT / path).exists()
+
+
 def _is_ignored(path: str) -> bool:
     """Whether git deliberately does not track this path.
 
@@ -192,7 +212,7 @@ def test_every_repository_path_it_quotes_exists(doc):
 
     quoted = _PATH.findall(doc.read_text())
     concrete = [p for p in quoted if "*" not in p and "{" not in p and "..." not in p]
-    absent = sorted({p for p in concrete if not (_ROOT / p).exists()})
+    absent = sorted({p for p in concrete if not _exists(p)})
     # A build output is absent from a clean checkout by design, and a document is
     # entitled to name one — ``clients/web/dist`` is what all four surfaces load.
     # Without this the test passes only on a machine that has already built, and
@@ -291,7 +311,7 @@ class TestTheHistoricalExemptionIsNarrow:
                 for p in _PATH.findall(doc.read_text())
                 if "*" not in p and "{" not in p and "..." not in p
             ]
-            if any(not (_ROOT / p).exists() for p in quoted) or any(
+            if any(not _exists(p) for p in quoted) or any(
                 _EMBER.search(_LEGITIMATE.sub("", line)) for line in doc.read_text().splitlines()
             ):
                 still_needed.append(name)

@@ -79,7 +79,7 @@ backend started by `python -m ember_code.backend`.
 
 ```bash
 # Clone
-git clone https://github.com/ignite-ember/igni.git
+git clone https://github.com/ignite-ember/igni-core.git
 cd igni
 
 # Create virtual environment
@@ -328,7 +328,7 @@ isolation and none of them becomes the god-class.
 
 ## Roadmap
 
-See [GitHub Issues](https://github.com/ignite-ember/igni/issues) for the current roadmap.
+See [GitHub Issues](https://github.com/ignite-ember/igni-app/issues) for the current roadmap.
 
 **Planned features:**
 - [x] Tracing (OpenTelemetry → the customer's own collector; see CONFIGURATION.md, "OpenTelemetry")

@@ -14,8 +14,7 @@ line directly above its fence:
   is only compiled;
 * ``<!-- file: <path from the repository root> -->`` — a copy of a file
   in the repository, and it must equal that file exactly. That file is
-  what runs (``examples/ticket-lookup`` has tests of its own), so the
-  document cannot drift from it.
+  what runs, so the document cannot drift from it.
 
 A ``json`` block that is a whole manifest (it has an ``id`` and a
 ``contract``) is validated against ``docs/extension-manifest.schema.json``.
@@ -24,8 +23,8 @@ Blocks that need the SDKs (``igni-extension``, ``igni-service``) skip
 where they are not installed — igni's own environment does not carry
 them — and run in CI's ``packages`` job, which installs both from the
 checkout and sets ``IGNI_DOCS_REQUIRE_SDKS=1``, turning that skip into a
-failure. The SDK READMEs follow the same convention and are checked by
-their packages' own tests.
+failure. igni-sdk checks its own ``docs/YOUR_FIRST_EXTENSION.md``, and the SDK
+READMEs, the same way.
 
 This module imports nothing from igni or its ``tests`` package, so it
 runs in that job with ``--noconftest``.
@@ -45,10 +44,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-DOCS = [
-    REPO / "docs" / "EXTENSIBILITY.md",
-    REPO / "docs" / "YOUR_FIRST_EXTENSION.md",
-]
+DOCS = [REPO / "docs" / "EXTENSIBILITY.md"]
 SCHEMA = REPO / "docs" / "extension-manifest.schema.json"
 
 #: Modules a block may need that igni's own environment lacks.
