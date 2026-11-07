@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from igni_core.extensions.host.broadcasts.deferred_reads import DeferredReads
+from igni_core.extensions.host.broadcasts.file_edits import FileEditSignals
 from igni_core.extensions.host.broadcasts.push_payloads import (
     EventPush,
     NotificationsPush,
@@ -19,7 +20,6 @@ from igni_core.extensions.host.broadcasts.push_payloads import (
     ViewActionPush,
     VisualizationDelta,
 )
-from igni_core.extensions.host.broadcasts.run_signals import RunSignals
 from igni_core.extensions.host.broadcasts.signal import PushHandler, merged
 from igni_core.extensions.host.broadcasts.task_signals import TaskSignals
 from igni_core.extensions.host.broadcasts.views import ViewAction, ViewShown
@@ -107,12 +107,14 @@ class PushSignals:
     def __init__(
         self,
         emitter: Emitter,
-        runs: RunSignals,
+        files: FileEditSignals,
         tasks: TaskSignals,
         reads: DeferredReads,
     ) -> None:
         self._emitter = emitter
-        self._table: dict[PushChannel, PushHandler] = merged(
+        # Keyed by channel name: a ``PushChannel`` is a ``str`` and looks up
+        # as one, and a channel igni pushes that is not listed finds nothing.
+        self._table: dict[str, PushHandler] = merged(
             {
                 PushChannel.ORCHESTRATE_PROGRESS: self._progress,
                 PushChannel.ORCHESTRATE_EVENT: self._orchestrate_event,
@@ -121,7 +123,6 @@ class PushSignals:
                 PushChannel.OUTPUT_STYLE_CHANGED: lambda m: reads.display(m.session_id),
                 PushChannel.SESSION_NAMED: self._session_named,
                 PushChannel.PERMISSION_MODE_CHANGED: self._permission_mode_changed,
-                PushChannel.FILE_EDITED: runs.file_edited,
                 PushChannel.NOTIFICATIONS_CHANGED: self._notifications_changed,
                 PushChannel.WORKFLOW_EVENT: self._workflow_event,
                 PushChannel.VISUALIZATION_ACTION_DISPATCHED: self._view_action,
@@ -129,15 +130,16 @@ class PushSignals:
             dict.fromkeys(self.PLAN_KINDS, self._plan),
             dict.fromkeys(self.PROCESS_KINDS, self._process),
             dict.fromkeys(self.RETRY_KINDS, self._retry),
+            files.push_handlers(),
             tasks.push_handlers(),
         )
 
     def channels(self) -> frozenset[PushChannel]:
         """Every channel translated, for the coverage test."""
-        return frozenset(self._table)
+        return frozenset(PushChannel(channel) for channel in self._table)
 
     def push(self, m: msg.PushNotification) -> None:
-        handler = self._table.get(PushChannel(m.channel))
+        handler = self._table.get(m.channel)
         if handler is not None:
             handler(m)
 

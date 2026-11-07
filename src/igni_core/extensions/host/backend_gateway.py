@@ -2,7 +2,7 @@
 
 Every reach goes through here so a backend failure becomes a refusal in
 one place, and every successful RPC is told to whoever listens for
-writes (:class:`~.broadcasts.rpc_writes.RpcWrite`) — the broadcasts,
+writes (:class:`~.rpc_write.RpcWrite`) — the broadcasts,
 which turn a write into its signal.
 """
 
@@ -12,8 +12,8 @@ from collections.abc import Callable
 from typing import Any
 
 from igni_core.extensions.host.backend import HostBackend
-from igni_core.extensions.host.broadcasts.rpc_writes import RpcWrite
 from igni_core.extensions.host.errors import HostModelError
+from igni_core.extensions.host.rpc_write import RpcWrite
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.values import Account, CommandOutcome, SessionAttached
 from igni_core.protocol import messages as msg

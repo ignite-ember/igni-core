@@ -5,10 +5,9 @@ from __future__ import annotations
 from typing import ClassVar
 
 from igni_core.core.approvals.events import ApprovalChange
-from igni_core.extensions.host.broadcasts.activity import ActivityWatch
-from igni_core.extensions.host.broadcasts.approvals import Approval, ApprovalMirror
 from igni_core.extensions.host.broadcasts.signal import Handler
 from igni_core.extensions.host.signal_values import Emitter, Signal
+from igni_core.extensions.host.state.approvals import Approval, ApprovalMirror
 from igni_core.protocol import messages as msg
 
 APPROVALS_CHANGED = "chat.approvals.changed"
@@ -40,10 +39,9 @@ class ApprovalDetails(Signal):
 class ApprovalSignals:
     """Translates the approval traffic, keeping :class:`ApprovalMirror` in step."""
 
-    def __init__(self, emitter: Emitter, mirror: ApprovalMirror, activity: ActivityWatch) -> None:
+    def __init__(self, emitter: Emitter, mirror: ApprovalMirror) -> None:
         self._emitter = emitter
         self._mirror = mirror
-        self._activity = activity
 
     def handlers(self) -> dict[type[msg.Message], Handler]:
         return {
@@ -56,7 +54,6 @@ class ApprovalSignals:
     def changed(self, change: ApprovalChange) -> None:
         """An approval appeared or went away (``core/approvals/events.py``)."""
         self._emitter.value(APPROVALS_CHANGED, change.model_dump(mode="json"))
-        self._activity.moved()
 
     def run_paused(self, m: msg.RunPaused) -> None:
         approvals = [self._mirror.record(m.session_id, r) for r in m.requirements]

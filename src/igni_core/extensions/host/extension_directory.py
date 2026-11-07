@@ -49,6 +49,13 @@ class ExtensionDirectory:
     def settings_of(self, extension_id: str) -> dict[str, Any]:
         return dict(self.store.settings(self._entry(extension_id).manifest))
 
+    def saved_settings(self, extension_id: str) -> dict[str, Any] | None:
+        """The extension's saved settings; ``None`` when it is not installed (never raises)."""
+        entry = self.registry.get(extension_id)
+        if entry is None:
+            return None
+        return dict(self.store.settings(entry.manifest))
+
     async def save_settings(self, extension_id: str, values: dict[str, Any]) -> SettingsChange:
         """Through ``set_extension_settings``, as the Extensions page saves them."""
         await self._gateway.rpc(

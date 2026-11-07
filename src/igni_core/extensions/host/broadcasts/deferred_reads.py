@@ -11,30 +11,12 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
-
+from igni_core.extensions.host.broadcasts.session_values import SessionValueSource
 from igni_core.extensions.host.signal_values import Emitter
 
 ACCOUNT_CHANGED = "account.changed"
 DISPLAY_CHANGED = "app.display_changed"
 LOOP_CHANGED = "loop.changed"
-
-SessionRead = Callable[[str], Awaitable[Any]]
-
-
-class SessionReaders(BaseModel):
-    """How to read each value again, for a session."""
-
-    model_config = ConfigDict(frozen=True)
-
-    #: ``Account``, as :meth:`HostBackendGateway.account` reads it.
-    account: SessionRead
-    #: ``Display``, as ``AppMembers.display_value`` reads it.
-    display: SessionRead
-    #: ``LoopStatus``, from the backend's ``loop_status``.
-    loop: SessionRead
-    #: The session to read when the change named none.
-    default_session: Callable[[], str]
 
 
 class DeferredReads:
@@ -45,12 +27,12 @@ class DeferredReads:
         wanted: Callable[[str], bool],
         spawn: Callable[[Coroutine[Any, Any, None]], None],
         emitter: Emitter,
-        readers: SessionReaders,
+        values: SessionValueSource,
     ) -> None:
         self._wanted = wanted
         self._spawn = spawn
         self._emitter = emitter
-        self._readers = readers
+        self._values = values
 
     def refresh(self, wire: str, read: Callable[[], Awaitable[Any]]) -> None:
         if not self._wanted(wire):
@@ -62,16 +44,16 @@ class DeferredReads:
         self._spawn(tell())
 
     def account(self, session_id: str) -> None:
-        self.refresh(ACCOUNT_CHANGED, lambda: self._readers.account(self._or_default(session_id)))
+        self.refresh(ACCOUNT_CHANGED, lambda: self._values.account(self._or_default(session_id)))
 
     def display(self, session_id: str) -> None:
-        self.refresh(DISPLAY_CHANGED, lambda: self._readers.display(self._or_default(session_id)))
+        self.refresh(DISPLAY_CHANGED, lambda: self._values.display(self._or_default(session_id)))
 
     def loop(self, session_id: str) -> None:
-        self.refresh(LOOP_CHANGED, lambda: self._readers.loop(session_id))
+        self.refresh(LOOP_CHANGED, lambda: self._values.loop(session_id))
 
     def _or_default(self, session_id: str) -> str:
-        return session_id or self._readers.default_session()
+        return session_id or self._values.default_session()
 
 
-__all__ = ["DeferredReads", "SessionReaders"]
+__all__ = ["ACCOUNT_CHANGED", "DISPLAY_CHANGED", "LOOP_CHANGED", "DeferredReads"]

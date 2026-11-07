@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 from pydantic import Field
 
 from igni_core.extensions.host.broadcasts.signal import Handler, RunRef
 from igni_core.extensions.host.signal_values import Emitter, Signal
 from igni_core.extensions.host.values import SessionInfo
+from igni_core.extensions.host.windows import Windows
 from igni_core.protocol import messages as msg
-
-if TYPE_CHECKING:
-    from igni_core.extensions.host.windows import Windows
 
 
 class MessageAdded(Signal):

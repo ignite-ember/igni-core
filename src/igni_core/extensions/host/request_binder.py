@@ -4,7 +4,7 @@ Everything between "an extension asked" and "a member runs": the member
 exists and is built, the grant allows it, the op fits what it is, the
 window and session are resolved, and the parameters or the value are of
 the schema's types. What comes out is a :class:`BoundRequest`, whose
-:class:`~.members.Call` the member is handed.
+:class:`~.members.base.Call` the member is handed.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, SkipValidation, ValidationError
 from igni_core.extensions.host.call_scope import CallScope
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.grants import HostGrants
-from igni_core.extensions.host.members import Call
+from igni_core.extensions.host.members.base import Call
 from igni_core.extensions.host.spec import (
     ErrorCode,
     HostSchema,

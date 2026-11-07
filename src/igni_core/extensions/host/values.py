@@ -20,6 +20,7 @@ from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.host.signal_values import Signal
 from igni_core.extensions.impact import SwitchedOff
 from igni_core.extensions.registry import InstalledExtension
+from igni_core.protocol import messages as msg
 
 
 class SessionInfo(BaseModel):
@@ -75,6 +76,20 @@ class SessionStatus(Signal):
             max_context=int(status.get("max_context") or 0),
         )
 
+    @classmethod
+    def from_update(cls, m: msg.StatusUpdate) -> SessionStatus:
+        """A ``status_update``, already typed."""
+        return cls(
+            session_id=m.session_id,
+            model=m.model,
+            model_configured=m.model_configured,
+            permission_mode=m.permission_mode,
+            input_tokens=m.input_tokens,
+            output_tokens=m.output_tokens,
+            context_tokens=m.context_tokens,
+            max_context=m.max_context,
+        )
+
 
 class Account(Signal):
     """Who is signed in to igni server, if anyone."""
@@ -95,6 +110,16 @@ class Account(Signal):
             email=email,
             name=str(status.get("cloud_name") or ""),
             org=str(status.get("cloud_org") or ""),
+        )
+
+    @classmethod
+    def from_update(cls, m: msg.StatusUpdate) -> Account:
+        """The account part of a ``status_update``, already typed."""
+        return cls(
+            signed_in=bool(m.cloud_email) or m.cloud_connected,
+            email=m.cloud_email,
+            name=m.cloud_name,
+            org=m.cloud_org,
         )
 
 

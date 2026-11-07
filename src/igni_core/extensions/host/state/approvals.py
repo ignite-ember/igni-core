@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 from igni_core.extensions.host.signal_values import Signal
@@ -48,6 +49,14 @@ class ApprovalMirror:
 
     def knows(self, session_id: str) -> bool:
         return session_id in self._by_session
+
+    def ensure(self, session_id: str, load: Callable[[], list[msg.Message]]) -> ApprovalMirror:
+        """This mirror, with the session read from the backend (``load``)
+        the first time it is asked about — after a restart nothing has
+        been broadcast yet."""
+        if not self.knows(session_id):
+            self.restore(session_id, load())
+        return self
 
     def waiting(self, session_id: str) -> list[Approval]:
         return list(self._by_session.get(session_id, {}).values())

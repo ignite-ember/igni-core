@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
+from typing import Protocol
 
 from pydantic import BaseModel
 
@@ -17,21 +17,30 @@ class ProjectPath(BaseModel):
     reason: str = ""
 
 
-class ProjectRoot:
-    """Places a path inside the project of the session that touched it."""
+class ProjectDirs(Protocol):
+    """Where each session's project is — :class:`~.backend.HostBackend` is one."""
 
-    def __init__(
-        self, project_dir_of: Callable[[str], Path], default_session: Callable[[], str]
-    ) -> None:
-        self._project_dir_of = project_dir_of
-        self._default_session = default_session
+    def project_dir_of(self, session_id: str) -> Path: ...
+
+    def default_session(self) -> str: ...
+
+
+class ProjectRoot:
+    """Places a path inside the project of the session that touched it.
+
+    ``dirs`` is asked each time, not captured: a test replaces the
+    backend's methods under a running model.
+    """
+
+    def __init__(self, dirs: ProjectDirs) -> None:
+        self._dirs = dirs
 
     def relative(self, session_id: str, path: str) -> ProjectPath:
         """Outside the project, the path is nothing an extension may be told."""
         if not path:
             return ProjectPath(ok=False, reason="no path")
         try:
-            root = self._project_dir_of(session_id or self._default_session()).resolve()
+            root = self._dirs.project_dir_of(session_id or self._dirs.default_session()).resolve()
             target = Path(path)
             target = target.resolve() if target.is_absolute() else (root / target).resolve()
         except (OSError, ValueError) as exc:
@@ -42,4 +51,4 @@ class ProjectRoot:
         return ProjectPath(ok=True, relative=target.relative_to(root).as_posix())
 
 
-__all__ = ["ProjectPath", "ProjectRoot"]
+__all__ = ["ProjectDirs", "ProjectPath", "ProjectRoot"]

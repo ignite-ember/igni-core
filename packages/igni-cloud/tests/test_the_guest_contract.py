@@ -54,7 +54,7 @@ from igni_core.core.db.scope import Tenant, tenancy
 from igni_core.core.db.urls import DatabaseUrl
 from igni_core.core.layer import BackendHooks, Layer
 from igni_core.core.session.pending_messages import PendingMessageStore
-from igni_core.extensions.host.broadcasts.activity import ActivityWatch
+from igni_core.extensions.host.activity import ActivityWatch
 from igni_core.notifications.stream import NotificationStreamFollower
 from igni_core.protocol import messages as msg
 from igni_core.transport.websocket import WebSocketServerTransport

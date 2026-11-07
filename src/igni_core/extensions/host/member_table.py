@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from igni_core.extensions.host.errors import HostModelError
-from igni_core.extensions.host.members import Impl, Members
+from igni_core.extensions.host.members.base import Impl, Members
 from igni_core.extensions.host.plain import plain
 from igni_core.extensions.host.request_binder import BoundRequest
 from igni_core.extensions.host.services import HostServices
@@ -33,10 +33,11 @@ class MemberTable:
         types: SchemaTypes,
         strict: bool,
     ) -> MemberTable:
-        """Every class's members in one table; a member built twice is a bug."""
+        """Every class's members in one table. A member built twice — in two
+        classes, or under two names in one — is a bug, refused here alone."""
         impls: dict[tuple[str, str], Impl] = {}
         for members_class in members_classes:
-            for key, impl in members_class(host).table().items():
+            for key, impl in members_class(host).table():
                 if key in impls:
                     raise RuntimeError(f"host member {key} implemented twice")
                 impls[key] = impl

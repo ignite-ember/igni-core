@@ -48,7 +48,8 @@ class WindowPushes:
 
     def open_external(self, window: str, url: str, *, source: str) -> None:
         """Ask ``window`` to open ``url`` the way it opens every link
-        outside igni. Checked already (``ExternalLink``); the window
+        outside igni. Checked already
+        (:class:`~igni_core.extensions.host.members.window_values.ExternalLink`); the window
         checks again before it opens anything."""
         self._push(
             PushChannel.OPEN_EXTERNAL,

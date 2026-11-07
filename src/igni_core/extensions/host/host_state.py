@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from igni_core.extensions.host.broadcasts.approvals import ApprovalMirror
-from igni_core.extensions.host.broadcasts.runs import RunLedger
-from igni_core.extensions.host.broadcasts.status import StatusMemory
+from igni_core.extensions.host.state.approvals import ApprovalMirror
+from igni_core.extensions.host.state.runs import RunLedger
+from igni_core.extensions.host.state.status import StatusMemory
 from igni_core.extensions.host.values import UpdateInfo
 
 

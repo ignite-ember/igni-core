@@ -1,16 +1,14 @@
-"""A run started, finished or failed — and the files it edited on the way."""
+"""A run started, finished or failed."""
 
 from __future__ import annotations
 
 from typing import ClassVar
 
-from igni_core.extensions.host.broadcasts.approvals import ApprovalMirror
-from igni_core.extensions.host.broadcasts.project_paths import ProjectRoot
-from igni_core.extensions.host.broadcasts.push_payloads import FileEditedPush
-from igni_core.extensions.host.broadcasts.runs import RunLedger
 from igni_core.extensions.host.broadcasts.signal import Handler, RunRef
 from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.host.signal_values import Emitter, Signal
+from igni_core.extensions.host.state.approvals import ApprovalMirror
+from igni_core.extensions.host.state.runs import RunLedger
 from igni_core.protocol import messages as msg
 
 
@@ -57,26 +55,13 @@ class RunErrorSignal(Signal):
     error: str
 
 
-class FileEditedSignal(Signal):
-    WIRE: ClassVar[str] = "chat.file_edited"
-
-    session_id: str
-    path: str
-
-    def seen_by(self, grants: HostGrants) -> dict[str, object] | None:
-        return self.model_dump() if grants.workspace.permits(self.path) else None
-
-
 class RunSignals:
     """Translates a run's life, keeping the ledger and the approval mirror in step."""
 
-    def __init__(
-        self, emitter: Emitter, ledger: RunLedger, mirror: ApprovalMirror, root: ProjectRoot
-    ) -> None:
+    def __init__(self, emitter: Emitter, ledger: RunLedger, mirror: ApprovalMirror) -> None:
         self._emitter = emitter
         self._ledger = ledger
         self._mirror = mirror
-        self._root = root
 
     def handlers(self) -> dict[type[msg.Message], Handler]:
         return {
@@ -102,19 +87,8 @@ class RunSignals:
         self._ledger.dropped(m.session_id)
         self._emitter.send(RunErrorSignal.of(m))
 
-    def file_edited(self, m: msg.PushNotification) -> None:
-        """The ``file_edited`` push: told, and kept for the run's ``changed_files``."""
-        push = FileEditedPush.model_validate(m.payload)
-        found = self._root.relative(m.session_id, push.path)
-        if not found.ok:
-            return
-        self._ledger.edited(m.session_id, found.relative)
-        signal = FileEditedSignal(session_id=m.session_id, path=found.relative)
-        self._emitter.send(signal, content=signal.seen_by)
-
 
 __all__ = [
-    "FileEditedSignal",
     "RunCompletedSignal",
     "RunErrorSignal",
     "RunSignals",

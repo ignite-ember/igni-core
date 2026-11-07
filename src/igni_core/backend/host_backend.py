@@ -36,9 +36,10 @@ from igni_core.core.activity import ActivityRegistry, background
 from igni_core.core.approvals.events import approval_events
 from igni_core.core.hooks.extension_gate import ExtensionHookGate
 from igni_core.core.session.schemas import PersistResult
-from igni_core.extensions.host.broadcasts import RpcWrite, ViewShown
+from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
+from igni_core.extensions.host.rpc_write import RpcWrite
 from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.extensions.service_events import UnattendedPost
 from igni_core.extensions.store import ExtensionStore
@@ -100,7 +101,7 @@ class RpcWatch:
     nothing of its own, so the host learns it succeeded from the reply
     going out and tells
     :meth:`~igni_core.extensions.host.broadcasts.BroadcastSignals.after_rpc`
-    the :class:`~igni_core.extensions.host.broadcasts.RpcWrite`.
+    the :class:`~igni_core.extensions.host.rpc_write.RpcWrite`.
     """
 
     LIMIT = 1000

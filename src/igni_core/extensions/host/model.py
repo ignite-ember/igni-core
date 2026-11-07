@@ -30,7 +30,8 @@ from igni_core.extensions.host.call_scope import CallScope
 from igni_core.extensions.host.definition import HOST_SCHEMA
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.member_table import MemberTable
-from igni_core.extensions.host.members import ALL_MEMBERS, AppMembers
+from igni_core.extensions.host.members import ALL_MEMBERS
+from igni_core.extensions.host.members.app import AppMembers
 from igni_core.extensions.host.page_channel import PageChannel
 from igni_core.extensions.host.plain import plain
 from igni_core.extensions.host.request_binder import RequestBinder

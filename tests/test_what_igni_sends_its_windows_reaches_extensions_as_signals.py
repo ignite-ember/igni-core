@@ -15,6 +15,7 @@ about the shape of what is heard.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -22,8 +23,9 @@ from typing import Any
 import pytest
 
 from igni_core.extensions.host import coverage
-from igni_core.extensions.host.broadcasts import RpcWrite, ViewShown
+from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.definition import HOST_SCHEMA
+from igni_core.extensions.host.rpc_write import RpcWrite
 from igni_core.extensions.host.signal_values import Signal
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
@@ -360,6 +362,18 @@ async def test_process_and_workflow_pushes_are_told(rig, heard):
         ("step", "release"),
         ("event", None),
     ]
+
+
+def test_a_channel_that_is_not_yet_a_channel_is_dropped_quietly(rig, heard, caplog):
+    """An unlisted channel name is dropped, not turned into a ``PushChannel`` (a ValueError)."""
+    unknown = _push("not_a_channel_yet", x=1)
+
+    with caplog.at_level(logging.DEBUG):
+        rig.model.broadcasts.observe(unknown)
+        rig.model.broadcasts.outbound(unknown)
+
+    assert heard.got == []
+    assert not [r for r in caplog.records if r.exc_info], caplog.text
 
 
 async def test_a_sign_in_and_an_output_style_are_read_again_and_told(rig, heard):

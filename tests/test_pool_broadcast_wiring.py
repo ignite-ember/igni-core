@@ -63,7 +63,7 @@ class _StubSession:
         self.broadcast_bus.emit(event)
 
 
-def _make_broadcast_callback_under_test(send_through: Any, loop: asyncio.AbstractEventLoop):
+def _make_push_sink_under_test(send_through: Any, loop: asyncio.AbstractEventLoop):
     """Mirror of :meth:`PushNotificationBridge._on_broadcast` (serialise
     the event at the transport boundary, hop onto the loop) so the test
     pins the wiring shape without building a whole bridge."""
@@ -81,15 +81,15 @@ def _make_broadcast_callback_under_test(send_through: Any, loop: asyncio.Abstrac
     return _on_event
 
 
-class TestBroadcastCallbackShape:
+class TestBroadcastSinkShape:
     async def test_plan_submitted_reaches_transport(self) -> None:
         # ``exit_plan_mode`` emits a ``PlanSubmittedEvent``.
-        # With the callback registered, a PushNotification must land
+        # With the sink registered, a PushNotification must land
         # on the transport.
         loop = asyncio.get_running_loop()
         transport = _CapturingTransport()
         session = _StubSession()
-        session.register_broadcast_callback(_make_broadcast_callback_under_test(transport, loop))
+        session.register_broadcast_callback(_make_push_sink_under_test(transport, loop))
 
         session.broadcast(
             PlanSubmittedEvent(plan="Add a comment.", tasks=[{"content": "x", "status": "pending"}])
@@ -110,7 +110,7 @@ class TestBroadcastCallbackShape:
         loop = asyncio.get_running_loop()
         transport = _CapturingTransport()
         session = _StubSession()
-        session.register_broadcast_callback(_make_broadcast_callback_under_test(transport, loop))
+        session.register_broadcast_callback(_make_push_sink_under_test(transport, loop))
 
         session.broadcast(PermissionModeChangedEvent(mode="plan", previous="default"))
         session.broadcast(PlanModeEnteredEvent(mode="plan", source="agent", reason="r"))
@@ -140,7 +140,7 @@ class TestBroadcastCallbackShape:
         inner = _CapturingTransport()
         stamped = SessionStampingTransport(inner, _Backend())
         session = _StubSession()
-        session.register_broadcast_callback(_make_broadcast_callback_under_test(stamped, loop))
+        session.register_broadcast_callback(_make_push_sink_under_test(stamped, loop))
 
         session.broadcast(PlanSubmittedEvent(plan="y"))
         await asyncio.sleep(0.01)

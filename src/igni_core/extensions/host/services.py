@@ -18,9 +18,9 @@ from pydantic import BaseModel, ConfigDict, SkipValidation
 
 from igni_core.core.decisions import Laya
 from igni_core.extensions.busy import ExtensionBusy
+from igni_core.extensions.host.activity import ActivityWatch
 from igni_core.extensions.host.backend import HostBackend
 from igni_core.extensions.host.backend_gateway import HostBackendGateway
-from igni_core.extensions.host.broadcasts.activity import ActivityWatch
 from igni_core.extensions.host.extension_directory import ExtensionDirectory
 from igni_core.extensions.host.host_state import HostState
 from igni_core.extensions.host.local_notices import LocalNotices

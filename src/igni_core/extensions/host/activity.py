@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel
 
 from igni_core.extensions.host.signal_values import Emit
+from igni_core.protocol import messages as msg
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,20 @@ class ActivityRead(BaseModel):
 class ActivityWatch:
     """Keeps the last activity told, and who else wants to hear of a new one."""
 
+    #: Messages after which igni may have started or stopped doing something.
+    MOVES: ClassVar[frozenset[type[msg.Message]]] = frozenset(
+        {
+            msg.RunStarted,
+            msg.RunCompleted,
+            msg.RunError,
+            msg.RunPaused,
+            msg.HITLRequest,
+            msg.RequirementResolved,
+            msg.StreamEnd,
+            msg.StreamingDone,
+        }
+    )
+
     def __init__(self, read: Callable[[], dict[str, Any]], emit: Emit) -> None:
         self._read_activity = read
         self._emit = emit
@@ -38,6 +53,11 @@ class ActivityWatch:
     def listen(self, listener: ActivityListener) -> None:
         """Be told the new ``app.activity`` whenever ``app.activity_changed`` is."""
         self._listeners.append(listener)
+
+    def after(self, message: msg.Message) -> None:
+        """igni sent its windows ``message``; the activity may have moved with it."""
+        if type(message) in self.MOVES:
+            self.moved()
 
     def moved(self) -> None:
         """Tell ``app.activity_changed`` when the activity is not what it was."""
@@ -63,4 +83,4 @@ class ActivityWatch:
             return ActivityRead(ok=False, reason=str(exc))
 
 
-__all__ = ["ActivityRead", "ActivityWatch"]
+__all__ = ["ACTIVITY_CHANGED", "ActivityListener", "ActivityRead", "ActivityWatch"]
