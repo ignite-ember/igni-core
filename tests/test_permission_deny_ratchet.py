@@ -28,9 +28,9 @@ import logging
 
 from igni_core.cli.options import CliOptions
 from igni_core.core.config.accumulator import SettingsAccumulator
+from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
-from igni_core.core.config.models import CliOverrides
 from igni_core.core.config.tiers.cli import CliRatchet, CliTier
 from igni_core.core.config.tiers.group_policy import GroupPolicyTier
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 import click
 
 from igni_core.cli.options import CliOptions
+from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
-from igni_core.core.config.models import CliOverrides
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
 

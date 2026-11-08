@@ -113,7 +113,7 @@ class TestReadOnlyIsAWall:
 
     def test_reads_run_and_writes_are_denied(self):
         from igni_core.cli.options import CliOptions
-        from igni_core.core.config.models import CliOverrides
+        from igni_core.core.config.cli_overrides import CliOverrides
         from igni_core.core.config.settings import load_settings
 
         payload = CliOverrides.from_options(CliOptions(read_only=True))
@@ -132,7 +132,7 @@ class TestReadOnlyIsAWall:
         extension it is, only what the tool says it is.
         """
         from igni_core.cli.options import CliOptions
-        from igni_core.core.config.models import CliOverrides
+        from igni_core.core.config.cli_overrides import CliOverrides
         from igni_core.core.config.settings import load_settings
         from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
 

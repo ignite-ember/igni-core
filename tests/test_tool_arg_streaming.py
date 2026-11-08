@@ -28,7 +28,7 @@ from agno.models.response import ModelResponse
 from agno.run import agent as agent_events
 from agno.run.agent import CustomEvent
 
-from igni_core.core.config.models import (
+from igni_core.core.config.model_stream import (
     _aemit_tool_arg_deltas,
     _emit_tool_arg_delta_events,
     _ToolCallAccumulatorStore,

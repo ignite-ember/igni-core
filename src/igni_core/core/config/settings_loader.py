@@ -62,8 +62,8 @@ from igni_core.core.config.tiers.files import JsonFragmentTier, YamlTier
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from igni_core.core.config.cli_overrides import CliOverrides
     from igni_core.core.config.group_policy.pack import GroupPolicyPack
-    from igni_core.core.config.models import CliOverrides
     from igni_core.core.config.settings import Settings
 
 

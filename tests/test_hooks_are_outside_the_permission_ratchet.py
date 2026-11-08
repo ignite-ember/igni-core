@@ -44,7 +44,7 @@ import inspect
 from pathlib import Path
 
 from igni_core.cli.options import CliOptions
-from igni_core.core.config.models import CliOverrides
+from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.hooks.handlers.command import CommandHookHandler
 from igni_core.core.hooks.schemas import HookDefinition, HookPayload
 

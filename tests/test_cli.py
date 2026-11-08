@@ -34,7 +34,7 @@ class TestCLIFlags:
             mock_load.return_value = Settings()
             runner.invoke(cli, ["--model", "gpt-4", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args.kwargs["cli_overrides"]
-            assert overrides.model_default == "gpt-4"
+            assert overrides.models.default == "gpt-4"
 
     def test_verbose_flag(self):
         runner = CliRunner()
@@ -45,7 +45,7 @@ class TestCLIFlags:
             mock_load.return_value = Settings()
             runner.invoke(cli, ["--verbose", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args.kwargs["cli_overrides"]
-            assert overrides.show_routing is True
+            assert overrides.display.show_routing is True
 
     def test_quiet_flag(self):
         runner = CliRunner()
@@ -56,7 +56,7 @@ class TestCLIFlags:
             mock_load.return_value = Settings()
             runner.invoke(cli, ["--quiet", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args.kwargs["cli_overrides"]
-            assert overrides.show_tool_calls is False
+            assert overrides.display.show_tool_calls is False
 
     def test_read_only_flag(self):
         runner = CliRunner()

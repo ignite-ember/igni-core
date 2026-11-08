@@ -40,11 +40,11 @@ from pydantic import BaseModel, Field, model_validator
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from igni_core.core.config.cli_overrides import CliOverrides
     from igni_core.core.config.group_policy.pack import GroupPolicyPack
-    from igni_core.core.config.models import CliOverrides
 
 from igni_core.core.air_gap import AIR_GAPPED_ENV, air_gapped_by_environment
-from igni_core.core.config.model_entry import CLOUD_TOKEN_SENTINEL, ModelRegistryEntry
+from igni_core.core.config.model_entry import CLOUD_TOKEN_SENTINEL
 
 # ── Re-exports: schemas from the schemas package ───────────────────
 #
@@ -308,17 +308,7 @@ class Settings(BaseModel):
         if resolved_token is None:
             resolved_token = self._resolve_cloud_token()
 
-        for cfg in self.models.registry.values():
-            # Registry values are heterogeneous — cloud discovery
-            # writes typed ``ModelRegistryEntry`` instances, user YAML
-            # loads as raw dicts. Normalise both shapes through a
-            # single ``ModelRegistryEntry`` coercion so the credential
-            # check reads one flat set of attributes.
-            entry = (
-                cfg
-                if isinstance(cfg, ModelRegistryEntry)
-                else ModelRegistryEntry.model_validate(cfg)
-            )
+        for _name, entry in self.models.iter_registry_entries():
             key = entry.api_key or ""
             if key == CLOUD_TOKEN_SENTINEL and resolved_token:
                 return True

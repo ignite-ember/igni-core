@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from igni_core.core.config.models import CliOverrides, PermissionOverrides
+from igni_core.core.config.cli_overrides import CliOverrides, ModelsOverrides, PermissionOverrides
 from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.config.settings import (
     ModelsConfig,
@@ -148,7 +148,7 @@ class TestLoadSettings:
 
     def test_load_with_cli_overrides(self, tmp_path):
         s = load_settings(
-            cli_overrides=CliOverrides(model_default="cli-model"),
+            cli_overrides=CliOverrides(models=ModelsOverrides(default="cli-model")),
             project_dir=tmp_path,
         )
         assert s.models.default == "cli-model"
@@ -160,7 +160,7 @@ class TestLoadSettings:
         config.write_text("models:\n  default: project-model\n")
 
         s = load_settings(
-            cli_overrides=CliOverrides(model_default="cli-model"),
+            cli_overrides=CliOverrides(models=ModelsOverrides(default="cli-model")),
             project_dir=tmp_path,
         )
         assert s.models.default == "cli-model"
@@ -238,7 +238,7 @@ class TestFiveTierPrecedence:
         # All five tiers present; managed must win.
         self._write_all_tiers(tmp_path, monkeypatch, value="x", tier_label="x")
         s = load_settings(
-            cli_overrides=CliOverrides(model_default="cli-x"),
+            cli_overrides=CliOverrides(models=ModelsOverrides(default="cli-x")),
             project_dir=tmp_path,
         )
         assert s.models.default == "managed-x"
@@ -249,7 +249,7 @@ class TestFiveTierPrecedence:
         # Clear the managed file but keep the lookup path intact.
         (tmp_path / "managed.yaml").unlink()
         s = load_settings(
-            cli_overrides=CliOverrides(model_default="cli-x"),
+            cli_overrides=CliOverrides(models=ModelsOverrides(default="cli-x")),
             project_dir=tmp_path,
         )
         assert s.models.default == "cli-x"
@@ -341,7 +341,7 @@ class TestManagedSettings:
         )
         s = load_settings(
             cli_overrides=CliOverrides(
-                model_default="user-cli-choice",
+                models=ModelsOverrides(default="user-cli-choice"),
                 permissions=PermissionOverrides(mode=PermissionMode.BYPASS_PERMISSIONS),
             ),
             project_dir=tmp_path,
@@ -358,7 +358,7 @@ class TestManagedSettings:
             staticmethod(lambda: tmp_path / "does-not-exist.yaml"),
         )
         s = load_settings(
-            cli_overrides=CliOverrides(model_default="user-cli-choice"),
+            cli_overrides=CliOverrides(models=ModelsOverrides(default="user-cli-choice")),
             project_dir=tmp_path,
         )
         assert s.models.default == "user-cli-choice"
@@ -374,7 +374,7 @@ class TestManagedSettings:
             staticmethod(lambda: managed),
         )
         s = load_settings(
-            cli_overrides=CliOverrides(model_default="user-cli-choice"),
+            cli_overrides=CliOverrides(models=ModelsOverrides(default="user-cli-choice")),
             project_dir=tmp_path,
         )
         assert s.permissions.mode == "dontAsk"  # from managed
@@ -404,7 +404,7 @@ class TestManagedSettings:
             staticmethod(lambda: None),
         )
         s = load_settings(
-            cli_overrides=CliOverrides(model_default="cli-wins"),
+            cli_overrides=CliOverrides(models=ModelsOverrides(default="cli-wins")),
             project_dir=tmp_path,
         )
         assert s.models.default == "cli-wins"

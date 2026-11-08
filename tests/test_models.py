@@ -2,12 +2,9 @@
 
 import pytest
 
+from igni_core.core.config.context_window import DEFAULT_CONTEXT_WINDOW, ContextWindowResolver
 from igni_core.core.config.model_entry import ModelRegistryEntry
-from igni_core.core.config.models import (
-    DEFAULT_CONTEXT_WINDOW,
-    ContextWindowResolver,
-    ModelRegistry,
-)
+from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.null_model import NoModelConfigured
 from igni_core.core.config.permissions import AllowlistPattern
 from igni_core.core.config.provider_builders import ProviderClientBuilder

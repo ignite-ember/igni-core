@@ -35,8 +35,8 @@ class ModelsConfig(BaseModel):
     # Registry is heterogeneous by design: cloud discovery writes
     # typed :class:`ModelRegistryEntry` instances (via
     # :meth:`CloudModelCatalogClient.merge_into`), while user YAML
-    # entries load as raw dicts. :meth:`ModelRegistry._coerce_entry`
-    # normalises both at lookup time.
+    # entries load as raw dicts. :meth:`entry` normalises both at
+    # lookup time.
     registry: dict[str, ModelRegistryEntry | dict[str, Any]] = Field(default_factory=dict)
 
     # ── Registry-shape queries (heterogeneous coercion lives here) ──
@@ -51,10 +51,15 @@ class ModelsConfig(BaseModel):
     # inline api_keys should reuse these instead of coercing on its
     # own.
 
-    def _entry(self, raw: ModelRegistryEntry | dict[str, Any] | None) -> ModelRegistryEntry | None:
+    def entry(self, name: str) -> ModelRegistryEntry | None:
+        """Registry row ``name`` as a typed :class:`ModelRegistryEntry`,
+        or ``None`` when there is no such row."""
+        return self._coerce(self.registry.get(name))
+
+    @staticmethod
+    def _coerce(raw: ModelRegistryEntry | dict[str, Any] | None) -> ModelRegistryEntry | None:
         """Normalise a registry row to a typed
-        :class:`ModelRegistryEntry`. ``None`` passes through so
-        callers can chain ``.get(name)`` results directly."""
+        :class:`ModelRegistryEntry`. ``None`` passes through."""
         if raw is None:
             return None
         if isinstance(raw, ModelRegistryEntry):
@@ -73,7 +78,7 @@ class ModelsConfig(BaseModel):
         instead of re-implementing URL-parse logic per caller.
         """
         for name, raw in self.registry.items():
-            entry = self._entry(raw)
+            entry = self._coerce(raw)
             if entry is None:
                 continue
             yield name, entry
@@ -81,7 +86,7 @@ class ModelsConfig(BaseModel):
     def has_vision(self, name: str) -> bool:
         """True when ``name`` is a registry entry flagged ``vision``.
         Unknown names are non-vision."""
-        entry = self._entry(self.registry.get(name))
+        entry = self.entry(name)
         return entry is not None and entry.vision
 
     def current_uses_cloud_token(self) -> bool:
@@ -89,7 +94,7 @@ class ModelsConfig(BaseModel):
         whose ``api_key`` is the cloud sentinel. False when the
         default is unset, missing from the registry, or configured
         with an inline / env-backed api_key."""
-        entry = self._entry(self.registry.get(self.default))
+        entry = self.entry(self.default)
         if entry is None:
             return False
         return entry.api_key == CLOUD_TOKEN_SENTINEL
@@ -104,7 +109,7 @@ class ModelsConfig(BaseModel):
         credentials are dropped — we don't want the default model
         to remain cloud-backed with no token behind it."""
         for name, raw in self.registry.items():
-            entry = self._entry(raw)
+            entry = self._coerce(raw)
             if entry is None:
                 continue
             key = entry.api_key

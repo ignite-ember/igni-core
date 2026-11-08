@@ -13,7 +13,7 @@ from igni_core.core.config.schemas.orchestration import GroupHookMode
 from igni_core.core.config.tiers.base import Tier
 
 if TYPE_CHECKING:
-    from igni_core.core.config.models import CliOverrides
+    from igni_core.core.config.cli_overrides import CliOverrides
 
 
 class CliRatchet(BaseModel):
@@ -54,7 +54,7 @@ class CliRatchet(BaseModel):
         permissions = overrides.permissions.to_payload()
         return cls(
             denied=frozenset(f for f, v in permissions.items() if v == cls.tightest(f)),
-            hooks_group=overrides.hooks_group,
+            hooks_group=overrides.hooks.group,
         )
 
     def refusals(self, permissions: Mapping[str, Any]) -> dict[str, str]:
@@ -75,4 +75,4 @@ class CliTier(Tier):
     def apply(self, accumulator: SettingsAccumulator) -> SettingsAccumulator:
         if self._overrides is None:
             return accumulator
-        return accumulator.merge(self._overrides.as_merge_dict())
+        return accumulator.merge(self._overrides.to_payload())

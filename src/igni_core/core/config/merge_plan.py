@@ -55,8 +55,8 @@ from igni_core.core.layer import Layers
 from igni_core.core.paths import home_config_dir, project_config_dir
 
 if TYPE_CHECKING:
+    from igni_core.core.config.cli_overrides import CliOverrides
     from igni_core.core.config.group_policy.pack import GroupPolicyPack
-    from igni_core.core.config.models import CliOverrides
     from igni_core.core.config.schemas.models import ModelsConfig
     from igni_core.core.config.settings import Settings
     from igni_core.core.workspace_trust import WorkspaceTrust

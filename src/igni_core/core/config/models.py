@@ -1,257 +1,22 @@
-"""Model registry — maps model names to Agno model instances.
-
-This module now hosts ONLY the registry itself. Everything else it
-used to accrete (import-time logger side effect, null-object
-placeholder, message sanitizer, stack-walking helper, streaming
-logging wrapper, dispatch-branching provider builders) has moved to
-its own single-concern module. The old private names remain
-importable through the re-export block at the bottom so tests and
-external callers keep working — new code should reach for the real
-homes listed in each import comment.
-"""
+"""Model registry — maps model names to Agno model instances."""
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
 
 from agno.models.base import Model
-from pydantic import BaseModel, Field
-
-if TYPE_CHECKING:
-    from igni_core.cli.options import CliOptions
 
 from igni_core.core.auth.credentials import CloudCredentials
 from igni_core.core.auth.http_auth import CloudTokenAuth
-from igni_core.core.config.context_window import (
-    DEFAULT_CONTEXT_WINDOW,
-    ContextWindowResolver,
-)
+from igni_core.core.config.context_window import ContextWindowResolver
 from igni_core.core.config.llm_call_logger import LlmCallLogger
-from igni_core.core.config.logging_model import LoggingModel
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.null_model import NoModelConfigured
-from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.config.provider_builders import ProviderClientBuilder
 from igni_core.core.config.provider_catalog import ProviderCatalog
-from igni_core.core.config.schemas.orchestration import GroupHookMode
 from igni_core.core.config.settings import Settings
 
 logger = logging.getLogger(__name__)
-
-
-# ── Typed CLI override models ────────────────────────────────────
-#
-# These bundles replace the raw-dict scaffolding the CLI callback
-# used to build by hand. ``CliOverrides.from_options(opts)`` is the
-# single owner of the "strictest-wins" precedence rule for the
-# permission flags — every branch that used to ``setdefault(...)``
-# a nested dict now runs through one classmethod that reads a typed
-# :class:`CliOptions` bundle and returns a validated shape.
-#
-# ``to_settings_payload()`` is the seam back to the existing
-# :meth:`SettingsLoader.merge_cli` API, which still expects a
-# dict[str, Any]. Nothing else in the codebase needs to change —
-# the dict shape emitted here is byte-for-byte the shape the old
-# procedural code produced.
-
-
-class PermissionOverrides(BaseModel):
-    """CLI-supplied permission overrides.
-
-    ``mode`` is typed via :class:`PermissionMode` (the same enum the
-    :class:`PermissionEvaluator` reads) so the strictest-wins policy
-    is enforced by the type layer rather than free-form strings.
-
-    The per-category fields — ``file_write``, ``shell_execute``,
-    ``git_push``, ``git_destructive``, ``web_search``, ``web_fetch``
-    — are not legacy and are not inert. They travel through
-    :meth:`to_payload` into ``Settings.permissions``, where
-    :meth:`PermissionsConfig.category_rules
-    <igni_core.core.config.schemas.permissions.PermissionsConfig.category_rules>`
-    turns every level that differs from its schema default into
-    ``deny``/``ask``/``allow`` rule strings, and
-    ``ToolHookFactory.permission_evaluator``
-    (:mod:`igni_core.core.session.tool_hook_factory`) appends those
-    behind the explicit lists when it builds the live
-    :class:`PermissionEvaluator`. ``backend/schemas_config.py`` reads
-    ``file_write`` / ``shell_execute`` a second time, for the
-    ``/config`` summary.
-
-    So they carry the half of each flag that ``mode`` alone cannot
-    express. ``--no-web`` is the starkest case: it sets no mode at all,
-    so those two web fields are the entire flag. ``--read-only`` is the
-    other way round: its ``PermissionMode.PLAN`` is what the person sees
-    and what ``exit_plan_mode`` talks about, and ``read_only`` is the
-    guarantee — held by the evaluator, so it survives a mode switch.
-    """
-
-    mode: PermissionMode | None = None
-    file_write: str | None = None
-    shell_execute: str | None = None
-    git_push: str | None = None
-    git_destructive: str | None = None
-    web_search: str | None = None
-    web_fetch: str | None = None
-    read_only: bool | None = None
-
-    def to_payload(self) -> dict[str, Any]:
-        """Dict shape :meth:`SettingsLoader.merge_cli` still expects.
-        Only fields that were actually set are emitted, so downstream
-        deep-merge doesn't clobber unrelated permissions with ``None``.
-        """
-        payload: dict[str, Any] = {}
-        if self.mode is not None:
-            payload["mode"] = self.mode.value
-        for name in (
-            "file_write",
-            "shell_execute",
-            "git_push",
-            "git_destructive",
-            "web_search",
-            "web_fetch",
-        ):
-            value = getattr(self, name)
-            if value is not None:
-                payload[name] = value
-        if self.read_only:
-            payload["read_only"] = True
-        return payload
-
-
-class CliOverrides(BaseModel):
-    """Typed bundle of CLI-driven ``Settings`` overrides.
-
-    Constructed via :meth:`from_options` — that classmethod owns the
-    permissive-to-strict precedence order that used to live inline
-    in the click callback. ``to_settings_payload`` emits the
-    dict shape :meth:`SettingsLoader.merge_cli` still consumes so
-    the loader itself doesn't need to change.
-    """
-
-    model_default: str | None = None
-    show_routing: bool | None = None
-    show_reasoning: bool | None = None
-    show_tool_calls: bool | None = None
-    permissions: PermissionOverrides = Field(default_factory=PermissionOverrides)
-    #: ``hooks.group`` from the command line: ``--strict`` asks before a
-    #: group-policy hook runs. Combined with the user's own setting by
-    #: ``DeveloperOnlyTier`` — strictest wins.
-    hooks_group: GroupHookMode | None = None
-
-    @classmethod
-    def from_options(cls, opts: CliOptions) -> CliOverrides:
-        """Build overrides from a :class:`CliOptions` bundle.
-
-        Order is "permissive → strict" so the strictest passed flag
-        wins via standard field overwrite: ``--auto-approve --strict``
-        ends up in ``dontAsk``. Matches the "safety beats convenience"
-        principle used elsewhere in the permission stack.
-        """
-        overrides = cls()
-        if opts.model:
-            overrides.model_default = opts.model
-        if opts.verbose:
-            overrides.show_routing = True
-            overrides.show_reasoning = True
-        if opts.quiet:
-            overrides.show_tool_calls = False
-            overrides.show_routing = False
-
-        perms = overrides.permissions
-        if opts.auto_approve:
-            perms.mode = PermissionMode.BYPASS_PERMISSIONS
-            perms.file_write = "allow"
-            perms.shell_execute = "allow"
-            perms.git_push = "allow"
-            perms.git_destructive = "allow"
-        if opts.accept_edits:
-            perms.mode = PermissionMode.ACCEPT_EDITS
-            perms.file_write = "allow"
-        if opts.read_only:
-            perms.mode = PermissionMode.PLAN
-            perms.file_write = "deny"
-            # Plan-mode reads, with no questions. The shell stays open for the
-            # commands on the read-only allow-list (``cat``, ``ls``, ``rg``,
-            # ``git log``, …) — igni reads files through the shell, so denying
-            # it outright, as this flag used to, left a read-only agent unable
-            # to read. Reading the web is reading too (search, GET fetches).
-            # Every other shell command is refused, not asked, and so are an
-            # extension's tools that change something: ``read_only`` is checked
-            # by the evaluator before the mode, and survives a mode switch. See
-            # tests/test_read_only_reads_and_refuses_the_rest.py.
-            perms.read_only = True
-        if opts.strict:
-            perms.mode = PermissionMode.DONT_ASK
-            perms.file_write = "deny"
-            perms.shell_execute = "deny"
-            perms.git_push = "deny"
-            perms.git_destructive = "deny"
-            # The agent's denies do not reach the hooks a group ships, which
-            # run ``bash -c`` outside the permission system; ``--strict``
-            # asks before one runs (and, headless, refuses it).
-            overrides.hooks_group = "ask"
-        if opts.no_web:
-            perms.web_search = "deny"
-            perms.web_fetch = "deny"
-
-        return overrides
-
-    def is_empty(self) -> bool:
-        """True when no override was actually populated. The
-        :func:`load_settings` seam accepts ``None`` for
-        "no overrides", which lets loader-side tests distinguish
-        the "user passed no flags" path from "user passed flags
-        that resolved to defaults"."""
-        if (
-            self.model_default is not None
-            or self.show_routing is not None
-            or self.show_reasoning is not None
-            or self.show_tool_calls is not None
-            or self.hooks_group is not None
-        ):
-            return False
-        return not self.permissions.to_payload()
-
-    def to_settings_payload(self) -> dict[str, Any] | None:
-        """Emit the dict shape :meth:`SettingsLoader.merge_cli`
-        consumes. Returns ``None`` when no override is populated so
-        the loader can distinguish "user passed nothing" from "user
-        passed something that happens to match defaults"."""
-        if self.is_empty():
-            return None
-        payload: dict[str, Any] = {}
-        if self.model_default is not None:
-            payload.setdefault("models", {})["default"] = self.model_default
-        display: dict[str, Any] = {}
-        if self.show_routing is not None:
-            display["show_routing"] = self.show_routing
-        if self.show_reasoning is not None:
-            display["show_reasoning"] = self.show_reasoning
-        if self.show_tool_calls is not None:
-            display["show_tool_calls"] = self.show_tool_calls
-        if display:
-            payload["display"] = display
-        perms_payload = self.permissions.to_payload()
-        if perms_payload:
-            payload["permissions"] = perms_payload
-        if self.hooks_group is not None:
-            payload["hooks"] = {"group": self.hooks_group}
-        return payload
-
-    def as_merge_dict(self) -> dict[str, Any]:
-        """Return the merge-ready dict form for
-        :meth:`SettingsLoader.merge_cli`.
-
-        Thin sibling of :meth:`to_settings_payload` — the difference
-        is the return type. ``to_settings_payload`` returns
-        ``None`` for the empty case (used by the CLI seam that
-        wants to distinguish "no flags" from "flags matching
-        defaults"); ``as_merge_dict`` returns ``{}`` so the loader
-        can pass the result straight into ``deep_merge`` without a
-        None-guard.
-        """
-        return self.to_settings_payload() or {}
 
 
 class ModelRegistry:
@@ -380,8 +145,7 @@ class ModelRegistry:
         # Transient failures are retried here, per model call, where Agno
         # asks whether the error is worth retrying; the agents and the team
         # get ``retries=0`` (B31, ``reply_ending.ReplyCutRetries``).
-        if hasattr(model, "retries"):
-            model.retries = self.settings.models.retries
+        model.retries = self.settings.models.retries
         return model
 
     def get_context_window(self, name: str | None = None) -> int:
@@ -474,74 +238,12 @@ class ModelRegistry:
         return bool(self._effective_default())
 
     def _resolve_entry(self, name: str) -> ModelRegistryEntry | None:
-        """Resolve a model name to a typed registry entry.
-
-        ``settings.models.registry`` stores a mix of shapes:
-        cloud-discovery now writes typed :class:`ModelRegistryEntry`
-        instances directly (see
-        :meth:`CloudModelCatalogClient.merge_into`), but user-authored
-        YAML entries still arrive as raw ``dict`` from Pydantic's
-        YAML load path, and tests occasionally re-assign raw dicts.
-        We coerce here at lookup time so every downstream reader
-        sees a real :class:`ModelRegistryEntry` regardless of which
-        source produced the row.
-        """
-        raw = self.settings.models.registry.get(name)
-        if raw is not None:
-            return self._coerce_entry(raw)
+        """Resolve a model name to a typed registry entry: a
+        ``models.registry`` row, else a ``provider:model_id`` name."""
+        entry = self.settings.models.entry(name)
+        if entry is not None:
+            return entry
         if ":" in name:
             provider, model_id = name.split(":", 1)
             return ModelRegistryEntry(provider=provider, model_id=model_id)
         return None
-
-    @staticmethod
-    def _coerce_entry(raw: ModelRegistryEntry | dict) -> ModelRegistryEntry:
-        if isinstance(raw, ModelRegistryEntry):
-            return raw
-        return ModelRegistryEntry.model_validate(raw)
-
-
-# ── Backward-compat re-exports ─────────────────────────────────────
-#
-# The pre-refactor module exposed a handful of underscore-prefixed
-# symbols that tests and adjacent modules pull from
-# ``igni_core.core.config.models``. Rather than force every caller
-# to update its import path in the same diff, we alias the new
-# public names back to their old private ones here. The real homes
-# are documented on the alias RHS.
-
-_LoggingModel = LoggingModel  # real home: logging_model.py
-_NoModelConfigured = NoModelConfigured  # real home: null_model.py
-
-# Tool-arg streaming primitives — real home: model_stream.py. The
-# streaming test suite imports them via this module.
-from igni_core.core.config.model_stream import (  # noqa: E402
-    _aemit_tool_arg_deltas,
-    _emit_tool_arg_delta_events,
-    _emit_tool_arg_deltas,
-    _ToolCallAccumulator,
-    _ToolCallAccumulatorStore,
-    _ToolCallFragment,
-)
-
-__all__ = [
-    "CliOverrides",
-    "DEFAULT_CONTEXT_WINDOW",
-    "ContextWindowResolver",
-    "LoggingModel",
-    "ModelRegistry",
-    "ModelRegistryEntry",
-    "NoModelConfigured",
-    "PermissionMode",
-    "PermissionOverrides",
-    "ProviderClientBuilder",
-    # Backward-compat private aliases.
-    "_LoggingModel",
-    "_NoModelConfigured",
-    "_ToolCallAccumulator",
-    "_ToolCallAccumulatorStore",
-    "_ToolCallFragment",
-    "_aemit_tool_arg_deltas",
-    "_emit_tool_arg_delta_events",
-    "_emit_tool_arg_deltas",
-]

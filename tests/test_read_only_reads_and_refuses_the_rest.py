@@ -24,7 +24,7 @@ from __future__ import annotations
 import pytest
 
 from igni_core.cli.options import CliOptions
-from igni_core.core.config.models import CliOverrides
+from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.permission_eval import PermissionDecision, PermissionMode
 from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 from igni_core.core.config.settings import load_settings

@@ -35,13 +35,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from igni_core.backend.settings_loader import BackendSettingsLoader
+from igni_core.core.config.cli_overrides import CliOverrides, PermissionOverrides
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
 from igni_core.core.config.group_policy.trust import PackTrust
-from igni_core.core.config.models import CliOverrides, PermissionOverrides
 from igni_core.core.config.settings import load_settings
 from tests.group_policy_signing import ISSUER, sign_in, store
 

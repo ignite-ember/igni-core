@@ -20,7 +20,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from igni_core.cli import cli
-from igni_core.core.config.models import CliOverrides, PermissionOverrides
+from igni_core.core.config.cli_overrides import CliOverrides, PermissionOverrides
 from igni_core.core.config.permission_eval import (
     PermissionDecision,
     PermissionEvaluator,

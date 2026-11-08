@@ -30,9 +30,9 @@ from typing import Any
 import pytest
 
 from igni_core.cli.options import CliOptions
+from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
-from igni_core.core.config.models import CliOverrides
 from igni_core.core.config.settings import load_settings
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.group_hook_gate import (
@@ -139,7 +139,7 @@ class TestTheSettingIsTheDevelopers:
     def test_strict_means_ask(self, tmp_path: Path):
         overrides = CliOverrides.from_options(CliOptions(strict=True))
 
-        assert overrides.hooks_group == "ask"
+        assert overrides.hooks.group == "ask"
         assert load_settings(overrides, project_dir=tmp_path).hooks.group == "ask"
 
     def test_strict_does_not_loosen_a_stricter_choice(self, tmp_path: Path):
