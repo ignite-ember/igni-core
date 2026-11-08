@@ -35,7 +35,8 @@ from typing import TYPE_CHECKING, Any
 
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.extension_gate import ExtensionHookGate, PlanSubmitValue
+from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.hooks.extension_values import PlanSubmitValue
 from igni_core.core.tools.plan.researcher import PlanResearcherRunner
 from igni_core.core.tools.plan.schemas import (
     PlanEnterResult,
@@ -257,18 +258,17 @@ class PlanTransactionCoordinator:
             msg = "Error: plan store not initialised on this session."
             raise PlanSessionShapeError(missing="plan_store", reply_text=msg)
         session_id = str(getattr(self._session, "session_id", "") or "")
-        verdict = await ExtensionHookGate.ask(
+        verdict = await extension_hook_gate.ask(
             PlanSubmitValue(
                 session_id=session_id,
                 plan=plan_text,
                 tasks=list(raw_tasks or []),
                 attempt=int(store.rejected),
-            ),
-            HookEvent.PLAN_SUBMIT,
+            )
         )
         if not verdict.allowed:
             return self._rejected(store, verdict.reason)
-        plan_text = str(verdict.value.get("plan", plan_text)).strip() or plan_text
+        plan_text = verdict.value.plan.strip() or plan_text
         executor = getattr(self._session, "hook_executor", None)
         if isinstance(executor, HookExecutor):
             result = await executor.execute(

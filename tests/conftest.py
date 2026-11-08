@@ -14,7 +14,7 @@ from igni_core.core.config.schemas.storage_and_paths import StorageConfig
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.db.scope import tenancy
 from igni_core.core.db.urls import DatabaseUrl, Dialect
-from igni_core.core.hooks.extension_gate import ExtensionHookGate
+from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.layer import Layers
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.extensions.faults import ExtensionFaults
@@ -222,7 +222,7 @@ def _no_extension_hooks_left_behind():
     every later test's tool calls waiting on a process that is not there.
     """
     yield
-    ExtensionHookGate.install(None)
+    extension_hook_gate.install(None)
     ExtensionHooks.reset_shared()
     ExtensionFaults.reset_shared()
     ExtensionProcesses.reset_shared()

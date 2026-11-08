@@ -35,11 +35,8 @@ from igni_core.core.config.permission_eval import PermissionDecision
 from igni_core.core.guardrails.runner import GuardrailRunner
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.extension_gate import (
-    ExtensionHookGate,
-    StopValue,
-    UserPromptSubmitValue,
-)
+from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.hooks.extension_values import StopValue, UserPromptSubmitValue
 from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.session.compaction.context_budget import ContextBudget
 from igni_core.core.session.schemas import (
@@ -127,13 +124,12 @@ class SessionMessageHandler:
         self.last_failure = ""
         await self._ensure_mcp()
 
-        verdict = await ExtensionHookGate.ask(
-            UserPromptSubmitValue(session_id=self._session_id_ref(), message=message),
-            HookEvent.USER_PROMPT_SUBMIT,
+        verdict = await extension_hook_gate.ask(
+            UserPromptSubmitValue(session_id=self._session_id_ref(), message=message)
         )
         if not verdict.allowed:
             return self._blocked(verdict.reason)
-        message = str(verdict.value.get("message", message))
+        message = verdict.value.message
         blocked = await self._check_user_prompt_hook(message)
         if blocked is not None:
             return blocked
@@ -392,8 +388,8 @@ class SessionMessageHandler:
         The extensions that hook ``Stop`` are asked first, then the
         configured hooks; either one's block sends the agent back.
         """
-        verdict = await ExtensionHookGate.ask(
-            StopValue(session_id=payload.session_id, response=response_text), HookEvent.STOP
+        verdict = await extension_hook_gate.ask(
+            StopValue(session_id=payload.session_id, response=response_text)
         )
         if not verdict.allowed:
             return verdict.reason

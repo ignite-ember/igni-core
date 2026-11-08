@@ -23,7 +23,8 @@ from mcp.shared.message import SessionMessage
 
 from igni_core.core.auth.credentials import Credentials, CredentialsStore
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.hooks.extension_gate import DECIDING
+from igni_core.core.hooks.extension_values import PreToolUseValue
+from igni_core.core.hooks.schemas import HookPayload
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.config import MCPServerConfig, MCPTransport
 from igni_core.core.mcp.request_meta import RequestMetaSession
@@ -178,10 +179,8 @@ async def test_a_hook_frame_names_its_principal() -> None:
             hooks.answered("acme.a", HookAnswer(hook=message["id"], outcome="allow"))
 
     hooks.connect("acme.a", send)
-    await hooks.ask(
-        DECIDING[HookEvent.PRE_TOOL_USE], {"session_id": "s", "tool_name": "x", "tool_args": {}}
-    )
-    hooks.tell("SessionStart", {"session_id": "s"})
+    await hooks.ask(PreToolUseValue(session_id="s", tool_name="x"))
+    hooks.tell(HookEvent.SESSION_START, HookPayload.coerce({"session_id": "s"}))
 
     assert [frame["principal"] for frame in frames] == [ADA.model_dump(mode="json")] * 2
 

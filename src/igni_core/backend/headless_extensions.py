@@ -27,7 +27,7 @@ from typing import Any
 
 from igni_core.backend.activity import Activity
 from igni_core.backend.command_handler import CommandHandler
-from igni_core.core.hooks.extension_gate import ExtensionHookGate
+from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.contributions import ExtensionContributions
@@ -194,7 +194,7 @@ class HeadlessExtensions:
         )
         self._channel = HostChannel(model)
         hooks = ExtensionHooks.wire(self._registry)
-        ExtensionHookGate.install(hooks)
+        extension_hook_gate.install(hooks)
         person = SignedInPerson(settings.auth.credentials_file, store)
         session.mcp_manager.extension_request_meta = person.meta
         hooks.set_principal(person)
@@ -274,7 +274,7 @@ class HeadlessExtensions:
         """Stop the extensions' processes, and take their hooks out of the gate."""
         if self._channel is None:
             return
-        ExtensionHookGate.install(None)
+        extension_hook_gate.install(None)
         await self._session.mcp_manager.disconnect_all()
         await self._channel.stop()
 

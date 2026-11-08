@@ -28,14 +28,18 @@ from websockets.asyncio.client import connect
 from igni_core.backend.run_hook_gate import RunHookGate
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.extension_gate import (
-    DECIDING,
-    ExtensionHookGate,
-    ExtensionHookSpec,
-    ExtensionHookVerdict,
-    HookFailMode,
+from igni_core.core.hooks.extension_gate import ExtensionHookVerdict, extension_hook_gate
+from igni_core.core.hooks.extension_spec import DECIDING, HookFailMode
+from igni_core.core.hooks.extension_values import (
+    HookValue,
+    HookValueT,
+    PlanSubmitValue,
+    PostToolUseValue,
+    PreToolUseValue,
+    StopValue,
+    UserPromptSubmitValue,
 )
-from igni_core.core.hooks.schemas import HookDefinition
+from igni_core.core.hooks.schemas import HookDefinition, HookPayload
 from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.session.schemas import PermissionModeSwitch
 from igni_core.core.tools.plan.store import PlanStore
@@ -47,8 +51,7 @@ from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from tests.host_model_helpers import HostRig, manifest
 
-CALL = {"session_id": "s-1", "tool_name": "run_shell_command", "tool_args": {"command": "ls"}}
-PRE = DECIDING[HookEvent.PRE_TOOL_USE]
+CALL = PreToolUseValue(session_id="s-1", tool_name="run_shell_command", tool_args={"command": "ls"})
 
 Answering = Callable[[dict[str, Any]], dict[str, Any] | None]
 
@@ -114,7 +117,7 @@ def allow(_: dict[str, Any]) -> dict[str, Any]:
 
 
 async def test_nobody_hooking_lets_it_happen_as_it_is(hooks: ExtensionHooks) -> None:
-    verdict = await hooks.ask(PRE, CALL)
+    verdict = await hooks.ask(CALL)
     assert verdict.allowed and verdict.value == CALL
 
 
@@ -126,7 +129,7 @@ async def test_a_reject_ends_the_chain_with_its_reason(
     a = StandIn(hooks, "acme.a", lambda _: {"outcome": "reject", "reason": "No shell."})
     b = StandIn(hooks, "acme.b", allow)
 
-    verdict = await hooks.ask(PRE, CALL)
+    verdict = await hooks.ask(CALL)
 
     assert not verdict.allowed
     assert verdict.by == "acme.a"
@@ -151,10 +154,10 @@ async def test_changes_chain_in_priority_order(
     b = StandIn(hooks, "acme.b", add("b"))
     a = StandIn(hooks, "acme.a", add("a"))
 
-    verdict = await hooks.ask(PRE, CALL)
+    verdict = await hooks.ask(CALL)
 
     assert verdict.allowed
-    assert verdict.value["tool_args"] == {"command": "ls", "b": True, "a": True}
+    assert verdict.value.tool_args == {"command": "ls", "b": True, "a": True}
     # b went first, so a was handed b's change.
     assert a.asked[0][1]["tool_args"] == {"command": "ls", "b": True}
     assert b.asked[0][1]["tool_args"] == {"command": "ls"}
@@ -166,7 +169,7 @@ async def test_changing_what_cannot_be_changed_is_a_failure(
     install(registry, "acme.a", "PreToolUse")
     StandIn(hooks, "acme.a", lambda v: {"outcome": "modify", "value": {**v, "tool_name": "rm"}})
 
-    verdict = await hooks.ask(PRE, CALL)
+    verdict = await hooks.ask(CALL)
 
     # PreToolUse fails closed: a call nobody could check does not run.
     assert not verdict.allowed
@@ -179,7 +182,7 @@ async def test_a_change_that_does_not_fit_the_event_is_a_failure(
     install(registry, "acme.a", "PreToolUse")
     StandIn(hooks, "acme.a", lambda v: {"outcome": "modify", "value": {**v, "tool_args": "x"}})
 
-    verdict = await hooks.ask(PRE, CALL)
+    verdict = await hooks.ask(CALL)
 
     assert not verdict.allowed and "does not fit PreToolUse" in verdict.reason
 
@@ -190,37 +193,32 @@ async def test_changing_an_event_with_nothing_to_change_is_a_failure(
     install(registry, "acme.a", "Stop")
     StandIn(hooks, "acme.a", lambda v: {"outcome": "modify", "value": v})
 
-    verdict = await hooks.ask(DECIDING[HookEvent.STOP], {"session_id": "s", "response": ""})
+    verdict = await hooks.ask(StopValue(session_id="s"))
 
     # Stop fails open: the failure is logged and the agent stops.
     assert verdict.allowed
 
 
 @pytest.mark.parametrize(
-    ("event", "value", "goes_ahead"),
+    ("value", "goes_ahead"),
     [
-        (HookEvent.PRE_TOOL_USE, CALL, False),
-        (HookEvent.USER_PROMPT_SUBMIT, {"session_id": "s", "message": "hi"}, False),
-        (
-            HookEvent.POST_TOOL_USE,
-            {"session_id": "s", "tool_name": "t", "tool_args": {}, "result": "r"},
-            True,
-        ),
-        (HookEvent.STOP, {"session_id": "s", "response": ""}, True),
-        (HookEvent.PLAN_SUBMIT, {"session_id": "s", "plan": "p", "tasks": [], "attempt": 0}, True),
+        (CALL, False),
+        (UserPromptSubmitValue(session_id="s", message="hi"), False),
+        (PostToolUseValue(session_id="s", tool_name="t", result="r"), True),
+        (StopValue(session_id="s"), True),
+        (PlanSubmitValue(session_id="s", plan="p"), True),
     ],
 )
 async def test_a_silence_is_decided_by_the_event(
     registry: ExtensionRegistry,
     hooks: ExtensionHooks,
-    event: HookEvent,
-    value: dict[str, Any],
+    value: HookValue,
     goes_ahead: bool,
 ) -> None:
-    install(registry, "acme.a", event.value)
+    install(registry, "acme.a", value.hook_event.value)
     StandIn(hooks, "acme.a", lambda _: None)
 
-    verdict = await hooks.ask(DECIDING[event], value)
+    verdict = await hooks.ask(value)
 
     assert verdict.allowed is goes_ahead
     if not goes_ahead:
@@ -237,7 +235,7 @@ async def test_a_process_that_is_not_connected_is_a_silence(
 ) -> None:
     install(registry, "acme.a", "PreToolUse")
 
-    verdict = await hooks.ask(PRE, CALL)
+    verdict = await hooks.ask(CALL)
 
     assert not verdict.allowed and "not connected" in verdict.reason
 
@@ -253,7 +251,7 @@ async def test_a_process_that_failed_to_start_is_refused_at_once_with_why(
     slow = ExtensionHooks(timeout=30)
     slow.attach(registry)
 
-    verdict = await asyncio.wait_for(slow.ask(PRE, CALL), 1)
+    verdict = await asyncio.wait_for(slow.ask(CALL), 1)
 
     assert not verdict.allowed
     assert "not running: its environment would not install" in verdict.reason
@@ -265,7 +263,7 @@ async def test_a_handler_that_failed_is_a_silence(
     install(registry, "acme.a", "PreToolUse")
     StandIn(hooks, "acme.a", lambda _: {"outcome": "failed", "reason": "boom"})
 
-    verdict = await hooks.ask(PRE, CALL)
+    verdict = await hooks.ask(CALL)
 
     assert not verdict.allowed and "it failed: boom" in verdict.reason
 
@@ -275,7 +273,7 @@ async def test_a_disabled_extension_is_not_asked(
 ) -> None:
     install(registry, "acme.a", "PreToolUse", state=ExtensionState.DISABLED)
 
-    verdict = await hooks.ask(PRE, CALL)
+    verdict = await hooks.ask(CALL)
 
     assert verdict.allowed
 
@@ -286,7 +284,7 @@ async def test_a_reject_with_no_reason_is_not_an_answer(
     install(registry, "acme.a", "PreToolUse")
     StandIn(hooks, "acme.a", lambda _: {"outcome": "reject", "reason": "  "})
 
-    verdict = await hooks.ask(PRE, CALL)
+    verdict = await hooks.ask(CALL)
 
     assert not verdict.allowed and "without saying why" in verdict.reason
 
@@ -298,7 +296,7 @@ async def test_an_event_that_decides_nothing_is_told_and_nobody_waits(
     install(registry, "acme.b", "PreToolUse")
     a = StandIn(hooks, "acme.a", lambda _: pytest.fail("a told event is not answered"))
     b = StandIn(hooks, "acme.b", allow)
-    ExtensionHookGate.install(hooks)
+    extension_hook_gate.install(hooks)
 
     await HookExecutor({}).execute("SessionStart", {"session_id": "s-1", "source": "startup"})
 
@@ -311,7 +309,7 @@ async def test_a_deciding_event_is_never_told_from_the_executor(
 ) -> None:
     install(registry, "acme.a", "PreToolUse")
     a = StandIn(hooks, "acme.a", allow)
-    ExtensionHookGate.install(hooks)
+    extension_hook_gate.install(hooks)
 
     await HookExecutor({}).execute("PreToolUse", {"session_id": "s-1", "tool_name": "x"})
 
@@ -324,27 +322,31 @@ async def test_a_deciding_event_is_never_told_from_the_executor(
 class Gate:
     """The core's gate, answered by the test."""
 
-    def __init__(self, answer: Callable[[HookEvent, dict[str, Any]], ExtensionHookVerdict]) -> None:
+    def __init__(self, answer: Callable[[Any], ExtensionHookVerdict[Any]]) -> None:
         self.answer = answer
-        self.asked: list[tuple[HookEvent, dict[str, Any]]] = []
-        ExtensionHookGate.install(self)
+        self.asked: list[HookValue] = []
+        extension_hook_gate.install(self)
 
     def hooks(self, event: HookEvent) -> bool:
         return True
 
-    async def ask(self, spec: ExtensionHookSpec, value: dict[str, Any]) -> ExtensionHookVerdict:
-        self.asked.append((spec.event, value))
-        return self.answer(spec.event, value)
+    async def ask(self, value: HookValueT) -> ExtensionHookVerdict[HookValueT]:
+        self.asked.append(value)
+        return self.answer(value)
 
-    def tell(self, event: str, payload: dict[str, Any]) -> None:
+    def tell(self, event: HookEvent, payload: HookPayload) -> None:
         return None
 
     def tool_called(self, tool_name: str, *, answered: bool, detail: str) -> None:
         return None
 
 
-def _go(_: HookEvent, value: dict[str, Any]) -> ExtensionHookVerdict:
+def _go(value: HookValue) -> ExtensionHookVerdict[HookValue]:
     return ExtensionHookVerdict(allowed=True, value=value)
+
+
+def _no(reason: str) -> Callable[[HookValue], ExtensionHookVerdict[HookValue]]:
+    return lambda value: ExtensionHookVerdict(allowed=False, value=value, reason=reason)
 
 
 class Tool:
@@ -363,7 +365,7 @@ def _hook(executor: HookExecutor | None = None) -> ToolEventHook:
 
 
 async def test_a_rejected_tool_call_does_not_run_and_the_agent_is_told_why() -> None:
-    Gate(lambda e, v: ExtensionHookVerdict(allowed=False, value=v, reason="Not on Fridays."))
+    Gate(_no("Not on Fridays."))
     tool = Tool()
 
     result = await _hook()("probe", tool, {"x": 1})
@@ -373,10 +375,12 @@ async def test_a_rejected_tool_call_does_not_run_and_the_agent_is_told_why() -> 
 
 
 async def test_a_changed_tool_call_runs_with_what_it_was_changed_to() -> None:
-    def change(event: HookEvent, value: dict[str, Any]) -> ExtensionHookVerdict:
-        if event is HookEvent.PRE_TOOL_USE:
-            return ExtensionHookVerdict(allowed=True, value={**value, "tool_args": {"x": 2}})
-        return _go(event, value)
+    def change(value: HookValue) -> ExtensionHookVerdict[HookValue]:
+        if isinstance(value, PreToolUseValue):
+            return ExtensionHookVerdict(
+                allowed=True, value=value.model_copy(update={"tool_args": {"x": 2}})
+            )
+        return _go(value)
 
     gate = Gate(change)
     tool = Tool()
@@ -384,10 +388,7 @@ async def test_a_changed_tool_call_runs_with_what_it_was_changed_to() -> None:
     result = await _hook()("probe", tool, {"x": 1})
 
     assert result == "ran" and tool.ran == [{"x": 2}]
-    assert gate.asked[0] == (
-        HookEvent.PRE_TOOL_USE,
-        {"session_id": "s-1", "tool_name": "probe", "tool_args": {"x": 1}},
-    )
+    assert gate.asked[0] == PreToolUseValue(session_id="s-1", tool_name="probe", tool_args={"x": 1})
 
 
 async def test_the_configured_pre_tool_use_hooks_see_the_extensions_change(tmp_path: Path) -> None:
@@ -400,10 +401,10 @@ async def test_the_configured_pre_tool_use_hooks_see_the_extensions_change(tmp_p
         }
     )
     Gate(
-        lambda e, v: (
-            ExtensionHookVerdict(allowed=True, value={**v, "tool_args": {"x": 2}})
-            if e is HookEvent.PRE_TOOL_USE
-            else _go(e, v)
+        lambda v: (
+            ExtensionHookVerdict(allowed=True, value=v.model_copy(update={"tool_args": {"x": 2}}))
+            if isinstance(v, PreToolUseValue)
+            else _go(v)
         )
     )
 
@@ -413,13 +414,7 @@ async def test_the_configured_pre_tool_use_hooks_see_the_extensions_change(tmp_p
 
 
 async def test_a_withheld_result_never_reaches_the_model() -> None:
-    Gate(
-        lambda e, v: (
-            ExtensionHookVerdict(allowed=False, value=v, reason="It holds a secret.")
-            if e is HookEvent.POST_TOOL_USE
-            else _go(e, v)
-        )
-    )
+    Gate(lambda v: _no("It holds a secret.")(v) if isinstance(v, PostToolUseValue) else _go(v))
 
     result = await _hook()("probe", lambda **kw: "token=abc", {})
 
@@ -428,12 +423,13 @@ async def test_a_withheld_result_never_reaches_the_model() -> None:
 
 async def test_a_changed_result_is_what_the_model_reads() -> None:
     Gate(
-        lambda e, v: (
+        lambda v: (
             ExtensionHookVerdict(
-                allowed=True, value={**v, "result": v["result"].replace("abc", "…")}
+                allowed=True,
+                value=v.model_copy(update={"result": v.result.replace("abc", "…")}),
             )
-            if e is HookEvent.POST_TOOL_USE
-            else _go(e, v)
+            if isinstance(v, PostToolUseValue)
+            else _go(v)
         )
     )
 
@@ -444,10 +440,10 @@ async def test_a_changed_result_is_what_the_model_reads() -> None:
 
 async def test_a_result_that_is_not_text_is_not_changed() -> None:
     Gate(
-        lambda e, v: (
-            ExtensionHookVerdict(allowed=True, value={**v, "result": "changed"})
-            if e is HookEvent.POST_TOOL_USE
-            else _go(e, v)
+        lambda v: (
+            ExtensionHookVerdict(allowed=True, value=v.model_copy(update={"result": "changed"}))
+            if isinstance(v, PostToolUseValue)
+            else _go(v)
         )
     )
 
@@ -458,21 +454,20 @@ async def test_a_result_that_is_not_text_is_not_changed() -> None:
 
 async def test_a_message_an_extension_changes_is_the_one_run() -> None:
     gate = Gate(
-        lambda e, v: ExtensionHookVerdict(
-            allowed=True, value={**v, "message": v["message"].replace("pw=1", "pw=…")}
+        lambda v: ExtensionHookVerdict(
+            allowed=True,
+            value=v.model_copy(update={"message": v.message.replace("pw=1", "pw=…")}),
         )
     )
 
     result = await RunHookGate(HookExecutor({}), "s-1").fire_user_prompt_submit("login pw=1")
 
     assert result.should_continue and result.text == "login pw=…"
-    assert gate.asked == [
-        (HookEvent.USER_PROMPT_SUBMIT, {"session_id": "s-1", "message": "login pw=1"})
-    ]
+    assert gate.asked == [UserPromptSubmitValue(session_id="s-1", message="login pw=1")]
 
 
 async def test_a_message_an_extension_rejects_does_not_start_a_run() -> None:
-    Gate(lambda e, v: ExtensionHookVerdict(allowed=False, value=v, reason="No secrets."))
+    Gate(_no("No secrets."))
 
     result = await RunHookGate(HookExecutor({}), "s-1").fire_user_prompt_submit("pw=1")
 
@@ -480,7 +475,7 @@ async def test_a_message_an_extension_rejects_does_not_start_a_run() -> None:
 
 
 async def test_a_stop_an_extension_rejects_is_a_stop_hook_block() -> None:
-    Gate(lambda e, v: ExtensionHookVerdict(allowed=False, value=v, reason="Run the tests."))
+    Gate(_no("Run the tests."))
 
     result = await RunHookGate(HookExecutor({}), "s-1").fire_stop()
 
@@ -496,7 +491,7 @@ def _plan_session(executor: HookExecutor | None = None) -> MagicMock:
 
 
 async def test_a_rejected_plan_goes_back_to_the_agent_and_counts_as_an_attempt() -> None:
-    gate = Gate(lambda e, v: ExtensionHookVerdict(allowed=False, value=v, reason="Cite two files."))
+    gate = Gate(_no("Cite two files."))
     session = _plan_session()
     coordinator = PlanTransactionCoordinator(session)
 
@@ -505,15 +500,15 @@ async def test_a_rejected_plan_goes_back_to_the_agent_and_counts_as_an_attempt()
 
     assert not first.ok and first.reply_text == "Plan rejected: Cite two files."
     assert session.plan_store.latest == ""
-    assert [e for e, _ in gate.asked] == [HookEvent.PLAN_SUBMIT, HookEvent.PLAN_SUBMIT]
-    assert [v["attempt"] for _, v in gate.asked] == [0, 1]
+    assert [type(v) for v in gate.asked] == [PlanSubmitValue, PlanSubmitValue]
+    assert [v.attempt for v in gate.asked if isinstance(v, PlanSubmitValue)] == [0, 1]
     assert second.reply_text.startswith("Plan rejected")
 
 
 async def test_a_changed_plan_is_the_one_the_person_sees() -> None:
     Gate(
-        lambda e, v: ExtensionHookVerdict(
-            allowed=True, value={**v, "plan": v["plan"] + "\n\nChecked."}
+        lambda v: ExtensionHookVerdict(
+            allowed=True, value=v.model_copy(update={"plan": v.plan + "\n\nChecked."})
         )
     )
     session = _plan_session()
@@ -617,11 +612,11 @@ async def test_a_process_answers_a_hook_over_its_socket(rig: HostRig) -> None:
     ) as socket:
         hello = json.loads(await socket.recv())
         assert hello["op"] == "hello"
-        asking = asyncio.create_task(ExtensionHooks.shared().ask(PRE, CALL))
+        asking = asyncio.create_task(ExtensionHooks.shared().ask(CALL))
         frame = json.loads(await socket.recv())
         assert frame["op"] == "hook" and frame["event"] == "PreToolUse"
         # The host adds the manifest name; "" for a tool that is no extension's.
-        assert frame["value"] == {**CALL, "tool_manifest_name": ""}
+        assert frame["value"] == {**CALL.model_dump(), "tool_manifest_name": ""}
         await socket.send(
             json.dumps(
                 {
@@ -648,7 +643,7 @@ async def test_a_process_that_goes_away_has_failed_what_it_owed(rig: HostRig) ->
         additional_headers={"Authorization": f"Bearer {env['IGNI_HOST_SECRET']}"},
     ) as socket:
         await socket.recv()
-        asking = asyncio.create_task(ExtensionHooks.shared().ask(PRE, CALL))
+        asking = asyncio.create_task(ExtensionHooks.shared().ask(CALL))
         await socket.recv()
     verdict = await asking
 
@@ -673,8 +668,7 @@ async def test_an_extension_tool_s_event_carries_its_manifest_name_too(
         ("mcp_ext:acme.tickets.extra_find", "acme.tickets.extra.find"),
         ("run_shell_command", ""),
     ]:
-        call = {**CALL, "tool_name": registered}
-        verdict = await hooks.ask(PRE, call)
+        verdict = await hooks.ask(CALL.model_copy(update={"tool_name": registered}))
         assert verdict.allowed
         asked = hooker.asked[-1][1]
         assert asked["tool_name"] == registered
@@ -688,8 +682,10 @@ async def test_a_told_tool_event_carries_the_manifest_name_too(
     told = StandIn(hooks, "acme.tickets", lambda _: None)
 
     hooks.tell(
-        "PostToolUseFailure",
-        {"session_id": "s-1", "tool_name": "mcp_ext:acme.tickets_lookup_ticket", "error": "x"},
+        HookEvent.POST_TOOL_USE_FAILURE,
+        HookPayload.coerce(
+            {"session_id": "s-1", "tool_name": "mcp_ext:acme.tickets_lookup_ticket", "error": "x"}
+        ),
     )
 
     assert told.told[0][1]["tool_manifest_name"] == "acme.tickets.lookup_ticket"
@@ -709,7 +705,9 @@ async def test_a_change_that_echoes_the_manifest_name_is_still_a_change(
         },
     )
 
-    verdict = await hooks.ask(PRE, {**CALL, "tool_name": "mcp_ext:acme.tickets_lookup_ticket"})
+    verdict = await hooks.ask(
+        CALL.model_copy(update={"tool_name": "mcp_ext:acme.tickets_lookup_ticket"})
+    )
 
     assert verdict.allowed, verdict.reason
-    assert verdict.value["tool_args"] == {"command": "ls -l"}
+    assert verdict.value.tool_args == {"command": "ls -l"}

@@ -30,7 +30,8 @@ from igni_core.backend.schemas_hitl import PausedRun, ResolvedBatch, StreamFacto
 from igni_core.backend.schemas_pause import PauseHandleResult
 from igni_core.backend.schemas_run import StopHookPayload
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.hooks.extension_gate import ExtensionHookGate, StopValue
+from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.hooks.extension_values import StopValue
 from igni_core.core.session.persistence.run_history import RunHistory
 from igni_core.protocol import messages as msg
 
@@ -224,9 +225,7 @@ class HitlController:
     async def _fire_stop_hooks(self) -> AsyncIterator[msg.Message]:
         """The Stop hook, once the continuation completes: the extensions
         that hook it first, then the configured hooks."""
-        verdict = await ExtensionHookGate.ask(
-            StopValue(session_id=self._session.session_id), HookEvent.STOP
-        )
+        verdict = await extension_hook_gate.ask(StopValue(session_id=self._session.session_id))
         if not verdict.allowed:
             yield msg.Info(text=verdict.reason)
             return

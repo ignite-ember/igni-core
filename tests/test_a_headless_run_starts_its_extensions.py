@@ -16,7 +16,8 @@ import pytest
 
 from igni_core.backend.headless_extensions import HeadlessExtensions
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.hooks.extension_gate import ExtensionHookGate, PreToolUseValue
+from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.hooks.extension_values import PreToolUseValue
 from igni_core.extensions.registry import ExtensionState
 from igni_core.extensions.store import ExtensionStore
 
@@ -86,7 +87,7 @@ async def test_nothing_installed_starts_nothing(tmp_path: Path) -> None:
     await extensions.stop()
 
     assert session.rebuilt == 0 and not session.mcp_manager.disconnected
-    assert not ExtensionHookGate.hooked(HookEvent.PRE_TOOL_USE)
+    assert not extension_hook_gate.hooked(HookEvent.PRE_TOOL_USE)
 
 
 async def test_an_extension_that_did_not_start_refuses_what_it_checks(
@@ -103,9 +104,8 @@ async def test_an_extension_that_did_not_start_refuses_what_it_checks(
         assert entry is not None and entry.state is ExtensionState.FAILED
         assert session.rebuilt == 1
 
-        verdict = await ExtensionHookGate.ask(
-            PreToolUseValue(session_id="s-1", tool_name="run_shell_command"),
-            HookEvent.PRE_TOOL_USE,
+        verdict = await extension_hook_gate.ask(
+            PreToolUseValue(session_id="s-1", tool_name="run_shell_command")
         )
     finally:
         await extensions.stop()
@@ -113,4 +113,4 @@ async def test_an_extension_that_did_not_start_refuses_what_it_checks(
     assert not verdict.allowed
     assert "acme.guard" in verdict.reason and "not running" in verdict.reason
     assert session.mcp_manager.disconnected
-    assert not ExtensionHookGate.hooked(HookEvent.PRE_TOOL_USE)
+    assert not extension_hook_gate.hooked(HookEvent.PRE_TOOL_USE)

@@ -8,7 +8,7 @@ an extension's process is the other: it lists the events in
 (:mod:`.channel`).
 
 The core never imports this. It asks
-:class:`~igni_core.core.hooks.extension_gate.ExtensionHookGate`, and the
+:data:`~igni_core.core.hooks.extension_gate.extension_hook_gate`, and the
 backend installs :class:`ExtensionHooks` there. On a deciding event the
 host asks every extension that hooks it, in the super admin's priority
 order, and waits for each: allow, reject with a reason, or — where the
@@ -22,7 +22,7 @@ priority order settles who goes first.
 extension that does not answer within :attr:`ExtensionHooks.TIMEOUT_S`,
 whose process is not running or not connected, or that answers in a
 shape the event does not take, has failed, and the event's fail mode
-says what follows (:class:`~igni_core.core.hooks.extension_gate.HookFailMode`).
+says what follows (:class:`~igni_core.core.hooks.extension_spec.HookFailMode`).
 A page cannot answer a hook: igni would then wait on whatever tab
 happens to be open.
 """
@@ -36,15 +36,14 @@ import logging
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 from pydantic_core import to_jsonable_python
 
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.hooks.extension_gate import (
-    ExtensionHookSpec,
-    ExtensionHookVerdict,
-    HookFailMode,
-)
+from igni_core.core.hooks.extension_gate import ExtensionHookVerdict
+from igni_core.core.hooks.extension_spec import DECIDING, ExtensionHookSpec, HookFailMode
+from igni_core.core.hooks.extension_values import HookValueT
+from igni_core.core.hooks.schemas import HookPayload
 from igni_core.core.mcp.naming import tool_name_prefix
 from igni_core.extensions.faults import ExtensionFaults
 from igni_core.extensions.host.wire import HookAnswer, HookMessage, Outcome
@@ -187,15 +186,17 @@ class ExtensionHooks:
 
     # ── Telling ───────────────────────────────────────────────────
 
-    def tell(self, event: str, payload: dict[str, Any]) -> None:
+    def tell(self, event: HookEvent, payload: HookPayload) -> None:
         """An event that decides nothing: sent to each extension that hooks it, never awaited."""
         frame = HookMessage(
-            event=event,
-            value=to_jsonable_python(self._with_manifest_name(payload), fallback=str),
+            event=event.value,
+            value=to_jsonable_python(
+                self._with_manifest_name(payload.to_wire_dict()), fallback=str
+            ),
             principal=self._principal_wire(),
         )
         text = frame.model_dump_json()
-        for extension_id in self.hookers(HookEvent(event)):
+        for extension_id in self.hookers(event):
             send = self._senders.get(extension_id)
             if send is None:
                 logger.debug("%s hooks %s but is not connected; not told", extension_id, event)
@@ -250,9 +251,13 @@ class ExtensionHooks:
 
     # ── Asking ────────────────────────────────────────────────────
 
-    async def ask(self, spec: ExtensionHookSpec, value: dict[str, Any]) -> ExtensionHookVerdict:
-        """Ask everyone who hooks a deciding event; the verdict, and the value to go ahead with."""
-        current = dict(value)
+    async def ask(self, value: HookValueT) -> ExtensionHookVerdict[HookValueT]:
+        """Ask everyone who hooks the deciding event ``value`` is for.
+
+        The verdict, and the value to go ahead with.
+        """
+        spec = DECIDING[value.hook_event]
+        current = value
         for extension_id in self.hookers(spec.event):
             if self._faults.faulty(extension_id):
                 # Not waited on: it has not answered LIMIT times in a row.
@@ -266,7 +271,9 @@ class ExtensionHooks:
                 )
             try:
                 answer = await self._ask(
-                    extension_id, spec.event, self._with_manifest_name(current)
+                    extension_id,
+                    spec.event,
+                    self._with_manifest_name(current.model_dump(mode="json")),
                 )
                 current_or_reason = self._apply(spec, extension_id, current, answer)
                 self._faults.answered(extension_id)
@@ -370,9 +377,9 @@ class ExtensionHooks:
     def _apply(
         spec: ExtensionHookSpec,
         extension_id: str,
-        current: dict[str, Any],
+        current: HookValueT,
         answer: HookAnswer,
-    ) -> dict[str, Any] | str:
+    ) -> HookValueT | str:
         """The value to go on with, or the reason it was rejected."""
         if answer.outcome is Outcome.ALLOW:
             return current
@@ -389,22 +396,22 @@ class ExtensionHooks:
             raise HookFailure("its change is not the event's value")
         # Told, not part of the value: an answer echoing it changes nothing.
         proposed = {k: v for k, v in answer.value.items() if k not in _INFORMATIONAL}
+        handed = current.model_dump(mode="json")
         stray = sorted(
             key
             for key, new in proposed.items()
-            if key not in spec.modify and current.get(key) != new
+            if key not in spec.modify and handed.get(key) != new
         )
         if stray:
             raise HookFailure(f"it changed {', '.join(stray)}, which cannot be changed")
-        changed = dict(current)
+        changed = dict(handed)
         for key in spec.modify:
             if key in proposed:
                 changed[key] = proposed[key]
         try:
-            checked: BaseModel = spec.value.model_validate(changed)
+            return type(current).model_validate(changed)
         except ValidationError as exc:
             raise HookFailure(f"its change does not fit {spec.event.value}: {exc}") from exc
-        return checked.model_dump(mode="json")
 
 
 #: Fields the host adds to what an extension is handed, which are not the

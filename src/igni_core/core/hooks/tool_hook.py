@@ -35,11 +35,8 @@ from igni_core.core.config.permission_eval import PermissionEvaluator
 from igni_core.core.hooks.agno_coroutine_marker import AgnoCoroutineMarker
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.extension_gate import (
-    ExtensionHookGate,
-    PostToolUseValue,
-    PreToolUseValue,
-)
+from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.hooks.extension_values import PostToolUseValue, PreToolUseValue
 from igni_core.core.hooks.hook_firer import HookFirer
 from igni_core.core.hooks.payload_sanitizer import PayloadSanitizer
 from igni_core.core.hooks.permission_pipeline import (
@@ -128,14 +125,13 @@ class ToolEventHook:
         # Extensions' PreToolUse hooks are asked first, with the real
         # arguments, so igni's own checks — the configured PreToolUse
         # hooks among them — run on whatever they leave.
-        pre = await ExtensionHookGate.ask(
-            PreToolUseValue(session_id=self._session_id, tool_name=name, tool_args=ctx.args),
-            HookEvent.PRE_TOOL_USE,
+        pre = await extension_hook_gate.ask(
+            PreToolUseValue(session_id=self._session_id, tool_name=name, tool_args=ctx.args)
         )
         if not pre.allowed:
             OtelRuntime.note_permission("deny")
             return f"Blocked: {pre.reason}"
-        ctx = ctx.with_args(pre.value.get("tool_args", ctx.args))
+        ctx = ctx.with_args(pre.value.tool_args)
         block_message = await self._pipeline.evaluate(ctx)
         if block_message is not None:
             OtelRuntime.note_permission("deny")
@@ -147,10 +143,10 @@ class ToolEventHook:
             # An MCP tool that reported an error of its own answered
             # (``core/mcp/tool_errors``); only one that did not is a fault.
             answered = bool(getattr(exc, "answered", False))
-            ExtensionHookGate.tool_called(name, answered=answered, detail=str(exc))
+            extension_hook_gate.tool_called(name, answered=answered, detail=str(exc))
             raise
         unanswered = self._unanswered(result)
-        ExtensionHookGate.tool_called(name, answered=unanswered is None, detail=unanswered or "")
+        extension_hook_gate.tool_called(name, answered=unanswered is None, detail=unanswered or "")
         result = await self._after(ctx, result)
         return await self._suffixer.enrich(ctx, result)
 
@@ -162,21 +158,20 @@ class ToolEventHook:
         an MCP tool's text content) can be changed, so for any other
         kind a change is refused and the result goes through as it is.
         """
-        if not ExtensionHookGate.hooked(HookEvent.POST_TOOL_USE):
+        if not extension_hook_gate.hooked(HookEvent.POST_TOOL_USE):
             return result
         text = self._text_of(result)
-        post = await ExtensionHookGate.ask(
+        post = await extension_hook_gate.ask(
             PostToolUseValue(
                 session_id=self._session_id,
                 tool_name=ctx.name,
                 tool_args=ctx.args,
                 result=text if text is not None else str(result),
-            ),
-            HookEvent.POST_TOOL_USE,
+            )
         )
         if not post.allowed:
             return f"Withheld: {post.reason}"
-        changed = post.value.get("result")
+        changed = post.value.result
         if text is None:
             if changed != str(result):
                 logger.warning(

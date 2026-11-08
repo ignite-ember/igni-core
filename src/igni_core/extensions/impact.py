@@ -87,7 +87,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from igni_core.core.hooks.extension_gate import DECIDING
+from igni_core.core.hooks.extension_spec import DECIDING
 from igni_core.core.mcp.hints import ToolHints
 from igni_core.core.prompts.contributions import EditOp
 from igni_core.core.prompts.document import FRONTMATTER, Position

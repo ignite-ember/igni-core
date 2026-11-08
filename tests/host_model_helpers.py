@@ -46,7 +46,7 @@ from igni_core.core.activity import ActivityRegistry
 from igni_core.core.approvals.events import approval_events
 from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.config.schemas.models import ModelsConfig
-from igni_core.core.hooks.extension_gate import ExtensionHookGate
+from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.session.event_log_schema import SessionEvent
 from igni_core.core.session.schemas import ContextBreakdown, PersistResult
 from igni_core.extensions.host.caller import Caller
@@ -449,7 +449,7 @@ class HostRig:
             hubs=HostModelHubs(
                 approvals=approval_events,
                 activities=ActivityRegistry.shared(),
-                install_hooks=ExtensionHookGate.install,
+                install_hooks=extension_hook_gate.install,
             ),
             store=self.store,
             strict=strict,

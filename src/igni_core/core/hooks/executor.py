@@ -33,7 +33,7 @@ from typing import Any
 from igni_core.core.activity import background
 from igni_core.core.hooks.envelope import HookEnvelope
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.hooks.extension_gate import ExtensionHookGate
+from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.hooks.group_hook_gate import GroupHookGate
 from igni_core.core.hooks.handlers import HookHandlerRegistry, MCPResolver
 from igni_core.core.hooks.matcher import HookMatcher
@@ -161,7 +161,7 @@ class HookExecutor:
         # Extensions that hook an event deciding nothing hear it here,
         # wherever it fires; the deciding ones are asked where they fire,
         # with the real values (:mod:`.extension_gate`).
-        ExtensionHookGate.tell(event, typed_payload.to_wire_dict())
+        extension_hook_gate.tell(event, typed_payload)
         hooks = self._registry.for_event_and_target(event, target)
         if not hooks:
             return HookResult(should_continue=True)
