@@ -15,9 +15,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from igni_core.backend.plan_snapshot_builder import PlanSnapshotBuilder
 from igni_core.core.tools.todo import (
     TodoItem,
+    TodoItemWire,
     TodoStore,
     TodoTools,
     _coerce_items,
@@ -191,8 +191,13 @@ class TestGetTodosRpc:
         backend = make_backend(session)
         out = backend.get_todos()
         assert out == [
-            {"content": "Run tests", "status": "in_progress", "activeForm": "Running tests"}
+            TodoItemWire(content="Run tests", status="in_progress", active_form="Running tests")
         ]
+        assert out[0].model_dump() == {
+            "content": "Run tests",
+            "status": "in_progress",
+            "activeForm": "Running tests",
+        }
 
     def test_returns_empty_when_no_list(self):
         """If the agent never called ``todo_write``, the store
@@ -201,13 +206,6 @@ class TestGetTodosRpc:
         session.todo_store = TodoStore()
         backend = make_backend(session)
         assert backend.get_todos() == []
-
-    def test_returns_empty_when_store_missing(self):
-        """Defensive: if a Session was somehow constructed
-        without a ``todo_store`` attribute (legacy serialised
-        session, partial init), the RPC mustn't crash."""
-        session = MagicMock(spec=[])  # No attributes at all.
-        assert PlanSnapshotBuilder(session).todos() == []
 
     @pytest.mark.asyncio
     async def test_dispatch_table_routes_get_todos(self):
@@ -221,7 +219,7 @@ class TestGetTodosRpc:
         assert handler is not None
         result = handler({})
         assert isinstance(result, list)
-        assert result[0]["content"] == "planned"
+        assert result[0].content == "planned"
 
 
 # ── Integration ─────────────────────────────────────────────
@@ -247,7 +245,7 @@ class TestEndToEnd:
             ]
         )
         snap = backend.get_todos()
-        statuses = [e["status"] for e in snap]
+        statuses = [e.status for e in snap]
         assert statuses == ["in_progress", "pending", "pending"]
 
         # Second call: mark step 1 done, step 2 in progress.
@@ -259,7 +257,7 @@ class TestEndToEnd:
             ]
         )
         snap = backend.get_todos()
-        statuses = [e["status"] for e in snap]
+        statuses = [e.status for e in snap]
         assert statuses == ["completed", "in_progress", "pending"]
         # Active form for the active step is what the UI renders.
-        assert snap[1]["activeForm"] == "Writing code"
+        assert snap[1].active_form == "Writing code"

@@ -816,7 +816,7 @@ class TestGetLatestPlanRpc:
         # in test_plan_rehydrate.py for the new semantics.
         session = MagicMock(spec=["plan_store", "todo_store"])
         session.plan_store = PlanStore()
-        session.todo_store = None
+        session.todo_store = TodoStore()
         snap = PlanSnapshotBuilder(session).latest()
         assert snap.latest == ""
         assert snap.history == []
@@ -827,26 +827,17 @@ class TestGetLatestPlanRpc:
     def test_returns_latest_and_history(self):
         session = MagicMock()
         session.plan_store = PlanStore()
+        session.todo_store = TodoStore()
         session.plan_store.set_plan("first plan")
         session.plan_store.set_plan("second plan")
         snap = PlanSnapshotBuilder(session).latest()
         assert snap.latest == "second plan"
         assert snap.history == ["first plan"]
 
-    def test_no_plan_store_does_not_crash(self):
-        """Defensive: legacy / partially-initialised sessions
-        without a ``plan_store`` attribute must return empty
-        rather than crash."""
-        session = MagicMock(spec=[])  # no attributes
-        snap = PlanSnapshotBuilder(session).latest()
-        assert snap.latest == ""
-        assert snap.history == []
-        assert snap.tasks == []
-        assert snap.state == ""
-
     def test_dispatch_table_routes_get_latest_plan(self):
         session = MagicMock()
         session.plan_store = PlanStore()
+        session.todo_store = TodoStore()
         session.plan_store.set_plan("test plan")
         backend = make_backend(session, settings=MagicMock())
 

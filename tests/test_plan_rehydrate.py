@@ -19,6 +19,7 @@ from igni_core.backend.restore_content import AssistantContentRestorer
 from igni_core.backend.server_history import ChatHistoryRebuilder
 from igni_core.backend.server_rehydrate import RehydrateController
 from igni_core.core.tools.plan import PlanStore
+from igni_core.core.tools.todo import TodoStore
 
 
 def _assistant_msg_with_tool_call(name: str, args: dict | str) -> SimpleNamespace:
@@ -186,7 +187,7 @@ class TestPlanRehydrate:
         # Empty plan → empty state (no card to render).
         session = SimpleNamespace(
             plan_store=PlanStore(latest="some plan text"),
-            todo_store=SimpleNamespace(snapshot=lambda: []),
+            todo_store=TodoStore(),
         )
         result = PlanSnapshotBuilder(session).latest()
         assert result.state == "pending"
@@ -195,7 +196,7 @@ class TestPlanRehydrate:
     def test_get_latest_plan_empty_state_when_no_plan(self) -> None:
         session = SimpleNamespace(
             plan_store=PlanStore(),
-            todo_store=SimpleNamespace(snapshot=lambda: []),
+            todo_store=TodoStore(),
         )
         result = PlanSnapshotBuilder(session).latest()
         assert result.state == ""

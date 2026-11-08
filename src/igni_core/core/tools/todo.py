@@ -52,10 +52,11 @@ class TodoItemWire(BaseModel):
     """Wire shape for one todo row — CC-parity ``activeForm``
     camelCase alias so the SDK-facing payload matches Claude Code
     verbatim. Constructed via keyword-args with the Python-side
-    ``active_form`` snake case; ``.model_dump(by_alias=True)``
-    produces the camelCase dict for broadcasts / persistence."""
+    ``active_form`` snake case; every ``.model_dump()`` produces the
+    camelCase dict (``serialize_by_alias``), so the RPC layer, which
+    dumps without ``by_alias``, still emits ``activeForm``."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     content: str
     status: str
@@ -132,21 +133,25 @@ class TodoStore:
         # this". No partial merge, no delta detection.
         self.items = list(items)
 
-    def snapshot(self) -> list[dict]:
-        """Serialise to the wire shape (``activeForm`` camelCase,
-        matching how CC's tool payload looks on the SDK). The
-        shape is defined once by :class:`TodoItemWire`; the
-        list-comp constructs and dumps via ``by_alias=True`` so
-        any future field addition/rename goes through the model,
-        not a hand-rolled dict."""
+    def wires(self) -> list[TodoItemWire]:
+        """The list as typed :class:`TodoItemWire` rows — the shape
+        the plan and todos panels receive."""
         return [
             TodoItemWire(
                 content=item.content,
                 status=item.status,
                 active_form=item.active_form,
-            ).model_dump(by_alias=True)
+            )
             for item in self.items
         ]
+
+    def snapshot(self) -> list[dict]:
+        """Serialise to the wire shape (``activeForm`` camelCase,
+        matching how CC's tool payload looks on the SDK). The
+        shape is defined once by :class:`TodoItemWire`, so any
+        future field addition/rename goes through the model, not a
+        hand-rolled dict."""
+        return [wire.model_dump() for wire in self.wires()]
 
 
 def _coerce_items(raw: list) -> tuple[list[TodoItem], list[str]]:

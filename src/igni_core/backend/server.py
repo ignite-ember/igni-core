@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from igni_core.core.skills import SkillPool
     from igni_core.core.skills.parser import SkillInfo
     from igni_core.core.tools.orchestrate_events import OnProgress
+    from igni_core.core.tools.todo import TodoItemWire
     from igni_core.core.utils.media_schemas import MediaAttachments
 
 logger = logging.getLogger(__name__)
@@ -346,7 +347,7 @@ class BackendServer:
     def get_latest_plan(self) -> LatestPlanResult:
         return self.controllers.plan_snapshots.latest()
 
-    def get_todos(self) -> list[dict]:
+    def get_todos(self) -> list[TodoItemWire]:
         return self.controllers.plan_snapshots.todos()
 
     def dispatch_visualization_action(
