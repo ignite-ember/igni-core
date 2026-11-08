@@ -9,15 +9,10 @@ pattern.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import TYPE_CHECKING
-
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from igni_core.backend.command_result import CommandResult
-
-if TYPE_CHECKING:
-    from igni_core.core.hooks.models import HookConfig
+from igni_core.core.hooks.schemas import HookDefinition
 
 
 class HooksReloadResult(BaseModel):
@@ -37,9 +32,7 @@ class HooksListView(BaseModel):
     markdown output. Empty map renders as an info result.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    hooks_map: Mapping[str, list[HookConfig]]
+    hooks_map: dict[str, list[HookDefinition]]
 
     def to_command_result(self) -> CommandResult:
         if not self.hooks_map:
