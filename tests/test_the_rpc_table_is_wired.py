@@ -53,7 +53,7 @@ def _router() -> RpcRouter:
     """
     backend = MagicMock()
     backend.project_dir = Path(tempfile.mkdtemp())
-    return RpcRouter(backend=backend, transport=MagicMock(), login=MagicMock(), push=MagicMock())
+    return RpcRouter(backend=backend, login=MagicMock(), push=MagicMock())
 
 
 class TestTheTableBuilds:

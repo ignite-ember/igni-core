@@ -19,6 +19,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -47,7 +48,8 @@ def bundle_at(tmp_path: Path) -> Path:
 def handler(extensions: ExtensionRpc | None, origins: ExtensionOrigins | None):
     ctx = RpcHandlerContext(
         backend=None,
-        transport=None,
+        file_completion=MagicMock(),
+        shell_runner=MagicMock(),
         login=None,  # type: ignore[arg-type]
         push=None,  # type: ignore[arg-type]
         workflows=None,  # type: ignore[arg-type]

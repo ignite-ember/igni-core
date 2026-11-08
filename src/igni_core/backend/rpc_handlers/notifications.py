@@ -51,10 +51,9 @@ class NotificationsRpcHandler(RpcHandler):
             return NotificationCounts()
         return center.counts()
 
-    @rpc(RpcMethod.NOTIFICATIONS_MARK_READ)
-    async def notifications_mark_read(self, args: dict) -> NotificationsReadResult:
+    @rpc(RpcMethod.NOTIFICATIONS_MARK_READ, args=MarkReadArgs)
+    async def notifications_mark_read(self, args: MarkReadArgs) -> NotificationsReadResult:
         center = self._ctx.notifications
         if center is None:
             return NotificationsReadResult()
-        parsed = MarkReadArgs.model_validate(args or {})
-        return await center.mark_read(MarkReadRequest(ids=parsed.ids, source=parsed.source))
+        return await center.mark_read(MarkReadRequest(ids=args.ids, source=args.source))

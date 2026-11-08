@@ -230,7 +230,7 @@ def _orchestrator(
     queue: list[str] = []
     push = PushNotificationBridge(transport=transport, loop=None, queue=queue)
     login = LoginCoordinator(backend=backend, push_bridge=push)
-    router = RpcRouter(backend=backend, transport=transport, login=login, push=push)
+    router = RpcRouter(backend=backend, login=login, push=push)
     orchestrator = SessionOrchestrator.start(
         boot=BootRuntime(
             backend=backend, rpc_table=router.build_table(), router=router, queue=queue

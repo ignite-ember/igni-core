@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from igni_core.backend.rpc_handlers.base import RpcHandlerContext
 from igni_core.backend.rpc_handlers.extensions import ExtensionsRpcHandler
@@ -67,7 +68,8 @@ async def test_the_extension_list_carries_it_for_the_window() -> None:
     ExtensionStore().record_distribution(record("acme.reviewer", "https://reviewer.acme.test"))
     ctx = RpcHandlerContext(
         backend=None,
-        transport=None,
+        file_completion=MagicMock(),
+        shell_runner=MagicMock(),
         login=None,
         push=None,
         workflows=None,  # type: ignore[arg-type]

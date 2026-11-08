@@ -34,12 +34,10 @@ class AuthRpcHandler(RpcHandler):
             await self._ctx.notifications.signed_out()
         return status
 
-    @rpc(RpcMethod.DISCOVER_SERVER)
-    async def discover_server(self, args: dict) -> ServerFound:
-        parsed = DiscoverServerArgs.model_validate(args)
-        return await self._controllers.auth.discover_server(parsed.email)
+    @rpc(RpcMethod.DISCOVER_SERVER, args=DiscoverServerArgs)
+    async def discover_server(self, args: DiscoverServerArgs) -> ServerFound:
+        return await self._controllers.auth.discover_server(args.email)
 
-    @rpc(RpcMethod.SET_SERVER)
-    def set_server(self, args: dict) -> ServerChoice:
-        parsed = SetServerArgs.model_validate(args)
-        return self._controllers.auth.set_server(parsed.api_url, parsed.portal_url)
+    @rpc(RpcMethod.SET_SERVER, args=SetServerArgs)
+    def set_server(self, args: SetServerArgs) -> ServerChoice:
+        return self._controllers.auth.set_server(args.api_url, args.portal_url)

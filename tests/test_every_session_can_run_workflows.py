@@ -22,7 +22,7 @@ from igni_core.protocol.rpc import RpcMethod
 
 def _table(project_dir: Path) -> dict:
     backend = SimpleNamespace(project_dir=project_dir, session=MagicMock())
-    router = RpcRouter(backend=backend, transport=MagicMock(), login=MagicMock(), push=MagicMock())
+    router = RpcRouter(backend=backend, login=MagicMock(), push=MagicMock())
     return router.build_table()
 
 

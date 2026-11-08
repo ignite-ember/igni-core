@@ -64,7 +64,7 @@ class SessionRuntimeFactory:
         # The runtime's own queue: anything the bridge appends is injected
         # as a synthetic user message in the session it belongs to.
         rt_bridge = self._wiring.push_bridge.for_transport(stamped, queue=queue)
-        router = self._wiring.router_for(backend, stamped, rt_bridge)
+        router = self._wiring.router_for(backend, rt_bridge)
         rpc_table = router.build_table()
         self._dirs.record(backend.session_id, backend.project_dir)
         # The session's broadcasts (plan_submitted, permission_mode_changed,

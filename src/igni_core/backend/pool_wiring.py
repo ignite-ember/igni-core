@@ -43,13 +43,10 @@ class PoolWiring:
         """The root transport, stamping ``backend``'s session id on everything it sends."""
         return SessionStampingTransport(self.transport, backend)
 
-    def router_for(
-        self, backend: Any, stamped: SessionStampingTransport, bridge: PushNotificationBridge
-    ) -> RpcRouter:
-        """A runtime's RPC router: its own backend and transport, the shared rest."""
+    def router_for(self, backend: Any, bridge: PushNotificationBridge) -> RpcRouter:
+        """A runtime's RPC router: its own backend and bridge, the shared rest."""
         return RpcRouter(
             backend=backend,
-            transport=stamped,
             login=self.login,
             push=bridge,
             extensions=self.extensions,

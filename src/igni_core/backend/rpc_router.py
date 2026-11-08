@@ -2,7 +2,7 @@
 
 :class:`RpcRouter` is the composer that turns the per-domain
 :class:`RpcHandler` subclasses into the flat
-``dict[str, Callable[[dict], Any]]`` the receive loop calls through.
+``dict[str, RpcCall]`` the receive loop calls through.
 Every handler subclass owns one domain (MCP, plan mode, plugins,
 etc.); this class' only job is to construct them, merge their
 submaps, and validate exhaustiveness against
@@ -14,18 +14,11 @@ file-completion service) live in sibling modules — see
 :mod:`igni_core.backend.dir_scanner`,
 :mod:`igni_core.backend.captured_shell_runner`,
 :mod:`igni_core.backend.file_completion_service`.
-
-The router preserves the legacy ``dict[str, Callable]`` shape so
-existing callers (``BackendApp``, ``PoolWiring``, and the
-tests that reach in with ``table[RpcMethod.X](args)``) keep working
-unchanged.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from typing import Any
 
 from igni_core.backend.captured_shell_runner import CapturedShellRunner
 from igni_core.backend.file_completion_service import FileCompletionService
@@ -57,7 +50,12 @@ from igni_core.backend.rpc_handlers import (
     WorkflowsRpcHandler,
     WorkspaceTrustRpcHandler,
 )
+from igni_core.backend.rpc_handlers.base import RpcCall
+from igni_core.backend.server import BackendServer
 from igni_core.backend.workflow_runner import WorkflowRunner
+from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.notifications.center import NotificationCenter
 from igni_core.protocol.rpc import RpcMethod, validate_rpc_table
 
 logger = logging.getLogger(__name__)
@@ -90,13 +88,12 @@ class RpcRouter:
     def __init__(
         self,
         *,
-        backend: Any,
-        transport: Any,
+        backend: BackendServer,
         login: LoginCoordinator,
         push: PushNotificationBridge,
-        extensions: Any = None,
-        origins: Any = None,
-        notifications: Any = None,
+        extensions: ExtensionRpc | None = None,
+        origins: ExtensionOrigins | None = None,
+        notifications: NotificationCenter | None = None,
     ) -> None:
         # Shared services the panel-cluster handlers depend on.
         # Cached here so per-runtime routers each get their own
@@ -108,7 +105,6 @@ class RpcRouter:
 
         ctx = RpcHandlerContext(
             backend=backend,
-            transport=transport,
             login=login,
             push=push,
             file_completion=file_completion,
@@ -148,12 +144,11 @@ class RpcRouter:
         """Stop what this router started: its live workflow runs."""
         await self._workflows.close()
 
-    def build_table(self) -> dict[str, Callable[[dict], Any]]:
-        """Produce the legacy dispatch shape
-        ``{method_wire_string: handler(args)}``. Validated for
-        exhaustiveness against the :class:`RpcMethod` enum before
-        returning."""
-        table: dict[str, Callable[[dict], Any]] = {}
+    def build_table(self) -> dict[str, RpcCall]:
+        """Produce the dispatch table ``{method_wire_string: call}``.
+        Validated for exhaustiveness against the :class:`RpcMethod`
+        enum before returning."""
+        table: dict[str, RpcCall] = {}
         for handler in self._handlers:
             for method, fn in handler.methods().items():
                 if method in table:

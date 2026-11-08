@@ -172,7 +172,6 @@ class BackendApp:
         extensions.attach_faults(ExtensionFaults.shared(), notifications.center)
         router = RpcRouter(
             backend=backend,
-            transport=transport,
             login=login,
             push=push_bridge,
             extensions=extensions.rpc,

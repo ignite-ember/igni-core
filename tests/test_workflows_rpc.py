@@ -55,7 +55,8 @@ def _envelope(
 def _context(runner: WorkflowRunner, session: object) -> RpcHandlerContext:
     return RpcHandlerContext(
         backend=SimpleNamespace(session=session),
-        transport=None,
+        file_completion=MagicMock(),
+        shell_runner=MagicMock(),
         login=MagicMock(),
         push=MagicMock(),
         workflows=runner,

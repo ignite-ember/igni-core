@@ -19,7 +19,7 @@ import pytest
 
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_handlers.base import RpcHandlerContext
-from igni_core.backend.rpc_handlers.notifications import NotificationsRpcHandler
+from igni_core.backend.rpc_handlers.notifications import MarkReadArgs, NotificationsRpcHandler
 from igni_core.extensions.service_token import IgniSession
 from igni_core.notifications.center import NotificationCenter
 from igni_core.notifications.local_store import LocalNotificationStore
@@ -70,7 +70,8 @@ class Floor:
         self.handler = NotificationsRpcHandler(
             RpcHandlerContext(
                 backend=None,
-                transport=None,
+                file_completion=MagicMock(),
+                shell_runner=MagicMock(),
                 login=MagicMock(),
                 push=MagicMock(),
                 workflows=MagicMock(),
@@ -266,7 +267,7 @@ async def test_marking_ids_splits_them_between_the_two(tmp_path, rows):
     kept = floor.center.keep_local("acme.scanner", local_notice())
     assert kept is not None
 
-    result = await floor.handler.notifications_mark_read({"ids": [kept.id, "s-new"]})
+    result = await floor.handler.notifications_mark_read(MarkReadArgs(ids=[kept.id, "s-new"]))
 
     assert floor.server.read_bodies == [{"ids": ["s-new"]}]
     assert floor.store.counts().unread == 0
@@ -278,7 +279,7 @@ async def test_marking_a_source_marks_it_on_both(tmp_path, rows):
     floor = Floor(tmp_path, rows)
     floor.center.keep_local("igni.artifacts", local_notice())
 
-    result = await floor.handler.notifications_mark_read({"source": "igni.artifacts"})
+    result = await floor.handler.notifications_mark_read(MarkReadArgs(source="igni.artifacts"))
 
     assert floor.server.read_bodies == [{"source": "igni.artifacts"}]
     assert result.counts.unread == 0
@@ -288,7 +289,7 @@ async def test_marking_everything(tmp_path, rows):
     floor = Floor(tmp_path, rows)
     floor.center.keep_local("acme.scanner", local_notice())
 
-    result = await floor.handler.notifications_mark_read({})
+    result = await floor.handler.notifications_mark_read(MarkReadArgs())
 
     assert floor.server.read_bodies == [{}]
     assert result.counts.unread == 0
@@ -299,7 +300,7 @@ async def test_a_server_that_cannot_mark_says_so(tmp_path, rows):
     await floor.center.refresh()
     floor.server.status = 500
 
-    result = await floor.handler.notifications_mark_read({"ids": ["s-new"]})
+    result = await floor.handler.notifications_mark_read(MarkReadArgs(ids=["s-new"]))
 
     assert "500" in result.server_error
     assert result.counts.unread == 2
@@ -327,7 +328,8 @@ def test_the_three_rpcs_are_the_handlers():
     handler = NotificationsRpcHandler(
         RpcHandlerContext(
             backend=None,
-            transport=None,
+            file_completion=MagicMock(),
+            shell_runner=MagicMock(),
             login=MagicMock(),
             push=MagicMock(),
             workflows=MagicMock(),
@@ -345,7 +347,8 @@ async def test_a_backend_without_a_center_answers_empty():
     handler = NotificationsRpcHandler(
         RpcHandlerContext(
             backend=None,
-            transport=None,
+            file_completion=MagicMock(),
+            shell_runner=MagicMock(),
             login=MagicMock(),
             push=MagicMock(),
             workflows=MagicMock(),

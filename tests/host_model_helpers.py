@@ -352,7 +352,7 @@ class RigRuntimeFactory(SessionRuntimeFactory):
         backend = FakeSession(session_id, self._dirs.project_dir)
         stamped = self._wiring.stamped(backend)
         router = self._wiring.router_for(
-            backend, stamped, self._wiring.push_bridge.for_transport(stamped, queue=[])
+            backend, self._wiring.push_bridge.for_transport(stamped, queue=[])
         )
         return self.bind(
             backend=backend,
@@ -408,7 +408,6 @@ class HostRig:
         extensions = ExtensionRpc(self.registry)
         router = RpcRouter(
             backend=self.session,
-            transport=self.transport,
             login=login,
             push=push,
             extensions=extensions,
