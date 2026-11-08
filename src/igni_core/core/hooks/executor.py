@@ -30,6 +30,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from pydantic import BaseModel
+
 from igni_core.core.activity import background
 from igni_core.core.hooks.envelope import HookEnvelope
 from igni_core.core.hooks.events import HookEvent
@@ -42,7 +44,6 @@ from igni_core.core.hooks.registry import HookRegistry
 from igni_core.core.hooks.schemas import (
     HookDefinition,
     HookPayload,
-    HookPayloadBase,
     HookResult,
 )
 from igni_core.core.network_policy import NetworkPolicy
@@ -146,7 +147,7 @@ class HookExecutor:
     async def execute(
         self,
         event: str,
-        payload: HookPayloadBase | dict[str, Any],
+        payload: BaseModel,
         target: str = "",
     ) -> HookResult:
         """Execute all matching hooks for an event.
@@ -156,8 +157,11 @@ class HookExecutor:
         Background hooks are fire-and-forget, EXCEPT on the
         terminal events in :attr:`_DRAIN_EVENTS`, where "later" is
         never and they are drained before this returns.
+
+        ``payload`` is the event's own typed model; the handlers put
+        it on the wire.
         """
-        typed_payload = HookPayload.coerce(payload)
+        typed_payload = HookPayload(body=payload)
         # Extensions that hook an event deciding nothing hear it here,
         # wherever it fires; the deciding ones are asked where they fire,
         # with the real values (:mod:`.extension_gate`).
@@ -211,7 +215,7 @@ class HookExecutor:
         self,
         hook: HookDefinition,
         event: str,
-        payload: HookPayloadBase,
+        payload: HookPayload,
     ) -> Awaitable[HookResult] | None:
         """Dispatch one hook to its handler.
 
@@ -229,7 +233,7 @@ class HookExecutor:
         self,
         hook: HookDefinition,
         event: str,
-        payload: HookPayloadBase,
+        payload: HookPayload,
     ) -> HookResult:
         """Coroutine wrapper around the handler registry's
         ``.run`` — flattens the ``Optional[HookResult]`` to a
@@ -246,7 +250,7 @@ class HookExecutor:
         self,
         bg_hooks: list[HookDefinition],
         event: str,
-        payload: HookPayloadBase,
+        payload: HookPayload,
     ) -> None:
         """Fire-and-forget background hooks."""
         for hook in bg_hooks:
@@ -258,7 +262,7 @@ class HookExecutor:
         self,
         fg_hooks: list[HookDefinition],
         event: str,
-        payload: HookPayloadBase,
+        payload: HookPayload,
     ) -> None:
         """``async_rewake`` implies a background dispatch (a sync
         hook with rewake would be a contradiction — the agent
@@ -289,7 +293,7 @@ class HookExecutor:
         self,
         fg_hooks: list[HookDefinition],
         event: str,
-        payload: HookPayloadBase,
+        payload: HookPayload,
     ) -> HookResult:
         """Run non-rewake foreground hooks in parallel, merge
         their :class:`HookResult` instances via

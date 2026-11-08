@@ -55,6 +55,16 @@ class PlanSubmittedEvent(RunScopedBroadcastEvent):
     tasks: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class PlanSubmitHookPayload(BaseModel):
+    """What igni's configured ``PlanSubmit`` hooks are sent."""
+
+    session_id: str
+    #: The plan, in markdown, as the extensions left it.
+    plan: str
+    #: Plans rejected since the agent entered plan mode: 0 for the first.
+    attempt: int
+
+
 class PlanTaskInput(BaseModel):
     """One row in ``exit_plan_mode(tasks=[...])`` — the agent-
     facing shape of a plan-time task suggestion. Extras are

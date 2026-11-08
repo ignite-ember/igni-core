@@ -384,9 +384,7 @@ class FinalizeResult(BaseModel):
 # ``task``, stop carries ``result_preview`` or ``error``), so they
 # live as two separate models — the "wide model with everything
 # optional" collapse would defeat the type safety. The hook executor
-# still receives a ``dict`` (via ``.model_dump(exclude_none=True)`` at
-# the emit site) so downstream hook implementations don't have to
-# import these models.
+# takes them as they are and its handlers put them on the wire.
 
 
 class SubagentStartPayload(BaseModel):

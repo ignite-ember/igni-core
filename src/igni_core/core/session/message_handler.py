@@ -298,7 +298,7 @@ class SessionMessageHandler:
         )
         hook_result = await self._hook_executor.execute(
             event=HookEvent.USER_PROMPT_SUBMIT.value,
-            payload=payload.model_dump(),
+            payload=payload,
         )
         if hook_result.should_continue:
             return None
@@ -395,7 +395,7 @@ class SessionMessageHandler:
             return verdict.reason
         stop_result = await self._hook_executor.execute(
             event=HookEvent.STOP.value,
-            payload=payload.model_dump(),
+            payload=payload,
         )
         if stop_result.should_continue:
             return None
@@ -432,7 +432,7 @@ class SessionMessageHandler:
             )
             await self._hook_executor.execute(
                 event=HookEvent.STOP_FAILURE.value,
-                payload=payload.model_dump(),
+                payload=payload,
             )
         return error_msg
 

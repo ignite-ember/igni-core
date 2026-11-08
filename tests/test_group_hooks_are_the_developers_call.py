@@ -38,9 +38,12 @@ from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.group_hook_decisions import GroupHookDecisions
 from igni_core.core.hooks.group_hook_gate import APPROVAL_NAME, GroupHookGate
+from igni_core.core.hooks.load_result import HookLoadResult
 from igni_core.core.hooks.loader import HookLoader
 from igni_core.core.hooks.registry import HookRegistry
-from igni_core.core.hooks.schemas import HookDefinition, HookLoadResult, MergeStrategy
+from igni_core.core.hooks.schemas import HookDefinition, MergeStrategy
+from igni_core.core.hooks.tool_events import PreToolUsePayload
+from igni_core.core.session.schemas import SessionLifecyclePayload
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "igni_core"
 
@@ -81,7 +84,7 @@ def _gate(tmp_path: Path, mode: GroupHookMode, asker: Asker | None = None) -> Gr
 
 def _fire(hooks: list[HookDefinition], gate: GroupHookGate | None) -> None:
     executor = HookExecutor({"SessionStart": hooks}, group_hook_gate=gate)
-    asyncio.run(executor.execute("SessionStart", {"event": "SessionStart"}))
+    asyncio.run(executor.execute("SessionStart", SessionLifecyclePayload(session_id="s")))
 
 
 @pytest.fixture
@@ -316,9 +319,7 @@ class TestRefuse:
         hook = HookDefinition(type="command", command="exit 2").mark_from_group("g")
         executor = HookExecutor({"PreToolUse": [hook]}, group_hook_gate=_gate(tmp_path, "refuse"))
 
-        result = asyncio.run(
-            executor.execute("PreToolUse", {"event": "PreToolUse", "tool_name": "x"})
-        )
+        result = asyncio.run(executor.execute("PreToolUse", PreToolUsePayload(tool_name="x")))
 
         assert result.should_continue
 

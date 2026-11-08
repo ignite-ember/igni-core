@@ -10,6 +10,8 @@ from agno.db.base import AsyncBaseDb
 from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.config.schemas.permissions import PermissionsConfig
 from igni_core.core.config.settings import Settings
+from igni_core.core.hooks.load_result import HookLoadResult
+from igni_core.core.hooks.registry import HookRegistry
 from igni_core.core.learn import LearnBootResult
 from igni_core.core.session.agent_builder.main_tools import MainToolSet
 from igni_core.core.session.broadcast import BroadcastBus
@@ -96,6 +98,9 @@ def _patches_for(defaults: dict) -> list:
         if name == "AgentPool":
             # A mocked pool has no agents: an empty catalog, nothing unresolved.
             shared.return_value.list_agents.return_value = []
+        if name == "HookLoader":
+            # A mocked loader finds no hooks: an empty registry, no warnings.
+            shared.return_value.load.return_value = HookLoadResult(registry=HookRegistry({}))
         if name == "StorageManager":
             # The pool checks its db against DbHandle, which a bare MagicMock fails.
             shared.build_db.return_value = MagicMock(spec=AsyncBaseDb)
@@ -256,8 +261,8 @@ class TestSessionMessageHandling:
             if c.kwargs.get("event") == "StopFailure"
         )
         payload = sf_call.kwargs["payload"]
-        assert "LLM failed" in payload["error"]
-        assert payload["error_type"] == "RuntimeError"
+        assert "LLM failed" in payload.error
+        assert payload.error_type == "RuntimeError"
 
 
 class TestSessionCompaction:

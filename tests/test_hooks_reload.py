@@ -4,8 +4,9 @@ import pytest
 
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.core.config.settings import Settings
+from igni_core.core.hooks.load_result import HookLoadResult
 from igni_core.core.hooks.registry import HookRegistry
-from igni_core.core.hooks.schemas import HookDefinition, HookLoadResult
+from igni_core.core.hooks.schemas import HookDefinition
 from igni_core.core.session.core import Session
 
 # Reuse the shared patching infrastructure

@@ -28,6 +28,7 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.hooks.handlers.http import HttpHookHandler
 from igni_core.core.hooks.schemas import HookDefinition, HookPayload
+from igni_core.core.hooks.tool_events import PreToolUsePayload
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.config import MCPPolicy, MCPServerConfig, MCPTransport
 from igni_core.core.network_policy import NetworkPolicy
@@ -273,7 +274,7 @@ def _hook(url: str) -> HookDefinition:
 
 
 def _payload() -> HookPayload:
-    return HookPayload(event="PreToolUse", tool_name="Bash")
+    return HookPayload(body=PreToolUsePayload(tool_name="Bash"))
 
 
 def _ok_response() -> MagicMock:

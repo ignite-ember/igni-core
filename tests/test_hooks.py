@@ -10,6 +10,7 @@ from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.loader import HookLoader
 from igni_core.core.hooks.schemas import HookDefinition, HookResult
+from igni_core.core.hooks.tool_events import PreToolUsePayload
 from igni_core.core.paths import CONFIG_DIR
 
 
@@ -154,7 +155,7 @@ class TestHookExecutor:
     @pytest.mark.asyncio
     async def test_no_hooks_returns_continue(self):
         executor = HookExecutor({})
-        result = await executor.execute("PreToolUse", {"tool": "Read"})
+        result = await executor.execute("PreToolUse", PreToolUsePayload(tool_name="Read"))
         assert result.should_continue is True
 
     def test_get_matching_hooks_no_matcher(self):
@@ -182,14 +183,14 @@ class TestHookExecutor:
             timeout=5000,
         )
         executor = HookExecutor({"PreToolUse": [hook]})
-        result = await executor.execute("PreToolUse", {"tool": "Read"})
+        result = await executor.execute("PreToolUse", PreToolUsePayload(tool_name="Read"))
         assert result.should_continue is True
 
     @pytest.mark.asyncio
     async def test_execute_no_matching_event(self):
         hook = HookDefinition(type="command", command="echo test")
         executor = HookExecutor({"Stop": [hook]})
-        result = await executor.execute("PreToolUse", {"tool": "Read"})
+        result = await executor.execute("PreToolUse", PreToolUsePayload(tool_name="Read"))
         assert result.should_continue is True
 
     def test_hook_result_defaults(self):

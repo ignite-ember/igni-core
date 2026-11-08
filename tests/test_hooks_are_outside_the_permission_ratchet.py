@@ -47,6 +47,7 @@ from igni_core.cli.options import CliOptions
 from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.hooks.handlers.command import CommandHookHandler
 from igni_core.core.hooks.schemas import HookDefinition, HookPayload
+from igni_core.core.hooks.tool_events import PreToolUsePayload
 
 
 class TestStrictDeniesTheAgentsShell:
@@ -76,7 +77,7 @@ class TestAHookRunsAnyway:
             matcher="Bash",
             timeout=5000,
         )
-        payload = HookPayload(event="PreToolUse", tool_name="Bash", tool_input={"command": "ls"})
+        payload = HookPayload(body=PreToolUsePayload(tool_name="Bash", tool_args={"command": "ls"}))
 
         asyncio.run(CommandHookHandler().run(hook, "PreToolUse", payload))
 

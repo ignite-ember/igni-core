@@ -28,6 +28,7 @@ from igni_core.core.hooks.schemas import HookPayload
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.config import MCPServerConfig, MCPTransport
 from igni_core.core.mcp.request_meta import RequestMetaSession
+from igni_core.core.session.schemas import SessionLifecyclePayload
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.wire import HookAnswer
 from igni_core.extensions.principal import Principal, PrincipalKind, SignedInPerson
@@ -180,7 +181,7 @@ async def test_a_hook_frame_names_its_principal() -> None:
 
     hooks.connect("acme.a", send)
     await hooks.ask(PreToolUseValue(session_id="s", tool_name="x"))
-    hooks.tell(HookEvent.SESSION_START, HookPayload.coerce({"session_id": "s"}))
+    hooks.tell(HookEvent.SESSION_START, HookPayload(body=SessionLifecyclePayload(session_id="s")))
 
     assert [frame["principal"] for frame in frames] == [ADA.model_dump(mode="json")] * 2
 

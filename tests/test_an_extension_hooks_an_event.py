@@ -40,8 +40,9 @@ from igni_core.core.hooks.extension_values import (
     UserPromptSubmitValue,
 )
 from igni_core.core.hooks.schemas import HookDefinition, HookPayload
+from igni_core.core.hooks.tool_events import PostToolUseFailurePayload, PreToolUsePayload
 from igni_core.core.hooks.tool_hook import ToolEventHook
-from igni_core.core.session.schemas import PermissionModeSwitch
+from igni_core.core.session.schemas import PermissionModeSwitch, SessionLifecyclePayload
 from igni_core.core.tools.plan.store import PlanStore
 from igni_core.core.tools.plan.submission import PlanTransactionCoordinator
 from igni_core.extensions.host.hooks import ExtensionHooks
@@ -298,9 +299,9 @@ async def test_an_event_that_decides_nothing_is_told_and_nobody_waits(
     b = StandIn(hooks, "acme.b", allow)
     extension_hook_gate.install(hooks)
 
-    await HookExecutor({}).execute("SessionStart", {"session_id": "s-1", "source": "startup"})
+    await HookExecutor({}).execute("SessionStart", SessionLifecyclePayload(session_id="s-1"))
 
-    assert a.told == [("SessionStart", {"session_id": "s-1", "source": "startup"})]
+    assert a.told == [("SessionStart", {"session_id": "s-1", "resumed": False})]
     assert b.told == []
 
 
@@ -311,7 +312,7 @@ async def test_a_deciding_event_is_never_told_from_the_executor(
     a = StandIn(hooks, "acme.a", allow)
     extension_hook_gate.install(hooks)
 
-    await HookExecutor({}).execute("PreToolUse", {"session_id": "s-1", "tool_name": "x"})
+    await HookExecutor({}).execute("PreToolUse", PreToolUsePayload(session_id="s-1", tool_name="x"))
 
     assert a.told == [] and a.asked == []
 
@@ -683,8 +684,10 @@ async def test_a_told_tool_event_carries_the_manifest_name_too(
 
     hooks.tell(
         HookEvent.POST_TOOL_USE_FAILURE,
-        HookPayload.coerce(
-            {"session_id": "s-1", "tool_name": "mcp_ext:acme.tickets_lookup_ticket", "error": "x"}
+        HookPayload(
+            body=PostToolUseFailurePayload(
+                session_id="s-1", tool_name="mcp_ext:acme.tickets_lookup_ticket", error="x"
+            )
         ),
     )
 

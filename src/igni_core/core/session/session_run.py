@@ -73,7 +73,7 @@ class SessionRun(ABC):
             payload=SessionLifecyclePayload(
                 session_id=self._session.session_id,
                 resumed=bool(self._resume_session_id),
-            ).model_dump(),
+            ),
         )
 
     async def _fire_session_end(self) -> None:
@@ -83,7 +83,7 @@ class SessionRun(ABC):
             payload=SessionLifecyclePayload(
                 session_id=self._session.session_id,
                 resumed=bool(self._resume_session_id),
-            ).model_dump(),
+            ),
         )
 
     # ── Shared turn pipeline ─────────────────────────────────────

@@ -24,9 +24,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from igni_core.core.hooks.load_result import HookLoadResult
 from igni_core.core.hooks.registry import HookRegistry
 from igni_core.core.hooks.schemas import (
-    HookLoadResult,
     HookLoadWarning,
     MergeStrategy,
 )

@@ -68,7 +68,7 @@ class HookFirer:
         try:
             return await self._executor.execute(
                 event=event.value,
-                payload=payload.to_wire_dict(),
+                payload=payload,
                 target=target,
             )
         except Exception as exc:

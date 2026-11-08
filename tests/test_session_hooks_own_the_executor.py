@@ -16,8 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from igni_core.core.config.settings import Settings
+from igni_core.core.hooks.load_result import HookLoadResult
 from igni_core.core.hooks.registry import HookRegistry
-from igni_core.core.hooks.schemas import HookDefinition, HookLoadResult
+from igni_core.core.hooks.schemas import HookDefinition
 from igni_core.core.session.hooks import SessionHooks
 from igni_core.core.session.mcp_resolver import MCPToolResolver
 from igni_core.core.session.reminders import PendingReminderQueue

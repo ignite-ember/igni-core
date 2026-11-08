@@ -212,7 +212,7 @@ class CompactionCoordinator:
         )
         pre = await self._hook_executor_ref().execute(
             event=HookEvent.PRE_COMPACT.value,
-            payload=pre_payload.model_dump(),
+            payload=pre_payload,
         )
         if not pre.should_continue:
             logger.info("Auto-compact cancelled by PreCompact hook: %s", pre.message)
@@ -239,7 +239,7 @@ class CompactionCoordinator:
         )
         await self._hook_executor_ref().execute(
             event=HookEvent.POST_COMPACT.value,
-            payload=post_payload.model_dump(),
+            payload=post_payload,
         )
         return True
 
@@ -274,7 +274,7 @@ class CompactionCoordinator:
         )
         pre = await self._hook_executor_ref().execute(
             event=HookEvent.PRE_COMPACT.value,
-            payload=pre_payload.model_dump(),
+            payload=pre_payload,
         )
         if not pre.should_continue:
             return CompactResult(
@@ -342,7 +342,7 @@ class CompactionCoordinator:
         )
         await self._hook_executor_ref().execute(
             event=HookEvent.POST_COMPACT.value,
-            payload=post_payload.model_dump(),
+            payload=post_payload,
         )
         return CompactResult(
             ok=ok, status=status, summary=summary, error=error, history_cleared=True

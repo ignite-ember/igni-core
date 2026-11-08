@@ -26,6 +26,7 @@ from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.loader import HookLoader
 from igni_core.core.lsp.loader import load_lsp_config
 from igni_core.core.monitors.config import load_monitor_config
+from igni_core.core.session.schemas import SessionLifecyclePayload
 from igni_core.core.tools.custom_loader import CustomToolLoader
 from igni_core.core.utils.markdown_commands import MarkdownCommand
 from igni_core.core.workspace_trust import (
@@ -139,7 +140,7 @@ def _hook_that_writes(settings_file: Path, marker: Path) -> None:
 def _fire_session_start(repo: Path) -> None:
     hooks = HookLoader(repo, cross_tool_support=True).load().registry.raw
     executor = HookExecutor(hooks)
-    asyncio.run(executor.execute("SessionStart", {"session_id": "s-1", "source": "startup"}))
+    asyncio.run(executor.execute("SessionStart", SessionLifecyclePayload(session_id="s-1")))
 
 
 @pytest.mark.parametrize("folder", [".igni", ".claude"])

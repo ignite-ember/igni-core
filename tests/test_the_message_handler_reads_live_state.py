@@ -33,6 +33,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from pydantic import BaseModel
 
 from igni_core.core.session.compaction.context_budget import ContextBudget
 from igni_core.core.session.message_handler import SessionMessageHandler
@@ -45,7 +46,7 @@ class _Hooks:
         self.payloads: list[tuple[str, dict]] = []
         self._stop_blocks = stop_blocks
 
-    async def execute(self, *, event: str, payload: dict):
+    async def execute(self, *, event: str, payload: BaseModel):
         self.payloads.append((event, payload))
         if event == "Stop" and self._stop_blocks > 0:
             self._stop_blocks -= 1
@@ -53,7 +54,7 @@ class _Hooks:
         return SimpleNamespace(should_continue=True, message="")
 
     def session_ids_for(self, event: str) -> list[str]:
-        return [p["session_id"] for name, p in self.payloads if name == event]
+        return [p.session_id for name, p in self.payloads if name == event]
 
 
 class _Audit:

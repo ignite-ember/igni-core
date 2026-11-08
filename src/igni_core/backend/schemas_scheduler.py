@@ -11,10 +11,8 @@ Hook payloads (BE → HookExecutor):
   ``SchedulerController._TaskHookBridge.on_completed`` on either
   success or failure.
 
-Both hook consumers call ``.model_dump()`` when handing the payload
-to :meth:`HookExecutor.execute(payload=...)` so the wire dict shape
-is unchanged from the pre-refactor raw-dict path — the win is that
-the payload fields are now validated + documented in one place
+Both are handed to :meth:`HookExecutor.execute(payload=...)` as they
+are, so the payload fields are validated and documented in one place
 instead of being spelled out at each call site.
 
 Chat view models (BE → FE via ``/schedule`` slash command):

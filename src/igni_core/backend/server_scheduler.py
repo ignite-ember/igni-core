@@ -227,7 +227,7 @@ class SchedulerController:
             background.start(
                 self._hook_executor.execute(
                     event=HookEvent.TASK_CREATED.value,
-                    payload=payload.model_dump(),
+                    payload=payload,
                 ),
                 holder="hook",
                 reason=HookEvent.TASK_CREATED.value,
@@ -261,7 +261,7 @@ class SchedulerController:
             background.start(
                 self._hook_executor.execute(
                     event=HookEvent.TASK_COMPLETED.value,
-                    payload=payload.model_dump(),
+                    payload=payload,
                 ),
                 holder="hook",
                 reason=HookEvent.TASK_COMPLETED.value,

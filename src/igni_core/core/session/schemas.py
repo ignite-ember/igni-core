@@ -38,10 +38,7 @@ Housed here:
   :class:`PostCompactHookPayload` /
   :class:`SessionLifecyclePayload` — typed builders for the
   hook events emitted by Session's message / compaction /
-  interactive paths. The wider :class:`HookExecutor` still
-  accepts ``dict``; callers ``.model_dump()`` at emit time
-  so the boundary is a partial win until the executor
-  adopts the union too.
+  interactive paths, handed to :class:`HookExecutor` as they are.
 * :class:`ContextBreakdown` — token accounting for ``/ctx``
   (moved out of the old ``compact_ops`` module so it lives
   next to its sibling hook payloads).
@@ -298,8 +295,7 @@ class McpServerStatus(BaseModel):
 # The five hook events emitted by Session's message /
 # compaction paths. Each carries the minimum context a
 # subscriber needs to react (``session_id`` + the event-
-# specific fields). Callers ``.model_dump()`` at the executor
-# boundary; the executor accepts ``dict``.
+# specific fields). Handed to the executor as they are.
 
 
 class UserPromptSubmitHookPayload(BaseModel):
@@ -470,8 +466,7 @@ class SessionLifecyclePayload(BaseModel):
     et al.: the minimum context a subscriber needs to react
     (``session_id`` plus the ``resumed`` flag so analytics /
     hook subscribers can distinguish fresh from resumed
-    sessions). Callers ``.model_dump()`` at the executor
-    boundary, which still accepts ``dict``.
+    sessions). Handed to :meth:`HookExecutor.execute` as is.
     """
 
     session_id: str

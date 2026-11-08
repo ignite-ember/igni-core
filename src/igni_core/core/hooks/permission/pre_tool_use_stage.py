@@ -40,7 +40,7 @@ class PreToolUseHookStage(PermissionStage):
             ctx.name,
             PreToolUsePayload.from_call(ctx.name, ctx.args),
         )
-        decision = PermissionDecision.from_wire((result.permission_decision or "").lower())
+        decision = result.permission_decision
         if decision is PermissionDecision.DENY:
             await self._fire_denied(ctx)
             return Block(result.message or f"Blocked: '{ctx.name}' denied by PreToolUse hook")

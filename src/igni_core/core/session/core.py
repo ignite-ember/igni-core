@@ -590,7 +590,7 @@ class Session:
                 event=HookEvent.SESSION_START.value,
                 payload=SessionLifecyclePayload(
                     session_id=self.session_id, resumed=self.session_named
-                ).model_dump(),
+                ),
             )
         except Exception as exc:
             logger.debug("session_start hook fire raised: %s", exc)

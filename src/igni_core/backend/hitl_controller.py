@@ -231,7 +231,7 @@ class HitlController:
             return
         stop_result = await self._session.hook_executor.execute(
             event=HookEvent.STOP.value,
-            payload=StopHookPayload(session_id=self._session.session_id).model_dump(),
+            payload=StopHookPayload(session_id=self._session.session_id),
         )
         if stop_result.message and not stop_result.should_continue:
             yield msg.Info(text=stop_result.message)

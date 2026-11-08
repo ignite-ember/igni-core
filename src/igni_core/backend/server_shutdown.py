@@ -84,7 +84,7 @@ class SessionEndHookStep(ShutdownStep):
         payload = SessionEndPayload(session_id=session.session_id)
         await session.hook_executor.execute(
             event=HookEvent.SESSION_END.value,
-            payload=payload.model_dump(),
+            payload=payload,
         )
         result.mark_hook_fired()
 

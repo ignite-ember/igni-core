@@ -6,7 +6,7 @@ Extracted out of two spots in the old ``server_run.py``:
   run when the hook says ``should_continue=False``).
 * The ``Stop`` fire after the natural end-of-run.
 
-Consolidates the ``hook_executor.execute(event=..., payload={...})``
+Consolidates the ``hook_executor.execute(event=..., payload=...)``
 + ``.should_continue`` + ``.message`` handling behind typed
 :class:`HookGateResult` return values so the RunController body
 reads as ``result = await self._hooks.fire_user_prompt_submit(...)``.
@@ -56,7 +56,7 @@ class RunHookGate:
         if not verdict.allowed:
             return HookGateResult(should_continue=False, block_message=verdict.reason)
         text = verdict.value.message
-        payload = UserPromptSubmitPayload(message=text, session_id=self._session_id).model_dump()
+        payload = UserPromptSubmitPayload(message=text, session_id=self._session_id)
         hook_result = await self._hook_executor.execute(
             event=HookEvent.USER_PROMPT_SUBMIT.value,
             payload=payload,
@@ -87,7 +87,7 @@ class RunHookGate:
         verdict = await extension_hook_gate.ask(StopValue(session_id=self._session_id))
         if not verdict.allowed:
             return HookGateResult(should_continue=False, block_message=verdict.reason)
-        payload = StopHookPayload(session_id=self._session_id).model_dump()
+        payload = StopHookPayload(session_id=self._session_id)
         hook_result = await self._hook_executor.execute(
             event=HookEvent.STOP.value,
             payload=payload,

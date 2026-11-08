@@ -319,7 +319,7 @@ class SpawnRunner:
     # ── Hook / progress plumbing ─────────────────────────────────
 
     async def _fire_start(self, payload: SubagentStartPayload) -> None:
-        await self._fire_hook("SubagentStart", payload.model_dump(exclude_none=True))
+        await self._fire_hook("SubagentStart", payload)
 
     async def _fire_stop_once(self, payload: SubagentStopPayload) -> None:
         """Fire ``SubagentStop`` at most once per spawn.
@@ -331,9 +331,11 @@ class SpawnRunner:
         if self._stop_fired:
             return
         self._stop_fired = True
-        await self._fire_hook("SubagentStop", payload.model_dump(exclude_none=True))
+        await self._fire_hook("SubagentStop", payload)
 
-    async def _fire_hook(self, event: str, payload: dict[str, Any]) -> None:
+    async def _fire_hook(
+        self, event: str, payload: SubagentStartPayload | SubagentStopPayload
+    ) -> None:
         if not self._hook_executor:
             return
         with contextlib.suppress(Exception):

@@ -43,6 +43,7 @@ from igni_core.core.tools.plan.schemas import (
     PlanExitInput,
     PlanExitResult,
     PlanModeEnteredEvent,
+    PlanSubmitHookPayload,
     PlanSubmittedEvent,
     PlanTaskInput,
 )
@@ -273,11 +274,9 @@ class PlanTransactionCoordinator:
         if isinstance(executor, HookExecutor):
             result = await executor.execute(
                 event=HookEvent.PLAN_SUBMIT.value,
-                payload={
-                    "session_id": session_id,
-                    "plan": plan_text,
-                    "attempt": int(store.rejected),
-                },
+                payload=PlanSubmitHookPayload(
+                    session_id=session_id, plan=plan_text, attempt=int(store.rejected)
+                ),
             )
             if not result.should_continue:
                 return self._rejected(store, result.message or "a PlanSubmit hook rejected it")

@@ -90,9 +90,8 @@ class UserPromptSubmitPayload(BaseModel):
     """Payload dict for ``UserPromptSubmit`` hook fires.
 
     Replaces the ``{"message": text, "session_id": ...}`` dict
-    literal in the old ``run_message_locked``. Consumers still see a
-    plain dict at the hook-executor interface (``.model_dump()`` at
-    the boundary)."""
+    literal in the old ``run_message_locked``; handed to the hook
+    executor as it is."""
 
     message: str
     session_id: str

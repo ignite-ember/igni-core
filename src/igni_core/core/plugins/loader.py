@@ -41,7 +41,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from igni_core.core.hooks.schemas import HookLoadResult
+from igni_core.core.hooks.load_result import HookLoadResult
 from igni_core.core.paths import CONFIG_DIR, DEFAULT_DATA_DIR, managed_policy_dir
 from igni_core.core.plugins.models import (
     PluginDefinition,
@@ -53,7 +53,6 @@ if TYPE_CHECKING:
     from igni_core.core.agents import AgentPool
     from igni_core.core.hooks.loader import HookLoader
     from igni_core.core.hooks.registry import HookRegistry
-    from igni_core.core.hooks.schemas import HookLoadResult
     from igni_core.core.mcp.config import MCPConfigLoader, MCPServerConfig
     from igni_core.core.skills.loader import SkillPool
 
