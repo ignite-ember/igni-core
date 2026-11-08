@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, SkipValidation
 
-from igni_core.core.decisions import Laya
+from igni_core.core.decisions.laya import Laya, process_laya
 from igni_core.extensions.busy import ExtensionBusy
 from igni_core.extensions.host.activity import ActivityWatch
 from igni_core.extensions.host.backend import HostBackend
@@ -101,7 +101,7 @@ class HostServices(BaseModel):
             pushes=pushes,
             extensions=extensions,
             notices=LocalNotices(config.notices),
-            decisions=config.decisions if config.decisions is not None else Laya.shared(),
+            decisions=config.decisions if config.decisions is not None else process_laya,
             busy=busy,
             work=BackgroundWork(),
             # Read through the backend each time, so a test can replace it.

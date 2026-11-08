@@ -25,7 +25,7 @@ class HostModelConfig(BaseModel):
     #: For ``host.notifications.notify`` — the same check a notice
     #: arriving over MCP passes.
     notices: SkipValidation[ExtensionNoticeReceiver | None] = None
-    #: Laya, for ``host.decide``; the process's shared one unless a test
+    #: Laya, for ``host.decide``; the process's own (``process_laya``) unless a test
     #: brings its own.
     decisions: SkipValidation[Laya | None] = None
     #: The schema every request and signal is checked against.

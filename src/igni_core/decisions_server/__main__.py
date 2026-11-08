@@ -3,7 +3,7 @@
 Two ways it runs:
 
 * **Beside a desktop backend.** The backend starts it on first use
-  (:class:`~igni_core.core.decisions.laya.LocalDecisions`) on a
+  (:class:`~igni_core.core.decisions.endpoints.LocalDecisions`) on a
   loopback port, with ``--ready-file`` (where the bound port is written)
   and ``--watch-stdin`` (it exits when the backend's end of its stdin
   closes, so it never outlives the backend), and ``--idle-seconds`` so

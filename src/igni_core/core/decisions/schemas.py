@@ -191,12 +191,15 @@ class Priority(IntEnum):
 
 
 class PredictCall(Strict):
-    """One raw Laya question set, on one checkpoint — the Bypass guard's call."""
+    """One question set about one context, on one checkpoint — the Bypass guard's call."""
 
     state: dict[str, str]
-    questions: dict[str, Any]
+    questions: list[DecisionQuestion] = Field(min_length=1, max_length=DecisionLimits.QUESTIONS)
     model: str
     priority: Priority = Priority.APPROVAL
+
+    def laya_questions(self) -> dict[str, Any]:
+        return {q.id: q.laya() for q in self.questions}
 
 
 class PredictAnswer(BaseModel):
@@ -235,9 +238,10 @@ class LayaReading:
     def __init__(self, questions: list[DecisionQuestion]) -> None:
         self._questions = {q.id: q for q in questions}
 
-    def decision(self, result: dict[str, Any]) -> Decision:
+    def decision(self, result: dict[str, Any], *, allow_truncated: bool = False) -> Decision:
+        """``result`` read back; one Laya read only part of is refused unless ``allow_truncated``."""
         usage = result.get("usage") or {}
-        if usage.get("truncated") or usage.get("truncated_questions"):
+        if not allow_truncated and (usage.get("truncated") or usage.get("truncated_questions")):
             dropped = int(usage.get("state_tokens_dropped") or 0)
             raise DecisionTooLong(
                 f"the context and questions are longer than Laya reads ({dropped} tokens of "
@@ -262,6 +266,8 @@ class LayaReading:
         if question.kind is QuestionKind.SCORE:
             levels = question.levels or []
             by_index = raw.get("probabilities") or {}
+            if isinstance(by_index, list):
+                by_index = {str(i): p for i, p in enumerate(by_index)}
             probabilities = {
                 level: float(by_index.get(str(i), 0.0)) for i, level in enumerate(levels)
             }

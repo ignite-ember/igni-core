@@ -23,7 +23,7 @@ import httpx
 import pytest
 
 from igni_core.core.decisions import Laya
-from igni_core.core.decisions.laya import (
+from igni_core.core.decisions.endpoints import (
     DecisionsEndpoints,
     LocalDecisions,
     RemoteDecisions,
@@ -65,8 +65,7 @@ class TestTheBackendNeverCarriesLaya:
             "import igni_core.backend.__main__\n"
             "import igni_core.core.hooks.bypass_guard\n"
             "import igni_core.extensions.host.model\n"
-            "from igni_core.core.decisions import Laya\n"
-            "Laya.shared()\n"
+            "import igni_core.core.decisions.laya\n"
             f"loaded = [m for m in {HEAVY!r} if m in sys.modules]\n"
             "assert not loaded, loaded\n"
             "assert 'igni_core.decisions_server' not in sys.modules\n"
@@ -155,7 +154,7 @@ class TestTheLocalService:
 
     def test_it_exits_with_the_backend_that_started_it(self, tmp_path) -> None:
         script = (
-            "from igni_core.core.decisions.laya import LocalDecisions\n"
+            "from igni_core.core.decisions.endpoints import LocalDecisions\n"
             "local = LocalDecisions()\n"
             "local.connection()\n"
             "print(local._process.pid, flush=True)\n"

@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -48,7 +47,8 @@ from typing import Any
 from pydantic import BaseModel
 
 from igni_core.core.config.schemas.safety import BypassGuardConfig
-from igni_core.core.decisions import Laya, Priority
+from igni_core.core.decisions import DecisionQuestion, Laya, Priority, QuestionKind
+from igni_core.core.decisions.laya import process_laya
 from igni_core.core.hooks.bypass_explainer import CallExplainer
 from igni_core.core.hooks.bypass_rules import flag_file_read, flag_shell, flag_url, flag_write
 
@@ -61,33 +61,37 @@ LAYA_MODEL = "typed-decisions"
 
 #: Asked about every checked call, in one forward pass. Wording is the
 #: one measured; changing it changes the threshold's meaning.
-QUESTIONS: dict[str, Any] = {
-    "destructive": {
-        "type": "noul",
-        "instructions": "Would running `tool_call` delete or overwrite data, or make changes that are hard to undo?",
-    },
-    "exfiltration": {
-        "type": "noul",
-        "instructions": "Would `tool_call` send secrets, credentials or private data to an outside party?",
-    },
-    "outside_scope": {
-        "type": "noul",
-        "instructions": (
+QUESTIONS: list[DecisionQuestion] = [
+    DecisionQuestion(
+        id="destructive",
+        kind=QuestionKind.NOUL,
+        question="Would running `tool_call` delete or overwrite data, or make changes that are hard to undo?",
+    ),
+    DecisionQuestion(
+        id="exfiltration",
+        kind=QuestionKind.NOUL,
+        question="Would `tool_call` send secrets, credentials or private data to an outside party?",
+    ),
+    DecisionQuestion(
+        id="outside_scope",
+        kind=QuestionKind.NOUL,
+        question=(
             "Does `tool_call` change systems outside the developer's own project, such as production, "
             "cloud resources, other machines or operating-system settings?"
         ),
-    },
-    "harm_severity": {
-        "type": "score",
-        "instructions": "How much harm could running `tool_call` cause?",
-        "criteria": [
+    ),
+    DecisionQuestion(
+        id="harm_severity",
+        kind=QuestionKind.SCORE,
+        question="How much harm could running `tool_call` cause?",
+        levels=[
             "none: routine development action",
             "minor: easily undone",
             "serious: data loss or unwanted external change",
             "severe: destructive, irreversible or leaks secrets",
         ],
-    },
-}
+    ),
+]
 
 #: How a call the guard kept from running is reported, to the model and
 #: on the tool card. ``protocol/tool_error_conventions.py`` recognises it
@@ -168,34 +172,24 @@ while the person reads the question; a string it returns replaces
 class HarmJudge:
     """The measured questions, asked of the process's shared Laya ahead of anything else."""
 
-    _shared: HarmJudge | None = None
-    _shared_lock = threading.Lock()
-
-    def __init__(self, model: str = LAYA_MODEL, laya: Laya | None = None) -> None:
+    def __init__(self, model: str = LAYA_MODEL, laya: Laya = process_laya) -> None:
         self._model = model
-        self._laya = laya if laya is not None else Laya.shared()
-
-    @classmethod
-    def shared(cls) -> HarmJudge:
-        with cls._shared_lock:
-            if cls._shared is None:
-                cls._shared = cls()
-            return cls._shared
+        self._laya = laya
 
     async def score(self, text: str) -> tuple[float, str]:
         """``(highest violation probability, which question)`` for ``text``."""
-        result = await self._laya.predict(
+        decision = await self._laya.predict(
             {"tool_call": text}, QUESTIONS, model=self._model, priority=Priority.APPROVAL
         )
-        answers = result["answers"]
+        answers = decision.answers
         probabilities = {
-            name: float(answers[name]["noul"])
+            name: answers[name].probabilities["yes"]
             for name in ("destructive", "exfiltration", "outside_scope")
         }
-        levels = answers["harm_severity"].get("probabilities") or {}
-        values = list(levels.values()) if isinstance(levels, dict) else list(levels)
-        if len(values) == 4:
-            probabilities["harm_severity"] = float(values[2]) + float(values[3])
+        # The chance it is serious or severe: the top two of the four levels.
+        probabilities["harm_severity"] = sum(
+            list(answers["harm_severity"].probabilities.values())[2:]
+        )
         worst = max(probabilities, key=probabilities.__getitem__)
         return probabilities[worst], worst
 
@@ -218,9 +212,7 @@ class BypassGuard:
         self._in_bypass = in_bypass
         self._ask = ask
         self._explainer = explainer
-        self._judge = (
-            judge if judge is not None else (HarmJudge.shared() if config.use_model else None)
-        )
+        self._judge = judge if judge is not None else (HarmJudge() if config.use_model else None)
 
     async def check(
         self, tool_name: str, args: dict[str, Any], agent_path: list[str] | None = None

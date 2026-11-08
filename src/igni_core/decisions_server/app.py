@@ -88,7 +88,7 @@ class DecisionsApp:
 
     async def _run_predict(self, call: PredictCall) -> BaseModel:
         result = await asyncio.to_thread(
-            self._model.predict, call.state, call.questions, call.model, call.priority
+            self._model.predict, call.state, call.laya_questions(), call.model, call.priority
         )
         return PredictAnswer(result=result)
 
