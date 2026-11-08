@@ -134,6 +134,13 @@ def test_the_desktop_has_no_guest_contract():
     assert isinstance(CloudLayer().backend(), CloudGuest)
 
 
+def test_the_guest_tells_the_layers_credentials_who_keeps_the_token():
+    layer = CloudLayer()
+    guest = layer.backend()
+    assert isinstance(guest, CloudGuest)
+    assert guest.tokens is layer.credentials(), "one instance, not process-wide state"
+
+
 def test_an_atomic_write_leaves_only_the_file(tmp_path: Path):
     target = tmp_path / "activity.json"
     AtomicFile(target).write(b"one")

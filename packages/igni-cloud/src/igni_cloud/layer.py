@@ -40,13 +40,16 @@ from igni_cloud.guest.contract import CloudGuest
 from igni_cloud.guest.paths import GuestPaths
 from igni_cloud.logs import StdoutLog
 from igni_cloud.mcp_approvals import CloudMcpApprovals
-from igni_core.core.auth.credentials import CredentialSource
 from igni_core.core.layer import BackendHooks, Layer
 from igni_core.core.mcp.approval import McpApprovalPolicy
 
 
 class CloudLayer(Layer):
     name: ClassVar[str] = "cloud"
+
+    def __init__(self) -> None:
+        #: The process's credentials: the guest contract tells them who keeps the token.
+        self._credentials = EnvironmentCredentials()
 
     def log_files(self) -> bool:
         return False
@@ -58,8 +61,8 @@ class CloudLayer(Layer):
         StdoutLog.attach("igni_cloud")
         return StdoutLog.handler()
 
-    def credentials(self) -> CredentialSource | None:
-        return EnvironmentCredentials()
+    def credentials(self) -> EnvironmentCredentials:
+        return self._credentials
 
     def reads_local_settings(self) -> bool:
         return False
@@ -95,7 +98,7 @@ class CloudLayer(Layer):
         return False
 
     def backend(self) -> BackendHooks:
-        return CloudGuest.from_env()
+        return CloudGuest.from_env(tokens=self._credentials)
 
 
 __all__ = ["CloudLayer"]

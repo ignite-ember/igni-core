@@ -86,8 +86,11 @@ class CloudGuest(BackendHooks):
         warm: WarmImports | None = None,
         gc_freeze: bool = True,
         practise: bool = True,
+        tokens: EnvironmentCredentials | None = None,
     ) -> None:
         self.paths = paths
+        #: The credentials igni server's clients read: told who keeps the token while serving.
+        self.tokens = tokens if tokens is not None else EnvironmentCredentials()
         self.ready = ReadyFile(paths.ready)
         self._directories: dict[Path, DirectoryWatch] = {}
         self.binding = (
@@ -130,8 +133,8 @@ class CloudGuest(BackendHooks):
         return watch
 
     @classmethod
-    def from_env(cls) -> CloudGuest:
-        return cls(GuestPaths.from_env())
+    def from_env(cls, *, tokens: EnvironmentCredentials | None = None) -> CloudGuest:
+        return cls(GuestPaths.from_env(), tokens=tokens)
 
     def starting(self) -> None:
         try:
@@ -230,7 +233,7 @@ class CloudGuest(BackendHooks):
             self.binding.watch(lambda _env: on_rebind())
         if self.credentials is not None:
             # Its token is the one igni server's clients read: never handed out expired.
-            EnvironmentCredentials.kept_by(self.credentials)
+            self.tokens.kept_by(self.credentials)
             self.restores.on_restore(self._renew_credential, when=RestoreStep.LATER)
             background.start(
                 self.credentials.start(), holder="vm-credential", reason="a token from it"
@@ -254,7 +257,7 @@ class CloudGuest(BackendHooks):
 
     async def stop(self) -> None:
         if self.credentials is not None:
-            EnvironmentCredentials.kept_by(None)
+            self.tokens.kept_by(None)
             await self.credentials.stop()
         await self.restores.stop()
         StdoutLog.release()

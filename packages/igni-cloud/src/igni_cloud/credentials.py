@@ -51,26 +51,28 @@ class EnvironmentCredentials(CredentialSource):
       life.
 
     ``IGNI_ACCESS_TOKEN_EXPIRES_AT`` and ``IGNI_EMAIL`` are optional.
+
+    The cloud layer holds the process's one instance and hands it to the
+    guest contract, which tells it who keeps the file's token while it serves.
     """
 
-    TOKEN_FILE_ENV = "IGNI_ACCESS_TOKEN_FILE"  # noqa: S105 — an environment variable's name, not a secret
-    TOKEN_ENV = "IGNI_ACCESS_TOKEN"  # noqa: S105 — an environment variable's name, not a secret
-    EXPIRES_ENV = "IGNI_ACCESS_TOKEN_EXPIRES_AT"
-    EMAIL_ENV = "IGNI_EMAIL"
+    TOKEN_FILE_ENV: ClassVar[str] = "IGNI_ACCESS_TOKEN_FILE"  # noqa: S105 — an environment variable's name, not a secret
+    TOKEN_ENV: ClassVar[str] = "IGNI_ACCESS_TOKEN"  # noqa: S105 — an environment variable's name, not a secret
+    EXPIRES_ENV: ClassVar[str] = "IGNI_ACCESS_TOKEN_EXPIRES_AT"
+    EMAIL_ENV: ClassVar[str] = "IGNI_EMAIL"
 
-    #: The process's keeper of the file's token, while the guest contract serves.
-    _keeper: ClassVar[TokenKeeper | None] = None
+    def __init__(self) -> None:
+        #: The keeper of the file's token, while the guest contract serves.
+        self._keeper: TokenKeeper | None = None
 
-    @classmethod
-    def kept_by(cls, keeper: TokenKeeper | None) -> None:
+    def kept_by(self, keeper: TokenKeeper | None) -> None:
         """Whose token the file holds (``None`` when it stops keeping it)."""
-        cls._keeper = keeper
+        self._keeper = keeper
 
-    @classmethod
-    def token(cls) -> str:
-        path = os.environ.get(cls.TOKEN_FILE_ENV, "").strip()
+    def token(self) -> str:
+        path = os.environ.get(self.TOKEN_FILE_ENV, "").strip()
         if path:
-            keeper = cls._keeper
+            keeper = self._keeper
             if keeper is not None and keeper.expired():
                 # Never an expired token: ``ready`` renews it.
                 return ""
@@ -79,7 +81,7 @@ class EnvironmentCredentials(CredentialSource):
             except OSError as exc:
                 logger.warning("cannot read the token at %s: %s", path, exc)
                 return ""
-        return os.environ.get(cls.TOKEN_ENV, "").strip()
+        return os.environ.get(self.TOKEN_ENV, "").strip()
 
     async def ready(self) -> None:
         keeper = self._keeper
