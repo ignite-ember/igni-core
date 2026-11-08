@@ -23,6 +23,7 @@ import pytest
 from igni_core.core.init.gitignore import BLOCK_BEGIN, BLOCK_END, IgniGitignore
 from igni_core.core.init.project_initializer import ProjectInitializer
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.workspace_trust import WorkspaceTrust
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -82,7 +83,9 @@ def _repo(tmp_path: Path) -> Path:
 
 
 def _init(repo: Path, tmp_path: Path) -> None:
-    ProjectInitializer(project_dir=repo, home_igni=tmp_path / "home" / CONFIG_DIR).run()
+    ProjectInitializer(
+        project_dir=repo, trust=WorkspaceTrust.shared(), home_igni=tmp_path / "home" / CONFIG_DIR
+    ).run()
 
 
 def _untracked(repo: Path) -> set[str]:

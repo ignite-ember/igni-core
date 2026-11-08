@@ -81,6 +81,15 @@ class SettingsFile(BaseModel):
         """
         return JsonFile(path=path).load_model(cls)
 
+    @classmethod
+    def load_if_valid(cls, path: Path) -> SettingsFile | None:
+        """Load from disk, or ``None`` when the file is there but does not validate.
+
+        For a caller about to save the result back: :meth:`load`'s empty
+        fallback would overwrite every key the person wrote.
+        """
+        return JsonFile(path=path).load_model_if_valid(cls)
+
     def save(self, path: Path) -> None:
         """Persist to disk, preserving user-added keys.
 
@@ -346,11 +355,8 @@ class InitResult(BaseModel):
     checksum-merge warnings or the home-config migration outcome
     can read them structured rather than through the logger.
 
-    ``first_run`` preserves the pre-refactor semantics — the
-    ``initialize_project`` compat shim in ``__init__.py`` returns
-    this field as a bare ``bool`` so legacy callers
-    (``session/core.py`` and ``tests/test_onboarding_and_audit.py``)
-    keep working without changes.
+    ``first_run`` is ``True`` when the run performed first-time init
+    on the project.
     """
 
     first_run: bool
@@ -395,9 +401,9 @@ class InitConfig(BaseModel):
     Replaces the module-level ``PACKAGE_DIR`` / ``MARKER_FILE`` /
     ``CHECKSUMS_FILE`` / ``DEFAULT_PERMISSIONS`` constants (Rule 5 —
     no module-level mutable state). Tests inject an alternative
-    ``package_dir`` via :meth:`ProjectInitializer.initialize` (which
-    forwards ``**config_kwargs`` here) rather than monkey-patching
-    a module attribute.
+    ``package_dir`` through the config they hand
+    :class:`ProjectInitializer` rather than monkey-patching a module
+    attribute.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

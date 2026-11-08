@@ -67,7 +67,7 @@ from igni_core.core.hooks.memory_sync import MemorySyncHook
 from igni_core.core.hooks.schemas import HookDefinition
 from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.hooks.turn_results import TurnResultHook
-from igni_core.core.init import ProjectInitializer
+from igni_core.core.init import InitConfig, ProjectInitializer
 from igni_core.core.learn import create_learning_machine
 from igni_core.core.loop import LoopProgressStore, LoopStore, LoopToolResult
 from igni_core.core.lsp import LspServerManager, load_lsp_config
@@ -147,6 +147,7 @@ from igni_core.core.utils.display import DisplayManager
 from igni_core.core.utils.memory_files import MemoryMirror
 from igni_core.core.utils.rules_index import RulesIndex
 from igni_core.core.workspace import WorkspaceManager
+from igni_core.core.workspace_trust import WorkspaceTrust
 
 logger = logging.getLogger(__name__)
 
@@ -181,12 +182,15 @@ class Session:
         # The bundled agents stand down when the group ships its own —
         # otherwise this would scaffold back the very agents an admin
         # removed, and two sources would fight over one checksum file.
-        ProjectInitializer.initialize(
-            self.project_dir,
-            skip_bundled_agents=self.group_policy.ships("agents"),
-            skip_builtin_hook_registration=self.group_policy.ships("hooks"),
-            group_ships_hook_scripts=self.group_policy.ships("scripts"),
-        )
+        ProjectInitializer(
+            project_dir=self.project_dir,
+            trust=WorkspaceTrust.shared(),
+            config=InitConfig(
+                skip_bundled_agents=self.group_policy.ships("agents"),
+                skip_builtin_hook_registration=self.group_policy.ships("hooks"),
+                group_ships_hook_scripts=self.group_policy.ships("scripts"),
+            ),
+        ).run()
 
         self.db = StorageManager.build_db(settings, project_dir=self.project_dir)
         self.audit = AuditLogger(settings)

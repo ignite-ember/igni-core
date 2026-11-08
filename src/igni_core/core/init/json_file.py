@@ -79,6 +79,18 @@ class JsonFile(BaseModel):
             )
             return model_cls()
 
+    def load_model_if_valid(self, model_cls: type[T]) -> T | None:
+        """Load and validate into ``model_cls``; ``None`` when it does not validate.
+
+        Missing / unparseable JSON still resolves to ``model_cls()``, as in
+        :meth:`load_model` — only a file whose content fails validation is
+        refused, so a caller that saves the result never overwrites it.
+        """
+        try:
+            return model_cls.model_validate(self.load())
+        except ValidationError:
+            return None
+
     def save_model(self, model: BaseModel, **dump_kwargs: object) -> None:
         """Serialise ``model`` and persist via :meth:`save`.
 

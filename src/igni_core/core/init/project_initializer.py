@@ -29,7 +29,6 @@ from igni_core.core.init.checksum_store import ChecksumStore
 from igni_core.core.init.gitignore import IgniGitignore
 from igni_core.core.init.home_migrator import HomeConfigMigrator
 from igni_core.core.init.hook_provisioner import HookProvisioner
-from igni_core.core.init.json_file import JsonFile
 from igni_core.core.init.schemas import (
     InitConfig,
     InitResult,
@@ -40,6 +39,7 @@ from igni_core.core.init_templates import (
     PROJECT_CONFIG_TEMPLATE,
 )
 from igni_core.core.paths import CONFIG_DIR, PROJECT_CONTEXT_FILE
+from igni_core.core.workspace_trust import WorkspaceTrust
 
 logger = logging.getLogger(__name__)
 
@@ -57,42 +57,25 @@ class ProjectInitializer(BaseModel):
        overwritten; user-modified files trigger a warning + a
        ``.new`` sidecar.
 
-    :meth:`run` is the entry point. Callers wanting the compat
-    ``bool`` return should use the module-level ``initialize_project``
-    shim in :mod:`igni_core.core.init` (which delegates to
-    :meth:`initialize`).
+    :meth:`run` is the entry point. ``trust`` is the workspace-trust
+    service the caller already holds: the starter settings and the
+    ``.gitignore`` block are written only in a folder it trusts.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     project_dir: Path
+    trust: WorkspaceTrust
     config: InitConfig = Field(default_factory=InitConfig)
     home_igni: Path = Field(default_factory=lambda: Path.home() / CONFIG_DIR)
 
     # ── Public entry point ────────────────────────────────────────
 
-    @classmethod
-    def initialize(cls, project_dir: Path, **config_kwargs) -> bool:
-        """Construct an instance with the given config kwargs and run it.
-
-        Returns ``True`` if this run performed first-time init on this
-        project — matches the pre-refactor ``bool`` return shape that
-        :mod:`igni_core.core.session.core` consumes. Forwarded
-        ``**config_kwargs`` become fields of :class:`InitConfig`
-        (``package_dir=`` is the common one — tests inject a fake
-        package root through this entry point rather than
-        monkey-patching a module attribute).
-        """
-        config = InitConfig(**config_kwargs)
-        result = cls(project_dir=project_dir, config=config).run()
-        return result.first_run
-
     def run(self) -> InitResult:
         """Run the full init-and-update flow.
 
-        Returns a typed :class:`InitResult` — the compat shim in
-        :mod:`igni_core.core.init` collapses this to ``.first_run``
-        for backward compat with ``session/core.py``.
+        ``InitResult.first_run`` is ``True`` when this run performed
+        first-time init on this project.
         """
         # Before the mkdir below, which would otherwise create an empty
         # ``.igni`` beside the project's existing ``.igni`` — and the
@@ -190,21 +173,15 @@ class ProjectInitializer(BaseModel):
         # printed twice per ``igni -m``, about a file the person never
         # wrote. Found on a fresh clone; a new user's first folder is an
         # untrusted one.
-        from igni_core.core.workspace_trust import WorkspaceTrust
-
-        if not WorkspaceTrust.shared().is_trusted(self.project_dir):
+        if not self.trust.is_trusted(self.project_dir):
             return
 
-        # Peek at the raw JSON first — we only touch the file if
-        # ``permissions`` is absent, matching the pre-refactor
-        # semantics that leave user-written files alone. Deliberate
-        # raw-dict probe: we're checking key presence, not validating
-        # the shape, so paying the Pydantic-validate cost on an
-        # already-populated user file would be waste.
-        if JsonFile(path=path).load().get("permissions") is not None:
+        # A file that does not validate is the person's to fix — writing
+        # the starter over it would drop everything else it declares.
+        settings = SettingsFile.load_if_valid(path)
+        if settings is None or settings.permissions is not None:
             return
 
-        settings = SettingsFile.load(path)
         settings.permissions = self.config.default_permissions.model_copy(deep=True)
         settings.save(path)
 
@@ -216,9 +193,7 @@ class ProjectInitializer(BaseModel):
         repository the person has not said they work in. Written on the first
         run after the folder is trusted.
         """
-        from igni_core.core.workspace_trust import WorkspaceTrust
-
-        if not WorkspaceTrust.shared().is_trusted(self.project_dir):
+        if not self.trust.is_trusted(self.project_dir):
             return
         IgniGitignore(self.project_dir / CONFIG_DIR).ensure()
 
