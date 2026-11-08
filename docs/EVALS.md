@@ -203,7 +203,7 @@ assert accuracy_result.avg_score >= case.accuracy_threshold
 
 # 4. igni file assertions — did the filesystem change correctly?
 for assertion in case.file_assertions:
-    check_file_assertion(assertion)
+    assertion.check(work_dir)
 ```
 
 ---
@@ -275,7 +275,6 @@ Verify filesystem state after the agent runs. Not in Agno — this is igni's ext
 | `file_not_exists` | `path` | File does NOT exist |
 | `file_contains` | `path`, `pattern` | File content matches regex |
 | `file_not_contains` | `path`, `pattern` | File content does NOT match |
-| `file_unchanged` | `path` | File was not modified |
 | `file_diff_lines` | `path`, `max` | Changed lines under threshold |
 
 ### 5. Orchestrator Assertions (igni extension)

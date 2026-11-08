@@ -11,7 +11,7 @@ Each driver:
 Drivers that produce one verdict derive from :class:`CheckDriver`,
 which splits ``record`` into ``run`` (returns a :class:`CheckResult`)
 and ``apply_to`` (writes it). :class:`FileDriver` records one
-:class:`FileCheckResult` per assertion instead.
+:class:`~igni_core.core.evals.assertions.FileCheckResult` per assertion instead.
 
 The overall aggregate (``result.passed``) is derived by
 :meth:`CaseResult.compute_passed` after every driver has run — killing
@@ -32,15 +32,10 @@ from agno.eval.reliability import ReliabilityEval
 from agno.models.base import Model
 
 from igni_core.core.evals.agno_adapter import AgnoResponseAdapter
-from igni_core.core.evals.assertions import (
-    check_file_assertion,
-    check_unexpected_tool_calls,
-)
 from igni_core.core.evals.schemas import (
     CaseResult,
     CheckResult,
     EvalCase,
-    FileCheckResult,
     ToolArgAssertion,
     ToolTraceEntry,
 )
@@ -189,8 +184,18 @@ class UnexpectedToolsDriver(CheckDriver):
 
     async def run(self, ctx: AssertionContext) -> CheckResult:
         expanded = ctx.catalog.expand(ctx.case.unexpected_tool_calls or [])
-        passed, detail = check_unexpected_tool_calls(ctx.adapter.response, expanded)
-        return CheckResult(ok=passed, detail=detail)
+        return self.check(ctx.adapter.called_tool_names(), expanded)
+
+    @staticmethod
+    def check(called: set[str], unexpected: list[str]) -> CheckResult:
+        """Fail when any of ``unexpected`` appears in ``called``."""
+        forbidden_used = called & set(unexpected)
+        if forbidden_used:
+            return CheckResult(
+                ok=False,
+                detail=f"unexpected tools called: {', '.join(sorted(forbidden_used))}",
+            )
+        return CheckResult(ok=True, detail="no unexpected tool calls")
 
     def apply_to(self, result: CaseResult, check: CheckResult) -> None:
         result.unexpected_passed = check.ok
@@ -336,10 +341,7 @@ class FileDriver(AssertionDriver):
 
     async def record(self, ctx: AssertionContext, result: CaseResult) -> None:
         for assertion in ctx.case.file_assertions or []:
-            passed, detail = check_file_assertion(assertion, work_dir=ctx.work_dir)
-            result.add_file_result(
-                FileCheckResult(type=assertion.type, passed=passed, detail=detail)
-            )
+            result.add_file_result(assertion.check(ctx.work_dir))
 
 
 class CaseAssertionRunner:

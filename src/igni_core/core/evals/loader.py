@@ -16,7 +16,7 @@ import yaml
 from pydantic import ValidationError
 
 from igni_core.core.config.schemas.llm_behavior import EvalsConfig
-from igni_core.core.evals.assertions import FileAssertion
+from igni_core.core.evals.assertions import FILE_ASSERTION, BaseFileAssertion, FileAssertion
 from igni_core.core.evals.schemas import (
     EvalCase,
     EvalSuite,
@@ -125,13 +125,13 @@ class _EvalYamlParser:
             return None
         out: list[FileAssertion] = []
         for entry in raw:
-            if isinstance(entry, FileAssertion):
+            if isinstance(entry, BaseFileAssertion):
                 out.append(entry)
             elif isinstance(entry, dict):
                 # Validate at load time so a typo'd ``type`` fails here
                 # (with the whole file logged and skipped) rather than
                 # producing a run-time "unknown assertion type" per case.
-                out.append(FileAssertion.model_validate(entry))
+                out.append(FILE_ASSERTION.validate_python(entry))
         return out
 
     @staticmethod

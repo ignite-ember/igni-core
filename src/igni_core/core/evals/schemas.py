@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from igni_core.core.evals.assertions import FileAssertion
+from igni_core.core.evals.assertions import FileAssertion, FileCheckResult
 
 
 class FixtureSpec(BaseModel):
@@ -67,20 +67,6 @@ class ToolTraceEntry(BaseModel):
     args: dict[str, Any] | None = None
     result_preview: str = ""
     error: bool = False
-
-
-class FileCheckResult(BaseModel):
-    """Result of a single file-assertion check.
-
-    Replaces the old ``tuple[str, bool, str]`` return so reporter /
-    JSON consumers see named fields rather than positional indices.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    type: str
-    passed: bool
-    detail: str
 
 
 class CheckResult(BaseModel):
