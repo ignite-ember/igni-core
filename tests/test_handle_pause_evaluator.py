@@ -376,4 +376,4 @@ class TestResolveHitlBatchMergesAutoResolved:
         assert user_req in passed
         assert auto_req in passed
         # The bucket should be drained so we don't re-merge on a later resume.
-        assert store.auto_resolved_snapshot() == {}
+        assert store.auto_resolved_for(run_id) == []

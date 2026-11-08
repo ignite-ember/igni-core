@@ -1,20 +1,9 @@
 """Store for HITL requirements paused waiting on a user decision.
 
-Extracted from :mod:`igni_core.backend.server_pause` — the two
-dicts ``_pending_requirements`` and ``_auto_resolved_requirements``
-previously lived as attributes on :class:`BackendServer` and were
-mutated from three separate modules (``server_pause``,
-``hitl_controller``, and several tests). This class owns both dicts
-and exposes the mutation API as methods so a future audit for stray
-``backend._pending_requirements[x] = y`` has one grep target and
-one place to add invariant guards.
-
 Invariant enforced by the store: a requirement id lives in
-``_pending`` XOR in ``_auto_resolved`` — never both. The audit
-flagged the previous state (two dicts mutated independently) as a
-correctness seam because ``HitlController._merge_auto_resolved`` and
-``server_pause.drop_pending_for_run`` both had to sweep both dicts
-in the right order.
+``_pending`` XOR in ``_auto_resolved`` — never both. Both buckets
+are private; every read and write goes through the methods below, so
+the invariant has one place to live.
 
 Both buckets are written through to an
 :class:`~igni_core.core.approvals.journal.ApprovalJournal` when
@@ -29,7 +18,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+
+from agno.run.requirement import RunRequirement
 
 from igni_core.backend.schemas_pause import PendingRequirement
 from igni_core.core.approvals.journal import ApprovalJournal, ApprovalOrigin
@@ -66,7 +56,7 @@ class PendingRequirementsStore:
         without them it is memory only, as tests build it.
         """
         self._pending: dict[str, PendingRequirement] = {}
-        self._auto_resolved: dict[str, list[Any]] = {}
+        self._auto_resolved: dict[str, list[RunRequirement]] = {}
         self._journal = journal
         self._session_id = session_id
         #: Main-agent runs a previous backend was continuing when it died.
@@ -149,12 +139,6 @@ class PendingRequirementsStore:
             self._journal.forget(req_id)
         return entry
 
-    def has(self, req_id: str) -> bool:
-        """True when the id is currently pending. Kept for the
-        test-only ``'x' in server._pending_requirements`` style
-        assertion via the compat view (see :meth:`pending_ids`)."""
-        return req_id in self._pending
-
     def pending_ids(self) -> list[str]:
         """Snapshot of currently-pending requirement ids."""
         return list(self._pending.keys())
@@ -184,7 +168,7 @@ class PendingRequirementsStore:
 
     # ── Read/mutate the auto-resolved bucket ──────────────────────
 
-    def stash_auto_resolved(self, run_id: str, reqs: list[Any]) -> None:
+    def stash_auto_resolved(self, run_id: str, reqs: list[RunRequirement]) -> None:
         """Append evaluator-resolved requirements to the run's bucket.
 
         Used by :meth:`PauseHandler.handle` on the mixed-pause path
@@ -199,7 +183,7 @@ class PendingRequirementsStore:
                     session_id=self._current_session(), run_id=run_id, requirement=req
                 )
 
-    def drain_auto_resolved(self, run_id: str | None) -> list[Any]:
+    def drain_auto_resolved(self, run_id: str | None) -> list[RunRequirement]:
         """Pop and return the auto-resolved list for a run.
 
         Returns ``[]`` when ``run_id`` is ``None`` or absent — used
@@ -213,31 +197,7 @@ class PendingRequirementsStore:
             self._journal.forget_run(run_id, origin=ApprovalOrigin.AUTO_RESOLVED)
         return drained
 
-    def auto_resolved_snapshot(self) -> dict[str, list[Any]]:
-        """Copy of the auto-resolved bucket for test assertions.
-
-        Tests compare ``server._auto_resolved_requirements == {}``
-        after a drain; this method backs the compat read-shim on
-        :class:`BackendServer`."""
-        return self._auto_resolved
-
-    # ── Backward-compat dict views ────────────────────────────────
-    #
-    # ``BackendServer._pending_requirements`` and
-    # ``_auto_resolved_requirements`` used to be raw dicts. Tests +
-    # :class:`HitlController` still expect a dict-like surface
-    # (``.pop``, ``in``, item assignment). We expose the underlying
-    # dicts here so the compat properties on BackendServer forward
-    # to them directly — no proxy class needed. The mutation API
-    # above is still the preferred surface for new code.
-
-    @property
-    def pending_dict(self) -> dict[str, PendingRequirement]:
-        """Raw pending dict — kept for the compat read-shim on
-        :class:`BackendServer`."""
-        return self._pending
-
-    @property
-    def auto_resolved_dict(self) -> dict[str, list[Any]]:
-        """Raw auto-resolved dict — kept for the compat read-shim."""
-        return self._auto_resolved
+    def auto_resolved_for(self, run_id: str) -> list[RunRequirement]:
+        """Copy of the requirements the evaluator decided for ``run_id``
+        and that wait to be merged into its continuation."""
+        return list(self._auto_resolved.get(run_id, []))

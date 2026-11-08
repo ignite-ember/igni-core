@@ -126,7 +126,7 @@ async def test_content_and_completion_pass_through_and_the_run_is_tidied_up():
 
     assert [m.type for m in out] == ["content_delta", "run_completed"]
     assert out[0].text == "Hello"
-    assert not store.has("stale")
+    assert "stale" not in store.pending_ids()
     assert bus.drained == ["r1"]
     # The relay counted itself in and back out.
     assert not session.sub_agent_hitl.has_relay
@@ -233,7 +233,7 @@ async def test_a_pause_left_to_the_person_ends_the_stream_with_the_dialog():
     (paused,) = out
     assert isinstance(paused, msg.RunPaused)
     assert paused.requirements[0].tool_name == "run_shell_command"
-    assert store.has(paused.requirements[0].requirement_id)
+    assert paused.requirements[0].requirement_id in store.pending_ids()
 
 
 async def test_a_mixed_pause_keeps_the_policy_s_decisions_for_the_answer():

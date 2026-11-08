@@ -223,9 +223,7 @@ class TestPendingPausedRunDispatcher:
         await dispatcher.dispatch(user_msg)
 
         # The edit was auto-rejected and must be in the auto-resolved bucket
-        auto_bucket = store.auto_resolved_snapshot()
-        assert "run-mixed" in auto_bucket
-        assert len(auto_bucket["run-mixed"]) == 1
+        assert len(store.auto_resolved_for("run-mixed")) == 1
         # The custom tool was deferred and must be in the pending bucket
         assert len(store.pending_ids()) == 1
 
@@ -303,5 +301,4 @@ class TestPendingPausedRunDispatcher:
         types = [c.args[0].type for c in calls]
         assert "run_paused" not in types
         # Auto-resolved bucket should have both reqs
-        auto_bucket = store.auto_resolved_snapshot()
-        assert len(auto_bucket.get("run-all-auto", [])) == 2
+        assert len(store.auto_resolved_for("run-all-auto")) == 2
