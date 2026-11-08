@@ -1,24 +1,17 @@
 """Typed view models for the ``/agents`` slash command's chat output.
 
-Extracted from :mod:`igni_core.backend.command_handler` — the
-old ``_cmd_agents`` inline body built markdown strings inside the
-handler and returned raw :class:`CommandResult` objects. Every
-markdown template that the :class:`AgentsCommand` coordinator emits
-now lives here as a Pydantic view model with a single
+Every markdown template the :class:`AgentsCommand` coordinator emits
+lives here as a Pydantic view model with a single
 ``.to_command_result()`` render entry point. Mirrors the sibling
 :mod:`schemas_context` pattern.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from igni_core.backend.command_result import CommandResult
-
-if TYPE_CHECKING:
-    from igni_core.core.agents.schemas import AgentDefinition
+from igni_core.core.agents.schemas import AgentDefinition
 
 
 class PromoteResult(BaseModel):
@@ -54,23 +47,27 @@ class DiscardResult(BaseModel):
 class EphemeralAgentsView(BaseModel):
     """Wraps the ``list[AgentDefinition]`` returned by
     :meth:`AgentPool.list_ephemeral`. Empty list renders as an
-    info result; non-empty renders the markdown catalogue that
-    the old inline body assembled.
-    """
+    info result; non-empty renders a markdown catalogue.
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    ``AgentDefinition`` is imported at runtime, not under
+    ``TYPE_CHECKING``: Pydantic resolves field annotations against the
+    module namespace, so a type-only import leaves the model
+    unconstructible.
+    """
 
     agents: list[AgentDefinition]
 
     def to_command_result(self) -> CommandResult:
         if not self.agents:
             return CommandResult.info("No ephemeral agents.")
-        lines = "## Ephemeral Agents\n"
-        for defn in self.agents:
-            tools = ", ".join(defn.tools) if defn.tools else "none"
-            lines += f"- **{defn.name}** — {defn.description}\n  tools: {tools}\n"
-        lines += "\n*`/agents promote <name>` to save · `/agents discard <name>` to remove*\n"
-        return CommandResult.markdown(lines)
+        rows = "".join(self._row(defn) for defn in self.agents)
+        footer = "\n*`/agents promote <name>` to save · `/agents discard <name>` to remove*\n"
+        return CommandResult.markdown(f"## Ephemeral Agents\n{rows}{footer}")
+
+    @staticmethod
+    def _row(defn: AgentDefinition) -> str:
+        tools = ", ".join(defn.tools) if defn.tools else "none"
+        return f"- **{defn.name}** — {defn.description}\n  tools: {tools}\n"
 
 
 __all__ = ["PromoteResult", "DiscardResult", "EphemeralAgentsView"]
