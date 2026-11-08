@@ -8,7 +8,7 @@ model, so the runner is the one seam mocked here; the context is a
 real :class:`RpcHandlerContext` and the backend a stub carrying the
 session the call was routed to.
 
-Wire shapes are asserted through the dispatcher's ``serialize_result``, the
+Wire shapes are asserted through ``RpcResult.serialize``, the
 path production takes, so the ``whenToUse`` alias is checked where it
 matters.
 """
@@ -20,9 +20,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.backend.message_dispatcher import serialize_result
 from igni_core.backend.rpc_handlers.base import RpcHandlerContext
 from igni_core.backend.rpc_handlers.workflows import WorkflowsRpcHandler
+from igni_core.backend.rpc_result import RpcResult
 from igni_core.backend.schemas_workflows import (
     WorkflowCancelOutcome,
     WorkflowMeta,
@@ -82,7 +82,7 @@ async def test_list_workflows_returns_discovery_output() -> None:
         _envelope("beta", f"{CONFIG_DIR}/workflows/beta.mjs"),
     ]
 
-    out = serialize_result(await handler.list_workflows({}))
+    out = RpcResult.serialize(await handler.list_workflows({}))
 
     assert out == [
         {
@@ -126,7 +126,7 @@ async def test_run_workflow_returns_workflow_run_id_without_blocking() -> None:
         }
     )
 
-    assert serialize_result(out) == {
+    assert RpcResult.serialize(out) == {
         "workflow_run_id": "wf_abc123def456",
         "name": "refactor-to-standards",
     }
@@ -216,7 +216,7 @@ async def test_cancel_workflow_returns_cancelled_true_when_run_exists() -> None:
 
     out = await handler.cancel_workflow({"workflow_run_id": "wf_abc", "session_id": "s"})
 
-    assert serialize_result(out) == {"cancelled": True, "workflow_run_id": "wf_abc"}
+    assert RpcResult.serialize(out) == {"cancelled": True, "workflow_run_id": "wf_abc"}
     runner.cancel.assert_awaited_once_with("wf_abc")
 
 
@@ -228,7 +228,7 @@ async def test_cancel_workflow_returns_cancelled_false_when_no_run() -> None:
 
     out = await handler.cancel_workflow({"workflow_run_id": "wf_unknown"})
 
-    assert serialize_result(out) == {"cancelled": False, "workflow_run_id": "wf_unknown"}
+    assert RpcResult.serialize(out) == {"cancelled": False, "workflow_run_id": "wf_unknown"}
 
 
 async def test_cancel_workflow_surfaces_runtime_error() -> None:
@@ -253,7 +253,7 @@ async def test_cancel_workflow_rejects_a_missing_id(args: dict) -> None:
 def test_a_started_result_answers_with_the_runs_id_and_name() -> None:
     out = _started("wf_ok", "smoke").to_response()
 
-    assert serialize_result(out) == {"workflow_run_id": "wf_ok", "name": "smoke"}
+    assert RpcResult.serialize(out) == {"workflow_run_id": "wf_ok", "name": "smoke"}
 
 
 def test_a_missing_workflow_result_raises_file_not_found() -> None:

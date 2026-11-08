@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from igni_core.backend.activity import Activity
-from igni_core.backend.message_dispatcher import serialize_result
 from igni_core.backend.observed_transport import ObservedTransport
+from igni_core.backend.rpc_result import RpcResult
 from igni_core.backend.rpc_router import POOL_LEVEL_RPCS
 from igni_core.backend.schemas_pool import AttachRefused, ExtensionPost
 from igni_core.backend.service_event_delivery import PoolSession
@@ -69,7 +69,7 @@ class OrchestratorHostBackend:
         result = handler(dict(args))
         if asyncio.iscoroutine(result) or asyncio.isfuture(result):
             result = await result
-        return serialize_result(result)
+        return RpcResult.serialize(result)
 
     async def act(self, message: msg.Message, *, session_id: str) -> None:
         self._orchestrator.spawn_dispatch(message.model_copy(update={"session_id": session_id}))

@@ -35,7 +35,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from igni_core.backend.message_dispatcher import ExtensionMessage, MessageDispatcher
+from igni_core.backend.agent_framing import ExtensionMessage
+from igni_core.backend.message_dispatcher import MessageDispatcher
 from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.core.activity import background
 from igni_core.core.utils.media_schemas import MediaAttachments

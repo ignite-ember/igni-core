@@ -1,4 +1,4 @@
-"""Tests for ``backend.message_dispatcher.serialize_result`` — the JSON-safety
+"""Tests for ``backend.rpc_result.RpcResult.serialize`` — the JSON-safety
 converter every RPC response runs through.
 
 It handles five branches in order:
@@ -21,72 +21,72 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from igni_core.backend.message_dispatcher import serialize_result
+from igni_core.backend.rpc_result import RpcResult
 
 
 class TestPrimitives:
     def test_none(self):
-        assert serialize_result(None) is None
+        assert RpcResult.serialize(None) is None
 
     def test_string(self):
-        assert serialize_result("hello") == "hello"
+        assert RpcResult.serialize("hello") == "hello"
         # Empty string stays a string (not None) — important
         # for distinguishing missing-field from empty-field at
         # the FE.
-        assert serialize_result("") == ""
+        assert RpcResult.serialize("") == ""
 
     def test_int(self):
-        assert serialize_result(42) == 42
-        assert serialize_result(0) == 0
-        assert serialize_result(-1) == -1
+        assert RpcResult.serialize(42) == 42
+        assert RpcResult.serialize(0) == 0
+        assert RpcResult.serialize(-1) == -1
 
     def test_float(self):
         # Floats pass through. NaN/Inf would technically be
         # un-JSON-safe but the function doesn't reject them;
         # the JSON encoder downstream does.
-        assert serialize_result(3.14) == 3.14
+        assert RpcResult.serialize(3.14) == 3.14
 
     def test_bool(self):
         # ``isinstance(True, int)`` is True in Python — pin
         # that the bool branch lands FIRST so True/False
         # don't get coerced to 1/0.
-        assert serialize_result(True) is True
-        assert serialize_result(False) is False
-        assert isinstance(serialize_result(True), bool)
+        assert RpcResult.serialize(True) is True
+        assert RpcResult.serialize(False) is False
+        assert isinstance(RpcResult.serialize(True), bool)
 
 
 class TestLists:
     def test_empty_list(self):
-        assert serialize_result([]) == []
+        assert RpcResult.serialize([]) == []
 
     def test_list_of_primitives(self):
-        assert serialize_result([1, "a", True, None]) == [1, "a", True, None]
+        assert RpcResult.serialize([1, "a", True, None]) == [1, "a", True, None]
 
     def test_tuple_returns_list(self):
         # JSON has no tuple — the function converts to list
         # (which round-trips through json.dumps cleanly).
-        assert serialize_result((1, 2, 3)) == [1, 2, 3]
-        assert isinstance(serialize_result((1, 2, 3)), list)
+        assert RpcResult.serialize((1, 2, 3)) == [1, 2, 3]
+        assert isinstance(RpcResult.serialize((1, 2, 3)), list)
 
     def test_nested_list(self):
         # Recursive — the inner list also goes through the
         # serializer.
-        assert serialize_result([[1, 2], [3, 4]]) == [[1, 2], [3, 4]]
+        assert RpcResult.serialize([[1, 2], [3, 4]]) == [[1, 2], [3, 4]]
 
 
 class TestDicts:
     def test_empty_dict(self):
-        assert serialize_result({}) == {}
+        assert RpcResult.serialize({}) == {}
 
     def test_dict_with_str_keys(self):
-        assert serialize_result({"a": 1, "b": 2}) == {"a": 1, "b": 2}
+        assert RpcResult.serialize({"a": 1, "b": 2}) == {"a": 1, "b": 2}
 
     def test_dict_with_non_str_keys_coerces_to_str(self):
         # The BE occasionally builds dicts keyed by ints
         # (e.g. run_id integers from an older Agno schema).
         # JSON requires string keys; without the coercion the
         # serializer would crash at the JSON layer downstream.
-        out = serialize_result({1: "one", 2: "two"})
+        out = RpcResult.serialize({1: "one", 2: "two"})
         assert out == {"1": "one", "2": "two"}
         for k in out:
             assert isinstance(k, str)
@@ -95,12 +95,12 @@ class TestDicts:
         # Edge case — defensive coverage. None becomes "None".
         # Pin so a future "raise on None keys" change is a
         # deliberate choice.
-        assert serialize_result({None: "x"}) == {"None": "x"}
+        assert RpcResult.serialize({None: "x"}) == {"None": "x"}
 
     def test_dict_values_recursively_serialized(self):
         # The whole point — nested structures flatten cleanly.
         nested = {"outer": {"inner": [1, 2, {"deep": True}]}}
-        assert serialize_result(nested) == {"outer": {"inner": [1, 2, {"deep": True}]}}
+        assert RpcResult.serialize(nested) == {"outer": {"inner": [1, 2, {"deep": True}]}}
 
 
 class TestPydanticModels:
@@ -115,7 +115,7 @@ class TestPydanticModels:
         # serialized as Python repr strings ("name='x'
         # count=1") instead of JSON dicts.
         m = self._Sample(name="x", count=1)
-        out = serialize_result(m)
+        out = RpcResult.serialize(m)
         assert out == {"name": "x", "count": 1}
         assert isinstance(out, dict)
 
@@ -127,7 +127,7 @@ class TestPydanticModels:
             self._Sample(name="a", count=1),
             self._Sample(name="b", count=2),
         ]
-        out = serialize_result(items)
+        out = RpcResult.serialize(items)
         assert out == [
             {"name": "a", "count": 1},
             {"name": "b", "count": 2},
@@ -143,13 +143,13 @@ class TestFallback:
             def __str__(self):
                 return "custom-repr"
 
-        assert serialize_result(Custom()) == "custom-repr"
+        assert RpcResult.serialize(Custom()) == "custom-repr"
 
     def test_path_object_serialized_as_str(self):
         # Path is a common BE return type — the str() fallback
         # gives the OS-path string the FE can render.
         p = Path("/tmp/x.txt")
-        assert serialize_result(p) == str(p)
+        assert RpcResult.serialize(p) == str(p)
 
     def test_set_falls_through_to_str(self):
         # Set isn't in the explicit branches — it falls
@@ -157,7 +157,7 @@ class TestFallback:
         # "support sets" change is deliberate (since the
         # current behaviour serializes ``{1, 2}`` as
         # ``"{1, 2}"`` which is probably wrong but pinned).
-        out = serialize_result({1, 2})
+        out = RpcResult.serialize({1, 2})
         assert isinstance(out, str)
 
 
@@ -170,19 +170,19 @@ class TestNestedCombinations:
             {"name": "a", "tags": ["x", "y"]},
             {"name": "b", "tags": ["z"]},
         ]
-        assert serialize_result(value) == value
+        assert RpcResult.serialize(value) == value
 
     def test_dict_with_pydantic_values(self):
         class _M(BaseModel):
             v: int
 
-        out = serialize_result({"first": _M(v=1), "second": _M(v=2)})
+        out = RpcResult.serialize({"first": _M(v=1), "second": _M(v=2)})
         assert out == {"first": {"v": 1}, "second": {"v": 2}}
 
     def test_tuple_of_pydantic_models(self):
         class _M(BaseModel):
             v: int
 
-        out = serialize_result((_M(v=1), _M(v=2)))
+        out = RpcResult.serialize((_M(v=1), _M(v=2)))
         # Tuple → list, models → dicts.
         assert out == [{"v": 1}, {"v": 2}]
