@@ -73,6 +73,7 @@ from igni_core.core.loop import LoopProgressStore, LoopStore, LoopToolResult
 from igni_core.core.lsp import LspServerManager, load_lsp_config
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.config import MCPConfigLoader
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.memory.manager import StorageManager
 from igni_core.core.monitors import MonitorManager, load_monitor_config
 from igni_core.core.network_policy import NetworkPolicy
@@ -515,6 +516,8 @@ class Session:
             self.approval.ask,
             # Read per call: ``apply_workspace_trust`` replaces ``settings``.
             model_ref=lambda: ModelRegistry(self.settings).get_model(),
+            # The process's registry, which the extension installer fills.
+            tool_hints=ToolHintsRegistry.shared(),
         )
         factory.ask_person = self.approval.ask
         self._tool_hook_factory = factory

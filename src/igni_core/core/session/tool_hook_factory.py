@@ -21,8 +21,9 @@ from igni_core.core.config.permission_eval.schemas import PermissionMode
 from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.bypass_explainer import CallExplainer
 from igni_core.core.hooks.bypass_guard import Ask, BypassGuard
-from igni_core.core.hooks.permission_pipeline import AskPerson
+from igni_core.core.hooks.permission.evaluator_stage import AskPerson
 from igni_core.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.session.hooks import SessionHooks
 from igni_core.core.utils.rules_index import RulesIndex
 
@@ -74,7 +75,9 @@ class ToolEventHookFactory:
         """Whether the live evaluator is in Bypass mode, read per call."""
         return self.permission_evaluator.mode is PermissionMode.BYPASS_PERMISSIONS
 
-    def build_bypass_guard(self, ask: Ask, model_ref: Callable[[], Any]) -> BypassGuard:
+    def build_bypass_guard(
+        self, ask: Ask, model_ref: Callable[[], Any], tool_hints: ToolHintsRegistry
+    ) -> BypassGuard:
         """Bypass mode's last check, asking through ``ask``.
 
         ``model_ref`` is called per explanation, so the session's current
@@ -86,6 +89,7 @@ class ToolEventHookFactory:
             project_dir=self._project_dir,
             in_bypass=lambda: self.in_bypass,
             ask=ask,
+            tool_hints=tool_hints,
             explainer=(
                 CallExplainer(
                     model_ref, project_dir=self._project_dir, timeout=config.explain_timeout

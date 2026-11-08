@@ -23,6 +23,7 @@ from igni_core.core.config.schemas.safety import BypassGuardConfig
 from igni_core.core.hooks.bypass_explainer import CallExplainer, clean
 from igni_core.core.hooks.bypass_guard import BypassGuard, Verdict
 from igni_core.core.hooks.bypass_judge import HarmScore
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.session.tool_approval import ToolCallApprovalChannel
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
@@ -54,6 +55,7 @@ def _guard(project: Path, *, ask, explainer=None) -> BypassGuard:
         project_dir=project,
         in_bypass=lambda: True,
         ask=ask,
+        tool_hints=ToolHintsRegistry(),
         judge=NoJudge(),
         explainer=explainer,
     )

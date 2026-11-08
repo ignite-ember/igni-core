@@ -49,6 +49,7 @@ from igni_core.core.config.schemas.safety import BypassGuardConfig
 from igni_core.core.hooks.bypass_explainer import CallExplainer
 from igni_core.core.hooks.bypass_judge import HarmJudge
 from igni_core.core.hooks.bypass_tool_kind import ToolKind
+from igni_core.core.mcp.hints import ToolHintsRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -171,10 +172,12 @@ class BypassGuard:
         project_dir: Path | None,
         in_bypass: Callable[[], bool],
         ask: Ask | None,
+        tool_hints: ToolHintsRegistry,
         judge: HarmJudge | None = None,
         explainer: CallExplainer | None = None,
     ) -> None:
         self._config = config
+        self._tool_hints = tool_hints
         self._project_dir = project_dir
         self._in_bypass = in_bypass
         self._ask = ask
@@ -186,6 +189,8 @@ class BypassGuard:
     ) -> str | None:
         """A block message when the call must not run, otherwise None."""
         if not self._config.enabled or not self._in_bypass():
+            return None
+        if self._is_extension_local_read(tool_name):
             return None
         kind = ToolKind.of(tool_name)
         # A read of a secret path is checked even though the tool is read-only:
@@ -228,6 +233,15 @@ class BypassGuard:
         # an earlier "Blocked: … Do not retry it another way" had it
         # telling the user a system policy had stopped the call.
         return f"{NOT_RUN} the user rejected this call when asked to approve it."
+
+    def _is_extension_local_read(self, tool_name: str) -> bool:
+        """An extension tool whose manifest says it only reads its own data.
+
+        Waved through as igni's own local reads are; every other extension
+        tool gets the same check as a shell command.
+        """
+        hints = self._tool_hints.get(tool_name)
+        return hints is not None and hints.is_local_read
 
     def _follow_up(self, tool_name: str, args: dict[str, Any], verdict: Verdict) -> FollowUp | None:
         explainer = self._explainer

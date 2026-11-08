@@ -33,7 +33,7 @@ import pytest
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.hook_firer import HookFirer
-from igni_core.core.hooks.permission_pipeline import ToolCallContext
+from igni_core.core.hooks.permission.context import ToolCallContext
 from igni_core.core.hooks.schemas import HookDefinition
 from igni_core.core.hooks.tool_call_invoker import ToolCallInvoker
 

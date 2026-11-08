@@ -28,6 +28,8 @@ from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.permission_eval import PermissionDecision, PermissionMode
 from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 from igni_core.core.config.settings_loader import SettingsLoader
+from igni_core.core.hooks.permission.denial import Denial
+from igni_core.core.hooks.permission.evaluator_stage import PermissionEvaluatorStage
 from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
 
 
@@ -206,10 +208,8 @@ def test_the_shell_is_not_reported_as_off_entirely():
     """The denial used to add "Shell access is off in this session" — true
     then, false now: reads still work, and saying otherwise costs the model
     the moves it has."""
-    from igni_core.core.hooks.permission_pipeline import PermissionEvaluatorStage
-
     stage = PermissionEvaluatorStage(_read_only_evaluator(), firer=None)  # type: ignore[arg-type]
-    assert stage._tool_is_off_entirely("run_shell_command") is False
+    assert stage._tool_is_off_entirely(Denial("run_shell_command")) is False
 
 
 def test_the_session_evaluator_carries_the_flag(tmp_path):

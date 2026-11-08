@@ -216,8 +216,8 @@ class SafetyCheckResult(BaseModel):
     """Result of a synchronous safety-list check on a single tool call.
 
     Pattern 3 Result-style return for the pure predicate seam
-    on :class:`~igni_core.core.hooks.permission_pipeline.ProtectedPathStage`
-    and :class:`~igni_core.core.hooks.permission_pipeline.BlockedCommandStage`.
+    on :class:`~igni_core.core.hooks.permission.protected_path_stage.ProtectedPathStage`
+    and :class:`~igni_core.core.hooks.permission.blocked_command_stage.BlockedCommandStage`.
     Their async ``evaluate`` composes ``check_sync`` (pure) with
     logging + :class:`StageOutcome` translation on the outside.
 

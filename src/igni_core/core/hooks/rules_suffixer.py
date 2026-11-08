@@ -25,7 +25,7 @@ from typing import Any
 
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.hook_firer import HookFirer
-from igni_core.core.hooks.permission_pipeline import ToolCallContext
+from igni_core.core.hooks.permission.context import ToolCallContext
 from igni_core.core.hooks.tool_events import InstructionsLoadedPayload
 from igni_core.core.utils.rules_index import RulesIndex
 

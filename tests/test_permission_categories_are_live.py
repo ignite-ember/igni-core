@@ -27,6 +27,7 @@ import pytest
 
 from igni_core.core.config.permission_eval import PermissionEvaluator
 from igni_core.core.config.schemas.permissions import CategoryRules, PermissionsConfig
+from igni_core.core.hooks.permission.denial import Denial
 
 
 def _decide(perms: PermissionsConfig, tool: str, args: dict) -> str:
@@ -161,9 +162,7 @@ class TestReadOnlyIsAWall:
         with no stated way forward, and a model given no alternative retries the
         same call in a new costume. It names no extension: igni does not know
         which tools an installed extension gives the session."""
-        from igni_core.core.hooks.permission_pipeline import _denial_message
-
-        message = _denial_message("run_shell_command")
+        message = Denial("run_shell_command").policy_message(tool_is_off_entirely=True)
 
         assert "another of your tools" in message
         assert "rather than retrying" in message
@@ -171,9 +170,10 @@ class TestReadOnlyIsAWall:
 
     def test_an_ordinary_denial_stays_terse(self):
         """Only the case that strands the model gets the extra paragraph."""
-        from igni_core.core.hooks.permission_pipeline import _denial_message
-
-        assert _denial_message("edit_file") == "Blocked: permission policy denied 'edit_file'."
+        assert (
+            Denial("edit_file").policy_message(tool_is_off_entirely=True)
+            == "Blocked: permission policy denied 'edit_file'."
+        )
 
 
 class TestTheUnreadCategoriesAreDocumentedAsUnread:

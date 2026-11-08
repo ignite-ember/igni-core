@@ -20,6 +20,10 @@ from igni_core.core.hooks.bypass_guard import NOT_RUN, BypassGuard, Verdict
 from igni_core.core.hooks.bypass_judge import HarmJudge, HarmScore
 from igni_core.core.hooks.bypass_rules import flag_shell, flag_write
 from igni_core.core.hooks.bypass_tool_kind import ToolKind
+from igni_core.core.hooks.permission.bypass_guard_stage import BypassGuardStage
+from igni_core.core.hooks.permission.context import ToolCallContext
+from igni_core.core.hooks.permission.outcome import Block, Continue
+from igni_core.core.mcp.hints import ToolHintsRegistry
 
 
 @pytest.fixture
@@ -130,6 +134,7 @@ def _guard(project, *, bypass=True, ask=None, judge=None, **config):
         project_dir=project,
         in_bypass=lambda: bypass,
         ask=ask,
+        tool_hints=ToolHintsRegistry(),
         judge=judge or FakeJudge(),
     )
 
@@ -266,13 +271,6 @@ class TestARejectedCallLooksRejected:
 
 
 def test_the_pipeline_runs_it_last_and_blocks_on_its_word(project):
-    from igni_core.core.hooks.permission_pipeline import (
-        Block,
-        BypassGuardStage,
-        Continue,
-        ToolCallContext,
-    )
-
     stage = BypassGuardStage(_guard(project, ask=Asker(False)))
     blocked = asyncio.run(
         stage.evaluate(
@@ -386,6 +384,7 @@ def test_the_dialog_pops_up_and_its_answer_decides(tmp_path, action, expect_ran)
             project_dir=tmp_path,
             in_bypass=lambda: True,
             ask=ToolCallApprovalChannel(session.sub_agent_hitl).ask,
+            tool_hints=ToolHintsRegistry(),
             judge=NoJudge(),
         )
         outcome = {}
