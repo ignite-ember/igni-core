@@ -20,7 +20,15 @@ from unittest.mock import MagicMock, patch
 
 from igni_core.backend.server import BackendServer
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.plugins.git import GitError
 from igni_core.core.plugins.loader import PluginLoader
+from igni_core.core.plugins.marketplace_store import MarketplaceRegistryStore
+from igni_core.core.plugins.models import (
+    MarketplaceCatalog,
+    MarketplaceEntry,
+    MarketplacePluginEntry,
+    MarketplaceRegistry,
+)
 from igni_core.core.plugins.state import PluginsState, load_state, save_state
 from igni_core.core.session.core import PluginReloadCounts
 from tests.backend_server_factory import make_backend
@@ -315,8 +323,6 @@ def test_install_plugin_no_git(tmp_path: Path) -> None:
 
 
 def test_install_plugin_surfaces_git_error(tmp_path: Path) -> None:
-    from igni_core.core.plugins.git import GitError
-
     backend = _make_backend(tmp_path)
     with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
@@ -424,8 +430,7 @@ def test_get_marketplaces_shape(tmp_path: Path) -> None:
     p1.resolved_source.return_value = resolved
     e.cached.plugins = [p1]
     fake_registry.marketplaces = [e]
-    with patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load:
-        mock_load.return_value = fake_registry
+    with patch.object(MarketplaceRegistryStore, "load", return_value=fake_registry):
         out = backend.get_marketplaces()
     assert len(out) == 1
     m = out[0]
@@ -440,26 +445,31 @@ def test_get_marketplaces_shape(tmp_path: Path) -> None:
     assert p.branch == "main"
 
 
+def _entry(name: str, plugin_count: int = 0) -> MarketplaceEntry:
+    """A registered marketplace whose cached catalog lists ``plugin_count`` plugins."""
+    catalog = MarketplaceCatalog(
+        name=name,
+        plugins=[
+            MarketplacePluginEntry(name=f"p{i}", source=f"https://p{i}.git")
+            for i in range(plugin_count)
+        ],
+    )
+    return MarketplaceEntry(name=name, url=f"https://{name}.git", cached=catalog)
+
+
 def test_add_marketplace_delegates(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    fake_entry = MagicMock()
-    fake_entry.name = "m1"
-    fake_entry.cached = MagicMock()
-    fake_entry.cached.plugins = [MagicMock(), MagicMock()]
-    with patch("igni_core.core.plugins.marketplaces.add_marketplace") as mock_add:
-        mock_add.return_value = fake_entry
+    with patch.object(MarketplaceRegistryStore, "add") as mock_add:
+        mock_add.return_value = _entry("m1", plugin_count=2)
         result = backend.controllers.marketplaces.add("https://m.git")
-    args, kwargs = mock_add.call_args
-    assert "https://m.git" in (args + tuple(kwargs.values()))
+    mock_add.assert_called_once_with("https://m.git")
     assert "m1" in result.text
     assert "2 plugin" in result.text
 
 
 def test_add_marketplace_surfaces_git_error(tmp_path: Path) -> None:
-    from igni_core.core.plugins.git import GitError
-
     backend = _make_backend(tmp_path)
-    with patch("igni_core.core.plugins.marketplaces.add_marketplace") as mock_add:
+    with patch.object(MarketplaceRegistryStore, "add") as mock_add:
         mock_add.side_effect = GitError("auth required")
         result = backend.controllers.marketplaces.add("https://m.git")
     assert "git error" in result.text.lower()
@@ -467,7 +477,7 @@ def test_add_marketplace_surfaces_git_error(tmp_path: Path) -> None:
 
 def test_remove_marketplace_delegates(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("igni_core.core.plugins.marketplaces.remove_marketplace") as mock_remove:
+    with patch.object(MarketplaceRegistryStore, "remove") as mock_remove:
         mock_remove.return_value = True
         result = backend.controllers.marketplaces.remove("m1")
     assert "m1" in result.text
@@ -475,7 +485,7 @@ def test_remove_marketplace_delegates(tmp_path: Path) -> None:
 
 def test_remove_marketplace_unknown(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("igni_core.core.plugins.marketplaces.remove_marketplace") as mock_remove:
+    with patch.object(MarketplaceRegistryStore, "remove") as mock_remove:
         mock_remove.return_value = False
         result = backend.controllers.marketplaces.remove("ghost")
     assert "ghost" in result.text
@@ -484,12 +494,8 @@ def test_remove_marketplace_unknown(tmp_path: Path) -> None:
 
 def test_refresh_marketplaces_named(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    fake_entry = MagicMock()
-    fake_entry.name = "m1"
-    fake_entry.cached = MagicMock()
-    fake_entry.cached.plugins = [MagicMock(), MagicMock(), MagicMock()]
-    with patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh:
-        mock_refresh.return_value = fake_entry
+    with patch.object(MarketplaceRegistryStore, "refresh") as mock_refresh:
+        mock_refresh.return_value = _entry("m1", plugin_count=3)
         result = backend.controllers.marketplaces.refresh("m1")
     assert "m1" in result.text
     assert "3 plugin" in result.text
@@ -497,10 +503,20 @@ def test_refresh_marketplaces_named(tmp_path: Path) -> None:
 
 def test_refresh_marketplaces_named_unknown(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    with patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh:
+    with patch.object(MarketplaceRegistryStore, "refresh") as mock_refresh:
         mock_refresh.return_value = None
         result = backend.controllers.marketplaces.refresh("ghost")
     assert "ghost" in result.text
+    assert "no marketplace" in result.text.lower()
+
+
+def test_refresh_marketplaces_named_failure_names_the_marketplace(tmp_path: Path) -> None:
+    backend = _make_backend(tmp_path)
+    with patch.object(MarketplaceRegistryStore, "refresh") as mock_refresh:
+        mock_refresh.side_effect = ValueError("catalog unreadable")
+        result = backend.controllers.marketplaces.refresh("m1")
+    assert "m1" in result.text
+    assert "catalog unreadable" in result.text
 
 
 def test_refresh_marketplaces_all_aggregates_errors(tmp_path: Path) -> None:
@@ -508,35 +524,26 @@ def test_refresh_marketplaces_all_aggregates_errors(tmp_path: Path) -> None:
     reports both counts: how many refreshed cleanly, how many
     failed and why."""
     backend = _make_backend(tmp_path)
-    fake_registry = MagicMock()
-    e1 = MagicMock()
-    e1.name = "m1"
-    e2 = MagicMock()
-    e2.name = "m2"
-    fake_registry.marketplaces = [e1, e2]
+    registry = MarketplaceRegistry(marketplaces=[_entry("m1"), _entry("m2")])
 
-    def _refresh_side_effect(name, *, data_dir):
+    def _refresh_side_effect(name: str) -> MarketplaceEntry:
         if name == "m1":
-            return MagicMock(cached=MagicMock(plugins=[]))
-        raise RuntimeError("boom")
+            return _entry("m1")
+        raise ValueError("boom")
 
     with (
-        patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load,
-        patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
+        patch.object(MarketplaceRegistryStore, "load", return_value=registry),
+        patch.object(MarketplaceRegistryStore, "refresh", side_effect=_refresh_side_effect),
     ):
-        mock_load.return_value = fake_registry
-        mock_refresh.side_effect = _refresh_side_effect
         result = backend.controllers.marketplaces.refresh(None)
     assert "1 ok" in result.text
     assert "1 failed" in result.text
     assert "m2" in result.text  # failure listed by name
+    assert "boom" in result.text
 
 
 def test_refresh_marketplaces_all_empty_registry(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    fake_registry = MagicMock()
-    fake_registry.marketplaces = []
-    with patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load:
-        mock_load.return_value = fake_registry
+    with patch.object(MarketplaceRegistryStore, "load", return_value=MarketplaceRegistry()):
         result = backend.controllers.marketplaces.refresh(None)
     assert "no marketplaces" in result.text.lower()

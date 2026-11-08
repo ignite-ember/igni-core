@@ -203,8 +203,9 @@ class MarketplaceRefreshFailure(BaseModel):
 
 
 class MarketplaceRefreshResult(BaseModel):
-    """Typed result of a bulk :meth:`MarketplaceController.refresh` —
-    keeps orchestration and message rendering independently testable.
+    """Typed result of a bulk marketplace refresh
+    (:class:`~igni_core.backend.cmd_plugin.bulk_refresh.BulkRefreshRunner`)
+    — keeps orchestration and message rendering independently testable.
     """
 
     ok: list[str] = Field(default_factory=list)
@@ -214,6 +215,17 @@ class MarketplaceRefreshResult(BaseModel):
         """True when neither success nor failure entries exist — the
         registry had no marketplaces to refresh."""
         return not self.ok and not self.failed
+
+    def summary_line(self) -> str:
+        """One-line outcome for the marketplace panel: counts of ok and
+        failed refreshes, each failure named with its reason."""
+        if self.is_empty():
+            return "No marketplaces to refresh."
+        line = f"Refreshed {len(self.ok)} ok"
+        if self.failed:
+            failures = ", ".join(f"{f.name} ({f.reason})" for f in self.failed)
+            line += f"; {len(self.failed)} failed: {failures}"
+        return line
 
     def to_markdown(self) -> str:
         """Render the bulk-refresh outcome as the markdown surface the

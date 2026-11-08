@@ -528,3 +528,15 @@ class MarketplaceInfo(BaseModel):
     url: str
     last_fetched: str = ""
     plugins: list[MarketplacePluginInfo] = []
+
+    @classmethod
+    def from_entry(cls, entry: MarketplaceEntry) -> MarketplaceInfo:
+        """Project a registry entry and its cached catalog into the
+        panel's display shape."""
+        plugins = entry.cached.plugins if entry.cached else []
+        return cls(
+            name=entry.name,
+            url=entry.url,
+            last_fetched=entry.last_fetched or "",
+            plugins=[MarketplacePluginInfo.from_catalog_entry(p, entry.url) for p in plugins],
+        )
