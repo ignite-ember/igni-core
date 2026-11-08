@@ -21,9 +21,9 @@ Two layers here, both going through the product's own code:
 
 1. **argv → CliOptions.** Click parses; the callback does
    ``CliOptions.model_validate(ctx.params)``. Captured by wrapping
-   ``load_settings_from_options``, which the callback calls with the
+   ``CliSettingsLoader``, which the callback builds with the
    bundle it built.
-2. **CliOptions → Settings.** ``load_settings_from_options`` is the
+2. **CliOptions → Settings.** ``CliSettingsLoader.load`` is the
    real mapping function. Called directly, asserting the values a
    permission evaluator will later read.
 
@@ -42,25 +42,26 @@ from click.testing import CliRunner
 
 import igni_core.cli as cli_module
 from igni_core.cli.options import CliOptions
+from igni_core.cli.run_settings import CliSettingsLoader
 
 
 @pytest.fixture
 def parsed(monkeypatch: pytest.MonkeyPatch):
     """Run the real CLI and hand back the ``CliOptions`` it built.
 
-    Wrapping ``load_settings_from_options`` rather than reading
+    Wrapping ``CliSettingsLoader`` rather than reading
     ``ctx.obj`` afterwards: the callback tears the context down on its
     way out, and this way the object under test is the one the
     product's own code passed on.
     """
     seen: dict[str, CliOptions] = {}
-    original = cli_module.load_settings_from_options
+    original = CliSettingsLoader.__init__
 
-    def _spy(options: CliOptions):
+    def _spy(self: CliSettingsLoader, options: CliOptions) -> None:
         seen["options"] = options
-        return original(options)
+        original(self, options)
 
-    monkeypatch.setattr(cli_module, "load_settings_from_options", _spy)
+    monkeypatch.setattr(CliSettingsLoader, "__init__", _spy)
 
     def run(*argv: str) -> CliOptions:
         """Parse ``argv`` and return the bundle, exit code aside.
@@ -201,7 +202,7 @@ class TestFlagsBecomeSettings:
 
     @staticmethod
     def _settings(**kwargs: Any):
-        return cli_module.load_settings_from_options(CliOptions(**kwargs))
+        return CliSettingsLoader(CliOptions(**kwargs)).load()
 
     def test_read_only_denies_writes_and_keeps_the_shell_for_reads(self):
         """Read-only is plan-mode reads with no questions.

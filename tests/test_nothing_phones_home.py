@@ -377,8 +377,8 @@ def test_bypass_lets_the_web_through_unasked(tmp_path):
 
     What Bypass keeps: an explicit ``deny`` wins over it, and its guard still
     turns a fetch carrying what looks like a secret back into a prompt."""
-    import igni_core.cli as cli_module
     from igni_core.cli.options import CliOptions
+    from igni_core.cli.run_settings import CliSettingsLoader
     from igni_core.core.config.permission_eval import (
         PermissionDecision,
         PermissionEvaluator,
@@ -388,7 +388,7 @@ def test_bypass_lets_the_web_through_unasked(tmp_path):
     from igni_core.core.hooks.bypass_guard import READ_ONLY_TOOLS
     from igni_core.core.hooks.bypass_rules import flag_url
 
-    perms = cli_module.load_settings_from_options(CliOptions(auto_approve=True)).permissions
+    perms = CliSettingsLoader(CliOptions(auto_approve=True)).load().permissions
     assert perms.mode == "bypassPermissions"
     # The defaults still say ask; Bypass is what lets them through.
     assert (perms.web_search, perms.web_fetch) == ("ask", "ask")

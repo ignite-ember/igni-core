@@ -11,7 +11,7 @@ the request path is the one a customer's on-premises model gets.
 
 The `Session` path, driven the way the app drives it:
 
-- settings loaded the CLI's way (`load_settings_from_options`), from a
+- settings loaded the CLI's way (`CliSettingsLoader`), from a
   `~/.igni/config.yaml` an administrator would write, with `--no-web`;
 - `Session(...)` construction;
 - the boot background services the backend starts once the ready line is
@@ -64,8 +64,8 @@ from openai.types.chat.chat_completion_chunk import Choice as ChunkChoice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta
 from pydantic import BaseModel, ConfigDict
 
-from igni_core.cli.invocation import load_settings_from_options
 from igni_core.cli.options import CliOptions
+from igni_core.cli.run_settings import CliSettingsLoader
 from igni_core.core.activity import background
 from igni_core.core.config.settings import Settings
 from igni_core.core.paths import CONFIG_DIR
@@ -217,7 +217,7 @@ class AirGappedInstall:
         config = self.home / CONFIG_DIR / "config.yaml"
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text(self._config_yaml(model_url))
-        return load_settings_from_options(CliOptions(no_web=not AIR_GAPPED_SETTING_EXISTS))
+        return CliSettingsLoader(CliOptions(no_web=not AIR_GAPPED_SETTING_EXISTS)).load()
 
     @staticmethod
     def _config_yaml(model_url: str) -> str:

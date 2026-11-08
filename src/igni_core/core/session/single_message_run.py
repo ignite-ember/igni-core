@@ -15,13 +15,8 @@ single-shot case:
   SessionStart hook, slash-dispatch, :meth:`SessionRun._run_turn`,
   SessionEnd hook, and the exit code the turn earned.
 
-.. note::
-
-    ``runner.py`` keeps a module-level ``async def
-    run_single_message`` shim so the CLI's
-    ``_session_module.run_single_message`` pattern (and any
-    ``patch("igni_core.core.session.runner.run_single_message")``
-    test target) continues to work.
+The CLI (:class:`~igni_core.cli.invocation.CliInvocation`) builds one
+of these directly.
 """
 
 from __future__ import annotations

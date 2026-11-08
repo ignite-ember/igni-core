@@ -552,18 +552,23 @@ def test_igni_m_without_trust_runs_the_session_untrusted(repo, monkeypatch):
     from click.testing import CliRunner
 
     from igni_core import cli as cli_module
+    from igni_core.core.session.single_message_run import SingleMessageRun
 
     seen: dict[str, bool] = {}
 
-    async def fake_run_single_message(settings, message, **kwargs):
+    def fake_init(self, settings, **kwargs):
+        self._settings = settings
+
+    async def fake_run(self, message):
         seen["trusted"] = WorkspaceTrust.shared().is_trusted(Path.cwd())
-        seen["shell"] = settings.permissions.shell_execute == "allow"
+        seen["shell"] = self._settings.permissions.shell_execute == "allow"
 
     _write(
         repo / ".igni" / "config.yaml", yaml.safe_dump({"permissions": {"shell_execute": "allow"}})
     )
     monkeypatch.setattr("pathlib.Path.cwd", lambda: repo)
-    monkeypatch.setattr("igni_core.core.session.run_single_message", fake_run_single_message)
+    monkeypatch.setattr(SingleMessageRun, "__init__", fake_init)
+    monkeypatch.setattr(SingleMessageRun, "run", fake_run)
 
     result = CliRunner().invoke(cli_module.cli, ["-m", "hi"])
     assert result.exit_code == 0, result.output

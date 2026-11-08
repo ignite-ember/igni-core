@@ -20,7 +20,7 @@ the non-interactive modes.
 This module is a *thin* Click-decorator surface: every option
 lands on :func:`cli`, which validates the params into a typed
 :class:`CliOptions`, loads settings via
-:class:`CliOverrides.from_options`, and hands off to
+:class:`CliSettingsLoader`, and hands off to
 :class:`CliInvocation` for the real work, including running the
 session (:class:`HeadlessRun`).
 """
@@ -35,13 +35,11 @@ import click
 from igni_core import __version__
 from igni_core.cli.ext import ext
 from igni_core.cli.headless_run import HeadlessRun
-from igni_core.cli.invocation import (
-    CliInvocation,
-    load_settings_from_options,
-)
+from igni_core.cli.invocation import CliInvocation
 from igni_core.cli.login import login
 from igni_core.cli.migrate import migrate
 from igni_core.cli.options import CliOptions
+from igni_core.cli.run_settings import CliSettingsLoader
 from igni_core.cli.trust import SessionTrust, trust_command
 from igni_core.core import air_gap
 from igni_core.core.agno_telemetry import AgnoTelemetry
@@ -157,7 +155,7 @@ def cli(ctx: click.Context, **_params: object) -> None:
 
     options = CliOptions.model_validate(ctx.params)
     try:
-        settings = load_settings_from_options(options)
+        settings = CliSettingsLoader(options).load()
     except GroupPolicyUnavailable as exc:
         # ``group_policy.required`` and no verified pack: no session, and
         # the message says what to do. ``igni login`` still works — it is a
@@ -173,7 +171,7 @@ def cli(ctx: click.Context, **_params: object) -> None:
             folder, pipe=options.pipe, trust_flag=options.trust, quiet=options.quiet
         ).settle()
         if became_trusted:
-            settings = load_settings_from_options(options)
+            settings = CliSettingsLoader(options).load()
 
     # A ``-m`` or pipe run starts igni's decisions service itself, and that
     # process reads no settings: it inherits the air-gap decision instead.
@@ -183,14 +181,13 @@ def cli(ctx: click.Context, **_params: object) -> None:
     AgnoTelemetry.enforce(os.environ, air_gapped=settings.air_gapped)
     OtelRuntime.start(settings)
 
-    invocation = CliInvocation(options, settings, ctx, HeadlessRun())
+    invocation = CliInvocation(options, settings, HeadlessRun())
     invocation.enable_debug_logging()
 
     invocation.resolve_resume_id()
     invocation.setup_worktree()
     invocation.carry_trust_into_worktree(folder)
-    invocation.resolve_additional_dirs()
-    invocation.store_context()
+    invocation.store_context(ctx)
 
     if options.pipe:
         invocation.run_pipe()

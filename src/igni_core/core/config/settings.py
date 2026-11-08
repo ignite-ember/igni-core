@@ -11,11 +11,8 @@ Only three things live in this module:
   :mod:`igni_core.core.config.schemas` so the flat import surface
   (``from igni_core.core.config.settings import PermissionsConfig``)
   keeps working for downstream callers.
-* :func:`load_settings` — the ONE surviving module-level function.
-  It's a two-line facade over :meth:`SettingsLoader.load` preserved
-  because :mod:`cli.invocation` monkey-patches
-  ``_settings_module.load_settings`` for test isolation and that
-  seam is load-bearing. Every OTHER former module-level shim
+* :func:`load_settings` — the ONE surviving module-level function,
+  a two-line facade over :meth:`SettingsLoader.load`. Every OTHER former module-level shim
   (``_deep_merge`` / ``_load_yaml`` / ``_platform_managed_settings_path``
   / ``save_default_model`` / …) has been promoted to a method on a
   class — see :class:`SettingsLoader`, :class:`ManagedPolicySource`,
@@ -367,12 +364,9 @@ def load_settings(
     on the command line. Same precedence ordering as Claude Code's
     managed > CLI > local > project > user stack.
 
-    Thin wrapper around :class:`SettingsLoader`. Preserved as a
-    module-level function because :mod:`cli.invocation` monkey-
-    patches ``_settings_module.load_settings`` for tests — moving
-    the entry point onto the class only would break those tests
-    silently. This is the ONLY surviving module-level function; every
-    other former shim now lives as a method on a class.
+    Thin wrapper around :class:`SettingsLoader`. This is the ONLY
+    surviving module-level function; every other former shim now
+    lives as a method on a class.
 
     ``group_policy_fetcher`` returns the org's
     :class:`~igni_core.core.config.group_policy.pack.GroupPolicyPack`, whose
@@ -382,7 +376,7 @@ def load_settings(
     publishing ``{"permissions": {"web_fetch": "deny"}}`` could not have it applied
     even by a caller that wanted to. Production now passes
     :class:`~igni_core.core.config.group_policy.settings_fetcher.CachedSettingsFetcher` from
-    ``BackendSettingsLoader.load`` and ``load_settings_from_options``; callers that want no
+    ``BackendSettingsLoader.load`` and ``CliSettingsLoader.load``; callers that want no
     org policy (tests, tooling) simply leave it ``None``.
     """
     return SettingsLoader.load(

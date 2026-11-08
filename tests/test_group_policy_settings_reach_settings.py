@@ -17,7 +17,7 @@ there was nothing for a fetcher to read. Now the cache persists the pack as
 igni server signed it (``pack.jws``), ``CachedSettingsFetcher`` verifies and
 reads it, and both
 entry points that build a real ``Settings`` — ``BackendSettingsLoader.load`` and
-``load_settings_from_options`` — construct one. The end-to-end claim being
+``CliSettingsLoader`` — construct one. The end-to-end claim being
 tested is the one an admin makes: publish ``{"learning": {"enabled": false}}``
 and the session comes up with learning off.
 
@@ -301,24 +301,24 @@ class TestTheEntryPointsBuildOne:
     def test_the_cli_applies_group_policy_too(self):
         """``igni -m`` runs a real session in this process, so a policy that
         held in the app and not on the command line would be half-enforced."""
-        from igni_core.cli.invocation import load_settings_from_options
         from igni_core.cli.options import CliOptions
+        from igni_core.cli.run_settings import CliSettingsLoader
 
         _publish({"learning": {"enabled": False}})
 
-        assert load_settings_from_options(CliOptions()).learning.enabled is False
+        assert CliSettingsLoader(CliOptions()).load().learning.enabled is False
 
     def test_a_group_still_cannot_loosen_what_the_cli_denied(self):
         """The ratchet holds through the production path, not just the
         hand-built plan — this is the combination an operator relies on."""
-        from igni_core.cli.invocation import load_settings_from_options
         from igni_core.cli.options import CliOptions
+        from igni_core.cli.run_settings import CliSettingsLoader
         from igni_core.core.config.permission_eval import PermissionDecision
         from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 
         _publish({"permissions": {"shell_execute": "allow", "read_only": False}})
 
-        settings = load_settings_from_options(CliOptions(read_only=True))
+        settings = CliSettingsLoader(CliOptions(read_only=True)).load()
         evaluator = PermissionEvaluator.from_permissions(settings.permissions)
 
         assert settings.permissions.read_only is True

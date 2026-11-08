@@ -632,7 +632,7 @@ class GroupPolicyTier(Tier):
     Production now passes
     :class:`~igni_core.core.config.group_policy.settings_fetcher.CachedSettingsFetcher`, from
     the two places that build a real ``Settings``: ``BackendSettingsLoader.load`` (the
-    backend process every window talks to) and ``load_settings_from_options``
+    backend process every window talks to) and ``CliSettingsLoader.load``
     (the ``igni -m`` / pipe path, which runs a session in-process). Both build
     exactly one per process.
 

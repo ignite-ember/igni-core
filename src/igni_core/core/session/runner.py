@@ -1,9 +1,7 @@
 """Single-message session runner — thin shim over
 :class:`SingleMessageRun`.
 
-Kept as a module-level ``async`` function so ``CliInvocation``'s
-``_session_module.run_single_message`` attribute-patch pattern
-keeps working. The pipeline lives in :class:`SingleMessageRun`,
+The pipeline lives in :class:`SingleMessageRun`,
 which shares :class:`SessionRun` with :class:`InteractiveSessionLoop`
 so the SessionStart / SessionEnd hook emit sites and the
 ``_run_turn`` pipeline exist in exactly one place.

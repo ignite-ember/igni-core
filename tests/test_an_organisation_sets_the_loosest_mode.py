@@ -352,11 +352,11 @@ class TestTheStricterTierWins:
 
 class TestAutoApproveIsIgnoredWhenBypassIsOff:
     def test_the_flag_loosens_nothing(self, tmp_path, monkeypatch, capsys):
-        from igni_core.cli.invocation import load_settings_from_options
+        from igni_core.cli.run_settings import CliSettingsLoader
 
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: false\n")
         monkeypatch.chdir(tmp_path)
-        settings = load_settings_from_options(CliOptions(auto_approve=True))
+        settings = CliSettingsLoader(CliOptions(auto_approve=True)).load()
 
         perms = settings.permissions
         assert perms.mode == "default"
@@ -365,19 +365,19 @@ class TestAutoApproveIsIgnoredWhenBypassIsOff:
         assert "--auto-approve is turned off" in capsys.readouterr().err
 
     def test_other_flags_still_apply(self, tmp_path, monkeypatch):
-        from igni_core.cli.invocation import load_settings_from_options
+        from igni_core.cli.run_settings import CliSettingsLoader
 
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: false\n")
         monkeypatch.chdir(tmp_path)
-        settings = load_settings_from_options(CliOptions(auto_approve=True, no_web=True))
+        settings = CliSettingsLoader(CliOptions(auto_approve=True, no_web=True)).load()
         assert settings.permissions.shell_execute != "allow"
         assert settings.permissions.web_fetch == "deny"
 
     def test_without_the_policy_the_flag_is_untouched(self, tmp_path, monkeypatch):
-        from igni_core.cli.invocation import load_settings_from_options
+        from igni_core.cli.run_settings import CliSettingsLoader
 
         monkeypatch.chdir(tmp_path)
-        settings = load_settings_from_options(CliOptions(auto_approve=True))
+        settings = CliSettingsLoader(CliOptions(auto_approve=True)).load()
         assert settings.permissions.mode == "bypassPermissions"
         assert settings.permissions.shell_execute == "allow"
 
