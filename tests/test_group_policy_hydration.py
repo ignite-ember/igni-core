@@ -29,7 +29,7 @@ from tests.group_policy_signing import ISSUER, KEY, session_token
 TOKEN = session_token()
 
 
-def _make_controller(tmp_path: Path) -> GroupPolicySync:
+def _make_controller(tmp_path: Path) -> tuple[GroupPolicySync, MagicMock]:
     """A :class:`GroupPolicySync` over minimal stubs.
 
     ``start`` is never called, so nothing is scheduled: each test drives
@@ -46,7 +46,7 @@ def _make_controller(tmp_path: Path) -> GroupPolicySync:
     portal.fetch_group_pack = AsyncMock()
     # igni server's published keys, which a fetched pack is verified against.
     portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
-    return GroupPolicySync(session=MagicMock(), settings=settings, portal=portal)
+    return GroupPolicySync(session=MagicMock(), settings=settings, portal=portal), portal
 
 
 def _sample_pack() -> GroupPolicyPack:
@@ -73,15 +73,15 @@ def _unsigned_pack() -> GroupPolicyPack:
 
 @pytest.mark.asyncio
 async def test_hydrate_fetches_and_materializes(tmp_path: Path):
-    ctrl = _make_controller(tmp_path)
+    ctrl, portal = _make_controller(tmp_path)
     pack = _sample_pack()
-    ctrl._portal.fetch_group_pack.return_value = pack
+    portal.fetch_group_pack.return_value = pack
 
     refreshed = await ctrl.hydrate(token=TOKEN)
 
     assert refreshed is True
     # Called with the tag we hold, so an unchanged pack costs a 304.
-    ctrl._portal.fetch_group_pack.assert_awaited_once_with(TOKEN, None)
+    portal.fetch_group_pack.assert_awaited_once_with(TOKEN, None)
     # Cache directory should now have the materialized agent file.
     agent_file = tmp_path / "group-policy" / "agents" / "reviewer.md"
     assert agent_file.exists()
@@ -90,8 +90,8 @@ async def test_hydrate_fetches_and_materializes(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_hydrate_handles_fetch_failure(tmp_path: Path):
-    ctrl = _make_controller(tmp_path)
-    ctrl._portal.fetch_group_pack.side_effect = RuntimeError("network down")
+    ctrl, portal = _make_controller(tmp_path)
+    portal.fetch_group_pack.side_effect = RuntimeError("network down")
 
     # Must not raise; the controller returns False to signal "no
     # update landed" so callers / audit logs can distinguish from
@@ -103,8 +103,8 @@ async def test_hydrate_handles_fetch_failure(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_hydrate_handles_none_pack(tmp_path: Path):
-    ctrl = _make_controller(tmp_path)
-    ctrl._portal.fetch_group_pack.return_value = None
+    ctrl, portal = _make_controller(tmp_path)
+    portal.fetch_group_pack.return_value = None
 
     refreshed = await ctrl.hydrate(token=TOKEN)
     # No update landed (None pack), so the controller reports False.
@@ -120,7 +120,7 @@ async def test_hydrate_skipped_when_cache_fresh(tmp_path: Path):
     cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
     cache.materialize(_sample_pack())
 
-    ctrl = _make_controller(tmp_path)
+    ctrl, portal = _make_controller(tmp_path)
     refreshed = await ctrl.hydrate(token=TOKEN)
     # The fetch was attempted because we constructed cache directly
     # with ``cache_dir`` not derived from ``data_dir`` — but actually
@@ -128,7 +128,7 @@ async def test_hydrate_skipped_when_cache_fresh(tmp_path: Path):
     # need to align the test with that. Verify the no-network behavior
     # instead.
     assert refreshed is False
-    ctrl._portal.fetch_group_pack.assert_not_called()
+    portal.fetch_group_pack.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -155,8 +155,8 @@ async def test_hydrate_passes_plugin_installer_to_cache(tmp_path: Path):
             ),
         ],
     )
-    ctrl = _make_controller(tmp_path)
-    ctrl._portal.fetch_group_pack.return_value = KEY.signed(pack)
+    ctrl, portal = _make_controller(tmp_path)
+    portal.fetch_group_pack.return_value = KEY.signed(pack)
 
     # Verify the installer constructor was reached by monkey-patching it
     # and asserting it was called with the controller's data_dir.
@@ -184,7 +184,7 @@ async def test_concurrent_hydrations_serialize(tmp_path: Path):
     """
 
     pack = _sample_pack()
-    ctrl = _make_controller(tmp_path)
+    ctrl, portal = _make_controller(tmp_path)
 
     fetch_calls = 0
 
@@ -194,7 +194,7 @@ async def test_concurrent_hydrations_serialize(tmp_path: Path):
         await asyncio.sleep(0.05)  # Let the second caller queue up
         return pack
 
-    ctrl._portal.fetch_group_pack.side_effect = slow_fetch
+    portal.fetch_group_pack.side_effect = slow_fetch
 
     # Fire two hydrations concurrently.
     results = await asyncio.gather(
@@ -231,8 +231,8 @@ async def test_hydrate_logs_warning_on_failure(tmp_path, monkeypatch):
 
     monkeypatch.setattr(refresher_mod.logger, "warning", _capture)
 
-    ctrl = _make_controller(tmp_path)
-    ctrl._portal.fetch_group_pack.side_effect = RuntimeError("portal down")
+    ctrl, portal = _make_controller(tmp_path)
+    portal.fetch_group_pack.side_effect = RuntimeError("portal down")
     refreshed = await ctrl.hydrate(token=TOKEN)
 
     assert refreshed is False
@@ -247,7 +247,7 @@ async def test_hydrate_logs_info_on_success(tmp_path, monkeypatch):
     log records when admin pushes propagate. Same logger-patch
     rationale as the warning test (see ``caplog`` caveat there).
     """
-    from igni_core.backend import group_policy_sync as auth_mod
+    from igni_core.backend import group_pack_hydrator as auth_mod
 
     messages: list[str] = []
     real_info = auth_mod.logger.info
@@ -262,8 +262,8 @@ async def test_hydrate_logs_info_on_success(tmp_path, monkeypatch):
     monkeypatch.setattr(auth_mod.logger, "info", _capture)
 
     pack = _sample_pack()
-    ctrl = _make_controller(tmp_path)
-    ctrl._portal.fetch_group_pack.return_value = pack
+    ctrl, portal = _make_controller(tmp_path)
+    portal.fetch_group_pack.return_value = pack
     refreshed = await ctrl.hydrate(token=TOKEN)
 
     assert refreshed is True

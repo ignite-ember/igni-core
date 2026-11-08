@@ -221,8 +221,7 @@ class TestNoPackIsASignedAnswer:
         portal = MagicMock()
         portal.fetch_group_pack = AsyncMock()
         portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
-        ctrl = GroupPolicySync(session=MagicMock(), settings=settings, portal=portal)
-        return ctrl
+        return GroupPolicySync(session=MagicMock(), settings=settings, portal=portal), portal
 
     def _hydrate(self, ctrl) -> bool:
         return asyncio.run(ctrl.hydrate(session_token(), force=True))
@@ -230,8 +229,8 @@ class TestNoPackIsASignedAnswer:
     def test_a_signed_absence_clears_the_pack_and_what_it_installed(self, tmp_path):
         _configure()
         store(_cache(), _pack(), version=1_000)
-        ctrl = self._controller(tmp_path)
-        ctrl._portal.fetch_group_pack.return_value = SignedAbsence(
+        ctrl, portal = self._controller(tmp_path)
+        portal.fetch_group_pack.return_value = SignedAbsence(
             signed_pack=KEY.sign_absence(version=2_000), etag='"none"'
         )
 
@@ -243,8 +242,8 @@ class TestNoPackIsASignedAnswer:
     def test_an_older_pack_put_back_after_it_is_a_rollback(self, tmp_path):
         _configure()
         older = store(_cache(), _pack(), version=1_000)
-        ctrl = self._controller(tmp_path)
-        ctrl._portal.fetch_group_pack.return_value = SignedAbsence(
+        ctrl, portal = self._controller(tmp_path)
+        portal.fetch_group_pack.return_value = SignedAbsence(
             signed_pack=KEY.sign_absence(version=2_000)
         )
         self._hydrate(ctrl)
@@ -257,10 +256,8 @@ class TestNoPackIsASignedAnswer:
     def test_a_forged_absence_changes_nothing(self, tmp_path):
         _configure()
         store(_cache(), _pack())
-        ctrl = self._controller(tmp_path)
-        ctrl._portal.fetch_group_pack.return_value = SignedAbsence(
-            signed_pack=STRANGER.sign_absence()
-        )
+        ctrl, portal = self._controller(tmp_path)
+        portal.fetch_group_pack.return_value = SignedAbsence(signed_pack=STRANGER.sign_absence())
 
         assert self._hydrate(ctrl) is False
         assert _agent().exists()
@@ -269,8 +266,8 @@ class TestNoPackIsASignedAnswer:
     def test_an_absence_for_somebody_else_changes_nothing(self, tmp_path):
         _configure()
         store(_cache(), _pack())
-        ctrl = self._controller(tmp_path)
-        ctrl._portal.fetch_group_pack.return_value = SignedAbsence(
+        ctrl, portal = self._controller(tmp_path)
+        portal.fetch_group_pack.return_value = SignedAbsence(
             signed_pack=KEY.sign_absence(sub="person-2")
         )
 

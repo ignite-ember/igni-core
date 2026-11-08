@@ -85,6 +85,16 @@ class Credentials(BaseModel):
             expires_at=expires.isoformat(),
         )
 
+    @classmethod
+    def for_token(cls, token: str, email: str) -> Credentials:
+        """Credentials expiring when the JWT does — or at the
+        :meth:`new` default when it carries no ``exp``."""
+        claims = JwtClaims.decode(token)
+        if claims is None or not claims.exp:
+            return cls.new(token, email)
+        now = datetime.now(timezone.utc).timestamp()
+        return cls.new(token, email, ttl=max(int(claims.exp - now), 0))
+
     def is_expired(self) -> bool:
         """True when the stored ``expires_at`` is at or before now.
 

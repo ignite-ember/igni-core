@@ -445,12 +445,11 @@ class TestTheFetchIsVerifiedToo:
         portal = MagicMock()
         portal.fetch_group_pack = AsyncMock()
         portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
-        ctrl = GroupPolicySync(session=MagicMock(), settings=settings, portal=portal)
-        return ctrl
+        return GroupPolicySync(session=MagicMock(), settings=settings, portal=portal), portal
 
     def test_a_genuine_pack_is_stored_with_its_keys_and_version(self, tmp_path):
-        ctrl = self._controller(tmp_path)
-        ctrl._portal.fetch_group_pack.return_value = KEY.signed(_pack(), version=42)
+        ctrl, portal = self._controller(tmp_path)
+        portal.fetch_group_pack.return_value = KEY.signed(_pack(), version=42)
 
         assert asyncio.run(ctrl.hydrate(session_token(), force=True)) is True
         cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
@@ -459,15 +458,15 @@ class TestTheFetchIsVerifiedToo:
         assert cache.signed.applied_version() == 42
 
     def test_a_forged_pack_from_the_wire_writes_nothing(self, tmp_path):
-        ctrl = self._controller(tmp_path)
-        ctrl._portal.fetch_group_pack.return_value = STRANGER.signed(_pack())
+        ctrl, portal = self._controller(tmp_path)
+        portal.fetch_group_pack.return_value = STRANGER.signed(_pack())
 
         assert asyncio.run(ctrl.hydrate(session_token(), force=True)) is False
         assert not (tmp_path / "group-policy" / GroupPolicyLayout.SIGNED_PACK_FILE).exists()
 
     def test_an_unsigned_pack_from_the_wire_writes_nothing(self, tmp_path):
-        ctrl = self._controller(tmp_path)
-        ctrl._portal.fetch_group_pack.return_value = _pack()
+        ctrl, portal = self._controller(tmp_path)
+        portal.fetch_group_pack.return_value = _pack()
 
         assert asyncio.run(ctrl.hydrate(session_token(), force=True)) is False
         assert not (tmp_path / "group-policy").exists() or not any(

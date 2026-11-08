@@ -18,27 +18,17 @@ newly chosen server.
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
-import webbrowser
-from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from igni_core.backend.browser_sign_in import BrowserSignIn, StatusCallback
 from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.backend.schemas_auth import ServerChoice, ServerFound
 from igni_core.backend.schemas_rpc import CloudPlan, LoginResult
-from igni_core.core.activity import background
-from igni_core.core.auth.credentials import (
-    CloudCredentials,
-    Credentials,
-    CredentialsStore,
-)
+from igni_core.core.auth.credentials import CloudCredentials, CredentialsStore
 from igni_core.core.auth.discovery import discover, is_safe_url
 from igni_core.core.auth.portal_client import PortalClient
-from igni_core.core.auth.schemas import JwtClaims
-from igni_core.core.config.endpoint import ApiUrlNotConfigured
 from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.protocol import messages as msg
 
@@ -47,35 +37,6 @@ if TYPE_CHECKING:
     from igni_core.core.session import Session
 
 logger = logging.getLogger(__name__)
-
-
-StatusCallback = Callable[[str], Awaitable[None] | None] | None
-
-
-class _StatusForwarder:
-    """Adapter around the optional login-status callback.
-
-    Wrapping the sync-or-async callback in a named collaborator (one
-    per :meth:`AuthController.login` call) flattens the login body —
-    the previous nested ``def _status`` closure hid the async-schedule
-    quirk (``ensure_future`` for coroutine returns) inside a
-    per-line-of-progress lambda. Same semantics, one place to explain
-    them.
-    """
-
-    def __init__(self, callback: StatusCallback) -> None:
-        self._callback = callback
-
-    def emit(self, text: str) -> None:
-        """Forward ``text`` to the wrapped callback (sync or async);
-        no-op when no callback was supplied."""
-        if self._callback is None:
-            return
-        result = self._callback(text)
-        # Coroutine callbacks are scheduled fire-and-forget so the
-        # login flow doesn't have to await status echoes.
-        if asyncio.iscoroutine(result):
-            background.start(result, holder="auth", reason="a status callback")
 
 
 class AuthController:
@@ -114,61 +75,17 @@ class AuthController:
         self._store = CredentialsStore(self._settings.auth.credentials_file)
 
     async def login(self, on_status: StatusCallback = None) -> LoginResult:
-        """Run the browser-callback login flow.
+        """Run the browser-callback login flow and hand the session its credentials.
 
-        Returns a :class:`LoginResult` with named ``ok`` / ``email`` /
-        ``error`` fields. Status callbacks are forwarded to
-        ``on_status`` so the caller can echo progress into the FE.
-
-        The failures a sign-in expects — no server configured, a port
-        that will not bind, a credentials file that cannot be written —
-        come back as ``ok=False``; anything else is a bug and raises.
+        The sign-in itself is :class:`BrowserSignIn`'s — status lines go
+        to ``on_status``, expected failures come back as ``ok=False`` —
+        and the group pack it refreshes is this session's, so a new
+        group's agents load at once.
         """
-        status = _StatusForwarder(on_status)
-        try:
-            status.emit("Starting local server...")
-            async with self._portal.start_callback() as callback:
-                login_url = self._portal.login_url(callback.port)
-
-                # No browser is not a failure: the address is printed next.
-                with contextlib.suppress(webbrowser.Error, OSError):
-                    webbrowser.open(login_url)
-
-                status.emit(
-                    f"Waiting for login in browser...\nIf the browser didn't open, go to:\n{login_url}"
-                )
-
-                token = await callback.wait_for_token(timeout=300)
-                if token is None:
-                    return LoginResult(ok=False, error="Login timed out")
-
-            status.emit("Fetching user info...")
-            validation = await self._portal.validate_token(token)
-            email = validation.user.email if validation.ok and validation.user else ""
-            self._store.save(self._credentials(token, email))
-        except (ApiUrlNotConfigured, OSError) as exc:
-            return LoginResult(ok=False, error=str(exc))
-
-        # Refresh the on-disk group policy pack with the freshly issued
-        # token so admin-side overrides take effect immediately rather
-        # than waiting for the 5-min TTL. ``force`` is what makes that
-        # true: without it a login inside the window did nothing.
-        # Failures are non-fatal — hydration reports them as ``False``.
-        await self._group_policy.hydrate(token, force=True)
-
-        self.reload_cloud_credentials()
-        return LoginResult(ok=True, email=email)
-
-    @staticmethod
-    def _credentials(token: str, email: str) -> Credentials:
-        """Credentials expiring when the JWT does — or at the
-        :meth:`Credentials.new` default when it carries no ``exp``."""
-        claims = JwtClaims.decode(token)
-        if claims is None or not claims.exp:
-            return Credentials.new(token, email)
-        now = datetime.now(timezone.utc)
-        exp = datetime.fromtimestamp(claims.exp, tz=timezone.utc)
-        return Credentials.new(token, email, ttl=max(int((exp - now).total_seconds()), 0))
+        result = await BrowserSignIn(self._portal, self._store, self._group_policy).login(on_status)
+        if result.ok:
+            self.reload_cloud_credentials()
+        return result
 
     def reload_cloud_credentials(self) -> msg.StatusUpdate:
         """Reload cloud credentials after login."""
