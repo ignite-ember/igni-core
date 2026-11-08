@@ -119,6 +119,7 @@ from igni_core.core.session.schemas import (
     LoopAdvance,
     McpInitResult,
     MessageMedia,
+    PermissionModeSwitch,
     PlanDecisionResult,
     PluginReloadCounts,
     SessionLifecyclePayload,
@@ -748,7 +749,7 @@ class Session:
     def set_output_style(self, name: str) -> str:
         return self.mode.set_output_style(name)
 
-    def set_permission_mode(self, mode: str) -> str:
+    def set_permission_mode(self, mode: str) -> PermissionModeSwitch:
         return self.mode.set_permission_mode(mode)
 
     # ── Plan decision delegation ────────────────────────────────

@@ -1,7 +1,7 @@
 """The 6-step evaluation pipeline.
 
 Kept as a lean dataclass — the class holds live rule lists that
-:mod:`igni_core.backend.hitl_controller` mutates at runtime, and
+:meth:`PermissionEvaluator.remember` extends at runtime, and
 :mod:`igni_core.core.session.state_ops` reassigns
 :attr:`PermissionEvaluator.mode` after a slash-command switches
 posture. Pydantic frozen model isn't the right fit for that call
@@ -207,6 +207,17 @@ class PermissionEvaluator:
         self.read_only = self.read_only or fresh.read_only
         if self.mode.value == previous_default and fresh.mode.value != previous_default:
             self.set_mode(fresh.mode)
+
+    def remember(self, rule: PermissionRule, *, deny: bool) -> None:
+        """Add a rule the person has just chosen in an approval dialog.
+
+        Appended in place (the hook pipeline holds these lists), once: a
+        rule already present is not added again. Takes effect on the
+        very next tool call, without waiting for a settings reload.
+        """
+        target = self.deny if deny else self.allow
+        if rule not in target:
+            target.append(rule)
 
     # ── Pipeline entry points ─────────────────────────────────────
 

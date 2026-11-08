@@ -39,6 +39,7 @@ import pytest
 from igni_core.backend.hitl_controller import HitlController
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.backend.schemas_pause import PendingRequirement
+from igni_core.core.session.schemas import PermissionModeSwitch
 from igni_core.protocol import messages as msg
 
 
@@ -54,7 +55,11 @@ def _fake_session() -> MagicMock:
     only touches ``set_permission_mode``, ``main_team``, ``session_id``,
     ``hook_executor``, ``sub_agent_hitl`` on the resume path."""
     session = MagicMock()
-    session.set_permission_mode = MagicMock(return_value="Permission mode: default → acceptEdits")
+    session.set_permission_mode = MagicMock(
+        return_value=PermissionModeSwitch(
+            changed=True, text="Permission mode: default → acceptEdits"
+        )
+    )
     session.session_id = "test-session"
     # ``acontinue_run`` is the call we want to observe AFTER the
     # mode flip. It's an async method on the main team.

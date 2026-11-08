@@ -179,7 +179,7 @@ def test_code_search_on_an_empty_project_finds_nothing(backend):
 
 
 def test_a_permission_is_checked_against_the_projects_rules(backend):
-    level = backend.controllers.hitl.check_permission(
+    level = backend.controllers.hitl.permissions.check(
         "Write", "save_file", ToolCallArgs(file_path="a.txt")
     )
 

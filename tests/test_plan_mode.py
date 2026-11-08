@@ -479,19 +479,19 @@ class TestSetPermissionMode:
 
     def test_flips_mode_to_plan(self):
         session = self._session_with_evaluator("default")
-        msg = session.set_permission_mode("plan")
+        msg = session.set_permission_mode("plan").text
         assert "default" in msg and "plan" in msg
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     def test_idempotent_when_already_in_mode(self):
         session = self._session_with_evaluator("plan")
-        msg = session.set_permission_mode("plan")
+        msg = session.set_permission_mode("plan").text
         assert "already" in msg.lower()
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     def test_rejects_unknown_mode(self):
         session = self._session_with_evaluator()
-        msg = session.set_permission_mode("turbo")
+        msg = session.set_permission_mode("turbo").text
         assert "Error" in msg
         # Mode unchanged.
         assert session.permission_evaluator.mode is PermissionMode.DEFAULT

@@ -133,13 +133,13 @@ class TestSetOutputStyle:
 class TestSetPermissionMode:
     def test_flips_mode(self):
         s = _bare_session()
-        msg = _coord(s).set_permission_mode("plan")
+        msg = _coord(s).set_permission_mode("plan").text
         assert s.permission_evaluator.mode is PermissionMode.PLAN
         assert "plan" in msg
 
     def test_unknown_mode_returns_error(self):
         s = _bare_session()
-        msg = _coord(s).set_permission_mode("invalid_mode")
+        msg = _coord(s).set_permission_mode("invalid_mode").text
         assert "Error" in msg
         # Valid modes listed for discoverability.
         assert "default" in msg
@@ -150,7 +150,7 @@ class TestSetPermissionMode:
         s = _bare_session()
         captured: list[tuple[str, dict]] = []
         s.broadcast_bus.register(lambda e: captured.append((e.channel, e.to_payload())))
-        msg = _coord(s).set_permission_mode("default")
+        msg = _coord(s).set_permission_mode("default").text
         assert "already" in msg.lower()
         assert captured == []
 

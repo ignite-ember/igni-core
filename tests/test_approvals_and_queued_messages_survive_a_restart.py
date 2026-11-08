@@ -35,6 +35,7 @@ from igni_core.core.db.database import Database
 from igni_core.core.db.urls import DatabaseUrl
 from igni_core.core.hooks.queue import QueueBridge
 from igni_core.core.session.queued_messages import DurableMessageQueue, QueuedMessageStore
+from igni_core.core.session.schemas import PermissionModeSwitch
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
 from tests.backend_server_factory import make_backend
@@ -85,7 +86,7 @@ def _session(team: FakeTeam, coordinator: SubAgentHITLCoordinator) -> Any:
         main_team=team,
         permission_evaluator=None,
         hook_executor=FakeHooks(),
-        set_permission_mode=lambda mode: mode,
+        set_permission_mode=lambda mode: PermissionModeSwitch(text=mode),
     )
 
 

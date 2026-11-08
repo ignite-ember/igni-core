@@ -7,6 +7,7 @@ and the protocol-based HITL flow.
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -224,7 +225,7 @@ class TestBackendHITLResolution:
         server = make_backend(session, settings=MagicMock(), hitl_store=hitl_store)
 
         req = MagicMock()
-        req.tool_execution.tool_name = "run_shell_command"
+        req.tool_execution = SimpleNamespace(tool_name="run_shell_command", tool_args={})
         hitl_store.register("r1", PendingRequirement(req=req, run_id="run-1"))
 
         results = []

@@ -41,6 +41,7 @@ from igni_core.core.session.output_style_selection import OutputStyleSelection
 from igni_core.core.session.schemas import (
     OutputStyleChangedEvent,
     PermissionModeChangedEvent,
+    PermissionModeSwitch,
 )
 
 if TYPE_CHECKING:
@@ -174,27 +175,30 @@ class RuntimeModeCoordinator:
             return f"Output style already {clean}."
         return f"Output style: {prev or '(none)'} → {clean}."
 
-    def set_permission_mode(self, mode: str) -> str:
+    def set_permission_mode(self, mode: str) -> PermissionModeSwitch:
         """Flip the live ``PermissionEvaluator`` mode (e.g. into or
         out of plan mode) without rebuilding the agent.
 
         Broadcasts a ``permission_mode_changed`` push so the FE's
-        mode badge updates without polling. Returns a short status
-        string for the caller (slash command, ``exit_plan_mode``
-        tool) to surface.
+        mode badge updates without polling. Returns a
+        :class:`PermissionModeSwitch`: whether it was refused or changed
+        anything, and the status line for the caller (slash command,
+        ``exit_plan_mode`` tool) to surface.
         """
         try:
             new_mode = PermissionMode(mode)
         except ValueError:
             valid = ", ".join(m.value for m in PermissionMode)
-            return f"Error: unknown permission mode {mode!r}. Valid: {valid}"
+            return PermissionModeSwitch(
+                refused=True, text=f"Error: unknown permission mode {mode!r}. Valid: {valid}"
+            )
         # Every runtime switch — the slash commands, the HITL "accept all
         # edits" flip, ``enter_plan_mode`` and plan approval — arrives here,
         # so this is the one place the organisation's floor and
-        # ``allow_bypass: false`` are enforced. Callers match on "Error".
+        # ``allow_bypass: false`` are enforced.
         refusal = self._policy.refusal(new_mode)
         if refusal is not None:
-            return refusal
+            return PermissionModeSwitch(refused=True, text=refusal)
         # Pin the starting mode before the first switch changes what the
         # evaluator would report.
         _ = self.starting_mode
@@ -202,9 +206,11 @@ class RuntimeModeCoordinator:
         prev = evaluator.mode
         evaluator.mode = new_mode
         if prev == new_mode:
-            return f"Permission mode already {new_mode.value}."
+            return PermissionModeSwitch(text=f"Permission mode already {new_mode.value}.")
         self._deps.bus.emit(PermissionModeChangedEvent(mode=new_mode, previous=prev))
-        return f"Permission mode: {prev.value} → {new_mode.value}."
+        return PermissionModeSwitch(
+            changed=True, text=f"Permission mode: {prev.value} → {new_mode.value}."
+        )
 
 
 __all__ = [

@@ -16,6 +16,11 @@ Consumers:
 * :class:`RunRequirement` — structural type for the opaque Agno
   requirement object. Only three attributes are actually touched
   (``tool_execution``, ``confirm()``, ``reject(note)``).
+* :class:`PausedRun` — structural type for Agno's paused-run event.
+* :class:`RequirementTool` — the tool name + args a requirement asks
+  about, read once from Agno's optional ``tool_execution``.
+* :class:`ResolvedBatch` — the main-team requirements one
+  ``resolve_batch`` call answered, with their run and the errors.
 * :class:`StreamFactory` — type alias for the callback that wraps
   a live team-stream in a HITL-aware multiplexer.
 * :class:`HitlAction` — domain-side enum replacing the stringly-
@@ -26,7 +31,7 @@ Consumers:
   ``dict[str, Any]`` ``tool_args`` payload at the RPC wire seam.
   ``extra='allow'`` because tool arg keys vary per tool.
 * :class:`PersistChoiceResult` — return type of
-  :meth:`HitlController.maybe_persist_choice`. Replaces the
+  :meth:`HitlPermissions.persist_choice`. Replaces the
   previous ``None``-return + ``contextlib.suppress`` at the caller.
 * :class:`ApplyDecisionResult` — return type of
   :meth:`AgnoDecisionApplier.apply`. Replaces the ``msg.Error |
@@ -41,6 +46,7 @@ from collections.abc import AsyncIterator, Callable
 from enum import Enum
 from typing import Any, Protocol
 
+from agno.models.response import ToolExecution
 from pydantic import BaseModel, ConfigDict
 
 from igni_core.core.config.tool_permissions import PermissionLevel
@@ -57,11 +63,70 @@ class RunRequirement(Protocol):
     Agno symbol that could move.
     """
 
-    tool_execution: Any
+    tool_execution: ToolExecution | None
 
     def confirm(self) -> None: ...
 
     def reject(self, note: str) -> None: ...
+
+
+class PausedRun(Protocol):
+    """Structural type for Agno's paused-run event, as the HITL
+    pipeline reads it: the run and the requirements still open."""
+
+    @property
+    def run_id(self) -> str | None: ...
+
+    @property
+    def active_requirements(self) -> list[RunRequirement]: ...
+
+
+class RequirementTool(BaseModel):
+    """The tool call a :class:`RunRequirement` asks about.
+
+    Agno's ``tool_execution`` is optional and its fields nullable;
+    this reads them once into a name and arguments that are always
+    there (empty when Agno left them out).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = ""
+    args: dict[str, Any] = {}
+
+    @classmethod
+    def of(cls, req: RunRequirement) -> RequirementTool:
+        """The tool ``req`` asks about, or an empty one."""
+        execution = req.tool_execution
+        if execution is None:
+            return cls()
+        return cls(name=execution.tool_name or "", args=execution.tool_args or {})
+
+
+class ResolvedBatch(BaseModel):
+    """The main-team requirements one ``resolve_batch`` call answered.
+
+    ``requirements`` all belong to ``run_id`` (the first run a decision
+    in the batch named); ``errors`` are what the person is told about
+    the decisions that could not be applied.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    requirements: list[Any] = []
+    run_id: str | None = None
+    errors: list[msg.Error] = []
+
+    def claim(self, run_id: str | None) -> bool:
+        """Whether a requirement of ``run_id`` can join this batch.
+
+        The first requirement to ask fixes the batch's run (whether or
+        not its decision then applies); every later one must share it.
+        """
+        if self.run_id is None:
+            self.run_id = run_id
+            return True
+        return self.run_id == run_id
 
 
 # Type alias for the stream-factory callback: takes a live
@@ -125,7 +190,7 @@ class ToolCallArgs(BaseModel):
 
 
 class PersistChoiceResult(BaseModel):
-    """Return type of :meth:`HitlController.maybe_persist_choice`.
+    """Return type of :meth:`HitlPermissions.persist_choice`.
 
     Replaces the previous ``None``-return + ``contextlib.suppress``
     at the caller. ``ok=False`` means we hit a malformed

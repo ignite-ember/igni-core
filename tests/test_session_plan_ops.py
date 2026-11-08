@@ -24,6 +24,7 @@ import pytest
 from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.plan_ops import PlanCoordinator, PlanDeps
+from igni_core.core.session.schemas import PermissionModeSwitch
 from igni_core.core.tools.plan import PlanDecision, PlanDecisionsBlob
 
 
@@ -40,7 +41,9 @@ def _bare_session(*, has_persistence: bool = True, has_plan_store: bool = True):
     if has_persistence:
         session.persistence = SimpleNamespace()
         session.persistence.save_plan_decisions = AsyncMock()
-    session.set_permission_mode = MagicMock(return_value="mode → default")
+    session.set_permission_mode = MagicMock(
+        return_value=PermissionModeSwitch(changed=True, text="mode → default")
+    )
     session.broadcast_bus = BroadcastBus()
     session.plan = PlanCoordinator(
         PlanDeps(
@@ -91,7 +94,9 @@ class TestApprovePlan:
         s = _bare_session()
         order = []
         s.persistence.save_plan_decisions = AsyncMock(side_effect=lambda _: order.append("save"))
-        s.set_permission_mode = MagicMock(side_effect=lambda _: order.append("flip") or "ok")
+        s.set_permission_mode = MagicMock(
+            side_effect=lambda _: order.append("flip") or PermissionModeSwitch(text="ok")
+        )
         await s.plan.approve("run-1")
         assert order == ["save", "flip"], (
             "save_plan_decisions must run BEFORE set_permission_mode — "

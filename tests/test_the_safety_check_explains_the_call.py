@@ -287,7 +287,9 @@ class TestTheCoordinator:
 
 async def _through_the_relay(tmp_path, explainer):
     """Run one guarded call through the real multiplexer; return what the UI was sent."""
-    session = SimpleNamespace(sub_agent_hitl=SubAgentHITLCoordinator(), project_dir=tmp_path)
+    session = SimpleNamespace(
+        sub_agent_hitl=SubAgentHITLCoordinator(), project_dir=tmp_path, permission_evaluator=None
+    )
     guard = _guard(
         tmp_path,
         ask=ToolCallApprovalChannel(session.sub_agent_hitl).ask,

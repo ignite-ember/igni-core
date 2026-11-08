@@ -35,6 +35,7 @@ from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.persistence import SessionPersistence
 from igni_core.core.session.schemas import (
+    PermissionModeSwitch,
     PlanDecidedEvent,
     PlanDecisionResult,
 )
@@ -58,7 +59,7 @@ class PlanDeps:
     plan_store: PlanStore | None
     persistence: SessionPersistence | None
     bus: BroadcastBus
-    set_permission_mode: Callable[[str], str]
+    set_permission_mode: Callable[[str], PermissionModeSwitch]
     starting_mode: Callable[[], PermissionMode]
 
 
@@ -172,7 +173,7 @@ class PlanCoordinator:
             start = deps.starting_mode()
             if start is PermissionMode.PLAN:
                 start = PermissionMode.DEFAULT
-            mode_status = deps.set_permission_mode(start.value)
+            mode_status = deps.set_permission_mode(start.value).text
         deps.bus.emit(PlanDecidedEvent(run_id=run_id, decision=decision))
         return PlanDecisionResult(
             run_id=run_id,

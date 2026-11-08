@@ -74,6 +74,8 @@ Housed here:
 * :class:`PermissionModeChangedEvent` — the
   ``permission_mode_changed`` broadcast emitted by
   :meth:`RuntimeModeCoordinator.set_permission_mode`.
+* :class:`PermissionModeSwitch` — typed result of
+  :meth:`RuntimeModeCoordinator.set_permission_mode`.
 * :class:`McpClientBundle` — typed wrapper around the
   ``name → client`` mapping crossing into
   :meth:`AgentPool.build_agents`. Replaces the raw
@@ -732,6 +734,24 @@ class PermissionModeChangedEvent(BroadcastEvent):
     channel: Literal["permission_mode_changed"] = "permission_mode_changed"
     mode: PermissionMode
     previous: PermissionMode
+
+
+class PermissionModeSwitch(BaseModel):
+    """What :meth:`RuntimeModeCoordinator.set_permission_mode` did.
+
+    * ``refused`` — the switch was not made: an unknown mode, or one the
+      organisation's mode policy forbids. ``text`` says why, in the words
+      ``/accept`` shows the person.
+    * ``changed`` — the mode is now different from what it was (``False``
+      for a refusal and for a switch to the mode already in force).
+    * ``text`` — the one-line status for the person.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    refused: bool = False
+    changed: bool = False
+    text: str
 
 
 # ── MCP startup schemas ─────────────────────────────────────

@@ -171,7 +171,7 @@ class HITLAction(StrEnum):
 
     See :class:`~igni_core.backend.schemas_hitl.HitlAction` for
     the domain-internal twin used by
-    :class:`~igni_core.backend.hitl_controller.AgnoDecisionApplier`;
+    :class:`~igni_core.backend.agno_decision_applier.AgnoDecisionApplier`;
     they carry the same string values, so
     ``HitlAction(msg.HITLDecision.action)`` still works whether
     the wire arm is a ``str`` or the new ``HITLAction`` member.

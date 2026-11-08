@@ -280,11 +280,12 @@ class ModesCommand:
             return CommandResult.error(error)
         assert target is not None  # status branch returned above
 
-        status_line = self._session.set_permission_mode(target.value)
-        if status_line.startswith("Error"):
+        switch = self._session.set_permission_mode(target.value)
+        if switch.refused:
             # Refused by the organisation's mode policy — nothing changed,
             # so neither transition hook fires.
-            return CommandResult.error(status_line)
+            return CommandResult.error(switch.text)
+        status_line = switch.text
 
         if target is toggle.target:
             # Entering target mode — fire the transition-in hook,

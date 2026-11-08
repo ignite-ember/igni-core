@@ -377,7 +377,11 @@ class NoJudge:
 @pytest.mark.parametrize("action,expect_ran", [("confirm", True), ("reject", False)])
 def test_the_dialog_pops_up_and_its_answer_decides(tmp_path, action, expect_ran):
     async def scenario():
-        session = SimpleNamespace(sub_agent_hitl=SubAgentHITLCoordinator(), project_dir=tmp_path)
+        session = SimpleNamespace(
+            sub_agent_hitl=SubAgentHITLCoordinator(),
+            project_dir=tmp_path,
+            permission_evaluator=None,
+        )
         guard = BypassGuard(
             config=BypassGuardConfig(),
             project_dir=tmp_path,

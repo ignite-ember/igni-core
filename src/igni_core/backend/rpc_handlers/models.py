@@ -37,13 +37,13 @@ class ModelsRpcHandler(RpcHandler):
         # into :class:`ToolCallArgs` here so downstream consumers get
         # a typed model rather than a raw ``dict[str, Any]``.
         tool_args = ToolCallArgs.model_validate(args["tool_args"])
-        return self._controllers.hitl.check_permission(
+        return self._controllers.hitl.permissions.check(
             args["tool_name"], args["func_name"], tool_args
         )
 
     @rpc(RpcMethod.SAVE_PERMISSION_RULE)
     def save_permission_rule(self, args: dict) -> Any:
-        return self._controllers.hitl.save_permission_rule(args["rule"], args["level"])
+        return self._controllers.hitl.permissions.save_rule(args["rule"], args["level"])
 
     @rpc(RpcMethod.GET_DISPLAY_CONFIG)
     def get_display_config(self, args: dict) -> DisplayConfigResult:

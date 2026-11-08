@@ -134,11 +134,11 @@ class PlanTransactionCoordinator:
             msg = "Error: session does not support runtime mode changes."
             raise PlanSessionShapeError(missing="set_permission_mode", reply_text=msg)
 
-        mode_status = set_mode("plan")
-        if "Error" in mode_status:
-            # Evaluator refused the flip — propagate the raw
-            # status verbatim (tests match on the "Error"
-            # substring the evaluator produces).
+        switch = set_mode("plan")
+        mode_status = switch.text
+        if switch.refused:
+            # Evaluator refused the flip — propagate the status
+            # verbatim.
             return PlanEnterResult(
                 ok=False,
                 mode_status=mode_status,
@@ -168,7 +168,7 @@ class PlanTransactionCoordinator:
         if task_clean:
             researcher_report = await self._researcher.run(task_clean)
 
-        mode_flipped = "already" not in mode_status.lower()
+        mode_flipped = switch.changed
         reply_text = self._render_enter_reply(
             reason_clean=reason_clean,
             researcher_report=researcher_report,

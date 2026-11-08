@@ -52,6 +52,7 @@ from igni_core.core.db.database import Database
 from igni_core.core.db.providers import SharedStorages
 from igni_core.core.db.urls import DatabaseUrl
 from igni_core.core.hooks.turn_results import TurnResultHook
+from igni_core.core.session.schemas import PermissionModeSwitch
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
@@ -427,7 +428,7 @@ class Backend:
             pool=self.pool,
             permission_evaluator=None,
             hook_executor=FakeHooks(),
-            set_permission_mode=lambda mode: mode,
+            set_permission_mode=lambda mode: PermissionModeSwitch(text=mode),
         )
         self.hitl = HitlController(self.session, self.store, stream_factory=self.collect)
 

@@ -33,6 +33,7 @@ from igni_core.core.config.settings import Settings, load_settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
+from igni_core.core.session.schemas import PermissionModeSwitch
 from igni_core.core.tools.slash import SlashCommandTool
 from igni_core.protocol.messages import CommandResultKind
 from tests.session_coordinators import wire_coordinators
@@ -155,9 +156,9 @@ class TestAManagedFloor:
         settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
         session = _session(settings)
 
-        status = session.set_permission_mode("default")
-        assert status.startswith("Error")
-        assert "group policy" in status
+        switch = session.set_permission_mode("default")
+        assert switch.refused
+        assert "group policy" in switch.text
         assert _mode(session) is PermissionMode.PLAN
 
     def test_a_flag_cannot_lift_a_managed_floor(self, tmp_path, monkeypatch):
@@ -167,7 +168,7 @@ class TestAManagedFloor:
             project_dir=tmp_path,
         )
         assert settings.permissions.mode == "default"
-        assert _session(settings).set_permission_mode("acceptEdits").startswith("Error")
+        assert _session(settings).set_permission_mode("acceptEdits").refused
 
     def test_a_user_config_mode_is_not_a_floor(self, tmp_path):
         """Only the organisation's tiers make a floor. A mode in the
@@ -175,7 +176,7 @@ class TestAManagedFloor:
         _user_config("permissions:\n  mode: plan\n")
         session = _session(load_settings(project_dir=tmp_path))
         assert _mode(session) is PermissionMode.PLAN
-        assert "→ bypassPermissions" in session.set_permission_mode("bypassPermissions")
+        assert "→ bypassPermissions" in session.set_permission_mode("bypassPermissions").text
 
 
 # ── allow_bypass: false ─────────────────────────────────────────────
@@ -211,9 +212,9 @@ class TestBypassCanBeForbidden:
         settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
         session = _session(settings)
 
-        status = session.set_permission_mode("bypassPermissions")
-        assert status.startswith("Error")
-        assert "group policy" in status
+        switch = session.set_permission_mode("bypassPermissions")
+        assert switch.refused
+        assert "group policy" in switch.text
         assert _mode(session) is PermissionMode.DEFAULT
 
         reply = await SlashCommandTool(session).slash_command("/bypass on")
@@ -232,7 +233,7 @@ class TestBypassCanBeForbidden:
         )
         assert settings.permissions.mode_policy == ModePolicy()
         assert settings.permissions.mode == "bypassPermissions"
-        assert "→" in _session(settings).set_permission_mode("default")
+        assert "→" in _session(settings).set_permission_mode("default").text
 
 
 # ── off returns where the session started ───────────────────────────
@@ -340,9 +341,9 @@ class TestTheStricterTierWins:
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: true\n")
         pack = _pack({"permissions": {"allow_bypass": False}})
         settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
-        status = _session(settings).set_permission_mode("bypassPermissions")
-        assert status.startswith("Error")
-        assert "group policy" in status
+        switch = _session(settings).set_permission_mode("bypassPermissions")
+        assert switch.refused
+        assert "group policy" in switch.text
 
 
 # ── --auto-approve under allow_bypass: false ────────────────────────
@@ -404,7 +405,9 @@ class TestARefusedFlipFromAnApprovalReachesThePerson:
             "for a looser mode."
         )
         session = MagicMock()
-        session.set_permission_mode = MagicMock(return_value=refusal)
+        session.set_permission_mode = MagicMock(
+            return_value=PermissionModeSwitch(refused=True, text=refusal)
+        )
         session.session_id = "s"
         session.main_team = MagicMock()
         session.main_team.acontinue_run = MagicMock(return_value=nothing())

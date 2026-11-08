@@ -37,6 +37,7 @@ from igni_core.core.hooks.extension_gate import (
 )
 from igni_core.core.hooks.schemas import HookDefinition
 from igni_core.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.session.schemas import PermissionModeSwitch
 from igni_core.core.tools.plan.store import PlanStore
 from igni_core.core.tools.plan.submission import PlanTransactionCoordinator
 from igni_core.extensions.host.hooks import ExtensionHooks
@@ -545,7 +546,7 @@ async def test_a_configured_plan_submit_hook_can_reject_a_plan_too() -> None:
 
 async def test_entering_plan_mode_starts_the_attempts_again() -> None:
     session = _plan_session()
-    session.set_permission_mode = MagicMock(return_value="plan")
+    session.set_permission_mode = MagicMock(return_value=PermissionModeSwitch(text="plan"))
     session.plan_store.rejected = 2
 
     await PlanTransactionCoordinator(session).enter(reason="", task="")
