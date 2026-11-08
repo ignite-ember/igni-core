@@ -144,11 +144,6 @@ def push_background_process_done(payload: Any) -> PushNotification:
     return _push(PushChannel.BACKGROUND_PROCESS_DONE, payload)
 
 
-def push_orchestrate_progress(payload: Any) -> PushNotification:
-    """``OrchestrateProgressLinePayload`` → wire push."""
-    return _push(PushChannel.ORCHESTRATE_PROGRESS, payload)
-
-
 def push_orchestrate_event(payload: dict) -> PushNotification:
     """Freeform orchestrate event dict → wire push."""
     return _push(PushChannel.ORCHESTRATE_EVENT, payload)
@@ -167,6 +162,5 @@ __all__ = [
     "push_process_line",
     "push_process_exited",
     "push_background_process_done",
-    "push_orchestrate_progress",
     "push_orchestrate_event",
 ]

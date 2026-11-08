@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Callable, MutableSequence
+from collections.abc import Callable, Mapping, MutableSequence
 from typing import Any
 
 from igni_core.backend.schemas_push import (
@@ -24,8 +24,6 @@ from igni_core.backend.schemas_push import (
     FileEditedPayload,
     LoginResultPayload,
     LoginStatusPayload,
-    OrchestrateProgressLinePayload,
-    ProcessDoneEvent,
     ProcessExitedPayload,
     ProcessLinePayload,
     ProcessStartedPayload,
@@ -33,13 +31,22 @@ from igni_core.backend.schemas_push import (
     SchedulerStartedPayload,
     SessionNamedPayload,
 )
+from igni_core.backend.schemas_sessions import TransportLike
 from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
+from igni_core.backend.server import BackendServer
+from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
 from igni_core.core.activity import background
 from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.tools.edit import (
     FileEditNotifier,
     default_file_edit_notifier,
 )
+from igni_core.core.tools.process_events import (
+    ProcessExitEvent,
+    ProcessLineEvent,
+    ProcessStartEvent,
+)
+from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.notifications.schemas import NotificationCounts, NotificationsChanged
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.enums import PushChannel
@@ -61,7 +68,7 @@ class PushNotificationBridge:
     def __init__(
         self,
         *,
-        transport: Any,
+        transport: TransportLike,
         loop: asyncio.AbstractEventLoop | None,
         queue: MutableSequence[str],
         file_edit_notifier: FileEditNotifier | None = None,
@@ -85,7 +92,7 @@ class PushNotificationBridge:
 
     @classmethod
     def wired(
-        cls, *, transport: Any, loop: asyncio.AbstractEventLoop, backend: Any
+        cls, *, transport: TransportLike, loop: asyncio.AbstractEventLoop, backend: BackendServer
     ) -> PushNotificationBridge:
         """The boot session's bridge, every push channel bound.
 
@@ -110,24 +117,23 @@ class PushNotificationBridge:
         self._live_session_count = probe
 
     def for_transport(
-        self, transport: Any, *, queue: MutableSequence[str] | None = None
+        self, transport: TransportLike, *, queue: MutableSequence[str]
     ) -> PushNotificationBridge:
         """Sub-bridge bound to a different transport (typically a
         :class:`SessionStampingTransport` for a pooled runtime). The
         loop + file-edit notifier references are shared with the
         parent bridge.
 
-        ``queue`` is NOT shared by default any more. The queue is a
-        conversation — whatever is appended to it is injected as a
-        synthetic user message on the owning session's next turn — so
-        a sub-bridge that kept the parent's list would speak into the
-        boot session no matter which window it belongs to. Callers
-        pass the runtime's own queue; the parent's is the fallback
-        only for callers that have none."""
+        ``queue`` is never shared. The queue is a conversation —
+        whatever is appended to it is injected as a synthetic user
+        message on the owning session's next turn — so a sub-bridge
+        that kept the parent's list would speak into the boot session
+        no matter which window it belongs to. Callers pass the
+        runtime's own queue."""
         sub = PushNotificationBridge(
             transport=transport,
             loop=self._loop,
-            queue=self._queue if queue is None else queue,
+            queue=queue,
             file_edit_notifier=self._file_edit_notifier,
         )
         sub.set_live_session_count(self._live_session_count)
@@ -169,7 +175,7 @@ class PushNotificationBridge:
         )
         background.daemon(self._transport.send(msg.push_scheduler_completed(payload)), name="push")
 
-    def start_scheduler(self, backend: Any) -> None:
+    def start_scheduler(self, backend: BackendServer) -> None:
         """Kick off the scheduled-task poller with our push
         callbacks. Replaces the old free-function
         ``_start_scheduler_with_push``."""
@@ -190,41 +196,44 @@ class PushNotificationBridge:
         :class:`~igni_core.core.tools.process_registry.ProcessRegistry`
         rather than on the supervisor — event emission co-locates
         with the state that emits it.
-        """
-        from igni_core.core.tools.process_supervisor_locator import supervisors  # noqa: PLC0415
 
+        The bus hands every subscriber the event's dumped mapping; each
+        handler validates it straight back into its
+        :mod:`~igni_core.core.tools.process_events` model, so nothing
+        past the first line of a handler reads a raw mapping.
+        """
         bus = supervisors.default().registry.bus
         bus.on("start", self._on_process_started)
         bus.on("line", self._on_process_line)
         bus.on("exit", self._on_process_exited)
         bus.on("exit", self._on_process_done)
 
-    def _on_process_started(self, info: dict) -> None:
-        event = ProcessDoneEvent.from_bus(info)
+    def _on_process_started(self, info: Mapping[str, Any]) -> None:
+        event = ProcessStartEvent.model_validate(info)
         payload = ProcessStartedPayload(pid=event.pid, cmd=event.cmd, started_at=event.started_at)
-        self._schedule_push("process_started", payload.model_dump())
+        self._schedule_push(PushChannel.PROCESS_STARTED, payload.model_dump())
 
-    def _on_process_line(self, info: dict) -> None:
-        event = ProcessDoneEvent.from_bus(info)
+    def _on_process_line(self, info: Mapping[str, Any]) -> None:
+        event = ProcessLineEvent.model_validate(info)
         payload = ProcessLinePayload(pid=event.pid, line=event.line)
-        self._schedule_push("process_line", payload.model_dump())
+        self._schedule_push(PushChannel.PROCESS_LINE, payload.model_dump())
 
-    def _on_process_exited(self, info: dict) -> None:
-        event = ProcessDoneEvent.from_bus(info)
+    def _on_process_exited(self, info: Mapping[str, Any]) -> None:
+        event = ProcessExitEvent.model_validate(info)
         payload = ProcessExitedPayload(
             pid=event.pid,
             cmd=event.cmd,
             exit_code=event.exit_code,
             duration_seconds=event.duration_seconds,
         )
-        self._schedule_push("process_exited", payload.model_dump())
+        self._schedule_push(PushChannel.PROCESS_EXITED, payload.model_dump())
 
-    def _on_process_done(self, info: dict) -> None:
+    def _on_process_done(self, info: Mapping[str, Any]) -> None:
         """Long-form background-process completion notice + queue
         injection. The queue-injected text lands as a synthetic
         user message on the next tool result so the agent reacts to
         the completion naturally."""
-        event = ProcessDoneEvent.from_bus(info)
+        event = ProcessExitEvent.model_validate(info)
         status = "succeeded" if event.exit_code == 0 else f"failed (exit {event.exit_code})"
         # Include a one-line hint pointing at ``read_process_output``
         # so the agent knows it can pull more than the 40-line tail.
@@ -270,7 +279,7 @@ class PushNotificationBridge:
             exit_code=event.exit_code,
             duration_seconds=event.duration_seconds,
         )
-        self._schedule_push("background_process_done", payload.model_dump())
+        self._schedule_push(PushChannel.BACKGROUND_PROCESS_DONE, payload.model_dump())
 
     # ── File-edit channel ───────────────────────────────────────
 
@@ -282,11 +291,11 @@ class PushNotificationBridge:
 
     def _on_file_edited(self, abs_path: str) -> None:
         payload = FileEditedPayload(path=abs_path)
-        self._schedule_push("file_edited", payload.model_dump())
+        self._schedule_push(PushChannel.FILE_EDITED, payload.model_dump())
 
     # ── Broadcast bus ───────────────────────────────────────────
 
-    def bind_to_broadcast_bus(self, backend: Any) -> None:
+    def bind_to_broadcast_bus(self, backend: BackendServer) -> None:
         """Wire the backend's broadcast bus to fan every broadcast
         out as a :class:`PushNotification` stamped for this bridge's
         transport. Pooled runtimes bind a bridge whose transport is
@@ -297,8 +306,6 @@ class PushNotificationBridge:
         into ``backend._session.broadcast_bus`` — so the seam is
         typed at BackendServer, not scattered across coordinators.
         """
-        if backend is None:
-            return
         backend.register_broadcast(self._on_broadcast)
 
     def _on_broadcast(self, event: BroadcastEvent) -> None:
@@ -312,16 +319,13 @@ class PushNotificationBridge:
 
     # ── Orchestrate progress ────────────────────────────────────
 
-    def on_orchestrate_progress(self, event: Any) -> None:
-        """Handle both structured-event dicts (new orchestrate.py
-        contract) and plain string progress lines (unported paths).
-        Kept sync — the tool fires it from inside a run without
-        awaiting."""
-        if isinstance(event, dict):
-            self._schedule_push("orchestrate_event", event)
-        else:
-            payload = OrchestrateProgressLinePayload(line=str(event))
-            self._schedule_push("orchestrate_progress", payload.model_dump())
+    def on_orchestrate_progress(self, event: dict[str, Any]) -> None:
+        """Forward one orchestrate sub-agent event (the
+        :data:`~igni_core.core.tools.orchestrate_events.OnProgress`
+        contract: an ``_EventBase`` model already dumped at the emit
+        site) onto ``orchestrate_event``. Kept sync — the tool fires it
+        from inside a run without awaiting."""
+        self._schedule_push(PushChannel.ORCHESTRATE_EVENT, event)
 
     # ── Session naming ──────────────────────────────────────────
 
@@ -331,7 +335,7 @@ class PushNotificationBridge:
 
     # ── Composite wiring ────────────────────────────────────────
 
-    def wire_all(self, backend: Any) -> None:
+    def wire_all(self, backend: BackendServer) -> None:
         """One call = every push channel bound to its source.
         Called by :meth:`wired` after backend + session are
         up. Individual ``bind_*`` methods stay public so tests can
@@ -348,11 +352,11 @@ class PushNotificationBridge:
             NotificationsChanged(counts=counts).model_dump(),
         )
 
-    def workspace_trust(self, status: dict) -> None:
+    def workspace_trust(self, status: WorkspaceTrustStatus) -> None:
         """The folder's workspace-trust status, after an answer (or when a
         window must ask): every window showing the trust dialog for that
         folder closes it, or opens it when ``state`` is ``ask``."""
-        self._schedule_push(PushChannel.WORKSPACE_TRUST_REQUIRED, status)
+        self._schedule_push(PushChannel.WORKSPACE_TRUST_REQUIRED, status.model_dump())
 
     def workflow_event(self, record: WorkflowEventRecord) -> None:
         """One event of a running workflow, for the window folding it into
@@ -361,7 +365,7 @@ class PushNotificationBridge:
 
     # ── Private helpers ─────────────────────────────────────────
 
-    def _schedule_push(self, channel: str, payload: dict) -> None:
+    def _schedule_push(self, channel: str, payload: dict[str, Any]) -> None:
         """Hop onto the running loop and enqueue a
         :class:`PushNotification`. Safe to call from any thread —
         the reader thread + the file-edit listener thread + the

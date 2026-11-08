@@ -73,7 +73,7 @@ async def test_trust_is_recorded_pushed_and_applied(tmp_path: Path) -> None:
     assert _stored(tmp_path) == "trusted"
     ctx.backend.apply_workspace_trust.assert_awaited_once()
     ctx.push.workspace_trust.assert_called_once()
-    assert ctx.push.workspace_trust.call_args.args[0]["state"] == "trusted"
+    assert ctx.push.workspace_trust.call_args.args[0].state == "trusted"
 
 
 async def test_this_time_only_trusts_without_recording(tmp_path: Path) -> None:

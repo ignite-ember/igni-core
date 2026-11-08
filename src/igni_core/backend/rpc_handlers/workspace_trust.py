@@ -36,5 +36,5 @@ class WorkspaceTrustRpcHandler(RpcHandler):
             await backend.apply_workspace_trust()
         push = self._ctx.push
         if push is not None:
-            push.workspace_trust(status.model_dump())
+            push.workspace_trust(status)
         return status

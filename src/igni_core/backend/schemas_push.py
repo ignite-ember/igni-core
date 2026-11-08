@@ -11,8 +11,6 @@ the FE contract stays greppable.
 
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel
 
 
@@ -96,51 +94,9 @@ class ProcessExitedPayload(BaseModel):
     duration_seconds: float | None
 
 
-class OrchestrateProgressLinePayload(BaseModel):
-    """Channel ``orchestrate_progress``. Plain string progress line
-    from the ``orchestrate`` tool — used only when the tool hasn't
-    been ported to the structured-event form yet."""
-
-    line: str
-
-
 class SessionNamedPayload(BaseModel):
     """Channel ``session_named``. The BE picked an auto-generated
     display name for a freshly-created session."""
 
     session_id: str
     name: str
-
-
-class ProcessDoneEvent(BaseModel):
-    """Adaptor around the ``dict`` payload emitted by
-    :attr:`core.tools.process_supervisor_locator.supervisors`
-    (``supervisors.default().registry.bus``).
-
-    The bus contract still hands us a raw dict (flipping the bus
-    would touch a lot of subscribers) — we validate the shape at
-    the ingress point (:class:`PushNotificationBridge`) instead.
-    """
-
-    pid: int | None = None
-    cmd: str = ""
-    exit_code: int | None = None
-    duration_seconds: float = 0.0
-    output_tail: str = ""
-    started_at: float | None = None
-    line: str | None = None
-
-    @classmethod
-    def from_bus(cls, info: dict[str, Any]) -> ProcessDoneEvent:
-        """Coerce whatever the bus subscriber received into a typed
-        payload. Missing keys default to sane values so a partial
-        subscriber implementation doesn't crash the bridge."""
-        return cls(
-            pid=info.get("pid"),
-            cmd=str(info.get("cmd", "") or ""),
-            exit_code=info.get("exit_code"),
-            duration_seconds=float(info.get("duration_seconds", 0.0) or 0.0),
-            output_tail=str(info.get("output_tail", "") or ""),
-            started_at=info.get("started_at"),
-            line=info.get("line"),
-        )
