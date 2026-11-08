@@ -1,4 +1,4 @@
-"""Typed schemas for the auth slash-command family.
+"""Typed schemas for the auth slash-command family and auth RPCs.
 
 Home for :class:`LogoutOutcome`, the composed result that
 :meth:`igni_core.backend.cmd_auth.AuthCommand.logout` builds before
@@ -19,6 +19,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from igni_core.backend.command_result import CommandResult
+from igni_core.core.auth.discovery import Discovered
 from igni_core.protocol.messages import CommandAction, CommandResultKind
 
 
@@ -92,3 +93,49 @@ class LogoutOutcome(BaseModel):
             content="\n".join(lines),
             action=CommandAction.LOGOUT,
         )
+
+
+class DiscoverServerArgs(BaseModel):
+    """``discover_server`` RPC args: the address to look the server up from."""
+
+    email: str
+
+
+class SetServerArgs(BaseModel):
+    """``set_server`` RPC args. An empty ``portal_url`` means "derive it"."""
+
+    api_url: str
+    portal_url: str = ""
+
+
+class ServerFound(BaseModel):
+    """``discover_server`` RPC result: where an address's organisation
+    runs igni, or — with every URL empty — why nothing usable was
+    published (``reason``)."""
+
+    api_url: str = ""
+    portal_url: str = ""
+    source: str = ""
+    reason: str = ""
+
+    @classmethod
+    def from_discovered(cls, found: Discovered) -> ServerFound:
+        return cls(
+            api_url=found.api_url,
+            portal_url=found.portal_url,
+            source=found.source,
+            reason=found.reason,
+        )
+
+
+class ServerChoice(BaseModel):
+    """``set_server`` RPC result: the server written down, or why it
+    was refused. ``error`` is empty on success."""
+
+    api_url: str = ""
+    portal_url: str = ""
+    error: str = ""
+
+    @classmethod
+    def refused(cls, error: str) -> ServerChoice:
+        return cls(error=error)

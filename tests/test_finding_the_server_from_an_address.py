@@ -403,7 +403,7 @@ class TestWritingTheServerDown:
 
         answer = controller.set_server("https://igni.acme.example")
 
-        assert answer["api_url"] == "https://igni.acme.example"
+        assert answer.api_url == "https://igni.acme.example"
         assert store.read()["api_url"] == "https://igni.acme.example"
 
     def test_the_running_process_learns_too(self, tmp_path, monkeypatch):
@@ -421,13 +421,13 @@ class TestWritingTheServerDown:
 
         answer = controller.set_server("http://igni.acme.example")
 
-        assert "not an https address" in answer["error"]
+        assert "not an https address" in answer.error
         assert store.read() == {}
 
     def test_nothing_typed_is_refused(self, tmp_path, monkeypatch):
         controller, store = self._controller(tmp_path, monkeypatch)
 
-        assert "error" in controller.set_server("   ")
+        assert controller.set_server("   ").error
         assert store.read() == {}
 
     def test_an_existing_config_keeps_its_other_keys(self, tmp_path, monkeypatch):
@@ -444,4 +444,4 @@ class TestWritingTheServerDown:
     def test_a_local_deployment_may_be_named(self, tmp_path, monkeypatch):
         controller, store = self._controller(tmp_path, monkeypatch)
 
-        assert controller.set_server("http://127.0.0.1:7777")["api_url"] == "http://127.0.0.1:7777"
+        assert controller.set_server("http://127.0.0.1:7777").api_url == "http://127.0.0.1:7777"

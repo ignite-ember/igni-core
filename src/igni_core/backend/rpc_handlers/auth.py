@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from igni_core.backend.rpc_handlers.base import RpcHandler, rpc
+from igni_core.backend.schemas_auth import (
+    DiscoverServerArgs,
+    ServerChoice,
+    ServerFound,
+    SetServerArgs,
+)
+from igni_core.backend.schemas_rpc import LoginStarted
+from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 
 
 class AuthRpcHandler(RpcHandler):
-    """Login + credential-refresh + credential-clear."""
+    """Login + credential-refresh + credential-clear + server choice."""
 
     @rpc(RpcMethod.LOGIN)
-    async def login_start(self, args: dict) -> Any:
+    async def login_start(self, args: dict) -> LoginStarted:
         return await self._ctx.login.start()
 
     @rpc(RpcMethod.RELOAD_CLOUD_CREDENTIALS)
-    def reload_creds(self, args: dict) -> Any:
+    def reload_creds(self, args: dict) -> msg.StatusUpdate:
         return self._controllers.auth.reload_cloud_credentials()
 
     @rpc(RpcMethod.CLEAR_CLOUD_CREDENTIALS)
-    async def clear_creds(self, args: dict) -> Any:
+    async def clear_creds(self, args: dict) -> msg.StatusUpdate:
         status = self._controllers.auth.clear_cloud_credentials()
         # Signed out: the last person's notifications stop arriving and
         # leave the badges.
@@ -29,11 +35,11 @@ class AuthRpcHandler(RpcHandler):
         return status
 
     @rpc(RpcMethod.DISCOVER_SERVER)
-    async def discover_server(self, args: dict) -> Any:
-        return await self._controllers.auth.discover_server(args.get("email", ""))
+    async def discover_server(self, args: dict) -> ServerFound:
+        parsed = DiscoverServerArgs.model_validate(args)
+        return await self._controllers.auth.discover_server(parsed.email)
 
     @rpc(RpcMethod.SET_SERVER)
-    def set_server(self, args: dict) -> Any:
-        return self._controllers.auth.set_server(
-            args.get("api_url", ""), args.get("portal_url", "")
-        )
+    def set_server(self, args: dict) -> ServerChoice:
+        parsed = SetServerArgs.model_validate(args)
+        return self._controllers.auth.set_server(parsed.api_url, parsed.portal_url)

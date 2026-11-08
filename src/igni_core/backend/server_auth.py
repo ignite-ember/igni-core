@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from igni_core.backend.schemas_auth import ServerChoice, ServerFound
 from igni_core.backend.schemas_rpc import CloudPlan, LoginResult
 from igni_core.core.activity import background
 from igni_core.core.auth.credentials import (
@@ -430,7 +431,7 @@ class AuthController:
 
     # ── Which server this install talks to ───────────────────────────
 
-    async def discover_server(self, email: str) -> dict[str, str]:
+    async def discover_server(self, email: str) -> ServerFound:
         """Where this address's organisation runs igni.
 
         Read from a record the organisation publishes on its own
@@ -442,15 +443,9 @@ class AuthController:
         domains have no record, and the screen offers an address field
         instead. ``reason`` is there for when somebody asks why.
         """
-        found = await discover(email)
-        return {
-            "api_url": found.api_url,
-            "portal_url": found.portal_url,
-            "source": found.source,
-            "reason": found.reason,
-        }
+        return ServerFound.from_discovered(await discover(email))
 
-    def set_server(self, api_url: str, portal_url: str = "") -> dict[str, str]:
+    def set_server(self, api_url: str, portal_url: str = "") -> ServerChoice:
         """Write the server down, so the next launch knows it.
 
         Refused unless the URL is one discovery would have accepted.
@@ -465,11 +460,11 @@ class AuthController:
         chosen = (api_url or "").strip().rstrip("/")
         portal = (portal_url or "").strip().rstrip("/")
         if not chosen:
-            return {"error": "Name the server to connect to."}
+            return ServerChoice.refused("Name the server to connect to.")
         if not is_safe_url(chosen):
-            return {"error": f"{chosen} is not an https address."}
+            return ServerChoice.refused(f"{chosen} is not an https address.")
         if portal and not is_safe_url(portal):
-            return {"error": f"{portal} is not an https address."}
+            return ServerChoice.refused(f"{portal} is not an https address.")
 
         store = UserConfigStore()
         config = store.read()
@@ -486,4 +481,4 @@ class AuthController:
             self._settings.portal_url = portal
         self._portal = PortalClient(api_url=chosen, portal_url=portal or None)
         logger.info("server set to %s", chosen)
-        return {"api_url": chosen, "portal_url": portal}
+        return ServerChoice(api_url=chosen, portal_url=portal)
