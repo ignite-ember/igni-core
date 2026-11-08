@@ -38,8 +38,8 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.tool_permissions import ToolPermissions
 from igni_core.core.decisions.schemas import DecisionsUnavailable
-from igni_core.core.plugins import marketplaces as _marketplaces
 from igni_core.core.plugins.installer import PluginError, PluginInstaller
+from igni_core.core.plugins.marketplace_store import MarketplaceRegistryStore
 from igni_core.core.plugins.models import MarketplaceEntry, MarketplaceRegistry
 from igni_core.core.plugins.source_policy import PluginSourcePolicy
 from igni_core.core.plugins.state import load_state, save_state
@@ -221,7 +221,7 @@ class TestTheMarketplaceClone:
             await _warmup(settings)._refresh_all()
 
         assert git.clone_urls() == [str(repo)]
-        registry = _marketplaces.load_registry(settings.storage.data_dir)
+        registry = MarketplaceRegistryStore(settings.storage.data_dir).load()
         assert [m.name for m in registry.marketplaces] == ["acme-internal"]
 
     def test_a_user_cannot_add_a_public_marketplace(self, tmp_path):

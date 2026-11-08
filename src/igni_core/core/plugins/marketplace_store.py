@@ -31,7 +31,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from igni_core.core.paths import DEFAULT_DATA_DIR
 from igni_core.core.plugins.git import GitClient
@@ -63,15 +63,18 @@ logger = logging.getLogger(__name__)
 # is what the user types after ``@`` (``@claude-plugins-official/foo``);
 # we know it ahead of time because the marketplace's own
 # ``marketplace.json`` declares it.
-DEFAULT_MARKETPLACES: list[tuple[str, str]] = [
+#
+# A tuple, not a list: the default set is a constant, and a module
+# constant any importer could mutate is module-level state.
+DEFAULT_MARKETPLACES: tuple[tuple[str, str], ...] = (
     (
         "claude-plugins-official",
         "https://github.com/anthropics/claude-plugins-official",
     ),
-]
+)
 
 
-# ── Catalog fetch (Pattern 3 result) ────────────────────────────────
+# ── Typed results (Pattern 3) ──────────────────────────────────────
 
 
 class CatalogFetchResult(BaseModel):
@@ -82,8 +85,6 @@ class CatalogFetchResult(BaseModel):
     fail-fast path (``/plugin marketplace add``) call
     :meth:`unwrap` to preserve the "raise on error" contract.
     """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     ok: bool
     catalog: MarketplaceCatalog | None = None
@@ -96,6 +97,14 @@ class CatalogFetchResult(BaseModel):
         if self.ok and self.catalog is not None:
             return self.catalog
         raise ValueError(self.reason or "catalog fetch failed")
+
+
+class MarketplaceRefreshOutcome(BaseModel):
+    """Per-marketplace outcome from :meth:`MarketplaceRegistryStore.refresh_all`."""
+
+    name: str
+    ok: bool
+    reason: str = ""
 
 
 class _CatalogFetcher:
@@ -218,7 +227,7 @@ class MarketplaceRegistryStore:
         tmp.write_text(registry.model_dump_json(indent=2), encoding="utf-8")
         tmp.replace(path)
 
-    # ── Catalog fetch (thin façade) ────────────────────────────────
+    # ── Catalog fetch ──────────────────────────────────────────────
 
     def fetch_catalog(self, url: str) -> CatalogFetchResult:
         """Fetch a marketplace's catalog by URL. Returns a
@@ -236,12 +245,12 @@ class MarketplaceRegistryStore:
         users write ``@anthropics-plugins/foo`` regardless of where
         the marketplace's git repo lives.
 
-        Raises on fetch failure (network / parse) — mirrors the old
-        contract; callers that catch got the same behaviour before.
+        Raises :class:`ValueError` when the catalog can't be fetched
+        or parsed — registering a marketplace the catalog can't be
+        read for would leave a broken entry behind. Callers that
+        want the best-effort answer ask :meth:`fetch_catalog` and
+        read its ``ok``.
         """
-        # ``unwrap`` preserves the raise-on-error contract of the
-        # legacy ``add_marketplace``; callers wanting best-effort go
-        # through :meth:`fetch_catalog` directly.
         catalog = self._fetcher.fetch(url).unwrap()
 
         registry = self.load()
@@ -322,14 +331,6 @@ class MarketplaceRegistryStore:
         if install_ref is None:
             return None
         return self.load().resolve_install_ref(install_ref)
-
-
-class MarketplaceRefreshOutcome(BaseModel):
-    """Per-marketplace outcome from :meth:`MarketplaceRegistryStore.refresh_all`."""
-
-    name: str
-    ok: bool
-    reason: str = ""
 
 
 __all__ = [

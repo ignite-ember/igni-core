@@ -31,6 +31,7 @@ from igni_core.core.plugins.models import (
     MarketplaceEntry,
     MarketplacePluginEntry,
     MarketplaceRegistry,
+    ResolvedSource,
 )
 from igni_core.core.plugins.state import PluginsState, load_state
 from igni_core.core.session.core import PluginReloadCounts
@@ -243,8 +244,6 @@ def test_plugin_install_marketplace_ref_resolves_first(tmp_path: Path) -> None:
     registry into a git URL *before* hitting the installer. The
     catalog's ``branch`` field flows through as ``--ref`` when no
     explicit ``--ref`` was given on the command line."""
-    from igni_core.core.plugins.marketplaces import ResolvedSource
-
     h = _make_handler(tmp_path)
     fake_entry = MagicMock()
     fake_entry.branch = "release-1"
@@ -282,8 +281,6 @@ def test_plugin_install_marketplace_explicit_ref_wins(tmp_path: Path) -> None:
     """If the user passes ``--ref X`` on a marketplace install, it
     takes precedence over the catalog's default branch — explicit
     user choice always wins over inferred metadata."""
-    from igni_core.core.plugins.marketplaces import ResolvedSource
-
     h = _make_handler(tmp_path)
     fake_entry = MagicMock()
     fake_entry.branch = "default-branch"

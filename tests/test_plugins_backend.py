@@ -6,9 +6,9 @@ URL detection, branch flow-through, error message shaping, ack
 text) is currently the most user-visible surface for plugin
 operations in the TUI, and was wholly untested.
 
-Real loader + state under tmp_path; module-level patches only for
-``PluginInstaller`` and ``marketplaces`` so we exercise the
-wrapping logic without doing real git operations.
+Real loader + state under tmp_path; class-level patches only for
+``PluginInstaller`` and ``MarketplaceRegistryStore`` so we exercise
+the wrapping logic without doing real git operations.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from igni_core.core.plugins.models import (
     MarketplaceEntry,
     MarketplacePluginEntry,
     MarketplaceRegistry,
+    ResolvedSource,
 )
 from igni_core.core.plugins.state import PluginsState, load_state, save_state
 from igni_core.core.session.core import PluginReloadCounts
@@ -228,14 +229,12 @@ def test_install_plugin_marketplace_ref(tmp_path: Path) -> None:
     """Marketplace ref → resolve → install. The resolver's
     ``ResolvedSource.ref`` (sha if present, else ref, else
     catalog branch) flows into the install call."""
-    from igni_core.core.plugins.marketplaces import ResolvedSource
-
     backend = _make_backend(tmp_path)
     fake_entry = MagicMock()
     fake_entry.branch = "release"
     with (
         patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls,
-        patch("igni_core.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
+        patch.object(MarketplaceRegistryStore, "resolve_install_ref") as mock_resolve,
     ):
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
@@ -262,14 +261,12 @@ def test_install_plugin_marketplace_ref(tmp_path: Path) -> None:
 
 
 def test_install_plugin_explicit_ref_wins_over_catalog_branch(tmp_path: Path) -> None:
-    from igni_core.core.plugins.marketplaces import ResolvedSource
-
     backend = _make_backend(tmp_path)
     fake_entry = MagicMock()
     fake_entry.branch = "default"
     with (
         patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls,
-        patch("igni_core.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
+        patch.object(MarketplaceRegistryStore, "resolve_install_ref") as mock_resolve,
     ):
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
@@ -302,7 +299,7 @@ def test_install_plugin_unresolved_marketplace_ref(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
     with (
         patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls,
-        patch("igni_core.core.plugins.marketplaces.resolve_install_ref") as mock_resolve,
+        patch.object(MarketplaceRegistryStore, "resolve_install_ref") as mock_resolve,
     ):
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True

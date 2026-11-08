@@ -25,15 +25,6 @@ from igni_core.core.plugins.marketplace_store import (
     MarketplaceRefreshOutcome,
     MarketplaceRegistryStore,
 )
-from igni_core.core.plugins.marketplaces import (
-    add_marketplace,
-    fetch_catalog,
-    load_registry,
-    refresh_marketplace,
-    remove_marketplace,
-    resolve_install_ref,
-    save_registry,
-)
 from igni_core.core.plugins.models import (
     InstallRef,
     MarketplaceCatalog,
@@ -83,11 +74,4 @@ __all__ = [
     "DEFAULT_MARKETPLACES",
     "load_state",
     "save_state",
-    "load_registry",
-    "save_registry",
-    "fetch_catalog",
-    "add_marketplace",
-    "remove_marketplace",
-    "refresh_marketplace",
-    "resolve_install_ref",
 ]

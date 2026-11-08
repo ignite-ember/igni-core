@@ -14,13 +14,9 @@ along with the refresh of any registered marketplace that is not a
 local path or one of the organisation's: no git process is started for
 those, so no connection is attempted.
 
-The ``_marketplaces`` module attribute-lookup import is
-INTENTIONAL — tests patch
-``igni_core.core.plugins.marketplaces.load_registry`` /
-``.refresh_marketplace`` and expect the call sites here to route
-through that attribute lookup. A direct ``from ... import
-load_registry`` would bind at import time and break the patching
-contract. This is the ONE call site that needs that seam.
+The registry is reached through a :class:`MarketplaceRegistryStore`
+built per pass by the injected ``store_for`` factory (the session's
+data dir can change between passes); tests hand in a fake.
 """
 
 from __future__ import annotations
@@ -32,13 +28,10 @@ from pathlib import Path
 from typing import ClassVar
 
 from igni_core.core.config.settings import Settings
-
-# Module-attribute pattern — tests patch
-# ``igni_core.core.plugins.marketplaces.load_registry`` /
-# ``.refresh_marketplace`` and expect the call sites here to
-# route through that attribute lookup. Direct ``from … import``
-# would bind at import time and break the patching contract.
-from igni_core.core.plugins import marketplaces as _marketplaces
+from igni_core.core.plugins.marketplace_store import (
+    DEFAULT_MARKETPLACES,
+    MarketplaceRegistryStore,
+)
 from igni_core.core.plugins.models import MarketplaceRegistry
 from igni_core.core.plugins.source_policy import PluginSourcePolicy
 from igni_core.core.session.startup.base import SessionStartupPhase
@@ -66,9 +59,14 @@ class MarketplaceWarmupPhase(SessionStartupPhase):
     #: A catalog younger than this is not fetched again at session start.
     REFRESH_EVERY_SECONDS: ClassVar[float] = 6 * 3600.0
 
-    def __init__(self, settings_ref: Callable[[], Settings]) -> None:
+    def __init__(
+        self,
+        settings_ref: Callable[[], Settings],
+        store_for: Callable[[Path], MarketplaceRegistryStore] = MarketplaceRegistryStore,
+    ) -> None:
         # A callable: a workspace-trust change replaces the session's settings.
         self._settings_ref = settings_ref
+        self._store_for = store_for
 
     def start_background(self) -> None:
         """Kick the marketplace refresh sequence in the background."""
@@ -78,30 +76,32 @@ class MarketplaceWarmupPhase(SessionStartupPhase):
         """Auto-register defaults then refresh every entry now
         present in the registry. Idempotent — re-runs on subsequent
         sessions no-op the auto-register step."""
-        data_dir = self._settings_ref().storage.data_dir
-        registry = _marketplaces.load_registry(data_dir)
-        await self._auto_register_defaults(registry, data_dir)
+        store = self._store_for(Path(self._settings_ref().storage.data_dir))
+        registry = store.load()
+        await self._auto_register_defaults(registry, store)
         # Re-read the registry since the auto-register step may have
         # appended entries.
-        registry = _marketplaces.load_registry(data_dir)
-        await self._refresh_registered(registry, data_dir)
+        registry = store.load()
+        await self._refresh_registered(registry, store)
 
     def _policy(self) -> PluginSourcePolicy:
         """Read fresh from the session's settings on every pass."""
         return PluginSourcePolicy.from_settings(self._settings_ref())
 
-    async def _auto_register_defaults(self, registry: MarketplaceRegistry, data_dir: Path) -> None:
+    async def _auto_register_defaults(
+        self, registry: MarketplaceRegistry, store: MarketplaceRegistryStore
+    ) -> None:
         """Auto-register the default marketplace (when allowed) and the
         organisation's own, so a brand-new install sees plugins on
         first open without the user having to run ``/plugin
         marketplace add``. Idempotent — a marketplace already registered
         under the default's name or at the same URL is skipped, and
-        ``add_marketplace`` updates in place anyway.
+        ``MarketplaceRegistryStore.add`` updates in place anyway.
         """
         policy = self._policy()
         registered_names = {m.name for m in registry.marketplaces}
         registered_urls = {m.url for m in registry.marketplaces}
-        default_names = {url: name for name, url in _marketplaces.DEFAULT_MARKETPLACES}
+        default_names = {url: name for name, url in DEFAULT_MARKETPLACES}
         for url in policy.marketplaces_to_register():
             if url in registered_urls or default_names.get(url) in registered_names:
                 continue
@@ -111,9 +111,8 @@ class MarketplaceWarmupPhase(SessionStartupPhase):
             try:
                 await asyncio.wait_for(
                     asyncio.to_thread(
-                        _marketplaces.add_marketplace,
+                        store.add,
                         url,
-                        data_dir=data_dir,
                         added_by="user" if url in policy.customer_marketplaces else "default",
                     ),
                     timeout=self._TIMEOUT_ADD,
@@ -126,7 +125,9 @@ class MarketplaceWarmupPhase(SessionStartupPhase):
                     e,
                 )
 
-    async def _refresh_registered(self, registry: MarketplaceRegistry, data_dir: Path) -> None:
+    async def _refresh_registered(
+        self, registry: MarketplaceRegistry, store: MarketplaceRegistryStore
+    ) -> None:
         """Refresh whatever is now registered (defaults + any
         user-added marketplaces) that the policy allows."""
         policy = self._policy()
@@ -148,11 +149,7 @@ class MarketplaceWarmupPhase(SessionStartupPhase):
                 continue
             try:
                 await asyncio.wait_for(
-                    asyncio.to_thread(
-                        _marketplaces.refresh_marketplace,
-                        entry.name,
-                        data_dir=data_dir,
-                    ),
+                    asyncio.to_thread(store.refresh, entry.name),
                     timeout=self._TIMEOUT_REFRESH,
                 )
             except Exception as e:  # noqa: BLE001 — best-effort

@@ -78,6 +78,72 @@ that will become D if untouched). B-tier addressed on-demand.
 
 Free-form record of what happened each iteration. Newest at the top.
 
+### Iteration 275 — `core/plugins/marketplaces.py`: delete the backward-compat façade
+
+**Target:** `src/igni_core/core/plugins/marketplaces.py` (audit grade **C** —
+"whole module is a deprecated backward-compat façade kept alive for test
+monkey-patching").
+
+**Audit findings, all still applying before this iteration:**
+- `_MarketplaceModuleAdapter` existed only so ~50
+  `patch("...marketplaces.<name>")` sites kept resolving (its own
+  docstring said so).
+- `_ADAPTER` was a module-level singleton whose bound methods were
+  published as the module's public functions.
+- `fetch_catalog` kept the legacy raise-on-error contract on top of
+  the Result API.
+- The file's own TODO said to delete it — and it was still exported
+  from `plugins/__init__.py`.
+
+**Changes:**
+- **Deleted** `src/igni_core/core/plugins/marketplaces.py` (213 lines).
+  The behaviour it re-exported already lives in
+  `core/plugins/marketplace_store.py`; the schemas live in
+  `core/plugins/models.py`.
+- `core/plugins/__init__.py`: the seven re-exported free functions
+  and their `__all__` entries are gone. The package now exports
+  `MarketplaceRegistryStore` (behaviour) and the `models` schemas
+  (shape) — no façade.
+- `backend/plugin_controller.py`: `@`-ref resolution now goes through
+  `MarketplaceRegistryStore(data_dir).resolve_install_ref(ref)` — the
+  same store `cmd_plugin/gateway.py` already drives.
+- `core/session/startup/marketplace.py`: the warmup phase takes an
+  injected `store_for` factory and drives `store.load()` / `store.add()`
+  / `store.refresh()`. The "tests patch `marketplaces.load_registry`"
+  seam is gone — the phase's collaborator is handed in.
+- `core/plugins/marketplace_store.py`: `DEFAULT_MARKETPLACES` is a
+  tuple (a module-level list any importer could mutate is module
+  state); `MarketplaceRefreshOutcome` moved up beside
+  `CatalogFetchResult` so both Pattern-3 result models sit together;
+  the dead `arbitrary_types_allowed` config dropped.
+- **Tests:** `tests/test_plugins_marketplaces.py` rewritten against the
+  store API — the free functions became store methods, and the
+  raise-on-error assertions became Result assertions (`result.ok` /
+  `result.unwrap()`). `test_plugins_backend.py` and
+  `test_plugins_slash_commands.py` patch
+  `MarketplaceRegistryStore.resolve_install_ref` instead of the deleted
+  module's function. `test_an_air_gapped_install_makes_no_outbound_call.py`
+  reads the registry through the store.
+- `docs/PLUGINS.md`: the registry link points at `marketplace_store.py`.
+
+**Behaviour:** preserved. `add` / `refresh` still raise on a failed
+fetch (the gateway catches `ValueError`), `fetch_catalog` still
+returns the typed `CatalogFetchResult`, `resolve_install_ref` still
+returns the same `(ResolvedSource, MarketplacePluginEntry)` tuple. The
+one contract change is the *test* surface: `fetch_catalog` no longer
+raises on its own — the Result is the contract, and the fail-fast
+callers unwrap it.
+
+**Tests:** 412 plugin / marketplace / air-gap / phones-home tests pass
+(1 skipped — git-gated), `test_session_startup.py` +
+`test_plugins_session_integration.py` + `test_backend_server.py` green.
+`ruff check`, `ruff format --check` and `mypy` clean on every touched
+file.
+
+**Grade change:** `core/plugins/marketplaces.py` **C → deleted**. Its
+behaviour now lives on `MarketplaceRegistryStore`, which the audit
+graded separately.
+
 ### Iteration 274 — Python-side audit milestone: no plain B/C/D remain
 
 **Milestone reached at iter 273:** every Python file in the

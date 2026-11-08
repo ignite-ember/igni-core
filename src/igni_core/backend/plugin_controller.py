@@ -29,13 +29,14 @@ from igni_core.backend.plugin_schemas import (
     PluginPreviewSource,
 )
 
-# Module-attribute imports (not ``from ... import ClassName``) so
-# tests patching ``installer.PluginInstaller`` / ``state.save_state``
-# at the source module take effect on our call sites.
+# The installer and the plugin state are imported as *modules* (not
+# ``from ... import ClassName``) so tests patching
+# ``installer.PluginInstaller`` / ``state.save_state`` at the source
+# module take effect on our call sites.
 from igni_core.core.plugins import installer as _plugin_installer
-from igni_core.core.plugins import marketplaces as _plugin_marketplaces
 from igni_core.core.plugins import state as _plugin_state
 from igni_core.core.plugins.git import GitClient, GitError
+from igni_core.core.plugins.marketplace_store import MarketplaceRegistryStore
 from igni_core.core.plugins.models import PluginInfo
 from igni_core.core.plugins.source_policy import PluginSourcePolicy
 from igni_core.protocol import messages as msg
@@ -249,7 +250,7 @@ class PluginController:
         url = ref
         subdir: str | None = None
         if ref.startswith("@"):
-            resolved = _plugin_marketplaces.resolve_install_ref(ref, data_dir=data_dir)
+            resolved = MarketplaceRegistryStore(data_dir).resolve_install_ref(ref)
             if resolved is None:
                 return msg.Info(
                     text=f"Could not resolve '{ref}'. Run "
