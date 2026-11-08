@@ -16,7 +16,7 @@ from igni_cloud.guest.ports import ResumingNotifications
 from igni_cloud.guest.resume import Restored, RestoreStep, RestoreWatch
 from igni_cloud.logs import StdoutLog
 from igni_core.core.activity import ActivityRegistry
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 
 
 class RestoreSteps:
@@ -59,7 +59,7 @@ class RestoreSteps:
         self._logs.release()
 
     async def _reset_pools(self, _restored: Restored) -> None:
-        await cache.reset_pools()
+        await engines.reset_pools()
 
     async def _rearm_timers(self, _restored: Restored) -> None:
         self._activities.rearm()

@@ -19,7 +19,7 @@ from igni_cloud.storage.agno_table_cache import AgnoTableCache
 from igni_cloud.storage.attachments import LargeObjectAttachments
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from igni_core.core.db.database import Database
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.providers import SharedStorage
 from igni_core.core.db.scope import StorageScope
 from igni_core.core.db.urls import DatabaseUrl
@@ -43,7 +43,7 @@ class PostgresStorage(SharedStorage):
         return ScopedAsyncPostgresDb(
             scope=scope,
             tables=self._agno_tables,
-            db_engine=cache.get_async_engine(url),
+            db_engine=engines.get_async_engine(url),
             # ``igni migrate`` made Agno's tables as the admin role: a
             # producer's role may not create any.
             create_schema=False,

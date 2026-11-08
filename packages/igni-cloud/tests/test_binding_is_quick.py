@@ -27,7 +27,7 @@ from igni_cloud.storage.agno_table_cache import AgnoTableCache
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from sqlalchemy import event
 
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.scope import StorageScope, Tenant
 from igni_core.core.db.urls import DatabaseUrl
 from igni_core.core.memory.manager import StorageManager
@@ -45,7 +45,7 @@ def test_agnos_tables_are_looked_up_once_per_cache(postgres_url: str):
         statements.append(statement)
 
     async def read_three_times() -> int:
-        engine = cache.get_async_engine(url)
+        engine = engines.get_async_engine(url)
         tables = AgnoTableCache()
 
         def database() -> ScopedAsyncPostgresDb:
@@ -67,7 +67,7 @@ def test_agnos_tables_are_looked_up_once_per_cache(postgres_url: str):
             await database().get_session("s2", SessionType.AGENT)
         finally:
             event.remove(engine.sync_engine, "before_cursor_execute", heard)
-            await cache.reset_pools()
+            await engines.reset_pools()
         return first
 
     first = asyncio.run(read_three_times())

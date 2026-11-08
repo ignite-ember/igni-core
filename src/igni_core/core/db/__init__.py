@@ -7,9 +7,8 @@ This module is the single import point for the DB stack:
 - :class:`igni_core.core.db.urls.DatabaseUrl` names a database: a SQLite
   file on the desktop, ``IGNI_DATABASE_URL`` (PostgreSQL) in the cloud.
 - :class:`igni_core.core.db.engine_registry.EngineRegistry` caches engines
-  and sessionmakers per database; the shared
-  :class:`igni_core.core.db.engine.EngineCache` singleton
-  ``igni_core.core.db.engine.cache`` is what production uses.
+  and sessionmakers per database; the process's one registry is
+  ``igni_core.core.db.engine.engines``.
 - :class:`igni_core.core.db.locator.StorageLocator` turns settings into
   :class:`igni_core.core.db.database.Database` handles, each with the
   :class:`igni_core.core.db.scope.StorageScope` (org, producer, project)

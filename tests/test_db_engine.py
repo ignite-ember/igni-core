@@ -1,4 +1,4 @@
-"""Tests for ``core/db/engine`` — the SQLAlchemy engine cache.
+"""Tests for :class:`EngineRegistry` — the SQLAlchemy engine cache.
 
 The module's invariants are subtle:
 
@@ -8,7 +8,7 @@ The module's invariants are subtle:
     locking gets confused with two engines on the same file).
   * Paths are auto-created. First call to ``get_engine`` for a
     file under a non-existent parent must create the parent.
-  * ``dispose_all`` actually clears the caches — otherwise the
+  * ``dispose_sync`` actually clears the caches — otherwise the
     next call returns a disposed engine, which fails on first
     use.
 """
@@ -19,13 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from igni_core.core.db.engine import (
-    dispose_all,
-    get_async_engine,
-    get_async_sessionmaker,
-    get_engine,
-    get_sessionmaker,
-)
+from igni_core.core.db.engine_registry import EngineRegistry
 from igni_core.core.db.urls import DatabaseUrl, Dialect
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
@@ -40,14 +34,13 @@ def async_url(path):
     return DatabaseUrl.for_file(path).async_
 
 
-@pytest.fixture(autouse=True)
-def _clear_engine_cache():
-    """Each test starts with empty caches. The module's caches are
-    process-globals, so tests would otherwise leak engine identity
-    across cases."""
-    dispose_all()
-    yield
-    dispose_all()
+@pytest.fixture
+def registry():
+    """Each test gets a registry of its own, so engine identity never
+    leaks across cases or into the process's shared one."""
+    registry = EngineRegistry()
+    yield registry
+    registry.dispose_sync()
 
 
 class TestNormalizePath:
@@ -154,27 +147,27 @@ class TestDatabaseUrls:
             DatabaseUrl.parse("sqlite://")
 
 
-class TestEngineCacheIdentity:
+class TestEngineIdentity:
     """The cache key is the normalised path. Same logical path →
     same engine instance."""
 
-    def test_same_path_returns_same_engine(self, tmp_path):
+    def test_same_path_returns_same_engine(self, registry, tmp_path):
         # Lock down identity equality — same engine instance,
         # not just "an equivalent engine". SQLAlchemy's
         # connection pool is per-engine, so two engines on the
         # same file would mean two separate pools (and SQLite
         # lock contention).
         path = tmp_path / "state.db"
-        first = get_engine(path)
-        second = get_engine(path)
+        first = registry.get_engine(path)
+        second = registry.get_engine(path)
         assert first is second
 
-    def test_different_paths_get_different_engines(self, tmp_path):
-        a = get_engine(tmp_path / "a.db")
-        b = get_engine(tmp_path / "b.db")
+    def test_different_paths_get_different_engines(self, registry, tmp_path):
+        a = registry.get_engine(tmp_path / "a.db")
+        b = registry.get_engine(tmp_path / "b.db")
         assert a is not b
 
-    def test_equivalent_path_forms_collapse_to_one_engine(self, tmp_path):
+    def test_equivalent_path_forms_collapse_to_one_engine(self, registry, tmp_path):
         # ``state.db`` and ``./state.db`` and ``../<parent>/state.db``
         # all reference the same file. The cache key normalises so
         # ALL of them get the same engine.
@@ -182,27 +175,27 @@ class TestEngineCacheIdentity:
         nested = tmp_path / "nested"
         nested.mkdir()
         # Same file, three different spellings of the path:
-        a = get_engine(canonical)
-        b = get_engine(str(canonical))
-        c = get_engine(nested / ".." / "state.db")
+        a = registry.get_engine(canonical)
+        b = registry.get_engine(str(canonical))
+        c = registry.get_engine(nested / ".." / "state.db")
         assert a is b is c
 
-    def test_sessionmaker_is_cached_per_path(self, tmp_path):
-        sm1 = get_sessionmaker(tmp_path / "state.db")
-        sm2 = get_sessionmaker(tmp_path / "state.db")
+    def test_sessionmaker_is_cached_per_path(self, registry, tmp_path):
+        sm1 = registry.get_sessionmaker(tmp_path / "state.db")
+        sm2 = registry.get_sessionmaker(tmp_path / "state.db")
         assert sm1 is sm2
 
-    def test_async_engine_cache_is_independent_of_sync(self, tmp_path):
+    def test_async_engine_cache_is_independent_of_sync(self, registry, tmp_path):
         # Sync and async engines for the same path are
         # different caches (they're different SQLAlchemy
         # objects — one uses pysqlite, the other aiosqlite).
-        sync = get_engine(tmp_path / "x.db")
-        async_eng = get_async_engine(tmp_path / "x.db")
+        sync = registry.get_engine(tmp_path / "x.db")
+        async_eng = registry.get_async_engine(tmp_path / "x.db")
         assert sync is not async_eng  # Different types entirely.
 
-    def test_async_sessionmaker_cached(self, tmp_path):
-        sm1 = get_async_sessionmaker(tmp_path / "state.db")
-        sm2 = get_async_sessionmaker(tmp_path / "state.db")
+    def test_async_sessionmaker_cached(self, registry, tmp_path):
+        sm1 = registry.get_async_sessionmaker(tmp_path / "state.db")
+        sm2 = registry.get_async_sessionmaker(tmp_path / "state.db")
         assert sm1 is sm2
 
 
@@ -211,52 +204,52 @@ class TestParentDirAutoCreate:
     parent must create the parent. Without it the SQLite open call
     would fail and the caller has to mkdir defensively everywhere."""
 
-    def test_parent_dir_created_on_first_sync_call(self, tmp_path):
+    def test_parent_dir_created_on_first_sync_call(self, registry, tmp_path):
         deep = tmp_path / "subdir" / "deeper" / "state.db"
         assert not deep.parent.exists()
-        get_engine(deep)
+        registry.get_engine(deep)
         assert deep.parent.exists()
 
-    def test_parent_dir_created_on_first_async_call(self, tmp_path):
+    def test_parent_dir_created_on_first_async_call(self, registry, tmp_path):
         deep = tmp_path / "async_dir" / "deeper" / "state.db"
         assert not deep.parent.exists()
-        get_async_engine(deep)
+        registry.get_async_engine(deep)
         assert deep.parent.exists()
 
-    def test_existing_parent_is_noop(self, tmp_path):
+    def test_existing_parent_is_noop(self, registry, tmp_path):
         # The mkdir is ``exist_ok=True`` — second call with an
         # existing parent is a noop (no errors).
         deep = tmp_path / "exists" / "state.db"
         deep.parent.mkdir()
-        get_engine(deep)  # must not raise
+        registry.get_engine(deep)  # must not raise
         assert deep.parent.exists()
 
 
 class TestDisposeAll:
-    def test_clears_sync_engine_cache(self, tmp_path):
+    def test_clears_sync_engine_cache(self, registry, tmp_path):
         # After dispose, a subsequent ``get_engine`` for the
         # same path must return a FRESH engine (the disposed
         # one is unusable).
         path = tmp_path / "state.db"
-        first = get_engine(path)
-        dispose_all()
-        second = get_engine(path)
+        first = registry.get_engine(path)
+        registry.dispose_sync()
+        second = registry.get_engine(path)
         assert first is not second
 
-    def test_clears_sessionmaker_cache(self, tmp_path):
+    def test_clears_sessionmaker_cache(self, registry, tmp_path):
         path = tmp_path / "state.db"
-        first = get_sessionmaker(path)
-        dispose_all()
-        second = get_sessionmaker(path)
+        first = registry.get_sessionmaker(path)
+        registry.dispose_sync()
+        second = registry.get_sessionmaker(path)
         assert first is not second
 
-    def test_clears_async_caches(self, tmp_path):
+    def test_clears_async_caches(self, registry, tmp_path):
         # Async engines need ``await engine.dispose()`` to
-        # cleanly close their pools, but dispose_all does the
+        # cleanly close their pools, but dispose_sync does the
         # CACHE clear synchronously (intentional — see the
         # source comment). Just pin the cache-clear behaviour.
         path = tmp_path / "state.db"
-        first = get_async_engine(path)
-        dispose_all()
-        second = get_async_engine(path)
+        first = registry.get_async_engine(path)
+        registry.dispose_sync()
+        second = registry.get_async_engine(path)
         assert first is not second

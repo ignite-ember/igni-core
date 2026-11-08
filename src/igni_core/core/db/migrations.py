@@ -125,7 +125,6 @@ def upgrade_to_head(target: DatabaseTarget) -> None:
 
     Kept as a ``def`` (not a bound-method assignment) so tests can
     replace ``migrator`` and the shim still routes through the current
-    singleton. This mirrors the free-function surface preserved by
-    :mod:`igni_core.core.db.engine` around :class:`EngineRegistry`.
+    singleton.
     """
     migrator.upgrade_to_head(target)

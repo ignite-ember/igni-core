@@ -49,7 +49,7 @@ from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.config.schemas.storage_and_paths import StorageConfig
 from igni_core.core.config.settings_loader import SettingsLoader
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.engine_registry import EngineRegistry
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.db.scope import Tenant, tenancy
@@ -415,7 +415,7 @@ async def test_an_igni_started_before_its_producer_binds_when_producer_env_appea
     guest.starting()
     # Engines other tests opened on the run's database go, so that "no
     # engine on it" below means this igni opened none.
-    cache.dispose_all()
+    engines.dispose_sync()
     transport = WebSocketServerTransport(port=0)
     await transport.start()
     try:
@@ -433,7 +433,7 @@ async def test_an_igni_started_before_its_producer_binds_when_producer_env_appea
             assert answer["type"] == "rpc_response" and answer["id"] == "r1"
             assert "not bound" in answer["error"]
             assert not binding.done()
-            assert database_url.url not in cache.registry._sync_engines, "no database yet"
+            assert database_url.url not in engines._sync_engines, "no database yet"
 
             _hand_over(run_dir, database_url.url)
             assert await asyncio.wait_for(binding, timeout=5) is True
@@ -683,7 +683,7 @@ async def test_serving_keeps_the_file_and_reconnects_after_a_restore(run_dir: Pa
     async def reset_pools() -> None:
         calls.append("pools")
 
-    monkeypatch.setattr(cache, "reset_pools", reset_pools)
+    monkeypatch.setattr(engines, "reset_pools", reset_pools)
 
     async def reseeded(_self: ProcessEntropy, _restored: Any) -> None:
         calls.append("entropy")

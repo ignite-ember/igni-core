@@ -16,7 +16,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, sessionmaker
 
-from igni_core.core.db.engine import get_async_sessionmaker, get_sessionmaker
+from igni_core.core.db.engine import engines
 from igni_core.core.db.engine_registry import DatabaseTarget
 from igni_core.core.db.schema import keeper
 from igni_core.core.db.scope import StorageScope
@@ -35,8 +35,10 @@ class Database:
         self.scope = scope if scope is not None else StorageScope.local()
         if run_migrations:
             keeper.ensure_current(self.url)
-        self._sessionmaker: async_sessionmaker[AsyncSession] = get_async_sessionmaker(self.url)
-        self._sync_sessionmaker: sessionmaker[Session] = get_sessionmaker(self.url)
+        self._sessionmaker: async_sessionmaker[AsyncSession] = engines.get_async_sessionmaker(
+            self.url
+        )
+        self._sync_sessionmaker: sessionmaker[Session] = engines.get_sessionmaker(self.url)
 
     @classmethod
     def of(cls, target: Database | DatabaseTarget) -> Database:

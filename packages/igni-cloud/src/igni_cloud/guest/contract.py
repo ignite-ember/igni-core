@@ -64,7 +64,7 @@ from igni_cloud.guest.watch import DirectoryWatches
 from igni_cloud.logs import StdoutLog
 from igni_core.backend.pool_rpcs import VmSignInRpc
 from igni_core.core.activity import ActivityRegistry
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.scope import Tenant
 from igni_core.core.layer import BackendHooks
 from igni_core.core.log_fields import LogFields
@@ -272,7 +272,7 @@ class CloudGuest(BackendHooks):
             self.activity.refresh()
 
     async def _close_connections(self) -> None:
-        await cache.close_connections()
+        await engines.close_connections()
 
 
 __all__ = ["CloudGuest"]

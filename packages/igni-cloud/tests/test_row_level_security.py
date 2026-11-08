@@ -33,7 +33,7 @@ from igni_core.cli.migrate import SchemaMigration
 from igni_core.core.approvals import journal as _journal  # noqa: F401 — its tables
 from igni_core.core.db.base import Base
 from igni_core.core.db.database import Database
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.db.scope import StorageScope, Tenant
 from igni_core.core.db.urls import DatabaseUrl
@@ -237,7 +237,7 @@ def test_agno_works_as_a_producer_and_keeps_to_its_rows(producers: tuple[Produce
         return ScopedAsyncPostgresDb(
             scope=p.scope,
             tables=AgnoTableCache(),
-            db_engine=cache.get_async_engine(p.url),
+            db_engine=engines.get_async_engine(p.url),
             session_table=StorageManager.SESSION_TABLE,
             memory_table=StorageManager.MEMORY_TABLE,
             create_schema=False,

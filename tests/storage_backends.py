@@ -19,7 +19,7 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 
 from igni_core.core.db.database import Database
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.scope import StorageScope, Tenant
 from igni_core.core.db.urls import DatabaseUrl
 
@@ -42,7 +42,7 @@ class ThrowawayPostgres:
         return self._server.set(database=self._name).render_as_string(hide_password=False)
 
     def drop(self) -> None:
-        cache.dispose_all()
+        engines.dispose_sync()
         admin = self._admin()
         with admin.connect() as connection:
             connection.execute(text(f'DROP DATABASE IF EXISTS "{self._name}" WITH (FORCE)'))

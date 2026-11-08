@@ -35,7 +35,7 @@ from sqlalchemy.exc import OperationalError
 
 from igni_core.cli.migrate import SchemaMigration
 from igni_core.core.db.database import Database
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.db.scope import StorageScope, Tenant
 from igni_core.core.db.urls import DatabaseUrl
@@ -103,7 +103,7 @@ class Incarnation:
         return ScopedAsyncPostgresDb(
             scope=self.scope,
             tables=AgnoTableCache(),
-            db_engine=cache.get_async_engine(self.url),
+            db_engine=engines.get_async_engine(self.url),
             session_table=StorageManager.SESSION_TABLE,
             memory_table=StorageManager.MEMORY_TABLE,
             create_schema=False,

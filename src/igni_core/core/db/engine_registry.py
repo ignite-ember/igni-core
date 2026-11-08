@@ -24,11 +24,11 @@ PostgreSQL needs neither; its connections get TCP keepalives and a
 timeout instead (:class:`PostgresConnectionSetup`), so a connection a
 snapshot restore left dead fails fast and the pool replaces it.
 
-Production callers should use the shared :class:`EngineCache`
-singleton (``core/db/engine.py`` exposes ``cache``). Per-instance
-``EngineRegistry()`` construction is for TEST ISOLATION ONLY — mixing
-a fresh registry with the shared ``cache`` on the SAME database would
-create two pools on it (the exact bug the cache exists to prevent).
+Production code uses the process's one registry,
+``igni_core.core.db.engine.engines``. Constructing another
+``EngineRegistry()`` is for TEST ISOLATION ONLY — a second registry on
+a database ``engines`` also serves would put two pools on it (the
+exact bug the registry exists to prevent).
 """
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ class EngineRegistry:
 
     One instance owns the state for both sync and async flavours. The
     caches are independent across instances — see the module docstring
-    for the "use the singleton in production" caveat.
+    for why production uses only the process's one registry.
     """
 
     def __init__(self) -> None:
