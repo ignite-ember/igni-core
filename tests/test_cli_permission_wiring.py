@@ -35,7 +35,7 @@ def _settings_from_flags(**flags: bool):
     @cli.result_callback()
     def _capture(result, **_kwargs):
         ctx = _capture.__click_context__  # noqa: SLF001
-        captured["settings"] = ctx.obj.get("settings")
+        captured["settings"] = ctx.obj.settings
 
     runner = CliRunner()
     flag_strs = []

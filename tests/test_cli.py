@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from igni_core.cli import cli
+from igni_core.core.config.settings import Settings
 
 
 def _patch_cli():
@@ -30,7 +31,7 @@ class TestCLIFlags:
             patch("igni_core.core.config.settings.load_settings") as mock_load,
             patch("igni_core.cli.headless_run.asyncio.run"),
         ):
-            mock_load.return_value = MagicMock()
+            mock_load.return_value = Settings()
             runner.invoke(cli, ["--model", "gpt-4", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args[1].get("cli_overrides", {})
             assert overrides["models"]["default"] == "gpt-4"
@@ -41,7 +42,7 @@ class TestCLIFlags:
             patch("igni_core.core.config.settings.load_settings") as mock_load,
             patch("igni_core.cli.headless_run.asyncio.run"),
         ):
-            mock_load.return_value = MagicMock()
+            mock_load.return_value = Settings()
             runner.invoke(cli, ["--verbose", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args[1].get("cli_overrides", {})
             assert overrides["display"]["show_routing"] is True
@@ -52,7 +53,7 @@ class TestCLIFlags:
             patch("igni_core.core.config.settings.load_settings") as mock_load,
             patch("igni_core.cli.headless_run.asyncio.run"),
         ):
-            mock_load.return_value = MagicMock()
+            mock_load.return_value = Settings()
             runner.invoke(cli, ["--quiet", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args[1].get("cli_overrides", {})
             assert overrides["display"]["show_tool_calls"] is False
@@ -63,7 +64,7 @@ class TestCLIFlags:
             patch("igni_core.core.config.settings.load_settings") as mock_load,
             patch("igni_core.cli.headless_run.asyncio.run"),
         ):
-            mock_load.return_value = MagicMock()
+            mock_load.return_value = Settings()
             runner.invoke(cli, ["--read-only", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args[1].get("cli_overrides", {})
             assert overrides["permissions"]["file_write"] == "deny"
@@ -78,7 +79,7 @@ class TestCLIFlags:
             patch("igni_core.core.config.settings.load_settings") as mock_load,
             patch("igni_core.cli.headless_run.asyncio.run"),
         ):
-            mock_load.return_value = MagicMock()
+            mock_load.return_value = Settings()
             runner.invoke(cli, ["--auto-approve", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args[1].get("cli_overrides", {})
             assert overrides["permissions"]["file_write"] == "allow"
@@ -90,7 +91,7 @@ class TestCLIFlags:
             patch("igni_core.core.config.settings.load_settings") as mock_load,
             patch("igni_core.cli.headless_run.asyncio.run"),
         ):
-            mock_load.return_value = MagicMock()
+            mock_load.return_value = Settings()
             runner.invoke(cli, ["--strict", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args[1].get("cli_overrides", {})
             assert overrides["permissions"]["file_write"] == "deny"
@@ -101,7 +102,7 @@ class TestCLIFlags:
             patch("igni_core.core.config.settings.load_settings") as mock_load,
             patch("igni_core.cli.headless_run.asyncio.run"),
         ):
-            mock_load.return_value = MagicMock()
+            mock_load.return_value = Settings()
             runner.invoke(cli, ["--no-web", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args[1].get("cli_overrides", {})
             assert overrides["permissions"]["web_search"] == "deny"
@@ -114,7 +115,7 @@ class TestCLIModes:
     def test_message_mode_calls_run_single_message(self):
         runner = CliRunner()
         with (
-            patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()),
+            patch("igni_core.core.config.settings.load_settings", return_value=Settings()),
             patch("igni_core.cli.headless_run.asyncio.run") as mock_run,
         ):
             runner.invoke(cli, ["-m", "hello world"], catch_exceptions=False)
@@ -123,7 +124,7 @@ class TestCLIModes:
     def test_pipe_mode_reads_stdin(self):
         runner = CliRunner()
         with (
-            patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()),
+            patch("igni_core.core.config.settings.load_settings", return_value=Settings()),
             patch("igni_core.cli.headless_run.asyncio.run") as mock_run,
         ):
             runner.invoke(cli, ["--pipe"], input="test input", catch_exceptions=False)
@@ -131,14 +132,14 @@ class TestCLIModes:
 
     def test_pipe_mode_no_input_errors(self):
         runner = CliRunner()
-        with patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()):
+        with patch("igni_core.core.config.settings.load_settings", return_value=Settings()):
             result = runner.invoke(cli, ["--pipe"], input="", catch_exceptions=False)
             assert result.exit_code != 0
 
     def test_pipe_mode_combines_message_and_stdin(self):
         runner = CliRunner()
         with (
-            patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()),
+            patch("igni_core.core.config.settings.load_settings", return_value=Settings()),
             patch("igni_core.cli.headless_run.asyncio.run") as mock_run,
         ):
             runner.invoke(
@@ -151,7 +152,7 @@ class TestCLIModes:
         instructions pointing users at the non-interactive modes and
         the React clients."""
         runner = CliRunner()
-        with patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()):
+        with patch("igni_core.core.config.settings.load_settings", return_value=Settings()):
             result = runner.invoke(cli, [], catch_exceptions=False)
             assert result.exit_code == 0
             assert "React client" in result.output
