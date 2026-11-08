@@ -55,6 +55,7 @@ from igni_core.core.config.group_policy.signature import PackSignatureVerifier
 from igni_core.core.config.group_policy.transport import LiveFetchResult, SignedPackTransport
 from igni_core.core.config.group_policy.trust import PackTrust
 from igni_core.core.config.group_policy.verifier import PackVerifier
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.settings_loader import SettingsLoader
 from tests.group_policy_signing import ISSUER, KEY, PERSON, ServerKey, session_token, sign_in, store
 
@@ -66,9 +67,7 @@ STRANGER = ServerKey()
 def _clean(monkeypatch):
     monkeypatch.delenv(GroupPolicyEnvironment.TRUSTED_KEYS_VAR, raising=False)
     monkeypatch.delenv(GroupPolicyEnvironment.REQUIRED_VAR, raising=False)
-    monkeypatch.setattr(
-        SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: None)
-    )
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: None))
     GroupPolicyGate.reset()
     yield
     GroupPolicyGate.reset()
@@ -111,9 +110,7 @@ def _configure(
 def _managed(tmp_path: Path, monkeypatch, text: str) -> None:
     managed = tmp_path / "managed-settings.yaml"
     managed.write_text(text)
-    monkeypatch.setattr(
-        SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: managed)
-    )
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: managed))
 
 
 def _settings(tmp_path: Path):

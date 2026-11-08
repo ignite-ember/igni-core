@@ -23,10 +23,8 @@ class ManagedTier(Tier):
 
     Takes an INJECTED path-provider callable rather than reaching
     directly for :meth:`ManagedPolicySource.platform_path`. The
-    :class:`SettingsLoader` passes its own
-    :meth:`platform_managed_settings_path` shim in so test
-    monkeypatches on ``SettingsLoader.platform_managed_settings_path``
-    still take effect. Default provider is
+    :class:`SettingsLoader` passes :meth:`OrganisationTiers.managed_path`
+    so its own policy reads see the same file. Default provider is
     :meth:`ManagedPolicySource.platform_path` so direct plan construction
     gets the natural behaviour.
     """

@@ -32,6 +32,7 @@ from igni_core.backend.cmd_plugin.gateway import PluginBackendGateway
 from igni_core.core import air_gap
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.schemas import PluginsConfig, StorageConfig
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
@@ -135,7 +136,7 @@ class TestTheSwitch:
     def test_a_managed_settings_file_turns_it_on(self, tmp_path, monkeypatch):
         managed = tmp_path / "managed-settings.yaml"
         managed.write_text("air_gapped: true\n")
-        monkeypatch.setattr(SettingsLoader, "platform_managed_settings_path", lambda: managed)
+        monkeypatch.setattr(ManagedPolicySource, "platform_path", lambda: managed)
         # A user cannot switch a sysadmin's air gap back off.
         (Path.home() / ".igni").mkdir(parents=True, exist_ok=True)
         (Path.home() / ".igni" / "config.yaml").write_text("air_gapped: false\n")

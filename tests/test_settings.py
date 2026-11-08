@@ -5,24 +5,26 @@ from pathlib import Path
 import pytest
 
 from igni_core.core.config.cli_overrides import CliOverrides, ModelsOverrides, PermissionOverrides
+from igni_core.core.config.config_io import DictMerger, YamlSource
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.config.schemas import ModelsConfig, PermissionsConfig
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.paths import CONFIG_DIR
 
-# The pre-refactor module exposed ``_deep_merge`` / ``_load_yaml`` as
-# free-function shims. They have been promoted to staticmethods on
-# :class:`SettingsLoader`; the tests below call them via the class
-# instead of the deleted module attributes.
-_deep_merge = SettingsLoader.deep_merge
-_load_yaml = SettingsLoader.load_yaml
+_deep_merge = DictMerger.deep
 
-# Capture the pristine class staticmethod BEFORE any autouse fixture
-# monkey-patches ``SettingsLoader.platform_managed_settings_path``.
+
+def _load_yaml(path: Path) -> dict:
+    return YamlSource(path).load()
+
+
+# Capture the pristine staticmethod BEFORE the autouse fixture
+# monkey-patches ``ManagedPolicySource.platform_path``.
 # Tests in ``TestPlatformManagedSettingsPath`` call this to reach the
 # real OS branching past the autouse stub.
-_REAL_PLATFORM_PATH = SettingsLoader.platform_managed_settings_path
+_REAL_PLATFORM_PATH = ManagedPolicySource.platform_path
 
 
 @pytest.fixture(autouse=True)
@@ -36,7 +38,7 @@ def _isolate_managed_settings(monkeypatch):
     ``_REAL_PLATFORM_PATH`` so platform-detail tests can still reach
     it past this stub."""
     monkeypatch.setattr(
-        "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
+        "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
         staticmethod(lambda: None),
     )
 
@@ -226,7 +228,7 @@ class TestFiveTierPrecedence:
         managed = tmp_path / "managed.yaml"
         managed.write_text(f"models:\n  default: managed-{tier_label}\n")
         monkeypatch.setattr(
-            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
             staticmethod(lambda: managed),
         )
 
@@ -307,7 +309,7 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("models:\n  default: org-pinned\n")
         monkeypatch.setattr(
-            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
             staticmethod(lambda: managed),
         )
         s = SettingsLoader.load(project_dir=tmp_path)
@@ -320,7 +322,7 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("models:\n  default: org-pinned\n")
         monkeypatch.setattr(
-            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
             staticmethod(lambda: managed),
         )
         s = SettingsLoader.load(project_dir=tmp_path)
@@ -332,7 +334,7 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("permissions:\n  mode: dontAsk\nmodels:\n  default: org-pinned\n")
         monkeypatch.setattr(
-            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
             staticmethod(lambda: managed),
         )
         s = SettingsLoader.load(
@@ -350,7 +352,7 @@ class TestManagedSettings:
         # Point at a path that doesn't exist — loader should fall
         # back to lower tiers without raising.
         monkeypatch.setattr(
-            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
             staticmethod(lambda: tmp_path / "does-not-exist.yaml"),
         )
         s = SettingsLoader.load(
@@ -366,7 +368,7 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("permissions:\n  mode: dontAsk\n")
         monkeypatch.setattr(
-            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
             staticmethod(lambda: managed),
         )
         s = SettingsLoader.load(
@@ -385,7 +387,7 @@ class TestManagedSettings:
             '{"permissions": {"mode": "dontAsk"}, "models": {"default": "json-model"}}'
         )
         monkeypatch.setattr(
-            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
             staticmethod(lambda: managed),
         )
         s = SettingsLoader.load(project_dir=tmp_path)
@@ -396,7 +398,7 @@ class TestManagedSettings:
         """Unknown platform (no managed location defined) → managed
         tier is silently skipped without error."""
         monkeypatch.setattr(
-            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
             staticmethod(lambda: None),
         )
         s = SettingsLoader.load(

@@ -23,6 +23,7 @@ from igni_core.cli.options import CliOptions
 from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.permission_eval import (
     PermissionDecision,
     PermissionEvaluator,
@@ -43,17 +44,13 @@ from tests.session_coordinators import wire_coordinators
 @pytest.fixture(autouse=True)
 def _no_managed_file(monkeypatch):
     """No stray OS-level managed file; tests that want one set it."""
-    monkeypatch.setattr(
-        SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: None)
-    )
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: None))
 
 
 def _managed(tmp_path: Path, monkeypatch, text: str) -> None:
     path = tmp_path / "managed-settings.yaml"
     path.write_text(text)
-    monkeypatch.setattr(
-        SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: path)
-    )
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: path))
 
 
 def _pack(settings: dict) -> GroupPolicyPack:

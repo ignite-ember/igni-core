@@ -181,7 +181,7 @@ class TestTheSettingIsTheDevelopers:
         managed = tmp_path / "managed.yaml"
         managed.write_text("hooks:\n  group: run\n", encoding="utf-8")
         monkeypatch.setattr(
-            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
             staticmethod(lambda: managed),
         )
         _user_config("hooks:\n  group: ask\n")

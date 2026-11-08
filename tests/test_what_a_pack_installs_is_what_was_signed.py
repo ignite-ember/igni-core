@@ -43,6 +43,7 @@ from igni_core.core.config.group_policy.settings_fetcher import (
 )
 from igni_core.core.config.group_policy.trust import PackTrust
 from igni_core.core.config.group_policy.verifier import AcceptedPack, PackVerifier
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.settings_loader import SettingsLoader
 from tests.group_policy_signing import ISSUER, KEY, PERSON, ServerKey, session_token, sign_in, store
 
@@ -55,9 +56,7 @@ HOOK = {"hooks": {"PreToolUse": [{"command": "audit-everything"}]}}
 def _clean(monkeypatch):
     monkeypatch.delenv(GroupPolicyEnvironment.TRUSTED_KEYS_VAR, raising=False)
     monkeypatch.delenv(GroupPolicyEnvironment.REQUIRED_VAR, raising=False)
-    monkeypatch.setattr(
-        SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: None)
-    )
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: None))
     GroupPolicyGate.reset()
     yield
     GroupPolicyGate.reset()
@@ -81,9 +80,7 @@ def _configure(*, org: str | None = None, signed_in: bool = True) -> None:
 def _require(tmp_path: Path, monkeypatch) -> None:
     managed = tmp_path / "managed-settings.yaml"
     managed.write_text("group_policy:\n  required: true\n")
-    monkeypatch.setattr(
-        SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: managed)
-    )
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: managed))
 
 
 def _pack() -> GroupPolicyPack:

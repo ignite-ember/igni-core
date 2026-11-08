@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 from igni_core.backend.workflow_discovery import WorkflowDiscovery
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 from igni_core.core.config.permission_eval.schemas import PermissionDecision
 from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
@@ -83,9 +84,7 @@ def managed(tmp_path: Path, monkeypatch):
         _write(path, yaml.safe_dump(payload))
         return path
 
-    monkeypatch.setattr(
-        SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: path)
-    )
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: path))
     return write
 
 

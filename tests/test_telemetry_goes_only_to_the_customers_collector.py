@@ -59,6 +59,7 @@ from pydantic import BaseModel, Field
 from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.schemas.telemetry import OtlpConfig, TelemetryConfig
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
@@ -290,7 +291,7 @@ def write_user_config(home: Path, model_url: str, extra: str = "") -> None:
 def managed_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str) -> None:
     managed = tmp_path / "managed-settings.yaml"
     managed.write_text(text)
-    monkeypatch.setattr(SettingsLoader, "platform_managed_settings_path", lambda: managed)
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", lambda: managed)
 
 
 def collector_block(url: str, *, capture_content: bool = False) -> str:
