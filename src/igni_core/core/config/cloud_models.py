@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import enum
 import logging
-from typing import Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -223,7 +222,7 @@ class CloudModelCatalogClient:
 
     def merge_into(
         self,
-        registry: dict[str, ModelRegistryEntry | dict[str, Any]],
+        registry: dict[str, ModelRegistryEntry],
         entries: list[ModelRegistryEntry] | None = None,
     ) -> MergeResult:
         """Merge cloud-discovered entries into ``registry`` in place.
@@ -269,7 +268,7 @@ class CloudModelCatalogClient:
 
     @staticmethod
     def _apply_entries(
-        registry: dict[str, ModelRegistryEntry | dict[str, Any]],
+        registry: dict[str, ModelRegistryEntry],
         entries: list[ModelRegistryEntry],
     ) -> MergeResult:
         added = 0

@@ -6,9 +6,8 @@ default to ensure users always get the latest model after upgrading.
 Rows pointing at dev/staging hosts are user-managed and left alone.
 
 The migration works on typed :class:`ModelsConfig` /
-:class:`ModelRegistryEntry` values: rows are read through
-:meth:`ModelsConfig.iter_registry_entries` and every row the migration
-writes is a :class:`ModelRegistryEntry`, never a raw dict.
+:class:`ModelRegistryEntry` values: every row it reads or writes is a
+:class:`ModelRegistryEntry`, never a raw dict.
 """
 
 from __future__ import annotations
@@ -81,11 +80,9 @@ class CloudModelMigrator:
 
         default_cloud = self._default_cloud_entries()
         default_name = self._current.default
-        # Rows the migration does not touch pass through in whatever
-        # shape the schema holds them; every row it writes is typed.
         registry = dict(self._current.registry)
 
-        for name, entry in self._current.iter_registry_entries():
+        for name, entry in self._current.registry.items():
             if not ModelRegistryEntry.is_cloud_gateway_url(entry.url or ""):
                 continue
             # A cloud model still shipped is refreshed to its latest
@@ -104,6 +101,6 @@ class CloudModelMigrator:
         """The shipping-defaults registry narrowed to its cloud rows."""
         return {
             name: entry
-            for name, entry in self._defaults.iter_registry_entries()
+            for name, entry in self._defaults.registry.items()
             if entry.matches_cloud_gateway()
         }

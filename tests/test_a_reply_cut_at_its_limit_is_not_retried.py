@@ -32,6 +32,7 @@ from agno.run.base import RunStatus
 
 from igni_core.core.agents.builder import AgentBuilder
 from igni_core.core.agents.schemas import AgentBuildContext, AgentDefinition
+from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.reply_ending import ModelReplyCut, ReplyCutRetries
 from igni_core.core.config.settings import Settings
@@ -128,13 +129,9 @@ def serve() -> Iterator[Any]:
 def _settings(url: str) -> Settings:
     settings = Settings()
     settings.models.registry = {
-        "m": {
-            "provider": "openai_like",
-            "model_id": "m",
-            "url": url,
-            "api_key": "k",
-            "max_tokens": 16,
-        }
+        "m": ModelRegistryEntry(
+            provider="openai_like", model_id="m", url=url, api_key="k", max_tokens=16
+        )
     }
     settings.models.retries = 2
     return settings

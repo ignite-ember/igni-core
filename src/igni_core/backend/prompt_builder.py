@@ -26,7 +26,6 @@ from igni_core.backend.schemas_run import (
     ModelConfig,
     PromptBuildResult,
 )
-from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.utils.attachment_store import AttachmentReferences, Attachments
 from igni_core.core.utils.media import MediaResolver
@@ -117,20 +116,12 @@ class PromptBuilder:
     def _resolve_model_config(self) -> ModelConfig:
         """Validate the current default model's row from the settings
         registry, returning an all-defaults ``ModelConfig`` when the
-        entry is missing or not schema-shaped.
-
-        Registry values are heterogeneous — cloud discovery writes
-        typed :class:`ModelRegistryEntry` instances while user YAML
-        loads as raw dicts. Both flow through Pydantic validation
-        via ``model_dump`` or a direct dict passthrough."""
-        registry = self._session.settings.models.registry
-        name = self._session.settings.models.default
-        entry = registry.get(name)
-        if isinstance(entry, ModelRegistryEntry):
-            return ModelConfig.model_validate(entry.model_dump())
-        if isinstance(entry, dict):
-            return ModelConfig.model_validate(entry)
-        return ModelConfig()
+        entry is missing."""
+        models = self._session.settings.models
+        entry = models.entry(models.default)
+        if entry is None:
+            return ModelConfig()
+        return ModelConfig.model_validate(entry.model_dump())
 
     def _localize_attachments(self, text: str) -> str:
         """Uploads named ``attachment:<id>`` (the cloud's), read through

@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.approvals.events import approval_events
+from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.schemas.storage_and_paths import StorageConfig
 from igni_core.core.config.settings import load_settings
 from igni_core.core.db.scope import tenancy
@@ -244,14 +245,14 @@ def settings():
     connection.
     """
     s = load_settings()
-    s.models.registry["MiniMax-M2.7"] = {
-        "provider": "openai_like",
-        "model_id": "MiniMaxAI/MiniMax-M2.7",
-        "url": "https://api.ignite-ember.sh/v1",
-        "api_key": "cloud_token",
-        "context_window": 204_800,
-        "vision": False,
-    }
+    s.models.registry["MiniMax-M2.7"] = ModelRegistryEntry(
+        provider="openai_like",
+        model_id="MiniMaxAI/MiniMax-M2.7",
+        url="https://api.ignite-ember.sh/v1",
+        api_key="cloud_token",
+        context_window=204_800,
+        vision=False,
+    )
     s.models.default = "MiniMax-M2.7"
     return s
 

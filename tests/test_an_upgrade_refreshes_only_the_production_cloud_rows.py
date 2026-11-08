@@ -47,7 +47,7 @@ def test_a_staging_row_and_a_local_row_are_kept() -> None:
     staging = {"model_id": "fast-next", "url": STAGING}
     local = {"model_id": "mine", "url": "http://localhost:8000"}
     models = _migrate({"default": "fast", "registry": {"fast": staging, "mine": local}})
-    rows = dict(models.iter_registry_entries())
+    rows = models.registry
     assert rows["fast"] == ModelRegistryEntry.model_validate(staging)
     assert rows["mine"] == ModelRegistryEntry.model_validate(local)
 

@@ -23,8 +23,8 @@ Consumers:
   natural-end path and :meth:`HitlController.resolve_batch` after
   ``acontinue_run`` finishes.
 * :class:`ModelConfig` — one entry in ``settings.models.registry``.
-  The registry is still ``dict[str, dict]`` on disk but we validate
-  the row-shape at the point of use in RunController.
+  Built from the typed registry row at the point of use in
+  RunController.
 * :class:`HttpClientCloseResult` — the previously-swallowed
   ``except Exception`` in ``close_model_http_client`` becomes a
   typed Result.
@@ -111,11 +111,9 @@ class StopHookPayload(BaseModel):
 class ModelConfig(BaseModel):
     """One row of ``settings.models.registry``.
 
-    The registry is still ``dict[str, dict[str, Any]]`` on disk (see
-    :class:`igni_core.core.config.settings.ModelsConfig`), but we
-    validate the row-shape at the RunController boundary so the
-    ``.vision`` check is a real attribute lookup rather than
-    ``.get('vision', False)``. ``extra='allow'`` preserves any
+    Validated from the row's typed
+    :class:`igni_core.core.config.model_entry.ModelRegistryEntry` at
+    the RunController boundary. ``extra='allow'`` preserves any
     provider-specific keys we haven't named."""
 
     model_config = ConfigDict(extra="allow")

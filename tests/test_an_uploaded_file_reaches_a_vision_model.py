@@ -32,6 +32,8 @@ from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.backend.schemas_run import PromptBuildResult
 from igni_core.backend.server_files import FilesController
 from igni_core.backend.service_item_desk import PoolChatDesk
+from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.db.urls import DatabaseUrl
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.utils.media import MediaResolver
@@ -100,8 +102,11 @@ class Workspace:
             session_id=SESSION,
             settings=SimpleNamespace(
                 storage=SimpleNamespace(database_url=None, data_dir=root),
-                models=SimpleNamespace(
-                    default="vision-stub", registry={"vision-stub": {"vision": vision}}
+                models=ModelsConfig(
+                    default="vision-stub",
+                    registry={
+                        "vision-stub": ModelRegistryEntry(model_id="vision-stub", vision=vision)
+                    },
                 ),
             ),
             inject_learnings=self._nothing_learned,

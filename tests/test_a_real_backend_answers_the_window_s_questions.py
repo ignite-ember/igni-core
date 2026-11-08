@@ -26,6 +26,7 @@ from igni_core.backend.activity import ActivityState, SessionActivity
 from igni_core.backend.schemas_hitl import ToolCallArgs
 from igni_core.backend.schemas_visualization import VisualizationAction
 from igni_core.backend.server import BackendServer
+from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.settings import load_settings
 from igni_core.core.config.tool_permissions import PermissionLevel
 from igni_core.protocol import messages as msg
@@ -200,7 +201,7 @@ def test_toggling_verbose_flips_it_and_back(backend):
 
 
 def test_switching_the_model_rebuilds_the_team_on_the_new_one(backend):
-    backend.settings.models.registry["another-model"] = {"model_id": "another"}
+    backend.settings.models.registry["another-model"] = ModelRegistryEntry(model_id="another")
 
     reply = backend.switch_model("another-model")
 

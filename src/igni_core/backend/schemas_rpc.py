@@ -187,7 +187,7 @@ class ModelRegistryResult(BaseModel):
         return cls(
             default=models.default,
             max_context_window=models.max_context_window,
-            registry=dict(models.iter_registry_entries()),
+            registry=dict(models.registry),
         )
 
 

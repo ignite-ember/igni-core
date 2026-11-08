@@ -34,6 +34,7 @@ from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.run_controller import RunController
 from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
+from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.protocol import messages as msg
 
@@ -309,7 +310,7 @@ class _ReminderSession:
 
     def __init__(self, project_dir) -> None:
         self.project_dir = project_dir
-        self.settings = SimpleNamespace(models=SimpleNamespace(registry={}, default="m"))
+        self.settings = SimpleNamespace(models=ModelsConfig(default="m"))
         self.reminders = PendingReminderQueue()
 
     async def inject_learnings(self) -> None:

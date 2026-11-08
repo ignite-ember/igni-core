@@ -20,14 +20,14 @@ def registry():
     tests can exercise the resolver without a real cloud
     connection."""
     settings = load_settings()
-    settings.models.registry["MiniMax-M2.7"] = {
-        "provider": "openai_like",
-        "model_id": "MiniMaxAI/MiniMax-M2.7",
-        "url": "https://api.ignite-ember.sh/v1",
-        "api_key": "cloud_token",
-        "context_window": 204_800,
-        "vision": False,
-    }
+    settings.models.registry["MiniMax-M2.7"] = ModelRegistryEntry(
+        provider="openai_like",
+        model_id="MiniMaxAI/MiniMax-M2.7",
+        url="https://api.ignite-ember.sh/v1",
+        api_key="cloud_token",
+        context_window=204_800,
+        vision=False,
+    )
     settings.models.default = "MiniMax-M2.7"
     return ModelRegistry(settings)
 

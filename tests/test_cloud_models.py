@@ -213,7 +213,7 @@ def _entries_for(ids: list[str], api_url: str = _API) -> list[ModelRegistryEntry
 
 
 def test_merge_adds_new_entries():
-    registry: dict[str, ModelRegistryEntry | dict] = {}
+    registry: dict[str, ModelRegistryEntry] = {}
     merge = _client().merge_into(
         registry,
         entries=_entries_for(["gpt-4o", "anthropic/claude-opus-4-7"]),
@@ -230,7 +230,7 @@ def test_merge_routes_through_ember_server_even_for_legacy_payload():
     ``from_cloud_discovery`` — the legacy upstream URL never
     reaches the entry."""
     entries = _entries_for(["MiniMaxAI/MiniMax-M2.5"])
-    registry: dict[str, ModelRegistryEntry | dict] = {}
+    registry: dict[str, ModelRegistryEntry] = {}
     _client().merge_into(registry, entries=entries)
     entry = registry["MiniMaxAI/MiniMax-M2.5"]
     assert isinstance(entry, ModelRegistryEntry)
@@ -241,7 +241,7 @@ def test_merge_entry_shape_matches_local_registry():
     """New entries must be drop-in compatible with the local registry
     shape (``provider``, ``model_id``, ``url``, ``api_key``) so the
     existing ``ModelRegistry.get_model`` resolution path works."""
-    registry: dict[str, ModelRegistryEntry | dict] = {}
+    registry: dict[str, ModelRegistryEntry] = {}
     _client().merge_into(registry, entries=_entries_for(["gpt-4o"]))
     entry = registry["gpt-4o"]
     assert isinstance(entry, ModelRegistryEntry)
@@ -261,7 +261,7 @@ def test_merge_entry_shape_matches_local_registry():
 def test_merge_strips_trailing_slash_on_api_url():
     """``api_url`` with a trailing slash → proxy URL still resolves to
     a clean ``{host}/v1`` (no double slash)."""
-    registry: dict[str, ModelRegistryEntry | dict] = {}
+    registry: dict[str, ModelRegistryEntry] = {}
     entries = _entries_for(["gpt-4o"], api_url="https://api.example.com/")
     _client(api_url="https://api.example.com/").merge_into(registry, entries=entries)
     entry = registry["gpt-4o"]
@@ -271,25 +271,25 @@ def test_merge_strips_trailing_slash_on_api_url():
 
 def test_merge_does_not_overwrite_existing():
     """User-defined entries win — same-name cloud entries are skipped."""
-    user_entry = {
-        "provider": "openai_like",
-        "model_id": "gpt-4o",
-        "url": "https://my-litellm.example/v1",
-        "api_key": "sk-pinned",
-        "timeout": 120,
-    }
-    registry: dict[str, ModelRegistryEntry | dict] = {"gpt-4o": user_entry}
+    user_entry = ModelRegistryEntry(
+        provider="openai_like",
+        model_id="gpt-4o",
+        url="https://my-litellm.example/v1",
+        api_key="sk-pinned",
+        timeout=120,
+    )
+    registry: dict[str, ModelRegistryEntry] = {"gpt-4o": user_entry}
     merge = _client().merge_into(registry, entries=_entries_for(["gpt-4o"]))
     assert merge.added == 0
     assert merge.skipped_existing == 1
     assert registry["gpt-4o"] is user_entry
-    assert registry["gpt-4o"]["url"] == "https://my-litellm.example/v1"
-    assert registry["gpt-4o"]["api_key"] == "sk-pinned"
+    assert registry["gpt-4o"].url == "https://my-litellm.example/v1"
+    assert registry["gpt-4o"].api_key == "sk-pinned"
 
 
 def test_merge_is_idempotent():
     """Re-fetching the same catalogue is a no-op on the second pass."""
-    registry: dict[str, ModelRegistryEntry | dict] = {}
+    registry: dict[str, ModelRegistryEntry] = {}
     entries = _entries_for(["gpt-4o"])
     assert _client().merge_into(registry, entries=entries).added == 1
     second = _client().merge_into(registry, entries=entries)
@@ -303,7 +303,7 @@ def test_merge_skips_entries_with_empty_model_id():
     registry. Pydantic validation prevents constructing such an
     entry in normal flow, but the merge layer re-checks so a
     hand-built list can't sneak a blank row through."""
-    registry: dict[str, ModelRegistryEntry | dict] = {}
+    registry: dict[str, ModelRegistryEntry] = {}
     # Construct via model_validate to bypass the aliased ``id``
     # requirement and build an intentionally-empty entry.
     blank = ModelRegistryEntry.model_validate(

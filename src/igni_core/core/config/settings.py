@@ -271,7 +271,7 @@ class Settings(BaseModel):
         model's own ``Field`` defaults. Preferred over
         ``default_dict()`` when the caller wants typed access
         (e.g. ``Settings.defaults().models.registry`` is
-        ``dict[str, dict[str, Any]]`` rather than string-indexed)."""
+        ``dict[str, ModelRegistryEntry]`` rather than string-indexed)."""
         return cls()
 
     @classmethod
@@ -308,7 +308,7 @@ class Settings(BaseModel):
         if resolved_token is None:
             resolved_token = self._resolve_cloud_token()
 
-        for _name, entry in self.models.iter_registry_entries():
+        for entry in self.models.registry.values():
             key = entry.api_key or ""
             if key == CLOUD_TOKEN_SENTINEL and resolved_token:
                 return True

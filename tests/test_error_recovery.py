@@ -3,11 +3,13 @@
 Covers: API timeout handling, cancel behavior, MCP crash recovery.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from igni_core.backend.server import BackendServer
+from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Error
 from tests.backend_server_factory import make_backend
@@ -39,6 +41,7 @@ class TestBackendRunMessageErrors:
     async def test_agno_exception_yields_error(self):
         """Agno runtime error should yield an Error protocol message."""
         session = MagicMock()
+        session.settings = SimpleNamespace(models=ModelsConfig(default="m"))
         session.main_team = MagicMock()
 
         async def _failing_arun(*args, **kwargs):
