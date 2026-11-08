@@ -563,7 +563,7 @@ def test_igni_m_without_trust_runs_the_session_untrusted(repo, monkeypatch):
         repo / ".igni" / "config.yaml", yaml.safe_dump({"permissions": {"shell_execute": "allow"}})
     )
     monkeypatch.setattr("pathlib.Path.cwd", lambda: repo)
-    monkeypatch.setattr(cli_module._session_module, "run_single_message", fake_run_single_message)
+    monkeypatch.setattr("igni_core.core.session.run_single_message", fake_run_single_message)
 
     result = CliRunner().invoke(cli_module.cli, ["-m", "hi"])
     assert result.exit_code == 0, result.output

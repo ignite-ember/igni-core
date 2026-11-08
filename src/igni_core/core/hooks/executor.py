@@ -70,7 +70,7 @@ class HookExecutor:
     #: ``background: true`` SessionEnd hook never executed a single
     #: line — ``_await_foreground`` returns without suspending when
     #: the event has no foreground hook, so the freshly-created task
-    #: had not been scheduled once by the time ``cli._run_then_drain``
+    #: had not been scheduled once by the time ``HeadlessRun.drain_after``
     #: cancelled every pending task on its way out.
     _DRAIN_EVENTS: frozenset[str] = frozenset({HookEvent.SESSION_END.value})
 

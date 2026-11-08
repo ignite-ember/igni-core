@@ -308,7 +308,7 @@ def test_drain_cancels_leftover_tasks_and_returns() -> None:
     """
     import asyncio
 
-    from igni_core.cli import _run_then_drain
+    from igni_core.cli.headless_run import HeadlessRun
 
     leaked: list[asyncio.Task[None]] = []
 
@@ -319,7 +319,7 @@ def test_drain_cancels_leftover_tasks_and_returns() -> None:
         leaked.append(asyncio.create_task(forever()))
         await asyncio.sleep(0)  # let it start
 
-    asyncio.run(_run_then_drain(scenario()))
+    asyncio.run(HeadlessRun().drain_after(scenario()))
     assert leaked and leaked[0].cancelled()
 
 
@@ -329,7 +329,7 @@ def test_drain_gives_up_on_a_task_that_ignores_cancellation() -> None:
     abandoned, not waited on."""
     import asyncio
 
-    from igni_core.cli import _run_then_drain
+    from igni_core.cli.headless_run import HeadlessRun
 
     async def scenario() -> None:
         async def stubborn() -> None:
@@ -341,14 +341,8 @@ def test_drain_gives_up_on_a_task_that_ignores_cancellation() -> None:
         asyncio.create_task(stubborn())
         await asyncio.sleep(0)
 
-    import igni_core.cli as cli_module
-
-    original = cli_module._DRAIN_TIMEOUT_SECONDS
-    cli_module._DRAIN_TIMEOUT_SECONDS = 0.05
-    try:
-        asyncio.run(_run_then_drain(scenario()))  # returns rather than hanging
-    finally:
-        cli_module._DRAIN_TIMEOUT_SECONDS = original
+    # returns rather than hanging
+    asyncio.run(HeadlessRun(drain_timeout_seconds=0.05).drain_after(scenario()))
 
 
 def test_the_body_logger_does_not_propagate_either() -> None:

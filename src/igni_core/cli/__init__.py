@@ -21,30 +21,20 @@ This module is a *thin* Click-decorator surface: every option
 lands on :func:`cli`, which validates the params into a typed
 :class:`CliOptions`, loads settings via
 :class:`CliOverrides.from_options`, and hands off to
-:class:`CliInvocation` for the real work. Keeping the decorator
-stack here (as opposed to the invocation module) lets tests keep
-patching ``igni_core.cli.asyncio.run`` — the mode-dispatch tail
-that runs the async session helpers lives here.
+:class:`CliInvocation` for the real work, including running the
+session (:class:`HeadlessRun`).
 """
 
 from __future__ import annotations
 
-import asyncio
-
-# Aliased: importing the ``igni_core.cli.logging`` submodule binds it as an
-# attribute of this package, which would shadow a plain ``logging`` global here.
-import logging as stdlib_logging
 import os
-import sys
-import threading as stdlib_threading
-import traceback
 from pathlib import Path
-from typing import Any
 
 import click
 
 from igni_core import __version__
 from igni_core.cli.ext import ext
+from igni_core.cli.headless_run import HeadlessRun
 from igni_core.cli.invocation import (
     CliInvocation,
     load_settings_from_options,
@@ -52,15 +42,12 @@ from igni_core.cli.invocation import (
 from igni_core.cli.login import login
 from igni_core.cli.migrate import migrate
 from igni_core.cli.options import CliOptions
-from igni_core.cli.trust import trust_command
+from igni_core.cli.trust import SessionTrust, trust_command
 from igni_core.core import air_gap
-from igni_core.core import session as _session_module
 from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.core.observability import OtelRuntime
 from igni_core.core.paths import DEFAULT_DATA_DIR
-
-logger = stdlib_logging.getLogger(__name__)
 
 
 # A group that runs without one.
@@ -182,8 +169,6 @@ def cli(ctx: click.Context, **_params: object) -> None:
     # once it is trusted. Only for a run that starts a session.
     folder = Path.cwd()
     if options.message or options.pipe:
-        from igni_core.cli.trust import SessionTrust
-
         became_trusted = SessionTrust(
             folder, pipe=options.pipe, trust_flag=options.trust, quiet=options.quiet
         ).settle()
@@ -198,20 +183,20 @@ def cli(ctx: click.Context, **_params: object) -> None:
     AgnoTelemetry.enforce(os.environ, air_gapped=settings.air_gapped)
     OtelRuntime.start(settings)
 
-    invocation = CliInvocation(options, settings, ctx)
+    invocation = CliInvocation(options, settings, ctx, HeadlessRun())
     invocation.enable_debug_logging()
 
     invocation.resolve_resume_id()
     invocation.setup_worktree()
-    _carry_trust_into_worktree(folder, invocation.project_dir)
+    invocation.carry_trust_into_worktree(folder)
     invocation.resolve_additional_dirs()
     invocation.store_context()
 
     if options.pipe:
-        _run_pipe(invocation)
+        invocation.run_pipe()
         return
     if options.message:
-        _run_single_message(invocation, options.message)
+        invocation.run_message(options.message)
         return
 
     # No message + no subcommand → point users at the React clients.
@@ -219,139 +204,10 @@ def cli(ctx: click.Context, **_params: object) -> None:
     invocation.cleanup_worktree()
 
 
-def _carry_trust_into_worktree(folder: Path, worktree: Path | None) -> None:
-    """``--worktree`` runs in a new folder of the same repository: trusted for
-    this run when the folder it was made from is (and policy allows it)."""
-    if worktree is None or worktree == folder:
-        return
-    from igni_core.core.workspace_trust import WorkspaceTrust
-
-    service = WorkspaceTrust.shared()
-    if service.is_trusted(folder):
-        service.grant_for_run(worktree)
-
-
-#: How long the drain below waits for leftover tasks before giving up on them.
-_DRAIN_TIMEOUT_SECONDS = 5.0
-
-
-async def _run_then_drain(coro: Any) -> None:
-    """Await ``coro``, then cancel and drain whatever it left behind.
-
-    Draining here, inside the loop, is what keeps the leftovers away from
-    ``asyncio.run``'s own close path — which is unbounded in two places:
-    ``_cancel_all_tasks`` gathers the leftovers with no timeout, and
-    ``shutdown_default_executor`` joins the executor's threads with a 300s
-    default and then leaves a *non-daemon* ``_do_shutdown`` thread behind
-    when that expires. Nothing bounds the interpreter's join of that thread,
-    which is the "sat there forever" half.
-
-    There is plenty to leave behind: a shell command slower than
-    ``run_shell_command``'s 7s default is auto-backgrounded and never killed
-    in this mode, and ``background: true`` hooks are fire-and-forget tasks.
-    """
-    try:
-        await coro
-    finally:
-        pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-        if pending:
-            for task in pending:
-                task.cancel()
-            # Bounded on purpose: a task that ignores cancellation must not be
-            # able to hold the process open. Anything still running is dropped
-            # by the exit below.
-            await asyncio.wait(pending, timeout=_DRAIN_TIMEOUT_SECONDS)
-
-
-def _run_session(invocation: CliInvocation, coro: Any) -> None:
-    """Run one non-interactive session and then actually exit.
-
-    Measured before this existed: sessions whose every model call had
-    finished in seconds sat until a 240s external timeout — and without one,
-    indefinitely. The work was done; the process simply could not get out of
-    interpreter shutdown (see :func:`_run_then_drain`).
-
-    This mode has no teardown of its own — the 5-step ``ShutdownPipeline``
-    that closes shells, MCP, LSP and monitors is reached only from
-    ``backend/server.py``. Until a session-owned ``aclose()`` exists, the
-    honest thing for a CLI whose work is provably finished is to flush and
-    go, rather than block on joining threads nobody will ever stop.
-    """
-    code = 0
-    try:
-        asyncio.run(_run_then_drain(coro))
-    except SystemExit as exc:  # a hook or handler asked for a specific code
-        code = int(exc.code or 0)
-    except BaseException:  # noqa: BLE001 — report, then still exit cleanly
-        traceback.print_exc()
-        code = 1
-
-    try:
-        invocation.cleanup_worktree()
-    except Exception:  # noqa: BLE001 — cleanup must not keep the process alive
-        logger.debug("worktree cleanup failed on exit", exc_info=True)
-
-    sys.stdout.flush()
-    sys.stderr.flush()
-
-    # Only skip interpreter shutdown when a normal exit would actually be at
-    # risk. ``threading._shutdown`` and
-    # ``concurrent.futures.thread._python_exit`` join *non-daemon* threads with
-    # no timeout, so surviving ones are precisely the hazard — most often the
-    # ``_do_shutdown`` thread left stuck in ``executor.shutdown(wait=True)``.
-    # With none of them the normal path is safe, which also keeps the in-process
-    # CLI tests (11 of them patch ``asyncio.run`` and call straight through
-    # here) from being killed mid-suite.
-    lingering = [
-        thread
-        for thread in stdlib_threading.enumerate()
-        if thread is not stdlib_threading.main_thread() and not thread.daemon
-    ]
-    if lingering:
-        logger.debug("hard-exiting past %d non-daemon thread(s)", len(lingering))
-        os._exit(code)
-    if code:
-        raise SystemExit(code)
-
-
-def _run_pipe(invocation: CliInvocation) -> None:
-    """Read stdin + ``-m`` and route through the session runner."""
-    text = invocation.read_pipe_message()
-    _run_session(
-        invocation,
-        _session_module.run_single_message(
-            invocation.settings,
-            text,
-            resume_session_id=invocation.resume_session_id,
-            project_dir=invocation.project_dir,
-            additional_dirs=invocation.additional_dirs,
-        ),
-    )
-
-
-def _run_single_message(invocation: CliInvocation, message: str) -> None:
-    """Route a ``-m`` message through the session runner."""
-    _run_session(
-        invocation,
-        _session_module.run_single_message(
-            invocation.settings,
-            message,
-            resume_session_id=invocation.resume_session_id,
-            project_dir=invocation.project_dir,
-            additional_dirs=invocation.additional_dirs,
-        ),
-    )
-
-
-__all__ = ["cli"]
-
-
-if __name__ == "__main__":
-    cli()
-
-
 # Registered after the callback so the module reads top to bottom.
 cli.add_command(ext)
 cli.add_command(login)
 cli.add_command(migrate)
 cli.add_command(trust_command)
+
+__all__ = ["cli"]

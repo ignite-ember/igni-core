@@ -18,9 +18,9 @@ Test seams (preserved intentionally):
   shim has been promoted to a method on
   :class:`SettingsLoader` / :class:`ManagedPolicySource` /
   :class:`UserConfigStore` / :class:`CloudModelMigrator`.
-* The ``asyncio.run(...)`` calls in the mode-dispatch tail happen
-  in :mod:`igni_core.cli.__init__` so ``tests/test_cli.py`` can
-  patch ``igni_core.cli.asyncio.run``.
+* The session is started via ``_session_module.run_single_message``
+  (the module attribute) so tests can patch
+  ``igni_core.core.session.run_single_message``.
 """
 
 from __future__ import annotations
@@ -31,12 +31,15 @@ from pathlib import Path
 import click
 
 from igni_core.cli.context import CliContext
+from igni_core.cli.headless_run import HeadlessRun
 from igni_core.cli.logging import DebugLogging
 from igni_core.cli.options import CliOptions
 from igni_core.cli.resume import ResumeResolver
+from igni_core.core import session as _session_module
 from igni_core.core.config import settings as _settings_module
 from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
 from igni_core.core.config.settings import Settings
+from igni_core.core.workspace_trust import WorkspaceTrust
 from igni_core.core.worktree import WorktreeManager
 
 #: The console script pyproject installs. `ignite-ember` is the other
@@ -70,6 +73,7 @@ class CliInvocation:
     * :class:`click.Context` — used for :meth:`click.echo` routing
       and ``ctx.obj`` stashing so subcommands can read the same
       settings / worktree state.
+    * :class:`HeadlessRun` — runs a ``-m`` / ``-p`` session and exits.
 
     All methods are I/O-side-effecting by design (the callback IS
     the CLI's imperative shell) — the class exists to give that
@@ -82,10 +86,12 @@ class CliInvocation:
         options: CliOptions,
         settings: Settings,
         ctx: click.Context,
+        headless_run: HeadlessRun,
     ) -> None:
         self._options = options
         self._settings = settings
         self._ctx = ctx
+        self._headless_run = headless_run
         self._resume_session_id: str | None = None
         self._project_dir: Path | None = None
         self._additional_dirs: list[Path] | None = None
@@ -136,6 +142,17 @@ class CliInvocation:
         self._project_dir = info.worktree_path
         self._worktree_manager = wm
         click.echo(f"Worktree: {info.worktree_path} (branch: {info.branch_name})")
+
+    def carry_trust_into_worktree(self, folder: Path) -> None:
+        """``--worktree`` runs in a new folder of the same repository:
+        trusted for this run when ``folder``, the one it was made from,
+        is (and policy allows it)."""
+        worktree = self._project_dir
+        if worktree is None or worktree == folder:
+            return
+        service = WorkspaceTrust.shared()
+        if service.is_trusted(folder):
+            service.grant_for_run(worktree)
 
     def resolve_additional_dirs(self) -> None:
         """Resolve each ``--add-dir`` value to an absolute path."""
@@ -202,6 +219,23 @@ class CliInvocation:
             click.echo("Error: no input provided via stdin or -m", err=True)
             raise SystemExit(1)
         return text
+
+    def run_pipe(self) -> None:
+        """Pipe mode: run one session on stdin (plus ``-m``), then exit."""
+        self.run_message(self.read_pipe_message())
+
+    def run_message(self, message: str) -> None:
+        """Run one session on ``message``, then exit (see :class:`HeadlessRun`)."""
+        self._headless_run.run(
+            _session_module.run_single_message(
+                self._settings,
+                message,
+                resume_session_id=self._resume_session_id,
+                project_dir=self._project_dir,
+                additional_dirs=self._additional_dirs,
+            ),
+            cleanup=self.cleanup_worktree,
+        )
 
     def echo_help_pointer(self) -> None:
         """Print the "use a React client instead" pointer when

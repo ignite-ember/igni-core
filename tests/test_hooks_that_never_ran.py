@@ -39,7 +39,7 @@ from igni_core.core.hooks.tool_call_invoker import ToolCallInvoker
 
 
 async def _cancel_sweep() -> None:
-    """The teardown ``cli._run_then_drain`` performs verbatim: cancel
+    """The teardown ``HeadlessRun.drain_after`` performs verbatim: cancel
     every task other than this one, wait briefly, move on."""
     pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     for task in pending:

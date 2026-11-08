@@ -11,7 +11,7 @@ def _patch_cli():
     """Return patches for the common CLI dependencies."""
     return (
         patch("igni_core.core.config.settings.load_settings"),
-        patch("igni_core.cli.asyncio.run"),
+        patch("igni_core.cli.headless_run.asyncio.run"),
     )
 
 
@@ -28,7 +28,7 @@ class TestCLIFlags:
         runner = CliRunner()
         with (
             patch("igni_core.core.config.settings.load_settings") as mock_load,
-            patch("igni_core.cli.asyncio.run"),
+            patch("igni_core.cli.headless_run.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--model", "gpt-4", "-m", "hi"], catch_exceptions=False)
@@ -39,7 +39,7 @@ class TestCLIFlags:
         runner = CliRunner()
         with (
             patch("igni_core.core.config.settings.load_settings") as mock_load,
-            patch("igni_core.cli.asyncio.run"),
+            patch("igni_core.cli.headless_run.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--verbose", "-m", "hi"], catch_exceptions=False)
@@ -50,7 +50,7 @@ class TestCLIFlags:
         runner = CliRunner()
         with (
             patch("igni_core.core.config.settings.load_settings") as mock_load,
-            patch("igni_core.cli.asyncio.run"),
+            patch("igni_core.cli.headless_run.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--quiet", "-m", "hi"], catch_exceptions=False)
@@ -61,7 +61,7 @@ class TestCLIFlags:
         runner = CliRunner()
         with (
             patch("igni_core.core.config.settings.load_settings") as mock_load,
-            patch("igni_core.cli.asyncio.run"),
+            patch("igni_core.cli.headless_run.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--read-only", "-m", "hi"], catch_exceptions=False)
@@ -76,7 +76,7 @@ class TestCLIFlags:
         runner = CliRunner()
         with (
             patch("igni_core.core.config.settings.load_settings") as mock_load,
-            patch("igni_core.cli.asyncio.run"),
+            patch("igni_core.cli.headless_run.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--auto-approve", "-m", "hi"], catch_exceptions=False)
@@ -88,7 +88,7 @@ class TestCLIFlags:
         runner = CliRunner()
         with (
             patch("igni_core.core.config.settings.load_settings") as mock_load,
-            patch("igni_core.cli.asyncio.run"),
+            patch("igni_core.cli.headless_run.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--strict", "-m", "hi"], catch_exceptions=False)
@@ -99,7 +99,7 @@ class TestCLIFlags:
         runner = CliRunner()
         with (
             patch("igni_core.core.config.settings.load_settings") as mock_load,
-            patch("igni_core.cli.asyncio.run"),
+            patch("igni_core.cli.headless_run.asyncio.run"),
         ):
             mock_load.return_value = MagicMock()
             runner.invoke(cli, ["--no-web", "-m", "hi"], catch_exceptions=False)
@@ -115,7 +115,7 @@ class TestCLIModes:
         runner = CliRunner()
         with (
             patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()),
-            patch("igni_core.cli.asyncio.run") as mock_run,
+            patch("igni_core.cli.headless_run.asyncio.run") as mock_run,
         ):
             runner.invoke(cli, ["-m", "hello world"], catch_exceptions=False)
             mock_run.assert_called_once()
@@ -124,7 +124,7 @@ class TestCLIModes:
         runner = CliRunner()
         with (
             patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()),
-            patch("igni_core.cli.asyncio.run") as mock_run,
+            patch("igni_core.cli.headless_run.asyncio.run") as mock_run,
         ):
             runner.invoke(cli, ["--pipe"], input="test input", catch_exceptions=False)
             mock_run.assert_called_once()
@@ -139,7 +139,7 @@ class TestCLIModes:
         runner = CliRunner()
         with (
             patch("igni_core.core.config.settings.load_settings", return_value=MagicMock()),
-            patch("igni_core.cli.asyncio.run") as mock_run,
+            patch("igni_core.cli.headless_run.asyncio.run") as mock_run,
         ):
             runner.invoke(
                 cli, ["--pipe", "-m", "prefix"], input="stdin data", catch_exceptions=False
