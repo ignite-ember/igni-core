@@ -25,7 +25,7 @@ import logging
 from pathlib import Path
 
 from igni_core.core.config.settings import Settings
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.log_fields import LogFields
 from igni_core.core.utils.audit_schemas import (
     AuditDetails,
@@ -80,7 +80,7 @@ class AuditLogger:
     def __init__(self, settings: Settings) -> None:
         self._log_path = Path(settings.storage.audit_log).expanduser()
         #: A layer that keeps no log files keeps no audit file (``core/layer.py``).
-        self._to_stdout = not Layers.current().log_files()
+        self._to_stdout = not layers.current().log_files()
         if not self._to_stdout:
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
         # First IO failure emits a warning; subsequent failures

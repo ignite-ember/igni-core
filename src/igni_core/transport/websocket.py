@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any
 
 from websockets.asyncio.server import serve
 
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.protocol.messages import Message, Welcome
 from igni_core.protocol.registry import MessageRegistry
@@ -101,9 +101,9 @@ if os.environ.get("IGNI_CHUNK_TRACE") == "1" and not any(
             self.flush()
 
     _trace_handler: logging.Handler
-    if not Layers.current().log_files():
+    if not layers.current().log_files():
         # A layer that keeps no log files (the cloud's): its handler.
-        _trace_handler = Layers.current().log_handler()
+        _trace_handler = layers.current().log_handler()
     else:
         _trace_path.parent.mkdir(parents=True, exist_ok=True)
         _trace_handler = _FlushingFileHandler(str(_trace_path), mode="a")

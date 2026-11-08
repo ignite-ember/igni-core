@@ -33,7 +33,7 @@ from typing import Any
 from igni_core.core.config.config_io import YamlSource
 from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.schemas.extensions import ExtensionsConfig
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import home_config_dir
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class SandboxSettings:
         """
         env = os.environ if environ is None else environ
         managed = cls._block(managed_path())
-        if user_file is None and Layers.current().reads_local_settings():
+        if user_file is None and layers.current().reads_local_settings():
             user_file = home_config_dir() / "config.yaml"
         user = cls._block(user_file)
 

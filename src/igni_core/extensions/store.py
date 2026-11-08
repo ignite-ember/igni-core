@@ -41,7 +41,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, ValidationError
 
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import home_config_dir
 from igni_core.extensions.assets import AssetCache, ReadOnlyTree
 from igni_core.extensions.manifest import ExtensionManifest
@@ -335,7 +335,7 @@ class ExtensionStore:
         stored = StoredPriority(priority=priority)
         if self._stored() == stored:
             return False
-        if not Layers.current().keeps_listing_in_files():
+        if not layers.current().keeps_listing_in_files():
             self._received_priority[str(self._root)] = stored
             return True
         self._root.mkdir(parents=True, exist_ok=True)
@@ -347,7 +347,7 @@ class ExtensionStore:
         return self._stored().priority
 
     def _stored(self) -> StoredPriority:
-        if not Layers.current().keeps_listing_in_files():
+        if not layers.current().keeps_listing_in_files():
             return self._received_priority.get(str(self._root), StoredPriority())
         path = self.priority_path
         if not path.is_file():
@@ -365,7 +365,7 @@ class ExtensionStore:
     def record_group(self, group: str | None, *, name: str | None = None) -> None:
         """Keep the person's group the listing carried, for the next start before igni answers."""
         stored = StoredGroup(group=group, name=name if group is not None else None)
-        if not Layers.current().keeps_listing_in_files():
+        if not layers.current().keeps_listing_in_files():
             self._received_group[str(self._root)] = stored
             return
         self._root.mkdir(parents=True, exist_ok=True)
@@ -373,7 +373,7 @@ class ExtensionStore:
 
     def group(self) -> StoredGroup | None:
         """The person's group as last received; ``None`` if no listing ever arrived."""
-        if not Layers.current().keeps_listing_in_files():
+        if not layers.current().keeps_listing_in_files():
             return self._received_group.get(str(self._root))
         path = self.group_path
         if not path.is_file():

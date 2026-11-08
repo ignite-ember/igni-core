@@ -15,7 +15,7 @@ from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.db.scope import tenancy
 from igni_core.core.db.urls import DatabaseUrl, Dialect
 from igni_core.core.hooks.extension_gate import extension_hook_gate
-from igni_core.core.layer import Layers
+from igni_core.core.layer import Layers, layers
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.extensions.faults import ExtensionFaults
 from igni_core.extensions.host.hooks import ExtensionHooks
@@ -168,9 +168,9 @@ def _desktop_storage(monkeypatch):
     monkeypatch.delenv(Layers.ENV, raising=False)
     # The desktop's layer, chosen afresh: a test that installs another
     # (``packages/igni-cloud``) does not leave it behind.
-    Layers.reset()
+    layers.reset()
     yield
-    Layers.reset()
+    layers.reset()
     tenancy.use(None)
     approval_events.clear()
 

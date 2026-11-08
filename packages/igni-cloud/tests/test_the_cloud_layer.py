@@ -32,7 +32,7 @@ from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.db.locator import StorageLocator
-from igni_core.core.layer import Layer, Layers, UnknownLayer
+from igni_core.core.layer import Layer, Layers, UnknownLayer, layers
 from igni_core.core.mcp.approval import MCPApprovalManager
 from igni_core.core.utils.audit import AuditLogger
 from igni_core.core.utils.audit_schemas import AuditEntry
@@ -67,14 +67,14 @@ def home(monkeypatch, tmp_path: Path) -> Path:
 
 
 def test_one_setting_installs_the_layer_this_package_declares(monkeypatch):
-    assert type(Layers.current()) is Layer, "unset: the desktop's"
+    assert type(layers.current()) is Layer, "unset: the desktop's"
     monkeypatch.setenv(Layers.ENV, "cloud")
-    Layers.reset()
-    assert isinstance(Layers.current(), CloudLayer), "found through the igni.layers entry point"
+    layers.reset()
+    assert isinstance(layers.current(), CloudLayer), "found through the igni.layers entry point"
     monkeypatch.setenv(Layers.ENV, "laptop")
-    Layers.reset()
+    layers.reset()
     with pytest.raises(UnknownLayer, match="laptop"):
-        Layers.current()
+        layers.current()
 
 
 def test_the_backend_logs_json_lines_to_stdout_and_writes_no_file(

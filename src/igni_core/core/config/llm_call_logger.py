@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 
 from igni_core.core.config.caller_inspector import CallerContextInspector
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
 
@@ -63,9 +63,9 @@ class LlmCallLogger:
             self._configured = True
             return
         handler: logging.Handler
-        if not Layers.current().log_files():
+        if not layers.current().log_files():
             # No llm_calls.log where the layer keeps no log files.
-            handler = Layers.current().log_handler()
+            handler = layers.current().log_handler()
         else:
             self._log_dir.mkdir(parents=True, exist_ok=True)
             handler = logging.FileHandler(self._log_dir / "llm_calls.log")

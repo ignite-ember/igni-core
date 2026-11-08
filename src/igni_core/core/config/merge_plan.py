@@ -51,7 +51,7 @@ from igni_core.core.config.tiers.group_policy import GroupPolicyTier
 from igni_core.core.config.tiers.managed import ManagedOnlyTier, ManagedTier
 from igni_core.core.config.tiers.organisation import TelemetryTier, WorkspaceTrustTier
 from igni_core.core.config.tiers.project import ProjectJsonFragmentTier, ProjectYamlTier
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import home_config_dir, project_config_dir
 
 if TYPE_CHECKING:
@@ -128,7 +128,7 @@ class SettingsMergePlan:
         # what it runs with comes from the image and from igni server).
         local_tiers: list[Tier] = (
             []
-            if not Layers.current().reads_local_settings()
+            if not layers.current().reads_local_settings()
             else [
                 # User global (lowest priority above built-in defaults)
                 YamlTier(user_ember / "config.yaml"),

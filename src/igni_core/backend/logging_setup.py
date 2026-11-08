@@ -26,7 +26,7 @@ import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import CONFIG_DIR
 
 #: Five files of 2 MB. Enough to hold a long session plus the couple of
@@ -78,7 +78,7 @@ def configure_logging(*, debug_flag: bool = False, path: Path | None = None) -> 
     five lines in while the backend ran on for minutes.
     """
     level = resolve_level(debug_flag=debug_flag)
-    layer = Layers.current()
+    layer = layers.current()
     if not layer.log_files():
         # A layer that keeps no log file (the cloud's: JSON lines on
         # standard output, which the node collects).

@@ -16,7 +16,7 @@ from __future__ import annotations
 from igni_core.backend import standing_policy
 from igni_core.backend.rpc_handlers.pool_guard import PAGE_RPCS, PLATFORM_RPCS, POOL_LEVEL_RPCS
 from igni_core.backend.schemas_pool import Refusal
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.extensions.registry import ExtensionRefused
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.protocol import messages as msg
@@ -55,7 +55,7 @@ class MessageAdmission:
         extension (never in the cloud)."""
         if not isinstance(message, msg.RPCRequest) or not message.caller:
             return None
-        if not Layers.current().connections_speak_for_extensions():
+        if not layers.current().connections_speak_for_extensions():
             return f"{message.method}: no connection to this igni speaks for an extension"
         try:
             self._extensions.registry.authorise_caller(
@@ -72,6 +72,6 @@ class MessageAdmission:
     def _platform_refusal(message: Message) -> str | None:
         if not isinstance(message, msg.RPCRequest) or message.method not in PLATFORM_RPCS:
             return None
-        if not Layers.current().platform_calls_need_control() or message.via_control:
+        if not layers.current().platform_calls_need_control() or message.via_control:
             return None
         return f"{message.method}: only on the platform's control connection"

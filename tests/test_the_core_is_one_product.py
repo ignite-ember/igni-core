@@ -15,7 +15,7 @@ import pytest
 
 from igni_core.core.db.providers import SharedStorages, SqliteStorage, StorageUnavailable
 from igni_core.core.db.urls import Dialect
-from igni_core.core.layer import BackendHooks, Layer, Layers, UnknownLayer
+from igni_core.core.layer import BackendHooks, Layer, Layers, UnknownLayer, layers
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "igni_core"
 
@@ -60,8 +60,8 @@ def test_only_the_layer_loader_reads_the_profile():
 
 def test_unset_the_desktop_runs_and_its_hooks_do_nothing(monkeypatch):
     monkeypatch.delenv(Layers.ENV, raising=False)
-    Layers.reset()
-    layer = Layers.current()
+    layers.reset()
+    layer = layers.current()
     assert type(layer) is Layer and layer.log_files() and layer.reads_local_settings()
     assert layer.credentials() is None and layer.mcp_approvals() is None
     assert not layer.requires_database()
@@ -70,9 +70,9 @@ def test_unset_the_desktop_runs_and_its_hooks_do_nothing(monkeypatch):
 
 def test_a_layer_no_package_declares_is_refused_not_ignored(monkeypatch):
     monkeypatch.setenv(Layers.ENV, "nowhere")
-    Layers.reset()
+    layers.reset()
     with pytest.raises(UnknownLayer, match="nowhere"):
-        Layers.current()
+        layers.current()
 
 
 def test_postgresql_without_its_package_says_what_to_install(monkeypatch):

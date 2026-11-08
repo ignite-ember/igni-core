@@ -17,7 +17,7 @@ from igni_cloud.layer import CloudLayer
 from websockets.asyncio.client import connect
 
 from igni_core.backend.pool_rpcs import VmSignInRpc
-from igni_core.core.layer import Layer, Layers
+from igni_core.core.layer import Layer, layers
 from igni_core.protocol import messages as msg
 from igni_core.transport.websocket import WebSocketServerTransport
 from tests.host_model_helpers import HostRig
@@ -55,7 +55,7 @@ class ControlOnly(Layer):
 
 
 async def test_in_the_cloud_a_client_cannot_sign_the_vm_in_or_deliver_events(tmp_path: Path):
-    Layers.install(ControlOnly())
+    layers.install(ControlOnly())
     rig = await HostRig(tmp_path).start()
     asked: list[str] = []
 

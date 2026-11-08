@@ -35,7 +35,7 @@ from pathlib import Path
 from pydantic import BaseModel, ValidationError
 
 from igni_core.core.auth.schemas import JwtClaims, LoadCredentialsResult, SignedInSession
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -176,7 +176,7 @@ class CredentialsStore:
         :meth:`Credentials.new` — this method does not do any
         datetime bookkeeping on its own.
         """
-        source = Layers.current().credentials()
+        source = layers.current().credentials()
         if source is not None:
             source.save(creds)
             return
@@ -201,7 +201,7 @@ class CredentialsStore:
         Expiry is *not* reported here — call :meth:`Credentials
         .is_expired` on the returned ``creds`` value.
         """
-        source = Layers.current().credentials()
+        source = layers.current().credentials()
         if source is not None:
             return source.load()
         fp = self._path
@@ -248,13 +248,13 @@ class CredentialsStore:
 
     async def ready(self) -> None:
         """Until the token :meth:`load` gives may be sent (the layer's source says; a file always may)."""
-        source = Layers.current().credentials()
+        source = layers.current().credentials()
         if source is not None:
             await source.ready()
 
     def clear(self) -> None:
         """Delete the credential file if it exists (no-op otherwise)."""
-        source = Layers.current().credentials()
+        source = layers.current().credentials()
         if source is not None:
             source.clear()
             return

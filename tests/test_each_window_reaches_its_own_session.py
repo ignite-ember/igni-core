@@ -57,6 +57,7 @@ from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
+from igni_core.core.layer import layers
 from igni_core.extensions.host.windows import WindowModelError
 from igni_core.extensions.service_events import DeliveryReceipt
 from igni_core.protocol import messages as msg
@@ -548,9 +549,7 @@ async def test_a_layer_can_take_platform_calls_from_its_control_connection_only(
 ):
     orchestrator, _, transport = _orchestrator(tmp_path)
     orchestrator.mount(ServiceEventRpc(_Inbox()))
-    monkeypatch.setattr(
-        "igni_core.core.layer.Layers.current", classmethod(lambda cls: _ControlOnly())
-    )
+    monkeypatch.setattr(layers, "current", lambda: _ControlOnly())
 
     await orchestrator.dispatch(_rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "w", events=[]))
     control = _rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "c", events=[])

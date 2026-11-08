@@ -38,7 +38,7 @@ from igni_core.backend.supervisor import BackendSupervisor
 from igni_core.backend.transport_builder import TransportBuilder
 from igni_core.core.config.settings import Settings
 from igni_core.core.db.locator import StorageLocator
-from igni_core.core.layer import BackendHooks, Layers
+from igni_core.core.layer import BackendHooks, layers
 from igni_core.core.observability import OtelRuntime
 from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.prompts.contributions import prompt_contributions
@@ -59,7 +59,7 @@ class BackendApp:
     def __init__(self, launch: BackendLaunch) -> None:
         self._launch = launch
         # Cached: the layer builds new hooks on every ask (``core/layer.py``).
-        self._guest = Layers.current().backend()
+        self._guest = layers.current().backend()
         self._transport_builder = TransportBuilder(
             socket_path=launch.socket_path, ws_port=launch.ws_port, ws_token=launch.ws_token
         )
@@ -234,7 +234,7 @@ class BackendApp:
             producer_db=StorageLocator.from_settings(settings).project_database(launch.project_dir),
             signed_in=access.signed_in_server(),
             orchestrator=orchestrator,
-            fetches_own_events=Layers.current().fetches_own_events(),
+            fetches_own_events=layers.current().fetches_own_events(),
         )
         orchestrator.mount(ingress.rpc())
         # Background-process narration goes to the boot session only while
