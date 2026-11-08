@@ -22,6 +22,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from igni_core.backend.plugin_directory_scanner import PluginDirectoryScanner
 from igni_core.backend.plugin_schemas import (
     PluginContents,
     PluginPreviewKey,
@@ -100,7 +101,7 @@ class PluginController:
                     f"Cloned repo has no '{subdir}' subdirectory — "
                     "the marketplace entry may be stale."
                 )
-            result = PluginContents.from_directory(scan_root, name=source)
+            result = PluginDirectoryScanner(scan_root, name=source).scan()
             # Don't leak the throwaway temp path — surface the
             # source the user knows about instead. Echo the subdir
             # form so the FE display matches the catalog entry.
@@ -165,7 +166,7 @@ class PluginController:
         )
         if plugin is None:
             return PluginContents(error=f"Plugin '{name}' not found")
-        return PluginContents.from_directory(plugin.root_path, name=name)
+        return PluginDirectoryScanner(plugin.root_path, name=name).scan()
 
     # ── Enable / disable toggle ────────────────────────────────────
 

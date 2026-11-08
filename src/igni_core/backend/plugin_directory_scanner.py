@@ -1,32 +1,33 @@
 """Filesystem walker that builds a :class:`PluginContents` inventory.
 
-Owns the per-plugin-directory scan behavior formerly living in the
-free function ``server_helpers._scan_plugin_dir``. Each per-subdir
-step (skills / agents / hooks / MCP servers / tools / README) is a
-private method so the six loops that used to be jammed into one
-100-line function become independently testable.
-
-Called only via :meth:`PluginContents.from_directory` (the classmethod
-that owns model construction). To avoid an import cycle
-(``plugin_schemas`` imports the scanner, scanner imports the models),
-:meth:`PluginContents.from_directory` performs a lazy import of this
-module inside its body.
+Each per-subdir step (skills / agents / hooks / MCP servers / tools /
+README) is its own method so every reader is independently testable.
+Third-party file shapes are validated by the models in
+:mod:`igni_core.backend.plugin_bundle_files`; a file that cannot be read
+or does not match its shape leaves its section empty and is logged with
+the reason.
 """
 
 from __future__ import annotations
 
-import contextlib
-import json
+import logging
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from igni_core.backend.plugin_bundle_files import (
+    MarkdownFrontmatter,
+    PluginHooksFile,
+    PluginMCPFile,
+)
 from igni_core.backend.plugin_schemas import (
     PluginAgentInfo,
     PluginContents,
-    PluginHookInfo,
-    PluginMCPServerInfo,
     PluginSkillInfo,
     PluginToolInfo,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PluginDirectoryScanner:
@@ -70,12 +71,7 @@ class PluginDirectoryScanner:
             return
         for sd in sorted(p for p in skills_dir.iterdir() if p.is_dir()):
             skill_md = sd / "SKILL.md"
-            desc = ""
-            if skill_md.is_file():
-                with contextlib.suppress(OSError):
-                    desc = self._frontmatter_field(
-                        skill_md.read_text(errors="replace"), "description"
-                    )
+            desc = self._description(skill_md) if skill_md.is_file() else ""
             self._result.skills.append(PluginSkillInfo(name=sd.name, description=desc))
 
     def _scan_agents(self) -> None:
@@ -85,10 +81,9 @@ class PluginDirectoryScanner:
         if not agents_dir.is_dir():
             return
         for af in sorted(agents_dir.glob("*.md")):
-            desc = ""
-            with contextlib.suppress(OSError):
-                desc = self._frontmatter_field(af.read_text(errors="replace"), "description")
-            self._result.agents.append(PluginAgentInfo(name=af.stem, description=desc))
+            self._result.agents.append(
+                PluginAgentInfo(name=af.stem, description=self._description(af))
+            )
 
     def _scan_hooks(self) -> None:
         """Read ``hooks/hooks.json`` and record one entry per event
@@ -97,12 +92,11 @@ class PluginDirectoryScanner:
         if not hooks_json.is_file():
             return
         try:
-            data = json.loads(hooks_json.read_text())
-            for event, handlers in (data.get("hooks") or {}).items():
-                if isinstance(handlers, list):
-                    self._result.hooks.append(PluginHookInfo(event=event, count=len(handlers)))
-        except (OSError, json.JSONDecodeError):
-            pass
+            hooks_file = PluginHooksFile.model_validate_json(hooks_json.read_text())
+        except (OSError, ValidationError) as exc:
+            logger.warning("Plugin %s: skipping unreadable %s: %s", self._name, hooks_json, exc)
+            return
+        self._result.hooks.extend(hooks_file.hook_infos())
 
     def _scan_mcp_servers(self) -> None:
         """Read ``.mcp.json`` (or ``mcp.json``) and record one entry
@@ -112,18 +106,12 @@ class PluginDirectoryScanner:
             if not mcp_path.is_file():
                 continue
             try:
-                data = json.loads(mcp_path.read_text())
-                for srv_name, cfg in (data.get("mcpServers") or {}).items():
-                    self._result.mcp_servers.append(
-                        PluginMCPServerInfo(
-                            name=srv_name,
-                            transport=cfg.get("type", "stdio"),
-                            command=cfg.get("command") or cfg.get("url") or "",
-                        )
-                    )
-            except (OSError, json.JSONDecodeError):
-                pass
-            break
+                mcp_file = PluginMCPFile.model_validate_json(mcp_path.read_text())
+            except (OSError, ValidationError) as exc:
+                logger.warning("Plugin %s: skipping unreadable %s: %s", self._name, mcp_path, exc)
+                return
+            self._result.mcp_servers.extend(mcp_file.server_infos())
+            return
 
     def _scan_tools(self) -> None:
         """Enumerate ``tools/*.py`` (dunder / underscored modules
@@ -146,34 +134,25 @@ class PluginDirectoryScanner:
                 continue
             try:
                 text = rp.read_text(errors="replace")
-                if len(text) > self._readme_cap:
-                    self._result.readme = (
-                        text[: self._readme_cap]
-                        + "\n\n_…README truncated — open the source repo for the rest._"
-                    )
-                else:
-                    self._result.readme = text
-            except OSError:
-                pass
-            break
+            except OSError as exc:
+                logger.warning("Plugin %s: skipping unreadable %s: %s", self._name, rp, exc)
+                return
+            if len(text) > self._readme_cap:
+                text = (
+                    text[: self._readme_cap]
+                    + "\n\n_…README truncated — open the source repo for the rest._"
+                )
+            self._result.readme = text
+            return
 
-    # ── Shared parsing helper ──────────────────────────────────────
+    # ── Shared reading helper ──────────────────────────────────────
 
-    @staticmethod
-    def _frontmatter_field(md_text: str, field: str) -> str:
-        """Extract one key's value from a leading ``---``-delimited
-        YAML frontmatter block.
-
-        Returns ``""`` when the block is absent, unterminated, or
-        missing the requested key. Values are stripped of surrounding
-        whitespace and matching double quotes.
-        """
-        if not md_text.startswith("---"):
+    def _description(self, md_path: Path) -> str:
+        """The ``description`` frontmatter value of *md_path*, or ``""``
+        when the file has none or cannot be read."""
+        try:
+            text = md_path.read_text(errors="replace")
+        except OSError as exc:
+            logger.warning("Plugin %s: skipping unreadable %s: %s", self._name, md_path, exc)
             return ""
-        end = md_text.find("\n---", 4)
-        if end <= 0:
-            return ""
-        for line in md_text[4:end].splitlines():
-            if line.lower().startswith(f"{field}:"):
-                return line.split(":", 1)[1].strip().strip('"')
-        return ""
+        return MarkdownFrontmatter.parse(text).value("description")

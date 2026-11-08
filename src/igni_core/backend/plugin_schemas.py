@@ -9,10 +9,9 @@
   :class:`PluginToolInfo` — per-item wire entries inside
   :class:`PluginContents`.
 * :class:`PluginContents` — plugin-inventory wire shape returned by
-  the plugin-details and marketplace-preview RPCs. Owns its own
-  construction via :meth:`PluginContents.from_directory` (which
-  delegates to :class:`PluginDirectoryScanner`) and
-  :meth:`PluginContents.error_result`.
+  the plugin-details and marketplace-preview RPCs, built from a
+  directory by :class:`PluginDirectoryScanner`; error payloads come
+  from :meth:`PluginContents.error_result`.
 * :class:`MarketplaceRefreshFailure` /
   :class:`MarketplaceRefreshResult` — typed result of a bulk
   refresh, letting the orchestration and message-rendering halves
@@ -39,7 +38,6 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -131,7 +129,7 @@ class PluginToolInfo(BaseModel):
 
 
 class PluginContents(BaseModel):
-    """Wire shape returned by :meth:`PluginContents.from_directory`
+    """Wire shape returned by :meth:`PluginDirectoryScanner.scan`
     (and the
     :meth:`igni_core.backend.plugin_controller.PluginController.preview`
     marketplace-preview path that unwraps a clone into the same
@@ -164,32 +162,6 @@ class PluginContents(BaseModel):
         """Construct an error-only :class:`PluginContents` — used
         at every error branch of the preview path."""
         return cls(error=message)
-
-    @classmethod
-    def from_directory(cls, root: Path, name: str) -> PluginContents:
-        """Walk *root* and build the bundled-contents inventory:
-        skills, agents, hooks, MCP servers, custom tools, plus a
-        README excerpt.
-
-        Shared between :meth:`BackendServer.get_plugin_contents`
-        (installed plugins) and :meth:`PluginController.preview`
-        (uninstalled catalog entries, scanned from a shallow clone).
-        Pure on the filesystem — no plugin loader / session state
-        needed.
-
-        Delegates to :class:`PluginDirectoryScanner` via a lazy
-        import — ``plugin_directory_scanner`` imports back from this
-        module for the item schemas, so the import happens inside
-        this classmethod body to break the cycle.
-        """
-        # Lazy import: plugin_directory_scanner.py imports the item
-        # schemas from THIS module. Deferring the import to call-time
-        # keeps the module-load graph acyclic.
-        from igni_core.backend.plugin_directory_scanner import (
-            PluginDirectoryScanner,
-        )
-
-        return PluginDirectoryScanner(root, name).scan()
 
 
 # ── Marketplace refresh result ──────────────────────────────────────
