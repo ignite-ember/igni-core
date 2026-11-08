@@ -182,10 +182,10 @@ def test_list_interrupted_excludes_completed_rows(tmp_path: Path) -> None:
 
 
 def test_list_interrupted_excludes_pending_not_stamped(tmp_path: Path) -> None:
-    """A pending row that was never stamped (legacy DB,
-    interrupted before this change) does NOT appear in the
-    interrupted list. The detection logic's legacy fallback in
-    ``InterruptedRunSummaryBuilder`` handles those."""
+    """A pending row that was never stamped (a hard crash runs no
+    cancel or error path) does NOT appear in the interrupted list.
+    ``InterruptedRunSummaryBuilder`` detects those from the pending
+    rows themselves."""
     store = PendingMessageStore(tmp_path / "state.db")
     store.record_received("sess", "stale pending row")
 

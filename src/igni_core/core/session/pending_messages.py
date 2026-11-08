@@ -241,9 +241,9 @@ class PendingMessageStore:
         as "interrupted".
 
         Failure here is non-fatal: a missing write only means the
-        next ``detect_interrupted_run`` falls back to the legacy
-        heuristic. We log and continue so cancel/error paths don't
-        crash mid-shutdown.
+        next ``detect_interrupted_run`` sees the row as an unstamped
+        pending row, the same evidence a hard crash leaves. We log and
+        continue so cancel/error paths don't crash mid-shutdown.
         """
         if reason not in INTERRUPTED_REASONS:
             raise ValueError(f"unknown interrupted_reason: {reason!r}")
