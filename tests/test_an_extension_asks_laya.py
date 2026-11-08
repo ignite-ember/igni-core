@@ -23,6 +23,7 @@ import pytest
 
 from igni_core.core.decisions import Laya, Priority
 from igni_core.core.decisions.endpoints import RemoteDecisions
+from igni_core.core.decisions.laya_wire import LayaQuestions
 from igni_core.core.decisions.schemas import DecisionRequest
 from igni_core.core.hooks.bypass_guard import QUESTIONS, HarmJudge
 from igni_core.decisions_server.app import DecisionsApp
@@ -296,7 +297,7 @@ class TestSharedWithTheBypassGuard:
         probability, which = asyncio.run(judge.score("Bash: rm -rf ~"))
         [(state, questions, model)] = router.single
         assert state == {"tool_call": "Bash: rm -rf ~"}
-        assert questions == {q.id: q.laya() for q in QUESTIONS}  # in Laya's own shape
+        assert questions == LayaQuestions.of(QUESTIONS).wire()  # in Laya's own shape
         assert model == "typed-decisions"
         assert which in {q.id for q in QUESTIONS} and 0.0 <= probability <= 1.0
 

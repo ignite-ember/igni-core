@@ -18,9 +18,8 @@ from __future__ import annotations
 
 import re
 from enum import IntEnum, StrEnum
-from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
 
 #: A context field's name, as a question quotes it: `` `diff` ``.
 FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -112,39 +111,30 @@ class DecisionQuestion(Strict):
                 f"{self.id}: a label is 1 to {DecisionLimits.LABEL_CHARS} characters, not {label!r}"
             )
 
-    def laya(self) -> dict[str, Any]:
-        """The question in Laya's own shape."""
-        out: dict[str, Any] = {"type": self.kind.value, "instructions": self.question}
-        if self.kind is QuestionKind.CHOICE:
-            out["criteria"] = {
-                label: (text or None) for label, text in (self.options or {}).items()
-            }
-        elif self.kind is QuestionKind.SCORE:
-            out["criteria"] = list(self.levels or [])
-        return out
+
+class DecisionContext(RootModel[dict[str, str]]):
+    """One context: named text fields the questions quote as `` `field` ``."""
+
+    @model_validator(mode="after")
+    def _fits(self) -> DecisionContext:
+        if not 1 <= len(self.root) <= DecisionLimits.CONTEXT_FIELDS:
+            raise ValueError(f"a context has 1 to {DecisionLimits.CONTEXT_FIELDS} named fields")
+        for name in self.root:
+            if not FIELD_NAME.match(name):
+                raise ValueError(f"a context field is a lowercase name, not {name!r}")
+        if sum(len(text) for text in self.root.values()) > DecisionLimits.CONTEXT_CHARS:
+            raise ValueError(
+                f"a context is at most {DecisionLimits.CONTEXT_CHARS} characters; "
+                "ask about less of it"
+            )
+        return self
 
 
 class DecisionRequest(Strict):
     """Contexts and the questions asked of each."""
 
-    contexts: list[dict[str, str]] = Field(min_length=1, max_length=DecisionLimits.BATCH)
+    contexts: list[DecisionContext] = Field(min_length=1, max_length=DecisionLimits.BATCH)
     questions: list[DecisionQuestion] = Field(min_length=1, max_length=DecisionLimits.QUESTIONS)
-
-    @field_validator("contexts")
-    @classmethod
-    def _contexts(cls, contexts: list[dict[str, str]]) -> list[dict[str, str]]:
-        for context in contexts:
-            if not 1 <= len(context) <= DecisionLimits.CONTEXT_FIELDS:
-                raise ValueError(f"a context has 1 to {DecisionLimits.CONTEXT_FIELDS} named fields")
-            for name in context:
-                if not FIELD_NAME.match(name):
-                    raise ValueError(f"a context field is a lowercase name, not {name!r}")
-            if sum(len(text) for text in context.values()) > DecisionLimits.CONTEXT_CHARS:
-                raise ValueError(
-                    f"a context is at most {DecisionLimits.CONTEXT_CHARS} characters; "
-                    "ask about less of it"
-                )
-        return contexts
 
     @field_validator("questions")
     @classmethod
@@ -153,9 +143,6 @@ class DecisionRequest(Strict):
         if len(set(ids)) != len(ids):
             raise ValueError("every question has its own id")
         return questions
-
-    def laya_questions(self) -> dict[str, Any]:
-        return {q.id: q.laya() for q in self.questions}
 
 
 class DecisionAnswer(BaseModel):
@@ -187,43 +174,6 @@ class Priority(IntEnum):
     EXTENSION = 1
 
 
-# ── The decisions service's wire ──────────────────────────────────
-
-
-class PredictCall(Strict):
-    """One question set about one context, on one checkpoint — the Bypass guard's call."""
-
-    state: dict[str, str]
-    questions: list[DecisionQuestion] = Field(min_length=1, max_length=DecisionLimits.QUESTIONS)
-    model: str
-    priority: Priority = Priority.APPROVAL
-
-    def laya_questions(self) -> dict[str, Any]:
-        return {q.id: q.laya() for q in self.questions}
-
-
-class PredictAnswer(BaseModel):
-    result: dict[str, Any]
-
-
-class DecideCall(Strict):
-    """An extension's decision, on Laya's general checkpoints, behind the approvals."""
-
-    request: DecisionRequest
-
-
-class DecideAnswer(BaseModel):
-    #: Laya's raw result per context; the asker reads them into decisions.
-    results: list[dict[str, Any]]
-
-
-class DecisionsFailure(BaseModel):
-    """Why the service answered nothing."""
-
-    error: Literal["unavailable", "unauthorized"]
-    detail: str
-
-
 class DecisionsUnavailable(Exception):
     """The decisions service could not be reached, or Laya could not load or run; nothing was decided."""
 
@@ -232,77 +182,17 @@ class DecisionTooLong(Exception):
     """The context and questions do not fit what Laya reads."""
 
 
-class LayaReading:
-    """One Laya result read back into a :class:`Decision`."""
-
-    def __init__(self, questions: list[DecisionQuestion]) -> None:
-        self._questions = {q.id: q for q in questions}
-
-    def decision(self, result: dict[str, Any], *, allow_truncated: bool = False) -> Decision:
-        """``result`` read back; one Laya read only part of is refused unless ``allow_truncated``."""
-        usage = result.get("usage") or {}
-        if not allow_truncated and (usage.get("truncated") or usage.get("truncated_questions")):
-            dropped = int(usage.get("state_tokens_dropped") or 0)
-            raise DecisionTooLong(
-                f"the context and questions are longer than Laya reads ({dropped} tokens of "
-                "the context would be dropped); ask about less, or fewer questions at once"
-            )
-        answers = result.get("answers") or {}
-        return Decision(
-            answers={qid: self._answer(q, answers[qid]) for qid, q in self._questions.items()},
-            model=str((result.get("routing") or {}).get("model") or ""),
-        )
-
-    @staticmethod
-    def _answer(question: DecisionQuestion, raw: dict[str, Any]) -> DecisionAnswer:
-        if question.kind is QuestionKind.NOUL:
-            yes = float(raw["noul"])
-            return DecisionAnswer(
-                kind=question.kind,
-                answer="yes" if yes >= 0.5 else "no",
-                confidence=max(yes, 1.0 - yes),
-                probabilities={"yes": yes, "no": 1.0 - yes},
-            )
-        if question.kind is QuestionKind.SCORE:
-            levels = question.levels or []
-            by_index = raw.get("probabilities") or {}
-            if isinstance(by_index, list):
-                by_index = {str(i): p for i, p in enumerate(by_index)}
-            probabilities = {
-                level: float(by_index.get(str(i), 0.0)) for i, level in enumerate(levels)
-            }
-            top = max(probabilities, key=probabilities.__getitem__)
-            return DecisionAnswer(
-                kind=question.kind,
-                answer=top,
-                confidence=probabilities[top],
-                probabilities=probabilities,
-                score=float(raw.get("score", 0.0)),
-            )
-        probabilities = {str(k): float(v) for k, v in (raw.get("probabilities") or {}).items()}
-        chosen = str(raw.get("choice"))
-        return DecisionAnswer(
-            kind=question.kind,
-            answer=chosen,
-            confidence=probabilities.get(chosen, 0.0),
-            probabilities=probabilities,
-        )
-
-
 __all__ = [
+    "FIELD_NAME",
     "Decision",
     "DecisionAnswer",
+    "DecisionContext",
     "DecisionLimits",
     "DecisionQuestion",
     "DecisionRequest",
     "DecisionTooLong",
     "DecisionsUnavailable",
-    "DecideAnswer",
-    "DecideCall",
-    "DecisionsFailure",
-    "LayaReading",
-    "PredictAnswer",
-    "PredictCall",
     "Priority",
     "QuestionKind",
+    "Strict",
 ]

@@ -24,15 +24,14 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from igni_core.core.decisions.schemas import (
+from igni_core.core.decisions.laya_wire import LayaQuestions, LayaResult
+from igni_core.core.decisions.schemas import DecisionRequest, DecisionsUnavailable, Priority
+from igni_core.core.decisions.service_wire import (
     DecideAnswer,
     DecideCall,
-    DecisionRequest,
     DecisionsFailure,
-    DecisionsUnavailable,
     PredictAnswer,
     PredictCall,
-    Priority,
 )
 
 
@@ -41,10 +40,10 @@ class DecisionModel(Protocol):
     def loaded(self) -> bool: ...
 
     def predict(
-        self, state: dict[str, str], questions: dict[str, Any], model: str, priority: Priority
-    ) -> dict[str, Any]: ...
+        self, state: dict[str, str], questions: LayaQuestions, model: str, priority: Priority
+    ) -> LayaResult: ...
 
-    def decide(self, request: DecisionRequest) -> list[dict[str, Any]]: ...
+    def decide(self, request: DecisionRequest) -> list[LayaResult]: ...
 
 
 class Activity:

@@ -32,17 +32,18 @@ from pydantic import BaseModel, ValidationError
 from igni_core.core.activity.http import busy_call
 from igni_core.core.decisions.endpoints import Connection, DecisionsEndpoint, DecisionsEndpoints
 from igni_core.core.decisions.schemas import (
-    DecideAnswer,
-    DecideCall,
     Decision,
     DecisionQuestion,
     DecisionRequest,
-    DecisionsFailure,
     DecisionsUnavailable,
-    LayaReading,
+    Priority,
+)
+from igni_core.core.decisions.service_wire import (
+    DecideAnswer,
+    DecideCall,
+    DecisionsFailure,
     PredictAnswer,
     PredictCall,
-    Priority,
 )
 
 Answer = TypeVar("Answer", bound=BaseModel)
@@ -74,13 +75,12 @@ class Laya:
         """
         call = PredictCall(state=state, questions=questions, model=model, priority=priority)
         answer = await self._ask("/v1/predict", call, PredictAnswer)
-        return LayaReading(questions).decision(answer.result, allow_truncated=True)
+        return answer.result.decision(questions, allow_truncated=True)
 
     async def decide(self, request: DecisionRequest) -> list[Decision]:
         """Every context's decision, from Laya's general checkpoints, behind the approvals."""
         answer = await self._ask("/v1/decide", DecideCall(request=request), DecideAnswer)
-        reading = LayaReading(request.questions)
-        return [reading.decision(result) for result in answer.results]
+        return [result.decision(request.questions) for result in answer.results]
 
     async def _ask(self, path: str, call: BaseModel, shape: type[Answer]) -> Answer:
         body = call.model_dump_json()

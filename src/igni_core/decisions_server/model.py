@@ -45,6 +45,7 @@ from typing import Any
 from huggingface_hub import constants as hub
 
 from igni_core.core.air_gap import air_gapped_by_environment
+from igni_core.core.decisions.laya_wire import LayaBatchItem, LayaQuestions, LayaResult
 from igni_core.core.decisions.schemas import (
     DecisionRequest,
     DecisionsUnavailable,
@@ -109,24 +110,28 @@ class LayaModel:
         return self._router is not None
 
     def predict(
-        self, state: dict[str, str], questions: dict[str, Any], model: str, priority: Priority
-    ) -> dict[str, Any]:
-        """Laya's raw answer from one checkpoint."""
+        self, state: dict[str, str], questions: LayaQuestions, model: str, priority: Priority
+    ) -> LayaResult:
+        """Laya's answer from one checkpoint."""
         router = self.load()
         with self.gate.hold(priority):
             try:
-                return dict(router.predict(state, questions, model=model))
+                return LayaResult.model_validate(
+                    router.predict(state, questions.wire(), model=model)
+                )
             except Exception as exc:  # noqa: BLE001 — a checkpoint loads on first use
                 raise self._unavailable(exc) from exc
 
-    def decide(self, request: DecisionRequest) -> list[dict[str, Any]]:
-        """Laya's raw answer per context, from its general checkpoints, behind the approvals."""
+    def decide(self, request: DecisionRequest) -> list[LayaResult]:
+        """Laya's answer per context, from its general checkpoints, behind the approvals."""
         router = self.load()
-        questions = request.laya_questions()
-        batch = [{"state": context, "questions": questions} for context in request.contexts]
+        questions = LayaQuestions.of(request.questions)
+        batch = [
+            LayaBatchItem(state=context, questions=questions).wire() for context in request.contexts
+        ]
         with self.gate.hold(Priority.EXTENSION):
             try:
-                return [dict(result) for result in router.predict_batch(batch)]
+                return [LayaResult.model_validate(r) for r in router.predict_batch(batch)]
             except ValueError as exc:
                 # Laya names the question it cannot read; the request
                 # passed igni's checks, so this is the model's limit.
