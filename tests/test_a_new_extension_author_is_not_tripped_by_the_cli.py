@@ -15,6 +15,7 @@ import pytest
 from click.testing import CliRunner
 
 from igni_core.cli.ext import ext
+from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.origin import ExtensionOrigin
 
 TOOLS_MANIFEST = {
@@ -189,6 +190,25 @@ def test_init_refuses_an_id_igni_would_refuse(run, tmp_path):
     assert result.exit_code != 0
     assert "--id acme.tickets" in result.output
     assert not (tmp_path / "x").exists()
+
+
+@pytest.mark.parametrize("packaging", [(), ("--service",)])
+def test_init_refuses_a_hyphened_id_before_writing_anything(run, tmp_path, packaging):
+    """A hyphen is fine in an id and refused in the RPC grant built from it."""
+    result = run("init", str(tmp_path / "x"), "--id", "acme.my-tickets", *packaging)
+    assert result.exit_code != 0
+    assert "--id acme.tickets" in result.output
+    assert not (tmp_path / "x").exists()
+
+
+@pytest.mark.parametrize("packaging", [(), ("--service",)])
+def test_a_hyphened_directory_scaffolds_a_manifest_igni_accepts(run, tmp_path, packaging):
+    """The default id comes from the directory, and used to keep its hyphen."""
+    target = tmp_path / "my-tickets"
+    assert run("init", str(target), *packaging).exit_code == 0
+    manifest_dir = target / "extension" if packaging else target
+    manifest = ExtensionManifest.model_validate_json((manifest_dir / "manifest.json").read_text())
+    assert manifest.id == "local.mytickets"
 
 
 def test_init_help_counts_the_packagings_there_are(run):

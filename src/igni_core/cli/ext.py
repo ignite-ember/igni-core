@@ -33,6 +33,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import click
+from pydantic import ValidationError
 
 from igni_core.cli.ext_doctor import Findings, NameCheck, ProcessProbe
 from igni_core.cli.ext_manifest_check import ManifestCheck
@@ -44,7 +45,7 @@ from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.plugins.git import GitClient
 from igni_core.extensions.bundle_source import BundleSource, BundleSourceError
 from igni_core.extensions.distribution import OneShotSync
-from igni_core.extensions.manifest import EXTENSION_ID, ExtensionManifest
+from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.profile import DEV_FLAG, DevelopmentFlag
 from igni_core.extensions.store import ExtensionStore, StoreError
 
@@ -436,13 +437,16 @@ def init(directory: Path, extension_id: str | None, shape: str) -> None:
         raise click.ClickException(f"{directory} is not empty")
 
     scaffold = Scaffold(directory, extension_id)
-    if not EXTENSION_ID.match(scaffold.id):
+    try:
+        written = scaffold.write_service() if shape == "service" else scaffold.write_dev()
+    except ValidationError as error:
+        # The manifest is built before anything is written, and the id
+        # is the only thing in it the author chose.
         raise click.ClickException(
             f"{scaffold.id!r} is not a usable extension id: give one with --id, "
-            "reverse-DNS and lower case, e.g. --id acme.tickets"
-        )
-
-    written = scaffold.write_service() if shape == "service" else scaffold.write_dev()
+            "reverse-DNS, lower case and without hyphens, e.g. --id acme.tickets\n"
+            f"{error}"
+        ) from error
 
     click.echo(f"created {directory} ({scaffold.id})")
     for name in written:
