@@ -24,6 +24,7 @@ import pytest
 
 from igni_core.backend.activity import ActivityState, SessionActivity
 from igni_core.backend.schemas_hitl import ToolCallArgs
+from igni_core.backend.schemas_visualization import VisualizationAction
 from igni_core.backend.server import BackendServer
 from igni_core.core.config.settings import load_settings
 from igni_core.core.config.tool_permissions import PermissionLevel
@@ -144,11 +145,17 @@ def test_a_visualization_action_is_recorded_and_echoed(backend):
     seen: list[tuple[str, dict]] = []
     backend.register_broadcast(lambda e: seen.append((e.channel, e.to_payload())))
 
-    result = backend.dispatch_visualization_action("select_row", {"row": 3})
+    result = backend.dispatch_visualization_action(
+        VisualizationAction(action="select_row", params={"row": 3})
+    )
 
     assert result.ok is True
     assert result.action == "select_row"
     assert result.params == {"row": 3}
+    assert (
+        "visualization_action_dispatched",
+        {"action": "select_row", "params": {"row": 3}},
+    ) in seen
 
 
 async def test_an_event_recorded_is_an_event_the_session_replays(backend):

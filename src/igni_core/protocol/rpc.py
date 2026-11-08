@@ -124,7 +124,7 @@ class RpcMethod(StrEnum):
     # User interacted with a component inside a ``<JsonRenderView>``
     # card (e.g. clicked a Button, changed a Select). The FE
     # forwards the action name + params here so agents can react.
-    # BE stashes the last N events into ``session._visualization_actions``
+    # BE keeps the last N events on ``VisualizationActionBus``
     # and pushes ``visualization_action_dispatched`` so any
     # listener (or a future agent tool that polls for actions) can
     # observe them. Returns ``{ok: bool, action, params}``.

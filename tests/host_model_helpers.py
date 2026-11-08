@@ -34,6 +34,10 @@ from igni_core.backend.schemas_history import UserTurn
 from igni_core.backend.schemas_panels import OutputStyleInfo, OutputStylesResult
 from igni_core.backend.schemas_pool import ProjectDirs
 from igni_core.backend.schemas_rpc import GroupPolicyPackResult
+from igni_core.backend.schemas_visualization import (
+    VisualizationAction,
+    VisualizationActionResult,
+)
 from igni_core.backend.server_processes import ProcessRow
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_pool import SessionRuntime
@@ -328,8 +332,10 @@ class FakeSession:
     async def loop_pause(self) -> bool:
         return True
 
-    def dispatch_visualization_action(self, action: str, params: dict | None = None) -> dict:
-        return {"ok": True, "action": action, "params": dict(params or {})}
+    def dispatch_visualization_action(
+        self, entry: VisualizationAction
+    ) -> VisualizationActionResult:
+        return VisualizationActionResult.echo(entry)
 
     async def truncate_history(self, session_id: str, run_id: str) -> dict:
         return {"ok": True, "run_id": run_id}

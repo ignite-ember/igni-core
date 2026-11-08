@@ -41,7 +41,10 @@ from igni_core.backend.schemas_rpc import (
     RunShellResult,
 )
 from igni_core.backend.schemas_search import SearchCodeResult
-from igni_core.backend.schemas_visualization import VisualizationActionResult
+from igni_core.backend.schemas_visualization import (
+    VisualizationAction,
+    VisualizationActionResult,
+)
 from igni_core.backend.server_files import ReadFileResult
 from igni_core.core.agents import AgentInfo
 from igni_core.core.tools.todo import TodoItemWire
@@ -118,7 +121,9 @@ class PanelRpcHandler(RpcHandler):
     def dispatch_visualization_action(
         self, args: VisualizationActionArgs
     ) -> VisualizationActionResult:
-        return self._ctx.backend.dispatch_visualization_action(args.action, args.params)
+        return self._ctx.backend.dispatch_visualization_action(
+            VisualizationAction(action=args.action, params=args.params or {})
+        )
 
     @rpc(RpcMethod.LIST_BACKGROUND_PROCESSES)
     def list_bg_processes(self, args: WireArgs) -> list[ProcessRow]:

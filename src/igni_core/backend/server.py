@@ -47,7 +47,10 @@ if TYPE_CHECKING:
     )
     from igni_core.backend.schemas_plan import LatestPlanResult
     from igni_core.backend.schemas_rpc import GroupPolicyPackResult
-    from igni_core.backend.schemas_visualization import VisualizationActionResult
+    from igni_core.backend.schemas_visualization import (
+        VisualizationAction,
+        VisualizationActionResult,
+    )
     from igni_core.backend.server_files import ReadFileResult
     from igni_core.backend.server_processes import ProcessRow
     from igni_core.core.agents import AgentInfo
@@ -351,9 +354,9 @@ class BackendServer:
         return self.controllers.plan_snapshots.todos()
 
     def dispatch_visualization_action(
-        self, action: str, params: dict | None = None
+        self, entry: VisualizationAction
     ) -> VisualizationActionResult:
-        return self.controllers.viz_actions.dispatch(action, params)
+        return self.controllers.viz_actions.dispatch(entry)
 
     def list_background_processes(self) -> list[ProcessRow]:
         return self.controllers.processes.list()
