@@ -45,7 +45,7 @@ def _envelope(
         meta=WorkflowMeta(
             name=name,
             description=f"smoke {name}",
-            whenToUse="tests",
+            when_to_use="tests",
             phases=[WorkflowPhase(title="plan")],
         ),
         path=path,

@@ -33,7 +33,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, JsonValue, ValidationError
 
 from igni_core.backend.schemas_workflow_events import (
     WorkflowCancelCommand,
@@ -189,7 +189,7 @@ class WorkflowRuntime:
         envelope: WorkflowMetaEnvelope,
         *,
         session_id: str,
-        args: dict[str, Any],
+        args: dict[str, JsonValue],
     ) -> WorkflowRuntimeProcess:
         """Spawn a run of the workflow ``envelope`` describes."""
         proc = await asyncio.create_subprocess_exec(

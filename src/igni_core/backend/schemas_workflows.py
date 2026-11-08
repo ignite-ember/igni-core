@@ -30,7 +30,7 @@ from enum import StrEnum
 from typing import Any, ClassVar, Literal, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
 from pydantic_core import ErrorDetails
 
 # ── Discovery (LIST_WORKFLOWS) ─────────────────────────────────────
@@ -50,14 +50,15 @@ class WorkflowMeta(BaseModel):
 
     Mirrors the CC convention. The runner reads this once at
     discovery and surfaces it to the FE for the workflow
-    autocomplete + describe panel.
+    autocomplete + describe panel. ``when_to_use`` is ``whenToUse``
+    on the wire, both ways.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_by_name=True, serialize_by_alias=True)
 
     name: str
     description: str = ""
-    whenToUse: str = ""
+    when_to_use: str = Field("", alias="whenToUse")
     phases: list[WorkflowPhase] = Field(default_factory=list)
 
 
@@ -81,7 +82,7 @@ class WorkflowMetaEnvelope(BaseModel):
         return WorkflowListItem(
             name=self.meta.name,
             description=self.meta.description,
-            when_to_use=self.meta.whenToUse,
+            when_to_use=self.meta.when_to_use,
             phases=self.meta.phases,
             path=self.path,
         )
@@ -152,18 +153,19 @@ class WorkflowListRequest(_RpcParams):
 class WorkflowRunRequest(_RpcParams):
     """``RUN_WORKFLOW`` params.
 
-    ``args`` is a free-form bag on purpose: it is handed to the
-    workflow script as JSON, and each workflow reads its own keys.
+    ``args`` is the workflow's own JSON input: it is handed to the
+    script as-is, and each workflow defines and reads its own keys,
+    so the only contract here is that it is a JSON object.
     """
 
     rpc_name: ClassVar[str] = "run_workflow"
 
     name: str = Field(min_length=1)
-    args: dict[str, Any] = Field(default_factory=dict)
+    args: dict[str, JsonValue] = Field(default_factory=dict)
 
     @field_validator("args", mode="before")
     @classmethod
-    def _absent_args_are_empty(cls, value: Any) -> Any:
+    def _absent_args_are_empty(cls, value: object) -> object:
         return value or {}
 
 
