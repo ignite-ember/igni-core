@@ -60,12 +60,13 @@ def test_only_a_web_address_is_a_home_page(tmp_path: Path) -> None:
     assert ExtensionWebHome(store).url_for(m) is None
 
 
-async def test_the_extension_list_carries_it_for_the_window() -> None:
+async def test_the_extension_list_carries_it_for_the_window(tmp_path: Path) -> None:
     """``list_extensions`` is what the Extensions panel and pages draw from."""
     registry = ExtensionRegistry()
     registry.install(manifest("acme.reviewer", host=["chat.read"]), state=ExtensionState.READY)
     registry.install(manifest("acme.plain"), state=ExtensionState.READY)
-    ExtensionStore().record_distribution(record("acme.reviewer", "https://reviewer.acme.test"))
+    store = ExtensionStore(tmp_path)
+    store.record_distribution(record("acme.reviewer", "https://reviewer.acme.test"))
     ctx = RpcHandlerContext(
         backend=None,
         file_completion=MagicMock(),
@@ -74,6 +75,7 @@ async def test_the_extension_list_carries_it_for_the_window() -> None:
         push=None,
         workflows=None,  # type: ignore[arg-type]
         extensions=ExtensionRpc(registry),  # type: ignore[arg-type]
+        extension_store=store,
     )
 
     listed = await ExtensionsRpcHandler(ctx).list_extensions({})

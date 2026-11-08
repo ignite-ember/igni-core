@@ -657,6 +657,38 @@ class TestExtensionsAndTheirWebHome:
             {"values": {"serviceUrl": "https://x.test"}}
         ]
 
+    async def test_a_refused_setting_reaches_the_extension_and_is_not_a_signal(
+        self, rig: HostRig
+    ) -> None:
+        ext = rig.install()
+        assert rig.model is not None
+        sink = Sink()
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["self.settings_changed"]
+        )
+        message = refused(await rig.ask(ext, "set", "self.settings", to={"backdoor": 1}), "refused")
+        assert "backdoor" in message
+        assert "backdoor" not in ok(await rig.ask(ext, "get", "self.settings"))
+        assert sink.values("self.settings_changed") == []
+
+    async def test_a_refused_window_settings_write_is_not_a_signal(self, rig: HostRig) -> None:
+        ext = rig.install()
+        assert rig.model is not None and rig.orchestrator is not None
+        sink = Sink()
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["self.settings_changed"]
+        )
+        await rig.orchestrator.dispatch(
+            msg.RPCRequest(
+                id="fe-3",
+                method="set_extension_settings",
+                args={"extension_id": ext, "values": {"backdoor": 1}},
+            )
+        )
+        [reply] = [m for m in rig.windows.of(msg.RPCResponse) if m.id == "fe-3"]
+        assert reply.error and "backdoor" in reply.error
+        assert sink.values("self.settings_changed") == []
+
 
 class TestAPageReachesTheSameModel:
     """A page's ``bridge.host…`` arrives as the ``host_model`` RPC."""

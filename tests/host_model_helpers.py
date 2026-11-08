@@ -391,7 +391,7 @@ class HostRig:
         self.windows = CapturingTransport()
         self.transport = ObservedTransport(self.windows)
         self.registry = ExtensionRegistry()
-        # The default store, as the RPC handlers use it; ``conftest``
+        # The default store, handed to the RPC handlers; ``conftest``
         # points the home directory it lives under at a temp dir.
         self.store = ExtensionStore()
         self.session = FakeSession("boot", self.project)
@@ -411,6 +411,7 @@ class HostRig:
             login=login,
             push=push,
             extensions=extensions,
+            extension_store=self.store,
         )
         settings = SimpleNamespace(
             storage=SimpleNamespace(data_dir=str(self.tmp / "data"), database_url=None)
@@ -421,7 +422,11 @@ class HostRig:
                 backend=self.session, rpc_table=router.build_table(), router=router, queue=queue
             ),
             wiring=PoolWiring(
-                transport=self.transport, push_bridge=push, login=login, extensions=extensions
+                transport=self.transport,
+                push_bridge=push,
+                login=login,
+                extensions=extensions,
+                extension_store=self.store,
             ),
             settings=settings,
             dirs=ProjectDirs(project_dir=self.project),

@@ -211,6 +211,15 @@ class ExtensionListResult(BaseModel):
     extensions: list[ExtensionSummary] = Field(default_factory=list)
 
 
+class SetExtensionSettingsArgs(BaseModel):
+    """``set_extension_settings``'s arguments: whose settings, and the new values."""
+
+    extension_id: str
+    #: Setting key to value. Merged over what is stored; a key the
+    #: extension does not declare is refused.
+    values: dict[str, Any]
+
+
 def _setting(setting: Setting) -> ExtensionSetting:
     return ExtensionSetting(
         key=setting.key,

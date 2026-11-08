@@ -55,6 +55,7 @@ from igni_core.backend.server import BackendServer
 from igni_core.backend.workflow_runner import WorkflowRunner
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.store import ExtensionStore
 from igni_core.notifications.center import NotificationCenter
 from igni_core.protocol.rpc import RpcMethod, validate_rpc_table
 
@@ -93,6 +94,7 @@ class RpcRouter:
         push: PushNotificationBridge,
         extensions: ExtensionRpc | None = None,
         origins: ExtensionOrigins | None = None,
+        extension_store: ExtensionStore | None = None,
         notifications: NotificationCenter | None = None,
     ) -> None:
         # Shared services the panel-cluster handlers depend on.
@@ -112,6 +114,7 @@ class RpcRouter:
             workflows=self._workflows,
             extensions=extensions,
             origins=origins,
+            extension_store=extension_store,
             notifications=notifications,
         )
         # Order is descriptive, not load-bearing — the merge below

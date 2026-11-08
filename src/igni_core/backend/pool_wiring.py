@@ -14,6 +14,7 @@ from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.store import ExtensionStore
 
 
 def _no_extensions() -> ExtensionRpc:
@@ -37,6 +38,7 @@ class PoolWiring:
     login: LoginCoordinator
     extensions: ExtensionRpc = field(default_factory=_no_extensions)
     origins: Any = None
+    extension_store: ExtensionStore | None = None
     notifications: Any = None
 
     def stamped(self, backend: BackendLike) -> SessionStampingTransport:
@@ -51,6 +53,7 @@ class PoolWiring:
             push=bridge,
             extensions=self.extensions,
             origins=self.origins,
+            extension_store=self.extension_store,
             notifications=self.notifications,
         )
 

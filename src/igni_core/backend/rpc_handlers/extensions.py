@@ -13,18 +13,32 @@ they were in, or which loopback port their UI was on.
 
 from __future__ import annotations
 
-from igni_core.backend.rpc_handlers.base import RpcHandler, rpc
-from igni_core.backend.schemas_extensions import ExtensionListResult, ExtensionSummary
-from igni_core.extensions.store import ExtensionStore
+from dataclasses import dataclass
+
+from igni_core.backend.rpc_handlers.base import RpcHandler, WireArgs, rpc
+from igni_core.backend.schemas_extensions import (
+    ExtensionListResult,
+    ExtensionSummary,
+    SetExtensionSettingsArgs,
+)
+from igni_core.extensions.store import StoreError
 from igni_core.extensions.web_home import ExtensionWebHome
 from igni_core.protocol.rpc import RpcMethod
+
+
+@dataclass(frozen=True)
+class SettingsSaved:
+    """Whether a settings write was stored, and if not, why not."""
+
+    ok: bool
+    error: str = ""
 
 
 class ExtensionsRpcHandler(RpcHandler):
     """What the client needs to render installed extensions."""
 
     @rpc(RpcMethod.LIST_EXTENSIONS)
-    async def list_extensions(self, args: dict) -> ExtensionListResult:
+    async def list_extensions(self, args: WireArgs) -> ExtensionListResult:
         """Every installed extension, including the broken ones.
 
         A ``FAILED`` extension is returned with its reason rather than
@@ -32,33 +46,10 @@ class ExtensionsRpcHandler(RpcHandler):
         missing" is better served by a row that says why than by an
         absence they have to interpret.
         """
-        extensions = self._ctx.extensions
-        if extensions is None:
-            # A backend built without extension support. An empty list
-            # is the truthful answer: nothing is installed, and
-            # nothing can be.
-            return ExtensionListResult()
+        return ExtensionListResult(extensions=self._summaries())
 
-        origins = self._ctx.origins
-        registry = extensions.registry
-        store = ExtensionStore()
-        web_home = ExtensionWebHome(store)
-        return ExtensionListResult(
-            extensions=[
-                ExtensionSummary.of(
-                    entry,
-                    origins.url_for(extension_id) if origins is not None else None,
-                    store.settings(entry.manifest),
-                    web_home.url_for(entry.manifest),
-                    origins.service_url_for(extension_id) if origins is not None else None,
-                )
-                for extension_id in registry.ids()
-                if (entry := registry.get(extension_id)) is not None
-            ]
-        )
-
-    @rpc(RpcMethod.SET_EXTENSION_SETTINGS)
-    async def set_extension_settings(self, args: dict) -> ExtensionListResult:
+    @rpc(RpcMethod.SET_EXTENSION_SETTINGS, args=SetExtensionSettingsArgs)
+    async def set_extension_settings(self, args: SetExtensionSettingsArgs) -> ExtensionListResult:
         """Store settings an administrator changed.
 
         Returns the whole list rather than the one row: the caller is
@@ -66,23 +57,56 @@ class ExtensionsRpcHandler(RpcHandler):
         everything, and one round trip is simpler than a merge it
         would have to get right.
 
+        A refusal leaves as an RPC error, not as a reply. Two callers
+        depend on that: the web client's Extensions panel shows the
+        error when the call rejects and otherwise redraws as saved, and
+        the after-RPC write signals tell the extension its settings
+        changed for any answer that is not an error.
+
         The values reach the extension as launch params on its next
         mount. Not pushed to a running frame — `params` can carry
         them, but an extension that reconfigured itself mid-render is
         a harder promise than this is worth until somebody asks.
         """
+        saved = self._save_settings(args)
+        if not saved.ok:
+            raise ValueError(saved.error)
+        return ExtensionListResult(extensions=self._summaries())
+
+    def _save_settings(self, args: SetExtensionSettingsArgs) -> SettingsSaved:
         extensions = self._ctx.extensions
-        if extensions is None:
-            raise ValueError("this backend has no extension support")
-
-        extension_id = str(args.get("extension_id") or "")
-        entry = extensions.registry.get(extension_id)
+        store = self._ctx.extension_store
+        if extensions is None or store is None:
+            return SettingsSaved(ok=False, error="this backend has no extension support")
+        entry = extensions.registry.get(args.extension_id)
         if entry is None:
-            raise ValueError(f"no extension '{extension_id}' is installed")
+            return SettingsSaved(ok=False, error=f"no extension '{args.extension_id}' is installed")
+        try:
+            store.save_settings(entry.manifest, args.values)
+        except StoreError as exc:
+            return SettingsSaved(ok=False, error=str(exc))
+        return SettingsSaved(ok=True)
 
-        values = args.get("values")
-        if not isinstance(values, dict):
-            raise ValueError("values must be an object of setting key to value")
+    def _summaries(self) -> list[ExtensionSummary]:
+        extensions = self._ctx.extensions
+        store = self._ctx.extension_store
+        if extensions is None or store is None:
+            # A backend built without extension support. An empty list
+            # is the truthful answer: nothing is installed, and
+            # nothing can be.
+            return []
 
-        ExtensionStore().save_settings(entry.manifest, values)
-        return await self.list_extensions({})
+        origins = self._ctx.origins
+        registry = extensions.registry
+        web_home = ExtensionWebHome(store)
+        return [
+            ExtensionSummary.of(
+                entry,
+                origins.url_for(extension_id) if origins is not None else None,
+                store.settings(entry.manifest),
+                web_home.url_for(entry.manifest),
+                origins.service_url_for(extension_id) if origins is not None else None,
+            )
+            for extension_id in registry.ids()
+            if (entry := registry.get(extension_id)) is not None
+        ]

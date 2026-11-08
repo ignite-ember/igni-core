@@ -176,6 +176,7 @@ class BackendApp:
             push=push_bridge,
             extensions=extensions.rpc,
             origins=extensions.origins,
+            extension_store=store,
             notifications=notifications.center,
         )
         rpc_table = router.build_table()
@@ -203,6 +204,7 @@ class BackendApp:
                 login=login,
                 extensions=extensions.rpc,
                 origins=extensions.origins,
+                extension_store=store,
                 notifications=notifications.center,
             ),
             settings=settings,

@@ -32,6 +32,7 @@ from igni_core.backend.server import BackendServer
 from igni_core.backend.workflow_runner import WorkflowRunner
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.store import ExtensionStore
 from igni_core.notifications.center import NotificationCenter
 from igni_core.protocol.rpc import RpcMethod
 
@@ -115,10 +116,12 @@ class RpcHandlerContext:
     workflows: WorkflowRunner
     # The extension surfaces. ``extensions`` owns the registry every
     # dispatcher authorises against; ``origins`` knows which loopback
-    # port each extension's UI is on. Both optional: a headless
-    # deployment installs no UI and a test builds neither.
+    # port each extension's UI is on; ``extension_store`` holds the
+    # installed bundles and their settings. All optional: a headless
+    # deployment installs no UI and a test builds none of them.
     extensions: ExtensionRpc | None = None
     origins: ExtensionOrigins | None = None
+    extension_store: ExtensionStore | None = None
     # The floor's notification center. Process-level, like
     # ``extensions``: one person, one set of notifications, whichever
     # session asks.
