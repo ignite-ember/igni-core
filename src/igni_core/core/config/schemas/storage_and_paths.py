@@ -90,7 +90,7 @@ class GroupPolicyConfig(BaseModel):
     #: **Managed-only.** Honoured from the managed-settings file and from
     #: ``IGNI_GROUP_POLICY_TRUSTED_KEYS`` (comma-separated), never from the
     #: user's or a project's config or from the group pack itself
-    #: (``ManagedOnlyTier`` in ``merge_plan.py``): whoever could set it could
+    #: (``ManagedOnlyTier`` in ``tiers/managed.py``): whoever could set it could
     #: pin a key of their own.
     trusted_keys: list[str] = Field(default_factory=list)
 

@@ -191,7 +191,7 @@ class Settings(BaseModel):
     # ``portal_url``, ``update_endpoint`` and ``plugins.marketplaces``
     # are inside without being listed, and so is loopback. A project's
     # ``.igni/config.yaml`` cannot set it (``ProjectYamlTier`` in
-    # ``merge_plan.py``): a cloned repository must not widen the air
+    # ``tiers/project.py``): a cloned repository must not widen the air
     # gap it runs under.
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     #: The variable a deployment turns air-gapped mode on with. It only
@@ -219,13 +219,13 @@ class Settings(BaseModel):
     display: DisplayConfig = Field(default_factory=DisplayConfig)
     #: Which folders may run their own code (``core/workspace_trust``).
     #: Managed-only: a user's, a project's or the CLI's value is discarded
-    #: (``WorkspaceTrustTier`` in ``merge_plan.py``).
+    #: (``WorkspaceTrustTier`` in ``tiers/organisation.py``).
     workspace_trust: WorkspaceTrustConfig = Field(default_factory=WorkspaceTrustConfig)
 
     #: OpenTelemetry to the customer's own collector (``core/observability``).
     #: No default endpoint: with none, nothing is exported. Managed-only: a
     #: user's, a project's or the CLI's value is discarded (``TelemetryTier``
-    #: in ``merge_plan.py``); the managed file, the group policy and the
+    #: in ``tiers/organisation.py``); the managed file, the group policy and the
     #: ``OTEL_*`` environment set it. Agno's own telemetry to
     #: os-api.agno.com is a different thing, and always off
     #: (``core/agno_telemetry.py``).
@@ -344,7 +344,7 @@ class Settings(BaseModel):
 
 
 def load_settings(
-    cli_overrides: CliOverrides | dict[str, Any] | None = None,
+    cli_overrides: CliOverrides | None = None,
     project_dir: Path | None = None,
     group_policy_fetcher: Callable[[], GroupPolicyPack | None] | None = None,
 ) -> Settings:

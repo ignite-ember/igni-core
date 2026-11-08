@@ -17,7 +17,7 @@ This block lets an organisation narrow that decision:
 
 **Managed-only.** Honoured from the managed-settings file, the group policy
 pack and the environment, never from a user's or a project's config or the
-command line: ``WorkspaceTrustTier`` in ``merge_plan.py`` puts the block back
+command line: ``WorkspaceTrustTier`` in ``tiers/organisation.py`` puts the block back
 to its defaults before the organisation tiers merge, so a repository cannot
 trust itself and a person cannot opt out of their organisation's rule.
 

@@ -30,8 +30,9 @@ from igni_core.cli.options import CliOptions
 from igni_core.core.config.accumulator import SettingsAccumulator
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
-from igni_core.core.config.merge_plan import CliTier, GroupPolicyTier
 from igni_core.core.config.models import CliOverrides
+from igni_core.core.config.tiers.cli import CliRatchet, CliTier
+from igni_core.core.config.tiers.group_policy import GroupPolicyTier
 
 BASELINE = {
     "permissions": {
@@ -63,9 +64,11 @@ def _pack(payload: dict) -> GroupPolicyPack:
 def _resolve(options: CliOptions, group_payload: dict):
     """Run the CLI tier then the group tier, as ``default()`` wires them."""
     accumulator = SettingsAccumulator.from_defaults(BASELINE)
-    cli_tier = CliTier(CliOverrides.from_options(options))
-    accumulator = cli_tier.apply(accumulator)
-    group_tier = GroupPolicyTier(fetcher=lambda: _pack(group_payload), cli_tier=cli_tier)
+    overrides = CliOverrides.from_options(options)
+    accumulator = CliTier(overrides).apply(accumulator)
+    group_tier = GroupPolicyTier(
+        fetcher=lambda: _pack(group_payload), ratchet=CliRatchet.of(overrides)
+    )
     accumulator = group_tier.apply(accumulator)
     return accumulator.payload["permissions"], group_tier
 
@@ -130,7 +133,7 @@ class TestTheRatchetHolds:
             def emit(self, record: logging.LogRecord) -> None:
                 records.append(record)
 
-        module_logger = logging.getLogger("igni_core.core.config.merge_plan")
+        module_logger = logging.getLogger("igni_core.core.config.tiers.group_policy")
         handler = _Collect()
         previous_level = module_logger.level
         assert not module_logger.disabled, (
@@ -201,16 +204,16 @@ class TestNothingElseChanged:
 
     def test_no_group_at_all(self):
         accumulator = SettingsAccumulator.from_defaults(BASELINE)
-        cli_tier = CliTier(CliOverrides.from_options(CliOptions(strict=True)))
-        accumulator = cli_tier.apply(accumulator)
+        overrides = CliOverrides.from_options(CliOptions(strict=True))
+        accumulator = CliTier(overrides).apply(accumulator)
 
-        group_tier = GroupPolicyTier(fetcher=lambda: None, cli_tier=cli_tier)
+        group_tier = GroupPolicyTier(fetcher=lambda: None, ratchet=CliRatchet.of(overrides))
         result = group_tier.apply(accumulator)
 
         assert result.payload["permissions"]["shell_execute"] == "deny"
 
-    def test_the_tier_works_without_a_cli_tier(self):
-        """``cli_tier`` is optional, because tests and one-off migrations
+    def test_the_tier_works_without_a_ratchet(self):
+        """``ratchet`` is optional, because tests and one-off migrations
         construct this tier directly. With none, there is nothing to
         ratchet against and the group simply wins."""
         accumulator = SettingsAccumulator.from_defaults(BASELINE)

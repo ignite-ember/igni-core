@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 
 from igni_core.core.config.accumulator import SettingsAccumulator
-from igni_core.core.config.merge_plan import ProjectYamlTier
+from igni_core.core.config.tiers.project import ProjectYamlTier
 
 PROJECT = {
     "models": {

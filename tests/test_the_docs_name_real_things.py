@@ -339,13 +339,13 @@ def test_no_document_installs_or_clones_by_an_old_name(doc):
 
 
 def test_the_readme_puts_the_server_in_the_user_config():
-    """A project's config may not name a server (`merge_plan.py`), so the
+    """A project's config may not name a server (`tiers/project.py`), so the
     README's old advice — `api_url` in `.igni/config.local.yaml` — was
     ignored with a warning, and the CLI never reached the server."""
     readme = (_ROOT / "README.md").read_text()
     section = readme[readme.index("To point it at your own igni server") :][:1200]
     assert "~/.igni/config.yaml" in section
     assert "portal_url" in section
-    from igni_core.core.config.merge_plan import ProjectYamlTier
+    from igni_core.core.config.tiers.project import ProjectYamlTier
 
-    assert {"api_url", "portal_url"} <= set(ProjectYamlTier._NOT_FROM_A_PROJECT)
+    assert {"api_url", "portal_url"} <= set(ProjectYamlTier.NOT_FROM_A_PROJECT.keys)

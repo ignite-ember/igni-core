@@ -54,16 +54,10 @@ from igni_core.core.config.accumulator import SettingsAccumulator
 from igni_core.core.config.cloud_model_migrator import CloudModelMigrator, MigrationResult
 from igni_core.core.config.config_io import DictMerger, YamlSource
 from igni_core.core.config.managed_policy import ManagedPolicySource
-from igni_core.core.config.merge_plan import (
-    CliTier,
-    CloudMigrationTier,
-    JsonFragmentTier,
-    ManagedTier,
-    SettingsMergePlan,
-    Tier,
-    YamlTier,
-)
+from igni_core.core.config.merge_plan import SettingsMergePlan
 from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.tiers.cli import CliTier
+from igni_core.core.config.tiers.files import JsonFragmentTier, YamlTier
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -189,13 +183,8 @@ class SettingsLoader:
         self._accumulator = JsonFragmentTier(path).apply(self._accumulator)
         return self
 
-    def merge_cli(self, overrides: CliOverrides | dict[str, Any] | None) -> SettingsLoader:
-        """Merge in-memory CLI overrides. ``None`` / empty is a no-op.
-
-        Accepts either the typed :class:`CliOverrides` bundle OR a
-        raw dict for back-compat with call sites (production +
-        tests) that still hand-build the dict shape.
-        """
+    def merge_cli(self, overrides: CliOverrides | None) -> SettingsLoader:
+        """Merge in-memory CLI overrides. ``None`` / empty is a no-op."""
         self._accumulator = CliTier(overrides).apply(self._accumulator)
         return self
 
@@ -248,7 +237,7 @@ class SettingsLoader:
     @classmethod
     def load(
         cls,
-        cli_overrides: CliOverrides | dict[str, Any] | None = None,
+        cli_overrides: CliOverrides | None = None,
         project_dir: Path | None = None,
         group_policy_fetcher: Callable[[], GroupPolicyPack | None] | None = None,
     ) -> Settings:
@@ -298,7 +287,8 @@ class SettingsLoader:
         trust_policy = cls._workspace_trust_policy(managed_path, fetch)
         from igni_core.core.workspace_trust import WorkspaceTrust
 
-        WorkspaceTrust.shared().set_policy(trust_policy)
+        workspace_trust = WorkspaceTrust.shared()
+        workspace_trust.set_policy(trust_policy)
 
         accumulator = SettingsAccumulator.from_defaults(Settings.default_dict())
         plan = SettingsMergePlan.default(
@@ -307,6 +297,7 @@ class SettingsLoader:
             accumulator=accumulator,
             settings_cls=Settings,
             defaults_models=Settings.defaults().models,
+            workspace_trust=workspace_trust,
             managed_path_provider=managed_path,
             group_policy_fetcher=fetch,
         )
@@ -401,23 +392,4 @@ class SettingsLoader:
             perms.mode = clamped.value
 
 
-# ── Re-exports for external callers ────────────────────────────────
-#
-# The pre-refactor module owned ``deep_merge`` / ``load_yaml`` as
-# staticmethods on ``SettingsLoader``. Those have moved to
-# :mod:`config_io` (real home) but the ``SettingsLoader`` shims
-# above still delegate through, so no external caller needs to
-# update its import. Callers writing NEW code should reach for
-# :class:`DictMerger` and :class:`YamlSource` directly.
-
-__all__ = [
-    "CliTier",
-    "CloudMigrationTier",
-    "JsonFragmentTier",
-    "ManagedTier",
-    "SettingsAccumulator",
-    "SettingsLoader",
-    "SettingsMergePlan",
-    "Tier",
-    "YamlTier",
-]
+__all__ = ["SettingsLoader"]

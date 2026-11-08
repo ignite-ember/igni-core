@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 class GroupPolicyEnvironment(BaseModel):
     """``IGNI_GROUP_POLICY_TRUSTED_KEYS`` and ``IGNI_GROUP_POLICY_REQUIRED``, read.
 
-    Both are managed-only settings (``ManagedOnlyTier`` in ``merge_plan.py``):
+    Both are managed-only settings (``ManagedOnlyTier`` in ``tiers/managed.py``):
     the environment can pin keys and turn ``required`` on, never off.
     """
 

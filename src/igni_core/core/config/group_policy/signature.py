@@ -33,7 +33,7 @@ pack only after :class:`PackSignatureVerifier` has accepted it.
    a key it generated *is* its thumbprint, but the thumbprint is computed
    here, never read from the ``kid``). Honoured only from the
    managed-settings file or ``IGNI_GROUP_POLICY_TRUSTED_KEYS``
-   (:class:`~igni_core.core.config.merge_plan.ManagedOnlyTier`). The key
+   (:class:`~igni_core.core.config.tiers.managed.ManagedOnlyTier`). The key
    material still comes from a JWKS — live, or the copy cached beside the
    pack — but only a key whose thumbprint is pinned is used, so a cached
    JWKS anybody could have rewritten cannot introduce a key.

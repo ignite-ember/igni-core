@@ -184,7 +184,7 @@ class ModelRegistryEntry(BaseModel):
         # Bounded timeout so a hung ``api_key_cmd`` (e.g. a keychain
         # prompt that never returns) can't wedge session bring-up.
         try:
-            result = subprocess.run(  # noqa: S603 — the user's own key command; from a project only once trusted (merge_plan)
+            result = subprocess.run(  # noqa: S603 — the user's own key command; from a project only once trusted (tiers/project)
                 shlex.split(self.api_key_cmd),
                 capture_output=True,
                 text=True,

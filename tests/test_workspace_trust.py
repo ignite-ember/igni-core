@@ -463,7 +463,7 @@ def test_user_and_project_config_cannot_set_workspace_trust(repo, tmp_path):
     )
     _trust().trust(repo)  # even a trusted project cannot set it
 
-    settings = load_settings(project_dir=repo, cli_overrides={"workspace_trust": {"mode": "never"}})
+    settings = load_settings(project_dir=repo)
 
     assert settings.workspace_trust == WorkspaceTrustConfig()
     assert _trust().decide(other).state == "ask"

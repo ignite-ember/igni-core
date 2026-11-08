@@ -8,7 +8,7 @@ the organisation, who controls the server and writes the pack, so nothing the
 server does can be the control. This is the control, and it is the
 developer's: ``hooks.group`` in their own ``~/.igni/config.yaml`` or on their
 command line, which neither a project, the group policy nor the managed file
-can set (``DeveloperOnlyTier`` in ``core/config/merge_plan.py``).
+can set (``DeveloperOnlyTier`` in ``core/config/tiers/developer.py``).
 
 * ``run`` — the group's hooks run (the default, and the behaviour before this
   existed).

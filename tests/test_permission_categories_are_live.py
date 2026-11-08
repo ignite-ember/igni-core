@@ -116,7 +116,7 @@ class TestReadOnlyIsAWall:
         from igni_core.core.config.models import CliOverrides
         from igni_core.core.config.settings import load_settings
 
-        payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
+        payload = CliOverrides.from_options(CliOptions(read_only=True))
         perms = load_settings(cli_overrides=payload).permissions
 
         assert _decide(perms, "run_shell_command", {"command": "cat setup.py"}) == "ALLOW"
@@ -136,7 +136,7 @@ class TestReadOnlyIsAWall:
         from igni_core.core.config.settings import load_settings
         from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
 
-        payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
+        payload = CliOverrides.from_options(CliOptions(read_only=True))
         perms = load_settings(cli_overrides=payload).permissions
         registry = ToolHintsRegistry.shared()
         registry.declare(

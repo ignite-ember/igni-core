@@ -41,6 +41,7 @@ from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
 from igni_core.core.config.group_policy.trust import PackTrust
+from igni_core.core.config.models import CliOverrides, PermissionOverrides
 from igni_core.core.config.settings import load_settings
 from tests.group_policy_signing import ISSUER, sign_in, store
 
@@ -77,7 +78,7 @@ class TestTheFacadeCarriesTheFetcher:
         pack = _pack({"permissions": {"shell_execute": "deny"}})
 
         settings = load_settings(
-            cli_overrides={"permissions": {"shell_execute": "allow"}},
+            cli_overrides=CliOverrides(permissions=PermissionOverrides(shell_execute="allow")),
             project_dir=tmp_path,
             group_policy_fetcher=lambda: pack,
         )
@@ -90,7 +91,7 @@ class TestTheFacadeCarriesTheFetcher:
         pack = _pack({"permissions": {"shell_execute": "allow"}})
 
         settings = load_settings(
-            cli_overrides={"permissions": {"shell_execute": "deny"}},
+            cli_overrides=CliOverrides(permissions=PermissionOverrides(shell_execute="deny")),
             project_dir=tmp_path,
             group_policy_fetcher=lambda: pack,
         )

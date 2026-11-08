@@ -58,6 +58,7 @@ from pydantic import BaseModel, Field
 
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.models import CliOverrides
 from igni_core.core.config.schemas.telemetry import OtlpConfig, TelemetryConfig
 from igni_core.core.config.settings import Settings, SettingsLoader, load_settings
 from igni_core.core.observability import OtelRuntime, OtlpTarget
@@ -376,9 +377,9 @@ class TestOnlyTheOrganisationNamesTheCollector:
         assert otlp.capture_content is False
         assert "telemetry may be set only in the managed-settings file" in caplog.text
 
-    def test_the_command_line_cannot_name_it_either(self, project):
-        cli = {"telemetry": {"otlp": {"endpoint": "http://cli-chosen.example:4318"}}}
-        assert load_settings(project_dir=project, cli_overrides=cli).telemetry.otlp.endpoint == ""
+    def test_the_command_line_cannot_name_it_either(self):
+        """The CLI's overrides are typed, and no flag names a collector."""
+        assert not any("telemetry" in name or "otlp" in name for name in CliOverrides.model_fields)
 
     def test_the_managed_file_names_it(self, project, tmp_path, monkeypatch):
         managed_file(tmp_path, monkeypatch, collector_block("http://otel.acme.internal:4318"))

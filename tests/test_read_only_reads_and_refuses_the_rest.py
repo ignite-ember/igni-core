@@ -32,7 +32,7 @@ from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
 
 
 def _read_only_evaluator() -> PermissionEvaluator:
-    payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
+    payload = CliOverrides.from_options(CliOptions(read_only=True))
     perms = load_settings(cli_overrides=payload).permissions
     return PermissionEvaluator.from_permissions(perms)
 
@@ -116,7 +116,7 @@ def test_a_fetch_that_carries_a_token_still_asks(tool: str, url: str):
 
 
 def test_air_gapped_still_refuses_the_web():
-    payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
+    payload = CliOverrides.from_options(CliOptions(read_only=True))
     settings = load_settings(cli_overrides=payload)
     settings.air_gapped = True
     settings = settings.model_validate(settings.model_dump())
@@ -132,7 +132,7 @@ def test_air_gapped_still_refuses_the_web():
 
 
 def test_a_deny_rule_still_wins_over_reading_the_web():
-    payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
+    payload = CliOverrides.from_options(CliOptions(read_only=True))
     perms = load_settings(cli_overrides=payload).permissions
     perms.deny.append("WebFetch")
     evaluator = PermissionEvaluator.from_permissions(perms)
@@ -188,7 +188,7 @@ def test_switching_mode_does_not_reopen_it(mode: PermissionMode):
 
 
 def test_a_deny_rule_still_wins_over_a_read():
-    payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
+    payload = CliOverrides.from_options(CliOptions(read_only=True))
     perms = load_settings(cli_overrides=payload).permissions
     perms.deny.append("Bash(cat *)")
     evaluator = PermissionEvaluator.from_permissions(perms)
@@ -217,7 +217,7 @@ def test_the_session_evaluator_carries_the_flag(tmp_path):
 
     from igni_core.core.session.tool_hook_factory import ToolEventHookFactory
 
-    payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
+    payload = CliOverrides.from_options(CliOptions(read_only=True))
     factory = ToolEventHookFactory(
         settings=load_settings(cli_overrides=payload),
         rules_index=MagicMock(),
