@@ -186,6 +186,7 @@ class TestExtInstall:
         assert "air-gapped" in done.output
         assert "network.internal_hosts" in done.output, "says how to allow it"
         assert "directory" in done.output, "and how to do without it"
+        assert "cloning" not in done.output, "a refused clone is not announced as started"
 
     def test_a_file_url_still_installs(self, dev_flag, tmp_path, mirror):
         _write_user_config("air_gapped: true\n")
@@ -193,6 +194,7 @@ class TestExtInstall:
             ext, ["install", f"file://{mirror}", "--root", str(tmp_path / "s")]
         )
         assert done.exit_code == 0, done.output
+        assert f"cloning file://{mirror}" in done.output
         assert "installed" in done.output
 
     def test_without_the_switch_the_clone_is_attempted(self, dev_flag, tmp_path):

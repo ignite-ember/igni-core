@@ -75,7 +75,7 @@ class NameCheck:
         page = f"ext.{self._id}."
         for grant in self._manifest.permissions.rpc:
             if grant == "*":
-                continue  # a problem of its own, reported by doctor
+                continue  # a problem of its own, reported by ManifestCheck
             if not grant.startswith(page):
                 findings.warnings.append(
                     f"permissions.rpc grants {grant!r}, outside this extension's "

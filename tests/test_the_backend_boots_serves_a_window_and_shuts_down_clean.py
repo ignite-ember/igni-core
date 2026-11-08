@@ -29,13 +29,13 @@ from pathlib import Path
 import pytest
 from websockets.asyncio.client import connect
 
-from igni_core.backend import settings_loader
 from igni_core.backend.app import BackendApp
 from igni_core.backend.lockfile import Lockfile
 from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.backend.schemas_rpc import LifecyclePhase
 from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.backend.transport_builder import TransportBuilder
+from igni_core.core.config.group_policy import policy_settings
 from igni_core.core.config.group_policy.gate import GroupPolicyGate
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.protocol import messages as msg
@@ -163,14 +163,14 @@ async def test_both_flags_mirror_one_session_to_both_transports(tmp_path):
 
 def test_a_required_policy_that_cannot_be_had_closes_the_gate_but_boots(project, monkeypatch):
     """The person can still sign in — which is how a pack is fetched."""
-    local = settings_loader.load_settings(project_dir=project)
+    local = policy_settings.load_settings(project_dir=project)
 
     def _unavailable(*args, **kwargs):
         if kwargs.get("group_policy_fetcher") is not None:
             raise GroupPolicyUnavailable("no verified pack")
         return local
 
-    monkeypatch.setattr(settings_loader, "load_settings", _unavailable)
+    monkeypatch.setattr(policy_settings, "load_settings", _unavailable)
     try:
         settings = BackendSettingsLoader(project).load()
 

@@ -160,11 +160,11 @@ class PluginInstaller:
         if self._tmp_dir.exists():
             shutil.rmtree(self._tmp_dir, ignore_errors=True)
 
-        clone_ref = ref if ref and not _looks_like_sha(ref) else None
+        clone_ref = ref if ref and not GitClient.looks_like_sha(ref) else None
         self._git.clone(url, self._tmp_dir, ref=clone_ref)
 
         # If ref is a SHA, check it out post-clone.
-        if ref and _looks_like_sha(ref):
+        if ref and GitClient.looks_like_sha(ref):
             self._git.checkout(self._tmp_dir, ref)
 
         # Resolve the actual plugin root — the clone root itself for
@@ -315,19 +315,6 @@ class PluginInstaller:
         save_state(state, data_dir=self._data_dir)
 
         logger.info("Removed plugin '%s' from %s", name, plugin_dir)
-
-
-def _looks_like_sha(ref: str) -> bool:
-    """Heuristic: 7-40 hex chars with no other content = SHA-ish.
-
-    Used to decide whether to pass ``ref`` to ``git clone --branch``
-    (branches/tags only) vs. clone-then-checkout. Errs on the side of
-    treating ambiguous values as branches/tags — those code paths
-    surface the actual git error message verbatim.
-    """
-    if not (7 <= len(ref) <= 40):
-        return False
-    return all(c in "0123456789abcdefABCDEF" for c in ref)
 
 
 def _safe_current_sha(git: GitClient, path: Path) -> str | None:

@@ -30,5 +30,6 @@ Layout, one responsibility per module:
 * :mod:`.refresher`        — fetch, verify, store, materialise.
 * :mod:`.transport`        — the one synchronous fetch a settings load may make.
 * :mod:`.settings_fetcher` — the ``group_policy_fetcher`` handed to ``load_settings``.
+* :mod:`.policy_settings`  — the two-pass load every process uses to apply it.
 * :mod:`.gate`             — whether this process may run agent sessions.
 """

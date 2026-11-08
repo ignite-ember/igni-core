@@ -21,11 +21,9 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from igni_core.core.config.group_policy.settings_fetcher import (
-    CachedSettingsFetcher,
-    GroupPolicyUnavailable,
-)
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
+from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
+from igni_core.core.config.settings import Settings
 from igni_core.core.workspace_trust import (
     GATED_SUMMARY,
     TrustDecision,
@@ -76,12 +74,10 @@ class WorkspaceTrustRefusedError(Exception):
 def reload_settings(project_dir: Path) -> Settings:
     """Settings for ``project_dir`` the way the backend boots them: a local
     pass to find the group-policy cache, then the load that counts."""
-    local_only = load_settings(project_dir=project_dir)
+    loader = PolicySettingsLoader(project_dir)
+    local_only = loader.local()
     try:
-        return load_settings(
-            project_dir=project_dir,
-            group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
-        )
+        return loader.load(local_only)
     except GroupPolicyUnavailable as exc:
         logger.error("group-policy: %s", exc)
         return local_only

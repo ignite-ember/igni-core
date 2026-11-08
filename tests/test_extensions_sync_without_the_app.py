@@ -16,6 +16,7 @@ from click.testing import CliRunner
 
 from igni_core.backend.headless_extensions import HeadlessExtensions
 from igni_core.core.auth.credentials import Credentials, CredentialsStore
+from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
 from igni_core.extensions.distribution import OneShotSync
 from igni_core.extensions.store import ExtensionStore
 from tests.extension_distribution_helpers import (
@@ -47,7 +48,7 @@ class World:
             storage=SimpleNamespace(data_dir=str(tmp_path / "data")),
         )
         monkeypatch.setattr(OneShotSync, "transport", self.igni.transport())
-        monkeypatch.setattr(ext_cli, "_settings", lambda: self.settings)
+        monkeypatch.setattr(PolicySettingsLoader, "load", lambda _self: self.settings)
 
     def sign_in(self, *, ttl: int = 3600) -> None:
         CredentialsStore(str(self.credentials)).save(
