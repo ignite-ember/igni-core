@@ -21,7 +21,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.backend.plan_snapshot_builder import PlanSnapshotBuilder
 from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
@@ -33,6 +32,7 @@ from igni_core.core.tools.plan import PlanStore, PlanTool
 from igni_core.core.tools.todo import TodoItem, TodoStore, TodoTools
 from igni_core.protocol.rpc import RpcMethod
 from tests.backend_server_factory import make_backend
+from tests.rpc_tables import rpc_table_for
 from tests.session_coordinators import wire_coordinators
 
 # ── PlanStore ─────────────────────────────────────────────
@@ -850,7 +850,7 @@ class TestGetLatestPlanRpc:
         session.plan_store.set_plan("test plan")
         backend = make_backend(session, settings=MagicMock())
 
-        table = _build_rpc_table(backend, transport=MagicMock(), login_state={})
+        table = rpc_table_for(backend, transport=MagicMock())
         handler = table.get(RpcMethod.GET_LATEST_PLAN)
         assert handler is not None
         result = handler({})

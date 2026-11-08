@@ -115,7 +115,7 @@ class TestEveryBindingCanBeCalled:
         The assumption was wrong and the code was right.
 
         What would be a real bug is that check disappearing while async
-        handlers remain. Then the RPC returns a coroutine, `_serialize`
+        handlers remain. Then the RPC returns a coroutine, `serialize_result`
         makes something meaningless of it, and the app sees a *success*
         containing nothing — worse than an error, because nothing looks
         wrong.

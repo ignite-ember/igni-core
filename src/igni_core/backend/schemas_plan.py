@@ -38,7 +38,7 @@ class LatestPlanResult(BaseModel):
     single payload.
 
     Wire-contract note: the RPC serializer
-    (``message_dispatcher._serialize``) calls ``model_dump()``
+    (``message_dispatcher.serialize_result``) calls ``model_dump()``
     WITHOUT ``by_alias=True``. A bare ``list[TodoItemWire]`` field
     would therefore emit snake_case ``active_form`` and break the FE
     PlanCard checklist. The :meth:`_dump_tasks` field serializer

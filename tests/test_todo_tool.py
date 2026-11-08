@@ -15,7 +15,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.plan_snapshot_builder import PlanSnapshotBuilder
 from igni_core.core.tools.todo import (
     TodoItem,
@@ -25,6 +24,7 @@ from igni_core.core.tools.todo import (
 )
 from igni_core.protocol.rpc import RpcMethod
 from tests.backend_server_factory import make_backend
+from tests.rpc_tables import rpc_table_for
 
 # ── Pure data layer ───────────────────────────────────────────
 
@@ -216,7 +216,7 @@ class TestGetTodosRpc:
         session.todo_store.set([TodoItem("planned", "pending")])
         backend = make_backend(session)
 
-        table = _build_rpc_table(backend, transport=MagicMock(), login_state={})
+        table = rpc_table_for(backend, transport=MagicMock())
         handler = table.get(RpcMethod.GET_TODOS)
         assert handler is not None
         result = handler({})

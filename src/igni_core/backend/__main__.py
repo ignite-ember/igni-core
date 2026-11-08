@@ -6,12 +6,6 @@ Starts a :class:`BackendApp`, listens on the given Unix socket
 and/or WebSocket port, and processes FE messages until shutdown.
 The real work lives in :mod:`igni_core.backend.app` — this module
 is the CLI + the module-load side effects (logging config).
-
-For backward compatibility with existing tests that reach in for
-``_build_rpc_table``, ``_handle_message``, ``_serialize``, or the
-wire schemas that used to live inline, this module re-exports
-those symbols as thin shims. New code should import from the
-themed modules directly.
 """
 
 from __future__ import annotations
@@ -21,57 +15,14 @@ import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import click
 
-# Backward-compat re-exports: keep the old import paths working for
-# in-tree tests. New callers should import from the themed modules.
 from igni_core.backend.app import BackendApp
 from igni_core.backend.logging_setup import configure_logging
-from igni_core.backend.login_coordinator import LoginCoordinator
-from igni_core.backend.message_dispatcher import MessageDispatcher, _serialize
-from igni_core.backend.push_bridge import PushNotificationBridge
-from igni_core.backend.rpc_router import RpcRouter
 from igni_core.backend.schemas_lifecycle import BackendLaunch
-from igni_core.backend.schemas_rpc import (
-    AttachSessionResult,
-    BackendReadyLine,
-    DirListResult,
-    DisplayConfigResult,
-    FileCompletion,
-    LifecyclePhase,
-    LoginStarted,
-    ModelRegistryResult,
-    PickDirResult,
-    RunShellResult,
-    SessionPoolConfig,
-    SkillDefinition,
-    UpdateAvailable,
-)
 from igni_core.core.data_paths import canonical_project_dir
 from igni_core.transport.ws_auth import take_token_from_environment
-
-__all__ = [
-    "AttachSessionResult",
-    "BackendApp",
-    "BackendReadyLine",
-    "DirListResult",
-    "DisplayConfigResult",
-    "FileCompletion",
-    "LifecyclePhase",
-    "LoginStarted",
-    "ModelRegistryResult",
-    "PickDirResult",
-    "RunShellResult",
-    "SessionPoolConfig",
-    "SkillDefinition",
-    "UpdateAvailable",
-    "_build_rpc_table",
-    "_handle_message",
-    "_serialize",
-    "main",
-]
 
 logger = logging.getLogger(__name__)
 
@@ -165,58 +116,6 @@ def main(
         )
     )
     asyncio.run(app.run())
-
-
-# ── Legacy shims (tests still import these) ─────────────────────
-
-
-def _build_rpc_table(
-    backend: Any, transport: Any, login_state: dict[str, Any] | None = None
-) -> dict[str, Any]:
-    """Test seam — build the RPC dispatch table without booting the
-    full :class:`BackendApp`. Used by ``tests/test_*_rpc*.py`` and
-    the plan / todo / process / output-styles / search-chat suites
-    to invoke individual RPC handlers directly.
-
-    ``login_state`` is accepted for backward compatibility; the
-    live login task now lives on :class:`LoginCoordinator`.
-    """
-    # Bridge without a loop — the sync RPC handlers this test
-    # surface reaches don't dispatch pushes.
-    try:
-        loop: asyncio.AbstractEventLoop | None = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = None
-    push = PushNotificationBridge(transport=transport, loop=loop, queue=[])
-    login = LoginCoordinator(backend=backend, push_bridge=push)
-    router = RpcRouter(backend=backend, transport=transport, login=login, push=push)
-    return router.build_table()
-
-
-async def _handle_message(
-    message: Any,
-    backend: Any,
-    transport: Any,
-    rpc_table: dict,
-    queue: list[str],
-    login_state: dict[str, Any] | None = None,
-) -> None:
-    """Legacy signature preserved for
-    ``tests/test_multi_session_integration.py`` (drives the real
-    per-message dispatcher through the production path).
-
-    The new dispatcher is :class:`MessageDispatcher`. We build one
-    per call — construction is cheap, and the tests each call this
-    once per message.
-    """
-    dispatcher = MessageDispatcher(
-        backend=backend,
-        transport=transport,
-        rpc_table=rpc_table,
-        queue=queue,
-        login=None,  # login coordinator not required for the paths tests exercise
-    )
-    await dispatcher.dispatch(message)
 
 
 if __name__ == "__main__":

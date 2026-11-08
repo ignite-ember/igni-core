@@ -33,6 +33,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.backend.message_dispatcher import MessageDispatcher
 from igni_core.backend.session_pool import (
     SessionPool,
     SessionRuntime,
@@ -579,8 +580,8 @@ async def test_handler_error_in_one_session_does_not_taint_another():
 
 
 @pytest.mark.asyncio
-async def test_real_handle_message_routes_two_sessions_through_production_path():
-    """Drives the real ``igni_core.backend.__main__._handle_message``
+async def test_real_dispatcher_routes_two_sessions_through_production_path():
+    """Drives the real :class:`MessageDispatcher`
     (the production per-message dispatcher) under a multi-session pool
     with a real ``WebSocketServerTransport``. The earlier tests in this
     file use a fake dispatcher — this one closes that gap by routing
@@ -594,7 +595,6 @@ async def test_real_handle_message_routes_two_sessions_through_production_path()
     wrapper, the WS broadcast, the StreamEnd + UserMessageReceived
     book-ending) is real production code.
     """
-    from igni_core.backend.__main__ import _handle_message
 
     def _fake_backend(session_id: str) -> Any:
         """A real ``BackendServer`` composed over a stub session
@@ -619,7 +619,7 @@ async def test_real_handle_message_routes_two_sessions_through_production_path()
         async def fake_run(text: str, media: Any = None):
             # Three deltas + a StreamingDone — mimics the shape Agno
             # emits at the protocol level without going anywhere near
-            # the team. ``_handle_message`` appends its own ``StreamEnd``
+            # the team. The dispatcher appends its own ``StreamEnd``
             # after the async-for loop drains.
             yield msg.ContentDelta(text=f"[{session_id}]:")
             yield msg.ContentDelta(text=f"{text}.1")
@@ -632,7 +632,7 @@ async def test_real_handle_message_routes_two_sessions_through_production_path()
     tr = WebSocketServerTransport(port=0)
     await tr.start()
 
-    # Build the pool exactly like ``__main__`` does: each runtime gets
+    # Build the pool exactly like the backend app does: each runtime gets
     # a SessionStampingTransport over the shared WS transport.
     backends_by_session: dict[str, Any] = {}
 
@@ -654,13 +654,20 @@ async def test_real_handle_message_routes_two_sessions_through_production_path()
     pool = SessionPool(default_rt, factory)
 
     # Production-style dispatch loop, copied in shape from
-    # ``_dispatch`` in ``__main__`` — fan out via Task per message.
+    # the backend's receive loop — fan out via Task per message.
     in_flight: set[asyncio.Task] = set()
 
     async def _dispatch_one(message: Any) -> None:
         rt = await pool.get_or_create(message.session_id or "")
         rt.register_id()
-        await _handle_message(message, rt.backend, rt.transport, rt.rpc_table, rt.queue, None)
+        dispatcher = MessageDispatcher(
+            backend=rt.backend,
+            transport=rt.transport,
+            rpc_table=rt.rpc_table,
+            queue=rt.queue,
+            login=None,
+        )
+        await dispatcher.dispatch(message)
 
     async def _loop() -> None:
         async for m in tr.receive():
@@ -706,7 +713,7 @@ async def test_real_handle_message_routes_two_sessions_through_production_path()
         # ── Pool created the two named sessions on top of the boot
         # default; no extra/ghost spawns. ──
         assert set(backends_by_session.keys()) == {"default", "alpha", "beta"}
-        # ``_handle_message`` fires ``maybe_auto_name_session`` as a
+        # The dispatcher fires ``maybe_auto_name_session`` as a
         # post-run task — give the event loop a tick to schedule it
         # before asserting.
         await asyncio.sleep(0)

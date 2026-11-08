@@ -1,14 +1,14 @@
 """Tests for ``protocol/rpc.validate_rpc_table`` — the
 "every RpcMethod enum value has a handler" safety net.
 
-The function fires once at backend startup (after
-``_build_rpc_table`` returns) so an added-enum-member-but-no-
+The function fires once at backend startup (from
+``RpcRouter.build_table``) so an added-enum-member-but-no-
 registration mistake surfaces immediately rather than at first
 call from the client. Catches the class of bug where:
 
   1. Someone adds ``RpcMethod.NEW_THING`` to the enum.
-  2. They forget to add ``"new_thing": handler`` to the dispatch
-     table in ``_build_rpc_table``.
+  2. They forget to add ``"new_thing": handler`` to an RPC
+     handler's ``methods()``.
   3. The FE calls ``new_thing`` → backend KeyError → wire-level
      error visible to the user.
 
@@ -75,7 +75,7 @@ class TestRaises:
 
     def test_missing_one_method_named_in_error(self):
         # The realistic case — one new enum member, one
-        # missing entry in ``_build_rpc_table``. The error
+        # missing handler entry. The error
         # must name the exact wire string the developer needs
         # to add.
         all_keys = _all_method_values()
@@ -92,10 +92,10 @@ class TestRaises:
         with pytest.raises(RuntimeError) as exc:
             validate_rpc_table([])
         msg = str(exc.value)
-        # The source explicitly names ``_build_rpc_table`` and
-        # ``backend/__main__.py``.
-        assert "_build_rpc_table" in msg
-        assert "backend/__main__.py" in msg
+        # The source explicitly names ``RpcRouter.build_table`` and
+        # ``backend/rpc_router.py``.
+        assert "RpcRouter.build_table" in msg
+        assert "backend/rpc_router.py" in msg
 
     def test_missing_keys_sorted_for_stable_error(self):
         # The error lists missing keys via ``sorted(missing)``

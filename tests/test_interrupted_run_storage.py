@@ -41,6 +41,8 @@ from igni_core.core.session.pending_messages import (
     InterruptedMessage,
     PendingMessageStore,
 )
+from igni_core.protocol.rpc import RpcMethod
+from tests.rpc_tables import rpc_table_for
 
 # ── Schema migration ────────────────────────────────────────
 
@@ -328,25 +330,19 @@ class TestInterruptedRunsRpcDispatch:
         return backend
 
     def test_get_interrupted_runs_extracts_session_id(self) -> None:
-        from igni_core.backend.__main__ import _build_rpc_table
-        from igni_core.protocol.rpc import RpcMethod
-
         backend = MagicMock()
         backend.get_interrupted_runs = AsyncMock(return_value=[])
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
         table[RpcMethod.GET_INTERRUPTED_RUNS]({"session_id": "sess-1"})
         backend.get_interrupted_runs.assert_called_once_with("sess-1")
 
     def test_discard_interrupted_run_extracts_session_and_message_id(
         self,
     ) -> None:
-        from igni_core.backend.__main__ import _build_rpc_table
-        from igni_core.protocol.rpc import RpcMethod
-
         backend = MagicMock()
         context = backend.controllers.context
         context.discard_interrupted_run = AsyncMock(return_value={"ok": True, "error": ""})
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
         table[RpcMethod.DISCARD_INTERRUPTED_RUN]({"session_id": "sess-1", "message_id": "msg-42"})
         context.discard_interrupted_run.assert_called_once_with("sess-1", "msg-42")
 

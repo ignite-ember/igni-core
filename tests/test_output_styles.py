@@ -10,7 +10,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.backend.server_panels import PanelsController
 from igni_core.core.output_styles import OutputStyle, discover_output_styles
@@ -20,6 +19,7 @@ from igni_core.core.session.core import Session
 from igni_core.core.session.output_style_selection import OutputStyleSelection
 from igni_core.protocol.rpc import RpcMethod
 from tests.backend_server_factory import make_backend
+from tests.rpc_tables import rpc_table_for
 from tests.session_coordinators import wire_coordinators
 
 
@@ -343,7 +343,7 @@ class TestGetOutputStylesRpc:
         session.active_output_style = "default"
         backend = make_backend(session)
 
-        table = _build_rpc_table(backend, transport=MagicMock(), login_state={})
+        table = rpc_table_for(backend, transport=MagicMock())
         handler = table.get(RpcMethod.GET_OUTPUT_STYLES)
         assert handler is not None
         result = handler({})

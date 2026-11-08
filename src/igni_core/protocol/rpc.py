@@ -32,8 +32,9 @@ Adding a new RPC
    must match the backend method.
 2. Implement the method on :class:`BackendServer` (or wherever the
    dispatch lambda routes).
-3. Register a dispatch entry in :mod:`igni_core.backend.__main__`'s
-   ``_build_rpc_table``, keyed by the new enum member.
+3. Register a dispatch entry in the ``methods()`` of the RPC handler
+   class it belongs to (the handlers :class:`RpcRouter` in
+   ``backend/rpc_router.py`` merges), keyed by the new enum member.
 4. Add the client-side wrapper in :class:`BackendClient` that calls
    ``self._rpc(RpcMethod.X, ...)``.
 
@@ -333,7 +334,7 @@ def validate_rpc_table(registered_keys: Iterable[str]) -> None:
     """Raise if any :class:`RpcMethod` member is missing from the
     backend's dispatch table.
 
-    Called once at backend startup (after ``_build_rpc_table`` returns).
+    Called once at backend startup (by ``RpcRouter.build_table``).
     Catches the "added enum member, forgot to register handler" mistake
     immediately instead of at first call from the client. Equivalent
     in spirit to mypy's ``assert_never`` for exhaustive matching.
@@ -344,6 +345,6 @@ def validate_rpc_table(registered_keys: Iterable[str]) -> None:
         raise RuntimeError(
             "RPC dispatch table is missing handlers for "
             f"{sorted(missing)!r}. Every RpcMethod enum value must "
-            "have a corresponding entry in `_build_rpc_table` "
-            "(backend/__main__.py)."
+            "have a corresponding entry in an RPC handler's `methods()` "
+            "merged by `RpcRouter.build_table` (backend/rpc_router.py)."
         )

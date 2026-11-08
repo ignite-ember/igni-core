@@ -20,7 +20,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import TypeAdapter
 
-from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.chat_history_searcher import ChatHistorySearcher
 from igni_core.backend.schemas_history import (
     AssistantTurn,
@@ -33,6 +32,7 @@ from igni_core.backend.server import BackendServer
 from igni_core.backend.server_sessions import SessionsController
 from igni_core.protocol.rpc import RpcMethod
 from tests.backend_server_factory import make_backend
+from tests.rpc_tables import rpc_table_for
 
 _CHAT_TURN = TypeAdapter(ChatTurn)
 
@@ -277,7 +277,7 @@ class TestSearchChatWrapper:
         """Wiring check: ``RpcMethod.SEARCH_CHAT`` resolves to the
         backend's method through the actual dispatch table."""
         backend = self._backend([_turn("foo NEEDLE bar")])
-        table = _build_rpc_table(backend, transport=MagicMock(), login_state={})
+        table = rpc_table_for(backend, transport=MagicMock())
         handler = table.get(RpcMethod.SEARCH_CHAT)
         assert handler is not None
         # The handler is an async lambda calling ``backend.search_chat``;

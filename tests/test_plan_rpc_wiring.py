@@ -3,7 +3,7 @@
 The fixture-FE Playwright suite proves the FE puts the right
 envelope on the wire. The unit suite proves ``Session.approve_plan``
 does the right thing once called. This file pins the missing
-middle: that the dispatch lambdas in ``_build_rpc_table`` route
+middle: that the dispatch lambdas in ``RpcRouter.build_table`` route
 the wire envelope to the right ``Session`` method with ``run_id``
 extracted from ``args`` correctly.
 
@@ -31,12 +31,12 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.server_lifecycle import LifecycleController
 from igni_core.backend.server_rehydrate import RehydrateController
 from igni_core.core.tools.plan import PlanStore
 from igni_core.core.tools.todo import TodoStore
 from igni_core.protocol.rpc import RpcMethod
+from tests.rpc_tables import rpc_table_for
 
 
 def _make_backend_with_recording_session() -> tuple[MagicMock, MagicMock]:
@@ -56,7 +56,7 @@ def _make_backend_with_recording_session() -> tuple[MagicMock, MagicMock]:
 class TestApprovePlanRouting:
     async def test_lambda_calls_session_approve_plan_with_run_id(self):
         backend, session = _make_backend_with_recording_session()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
 
         result = table[RpcMethod.APPROVE_PLAN]({"run_id": "R-123"})
         # Lambdas return the coroutine — await it to drive the call.
@@ -71,7 +71,7 @@ class TestApprovePlanRouting:
         # dispatch must coerce so ``Session.approve_plan`` gets
         # the type it asserts on.
         backend, session = _make_backend_with_recording_session()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
 
         result = table[RpcMethod.APPROVE_PLAN]({"run_id": 42})
         await result if asyncio.iscoroutine(result) else result
@@ -85,7 +85,7 @@ class TestApprovePlanRouting:
         # this so a refactor doesn't silently turn the empty
         # default into ``None`` and break the assertion order.
         backend, session = _make_backend_with_recording_session()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
 
         result = table[RpcMethod.APPROVE_PLAN]({})
         await result if asyncio.iscoroutine(result) else result
@@ -96,7 +96,7 @@ class TestApprovePlanRouting:
 class TestDismissPlanRouting:
     async def test_lambda_calls_session_dismiss_plan_with_run_id(self):
         backend, session = _make_backend_with_recording_session()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
 
         result = table[RpcMethod.DISMISS_PLAN]({"run_id": "R-789"})
         out = await result if asyncio.iscoroutine(result) else result
@@ -111,7 +111,7 @@ class TestDismissPlanRouting:
         # approve) but break this one. Catches the wrong-method
         # bug specifically.
         backend, session = _make_backend_with_recording_session()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
 
         result = table[RpcMethod.DISMISS_PLAN]({"run_id": "R-xyz"})
         await result if asyncio.iscoroutine(result) else result
@@ -121,7 +121,7 @@ class TestDismissPlanRouting:
 
 
 class TestPoolRuntimeRouting:
-    """Pool sessions get their own ``_build_rpc_table`` call with
+    """Pool sessions get their own ``RpcRouter.build_table`` call with
     ``rt_backend`` — pinning that the lambda closure binds to that
     backend, not the boot one. The bug shape: a refactor changes
     ``backend`` (closure capture) to ``self.backend`` (attribute
@@ -137,10 +137,10 @@ class TestPoolRuntimeRouting:
         # session only. Constructing the boot table proves the
         # two builders don't share mutable state, which is the
         # closure-isolation behaviour we want to pin.
-        _build_rpc_table(boot_backend, MagicMock(), {})
+        rpc_table_for(boot_backend, MagicMock())
         # Pool table — separate instance built against the
         # runtime's backend.
-        pool_table = _build_rpc_table(pool_backend, MagicMock(), {})
+        pool_table = rpc_table_for(pool_backend, MagicMock())
 
         # Fire ``approve_plan`` against the POOL table only.
         result = pool_table[RpcMethod.APPROVE_PLAN]({"run_id": "pool-run"})
@@ -158,8 +158,8 @@ class TestPoolRuntimeRouting:
         boot_backend, boot_session = _make_backend_with_recording_session()
         pool_backend, pool_session = _make_backend_with_recording_session()
 
-        boot_table = _build_rpc_table(boot_backend, MagicMock(), {})
-        _ = _build_rpc_table(pool_backend, MagicMock(), {})
+        boot_table = rpc_table_for(boot_backend, MagicMock())
+        _ = rpc_table_for(pool_backend, MagicMock())
 
         result = boot_table[RpcMethod.APPROVE_PLAN]({"run_id": "boot-run"})
         await result if asyncio.iscoroutine(result) else result

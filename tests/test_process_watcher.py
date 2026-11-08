@@ -22,11 +22,11 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.schemas_processes import ProcessTailResult, StopProcessResult
 from igni_core.backend.server_processes import ProcessesController
 from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.protocol.rpc import RpcMethod
+from tests.rpc_tables import rpc_table_for
 
 # ── Subscriber semantics ─────────────────────────────────────
 
@@ -293,25 +293,25 @@ class TestWatcherRpcDispatch:
 
     def test_list_dispatch_calls_method(self) -> None:
         backend = self._make_backend()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
         table[RpcMethod.LIST_BACKGROUND_PROCESSES]({})
         backend.list_background_processes.assert_called_once_with()
 
     def test_read_dispatch_extracts_pid_and_tail(self) -> None:
         backend = self._make_backend()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
         table[RpcMethod.READ_PROCESS_TAIL]({"pid": "42", "tail": "50"})
         backend.controllers.processes.read_tail.assert_called_once_with(pid=42, tail=50)
 
     def test_read_dispatch_defaults_tail_to_200(self) -> None:
         backend = self._make_backend()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
         table[RpcMethod.READ_PROCESS_TAIL]({"pid": 42})
         backend.controllers.processes.read_tail.assert_called_once_with(pid=42, tail=200)
 
     async def test_stop_dispatch_extracts_pid(self) -> None:
         backend = self._make_backend()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
         result = table[RpcMethod.STOP_BACKGROUND_PROCESS]({"pid": 99})
         # Lambda returns the coroutine — await to drive the call.
         if asyncio.iscoroutine(result):
@@ -320,7 +320,7 @@ class TestWatcherRpcDispatch:
 
     def test_pool_runtime_routes_to_pool_backend(self) -> None:
         # Same isolation contract as the plan-decision RPCs:
-        # ``_build_rpc_table`` closes over its ``backend`` arg, so
+        # ``rpc_table_for`` closes over its ``backend`` arg, so
         # a pool runtime's table must hit the pool backend, never
         # the boot one.
         boot = self._make_backend()
@@ -329,8 +329,8 @@ class TestWatcherRpcDispatch:
         # the pool table. Building both proves the two builders
         # produce independent closures (no shared mutable state
         # between boot and pool RPC dispatch).
-        _build_rpc_table(boot, MagicMock(), {})
-        pool_table = _build_rpc_table(pool, MagicMock(), {})
+        rpc_table_for(boot, MagicMock())
+        pool_table = rpc_table_for(pool, MagicMock())
 
         pool_table[RpcMethod.LIST_BACKGROUND_PROCESSES]({})
         pool.list_background_processes.assert_called_once()

@@ -1,7 +1,7 @@
 """Per-message dispatcher.
 
-Replaces the 11-branch ``isinstance`` chain that lived as
-``_handle_message`` in :mod:`igni_core.backend.__main__`. Each
+Replaces the 11-branch ``isinstance`` chain that used to live in the
+backend entry point. Each
 message class now maps to a bound method on :class:`MessageDispatcher`;
 :meth:`dispatch` is the single entry point the receive loop calls.
 
@@ -357,7 +357,7 @@ class MessageDispatcher:
                 result = result.model_copy(update={"id": req_id})
                 await self._reply(message, result)
             else:
-                await self._reply(message, msg.RPCResponse.ok(req_id, _serialize(result)))
+                await self._reply(message, msg.RPCResponse.ok(req_id, serialize_result(result)))
         except KeyError as exc:
             # A handler reading `args["session_id"]` on a call that
             # omitted it raises `KeyError('session_id')`, and
@@ -424,7 +424,7 @@ class MessageDispatcher:
             logger.error("extension rpc %s failed: %s", message.method, exc, exc_info=True)
             await self._reply(message, msg.RPCResponse.fail(req_id, str(exc)))
             return
-        await self._reply(message, msg.RPCResponse.ok(req_id, _serialize(result)))
+        await self._reply(message, msg.RPCResponse.ok(req_id, serialize_result(result)))
 
     async def _reply(self, request: Any, response: Message) -> None:
         """Answer a call; one made for an extension, on its window's connection only.
@@ -439,7 +439,7 @@ class MessageDispatcher:
         await self._transport.send(response)
 
 
-def _serialize(value: Any) -> Any:
+def serialize_result(value: Any) -> Any:
     """Convert an RPC handler's return value into a JSON-safe
     shape for :class:`RPCResponse.result`.
 
@@ -460,9 +460,9 @@ def _serialize(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, (list, tuple)):
-        return [_serialize(v) for v in value]
+        return [serialize_result(v) for v in value]
     if isinstance(value, dict):
-        return {str(k): _serialize(v) for k, v in value.items()}
+        return {str(k): serialize_result(v) for k, v in value.items()}
     if hasattr(value, "model_dump"):
         return value.model_dump()
     return str(value)
