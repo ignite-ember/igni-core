@@ -1,51 +1,32 @@
 """Pydantic models + typed protocols for the agents package.
 
-Splits five concerns off of the old ``core/pool.py``:
-
-* :class:`AgentPriority` — resolution priorities as an :class:`IntEnum`
-  (was a class-with-integer-constants). ``IntEnum`` composes with
-  ``int`` comparisons so external test code passing raw integers
-  still works.
+* :class:`AgentPriority` — resolution priorities as an :class:`IntEnum`.
 * :class:`AgentDefinition` — parsed frontmatter + body from a
-  ``.md`` file. Now carries two methods so the plugin-namespace
-  prefix and plugin-restriction envelope live where the data does
-  (Rule 1: methods on the model, not free functions taking the
-  model as first arg).
+  ``.md`` file.
 * :class:`AgentInfo` — wire format for the agents panel.
-* :class:`AgentEntry` — the (definition, priority) tuple replaced
-  by a typed Pydantic pair. Every unpack site in the package used
-  to spell ``defn, prio = entry`` — now they use ``entry.definition``
-  / ``entry.priority``.
-* :class:`AgentConstructorArgs` — replaces the ``kwargs: dict[str, Any]``
-  splat in the old ``build_agent`` free function. A single method
-  :meth:`AgentConstructorArgs.to_agno_kwargs` bridges to Agno's
-  keyword surface.
-* :class:`LoadReport` + :class:`LoadError` — typed Result over the
-  old "print to stderr and swallow" pattern.
-* :class:`AgentBuildContext` — the five shared-state params
-  (settings, base_dir, mcp_clients, db, broadcast)
-  bundled once so :class:`AgentBuilder` takes one construction
-  param instead of five.
-* Typed :class:`typing.Protocol` s — replaces ``Any`` on the public
-  API surface (audit AP5). Keeps runtime imports cheap (the real
-  Agno types stay behind
-  ``TYPE_CHECKING``).
+* :class:`AgentEntry` — a definition plus its resolution priority.
+* :class:`LoadReport` + :class:`LoadError` — what a directory-load
+  pass accepted and which files it could not parse.
+* :class:`DbHandle` / :class:`McpClient` — structural protocols for
+  the Agno DB and MCP toolkit, so this module does not import Agno.
+* :class:`AgentConstructorArgs` — the typed bundle handed to Agno's
+  ``Agent`` through :meth:`AgentConstructorArgs.to_agno_kwargs`.
+* :class:`AgentBuildContext` — the shared state (settings, base dir,
+  MCP clients, DB, broadcast) :class:`AgentBuilder` builds against.
 """
 
 from __future__ import annotations
 
 from enum import IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.core.agents.trained_layout import TrainedLayout
 from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.broadcast_schema import BroadcastSink
-
-if TYPE_CHECKING:
-    pass
+from igni_core.core.config.settings import Settings
 
 
 class AgentPriority(IntEnum):
@@ -84,23 +65,6 @@ class AgentPriority(IntEnum):
     EPHEMERAL = 10
 
 
-# Frontmatter keys that plugin-shipped agents are NOT allowed to
-# declare — they'd let a plugin escalate its own privileges. CC
-# parity row 37. Kept as a module constant only so it can be
-# re-exported by name from the package __init__; the canonical
-# owner is :class:`PluginRestrictionPolicy.RESTRICTED_KEYS`.
-_PLUGIN_RESTRICTED_FRONTMATTER_KEYS: frozenset[str] = frozenset(
-    {
-        "hooks",
-        "mcpServers",
-        "mcp_servers",  # snake_case alias — ember already parses it
-        "permissionMode",
-        "permission_mode",
-        "permissions",
-    }
-)
-
-
 class AgentDefinition(BaseModel):
     """Parsed agent definition from a .md file."""
 
@@ -124,26 +88,8 @@ class AgentDefinition(BaseModel):
     system_prompt: str = ""
     source_path: Path | None = None
     # ``"worktree"`` on plugin-shipped agents so their spawns run
-    # in a fresh worktree; ``None`` for user / project agents. The
-    # empty string is accepted for forward-compat with legacy
-    # frontmatter but treated as ``None`` semantically (the coercing
-    # validator below normalises it).
-    force_isolation: Literal["", "worktree"] | None = None
-
-    @field_validator("force_isolation", mode="before")
-    @classmethod
-    def _coerce_force_isolation(cls, v: Any) -> Any:
-        """Coerce loose legacy inputs to the ``Literal`` set.
-
-        The audit tightened this field from ``str | None`` to a
-        two-value ``Literal`` (audit AP6). Legacy markdown
-        frontmatter or serialized state may still carry an empty
-        string, so we accept it and normalise to ``None`` — anything
-        else falls through to Pydantic's strict rejection.
-        """
-        if v is None or v == "":
-            return None
-        return v
+    # in a fresh worktree; ``None`` for user / project agents.
+    force_isolation: Literal["worktree"] | None = None
 
     def namespaced(self, prefix: str) -> AgentDefinition:
         """Return a copy with ``name`` prefixed by ``<prefix>:``.
@@ -154,32 +100,6 @@ class AgentDefinition(BaseModel):
         ``.igni/agents/``.
         """
         return self.model_copy(update={"name": f"{prefix}:{self.name}"})
-
-    def with_plugin_restrictions(
-        self,
-        raw_keys: set[str],
-        plugin_name: str = "",
-    ) -> AgentDefinition:
-        """Return a copy with the plugin security envelope applied.
-
-        Strips ``mcp_servers`` and forces
-        ``force_isolation="worktree"``. Restricted keys detected
-        in ``raw_keys`` trigger a WARNING via the package logger
-        so plugin authors see the policy violation and a security
-        audit can spot escalation attempts.
-
-        Delegates the warning + drop to
-        :class:`PluginRestrictionPolicy` (defined in
-        ``plugin_policy.py``) so the policy is unit-testable
-        without a full model instance and the class-attribute
-        constants (``RESTRICTED_KEYS``) live next to the code
-        that reads them.
-        """
-        # Local import — the policy needs to import AgentDefinition
-        # so we'd otherwise get an import cycle.
-        from igni_core.core.agents.plugin_policy import PluginRestrictionPolicy
-
-        return PluginRestrictionPolicy().apply(self, raw_keys, plugin_name)
 
 
 class AgentInfo(BaseModel):
@@ -254,29 +174,38 @@ class LoadReport(BaseModel):
         self.errors.extend(other.errors)
 
 
-# ── Protocols for external collaborators (audit AP5) ─────────────
+# ── Protocols for external collaborators ─────────────────────────
 #
-# The real classes live in packages we don't want to eagerly import
-# here (they pull in Agno / chromadb / SQLite bindings; a bare
-# ``AgentPool()`` for a test shouldn't pay those costs). Structural
-# typing via Protocol keeps callers grep-able without the import
-# graph tax.
+# The real classes (Agno's ``AsyncBaseDb`` and ``MCPTools``) pull in
+# Agno and its storage bindings; a bare ``AgentPool()`` in a test
+# shouldn't pay that. Each protocol names the members the real class
+# has, so a db that is not one fails the field check. The pool fills
+# ``mcp_clients`` through ``model_copy``, which skips validation, so
+# there the protocol is a static type only.
 
 
 @runtime_checkable
 class DbHandle(Protocol):
-    """Opaque Agno ``AsyncBaseDb`` handle. Threaded through so
-    paused sub-agent runs land in the same store as the parent."""
+    """Agno ``AsyncBaseDb`` handle. Threaded through so paused
+    sub-agent runs land in the same store as the parent."""
 
-    ...
+    async def get_session(self, *args: Any, **kwargs: Any) -> Any: ...
+
+    async def upsert_session(self, *args: Any, **kwargs: Any) -> Any: ...
+
+    async def close(self) -> None: ...
 
 
 @runtime_checkable
 class McpClient(Protocol):
-    """One MCP client — placed in the ``tools=[...]`` list of an
-    agent to expose its remote tools locally."""
+    """One connected Agno ``MCPTools`` — placed in the ``tools=[...]``
+    list of an agent to expose its remote tools locally."""
 
-    ...
+    initialized: bool
+
+    async def connect(self, *args: Any, **kwargs: Any) -> None: ...
+
+    async def close(self) -> None: ...
 
 
 class AgentConstructorArgs(BaseModel):
@@ -344,25 +273,19 @@ class AgentBuildContext(BaseModel):
     """Shared state :class:`AgentBuilder` needs to construct any
     agent from a definition.
 
-    Composing these six pointers into one Pydantic bundle lets
-    :class:`AgentPool` re-construct only the fields that change
+    :class:`AgentPool` re-constructs only the fields that change
     (e.g. ``mcp_clients`` after MCP connects) via
     ``context.model_copy(update={...})`` instead of touching
-    private builder state (Rule 1 + audit AP5).
-
-    ``settings`` is typed ``Any`` to avoid the Pydantic forward-
-    ref rebuild dance (a real
-    :class:`igni_core.core.config.settings.Settings` doesn't
-    play nicely as a Pydantic field before ``model_rebuild`` and
-    isn't worth importing eagerly here).
+    private builder state. ``settings`` is ``None`` only until the
+    pool's ``load_definitions`` runs.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    settings: Any
+    settings: Settings | None = None
     base_dir: str | None = None
-    mcp_clients: dict[str, Any] | None = None
-    db: Any | None = None
+    mcp_clients: dict[str, McpClient] | None = None
+    db: DbHandle | None = None
     broadcast: BroadcastSink | None = None
 
 
@@ -377,5 +300,4 @@ __all__ = [
     "LoadError",
     "LoadReport",
     "McpClient",
-    "_PLUGIN_RESTRICTED_FRONTMATTER_KEYS",
 ]

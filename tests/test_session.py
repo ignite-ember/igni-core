@@ -5,6 +5,7 @@ from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from agno.db.base import AsyncBaseDb
 
 from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.config.schemas.permissions import PermissionsConfig
@@ -95,6 +96,9 @@ def _patches_for(defaults: dict) -> list:
         if name == "AgentPool":
             # A mocked pool has no agents: an empty catalog, nothing unresolved.
             shared.return_value.list_agents.return_value = []
+        if name == "StorageManager":
+            # The pool checks its db against DbHandle, which a bare MagicMock fails.
+            shared.build_db.return_value = MagicMock(spec=AsyncBaseDb)
         for module in _PATCH_MODULES.get(name, ("igni_core.core.session.core",)):
             patches.append(patch(f"{module}.{name}", new=shared))
     return patches

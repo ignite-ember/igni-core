@@ -12,6 +12,7 @@ in place of module-level patch decorators.
 from unittest.mock import MagicMock, patch
 
 import pytest
+from agno.tools.mcp import MCPTools
 
 from igni_core.core.agents import (
     AgentBuildContext,
@@ -309,7 +310,7 @@ class TestBuildAgentMCPFiltering:
         settings,
         *,
         base_dir: str | None = None,
-        mcp_clients: dict | None = None,
+        mcp_clients: dict[str, MCPTools] | None = None,
     ):
         """One :class:`AgentBuilder` call using the current class
         attribute mocks. Returned so each test can assert on the
@@ -336,8 +337,8 @@ class TestBuildAgentMCPFiltering:
             tools=["Read"],
             mcp_servers=[],
         )
-        pg_client = MagicMock()
-        redis_client = MagicMock()
+        pg_client = MagicMock(spec=MCPTools)
+        redis_client = MagicMock(spec=MCPTools)
         mcp_clients = {"postgres": pg_client, "redis": redis_client}
 
         self._build(defn, settings, mcp_clients=mcp_clients)
@@ -360,8 +361,8 @@ class TestBuildAgentMCPFiltering:
             tools=["Read"],
             mcp_servers=["postgres"],
         )
-        pg_client = MagicMock()
-        redis_client = MagicMock()
+        pg_client = MagicMock(spec=MCPTools)
+        redis_client = MagicMock(spec=MCPTools)
         mcp_clients = {"postgres": pg_client, "redis": redis_client}
 
         self._build(defn, settings, mcp_clients=mcp_clients)
@@ -384,7 +385,7 @@ class TestBuildAgentMCPFiltering:
             tools=["Read"],
             mcp_servers=["postgres"],
         )
-        mcp_clients = {"postgres": MagicMock(), "redis": MagicMock()}
+        mcp_clients = {"postgres": MagicMock(spec=MCPTools), "redis": MagicMock(spec=MCPTools)}
 
         self._build(defn, settings, base_dir="/tmp", mcp_clients=mcp_clients)
         kwargs = mock_agent_cls.call_args[1]

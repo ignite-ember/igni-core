@@ -12,10 +12,7 @@ from __future__ import annotations
 import logging
 from typing import ClassVar
 
-from igni_core.core.agents.schemas import (
-    _PLUGIN_RESTRICTED_FRONTMATTER_KEYS,
-    AgentDefinition,
-)
+from igni_core.core.agents.schemas import AgentDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +22,20 @@ class PluginRestrictionPolicy:
     definition and force ``force_isolation="worktree"`` so its
     spawns run in a fresh worktree.
 
-    ``RESTRICTED_KEYS`` is the class-level source of truth for the
-    key blocklist — same set as the (deprecated) module constant
-    ``_PLUGIN_RESTRICTED_FRONTMATTER_KEYS`` in ``schemas.py``.
+    ``RESTRICTED_KEYS`` is the frontmatter a plugin-shipped agent may
+    not declare: each would let a plugin escalate its own privileges.
     """
 
-    RESTRICTED_KEYS: ClassVar[frozenset[str]] = _PLUGIN_RESTRICTED_FRONTMATTER_KEYS
+    RESTRICTED_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "hooks",
+            "mcpServers",
+            "mcp_servers",
+            "permissionMode",
+            "permission_mode",
+            "permissions",
+        }
+    )
 
     @classmethod
     def strict(cls) -> PluginRestrictionPolicy:
