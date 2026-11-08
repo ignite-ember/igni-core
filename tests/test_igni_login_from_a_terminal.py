@@ -31,7 +31,7 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace
         auth=SimpleNamespace(credentials_file=str(tmp_path / "credentials.json")),
         storage=SimpleNamespace(data_dir=str(tmp_path / "data")),
     )
-    monkeypatch.setattr(login_cli, "load_settings", lambda: value)
+    monkeypatch.setattr(login_cli.SettingsLoader, "load", classmethod(lambda cls: value))
     return value
 
 

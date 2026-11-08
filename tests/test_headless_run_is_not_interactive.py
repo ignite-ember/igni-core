@@ -31,7 +31,7 @@ from typing import Any
 
 import pytest
 
-from igni_core.core.config.settings import PermissionsConfig
+from igni_core.core.config.schemas import PermissionsConfig
 from igni_core.core.config.tool_permissions import ToolPermissions
 from igni_core.core.tools.tool_spec import ToolSpecCatalog
 

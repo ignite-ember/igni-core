@@ -55,7 +55,6 @@ from igni_core.core.config.group_policy.signature import PackSignatureVerifier
 from igni_core.core.config.group_policy.transport import LiveFetchResult, SignedPackTransport
 from igni_core.core.config.group_policy.trust import PackTrust
 from igni_core.core.config.group_policy.verifier import PackVerifier
-from igni_core.core.config.settings import load_settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from tests.group_policy_signing import ISSUER, KEY, PERSON, ServerKey, session_token, sign_in, store
 
@@ -119,8 +118,8 @@ def _managed(tmp_path: Path, monkeypatch, text: str) -> None:
 
 def _settings(tmp_path: Path):
     """Settings the way the backend builds them: local first, then with the pack."""
-    local_only = load_settings(project_dir=tmp_path)
-    return load_settings(
+    local_only = SettingsLoader.load(project_dir=tmp_path)
+    return SettingsLoader.load(
         project_dir=tmp_path,
         group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
     )

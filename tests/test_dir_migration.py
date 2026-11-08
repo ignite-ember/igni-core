@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.dir_migration import (
     migrate_directory,
     migrate_home,
@@ -187,16 +187,16 @@ class TestTheSettingsLoaderSeesAnUnmigratedInstall:
 
     def test_a_project_config_under_the_old_name_is_still_read(self, tmp_path: Path):
         self._config(tmp_path / LEGACY_CONFIG_DIR, "configured-model")
-        assert load_settings(project_dir=tmp_path).models.default == "configured-model"
+        assert SettingsLoader.load(project_dir=tmp_path).models.default == "configured-model"
 
     def test_a_project_config_under_the_new_name_is_read(self, tmp_path: Path):
         self._config(tmp_path / CONFIG_DIR, "configured-model")
-        assert load_settings(project_dir=tmp_path).models.default == "configured-model"
+        assert SettingsLoader.load(project_dir=tmp_path).models.default == "configured-model"
 
     def test_the_new_name_wins_for_a_project(self, tmp_path: Path):
         self._config(tmp_path / LEGACY_CONFIG_DIR, "old")
         self._config(tmp_path / CONFIG_DIR, "new")
-        assert load_settings(project_dir=tmp_path).models.default == "new"
+        assert SettingsLoader.load(project_dir=tmp_path).models.default == "new"
 
     def test_a_home_config_under_the_old_name_is_still_read(self, tmp_path: Path, monkeypatch):
         home, project = tmp_path / "home", tmp_path / "proj"
@@ -204,7 +204,7 @@ class TestTheSettingsLoaderSeesAnUnmigratedInstall:
         monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
         self._config(home / LEGACY_CONFIG_DIR, "from-old-home")
 
-        assert load_settings(project_dir=project).models.default == "from-old-home"
+        assert SettingsLoader.load(project_dir=project).models.default == "from-old-home"
 
 
 class TestTheNamedWrappers:

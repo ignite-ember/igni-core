@@ -9,7 +9,8 @@ package shape (or the `Settings` sub-model layout) can't
 silently regress the "None means feature disabled" contract.
 """
 
-from igni_core.core.config.settings import GuardrailsConfig, ReasoningConfig, Settings
+from igni_core.core.config.schemas import GuardrailsConfig, ReasoningConfig
+from igni_core.core.config.settings import Settings
 from igni_core.core.session.agent_factory import create_guardrails, create_reasoning_tools
 
 

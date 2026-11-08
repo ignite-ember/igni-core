@@ -33,7 +33,7 @@ from igni_core.cli.options import CliOptions
 from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.group_hook_gate import (
     APPROVAL_NAME,
@@ -129,31 +129,31 @@ def _user_config(text: str) -> None:
 class TestTheSettingIsTheDevelopers:
     def test_default_is_run(self, tmp_path: Path):
         """Today's behaviour stays the default."""
-        assert load_settings(project_dir=tmp_path).hooks.group == "run"
+        assert SettingsLoader.load(project_dir=tmp_path).hooks.group == "run"
 
     def test_the_users_own_config_sets_it(self, tmp_path: Path):
         _user_config("hooks:\n  group: refuse\n")
 
-        assert load_settings(project_dir=tmp_path).hooks.group == "refuse"
+        assert SettingsLoader.load(project_dir=tmp_path).hooks.group == "refuse"
 
     def test_strict_means_ask(self, tmp_path: Path):
         overrides = CliOverrides.from_options(CliOptions(strict=True))
 
         assert overrides.hooks.group == "ask"
-        assert load_settings(overrides, project_dir=tmp_path).hooks.group == "ask"
+        assert SettingsLoader.load(overrides, project_dir=tmp_path).hooks.group == "ask"
 
     def test_strict_does_not_loosen_a_stricter_choice(self, tmp_path: Path):
         _user_config("hooks:\n  group: refuse\n")
         overrides = CliOverrides.from_options(CliOptions(strict=True))
 
-        assert load_settings(overrides, project_dir=tmp_path).hooks.group == "refuse"
+        assert SettingsLoader.load(overrides, project_dir=tmp_path).hooks.group == "refuse"
 
     def test_a_group_policy_cannot_set_it(self, tmp_path: Path, caplog):
         _user_config("hooks:\n  group: ask\n")
         pack = _pack({"hooks": {"group": "run"}})
 
         with caplog.at_level(logging.WARNING):
-            settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
+            settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
 
         assert settings.hooks.group == "ask"
         assert "hooks.group may be set only" in caplog.text
@@ -162,7 +162,9 @@ class TestTheSettingIsTheDevelopers:
         overrides = CliOverrides.from_options(CliOptions(strict=True))
         pack = _pack({"hooks": {"group": "run"}})
 
-        settings = load_settings(overrides, project_dir=tmp_path, group_policy_fetcher=lambda: pack)
+        settings = SettingsLoader.load(
+            overrides, project_dir=tmp_path, group_policy_fetcher=lambda: pack
+        )
 
         assert settings.hooks.group == "ask"
 
@@ -173,23 +175,23 @@ class TestTheSettingIsTheDevelopers:
         (project / "config.yaml").write_text("hooks:\n  group: run\n", encoding="utf-8")
         (project / "config.local.yaml").write_text("hooks:\n  group: run\n", encoding="utf-8")
 
-        assert load_settings(project_dir=tmp_path).hooks.group == "refuse"
+        assert SettingsLoader.load(project_dir=tmp_path).hooks.group == "refuse"
 
     def test_the_managed_file_cannot_set_it(self, tmp_path: Path, monkeypatch):
         managed = tmp_path / "managed.yaml"
         managed.write_text("hooks:\n  group: run\n", encoding="utf-8")
         monkeypatch.setattr(
-            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
         _user_config("hooks:\n  group: ask\n")
 
-        assert load_settings(project_dir=tmp_path).hooks.group == "ask"
+        assert SettingsLoader.load(project_dir=tmp_path).hooks.group == "ask"
 
     def test_a_typo_reads_as_ask_not_run(self, tmp_path: Path):
         _user_config("hooks:\n  group: refues\n")
 
-        assert load_settings(project_dir=tmp_path).hooks.group == "ask"
+        assert SettingsLoader.load(project_dir=tmp_path).hooks.group == "ask"
 
 
 # ── which hooks are the group's ──────────────────────────────────────
@@ -490,7 +492,7 @@ class TestNoPathAroundTheGate:
         async def nobody(*_: Any, **__: Any) -> bool | None:
             return None
 
-        settings = load_settings()
+        settings = SettingsLoader.load()
         hooks = SessionHooks(
             project_dir=tmp_path,
             settings=settings,

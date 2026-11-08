@@ -60,7 +60,8 @@ from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.schemas.telemetry import OtlpConfig, TelemetryConfig
-from igni_core.core.config.settings import Settings, SettingsLoader, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.observability import OtelRuntime, OtlpTarget
 from igni_core.core.observability.pipeline import OtelSinks
 from igni_core.core.paths import CONFIG_DIR
@@ -348,7 +349,7 @@ class TestNothingIsSetUpWithoutACollector:
         with ToolCallingModel(REPLY) as model:
             write_user_config(Path.home(), model.url)
             with EgressGuard(network=InternalNetwork(), watch_subprocesses=True).watching() as log:
-                await one_turn(load_settings(project_dir=project), project)
+                await one_turn(SettingsLoader.load(project_dir=project), project)
         assert not log.attempts, log.report()
         assert OtelRuntime.current() is None
 
@@ -371,7 +372,7 @@ class TestOnlyTheOrganisationNamesTheCollector:
             collector_block("http://repo-chosen.example:4318", capture_content=True)
         )
 
-        otlp = load_settings(project_dir=project).telemetry.otlp
+        otlp = SettingsLoader.load(project_dir=project).telemetry.otlp
 
         assert otlp.endpoint == ""
         assert otlp.capture_content is False
@@ -383,7 +384,7 @@ class TestOnlyTheOrganisationNamesTheCollector:
 
     def test_the_managed_file_names_it(self, project, tmp_path, monkeypatch):
         managed_file(tmp_path, monkeypatch, collector_block("http://otel.acme.internal:4318"))
-        otlp = load_settings(project_dir=project).telemetry.otlp
+        otlp = SettingsLoader.load(project_dir=project).telemetry.otlp
 
         assert otlp.endpoint == "http://otel.acme.internal:4318"
         assert otlp.headers == {"authorization": "Bearer collector-token"}
@@ -405,7 +406,7 @@ class TestOnlyTheOrganisationNamesTheCollector:
                 )
             ],
         )
-        settings = load_settings(project_dir=project, group_policy_fetcher=lambda: pack)
+        settings = SettingsLoader.load(project_dir=project, group_policy_fetcher=lambda: pack)
         assert settings.telemetry.otlp.endpoint == "http://otel.acme.internal:4318"
 
     def test_the_environment_names_it(self, monkeypatch):
@@ -429,7 +430,7 @@ class TestOnlyTheOrganisationNamesTheCollector:
         managed_file(tmp_path, monkeypatch, collector_block("http://otel.acme.internal:4318"))
         monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://elsewhere.example:4318")
 
-        otlp = load_settings(project_dir=project).telemetry.otlp
+        otlp = SettingsLoader.load(project_dir=project).telemetry.otlp
         assert otlp.endpoint == "http://otel.acme.internal:4318"
 
 
@@ -509,7 +510,7 @@ async def exported_turn(
         managed_file(
             tmp_path, monkeypatch, collector_block(collector.url, capture_content=capture_content)
         )
-        settings = load_settings(project_dir=project)
+        settings = SettingsLoader.load(project_dir=project)
         assert OtelRuntime.start(settings).ok
         response = await one_turn(settings, project)
         OtelRuntime.stop()

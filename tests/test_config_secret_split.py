@@ -70,9 +70,9 @@ class TestTheMergeTheSplitRestsOn:
             },
         )
 
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
 
-        settings = load_settings(project_dir=project)
+        settings = SettingsLoader.load(project_dir=project)
         entry = settings.models.registry["m3"]
 
         # Both halves survived. If tiers replaced whole entries rather
@@ -100,9 +100,9 @@ class TestTheMergeTheSplitRestsOn:
             {"models": {"registry": {"m3": {"model_id": "m", "context_window": 204800}}}},
         )
 
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
 
-        settings = load_settings(project_dir=project)
+        settings = SettingsLoader.load(project_dir=project)
         entry = settings.models.registry["m3"]
         assert entry.context_window == 204800
         assert entry.api_key == "k"

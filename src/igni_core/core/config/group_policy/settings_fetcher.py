@@ -1,4 +1,4 @@
-"""The ``group_policy_fetcher`` production hands to ``load_settings``."""
+"""The ``group_policy_fetcher`` production hands to ``SettingsLoader.load``."""
 
 from __future__ import annotations
 

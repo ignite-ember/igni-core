@@ -41,7 +41,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from igni_core.core.config.permissions.schemas import PermissionCategory, PermissionLevel
 
 if TYPE_CHECKING:
-    from igni_core.core.config.settings import PermissionsConfig
+    from igni_core.core.config.schemas import PermissionsConfig
 
 logger = logging.getLogger(__name__)
 

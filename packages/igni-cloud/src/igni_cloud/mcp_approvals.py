@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, ValidationError
 from igni_core.core.activity.http import busy_call
 from igni_core.core.auth.credentials import CloudCredentials
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.mcp.approval import McpApprovalPolicy
 
 logger = logging.getLogger(__name__)
@@ -154,7 +154,7 @@ class ConfiguredApiUrl:
         if not self._read:
             self._read = True
             try:
-                self._url = load_settings().api_url or None
+                self._url = SettingsLoader.load().api_url or None
             except Exception as exc:
                 logger.warning("MCP approvals: settings did not load: %s", exc)
         return self._url

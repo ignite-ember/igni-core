@@ -2,7 +2,8 @@
 
 import pytest
 
-from igni_core.core.config.settings import GuardrailsConfig, Settings
+from igni_core.core.config.schemas import GuardrailsConfig
+from igni_core.core.config.settings import Settings
 from igni_core.core.guardrails.base import Guardrail, GuardrailResult
 from igni_core.core.guardrails.injection import PromptInjectionGuardrail
 from igni_core.core.guardrails.moderation import ModerationGuardrail

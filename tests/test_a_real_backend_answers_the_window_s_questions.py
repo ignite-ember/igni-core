@@ -27,14 +27,14 @@ from igni_core.backend.schemas_hitl import ToolCallArgs
 from igni_core.backend.schemas_visualization import VisualizationAction
 from igni_core.backend.server import BackendServer
 from igni_core.core.config.model_entry import ModelRegistryEntry
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.tool_permissions import PermissionLevel
 from igni_core.protocol import messages as msg
 
 
 @pytest.fixture
 def backend(tmp_path) -> BackendServer:
-    return BackendServer(load_settings(project_dir=tmp_path), project_dir=tmp_path)
+    return BackendServer(SettingsLoader.load(project_dir=tmp_path), project_dir=tmp_path)
 
 
 # ── On connect ────────────────────────────────────────────────────

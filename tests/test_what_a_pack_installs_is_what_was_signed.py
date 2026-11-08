@@ -43,7 +43,6 @@ from igni_core.core.config.group_policy.settings_fetcher import (
 )
 from igni_core.core.config.group_policy.trust import PackTrust
 from igni_core.core.config.group_policy.verifier import AcceptedPack, PackVerifier
-from igni_core.core.config.settings import load_settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from tests.group_policy_signing import ISSUER, KEY, PERSON, ServerKey, session_token, sign_in, store
 
@@ -109,8 +108,8 @@ def _pack() -> GroupPolicyPack:
 
 def _start(tmp_path: Path):
     """What the backend does at start: local settings, then with the pack."""
-    local_only = load_settings(project_dir=tmp_path)
-    return load_settings(
+    local_only = SettingsLoader.load(project_dir=tmp_path)
+    return SettingsLoader.load(
         project_dir=tmp_path,
         group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
     )

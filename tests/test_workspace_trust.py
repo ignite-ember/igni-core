@@ -19,7 +19,6 @@ from igni_core.backend.workflow_discovery import WorkflowDiscovery
 from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 from igni_core.core.config.permission_eval.schemas import PermissionDecision
 from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
-from igni_core.core.config.settings import load_settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.tool_permissions.store import ToolPermissions
 from igni_core.core.hooks.executor import HookExecutor
@@ -285,9 +284,9 @@ def _loosening_config(repo: Path) -> None:
 
 def test_untrusted_project_config_cannot_loosen_safety_or_permissions(repo):
     _loosening_config(repo)
-    defaults = load_settings(project_dir=repo.parent)  # no project config there
+    defaults = SettingsLoader.load(project_dir=repo.parent)  # no project config there
 
-    settings = load_settings(project_dir=repo)
+    settings = SettingsLoader.load(project_dir=repo)
 
     assert settings.permissions.mode == "default"
     assert settings.permissions.shell_execute == "ask"
@@ -303,13 +302,13 @@ def test_trusting_lets_project_config_apply_and_revoking_takes_it_back(repo):
     _loosening_config(repo)
 
     _trust().trust(repo)
-    trusted = load_settings(project_dir=repo)
+    trusted = SettingsLoader.load(project_dir=repo)
     assert trusted.permissions.shell_execute == "allow"
     assert trusted.safety.blocked_commands == []
     assert ToolPermissions(project_dir=repo).get_level("Bash") == "allow"
 
     _trust().revoke(repo)
-    revoked = load_settings(project_dir=repo)
+    revoked = SettingsLoader.load(project_dir=repo)
     assert revoked.permissions.shell_execute == "ask"
     assert revoked.safety.blocked_commands
     assert ToolPermissions(project_dir=repo).get_level("Bash") == "ask"
@@ -432,7 +431,7 @@ def test_managed_policy_is_honoured_and_reaches_the_gate(repo, managed):
     managed({"workspace_trust": {"mode": "never"}})
     _trust().trust(repo)
 
-    settings = load_settings(project_dir=repo)
+    settings = SettingsLoader.load(project_dir=repo)
 
     assert settings.workspace_trust.mode == "never"
     assert not _trust().is_trusted(repo)
@@ -443,7 +442,7 @@ def test_group_policy_pack_sets_workspace_trust(repo):
         def to_settings_dict(self):
             return {"workspace_trust": {"mode": "trusted_remotes", "trusted_remotes": ["x/*"]}}
 
-    settings = load_settings(project_dir=repo, group_policy_fetcher=lambda: Pack())
+    settings = SettingsLoader.load(project_dir=repo, group_policy_fetcher=lambda: Pack())
 
     assert settings.workspace_trust.mode == "trusted_remotes"
     assert _trust().decide(repo).state == "untrusted"
@@ -463,7 +462,7 @@ def test_user_and_project_config_cannot_set_workspace_trust(repo, tmp_path):
     )
     _trust().trust(repo)  # even a trusted project cannot set it
 
-    settings = load_settings(project_dir=repo)
+    settings = SettingsLoader.load(project_dir=repo)
 
     assert settings.workspace_trust == WorkspaceTrustConfig()
     assert _trust().decide(other).state == "ask"
@@ -471,11 +470,11 @@ def test_user_and_project_config_cannot_set_workspace_trust(repo, tmp_path):
 
 def test_the_environment_may_tighten_but_not_loosen(repo, managed, monkeypatch):
     monkeypatch.setenv("IGNI_WORKSPACE_TRUST_MODE", "never")
-    assert load_settings(project_dir=repo).workspace_trust.mode == "never"
+    assert SettingsLoader.load(project_dir=repo).workspace_trust.mode == "never"
 
     managed({"workspace_trust": {"mode": "never"}})
     monkeypatch.setenv("IGNI_WORKSPACE_TRUST_MODE", "ask")
-    assert load_settings(project_dir=repo).workspace_trust.mode == "never"
+    assert SettingsLoader.load(project_dir=repo).workspace_trust.mode == "never"
 
 
 # ── managed values are final ──────────────────────────────────────
@@ -487,7 +486,7 @@ def test_managed_ask_beats_a_trusted_projects_allow(repo, managed):
     _write(repo / ".igni" / "config.yaml", yaml.safe_dump({"permissions": {"allow": ["Bash"]}}))
     _trust().trust(repo)
 
-    settings = load_settings(project_dir=repo)
+    settings = SettingsLoader.load(project_dir=repo)
     perms = settings.permissions
 
     assert "shell_execute" in perms.final_fields
@@ -507,7 +506,7 @@ def test_an_unmanaged_default_still_yields_to_a_trusted_project(repo):
     _write(repo / ".igni" / "settings.json", json.dumps({"permissions": {"allow": ["Bash"]}}))
     _trust().trust(repo)
 
-    perms = load_settings(project_dir=repo).permissions
+    perms = SettingsLoader.load(project_dir=repo).permissions
 
     assert perms.final_fields == frozenset()
     assert (

@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 
 
 class PolicySettingsLoader:
@@ -28,12 +29,12 @@ class PolicySettingsLoader:
 
     def local(self) -> Settings:
         """Local configuration only: the first pass."""
-        return load_settings(project_dir=self._project_dir)
+        return SettingsLoader.load(project_dir=self._project_dir)
 
     def load(self, local: Settings | None = None) -> Settings:
         """The load that counts, from ``local`` (read now when not given)."""
         local_only = local if local is not None else self.local()
-        return load_settings(
+        return SettingsLoader.load(
             project_dir=self._project_dir,
             group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
         )

@@ -40,7 +40,8 @@ from igni_core.core.config.model_entry import CLOUD_TOKEN_SENTINEL, ModelRegistr
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.provider_builders import AnthropicBuilder
 from igni_core.core.config.provider_catalog import ProviderCatalog
-from igni_core.core.config.settings import ModelsConfig, Settings
+from igni_core.core.config.schemas import ModelsConfig
+from igni_core.core.config.settings import Settings
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.core import Session
 from tests.anthropic_stub import Reply, StubMessagesApi, ToolUse

@@ -24,7 +24,8 @@ from click.testing import CliRunner
 
 from igni_core.cli.ext import ext
 from igni_core.core.config.schemas import NetworkConfig, PluginsConfig
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.hooks.handlers.http import HttpHookHandler
 from igni_core.core.hooks.schemas import HookDefinition, HookPayload
 from igni_core.core.mcp.client import MCPClientManager
@@ -107,7 +108,7 @@ class TestThePolicy:
 class TestWhereTheHostsComeFrom:
     def test_the_user_config_names_them(self, tmp_path):
         _write_user_config("network:\n  internal_hosts: [git.acme.internal]\n")
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
         assert settings.network.internal_hosts == ["git.acme.internal"]
 
     def test_a_project_config_cannot_widen_them(self, tmp_path):
@@ -117,7 +118,7 @@ class TestWhereTheHostsComeFrom:
         (project / "config.yaml").write_text("network:\n  internal_hosts: [github.com]\n")
         (project / "config.local.yaml").write_text("network:\n  internal_hosts: ['*.com']\n")
 
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
 
         assert settings.network.internal_hosts == ["git.acme.internal"]
         assert not NetworkPolicy.from_settings(settings).allows(PUBLIC)
@@ -128,7 +129,7 @@ class TestWhereTheHostsComeFrom:
         project.mkdir()
         (project / "config.yaml").write_text("air_gapped: false\n")
 
-        assert load_settings(project_dir=tmp_path).air_gapped is True
+        assert SettingsLoader.load(project_dir=tmp_path).air_gapped is True
 
     def test_a_project_config_cannot_add_a_host_through_another_setting(self, tmp_path):
         # api_url, portal_url, update_endpoint and plugins.marketplaces all
@@ -143,7 +144,7 @@ class TestWhereTheHostsComeFrom:
             "plugins:\n  marketplaces: [https://evil.example/m.git]\n"
         )
 
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
 
         assert not NetworkPolicy.from_settings(settings).allows("https://evil.example/x")
 

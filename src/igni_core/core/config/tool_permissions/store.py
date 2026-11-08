@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from igni_core.core.config.settings import PermissionsConfig
+from igni_core.core.config.schemas import PermissionsConfig
 from igni_core.core.config.tool_permissions.schemas import (
     CategoryToToolMap,
     PermissionLevel,

@@ -6,13 +6,9 @@ import pytest
 
 from igni_core.core.config.cli_overrides import CliOverrides, ModelsOverrides, PermissionOverrides
 from igni_core.core.config.permission_eval import PermissionMode
-from igni_core.core.config.settings import (
-    ModelsConfig,
-    PermissionsConfig,
-    Settings,
-    SettingsLoader,
-    load_settings,
-)
+from igni_core.core.config.schemas import ModelsConfig, PermissionsConfig
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.paths import CONFIG_DIR
 
 # The pre-refactor module exposed ``_deep_merge`` / ``_load_yaml`` as
@@ -40,7 +36,7 @@ def _isolate_managed_settings(monkeypatch):
     ``_REAL_PLATFORM_PATH`` so platform-detail tests can still reach
     it past this stub."""
     monkeypatch.setattr(
-        "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+        "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
         staticmethod(lambda: None),
     )
 
@@ -143,11 +139,11 @@ class TestLoadSettings:
         config = igni_dir / "config.yaml"
         config.write_text("models:\n  default: custom-from-project\n")
 
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert s.models.default == "custom-from-project"
 
     def test_load_with_cli_overrides(self, tmp_path):
-        s = load_settings(
+        s = SettingsLoader.load(
             cli_overrides=CliOverrides(models=ModelsOverrides(default="cli-model")),
             project_dir=tmp_path,
         )
@@ -159,7 +155,7 @@ class TestLoadSettings:
         config = igni_dir / "config.yaml"
         config.write_text("models:\n  default: project-model\n")
 
-        s = load_settings(
+        s = SettingsLoader.load(
             cli_overrides=CliOverrides(models=ModelsOverrides(default="cli-model")),
             project_dir=tmp_path,
         )
@@ -171,7 +167,7 @@ class TestLoadSettings:
         (igni_dir / "config.yaml").write_text("models:\n  default: project\n")
         (igni_dir / "config.local.yaml").write_text("models:\n  default: local\n")
 
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert s.models.default == "local"
 
     def test_user_global_config_loaded(self, tmp_path):
@@ -186,7 +182,7 @@ class TestLoadSettings:
         user_ember = Path.home() / CONFIG_DIR
         user_ember.mkdir(parents=True)
         (user_ember / "config.yaml").write_text("models:\n  default: user-global-model\n")
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert s.models.default == "user-global-model"
 
     def test_project_beats_user_global(self, tmp_path):
@@ -196,7 +192,7 @@ class TestLoadSettings:
         project_ember = tmp_path / CONFIG_DIR
         project_ember.mkdir()
         (project_ember / "config.yaml").write_text("models:\n  default: project-model\n")
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         # Project wins over user — same precedence as YAML files in
         # the CC tier model.
         assert s.models.default == "project-model"
@@ -230,14 +226,14 @@ class TestFiveTierPrecedence:
         managed = tmp_path / "managed.yaml"
         managed.write_text(f"models:\n  default: managed-{tier_label}\n")
         monkeypatch.setattr(
-            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
 
     def test_managed_is_top_of_stack(self, tmp_path, monkeypatch):
         # All five tiers present; managed must win.
         self._write_all_tiers(tmp_path, monkeypatch, value="x", tier_label="x")
-        s = load_settings(
+        s = SettingsLoader.load(
             cli_overrides=CliOverrides(models=ModelsOverrides(default="cli-x")),
             project_dir=tmp_path,
         )
@@ -248,7 +244,7 @@ class TestFiveTierPrecedence:
         self._write_all_tiers(tmp_path, monkeypatch, value="x", tier_label="x")
         # Clear the managed file but keep the lookup path intact.
         (tmp_path / "managed.yaml").unlink()
-        s = load_settings(
+        s = SettingsLoader.load(
             cli_overrides=CliOverrides(models=ModelsOverrides(default="cli-x")),
             project_dir=tmp_path,
         )
@@ -257,7 +253,7 @@ class TestFiveTierPrecedence:
     def test_project_local_wins_when_no_cli_no_managed(self, tmp_path, monkeypatch) -> None:
         self._write_all_tiers(tmp_path, monkeypatch, value="x", tier_label="x")
         (tmp_path / "managed.yaml").unlink()
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert s.models.default == "local-x"
 
     def test_project_wins_when_only_user_and_project(self, tmp_path) -> None:
@@ -267,7 +263,7 @@ class TestFiveTierPrecedence:
         project_ember = tmp_path / CONFIG_DIR
         project_ember.mkdir(parents=True, exist_ok=True)
         (project_ember / "config.yaml").write_text("models:\n  default: project-only\n")
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert s.models.default == "project-only"
 
 
@@ -311,10 +307,10 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("models:\n  default: org-pinned\n")
         monkeypatch.setattr(
-            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert s.models.default == "org-pinned"
 
     def test_managed_overrides_project(self, tmp_path, monkeypatch):
@@ -324,10 +320,10 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("models:\n  default: org-pinned\n")
         monkeypatch.setattr(
-            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert s.models.default == "org-pinned"
 
     def test_managed_overrides_cli(self, tmp_path, monkeypatch):
@@ -336,10 +332,10 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("permissions:\n  mode: dontAsk\nmodels:\n  default: org-pinned\n")
         monkeypatch.setattr(
-            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
-        s = load_settings(
+        s = SettingsLoader.load(
             cli_overrides=CliOverrides(
                 models=ModelsOverrides(default="user-cli-choice"),
                 permissions=PermissionOverrides(mode=PermissionMode.BYPASS_PERMISSIONS),
@@ -354,10 +350,10 @@ class TestManagedSettings:
         # Point at a path that doesn't exist — loader should fall
         # back to lower tiers without raising.
         monkeypatch.setattr(
-            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: tmp_path / "does-not-exist.yaml"),
         )
-        s = load_settings(
+        s = SettingsLoader.load(
             cli_overrides=CliOverrides(models=ModelsOverrides(default="user-cli-choice")),
             project_dir=tmp_path,
         )
@@ -370,10 +366,10 @@ class TestManagedSettings:
         managed = tmp_path / "managed.yaml"
         managed.write_text("permissions:\n  mode: dontAsk\n")
         monkeypatch.setattr(
-            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
-        s = load_settings(
+        s = SettingsLoader.load(
             cli_overrides=CliOverrides(models=ModelsOverrides(default="user-cli-choice")),
             project_dir=tmp_path,
         )
@@ -389,10 +385,10 @@ class TestManagedSettings:
             '{"permissions": {"mode": "dontAsk"}, "models": {"default": "json-model"}}'
         )
         monkeypatch.setattr(
-            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: managed),
         )
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert s.permissions.mode == "dontAsk"
         assert s.models.default == "json-model"
 
@@ -400,10 +396,10 @@ class TestManagedSettings:
         """Unknown platform (no managed location defined) → managed
         tier is silently skipped without error."""
         monkeypatch.setattr(
-            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.settings_loader.SettingsLoader.platform_managed_settings_path",
             staticmethod(lambda: None),
         )
-        s = load_settings(
+        s = SettingsLoader.load(
             cli_overrides=CliOverrides(models=ModelsOverrides(default="cli-wins")),
             project_dir=tmp_path,
         )
@@ -411,7 +407,7 @@ class TestManagedSettings:
 
 
 class TestSettingsJsonLifted:
-    """``load_settings`` lifts ``permissions`` out of ``settings.json``
+    """``SettingsLoader.load`` lifts ``permissions`` out of ``settings.json``
     files so the ``PermissionEvaluator`` sees the same rules the
     user wrote in their CC-style config — without this, a ``deny``
     rule there silently never fired and bypass mode let through
@@ -428,7 +424,7 @@ class TestSettingsJsonLifted:
         (igni_dir / "settings.json").write_text('{"permissions": {"deny": ["Bash(rm -rf /)"]}}')
         monkeypatch.setattr("pathlib.Path.home", lambda: user_home)
 
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert "Bash(rm -rf /)" in s.permissions.deny
 
     def test_project_settings_json_overrides_user(self, tmp_path, monkeypatch) -> None:
@@ -444,7 +440,7 @@ class TestSettingsJsonLifted:
         )
         monkeypatch.setattr("pathlib.Path.home", lambda: user_home)
 
-        s = load_settings(project_dir=tmp_path / "proj")
+        s = SettingsLoader.load(project_dir=tmp_path / "proj")
         # ``_deep_merge`` replaces lists — matches the YAML
         # precedence. Project wins for the ``deny`` list.
         assert s.permissions.deny == ["Bash(project-rule)"]
@@ -454,7 +450,7 @@ class TestSettingsJsonLifted:
         (user_home / CONFIG_DIR).mkdir(parents=True)
         monkeypatch.setattr("pathlib.Path.home", lambda: user_home)
 
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert s.permissions.deny == []
 
     def test_malformed_settings_json_does_not_crash(self, tmp_path, monkeypatch) -> None:
@@ -466,12 +462,12 @@ class TestSettingsJsonLifted:
         (igni_dir / "settings.json").write_text("{not valid json")
         monkeypatch.setattr("pathlib.Path.home", lambda: user_home)
 
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         assert s.permissions.deny == []
 
     def test_hooks_key_is_NOT_lifted(self, tmp_path, monkeypatch) -> None:
         # ``hooks`` has its own dedicated loader (HookLoader). If
-        # ``load_settings`` also lifted it, the unified ``HooksConfig``
+        # ``SettingsLoader.load`` also lifted it, the unified ``HooksConfig``
         # dataclass would either drop the unfamiliar shape or
         # there'd be two competing sources of truth. Confirm we
         # skip it entirely.
@@ -484,7 +480,7 @@ class TestSettingsJsonLifted:
         )
         monkeypatch.setattr("pathlib.Path.home", lambda: user_home)
 
-        s = load_settings(project_dir=tmp_path)
+        s = SettingsLoader.load(project_dir=tmp_path)
         # Permissions lifted as expected …
         assert "Bash(rm *)" in s.permissions.deny
         # … but the hooks dict from settings.json didn't leak

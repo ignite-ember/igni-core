@@ -2,7 +2,7 @@
 
 from igni_core.core.config.cloud_model_migrator import CloudModelMigrator
 from igni_core.core.config.managed_policy import ManagedPolicySource
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.user_config_store import UserConfigStore
 
@@ -13,7 +13,6 @@ __all__ = [
     "Settings",
     "SettingsLoader",
     "UserConfigStore",
-    "load_settings",
 ]
 
 

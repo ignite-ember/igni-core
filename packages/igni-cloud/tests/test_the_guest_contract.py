@@ -48,7 +48,7 @@ from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.config.schemas.storage_and_paths import StorageConfig
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.db.engine import cache
 from igni_core.core.db.engine_registry import EngineRegistry
 from igni_core.core.db.locator import StorageLocator
@@ -442,7 +442,7 @@ async def test_an_igni_started_before_its_producer_binds_when_producer_env_appea
 
             # The backend's boot from here on, as ``BackendApp.run`` does it.
             assert os.environ[StorageConfig.DATABASE_URL_ENV] == database_url.url
-            settings = load_settings(project_dir=tmp_path)
+            settings = SettingsLoader.load(project_dir=tmp_path)
             assert settings.storage.database_url == database_url.url
             tenancy.use(lambda: guest.tenant)
             database = StorageLocator.from_settings(settings).project_database(tmp_path)

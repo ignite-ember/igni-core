@@ -11,7 +11,7 @@ from igni_core.core.activity import ActivityRegistry
 from igni_core.core.approvals.events import approval_events
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.schemas.storage_and_paths import StorageConfig
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.db.scope import tenancy
 from igni_core.core.db.urls import DatabaseUrl, Dialect
 from igni_core.core.hooks.extension_gate import ExtensionHookGate
@@ -137,14 +137,14 @@ def _workspace_trust(request: pytest.FixtureRequest) -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _isolate_user_settings(tmp_path_factory, monkeypatch):
     """Globally redirect ``Path.home()``, ``Path.cwd()``, and the
-    ``HOME`` env var to temp directories so ``load_settings()``
+    ``HOME`` env var to temp directories so ``SettingsLoader.load()``
     can't read the developer's real ``~/.igni/settings.json`` or
     the project's ``.igni/settings.local.json``. Both files
     contain real permission rules (deny/ask/allow) the developer
     set on their machine (e.g. ``Bash(echo *PERM_TEST_BLOCKED*)``
     from the row-9 walkthrough, ``ask: [Edit]`` from an /accept
     session) that otherwise leak into every test calling
-    ``load_settings`` without an explicit ``project_dir``. The
+    ``SettingsLoader.load`` without an explicit ``project_dir``. The
     ``HOME`` env override covers code paths that use
     ``os.path.expanduser`` (auth credentials path, etc.) instead
     of ``Path.home`` so the two stay consistent. Tests that need
@@ -244,7 +244,7 @@ def settings():
     optional provider packages and without needing a real cloud
     connection.
     """
-    s = load_settings()
+    s = SettingsLoader.load()
     s.models.registry["MiniMax-M2.7"] = ModelRegistryEntry(
         provider="openai_like",
         model_id="MiniMaxAI/MiniMax-M2.7",

@@ -7,7 +7,9 @@ from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.null_model import NoModelConfigured
 from igni_core.core.config.provider_builders import ProviderClientBuilder
-from igni_core.core.config.settings import ModelsConfig, Settings, load_settings
+from igni_core.core.config.schemas import ModelsConfig
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 
 
 @pytest.fixture
@@ -19,7 +21,7 @@ def registry():
     simulates that discovery step by injecting a known entry so
     tests can exercise the resolver without a real cloud
     connection."""
-    settings = load_settings()
+    settings = SettingsLoader.load()
     settings.models.registry["MiniMax-M2.7"] = ModelRegistryEntry(
         provider="openai_like",
         model_id="MiniMaxAI/MiniMax-M2.7",

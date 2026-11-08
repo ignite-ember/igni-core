@@ -27,7 +27,7 @@ from igni_core.backend.group_pack_hydrator import GroupPackHydrator
 from igni_core.core.auth.credentials import Credentials, CredentialsStore
 from igni_core.core.auth.portal_client import PortalClient
 from igni_core.core.config.endpoint import ApiUrlNotConfigured, require_api_url
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 
 
 @click.command("login")
@@ -51,7 +51,7 @@ def login(token_stdin: bool, timeout: float) -> None:
     browser. With --token-stdin, keeps an access token read from stdin
     instead (e.g. `printf %s "$TOKEN" | igni login --token-stdin`).
     """
-    settings = load_settings()
+    settings = SettingsLoader.load()
     try:
         api_url = require_api_url(settings.api_url, operation="Signing in")
     except ApiUrlNotConfigured as exc:

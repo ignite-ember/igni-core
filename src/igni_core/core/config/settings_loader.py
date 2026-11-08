@@ -56,6 +56,7 @@ from igni_core.core.config.config_io import DictMerger, YamlSource
 from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.merge_plan import SettingsMergePlan
 from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.settings import Settings
 from igni_core.core.config.tiers.cli import CliTier
 from igni_core.core.config.tiers.files import JsonFragmentTier, YamlTier
 
@@ -64,7 +65,6 @@ if TYPE_CHECKING:
 
     from igni_core.core.config.cli_overrides import CliOverrides
     from igni_core.core.config.group_policy.pack import GroupPolicyPack
-    from igni_core.core.config.settings import Settings
 
 
 logger = logging.getLogger(__name__)
@@ -92,13 +92,6 @@ class SettingsLoader:
     ) -> None:
         """Build a fresh loader seeded from ``Settings`` defaults."""
         if accumulator is None:
-            # Lazy import: :class:`Settings` imports us (SettingsLoader
-            # is re-exported from ``settings.py``). Threading defaults
-            # through :meth:`Settings.default_dict` keeps the "defaults
-            # are the model's Field defaults" invariant without
-            # forcing a top-level cycle.
-            from igni_core.core.config.settings import Settings
-
             accumulator = SettingsAccumulator.from_defaults(Settings.default_dict())
         self._accumulator = accumulator
 
@@ -214,8 +207,6 @@ class SettingsLoader:
         — the final :meth:`finalize` step will surface a clear
         ``ValidationError`` if the payload is beyond repair.
         """
-        from igni_core.core.config.settings import Settings
-
         result: MigrationResult = CloudModelMigrator.migrate_from_dict(
             self._accumulator.models_block(),
             defaults=Settings.defaults().models,
@@ -228,8 +219,6 @@ class SettingsLoader:
         """Validate the accumulated payload through Pydantic and
         return the ``Settings`` instance. Shape errors surface here
         rather than mid-pipeline."""
-        from igni_core.core.config.settings import Settings
-
         return self._accumulator.to_settings(Settings)
 
     # ── full-pipeline entrypoint ──────────────────────────────────
@@ -251,8 +240,6 @@ class SettingsLoader:
         provider so tests that monkey-patch that class attribute
         keep controlling the managed tier.
         """
-        from igni_core.core.config.settings import Settings
-
         # The two organisation tiers are seen here on their own as well as
         # merged, so the mode policy can tell a ``permissions.mode`` the
         # organisation set from one a user or a flag set. The merged

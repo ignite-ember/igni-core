@@ -6,11 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from igni_core.core.config.settings import (
-    GuardrailsConfig,
-    PermissionsConfig,
-    Settings,
-)
+from igni_core.core.config.schemas import GuardrailsConfig, PermissionsConfig
+from igni_core.core.config.settings import Settings
 from igni_core.core.paths import CONFIG_DIR, PROJECT_CONTEXT_FILE
 from igni_core.core.utils.tips import CONTEXTUAL_TIPS, GENERAL_TIPS, get_tip, random_tip
 from igni_core.core.utils.update_checker import (

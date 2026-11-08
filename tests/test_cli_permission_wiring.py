@@ -53,25 +53,27 @@ def _settings_from_flags(**flags: bool):
     assert result.exit_code == 0
     # The settings object isn't directly captured by --help (it
     # exits before storing into ctx.obj). Replicate the merge by
-    # calling load_settings with the same override shape. The
+    # calling SettingsLoader.load with the same override shape. The
     # CLI's flag-handling block is short and self-contained;
     # tests below cross-check via PermissionEvaluator behavior.
     return None
 
 
 def _settings_with_overrides(**overrides):
-    from igni_core.core.config.settings import load_settings
+    from igni_core.core.config.settings_loader import SettingsLoader
 
-    return load_settings(cli_overrides=CliOverrides(permissions=PermissionOverrides(**overrides)))
+    return SettingsLoader.load(
+        cli_overrides=CliOverrides(permissions=PermissionOverrides(**overrides))
+    )
 
 
 # ── Flag → mode mapping (direct check) ───────────────────────────
 
 
 def test_default_mode_is_default() -> None:
-    from igni_core.core.config.settings import load_settings
+    from igni_core.core.config.settings_loader import SettingsLoader
 
-    s = load_settings()
+    s = SettingsLoader.load()
     assert s.permissions.mode == "default"
 
 

@@ -46,7 +46,8 @@ from pydantic import ValidationError
 
 from igni_core import __version__
 from igni_core.core.activity.http import busy_call
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.utils.update_checker_schemas import (
     PackageMetadata,
@@ -184,7 +185,7 @@ class UpdateChecker:
         catches anything truly unexpected.
         """
         current = __version__
-        settings = self._settings if self._settings is not None else load_settings()
+        settings = self._settings if self._settings is not None else SettingsLoader.load()
         ttl = settings.update_check_ttl
 
         # Off switch. ``update_check_ttl`` only ever changed how *often*

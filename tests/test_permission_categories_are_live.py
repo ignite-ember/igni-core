@@ -114,10 +114,10 @@ class TestReadOnlyIsAWall:
     def test_reads_run_and_writes_are_denied(self):
         from igni_core.cli.options import CliOptions
         from igni_core.core.config.cli_overrides import CliOverrides
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
 
         payload = CliOverrides.from_options(CliOptions(read_only=True))
-        perms = load_settings(cli_overrides=payload).permissions
+        perms = SettingsLoader.load(cli_overrides=payload).permissions
 
         assert _decide(perms, "run_shell_command", {"command": "cat setup.py"}) == "ALLOW"
         assert _decide(perms, "run_shell_command", {"command": "git checkout -- ."}) == "DENY"
@@ -133,11 +133,11 @@ class TestReadOnlyIsAWall:
         """
         from igni_core.cli.options import CliOptions
         from igni_core.core.config.cli_overrides import CliOverrides
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
         from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
 
         payload = CliOverrides.from_options(CliOptions(read_only=True))
-        perms = load_settings(cli_overrides=payload).permissions
+        perms = SettingsLoader.load(cli_overrides=payload).permissions
         registry = ToolHintsRegistry.shared()
         registry.declare(
             "ext:acme.index",

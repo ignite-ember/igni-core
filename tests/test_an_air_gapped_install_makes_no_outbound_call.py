@@ -33,7 +33,8 @@ from igni_core.core import air_gap
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.schemas import PluginsConfig, StorageConfig
-from igni_core.core.config.settings import Settings, SettingsLoader, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.tool_permissions import ToolPermissions
 from igni_core.core.decisions.schemas import DecisionsUnavailable
 from igni_core.core.plugins import marketplaces as _marketplaces
@@ -119,7 +120,7 @@ class TestTheSwitch:
     def test_the_config_key_turns_it_on(self, tmp_path):
         (Path.home() / ".igni").mkdir(parents=True, exist_ok=True)
         (Path.home() / ".igni" / "config.yaml").write_text("air_gapped: true\n")
-        assert load_settings(project_dir=tmp_path).air_gapped is True
+        assert SettingsLoader.load(project_dir=tmp_path).air_gapped is True
 
     @pytest.mark.parametrize("value", ["1", "true", "YES", " on "])
     def test_the_environment_variable_turns_it_on(self, monkeypatch, value):
@@ -138,7 +139,7 @@ class TestTheSwitch:
         # A user cannot switch a sysadmin's air gap back off.
         (Path.home() / ".igni").mkdir(parents=True, exist_ok=True)
         (Path.home() / ".igni" / "config.yaml").write_text("air_gapped: false\n")
-        assert load_settings(project_dir=tmp_path).air_gapped is True
+        assert SettingsLoader.load(project_dir=tmp_path).air_gapped is True
 
     def test_a_group_policy_turns_it_on(self, tmp_path):
         pack = GroupPolicyPack(
@@ -154,7 +155,7 @@ class TestTheSwitch:
                 )
             ],
         )
-        settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
+        settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
         assert settings.air_gapped is True
 
 
@@ -294,7 +295,7 @@ class TestTheWebTools:
         (Path.home() / ".igni" / "config.yaml").write_text(
             "air_gapped: true\npermissions:\n  web_fetch: allow\n  web_search: allow\n"
         )
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
         assert settings.permissions.web_fetch == "deny"
         assert settings.permissions.web_search == "deny"
 

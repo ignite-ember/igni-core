@@ -279,13 +279,13 @@ class TestBackendServerRealConstruction:
         `_init_*` phase methods and that ``get_status`` produces the
         typed StatusUpdate payload.
 
-        Constructs real Settings (via `load_settings`) rather than a
+        Constructs real Settings (via `SettingsLoader.load`) rather than a
         MagicMock so any `__init__` regression that only fires with
         real settings (missing field, wrong default, ordering bug)
         surfaces here."""
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
 
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
 
         backend = BackendServer(settings, project_dir=tmp_path)
 
@@ -316,9 +316,9 @@ class TestBackendServerRealConstruction:
         ``_init_agent_and_skill_pools`` →
         ``_init_mcp_client_manager`` → ``_init_lsp_and_monitors``.
         """
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
 
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
         backend = BackendServer(settings, project_dir=tmp_path)
         session = backend._session
 

@@ -163,14 +163,14 @@ async def test_both_flags_mirror_one_session_to_both_transports(tmp_path):
 
 def test_a_required_policy_that_cannot_be_had_closes_the_gate_but_boots(project, monkeypatch):
     """The person can still sign in — which is how a pack is fetched."""
-    local = policy_settings.load_settings(project_dir=project)
+    local = policy_settings.SettingsLoader.load(project_dir=project)
 
-    def _unavailable(*args, **kwargs):
+    def _unavailable(cls, *args, **kwargs):
         if kwargs.get("group_policy_fetcher") is not None:
             raise GroupPolicyUnavailable("no verified pack")
         return local
 
-    monkeypatch.setattr(policy_settings, "load_settings", _unavailable)
+    monkeypatch.setattr(policy_settings.SettingsLoader, "load", classmethod(_unavailable))
     try:
         settings = BackendSettingsLoader(project).load()
 
