@@ -25,7 +25,7 @@ from igni_core.core.config.tool_permissions.store import ToolPermissions
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.loader import HookLoader
 from igni_core.core.lsp.loader import load_lsp_config
-from igni_core.core.monitors.config import load_monitor_config
+from igni_core.core.monitors import MonitorConfigLoader
 from igni_core.core.session.schemas import SessionLifecyclePayload
 from igni_core.core.tools.custom_loader import CustomToolLoader
 from igni_core.core.utils.markdown_commands import MarkdownCommand
@@ -225,7 +225,10 @@ def test_untrusted_lsp_json_command_is_never_started(repo, tmp_path):
 
 def test_untrusted_monitors_json_is_not_loaded(repo):
     _write(repo / ".monitors.json", json.dumps({"monitors": {"m": {"command": "true"}}}))
-    assert load_monitor_config(repo) == {}
+    assert MonitorConfigLoader(repo, trust=_trust()).load() == {}
+
+    _trust().trust(repo)
+    assert "m" in MonitorConfigLoader(repo, trust=_trust()).load()
 
 
 # ── markdown commands ─────────────────────────────────────────────

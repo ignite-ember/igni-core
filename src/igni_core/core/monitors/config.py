@@ -1,5 +1,5 @@
-"""Monitor config — parses ``.monitors.json`` files (plugins,
-project, user tiers). Structured identically to the LSP config:
+"""Monitor config — one background-monitor declaration as written in a
+``.monitors.json`` file. Structured identically to the LSP config:
 
     {
       "monitors": {
@@ -13,24 +13,19 @@ project, user tiers). Structured identically to the LSP config:
       }
     }
 
-Precedence (lower → higher, last write wins on collision):
-1. ``~/.igni/monitors.json`` (user)
-2. ``<project>/.monitors.json`` (project)
-3. Plugin-bundled ``.monitors.json`` (namespaced ``<plugin>:<name>``)
+Discovering and merging the files across tiers is
+:class:`~igni_core.core.monitors.loader.MonitorConfigLoader`.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from igni_core.core.paths import CONFIG_DIR
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +40,15 @@ class MonitorConfig(BaseModel):
     survive transient failures but not infinite-loop on a hard
     error (the manager backs off and gives up after repeated
     crashes — see ``MonitorManager``).
+
+    Validation is permissive where a hand-written file is likely to be
+    sloppy: an unknown ``restart`` falls back to ``on_crash``, a non-string
+    ``cwd`` is dropped, a non-mapping ``env`` is empty and its values are
+    stringified, and keys the schema does not know are ignored. A blank
+    ``command`` is still an error — there is nothing to run.
     """
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
     name: str
     command: str
@@ -58,6 +59,33 @@ class MonitorConfig(BaseModel):
     cwd: str | None = None
     env: dict[str, str] = Field(default_factory=dict)
     restart: RestartPolicy = "on_crash"
+
+    @field_validator("command")
+    @classmethod
+    def _command_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("command must not be blank")
+        return value
+
+    @field_validator("cwd", mode="before")
+    @classmethod
+    def _cwd_string_or_none(cls, value: object) -> str | None:
+        return value if isinstance(value, str) else None
+
+    @field_validator("env", mode="before")
+    @classmethod
+    def _env_as_strings(cls, value: object) -> dict[str, str]:
+        if not isinstance(value, Mapping):
+            return {}
+        return {str(k): str(v) for k, v in value.items()}
+
+    @field_validator("restart", mode="before")
+    @classmethod
+    def _restart_or_default(cls, value: object) -> object:
+        if value in get_args(RestartPolicy):
+            return value
+        logger.debug("Unknown monitor restart policy %r — defaulting to on_crash", value)
+        return "on_crash"
 
     def resolve_cwd(self, project_dir: Path) -> str:
         """Resolve ``self.cwd`` against ``project_dir``.
@@ -88,93 +116,3 @@ class MonitorConfig(BaseModel):
         env: dict[str, str] = dict(base_env)
         env.update(self.env)
         return env
-
-
-def _parse_monitors_dict(raw: dict, namespace: str = "") -> dict[str, MonitorConfig]:
-    """Coerce a ``monitors`` mapping into typed configs.
-
-    ``namespace`` (plugin tier) is prepended as ``<ns>:<name>`` so
-    the same simple name from multiple plugins doesn't collide.
-    Malformed rows are dropped with a debug log — a single bad
-    entry never sinks the file.
-    """
-    out: dict[str, MonitorConfig] = {}
-    monitors = raw.get("monitors") or {}
-    if not isinstance(monitors, dict):
-        return out
-    for name, entry in monitors.items():
-        if not isinstance(entry, dict):
-            continue
-        command = entry.get("command")
-        if not isinstance(command, str) or not command.strip():
-            logger.debug("Monitor %s: missing/invalid command — skipping", name)
-            continue
-        restart = entry.get("restart", "on_crash")
-        if restart not in ("never", "on_crash", "always"):
-            logger.debug(
-                "Monitor %s: unknown restart policy %r — defaulting to on_crash",
-                name,
-                restart,
-            )
-            restart = "on_crash"
-        env = entry.get("env") or {}
-        if not isinstance(env, dict):
-            env = {}
-        full_name = f"{namespace}:{name}" if namespace else name
-        out[full_name] = MonitorConfig(
-            name=full_name,
-            command=command,
-            args=list(entry.get("args") or []),
-            cwd=entry.get("cwd") if isinstance(entry.get("cwd"), str) else None,
-            env={str(k): str(v) for k, v in env.items()},
-            restart=restart,
-        )
-    return out
-
-
-def _read_json(path: Path) -> dict | None:
-    """Permissive JSON read — returns ``None`` on any read or
-    parse failure so the merge step can keep going."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        logger.debug("Monitor config read %s failed: %s", path, exc)
-        return None
-
-
-def _project_trusted(project_dir: Path) -> bool:
-    """A folder's ``.monitors.json`` commands start only once it is trusted
-    (``core/workspace_trust``)."""
-    from igni_core.core.workspace_trust import WorkspaceTrust
-
-    return WorkspaceTrust.shared().is_trusted(project_dir, what="monitors (.monitors.json)")
-
-
-def load_monitor_config(
-    project_dir: Path,
-    plugin_roots: list[tuple[Path, str]] | None = None,
-) -> dict[str, MonitorConfig]:
-    """Discover and merge monitor configs from all tiers.
-
-    Returns ``{name → config}``. ``plugin_roots`` is a list of
-    ``(plugin_path, plugin_name)`` tuples (built by
-    ``PluginLoader.collect_monitor_roots``).
-    """
-    out: dict[str, MonitorConfig] = {}
-
-    user_path = Path.home() / CONFIG_DIR / "monitors.json"
-    if user_path.is_file() and (data := _read_json(user_path)) is not None:
-        out.update(_parse_monitors_dict(data))
-
-    project_path = project_dir / ".monitors.json"
-    if project_path.is_file() and _project_trusted(project_dir):
-        data = _read_json(project_path)
-        if data is not None:
-            out.update(_parse_monitors_dict(data))
-
-    for root, plugin_name in plugin_roots or []:
-        plugin_path = root / ".monitors.json"
-        if plugin_path.is_file() and (data := _read_json(plugin_path)) is not None:
-            out.update(_parse_monitors_dict(data, namespace=plugin_name))
-
-    return out

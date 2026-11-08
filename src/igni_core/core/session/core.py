@@ -75,7 +75,7 @@ from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.config import MCPConfigLoader
 from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.memory.manager import StorageManager
-from igni_core.core.monitors import MonitorManager, load_monitor_config
+from igni_core.core.monitors import MonitorConfigLoader, MonitorManager
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.output_styles import OutputStyle, discover_output_styles
 from igni_core.core.plugins import PluginLoader, load_state
@@ -471,10 +471,11 @@ class Session:
         )
         self.lsp_manager = LspServerManager(lsp_configs, self.project_dir)
 
-        monitor_configs = load_monitor_config(
+        monitor_configs = MonitorConfigLoader(
             self.project_dir,
+            trust=WorkspaceTrust.shared(),
             plugin_roots=self.plugin_loader.collect_monitor_roots(disabled=self._disabled_plugins),
-        )
+        ).load()
         self.monitor_manager = MonitorManager(monitor_configs, self.project_dir)
 
     def _init_plugins_output_styles_hooks(self, settings: Settings) -> None:

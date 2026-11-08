@@ -340,7 +340,7 @@ class PluginLoader:
     ) -> list[tuple[Path, str]]:
         """Return ``(plugin_root, plugin_name)`` for every enabled
         plugin that bundles a ``.monitors.json``. Consumed by
-        :func:`igni_core.core.monitors.config.load_monitor_config`
+        :class:`igni_core.core.monitors.loader.MonitorConfigLoader`
         to register plugin-bundled background monitors under the
         plugin's namespace."""
         disabled = disabled or set()

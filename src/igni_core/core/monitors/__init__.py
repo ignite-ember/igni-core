@@ -8,8 +8,9 @@ in a rolling buffer, and shuts them down on session close. Agent-
 facing tools live in ``core.tools.monitors``.
 """
 
-from igni_core.core.monitors.config import MonitorConfig, load_monitor_config
+from igni_core.core.monitors.config import MonitorConfig
 from igni_core.core.monitors.handle import MonitorHandle
+from igni_core.core.monitors.loader import MonitorConfigLoader, MonitorsFile
 from igni_core.core.monitors.manager import MonitorManager
 from igni_core.core.monitors.models import (
     MonitorControlResult,
@@ -24,13 +25,14 @@ from igni_core.core.monitors.supervisor import (
 
 __all__ = [
     "MonitorConfig",
+    "MonitorConfigLoader",
     "MonitorControlResult",
     "MonitorHandle",
     "MonitorManager",
     "MonitorSnapshot",
     "MonitorStatus",
     "MonitorSupervisor",
+    "MonitorsFile",
     "RestartDecision",
     "RestartPolicyEvaluator",
-    "load_monitor_config",
 ]

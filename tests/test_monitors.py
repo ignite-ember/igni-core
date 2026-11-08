@@ -18,24 +18,34 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from igni_core.core.monitors import (
+    MonitorConfig,
+    MonitorConfigLoader,
     MonitorControlResult,
     MonitorHandle,
     MonitorManager,
-)
-from igni_core.core.monitors.config import (
-    MonitorConfig,
-    _parse_monitors_dict,
-    load_monitor_config,
+    MonitorsFile,
 )
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.tools.monitors import MonitorTools
+from igni_core.core.workspace_trust import WorkspaceTrust
+
+
+def _configs(raw: object, namespace: str = "") -> dict[str, MonitorConfig]:
+    return MonitorsFile.model_validate(raw).configs(namespace=namespace)
+
+
+def _load(project_dir: Path, **kwargs) -> dict[str, MonitorConfig]:
+    return MonitorConfigLoader(
+        project_dir, trust=WorkspaceTrust(trust_everything=True), **kwargs
+    ).load()
+
 
 # ── Config parsing ────────────────────────────────────────────
 
 
-class TestParseMonitorsDict:
+class TestMonitorsFile:
     def test_minimal(self):
-        out = _parse_monitors_dict({"monitors": {"x": {"command": "cmd"}}})
+        out = _configs({"monitors": {"x": {"command": "cmd"}}})
         assert "x" in out
         assert out["x"].command == "cmd"
         # Defaults applied.
@@ -45,7 +55,7 @@ class TestParseMonitorsDict:
         assert out["x"].cwd is None
 
     def test_full(self):
-        out = _parse_monitors_dict(
+        out = _configs(
             {
                 "monitors": {
                     "watcher": {
@@ -67,11 +77,11 @@ class TestParseMonitorsDict:
     def test_unknown_restart_policy_defaults(self):
         """``restart: "maybe"`` falls back to ``on_crash`` — the
         permissive parser does not bounce the row."""
-        out = _parse_monitors_dict({"monitors": {"x": {"command": "cmd", "restart": "maybe"}}})
+        out = _configs({"monitors": {"x": {"command": "cmd", "restart": "maybe"}}})
         assert out["x"].restart == "on_crash"
 
     def test_namespace_prefix(self):
-        out = _parse_monitors_dict(
+        out = _configs(
             {"monitors": {"watcher": {"command": "x"}}},
             namespace="my-plugin",
         )
@@ -79,7 +89,7 @@ class TestParseMonitorsDict:
         assert "watcher" not in out
 
     def test_skips_malformed_rows(self):
-        out = _parse_monitors_dict(
+        out = _configs(
             {
                 "monitors": {
                     "good": {"command": "ok"},
@@ -91,8 +101,28 @@ class TestParseMonitorsDict:
         assert set(out.keys()) == {"good"}
 
     def test_no_monitors_key(self):
-        assert _parse_monitors_dict({}) == {}
-        assert _parse_monitors_dict({"monitors": "not a dict"}) == {}
+        assert _configs({}) == {}
+        assert _configs({"monitors": "not a dict"}) == {}
+
+    def test_row_with_bad_field_is_skipped_alone(self):
+        out = _configs(
+            {"monitors": {"good": {"command": "ok"}, "bad": {"command": "x", "args": [1]}}}
+        )
+        assert set(out.keys()) == {"good"}
+
+    def test_unknown_keys_are_ignored(self):
+        out = _configs({"monitors": {"x": {"command": "cmd", "colour": "blue"}}})
+        assert out["x"].model_extra in (None, {})
+
+    def test_non_string_cwd_and_env_are_coerced(self):
+        out = _configs({"monitors": {"x": {"command": "cmd", "cwd": 3, "env": {"N": 1}}}})
+        assert out["x"].cwd is None
+        assert out["x"].env == {"N": "1"}
+
+    def test_read_non_object_file_is_empty(self, tmp_path):
+        path = tmp_path / ".monitors.json"
+        path.write_text("[1, 2]")
+        assert MonitorsFile.read(path).configs() == {}
 
 
 class TestLoadMonitorConfig:
@@ -107,7 +137,7 @@ class TestLoadMonitorConfig:
             tmp_path / ".monitors.json",
             {"monitors": {"x": {"command": "cmd"}}},
         )
-        out = load_monitor_config(tmp_path)
+        out = _load(tmp_path)
         assert "x" in out
 
     def test_project_overrides_user(self, tmp_path, monkeypatch):
@@ -122,7 +152,7 @@ class TestLoadMonitorConfig:
             tmp_path / ".monitors.json",
             {"monitors": {"shared": {"command": "project-cmd"}}},
         )
-        out = load_monitor_config(tmp_path)
+        out = _load(tmp_path)
         assert out["shared"].command == "project-cmd"
 
     def test_plugin_namespacing(self, tmp_path, monkeypatch):
@@ -134,7 +164,7 @@ class TestLoadMonitorConfig:
             plugin_dir / ".monitors.json",
             {"monitors": {"watcher": {"command": "x"}}},
         )
-        out = load_monitor_config(
+        out = _load(
             tmp_path,
             plugin_roots=[(plugin_dir, "my-plugin")],
         )
@@ -144,7 +174,7 @@ class TestLoadMonitorConfig:
         monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
         (tmp_path / "home").mkdir()
         (tmp_path / ".monitors.json").write_text("{not json")
-        assert load_monitor_config(tmp_path) == {}
+        assert _load(tmp_path) == {}
 
 
 # ── Manager lifecycle ────────────────────────────────────────
