@@ -1,14 +1,9 @@
 """Typed wire schemas for the backend RPC surface + entry-point boot.
 
-Extracted out of :mod:`igni_core.backend.__main__` where they used to
-live inline alongside the boot code. Every wire shape the ``__main__``
-composition root touches — either as an RPC response, an entry-point
-boot payload, or a config value — is a Pydantic model here so mypy +
-Ruff + Pydantic validation give schema coverage at the seam.
-
-The original module re-exports every model in this file so external
-callers (in-tree tests, other modules) don't need to update their
-imports.
+Every wire shape the backend hands out — an RPC response, an
+entry-point boot payload, or a config value — is a Pydantic model
+here so mypy + Ruff + Pydantic validation give schema coverage at the
+seam.
 """
 
 from __future__ import annotations
@@ -16,12 +11,15 @@ from __future__ import annotations
 import json
 import os
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from igni_core.core.config.model_entry import ModelRegistryEntry
+
 if TYPE_CHECKING:
     from igni_core.core.auth.schemas import UserInfo
+    from igni_core.core.config.schemas.models import ModelsConfig
     from igni_core.core.utils.update_checker_schemas import UpdateInfo
 
 
@@ -173,23 +171,6 @@ class SkillDefinition(BaseModel):
     prompt: str
 
 
-class DisplayConfigResult(BaseModel):
-    """Wire shape for the ``get_display_config`` RPC — a flexible
-    view of ``settings.display`` used by the FE to render badges /
-    theming / toggles. Additional fields are allowed because the
-    Settings.display model may evolve independently of this schema."""
-
-    model_config = {"extra": "allow"}
-
-    @classmethod
-    def from_display(cls, display: Any) -> DisplayConfigResult:
-        """Normalise the ``settings.display`` value into the wire
-        shape. Handles the Pydantic-model-or-raw-dict duality so the
-        RPC handler stays a one-liner."""
-        dumped = display.model_dump() if hasattr(display, "model_dump") else {}
-        return cls.model_validate(dumped)
-
-
 class ModelRegistryResult(BaseModel):
     """Wire shape for the ``get_model_registry`` RPC — the FE's
     model-picker source of truth (default, ceiling, per-model
@@ -197,25 +178,16 @@ class ModelRegistryResult(BaseModel):
 
     default: str
     max_context_window: int
-    registry: dict
+    registry: dict[str, ModelRegistryEntry]
 
     @classmethod
-    def from_settings(cls, models: Any) -> ModelRegistryResult:
-        """Normalise a ``settings.models`` value into the wire shape.
-
-        Registry values are heterogeneous — cloud discovery writes
-        typed :class:`ModelRegistryEntry` instances alongside raw
-        dicts loaded from user YAML. Collapse everything to dicts for
-        the wire (which is a plain ``dict``).
-        """
-        wire_registry = {
-            name: (entry.model_dump() if hasattr(entry, "model_dump") else entry)
-            for name, entry in models.registry.items()
-        }
+    def from_settings(cls, models: ModelsConfig) -> ModelRegistryResult:
+        """Map ``settings.models`` into the wire shape, every registry
+        row typed as a :class:`ModelRegistryEntry`."""
         return cls(
             default=models.default,
             max_context_window=models.max_context_window,
-            registry=wire_registry,
+            registry=dict(models.iter_registry_entries()),
         )
 
 

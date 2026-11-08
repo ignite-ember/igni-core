@@ -8,11 +8,8 @@ from pydantic import BaseModel, ConfigDict
 
 from igni_core.backend.rpc_handlers.base import RpcHandler, WireArgs, rpc
 from igni_core.backend.schemas_hitl import ToolCallArgs
-from igni_core.backend.schemas_rpc import (
-    DisplayConfigResult,
-    ModelRegistryResult,
-    UpdateAvailable,
-)
+from igni_core.backend.schemas_rpc import ModelRegistryResult, UpdateAvailable
+from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.config.tool_permissions import PermissionLevel
 from igni_core.core.utils.update_checker import PackageMetadata, check_for_update
 from igni_core.protocol import messages as msg
@@ -75,8 +72,8 @@ class ModelsRpcHandler(RpcHandler):
         self._controllers.hitl.permissions.save_rule(args.rule, args.level)
 
     @rpc(RpcMethod.GET_DISPLAY_CONFIG)
-    def get_display_config(self, args: WireArgs) -> DisplayConfigResult:
-        return DisplayConfigResult.from_display(self._ctx.backend.settings.display)
+    def get_display_config(self, args: WireArgs) -> DisplayConfig:
+        return self._ctx.backend.settings.display
 
     @rpc(RpcMethod.GET_MODEL_REGISTRY)
     def get_model_registry(self, args: WireArgs) -> ModelRegistryResult:

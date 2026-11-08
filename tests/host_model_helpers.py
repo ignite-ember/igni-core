@@ -41,6 +41,7 @@ from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntim
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.approvals.events import approval_events
 from igni_core.core.config.schemas.display import DisplayConfig
+from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.hooks.extension_gate import ExtensionHookGate
 from igni_core.core.session.event_log_schema import SessionEvent
 from igni_core.core.session.schemas import ContextBreakdown, PersistResult
@@ -100,11 +101,13 @@ class CapturingTransport(ListeningTransport):
         ]
 
 
-class FakeModels:
-    def __init__(self) -> None:
-        self.default = "small"
-        self.max_context_window = 100_000
-        self.registry: dict[str, Any] = {"small": {"model_id": "s"}, "large": {"model_id": "l"}}
+def fake_models() -> ModelsConfig:
+    """Two configured models, ``small`` the default."""
+    return ModelsConfig(
+        default="small",
+        max_context_window=100_000,
+        registry={"small": {"model_id": "s"}, "large": {"model_id": "l"}},
+    )
 
 
 class FakeSession:
@@ -120,7 +123,7 @@ class FakeSession:
         self.project_dir = project_dir
         self.processing = False
         self.run_timeout = 600
-        self.settings = SimpleNamespace(display=DisplayConfig(), models=FakeModels())
+        self.settings = SimpleNamespace(display=DisplayConfig(), models=fake_models())
         self.runtime: Any = None
         self.ran: list[tuple[str, dict[str, str]]] = []
         self.commands: list[str] = []
