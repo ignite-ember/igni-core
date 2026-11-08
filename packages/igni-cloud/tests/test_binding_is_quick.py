@@ -23,6 +23,7 @@ from agno.db.base import SessionType
 from igni_cloud.db.agno_tables import AgnoTables
 from igni_cloud.guest.binding import ProducerBinding
 from igni_cloud.guest.watch import DirectoryWatch
+from igni_cloud.storage.agno_table_cache import AgnoTableCache
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from sqlalchemy import event
 
@@ -32,7 +33,7 @@ from igni_core.core.db.urls import DatabaseUrl
 from igni_core.core.memory.manager import StorageManager
 
 
-def test_agnos_tables_are_looked_up_once_per_process(postgres_url: str):
+def test_agnos_tables_are_looked_up_once_per_cache(postgres_url: str):
     url = DatabaseUrl.parse(postgres_url)
     AgnoTables(
         url, session_table=StorageManager.SESSION_TABLE, memory_table=StorageManager.MEMORY_TABLE
@@ -45,10 +46,12 @@ def test_agnos_tables_are_looked_up_once_per_process(postgres_url: str):
 
     async def read_three_times() -> int:
         engine = cache.get_async_engine(url)
+        tables = AgnoTableCache()
 
         def database() -> ScopedAsyncPostgresDb:
             return ScopedAsyncPostgresDb(
                 scope=scope,
+                tables=tables,
                 db_engine=engine,
                 create_schema=False,
                 session_table=StorageManager.SESSION_TABLE,
@@ -70,13 +73,6 @@ def test_agnos_tables_are_looked_up_once_per_process(postgres_url: str):
     first = asyncio.run(read_three_times())
     assert first > 2, "the first lookup checks and reflects the table"
     assert len(statements) == 2, "afterwards: one query per read, nothing else"
-
-
-@pytest.fixture(autouse=True)
-def _fresh_table_cache():
-    ScopedAsyncPostgresDb._tables.clear()
-    yield
-    ScopedAsyncPostgresDb._tables.clear()
 
 
 # ── Binding as quick as the rename ────────────────────────────────

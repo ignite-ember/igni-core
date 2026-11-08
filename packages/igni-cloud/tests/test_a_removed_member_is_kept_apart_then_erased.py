@@ -26,6 +26,7 @@ from igni_cloud.db.producer_data import AdminCannotSeeRows, ProducerData
 from igni_cloud.db.rls import AGNO_SCHEMA, ProducerRoles
 from igni_cloud.guest.binding import ProducerEnv
 from igni_cloud.producer import ProducerIncarnation, ProducerRef, UnknownProducer
+from igni_cloud.storage.agno_table_cache import AgnoTableCache
 from igni_cloud.storage.attachments import LargeObjectAttachments
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from sqlalchemy import create_engine, text
@@ -101,6 +102,7 @@ class Incarnation:
     def agno(self) -> ScopedAsyncPostgresDb:
         return ScopedAsyncPostgresDb(
             scope=self.scope,
+            tables=AgnoTableCache(),
             db_engine=cache.get_async_engine(self.url),
             session_table=StorageManager.SESSION_TABLE,
             memory_table=StorageManager.MEMORY_TABLE,

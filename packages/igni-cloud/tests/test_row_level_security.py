@@ -22,6 +22,7 @@ from agno.db.base import SessionType
 from agno.session import AgentSession
 from igni_cloud.db.rls import AGNO_SCHEMA, ProducerCredentials, ProducerRoles
 from igni_cloud.producer import ProducerIncarnation, ProducerRef
+from igni_cloud.storage.agno_table_cache import AgnoTableCache
 from igni_cloud.storage.attachments import LargeObjectAttachments
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from sqlalchemy import BigInteger, Boolean, DateTime, Integer, create_engine, text
@@ -235,6 +236,7 @@ def test_agno_works_as_a_producer_and_keeps_to_its_rows(producers: tuple[Produce
     def agno(p: Producer) -> ScopedAsyncPostgresDb:
         return ScopedAsyncPostgresDb(
             scope=p.scope,
+            tables=AgnoTableCache(),
             db_engine=cache.get_async_engine(p.url),
             session_table=StorageManager.SESSION_TABLE,
             memory_table=StorageManager.MEMORY_TABLE,

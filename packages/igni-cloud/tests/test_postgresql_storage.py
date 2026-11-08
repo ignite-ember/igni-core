@@ -18,6 +18,7 @@ from agno.db.base import SessionType
 from agno.db.schemas.memory import UserMemory
 from agno.run.agent import RunOutput
 from agno.session import AgentSession
+from igni_cloud.storage.agno_table_cache import AgnoTableCache
 from igni_cloud.storage.attachments import LargeObjectAttachments
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from sqlalchemy import text
@@ -88,6 +89,7 @@ async def test_agno_rows_are_kept_to_their_scope(postgres_url: str):
     def agno_db(scope: StorageScope) -> ScopedAsyncPostgresDb:
         return ScopedAsyncPostgresDb(
             scope=scope,
+            tables=AgnoTableCache(),
             db_engine=engine,
             session_table="ember_sessions",
             memory_table="ember_memories",
@@ -144,6 +146,7 @@ async def test_agno_runs_are_kept_to_their_scope(postgres_url: str):
     def agno_db(scope: StorageScope) -> ScopedAsyncPostgresDb:
         return ScopedAsyncPostgresDb(
             scope=scope,
+            tables=AgnoTableCache(),
             db_engine=engine,
             session_table="ember_sessions",
             memory_table="ember_memories",
