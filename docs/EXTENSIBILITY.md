@@ -954,7 +954,7 @@ That proves the easy half and should not be quoted as more. All four of its RPCs
 
 **Not an enum member.** `RpcMethod` stays closed, because closing it is what gives the base its "every method is registered or boot fails" guarantee. Extension methods arrive with a manifest rather than at import time, so they get a prefix checked by a registry. Anything under `ext.` is answered there, including a malformed name — falling back would reproduce the `Unknown RPC method` that hid this.
 
-**Before them, the message itself** (`SessionOrchestrator._refuse_caller`): a request carrying `caller` comes from a connection the layer lets speak for an extension (on the desktop any the handshake admitted, in the cloud none), names an installed extension, and asks for something a page may reach — its own namespace, the host model, its service token, or a base method its manifest grants, never igni's pool-level calls. The answer goes to the asking connection only.
+**Before them, the message itself** (`MessageAdmission.refusal`): a request carrying `caller` comes from a connection the layer lets speak for an extension (on the desktop any the handshake admitted, in the cloud none), names an installed extension, and asks for something a page may reach — its own namespace, the host model, its service token, or a base method its manifest grants, never igni's pool-level calls. The answer goes to the asking connection only.
 
 **Five checks, in this order**, each raising with a sentence that names the fix:
 

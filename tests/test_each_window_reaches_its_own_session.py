@@ -9,13 +9,13 @@ that session's runtime, resuming the session when it is not live. Its
 tests so far reached single handlers through ``__new__``; the routing,
 the attach rules and the pool's set-up had none.
 
-These build the orchestrator through its constructor with the real
-:class:`SessionPool`, :class:`SessionDirectoryStore` (SQLite under
-``tmp_path``), :class:`RpcRouter`, :class:`PushNotificationBridge` and
-:class:`MessageDispatcher`. The seam is the session's backend: a
+These build the orchestrator through :meth:`SessionOrchestrator.start`
+with the real :class:`SessionPool`, :class:`SessionDirectoryStore` (SQLite
+under ``tmp_path``), :class:`RpcRouter`, :class:`PushNotificationBridge`
+and :class:`MessageDispatcher`. The seam is the session's backend: a
 :class:`BackendServer` boots a model team, so a small recording backend
 stands in for it — the boot one passed in, and pooled ones made where
-:meth:`_create_runtime` makes them.
+:meth:`SessionRuntimeFactory.create` makes them.
 
 Pinned:
 
@@ -45,10 +45,15 @@ import pytest
 from pydantic import BaseModel
 
 from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.pool_rpcs import HostModelRpcs, ServiceEventRpc, VmSignInRpc
+from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
+from igni_core.backend.rpc_handlers.pool_guard import PLATFORM_RPCS, POOL_LEVEL_RPCS
 from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.schemas_pool import AttachRefused, ExtensionPost, ProjectDirs
 from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
 from igni_core.extensions.host.windows import WindowModelError
@@ -204,10 +209,13 @@ class _Credential(BaseModel):
     organisation: str | None
 
 
+class _PooledRuntimes(SessionRuntimeFactory):
+    server_cls = _Pooled  # type: ignore[assignment]
+
+
 @pytest.fixture(autouse=True)
-def _pooled_backends(monkeypatch):
+def _pooled_backends():
     _Pooled.made = []
-    monkeypatch.setattr("igni_core.backend.server.BackendServer", _Pooled)
 
 
 def _orchestrator(
@@ -222,19 +230,15 @@ def _orchestrator(
     push = PushNotificationBridge(transport=transport, loop=None, queue=queue)
     login = LoginCoordinator(backend=backend, push_bridge=push)
     router = RpcRouter(backend=backend, transport=transport, login=login, push=push)
-    orchestrator = SessionOrchestrator(
-        backend=backend,
-        transport=transport,
+    orchestrator = SessionOrchestrator.start(
+        boot=BootRuntime(
+            backend=backend, rpc_table=router.build_table(), router=router, queue=queue
+        ),
+        wiring=PoolWiring(transport=transport, push_bridge=push, login=login),
         settings=settings,
-        project_dir=project,
-        additional_dirs=None,
-        rpc_router=router,
-        rpc_table=router.build_table(),
-        push_bridge=push,
-        login=login,
-        queue=queue,
+        dirs=ProjectDirs(project_dir=project),
+        factory=_PooledRuntimes,
     )
-    orchestrator.setup_pool()
     return orchestrator, backend, transport
 
 
@@ -252,13 +256,6 @@ async def test_the_boot_session_is_the_pool_s_default(tmp_path):
     assert backend.runtime is orchestrator.pool.default
     assert orchestrator.client_state is not None
     assert orchestrator.extensions is not None
-
-
-def test_nothing_is_reloaded_before_there_is_a_pool(tmp_path):
-    orchestrator = SessionOrchestrator.__new__(SessionOrchestrator)
-    orchestrator._pool = None
-
-    orchestrator.refresh_agents()
 
 
 async def test_refreshing_agents_rebuilds_every_live_session(tmp_path):
@@ -318,8 +315,9 @@ async def test_a_session_whose_directory_is_gone_resumes_in_the_backend_s_own(tm
     later, _, _ = _orchestrator(tmp_path)
     gone.rmdir()
 
-    with pytest.raises(ValueError, match="different project"):
-        await later.attach("old", None)
+    refused = await later.attach("old", None)
+    assert isinstance(refused, AttachRefused)
+    assert "different project" in refused.reason
     result = await later.pool.get_or_create("old")
 
     assert result.backend.project_dir == backend.project_dir
@@ -399,7 +397,7 @@ async def test_an_extension_s_message_reaches_its_session_now_or_queued(tmp_path
     (pooled,) = _Pooled.made
 
     await orchestrator.post_from_extension(
-        session_id="s-3", extension_id="acme", text="later", media=None, queued=True
+        ExtensionPost(session_id="s-3", extension_id="acme", text="later", media=None, queued=True)
     )
 
     # The session's own queue — the next turn of *that* session reads it.
@@ -414,7 +412,9 @@ async def test_an_extension_s_message_now_runs_a_turn_in_its_session(tmp_path):
     (pooled,) = _Pooled.made
 
     await orchestrator.post_from_extension(
-        session_id="s-4", extension_id="acme", text="ticket closed", media=None, queued=False
+        ExtensionPost(
+            session_id="s-4", extension_id="acme", text="ticket closed", media=None, queued=False
+        )
     )
     for _ in range(100):
         if transport.sent and transport.sent[-1].type == "stream_end":
@@ -444,7 +444,7 @@ async def test_the_window_model_answers_and_refuses_with_the_reason(tmp_path):
     orchestrator, _, transport = _orchestrator(tmp_path)
 
     await orchestrator.dispatch(_rpc(RpcMethod.WINDOW_MODEL, "0", op="hydrate", window="w"))
-    orchestrator.attach_host_model(_HostModel())
+    orchestrator.mount(HostModelRpcs(_HostModel()))
     await orchestrator.dispatch(_rpc(RpcMethod.WINDOW_MODEL, "1", op="hydrate", window="w"))
     await orchestrator.dispatch(
         _rpc(RpcMethod.WINDOW_MODEL, "2", op="write", window="w", field="nope")
@@ -460,7 +460,7 @@ async def test_the_window_model_answers_and_refuses_with_the_reason(tmp_path):
 
 async def test_the_host_model_answers_only_an_extension_s_page(tmp_path):
     orchestrator, _, transport = _orchestrator(tmp_path)
-    orchestrator.attach_host_model(_HostModel())
+    orchestrator.mount(HostModelRpcs(_HostModel()))
     orchestrator.extensions.registry.install(manifest("acme.reviewer"))
 
     await orchestrator.dispatch(_rpc(RpcMethod.HOST_MODEL, "1", path="host.sessions"))
@@ -476,7 +476,7 @@ async def test_nothing_speaks_for_an_extension_that_is_not_installed(tmp_path):
     # is refused before any handler hears it.
     orchestrator, _, transport = _orchestrator(tmp_path)
     host_model = _HostModel()
-    orchestrator.attach_host_model(host_model)
+    orchestrator.mount(HostModelRpcs(host_model))
 
     await orchestrator.dispatch(_rpc(RpcMethod.HOST_MODEL, "2", caller="nobody", path="x"))
 
@@ -500,7 +500,7 @@ async def test_the_platform_s_events_are_delivered_and_acknowledged(tmp_path):
 
     await orchestrator.dispatch(_rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "0", events=[event]))
     inbox = _Inbox()
-    orchestrator.attach_event_inbox(inbox)
+    orchestrator.mount(ServiceEventRpc(inbox))
     await orchestrator.dispatch(_rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "1", events=[event]))
     await orchestrator.dispatch(_rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "2", events=[{"x": 1}]))
 
@@ -520,7 +520,7 @@ async def test_the_vm_signs_in_with_the_person_s_session(tmp_path):
         return _Credential(signed_in=True, organisation=organisation)
 
     await orchestrator.dispatch(_rpc(RpcMethod.VM_SIGN_IN, "0", session_token="tok"))
-    orchestrator.attach_vm_sign_in(sign_in)
+    orchestrator.mount(VmSignInRpc(sign_in))
     await orchestrator.dispatch(_rpc(RpcMethod.VM_SIGN_IN, "1", session_token=""))
     await orchestrator.dispatch(
         _rpc(RpcMethod.VM_SIGN_IN, "2", session_token="tok", organisation="acme")
@@ -546,7 +546,7 @@ async def test_a_layer_can_take_platform_calls_from_its_control_connection_only(
     tmp_path, monkeypatch
 ):
     orchestrator, _, transport = _orchestrator(tmp_path)
-    orchestrator.attach_event_inbox(_Inbox())
+    orchestrator.mount(ServiceEventRpc(_Inbox()))
     monkeypatch.setattr(
         "igni_core.core.layer.Layers.current", classmethod(lambda cls: _ControlOnly())
     )
@@ -559,6 +559,18 @@ async def test_a_layer_can_take_platform_calls_from_its_control_connection_only(
     from_window, from_control = transport.sent
     assert from_window.error == "deliver_service_events: only on the platform's control connection"
     assert from_control.result["acknowledge"] == []
+
+
+def test_the_platform_s_calls_are_checked_before_any_pool_call_is_answered():
+    # Admission refuses a platform call from the wrong connection before the
+    # pool's table is consulted; that is the order it always had only while
+    # none of these is a platform call.
+    assert PLATFORM_RPCS <= POOL_LEVEL_RPCS
+    assert not PLATFORM_RPCS & {
+        RpcMethod.ATTACH_SESSION,
+        RpcMethod.HOST_MODEL,
+        RpcMethod.EXTENSION_SERVICE_TOKEN,
+    }
 
 
 # ── Lifetime ──────────────────────────────────────────────────────

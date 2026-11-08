@@ -32,6 +32,7 @@ from websockets.http11 import Request
 
 from igni_core.backend import standing_policy
 from igni_core.backend.message_dispatcher import MessageDispatcher
+from igni_core.backend.pool_rpcs import ApproverTokenRpc
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 from igni_core.protocol.schemas.envelope import Standing
@@ -311,7 +312,7 @@ async def test_the_window_mints_an_approver_token_and_only_it_hears_it(tmp_path:
     guard = HandshakeGuard(SECRET)
     try:
         assert rig.orchestrator is not None
-        rig.orchestrator.attach_approver_tokens(_Tokens(guard))
+        rig.orchestrator.mount(ApproverTokenRpc(_Tokens(guard)))
         await rig.orchestrator.dispatch(
             _from(Standing.PROGRAM, msg.RPCRequest(id="p", method=RpcMethod.MINT_APPROVER_TOKEN))
         )

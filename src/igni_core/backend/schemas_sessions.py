@@ -35,6 +35,7 @@ from igni_core.protocol import messages as msg
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from igni_core.backend.hitl_controller import HitlController
     from igni_core.backend.session_pool import SessionRuntime
 
 
@@ -137,6 +138,9 @@ class BackendLike(Protocol):
     session_id: str
     project_dir: str | Path
     processing: bool
+
+    @property
+    def hitl(self) -> HitlController: ...
 
     async def shutdown(self) -> None: ...
     def wire_queue_hook(self, queue: list[str]) -> None: ...

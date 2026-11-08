@@ -27,6 +27,7 @@ from igni_cloud.guest.credential import (
 from igni_cloud.guest.files import AtomicFile
 from igni_cloud.guest.resume import NextAnswer, RestoreWatch
 
+from igni_core.backend.pool_rpcs import VmSignInRpc
 from igni_core.core.auth.http_auth import CloudTokenAuth
 from igni_core.protocol import messages as msg
 from tests.host_model_helpers import HostRig
@@ -474,7 +475,7 @@ async def test_the_gateway_hands_the_session_over_the_rpc(tmp_path: Path):
 
     try:
         assert rig.orchestrator is not None
-        rig.orchestrator.attach_vm_sign_in(sign_in)
+        rig.orchestrator.mount(VmSignInRpc(sign_in))
         await rig.orchestrator.dispatch(
             msg.RPCRequest(
                 id="s1", method="vm_sign_in", args={"session_token": SESSION, "organisation": "o"}

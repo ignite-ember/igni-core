@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.backend.schemas_rpc import SessionPoolConfig
 from igni_core.backend.session_pool import (
     SessionPool,
     SessionRuntime,
@@ -160,7 +161,7 @@ class TestIdleEviction:
         pool = SessionPool(
             default,
             factory,
-            idle_timeout_seconds=idle_timeout,
+            config=SessionPoolConfig(idle_timeout_seconds=idle_timeout),
             clock=clock,
         )
         return pool, created

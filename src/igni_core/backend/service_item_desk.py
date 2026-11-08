@@ -27,6 +27,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.backend.activity import ActivityState
+from igni_core.backend.schemas_rpc import AttachSessionResult
 from igni_core.backend.service_event_delivery import PoolSession
 from igni_core.core.activity import background
 from igni_core.extensions.service_events import UnattendedPost
@@ -65,6 +66,9 @@ class PoolChatDesk:
 
     async def open_chat(self, title: str) -> str:
         attached = await self._orchestrator.attach("", None)
+        if not isinstance(attached, AttachSessionResult):
+            # Neither a directory nor an id: nothing an attach could refuse.
+            raise RuntimeError(f"a new chat was refused: {attached.reason}")
         await self.rename(session_id=attached.session_id, title=title)
         return str(attached.session_id)
 

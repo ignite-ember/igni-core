@@ -6,7 +6,7 @@ an `RpcMethod` has no handler. That is a good guard against the "added
 an enum member, forgot to register it" mistake.
 
 **It had never run in CI.** `build_table` is called from
-`session_orchestrator`, `app.py` and `__main__` — all production paths.
+`session_runtime_factory`, `app.py` and `__main__` — all production paths.
 So adding an enum value without a handler left the suite green and the
 desktop app dead on launch: R-8's shape, in the one component a user
 meets first.
@@ -23,8 +23,8 @@ Beyond exhaustiveness, two properties `validate_rpc_table` cannot see:
   app, with no test naming it. Forty-nine of the hundred handlers are
   referenced nowhere in this suite, so a signature check over all of
   them is worth more than a test for any one;
-* **the pool-level guards refuse.** Four RPCs are intercepted by
-  `SessionOrchestrator` before per-runtime routing, and are registered
+* **the pool-level guards refuse.** The pool-level RPCs are answered by
+  `PoolRpcRouter` before per-runtime routing, and are registered
   in the table as deliberate "you should never reach here" traps. A trap
   that returned `None` instead of raising would make a mis-route
   invisible, which is the failure it exists to make loud.

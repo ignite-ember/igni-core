@@ -13,6 +13,7 @@ imports.
 
 from __future__ import annotations
 
+import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -245,19 +246,22 @@ class BackendReadyLine(BaseModel):
 
 
 class SessionPoolConfig(BaseModel):
-    """Typed config for :class:`SessionPool` construction. The pool
-    itself still accepts ``idle_timeout_seconds`` as a kwarg — we
-    thread this via ``**config.model_dump(exclude_none=True)`` at
-    the call site rather than flipping the pool's constructor, so
-    other callers keep working unchanged.
+    """Typed config for :class:`~igni_core.backend.session_pool.SessionPool`.
 
-    The pool's constructor takes typed seams
-    (:class:`igni_core.backend.schemas_sessions.BackendLike` /
-    :class:`igni_core.backend.schemas_sessions.TransportLike`
-    Protocols) on its runtimes' wiring — so downstream mypy sees
-    the exact backend/transport surface the pool relies on."""
+    ``idle_timeout_seconds`` is how long a session nobody has touched
+    stays loaded; ``None`` keeps the pool's default."""
 
     idle_timeout_seconds: float | None = None
+
+    @classmethod
+    def from_env(cls) -> SessionPoolConfig:
+        """``IGNI_SESSION_IDLE_TIMEOUT``, when it is a positive number of seconds."""
+        raw = os.environ.get("IGNI_SESSION_IDLE_TIMEOUT", "")
+        try:
+            seconds = float(raw) if raw else 0.0
+        except ValueError:
+            seconds = 0.0
+        return cls(idle_timeout_seconds=seconds if seconds > 0 else None)
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────

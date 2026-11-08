@@ -36,7 +36,7 @@ No dependencies. Roughly a week, done in any order.
 
 | # | Item | Where | Done when |
 |---|---|---|---|
-| 0.1 | Per-runtime `load_settings` | `backend/session_orchestrator.py:453` — it deep-copies the **boot** project's Settings | A session uses its own project's permissions: open a session on repo B from a backend booted on repo A, and B's `permissions.deny` applies while A's does not. |
+| 0.1 | Per-runtime `load_settings` | `SessionRuntimeFactory.create` (`backend/session_runtime_factory.py`) — it deep-copies the **boot** project's Settings | A session uses its own project's permissions: open a session on repo B from a backend booted on repo A, and B's `permissions.deny` applies while A's does not. |
 | 0.2 | Don't kill a sidecar you don't own | `igni_codeindex/local/runtime/neo4j.py` (CodeIndex extension) — line numbers from igni's `backend/neo4j_runtime.py:1288`, `:833` | A second attached backend shutting down leaves the first one's JVM alive; `stop_all()` honours the refcount. |
 | 0.3 | Stale pidfile is loud | `igni_codeindex/local/runtime/neo4j.py` (CodeIndex extension) — line numbers from igni's `backend/neo4j_runtime.py:1156` | Killing the JVM externally and rebooting surfaces a FAILED subsystem with a reason and a fix, not a silent no-artifact-store. |
 | 0.4 | Reap orphans | `igni_codeindex/local/runtime/neo4j.py` (CodeIndex extension; was `backend/neo4j_runtime.py`) `` + a boot-time sweep | Boot removes state dirs with no live PID and `tmp*.tar.gz` older than a day, and logs the count. Measured against the current 36 JVMs / 481 dirs / 248 MB. |

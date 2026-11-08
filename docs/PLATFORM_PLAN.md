@@ -25,7 +25,7 @@ Independent of direction. Days, not weeks.
 
 | | Where | Why now |
 |---|---|---|
-| **Per-runtime `load_settings`** | `backend/session_orchestrator.py:453` deep-copies the *boot* project's Settings | A session opened on repo B runs with repo A's `permissions.allow`/`deny`, guardrails and model default. Tauri "New Window" uses this path. Cross-project privilege escalation in the shipped product. |
+| **Per-runtime `load_settings`** | `SessionRuntimeFactory.create` (`backend/session_runtime_factory.py`) deep-copies the *boot* project's Settings | A session opened on repo B runs with repo A's `permissions.allow`/`deny`, guardrails and model default. Tauri "New Window" uses this path. Cross-project privilege escalation in the shipped product. |
 | **Neo4j: don't kill what you don't own** | `igni_codeindex/local/runtime/neo4j.py` (CodeIndex extension) — line numbers from igni's `backend/neo4j_runtime.py:1288`, `:833` | An attached backend SIGTERM→SIGKILLs another's sidecar; `stop_all()` ignores refcounts by design. SIGKILL mid-checkpoint forces a full re-embed. |
 | **Neo4j: stale pidfile** | `igni_codeindex/local/runtime/neo4j.py` (CodeIndex extension) — line numbers from igni's `backend/neo4j_runtime.py:1156` | Kill the JVM externally and the next boot silently runs with **no artifact store**, visible only in the log. |
 | **Neo4j: orphans and partials** | — | 36 stray JVMs (some 10 days old, `-Xmx2g`), 481 state dirs, 248 MB of abandoned `tmp*.tar.gz` on a developer laptop. Nothing reaps any of it. |

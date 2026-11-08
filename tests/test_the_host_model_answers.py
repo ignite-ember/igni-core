@@ -19,6 +19,8 @@ import pytest
 
 from igni_core.backend.activity import ActivityState, SessionActivity
 from igni_core.core.approvals.events import ApprovalChange, ApprovalState, approval_events
+from igni_core.core.db.locator import StorageLocator
+from igni_core.core.session.session_directories import SessionDirectoryStore
 from igni_core.extensions.host.definition import HOST_SCHEMA
 from igni_core.extensions.host.signals import SubscribeOutcome
 from igni_core.extensions.host.spec import PropertySpec
@@ -258,7 +260,10 @@ class TestWritesAreRefusedWhereThePersonsWouldBe:
         assert rig.orchestrator is not None
         elsewhere = rig.tmp / "elsewhere"
         elsewhere.mkdir()
-        rig.orchestrator._dir_registry.set_dir("other", elsewhere)  # type: ignore[union-attr]
+        # Another backend, in another project, attached it there.
+        SessionDirectoryStore.from_locator(StorageLocator.from_settings(rig.settings)).set_dir(
+            "other", elsewhere
+        )
         message = refused(await rig.ask(ext, "set", "sessions.current", to="other"), "refused")
         assert "different project" in message
 

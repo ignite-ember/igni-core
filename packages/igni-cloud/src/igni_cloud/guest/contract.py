@@ -63,6 +63,7 @@ from igni_cloud.guest.warm import WarmImports
 from igni_cloud.guest.watch import DirectoryWatch
 from igni_cloud.logs import StdoutLog
 from igni_core.backend.activity import Activity
+from igni_core.backend.pool_rpcs import VmSignInRpc
 from igni_core.core.activity import ActivityRegistry, background
 from igni_core.core.db.engine import cache
 from igni_core.core.db.scope import Tenant
@@ -189,7 +190,7 @@ class CloudGuest(BackendHooks):
         self._transport = transport
         self.credentials = self._credentials_for(api_url)
         if orchestrator is not None:
-            orchestrator.attach_vm_sign_in(self.vm_sign_in)
+            orchestrator.mount(VmSignInRpc(self.vm_sign_in))
         self.activity = ActivityFile(
             self.paths.activity,
             activity=self._current_activity,

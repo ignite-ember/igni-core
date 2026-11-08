@@ -29,7 +29,9 @@ from typing import Any
 
 from igni_core.backend.activity import Activity
 from igni_core.backend.message_dispatcher import _serialize
+from igni_core.backend.pool_rpcs import HostModelRpcs
 from igni_core.backend.rpc_router import POOL_LEVEL_RPCS
+from igni_core.backend.schemas_pool import AttachRefused, ExtensionPost
 from igni_core.backend.service_event_delivery import PoolSession
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.core.activity import ActivityRegistry, background
@@ -190,8 +192,11 @@ class OrchestratorHostBackend:
             self._transport.forget(message_id)
 
     async def attach(self, session_id: str, project_dir: str | None) -> dict[str, str]:
+        """The window's attach; refused as :class:`HostBackend` says, with ``ValueError``."""
         result = await self._orchestrator.attach(session_id, project_dir)
-        return {"session_id": result.session_id, "project_dir": result.project_dir}
+        if isinstance(result, AttachRefused):
+            raise ValueError(result.reason)
+        return result.model_dump()
 
     async def post(
         self,
@@ -203,11 +208,13 @@ class OrchestratorHostBackend:
         queued: bool,
     ) -> None:
         await self._orchestrator.post_from_extension(
-            session_id=session_id,
-            extension_id=extension_id,
-            text=text,
-            media=media,
-            queued=queued,
+            ExtensionPost(
+                session_id=session_id,
+                extension_id=extension_id,
+                text=text,
+                media=media,
+                queued=queued,
+            )
         )
 
     async def deliver(
@@ -342,7 +349,7 @@ class HostModelWiring:
                 backend=backend, registry=registry, store=store, notices=notices, strict=strict
             )
         )
-        orchestrator.attach_host_model(model)
+        orchestrator.mount(HostModelRpcs(model))
         # igni's hook events reach the extensions that hook them.
         ExtensionHookGate.install(ExtensionHooks.wire(registry))
         transport.observe(model.broadcasts.outbound)

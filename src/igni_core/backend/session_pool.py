@@ -26,6 +26,7 @@ import time
 from collections.abc import Awaitable, Callable, Coroutine, MutableSequence
 from typing import TYPE_CHECKING, Any
 
+from igni_core.backend.schemas_rpc import SessionPoolConfig
 from igni_core.backend.schemas_sessions import (
     BackendLike,
     EvictedRuntimeReport,
@@ -179,6 +180,20 @@ class SessionRuntime:
             return ShutdownReport(ok=False, session_id=sid, error=str(exc))
         return ShutdownReport(ok=True, session_id=sid)
 
+    async def replay_waiting_approvals(self) -> None:
+        """Show the session's approvals still waiting, to a window attaching.
+
+        After a reload the window has lost its dialog; after a backend
+        restart the approvals were read back from the database. Either
+        way the person sees the question again, and answering it resumes
+        the run. What the previous backend was continuing when it died
+        goes on now, where a window can see it.
+        """
+        for paused in self.backend.hitl.waiting_messages():
+            await self.transport.send(paused)
+        async for proto in self.backend.hitl.resume_interrupted():
+            await self.transport.send(proto)
+
     def spawn_auto_name(self, coro: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
         """Fire-and-forget task that survives until it completes.
 
@@ -197,7 +212,7 @@ class SessionRuntime:
 # Default: 30 minutes. Long enough that a user briefly switching to
 # another project doesn't lose warm state when they come back; short
 # enough that a forgotten BE doesn't hold every session it has ever
-# seen forever. Tunable via ``SessionPool(idle_timeout_seconds=...)``.
+# seen forever. Tunable via ``SessionPoolConfig.idle_timeout_seconds``.
 _DEFAULT_IDLE_TIMEOUT = 30 * 60
 
 
@@ -218,7 +233,7 @@ class SessionPool:
         default: SessionRuntime,
         factory: Callable[[str], Awaitable[SessionRuntime]],
         *,
-        idle_timeout_seconds: float = _DEFAULT_IDLE_TIMEOUT,
+        config: SessionPoolConfig | None = None,
         clock: Callable[[], float] | None = None,
     ) -> None:
         # ``clock`` is injectable so tests can fast-forward without
@@ -232,7 +247,8 @@ class SessionPool:
         default.touch(self._clock())
         self._runtimes: list[SessionRuntime] = [default]
         self._factory = factory
-        self._idle_timeout = idle_timeout_seconds
+        idle_timeout = config.idle_timeout_seconds if config is not None else None
+        self._idle_timeout = idle_timeout if idle_timeout is not None else _DEFAULT_IDLE_TIMEOUT
         # Serialises creation so two messages for the same not-yet-
         # loaded session don't resume it twice. Also held during
         # ``evict_idle`` so we never evict a runtime mid-resume.
@@ -276,7 +292,7 @@ class SessionPool:
             return rt
 
     async def evict_idle(self) -> EvictionReport:
-        """Drop runtimes idle longer than ``idle_timeout_seconds``.
+        """Drop runtimes idle longer than the configured idle timeout.
 
         The default runtime (index 0) is NEVER evicted — it serves
         empty-``session_id`` traffic (the TUI's default behaviour)

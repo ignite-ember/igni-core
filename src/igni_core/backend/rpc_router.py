@@ -16,7 +16,7 @@ file-completion service) live in sibling modules — see
 :mod:`igni_core.backend.file_completion_service`.
 
 The router preserves the legacy ``dict[str, Callable]`` shape so
-existing callers (``BackendApp``, ``SessionOrchestrator``, and the
+existing callers (``BackendApp``, ``PoolWiring``, and the
 tests that reach in with ``table[RpcMethod.X](args)``) keep working
 unchanged.
 """
@@ -62,7 +62,7 @@ from igni_core.protocol.rpc import RpcMethod, validate_rpc_table
 
 logger = logging.getLogger(__name__)
 
-# Re-exported at module level so ``session_orchestrator`` and any
+# Re-exported at module level so the pool's admission and RPC router and any
 # other module that needs the "which RPCs must be intercepted before
 # per-runtime dispatch" invariant reads it from one place.
 __all__ = ["POOL_LEVEL_RPCS", "NativeFolderPicker", "RpcRouter"]
@@ -81,8 +81,8 @@ class RpcRouter:
     added-enum-but-forgot-to-register mistake surfaces at boot.
     """
 
-    #: Which RPCs the :class:`SessionOrchestrator` must intercept
-    #: before per-runtime dispatch. Registered on the table as a
+    #: Which RPCs :class:`~igni_core.backend.pool_rpcs.PoolRpcRouter`
+    #: answers before per-runtime dispatch. Registered on the table as a
     #: shared "you should never reach here" guard so a regression in
     #: the intercept path fails loud instead of silently mis-routing.
     POOL_LEVEL_RPCS: frozenset[RpcMethod] = POOL_LEVEL_RPCS

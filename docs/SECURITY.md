@@ -461,7 +461,7 @@ did not start (through the lockfile) is a program too.
 window that hosts it: the window forwards the page's calls with the
 extension's id as `RPCRequest.caller` (`IgniClient.asExtension`), and the
 page cannot choose it. But `caller` is a field of the message, so the backend
-does not take it on trust (`SessionOrchestrator._refuse_caller`,
+does not take it on trust (`MessageAdmission.refusal`,
 `ExtensionRegistry.authorise_caller`):
 
 | Rule | Where |
@@ -469,7 +469,7 @@ does not take it on trust (`SessionOrchestrator._refuse_caller`,
 | Every message carries the connection it arrived on, stamped by the transport and never read from the message (`Message.from_client`) | `transport/websocket.py` |
 | A `caller` is honoured only from igni's window, and only where the layer lets a connection speak for an extension: on the desktop, the window's connections; **in the cloud, none** — no Fleet client hosts a page, so `host_model`, `extension_service_token` and `ext.*` with a caller are refused before any handler runs | `Layer.connections_speak_for_extensions` |
 | The extension must be installed, and its page may call only its own `ext.<id>.*`, the host model, its service token, and base methods its manifest grants — never igni's pool-level calls (`attach_session`, `window_model`, the platform's) | `ExtensionRegistry.authorise_caller` |
-| An answer that carries a secret or one extension's data — a page's service token, a host-model reply, an extension call's result — goes to the connection that asked, not to every client attached (`Message.to_client`) | `SessionOrchestrator._reply`, `MessageDispatcher._reply` |
+| An answer that carries a secret or one extension's data — a page's service token, a host-model reply, an extension call's result — goes to the connection that asked, not to every client attached (`Message.to_client`) | `PoolReplier.reply`, `MessageDispatcher._reply` |
 | A window's connection, and the window framing a page (`home_window`), are the server's to know | `window_model`, `host_model` handlers |
 
 On the desktop the boundary against other software is the OS user: a process

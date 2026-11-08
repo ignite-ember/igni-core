@@ -53,7 +53,7 @@ class PushNotificationBridge:
 
     Constructed once during BE boot. The transport it stamps
     through can be replaced per-runtime via :meth:`for_transport`
-    (used by :class:`SessionOrchestrator` when a pooled runtime's
+    (used by :class:`SessionRuntimeFactory` when a pooled runtime's
     ``SessionStampingTransport`` needs to carry its own session id
     on broadcasts).
     """

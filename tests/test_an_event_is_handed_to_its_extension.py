@@ -15,6 +15,8 @@ import json
 from typing import Any
 
 from igni_core.backend.activity import ActivityState
+from igni_core.backend.pool_rpcs import ServiceEventRpc
+from igni_core.backend.schemas_pool import ExtensionPost
 from igni_core.backend.service_event_delivery import ExtensionEventHandler
 from igni_core.backend.service_item_desk import PoolChatDesk
 from igni_core.core.db.urls import DatabaseUrl
@@ -178,8 +180,8 @@ async def test_a_chat_of_the_pool_is_busy_unless_idle_and_a_post_waits_for_its_r
     class Orchestrator:
         pool = Pool()
 
-        async def post_from_extension(self, **kwargs: Any) -> None:
-            posted.append(kwargs)
+        async def post_from_extension(self, post: ExtensionPost) -> None:
+            posted.append(post.model_dump())
 
     desk = PoolChatDesk(Orchestrator())
     assert not desk.busy("s-claim")
@@ -194,7 +196,7 @@ async def test_a_chat_of_the_pool_is_busy_unless_idle_and_a_post_waits_for_its_r
             "session_id": "s-claim",
             "extension_id": "acme.indexer",
             "text": "hi",
-            "media": None,
+            "media": {},
             "queued": True,
             "from_service": "svc",
         }
@@ -209,7 +211,7 @@ async def test_the_platform_delivers_over_the_rpc_and_is_told_what_was_not_handl
     rig = await HostRig(tmp_path).start()
     try:
         items = Inbox(DatabaseUrl.for_file(tmp_path / "e.db"), hand=Extension(handles=False))
-        rig.orchestrator.attach_event_inbox(items.inbox)  # type: ignore[union-attr]
+        rig.orchestrator.mount(ServiceEventRpc(items.inbox))  # type: ignore[union-attr]
         request = msg.RPCRequest(
             id="d1",
             method="deliver_service_events",

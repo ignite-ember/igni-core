@@ -62,6 +62,7 @@ from collections.abc import Awaitable, Callable
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from igni_core.backend.schemas_extensions import PageTokenReply
 from igni_core.core.activity.http import busy_call
 from igni_core.core.auth.credentials import CloudCredentials, CredentialsStore
 from igni_core.core.config.endpoint import is_configured
@@ -310,6 +311,23 @@ class PageServiceTokens:
             access_token=token.access_token,
             expires_in=self._exchange.remaining(token),
             service_url=service_url,
+        )
+
+    async def reply_for(self, extension_id: str) -> PageTokenReply:
+        """``extension_service_token``'s answer for ``extension_id``'s page.
+
+        Nobody signed in, no service, igni refusing: each is a state the
+        page shows (``ok: false`` with the sentence), not a broken call.
+        """
+        try:
+            token = await self.for_page(extension_id)
+        except (NoService, NotSignedIn, TokenExchangeFailed) as exc:
+            return PageTokenReply(ok=False, error=str(exc))
+        return PageTokenReply(
+            ok=True,
+            access_token=token.access_token,
+            expires_in=token.expires_in,
+            service_url=token.service_url,
         )
 
 

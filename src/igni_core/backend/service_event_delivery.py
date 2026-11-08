@@ -16,6 +16,7 @@ from typing import Any, ClassVar
 from pydantic_core import to_jsonable_python
 
 from igni_core.backend.activity import ActivityState
+from igni_core.backend.schemas_pool import ExtensionPost
 from igni_core.backend.schemas_push import SessionNamedPayload
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.host.hooks import ExtensionHooks, HookFailure
@@ -68,12 +69,14 @@ class PoolSession:
         """Posted as ``extension_id``'s; ``from_service`` is its service's client id
         when the service sent it, and marks the post in ``chat.message_added``."""
         await self._orchestrator.post_from_extension(
-            session_id=self.session_id,
-            extension_id=extension_id,
-            text=text,
-            media=media,
-            queued=queued,
-            from_service=from_service,
+            ExtensionPost(
+                session_id=self.session_id,
+                extension_id=extension_id,
+                text=text,
+                media=media,
+                queued=queued,
+                from_service=from_service,
+            )
         )
 
     async def deliver(

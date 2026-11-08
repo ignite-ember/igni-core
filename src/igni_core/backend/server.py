@@ -181,10 +181,10 @@ class BackendServer:
         # any legacy caller that reaches through ``server._runs``.
         self._runs: RunController = self.controllers.runs
 
-    # ── Runtime attach (SessionOrchestrator uses this) ─────────────
+    # ── Runtime attach (SessionRuntimeFactory uses this) ───────────
 
     def attach_runtime(self, runtime: Any) -> None:
-        """Called by :class:`SessionOrchestrator` after building the
+        """Called by :class:`SessionRuntimeFactory` after building the
         default :class:`SessionRuntime` and again per pool runtime.
         Exposed so :class:`MessageDispatcher` can reach the runtime
         via :attr:`runtime` without dunder gymnastics."""

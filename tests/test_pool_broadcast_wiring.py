@@ -22,15 +22,55 @@ import asyncio
 import inspect
 from typing import Any
 
+from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.pool_directories import PoolDirectories
+from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
-from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.backend.schemas_pool import ProjectDirs
 from igni_core.backend.session_pool import SessionStampingTransport
+from igni_core.backend.session_runtime_factory import SessionRuntimeFactory
 from igni_core.core.broadcast_schema import BroadcastEvent
+from igni_core.core.config.settings import Settings
+from igni_core.core.db.locator import StorageLocator
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
 from igni_core.core.session.schemas import PermissionModeChangedEvent
+from igni_core.core.session.session_directories import SessionDirectoryStore
 from igni_core.core.tools.plan import PlanModeEnteredEvent, PlanSubmittedEvent
 from igni_core.protocol import messages as msg
+
+
+class _PooledBackend:
+    """Stands in for ``BackendServer`` where the pool resumes a session."""
+
+    def __init__(
+        self,
+        settings: Any,
+        *,
+        project_dir: Any,
+        resume_session_id: str,
+        additional_dirs: Any = None,
+    ) -> None:
+        self.session_id = resume_session_id
+        self.project_dir = project_dir
+        self.message_queue: list[str] = []
+        self.broadcast_bus = BroadcastBus()
+
+    async def startup(self) -> None:
+        pass
+
+    def wire_queue_hook(self, queue: Any) -> None:
+        pass
+
+    def register_broadcast(self, callback: Any) -> None:
+        self.broadcast_bus.register(callback)
+
+    def attach_runtime(self, runtime: Any) -> None:
+        self.runtime = runtime
+
+
+class _PooledRuntimes(SessionRuntimeFactory):
+    server_cls = _PooledBackend  # type: ignore[assignment]
 
 
 class _CapturingTransport:
@@ -189,8 +229,8 @@ class TestPostRunDeferral:
 class TestOrchestratorAndAppWiring:
     """Confirm the broadcast-bus binding runs in BOTH the boot path
     (``BackendApp.setup`` → ``PushNotificationBridge.wire_all``) and
-    the pool path (``SessionOrchestrator._create_runtime`` →
-    ``rt_bridge.bind_to_broadcast_bus``)."""
+    the pool path (``SessionRuntimeFactory.create`` →
+    ``bind_to_broadcast_bus`` on the runtime's own bridge)."""
 
     def test_boot_wires_broadcast_via_push_bridge(self) -> None:
         # ``wire_all`` is what ``BackendApp.setup`` calls — must
@@ -200,13 +240,34 @@ class TestOrchestratorAndAppWiring:
             "bus, or the default runtime silently drops broadcasts"
         )
 
-    def test_pool_runtime_binds_broadcast_via_runtime_bridge(self) -> None:
-        create_src = inspect.getsource(SessionOrchestrator._create_runtime)
-        # Pool sessions get a runtime-scoped ``rt_bridge`` bound to
-        # the SessionStampingTransport — the bind must run there so
-        # the resulting push carries the session id.
-        assert "rt_bridge.bind_to_broadcast_bus" in create_src, (
-            "SessionOrchestrator._create_runtime must bind the broadcast "
-            "bus through the runtime-scoped bridge, or pool sessions miss "
-            "broadcasts / miss the session_id stamp"
+    async def test_a_pooled_session_s_broadcasts_reach_the_windows_stamped(self, tmp_path) -> None:
+        # The pool path: a session the pool resumes is made by
+        # ``SessionRuntimeFactory.create``, which must bind its broadcast
+        # bus through a bridge on the session's stamped transport.
+        loop = asyncio.get_running_loop()
+        windows = _CapturingTransport()
+        push = PushNotificationBridge(transport=windows, loop=loop, queue=[])
+        settings = Settings(storage={"data_dir": str(tmp_path / "data")})
+        boot = _PooledBackend(settings, project_dir=tmp_path, resume_session_id="boot")
+        directories = PoolDirectories(
+            SessionDirectoryStore.from_locator(StorageLocator.from_settings(settings)),
+            ProjectDirs(project_dir=tmp_path),
         )
+        factory = _PooledRuntimes(
+            wiring=PoolWiring(
+                transport=windows,
+                push_bridge=push,
+                login=LoginCoordinator(backend=boot, push_bridge=push),
+            ),
+            settings=settings,
+            dirs=directories,
+        )
+
+        runtime = await factory.create("sess-pool-7")
+        runtime.backend.broadcast_bus.emit(PlanSubmittedEvent(plan="y"))
+        await asyncio.sleep(0.01)
+
+        (pushed,) = windows.sent
+        assert isinstance(pushed, msg.PushNotification)
+        assert pushed.channel == "plan_submitted"
+        assert pushed.session_id == "sess-pool-7"

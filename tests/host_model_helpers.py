@@ -25,13 +25,15 @@ from typing import Any
 from igni_core.backend.command_result import CommandResult
 from igni_core.backend.host_backend import HostModelWiring, ObservedTransport
 from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_router import RpcRouter
 from igni_core.backend.schemas_panels import OutputStyleInfo, OutputStylesResult
+from igni_core.backend.schemas_pool import ProjectDirs
 from igni_core.backend.schemas_rpc import GroupPolicyPackResult
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_pool import SessionRuntime
-from igni_core.backend.session_stamping_transport import SessionStampingTransport
+from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
 from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.session.event_log_schema import SessionEvent
 from igni_core.core.session.schemas import PersistResult
@@ -306,31 +308,22 @@ class FakeSession:
         return [e for e in self.events if e.type == event_type]
 
 
-class RigOrchestrator(SessionOrchestrator):
-    """The real orchestrator, making stand-in sessions instead of real ones."""
+class RigRuntimeFactory(SessionRuntimeFactory):
+    """The real factory, making stand-in sessions instead of real ones."""
 
-    async def _create_runtime(self, session_id: str) -> SessionRuntime:
-        backend = FakeSession(session_id, self._project_dir)
-        stamped = SessionStampingTransport(self._transport, backend)
-        bridge = self._push_bridge.for_transport(stamped, queue=[])
-        router = RpcRouter(
-            backend=backend,
-            transport=stamped,
-            login=self._login,
-            push=bridge,
-            extensions=self._extensions,
-            origins=self._origins,
-            notifications=self._notifications,
+    async def create(self, session_id: str) -> SessionRuntime:
+        backend = FakeSession(session_id, self._dirs.project_dir)
+        stamped = self._wiring.stamped(backend)
+        router = self._wiring.router_for(
+            backend, stamped, self._wiring.push_bridge.for_transport(stamped, queue=[])
         )
-        runtime = SessionRuntime(
+        return self.bind(
             backend=backend,
             rpc_table=router.build_table(),
             queue=[],
             transport=stamped,
             router=router,
         )
-        backend.attach_runtime(runtime)
-        return runtime
 
 
 def manifest(extension_id: str = "acme.reviewer", **permissions: Any) -> ExtensionManifest:
@@ -366,7 +359,7 @@ class HostRig:
         self.store = ExtensionStore()
         self.session = FakeSession("boot", self.project)
         self.model: HostModel | None = None
-        self.orchestrator: RigOrchestrator | None = None
+        self.orchestrator: SessionOrchestrator | None = None
         self.channel: HostChannel | None = None
         self._requests = 0
 
@@ -386,20 +379,18 @@ class HostRig:
         settings = SimpleNamespace(
             storage=SimpleNamespace(data_dir=str(self.tmp / "data"), database_url=None)
         )
-        self.orchestrator = RigOrchestrator(
-            backend=self.session,
-            transport=self.transport,
+        self.settings = settings
+        self.orchestrator = SessionOrchestrator.start(
+            boot=BootRuntime(
+                backend=self.session, rpc_table=router.build_table(), router=router, queue=queue
+            ),
+            wiring=PoolWiring(
+                transport=self.transport, push_bridge=push, login=login, extensions=extensions
+            ),
             settings=settings,
-            project_dir=self.project,
-            additional_dirs=None,
-            rpc_router=router,
-            rpc_table=router.build_table(),
-            push_bridge=push,
-            login=login,
-            queue=queue,
-            extensions=extensions,
+            dirs=ProjectDirs(project_dir=self.project),
+            factory=RigRuntimeFactory,
         )
-        self.orchestrator.setup_pool()
         self.model = HostModelWiring.build(
             orchestrator=self.orchestrator,
             transport=self.transport,
@@ -497,7 +488,7 @@ class HostRig:
         for _ in range(20):
             await asyncio.sleep(0)
         assert self.orchestrator is not None and self.model is not None
-        tasks = [t for t in self.orchestrator._in_flight if not t.done()]
+        tasks = self.orchestrator.in_flight.pending()
         if tasks:
             await asyncio.wait(tasks, timeout=5)
         await self.model.services.work.drain()

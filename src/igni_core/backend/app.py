@@ -30,13 +30,17 @@ from igni_core.backend.agent_refresh import AgentRefresh
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.backend.host_backend import HostModelWiring, ObservedTransport
 from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.pool_rpcs import ApproverTokenRpc, PageTokenRpc, ServiceEventRpc
+from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.schemas_pool import ProjectDirs
 from igni_core.backend.schemas_rpc import BackendReadyLine
 from igni_core.backend.server import BackendServer
 from igni_core.backend.service_event_delivery import ExtensionEventHandler
 from igni_core.backend.service_item_desk import HeldPostFlusher, PoolChatDesk
 from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.backend.session_runtime_factory import BootRuntime
 from igni_core.backend.supervisor import BackendSupervisor
 from igni_core.backend.workspace_signals import WorkspaceSignals
 from igni_core.core import air_gap
@@ -410,25 +414,28 @@ class BackendApp:
 
         # Orchestrator: builds the pool, wires the default runtime,
         # registers itself as the receive-loop consumer.
-        self._orchestrator = SessionOrchestrator(
-            backend=self._backend,
-            transport=self._transport,
+        self._orchestrator = SessionOrchestrator.start(
+            boot=BootRuntime(
+                backend=self._backend,
+                rpc_table=rpc_table,
+                router=self._rpc_router,
+                queue=self._queue,
+            ),
+            wiring=PoolWiring(
+                transport=self._transport,
+                push_bridge=self._push_bridge,
+                login=self._login,
+                extensions=self._extensions,
+                origins=self._origins,
+                notifications=self._notifications,
+            ),
             settings=settings,
-            project_dir=self._project_dir,
-            additional_dirs=self._additional_dirs,
-            rpc_router=self._rpc_router,
-            rpc_table=rpc_table,
-            push_bridge=self._push_bridge,
-            login=self._login,
-            queue=self._queue,
-            extensions=self._extensions,
-            origins=self._origins,
-            notifications=self._notifications,
+            dirs=ProjectDirs(project_dir=self._project_dir, additional_dirs=self._additional_dirs),
         )
         # The WebSocket's guard mints the tokens igni's window hands a
         # program it lets answer approval requests.
-        self._orchestrator.attach_approver_tokens(self._transport_builder.ws_transport)
-        pool = self._orchestrator.setup_pool()
+        self._orchestrator.mount(ApproverTokenRpc(self._transport_builder.ws_transport))
+        pool = self._orchestrator.pool
         self._supervisor.set_pool(pool)
         self._start_host_model()
         # The platform's ``deliver_service_events``, once each: an event to
@@ -453,7 +460,7 @@ class BackendApp:
             ),
             hand_event=ExtensionEventHandler(),
         )
-        self._orchestrator.attach_event_inbox(inbox)
+        self._orchestrator.mount(ServiceEventRpc(inbox))
         # On the desktop igni also fetches the person's events itself, while
         # online (``extensions/event_pull.py``); a layer may leave that to its
         # platform (the cloud's gateway delivers them).
@@ -655,8 +662,8 @@ class BackendApp:
         )
         self._service_tokens = ServiceTokenEndpoint(exchange, principal=person)
         if self._orchestrator is not None and self._origins is not None:
-            self._orchestrator.attach_page_tokens(
-                PageServiceTokens(origins=self._origins, exchange=exchange)
+            self._orchestrator.mount(
+                PageTokenRpc(PageServiceTokens(origins=self._origins, exchange=exchange))
             )
         installer = ExtensionInstaller(
             registry=self._extensions.registry,

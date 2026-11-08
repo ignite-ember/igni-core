@@ -26,7 +26,7 @@ from agno.run.requirement import RunRequirement
 from igni_core.backend.hitl_controller import HitlController
 from igni_core.backend.pause_handler import PauseHandler
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
-from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.backend.session_pool import SessionRuntime
 from igni_core.core.approvals.journal import ApprovalJournal
 from igni_core.core.db.database import Database
 from igni_core.core.db.urls import DatabaseUrl
@@ -286,14 +286,6 @@ class RecordingTransport:
         self.sent.append(message)
 
 
-class OnePool:
-    def __init__(self, runtime: Any) -> None:
-        self._runtime = runtime
-
-    async def get_or_create(self, session_id: str) -> Any:
-        return self._runtime
-
-
 async def test_a_window_attaching_is_shown_what_waits(database_url: DatabaseUrl):
     """The dialog is shown again where the person will see it: to the
     window that attaches to the session, after a reload or a restart."""
@@ -305,11 +297,13 @@ async def test_a_window_attaching_is_shown_what_waits(database_url: DatabaseUrl)
         _session(FakeTeam(), SubAgentHITLCoordinator()), _store(db), stream_factory=_drain
     )
     transport = RecordingTransport()
-    orchestrator = SessionOrchestrator.__new__(SessionOrchestrator)
-    orchestrator._pool = OnePool(  # type: ignore[assignment]
-        SimpleNamespace(backend=SimpleNamespace(hitl=restarted), transport=transport)
+    runtime = SessionRuntime(
+        backend=SimpleNamespace(hitl=restarted),  # type: ignore[arg-type]
+        rpc_table={},
+        queue=[],
+        transport=transport,
     )
-    await orchestrator._show_waiting_approvals(SESSION)
+    await runtime.replay_waiting_approvals()
     (shown,) = transport.sent
     assert isinstance(shown, msg.RunPaused)
     assert shown.run_id == "run-6"
