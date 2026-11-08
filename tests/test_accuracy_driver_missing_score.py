@@ -31,23 +31,23 @@ from types import SimpleNamespace
 import pytest
 
 from igni_core.core.evals.assertion_runner import AccuracyDriver, AssertionContext
+from igni_core.core.evals.schemas import EvalCase
+from igni_core.core.evals.tool_names import DEFAULT_CATALOG
 
 
 def _ctx(*, threshold: float) -> AssertionContext:
-    """Minimal context. `model_construct` skips validation so the stub
-    objects below do not have to satisfy the real field types."""
-    case = SimpleNamespace(
-        input="q",
-        expected_output="a",
-        judge_guidelines=None,
-        num_iterations=1,
-        accuracy_threshold=threshold,
-    )
-    return AssertionContext.model_construct(
+    """Minimal context. The adapter, agent and judge are opaque stubs: the
+    driver only hands them to the (patched) `AccuracyEval`."""
+    case = EvalCase(name="c", input="q", expected_output="a", accuracy_threshold=threshold)
+    return AssertionContext(
         case=case,
+        adapter=SimpleNamespace(),  # type: ignore[arg-type]
         output_text="whatever the agent said",
-        judge_model=object(),
-        agent=object(),
+        tool_trace=[],
+        agent=SimpleNamespace(),  # type: ignore[arg-type]
+        judge_model=SimpleNamespace(),  # type: ignore[arg-type]
+        work_dir=None,
+        catalog=DEFAULT_CATALOG,
     )
 
 

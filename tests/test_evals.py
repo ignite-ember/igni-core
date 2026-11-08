@@ -19,6 +19,7 @@ from igni_core.core.evals.runner import (
     SuiteRunner,
     ToolTraceEntry,
 )
+from igni_core.core.evals.schemas import ToolArgAssertion
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.commands import InteractiveCommandDispatcher
 
@@ -489,8 +490,8 @@ class TestToolTraceEntry:
         }
 
     def test_check_tool_arg_assertion_matches_pydantic_trace(self):
-        # End-to-end for the check function: pydantic trace + plain
-        # dict assertions → assertion matches when args contain the
+        # End-to-end for the check function: pydantic trace + typed
+        # assertions → assertion matches when args contain the
         # required key/value pair.
         trace = [
             ToolTraceEntry(name="spawn_team", args={"mode": "coordinate"}),
@@ -498,7 +499,7 @@ class TestToolTraceEntry:
         ]
         check = ToolArgDriver.check(
             trace,
-            [{"tool": "spawn_team", "args_must_contain": {"mode": "coordinate"}}],
+            [ToolArgAssertion(tool="spawn_team", args_must_contain={"mode": "coordinate"})],
         )
         assert check.ok is True
         assert "all tool-arg assertions matched" in check.detail
@@ -508,25 +509,23 @@ class TestToolTraceEntry:
         trace = [ToolTraceEntry(name="save_file", args={"path": "/tmp/x"})]
         check = ToolArgDriver.check(
             trace,
-            [{"tool": "spawn_team", "args_must_contain": {"mode": "coordinate"}}],
+            [ToolArgAssertion(tool="spawn_team", args_must_contain={"mode": "coordinate"})],
         )
         assert check.ok is False
         assert "missing tool-arg matches" in check.detail
         assert "spawn_team" in check.detail
 
     def test_check_tool_arg_assertion_skips_missing_tool_field(self):
-        # Malformed assertion (no ``tool`` key) is silently skipped —
-        # matches the pre-refactor behaviour where such rows never
-        # matched anything.
+        # An assertion naming no tool is skipped — it has no call to match.
         trace = [ToolTraceEntry(name="save_file", args={})]
-        check = ToolArgDriver.check(trace, [{"args_must_contain": {"x": 1}}])
+        check = ToolArgDriver.check(trace, [ToolArgAssertion(args_must_contain={"x": 1})])
         assert check.ok is True
 
     def test_check_tool_arg_assertion_handles_none_args(self):
         # ``args=None`` (no args captured) must not crash the check.
         trace = [ToolTraceEntry(name="save_file", args=None)]
         check = ToolArgDriver.check(
-            trace, [{"tool": "save_file", "args_must_contain": {"path": "/x"}}]
+            trace, [ToolArgAssertion(tool="save_file", args_must_contain={"path": "/x"})]
         )
         # Should be a clean failure ("no match"), not an exception.
         assert check.ok is False

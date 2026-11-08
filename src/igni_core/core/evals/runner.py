@@ -29,9 +29,10 @@ import logging
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from agno.agent import Agent
+from agno.models.base import Model
 
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.schemas.llm_behavior import EvalsConfig
@@ -90,7 +91,7 @@ class CaseRunner:
         self,
         case: EvalCase,
         agent: Agent,
-        judge_model: Any | None = None,
+        judge_model: Model | None = None,
         session_id: str | None = None,
         work_dir: Path | None = None,
         catalog: ToolNameCatalog | None = None,
@@ -278,7 +279,7 @@ class SuiteRunner:
     async def _run_cases(
         self,
         agent: Agent,
-        judge_model: Any | None,
+        judge_model: Model | None,
         work_dir: Path,
         suite_result: SuiteResult,
     ) -> None:
@@ -349,7 +350,7 @@ class SuiteRunner:
         user = self._project_dir / CONFIG_DIR / "evals"
         return builtin if builtin.is_dir() else user
 
-    def _lookup_judge_model(self) -> Any | None:
+    def _lookup_judge_model(self) -> Model | None:
         """Load the configured judge model, or ``None`` if unavailable."""
         try:
             registry = ModelRegistry(self._settings)
