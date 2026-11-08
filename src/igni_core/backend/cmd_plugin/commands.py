@@ -1,30 +1,21 @@
-"""Three :class:`SlashCommand` instances — the top of the command tree.
-
-Replaces the three deleted module-level ``async def cmd_*`` shims:
+"""The two :class:`SlashCommand` classes at the top of the command tree.
 
 * :class:`PluginCommand` — ``/plugin`` (install / update / remove /
   marketplace family).
-* :class:`PluginMarketplaceCommand` — legacy sub-tree entrypoint
-  ``/plugin marketplace …`` retained so any external caller
-  threading through the direct symbol path keeps working. The
-  built-in registry only wires :class:`PluginCommand` — this class
-  is a public shim only.
 * :class:`PluginsCommand` — ``/plugins`` (open panel + enable /
   disable toggles).
 
+:class:`BuiltinCommandRegistry` names each class as its target and
+constructs it the first time the command runs.
+
 Each ``run(handler, args)`` implementation:
 
-1. Reads ``session.plugin_data_dir`` (the new named seam) fresh.
-2. Constructs a :class:`PluginBackendGateway` — per-command, not
-   per-SlashCommand-instance. Matches the pre-refactor
-   ``PluginSlashCommand(handler)`` shape (fresh state every call).
+1. Reads ``session.plugin_data_dir`` fresh.
+2. Constructs a :class:`PluginBackendGateway` per call, so every
+   invocation starts from fresh state.
 3. Builds a :class:`SlashCommandContext` bundling session +
    data_dir + gateway.
 4. Tokenises ``args`` and delegates to the appropriate router.
-
-Docstrings from the deleted ``cmd_plugin`` / ``cmd_plugin_marketplace``
-/ ``cmd_plugins`` shims (usage tables, forms lists) live on these
-classes.
 """
 
 from __future__ import annotations
@@ -47,8 +38,8 @@ if TYPE_CHECKING:
 
 class _BaseSlashCommand:
     """Small shared helper: builds a fresh
-    :class:`SlashCommandContext` from a :class:`CommandHandler`. All
-    three command classes need this; extracting keeps
+    :class:`SlashCommandContext` from a :class:`CommandHandler`. Both
+    command classes need this; extracting keeps
     :meth:`PluginCommand.run` etc. focused on tokenisation +
     dispatch."""
 
@@ -111,25 +102,6 @@ class PluginCommand(_BaseSlashCommand):
         return await self._install_router.dispatch(ctx, parts)
 
 
-class PluginMarketplaceCommand(_BaseSlashCommand):
-    """Legacy sub-tree entrypoint kept as a stable class name for any
-    external caller (or test) that reaches for ``PluginMarketplaceCommand``
-    directly. Not registered in :class:`BuiltinCommandRegistry` — the
-    ``/plugin marketplace …`` subtree flows through
-    :class:`PluginCommand` — this is a shim only."""
-
-    name: str = "/plugin marketplace"
-    description: str = "Manage plugin marketplaces"
-
-    def __init__(self) -> None:
-        self._router = MarketplaceRouter()
-
-    async def run(self, handler: CommandHandler, args: str) -> CommandResult:
-        rest = args.strip().split()
-        ctx = self._make_context(handler)
-        return await self._router.dispatch(ctx, rest)
-
-
 class PluginsCommand(_BaseSlashCommand):
     """``/plugins`` — open the plugins panel, or toggle enable/disable directly.
 
@@ -167,4 +139,4 @@ class PluginsCommand(_BaseSlashCommand):
         return await self._router.dispatch(ctx, rest)
 
 
-__all__ = ["PluginCommand", "PluginMarketplaceCommand", "PluginsCommand"]
+__all__ = ["PluginCommand", "PluginsCommand"]

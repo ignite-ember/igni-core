@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
+from igni_core.backend.slash_command import SlashCommand
+
 if TYPE_CHECKING:
     from igni_core.backend.command_handler import CommandHandler
     from igni_core.backend.command_result import CommandResult
@@ -45,7 +47,9 @@ class BuiltinCommand:
     """One entry in the registry: slash-key + description + where its
     shim lives.
 
-    ``target`` is ``"module:attr"``. The module is imported the first
+    ``target`` is ``"module:attr"``, where ``attr`` is either a bare
+    ``(handler, args)`` coroutine function or a :class:`SlashCommand`
+    class, which is constructed once and whose ``run`` is used. The module is imported the first
     time the command runs, never before: an idle backend carries
     none of what ``/evals``, ``/loop``, ``/schedule`` or ``/plugin``
     need (sqlalchemy, alembic, dateparser, the evals runner…). Listing
@@ -80,7 +84,10 @@ class BuiltinCommand:
         if not self._resolved:
             module_name, _, attr = self.target.partition(":")
             shim = getattr(importlib.import_module(module_name), attr)
-            if self.takes_args:
+            if isinstance(shim, type):
+                command = cast(type[SlashCommand], shim)()
+                self._resolved.append(command.run)
+            elif self.takes_args:
                 self._resolved.append(cast(BuiltinHandler, shim))
             else:
                 no_args = cast(NoArgsHandler, shim)
@@ -184,9 +191,13 @@ class BuiltinCommandRegistry:
             ),
             BuiltinCommand("/loop", "Run a prompt in a loop", f"{_B}.cmd_loop:cmd_loop"),
             BuiltinCommand(
-                "/plugin", "Install / update / remove a plugin", f"{_B}.cmd_plugin:cmd_plugin"
+                "/plugin",
+                "Install / update / remove a plugin",
+                f"{_B}.cmd_plugin.commands:PluginCommand",
             ),
-            BuiltinCommand("/plugins", "Open the plugins panel", f"{_B}.cmd_plugin:cmd_plugins"),
+            BuiltinCommand(
+                "/plugins", "Open the plugins panel", f"{_B}.cmd_plugin.commands:PluginsCommand"
+            ),
             BuiltinCommand(
                 "/extensions",
                 "Installed extensions and their settings",
