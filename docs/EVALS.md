@@ -402,7 +402,7 @@ Since evals are Agno-native, you can also write them as pytest tests:
 import pytest
 from agno.eval.accuracy import AccuracyEval
 from agno.eval.reliability import ReliabilityEval
-from igni_core.pool import AgentPool
+from igni_core.core.agents import AgentPool
 from igni_core.config import Settings
 
 @pytest.fixture

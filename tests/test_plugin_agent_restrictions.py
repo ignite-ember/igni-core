@@ -62,10 +62,8 @@ def captured_pool_warnings(monkeypatch):
     regardless of what other test code did to the global logger
     config.
 
-    Patches ``plugin_policy.logger`` directly (the canonical
-    emitter) rather than the ``core/pool.py`` shim's re-bound
-    ``logger`` — both are the same singleton but the canonical
-    path is grep-friendly for future maintainers.
+    Patches ``plugin_policy.logger`` directly — the emitter
+    :class:`PluginRestrictionPolicy` writes through.
     """
     from igni_core.core.agents import plugin_policy as _plugin_policy_mod
 

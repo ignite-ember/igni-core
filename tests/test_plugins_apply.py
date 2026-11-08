@@ -311,9 +311,9 @@ def test_apply_to_agents_namespaces_loaded_agents(tmp_path: Path) -> None:
     """Symmetric to ``test_apply_to_skills_namespaces_loaded_skills``
     but for agents. A plugin named ``foo`` whose ``agents/demo.md``
     carries ``name: demo`` lands in the AgentPool as ``foo:demo``."""
+    from igni_core.core.agents import AgentPool
     from igni_core.core.config.settings import Settings
     from igni_core.core.plugins.loader import PluginLoader
-    from igni_core.core.pool import AgentPool
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     plugin_dir = user_ember / "foo"
@@ -345,9 +345,9 @@ def test_apply_to_agents_honors_disabled(tmp_path: Path) -> None:
     """Symmetric to the skills-disabled test: a disabled plugin's
     agents never make it into the AgentPool, but the plugin itself
     is still discoverable for the panel."""
+    from igni_core.core.agents import AgentPool
     from igni_core.core.config.settings import Settings
     from igni_core.core.plugins.loader import PluginLoader
-    from igni_core.core.pool import AgentPool
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     for plugin_name in ("off", "on"):
