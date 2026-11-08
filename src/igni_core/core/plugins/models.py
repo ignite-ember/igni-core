@@ -304,6 +304,11 @@ class MarketplaceEntry(BaseModel):
     #: the official marketplace, the old default's auto-registration (B29).
     added_by: Literal["user", "default"] | None = None
 
+    @property
+    def plugin_count(self) -> int:
+        """Plugins in the cached catalog; 0 before the first fetch."""
+        return len(self.cached.plugins) if self.cached else 0
+
     def mark_fetched(self, catalog: MarketplaceCatalog) -> None:
         """Overwrite ``cached`` with a fresh catalog and stamp
         ``last_fetched`` to now-UTC (ISO-8601, seconds precision).
