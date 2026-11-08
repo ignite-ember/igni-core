@@ -36,6 +36,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.backend.schemas_context import DiscardInterruptedRunResult
 from igni_core.core.session.pending_messages import (
     INTERRUPTED_REASONS,
     InterruptedMessage,
@@ -321,29 +322,27 @@ class TestInterruptedRunsRpcDispatch:
     methods with the right arg shapes. Same shape as the
     ``test_process_watcher.py`` dispatch tests."""
 
-    def _make_backend(self) -> MagicMock:
-        backend = MagicMock()
-        backend.get_interrupted_runs = AsyncMock(return_value=[])
-        backend.controllers.context.discard_interrupted_run = AsyncMock(
-            return_value={"ok": True, "error": ""}
-        )
-        return backend
-
-    def test_get_interrupted_runs_extracts_session_id(self) -> None:
+    @pytest.mark.asyncio
+    async def test_get_interrupted_runs_extracts_session_id(self) -> None:
         backend = MagicMock()
         backend.get_interrupted_runs = AsyncMock(return_value=[])
         table = rpc_table_for(backend, MagicMock())
-        table[RpcMethod.GET_INTERRUPTED_RUNS]({"session_id": "sess-1"})
+        await table[RpcMethod.GET_INTERRUPTED_RUNS]({"session_id": "sess-1"})
         backend.get_interrupted_runs.assert_called_once_with("sess-1")
 
-    def test_discard_interrupted_run_extracts_session_and_message_id(
+    @pytest.mark.asyncio
+    async def test_discard_interrupted_run_extracts_session_and_message_id(
         self,
     ) -> None:
         backend = MagicMock()
         context = backend.controllers.context
-        context.discard_interrupted_run = AsyncMock(return_value={"ok": True, "error": ""})
+        context.discard_interrupted_run = AsyncMock(
+            return_value=DiscardInterruptedRunResult(ok=True)
+        )
         table = rpc_table_for(backend, MagicMock())
-        table[RpcMethod.DISCARD_INTERRUPTED_RUN]({"session_id": "sess-1", "message_id": "msg-42"})
+        await table[RpcMethod.DISCARD_INTERRUPTED_RUN](
+            {"session_id": "sess-1", "message_id": "msg-42"}
+        )
         context.discard_interrupted_run.assert_called_once_with("sess-1", "msg-42")
 
 
