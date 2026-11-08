@@ -1,6 +1,6 @@
 """``/ctx`` raised on every invocation, and three tests said it worked.
 
-``ContextBreakdownView`` annotates its one field with
+``ContextBreakdownView`` used to annotate its one field with
 ``ContextBreakdown``, imported under ``TYPE_CHECKING``. With
 ``from __future__ import annotations`` that annotation is a *string*
 Pydantic resolves when the class is built, and the name did not exist
@@ -50,7 +50,7 @@ class TestTheModelIsFullyDefined:
     def test_from_domain_does_not_raise(self):
         view = ContextBreakdownView.from_domain(ContextBreakdown(total=1000, runs=400, floor=600))
 
-        assert view.breakdown.total == 1000
+        assert view.total == 1000
 
     @pytest.mark.parametrize(
         "first",
@@ -64,15 +64,8 @@ class TestTheModelIsFullyDefined:
         """Order-independence, in a subprocess, because the fix is about
         import order and this process has already imported everything.
 
-        ``ContextBreakdown`` cannot be imported into
-        ``schemas_context`` at runtime **at all**: it drags in
-        ``core.session.__init__``, which reaches
-        ``interactive → interactive_loop → commands →
-        backend.command_handler``, which is what imports
-        ``schemas_context``. Putting the import at the top killed one
-        entry point; moving it to the foot killed a different one —
-        ``command_handler`` first, which is how the test suite loads.
-        Hence ``Any`` on the field.
+        The view holds the breakdown's numbers, not the domain object,
+        so its fields need nothing from ``core.session`` to resolve.
 
         Three entry points because two of them each passed while the
         third was broken.

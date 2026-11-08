@@ -33,56 +33,24 @@ Chat-view models (slash-command output):
   :mod:`igni_core.core.session.schemas` stays presentation-
   free (no ``CommandResult`` import in the domain layer).
 
-``OutputStyle`` (a ``@dataclass``) is imported lazily under
-``TYPE_CHECKING`` so this module stays import-cheap. Views that
-wrap it set ``arbitrary_types_allowed=True``.
-
-``ContextBreakdown`` **is not**, and cannot be. It is the
-*annotation of a Pydantic field*, and with
-``from __future__ import annotations`` every annotation in this
-file is a string that Pydantic resolves at class-build time
-against the module's real namespace. Under ``TYPE_CHECKING`` that
-name does not exist at runtime, so the model never finished
-building and every construction raised::
-
-    PydanticUserError: `ContextBreakdownView` is not fully
-    defined; you should define `ContextBreakdown`, then call
-    `ContextBreakdownView.model_rebuild()`.
-
-Which means ``/ctx`` did not work at all — not in an edge case,
-ever — and the error reached the user as ``session routing
-failed: …`` with a Pydantic docs link in it. ``arbitrary_types_
-allowed`` does not help: it permits non-pydantic *types*, it does
-not conjure a *name*.
-
-The field is annotated ``Any`` now — see the comment on it. No
-import of ``ContextBreakdown`` at runtime is possible from this
-module at all; both the top and the foot of the file were tried and
-each only changed which entry point the cycle killed.
-
-The domain :class:`~igni_core.core.session.pending_messages.PendingMessage`
-dataclass — the storage-row type this module's wire model wraps —
-is imported under ``TYPE_CHECKING`` as ``PendingMessageRow`` to
-avoid shadowing the wire-model class name at runtime.
+``OutputStyle`` is a plain ``@dataclass``; views that wrap it set
+``arbitrary_types_allowed=True``.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.backend.command_result import CommandResult
 from igni_core.core.output_styles import OutputStyle
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.pending_messages import InterruptedMessage as InterruptedMessageRow
+from igni_core.core.session.pending_messages import InterruptedReason
+from igni_core.core.session.pending_messages import PendingMessage as PendingMessageRow
 
 if TYPE_CHECKING:
-    from igni_core.core.session.pending_messages import (
-        InterruptedMessage as InterruptedMessageRow,
-    )
-    from igni_core.core.session.pending_messages import (
-        PendingMessage as PendingMessageRow,
-    )
     from igni_core.core.session.schemas import ContextBreakdown
 
 
@@ -106,16 +74,13 @@ class TruncateHistoryResult(BaseModel):
 class PendingMessage(BaseModel):
     """One pre-persisted user message row surfaced by
     :meth:`ContextController.get_pending_messages`. ``role`` is
-    always ``"user"`` — only user turns get pre-persisted, so this
-    is a constant on the wire; declared as a plain field (not a
-    discriminator) for FE-parity.
+    always ``"user"`` — only user turns get pre-persisted.
 
     Build one from a storage-row dataclass via
-    :meth:`from_pending_row` so the controller doesn't have to
-    hardcode the ``role="user"`` constant at every call site.
+    :meth:`from_pending_row`.
     """
 
-    role: str
+    role: Literal["user"] = "user"
     content: str
     received_at: int
     message_id: str
@@ -125,10 +90,8 @@ class PendingMessage(BaseModel):
         """Project a domain :class:`PendingMessage` storage row
         (the ``@dataclass`` in
         :mod:`igni_core.core.session.pending_messages`) onto the
-        wire model. ``role`` is fixed to ``"user"`` — the pending
-        table only holds user turns."""
+        wire model."""
         return cls(
-            role="user",
             content=row.text,
             received_at=row.received_at,
             message_id=row.message_id,
@@ -145,8 +108,8 @@ class InterruptedRun(BaseModel):
     the assistant bubble that was in-flight when the run stopped,
     with Retry / Discard / Edit-prompt actions.
 
-    ``reason`` is one of ``"cancelled" | "errored" | "abandoned"``
-    — same set as the storage column. ``last_error`` is set when
+    ``reason`` is the storage column's :data:`InterruptedReason`.
+    ``last_error`` is set when
     ``reason == "errored"`` and ``None`` otherwise.
     """
 
@@ -154,7 +117,7 @@ class InterruptedRun(BaseModel):
     content: str
     received_at: int
     interrupted_at: int
-    reason: str
+    reason: InterruptedReason
     last_error: str | None = None
 
     @classmethod
@@ -242,57 +205,33 @@ class OutputStyleStatusView(BaseModel):
 
 
 class ContextBreakdownView(BaseModel):
-    """Wraps a domain :class:`ContextBreakdown` for the ``/ctx``
-    markdown card.
+    """The ``/ctx`` markdown card for a domain :class:`ContextBreakdown`.
 
-    Owns the 7-line ``**Context breakdown**`` template plus the
-    ``runs/total*100`` percentage calculation, so the domain
-    model in :mod:`core.session.schemas` stays render-free.
-    Constructed via :meth:`from_domain` so the coordinator never
-    has to know about the field names — it just hands over the
-    ``ContextBreakdown`` it got from
-    :meth:`Session.context_breakdown`.
+    Owns the ``**Context breakdown**`` template plus the
+    ``runs/total*100`` percentage calculation, so the domain model in
+    :mod:`core.session.schemas` stays render-free. Built via
+    :meth:`from_domain`.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    #: The domain :class:`ContextBreakdown`, typed ``Any`` on purpose.
-    #:
-    #: It cannot be annotated with the real class. With
-    #: ``from __future__ import annotations`` Pydantic resolves the
-    #: annotation against this module's runtime namespace, so the name
-    #: has to be importable *here* — and importing
-    #: ``core.session.schemas`` runs ``core.session.__init__``, which
-    #: reaches ``interactive → interactive_loop → commands →
-    #: backend.command_handler``, which is what imports this file. A
-    #: genuine cycle, and it does not matter whether the import sits
-    #: at the top of the module or the foot: both were tried, and each
-    #: only moved which entry point died.
-    #:
-    #: ``Any`` always resolves, so the model finishes building. The
-    #: real type still guards the boundary — ``from_domain`` is the
-    #: only constructor and it is annotated, so a wrong argument is a
-    #: type error at the call site rather than a validation error at
-    #: runtime. That is the right trade for an internal view whose
-    #: input comes from one method in this repository.
-    breakdown: Any
+    total: int
+    runs: int
+    floor: int
 
     @classmethod
     def from_domain(cls, breakdown: ContextBreakdown) -> ContextBreakdownView:
-        return cls(breakdown=breakdown)
+        return cls(total=breakdown.total, runs=breakdown.runs, floor=breakdown.floor)
+
+    @property
+    def runs_percent(self) -> float:
+        return (self.runs / self.total * 100.0) if self.total else 0.0
 
     def to_command_result(self) -> CommandResult:
-        b = self.breakdown
-        total = b.total
-        runs = b.runs
-        floor = b.floor
-        pct = (runs / total * 100.0) if total else 0.0
         lines = [
             "**Context breakdown**",
             "",
-            f"- **Total:** {total:,} tokens",
-            f"- **Conversation (runs):** {runs:,} tokens ({pct:.1f}% of total)",
-            f"- **Floor (system + tools + rules + memories + summary):** {floor:,} tokens",
+            f"- **Total:** {self.total:,} tokens",
+            f"- **Conversation (runs):** {self.runs:,} tokens ({self.runs_percent:.1f}% of total)",
+            f"- **Floor (system + tools + rules + memories + summary):** {self.floor:,} tokens",
             "",
             "`/compact` only clears the conversation portion — the floor "
             "is rebaked into every prompt and cannot be compacted away.",
@@ -304,6 +243,8 @@ __all__ = [
     "PENDING_STALENESS_SECONDS",
     "TruncateHistoryResult",
     "PendingMessage",
+    "InterruptedRun",
+    "DiscardInterruptedRunResult",
     "OutputStylesListView",
     "OutputStyleStatusView",
     "ContextBreakdownView",
