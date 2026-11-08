@@ -294,7 +294,13 @@ class TestGetPendingMessagesRPC:
     @pytest.mark.asyncio
     async def test_returns_pending_in_chat_history_shape(self, tmp_path):
         store = PendingMessageStore(tmp_path / "state.db")
-        context = ContextController(session=MagicMock(), settings=MagicMock(), pending_store=store)
+        context = ContextController(
+            session=MagicMock(),
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
         store.record_received("sess-x", "first interrupted")
         time.sleep(0.01)
         store.record_received("sess-x", "second interrupted")
@@ -314,7 +320,13 @@ class TestGetPendingMessagesRPC:
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_pending(self, tmp_path):
         store = PendingMessageStore(tmp_path / "state.db")
-        context = ContextController(session=MagicMock(), settings=MagicMock(), pending_store=store)
+        context = ContextController(
+            session=MagicMock(),
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
 
         rows = await context.get_pending_messages("sess-x")
         assert rows == []

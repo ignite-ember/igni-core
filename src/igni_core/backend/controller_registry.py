@@ -36,6 +36,9 @@ from igni_core.backend.server_sessions import SessionsController
 from igni_core.backend.team_wiring import TeamWiring
 from igni_core.backend.visualization_action_bus import VisualizationActionBus
 from igni_core.core.auth.portal_client import PortalClient
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.meta import PackMetaStore
+from igni_core.core.config.models import ModelRegistry
 
 if TYPE_CHECKING:
     from igni_core.core.config.settings import Settings
@@ -154,6 +157,8 @@ class ControllerRegistry:
             session=session,
             settings=settings,
             pending_store=pending_store,
+            models=ModelRegistry(settings),
+            pack_meta=PackMetaStore(GroupPolicyLayout.for_data_dir(settings.storage.data_dir)),
         )
 
         chat_history = ChatHistoryRebuilder(session=session)

@@ -37,6 +37,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from igni_core.backend.schemas_context import DiscardInterruptedRunResult
+from igni_core.backend.server_context import ContextController
 from igni_core.core.session.pending_messages import (
     INTERRUPTED_REASONS,
     InterruptedMessage,
@@ -405,8 +406,6 @@ class TestContextControllerInterrupted:
 
     @pytest.mark.asyncio
     async def test_get_interrupted_runs_projects_to_wire(self, tmp_path: Path) -> None:
-        from igni_core.backend.server_context import ContextController
-
         store = PendingMessageStore(tmp_path / "state.db")
         msg_id = store.record_received("sess", "search foo")
         store.mark_interrupted(msg_id, "errored", last_error="timeout")
@@ -417,6 +416,8 @@ class TestContextControllerInterrupted:
             session=session,
             settings=MagicMock(),
             pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
         )
 
         rows = await controller.get_interrupted_runs("sess")
@@ -429,20 +430,22 @@ class TestContextControllerInterrupted:
 
     @pytest.mark.asyncio
     async def test_get_interrupted_runs_empty_on_clean_session(self, tmp_path: Path) -> None:
-        from igni_core.backend.server_context import ContextController
-
         store = PendingMessageStore(tmp_path / "state.db")
         # No interrupted rows for this session.
         session = MagicMock()
         session.session_id = "clean"
-        controller = ContextController(session=session, settings=MagicMock(), pending_store=store)
+        controller = ContextController(
+            session=session,
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
 
         assert await controller.get_interrupted_runs("clean") == []
 
     @pytest.mark.asyncio
     async def test_discard_interrupted_run_removes_one_row(self, tmp_path: Path) -> None:
-        from igni_core.backend.server_context import ContextController
-
         store = PendingMessageStore(tmp_path / "state.db")
         a = store.record_received("sess", "a")
         b = store.record_received("sess", "b")
@@ -451,7 +454,13 @@ class TestContextControllerInterrupted:
 
         session = MagicMock()
         session.session_id = "sess"
-        controller = ContextController(session=session, settings=MagicMock(), pending_store=store)
+        controller = ContextController(
+            session=session,
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
 
         result = await controller.discard_interrupted_run("sess", a)
         assert result.ok is True
@@ -466,24 +475,32 @@ class TestContextControllerInterrupted:
         """Deleting a row that doesn't exist returns ``ok=True``
         so the FE can safely retry on transient errors without
         worrying about double-delete surfacing as a failure."""
-        from igni_core.backend.server_context import ContextController
-
         store = PendingMessageStore(tmp_path / "state.db")
         session = MagicMock()
         session.session_id = "sess"
-        controller = ContextController(session=session, settings=MagicMock(), pending_store=store)
+        controller = ContextController(
+            session=session,
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
 
         result = await controller.discard_interrupted_run("sess", "nope")
         assert result.ok is True
 
     @pytest.mark.asyncio
     async def test_discard_interrupted_run_rejects_empty_message_id(self, tmp_path: Path) -> None:
-        from igni_core.backend.server_context import ContextController
-
         store = PendingMessageStore(tmp_path / "state.db")
         session = MagicMock()
         session.session_id = "sess"
-        controller = ContextController(session=session, settings=MagicMock(), pending_store=store)
+        controller = ContextController(
+            session=session,
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
 
         result = await controller.discard_interrupted_run("sess", "")
         assert result.ok is False

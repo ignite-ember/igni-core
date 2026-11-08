@@ -28,10 +28,11 @@ the sibling :mod:`schemas_context` module.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import time
 from typing import TYPE_CHECKING
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from igni_core.backend.schemas_context import (
     PENDING_STALENESS_SECONDS,
@@ -40,7 +41,9 @@ from igni_core.backend.schemas_context import (
     PendingMessage,
     TruncateHistoryResult,
 )
-from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.meta import PackMetaStore
+from igni_core.core.config.group_policy.pack import PackTheme
+from igni_core.core.config.models import ModelRegistry
 from igni_core.core.session.persistence.run_history import RunHistory
 from igni_core.core.session.schemas import ContextBreakdown
 from igni_core.core.session.token_estimate import TokenEstimate
@@ -63,10 +66,14 @@ class ContextController:
         session: Session,
         settings: Settings,
         pending_store: PendingMessageStore,
+        models: ModelRegistry,
+        pack_meta: PackMetaStore,
     ) -> None:
         self._session = session
         self._settings = settings
         self._pending_store = pending_store
+        self._models = models
+        self._pack_meta = pack_meta
 
     def get_status(self) -> msg.StatusUpdate:
         """Status-bar snapshot.
@@ -79,48 +86,32 @@ class ContextController:
         because the FE already re-renders on every one of these, and a
         second channel for six optional strings would be its own thing
         to keep in sync.
+
+        The theme crosses the wire as the pass-through mapping
+        :attr:`StatusUpdate.theme` declares; an empty one is no theme.
         """
+        theme = self._group_theme()
         return msg.StatusUpdate(
             model=self._settings.models.default,
-            model_configured=self._has_usable_model(),
+            model_configured=self._models.has_usable_model(),
             cloud_connected=self._session.cloud_connected,
             cloud_org=self._session.cloud_org_name or "",
             cloud_email=self._session.cloud_email or "",
             context_tokens=self._session.context_budget.last_input_tokens,
             max_context=self._settings.models.max_context_window,
             permission_mode=self._session.permission_mode_value,
-            theme=self._group_theme(),
+            theme=(theme.model_dump() or None) if theme is not None else None,
         )
 
-    def _has_usable_model(self) -> bool:
-        """Ask the registry, never raise.
-
-        A brand-new install has no model, which is the normal first-run
-        state rather than an error — and a status poll that failed
-        because of it would take the whole status bar down with it.
-        """
-        try:
-            from igni_core.core.config.models import ModelRegistry
-
-            return ModelRegistry(self._settings).has_usable_model()
-        except Exception as exc:  # pragma: no cover — defensive
-            logger.debug("model availability unknown (%s); assuming configured", exc)
-            return True
-
-    def _group_theme(self) -> dict | None:
+    def _group_theme(self) -> PackTheme | None:
         """Brand overrides from the cached group pack, if any.
 
-        Never raises: a missing, unreadable or theme-less pack all mean
-        the same thing to the caller, and a status poll that fails
-        because of a branding lookup would take the status bar with it.
+        A missing or unreadable meta file reads as ``None`` already
+        (:meth:`PackMetaStore.load`), so a status poll never fails on a
+        branding lookup.
         """
-        try:
-            meta = GroupPolicyCache.for_data_dir(self._settings.storage.data_dir).meta.load()
-            theme = meta.theme.model_dump() if meta is not None and meta.theme else None
-            return theme or None
-        except Exception as exc:  # pragma: no cover — defensive
-            logger.debug("group theme unavailable (%s); using the shipped palette", exc)
-            return None
+        meta = self._pack_meta.load()
+        return meta.theme if meta is not None else None
 
     async def context_breakdown(self) -> ContextBreakdown:
         """What the context is made of, for the ``/ctx`` page.
@@ -140,17 +131,12 @@ class ContextController:
                 session_id=self._session.session_id,
                 user_id=self._session.user_id,
             )
-        except Exception as exc:
-            logger.debug("aget_session failed (%s); reporting 0", exc)
+        except SQLAlchemyError:
+            logger.warning("count_context_tokens: session read failed; reporting 0", exc_info=True)
             return 0
         if agno_session is None:
             return 0
-        try:
-            messages = agno_session.get_messages()
-        except Exception as exc:
-            logger.debug("get_messages failed (%s); reporting 0", exc)
-            return 0
-        n = TokenEstimate.of(messages)
+        n = TokenEstimate.of(agno_session.get_messages())
         # Latch only when we actually measured something.
         if n > 0:
             self._session.context_budget.latch(n)
@@ -162,13 +148,17 @@ class ContextController:
         if not compacted:
             return None
         summary = ""
-        with contextlib.suppress(Exception):
+        try:
             agno_session = await self._session.main_team.aget_session(
                 session_id=self._session.session_id,
                 user_id=self._session.user_id,
             )
-            if agno_session and agno_session.summary and agno_session.summary.summary:
-                summary = agno_session.summary.summary
+        except SQLAlchemyError:
+            # The compaction itself succeeded; only the summary echo is lost.
+            logger.warning("compact_if_needed: summary read failed", exc_info=True)
+            agno_session = None
+        if agno_session and agno_session.summary and agno_session.summary.summary:
+            summary = agno_session.summary.summary
         return msg.SessionCleared(
             new_session_id=self._session.session_id,
             summary=summary,
@@ -227,8 +217,8 @@ class ContextController:
         """
         try:
             rows = await self._pending_store.alist_pending(session_id)
-        except Exception as exc:
-            logger.debug("get_pending_messages failed: %s", exc)
+        except SQLAlchemyError:
+            logger.warning("get_pending_messages: store read failed", exc_info=True)
             return []
         cutoff = int(time.time()) - PENDING_STALENESS_SECONDS
         rows = [r for r in rows if r.received_at <= cutoff]
@@ -257,8 +247,8 @@ class ContextController:
         """
         try:
             rows = await self._pending_store.alist_interrupted(session_id)
-        except Exception as exc:
-            logger.debug("get_interrupted_runs failed: %s", exc)
+        except SQLAlchemyError:
+            logger.warning("get_interrupted_runs: store read failed", exc_info=True)
             return []
         return [InterruptedRun.from_interrupted_row(r) for r in rows]
 
@@ -281,7 +271,7 @@ class ContextController:
             return DiscardInterruptedRunResult(ok=False, error="message_id is required")
         try:
             await self._pending_store.adiscard(message_id)
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             logger.warning("discard_interrupted_run failed: %s", exc)
             return DiscardInterruptedRunResult(ok=False, error=str(exc))
         return DiscardInterruptedRunResult(ok=True)
