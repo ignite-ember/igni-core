@@ -37,7 +37,7 @@ from agno.run.requirement import RunRequirement
 from pydantic import BaseModel, ConfigDict
 
 from igni_core.backend.schemas_hitl import StreamFactory
-from igni_core.core.approvals.journal import SpawnLink
+from igni_core.core.approvals.records import SpawnLink
 from igni_core.core.hooks.untrusted import UntrustedOutputHook
 from igni_core.core.sub_agent_hitl import RestoredRun
 from igni_core.core.tools.orchestrate import OrchestrateTools

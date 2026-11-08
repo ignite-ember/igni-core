@@ -36,20 +36,19 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
+from agno.run.requirement import RunRequirement
 from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.core.approvals.declined import declined_note
-from igni_core.core.approvals.journal import ApprovalJournal, ApprovalOrigin, SpawnLink
+from igni_core.core.approvals.journal import ApprovalJournal
+from igni_core.core.approvals.records import ApprovalOrigin, SpawnLink
 from igni_core.core.layer import Layers
 from igni_core.core.paths import DEFAULT_DATA_DIR
 from igni_core.core.tools.spawn_context import SpawnCalls, SpawnDeadline
 from igni_core.protocol import messages as msg
 from igni_core.protocol.agno_tool_formatter import default_registry
-
-if TYPE_CHECKING:
-    from agno.run.base import RunRequirement
 
 
 class PendingRequirement(Protocol):
@@ -168,7 +167,7 @@ class SubAgentHITLCoordinator:
         waiting = self._journal.waiting(session_id)
         asked = {s.run_id for s in waiting if s.origin is ApprovalOrigin.SUB_AGENT}
         self._interrupted = [
-            link for link in self._journal.spawns(session_id) if link.run_id not in asked
+            link for link in self._journal.spawns.of_session(session_id) if link.run_id not in asked
         ]
         for stored in waiting:
             if stored.origin is not ApprovalOrigin.SUB_AGENT:
@@ -208,7 +207,7 @@ class SubAgentHITLCoordinator:
                 continue
             requirements = [self._pending.pop(r).requirement for r in req_ids]
             self._restored.difference_update(req_ids)
-            link = self._journal.spawn(run_id) if self._journal is not None else None
+            link = self._journal.spawns.get(run_id) if self._journal is not None else None
             ready.append(RestoredRun(run_id=run_id, requirements=requirements, link=link))
         return ready
 
@@ -220,7 +219,7 @@ class SubAgentHITLCoordinator:
 
     def forget_spawn(self, run_id: str) -> None:
         if self._journal is not None:
-            self._journal.forget_spawn(run_id)
+            self._journal.spawns.forget(run_id)
 
     def request_for(self, req_id: str) -> msg.HITLRequest | None:
         """The request a window is shown for ``req_id``."""
@@ -252,9 +251,11 @@ class SubAgentHITLCoordinator:
             pass
 
     def _write(self, req_id: str) -> None:
-        if self._journal is None:
-            return
         entry = self._pending[req_id]
+        # A single-call safety question is not Agno's and cannot be
+        # serialised; it lives in memory only.
+        if self._journal is None or not isinstance(entry.requirement, RunRequirement):
+            return
         self._journal.record(
             requirement_id=req_id,
             session_id=self._session_id(),
@@ -279,16 +280,16 @@ class SubAgentHITLCoordinator:
         while len(self._turns) > self.TURNS_KEPT:
             self._turns.pop(next(iter(self._turns)))
         if self._journal is not None and run_id in self._linked_runs:
-            self._journal.record_turn_result(run_id, tool_call_id, result)
+            self._journal.turns.record(run_id, tool_call_id, result)
 
     def turn_results(self, run_id: str) -> dict[str, str]:
-        return self._journal.turn_results(run_id) if self._journal is not None else {}
+        return self._journal.turns.of_run(run_id) if self._journal is not None else {}
 
     def forget_turn(self, run_id: str) -> None:
         self._linked_runs.discard(run_id)
         self._turns.pop(run_id, None)
         if self._journal is not None:
-            self._journal.forget_turn(run_id)
+            self._journal.turns.forget(run_id)
 
     def _link(self, run_id: str, session_id: str, agent_path: list[str]) -> None:
         parents = SpawnCalls.current()
@@ -299,8 +300,8 @@ class SubAgentHITLCoordinator:
                 continue
             self._linked_runs.add(parent.run_id)
             for call_id, result in self._turns.get(parent.run_id, {}).items():
-                self._journal.record_turn_result(parent.run_id, call_id, result)
-        self._journal.record_spawn(
+                self._journal.turns.record(parent.run_id, call_id, result)
+        self._journal.spawns.record(
             SpawnLink(
                 run_id=run_id,
                 session_id=self._session_id(),

@@ -11,7 +11,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from igni_core.core.approvals import journal as _approval_journal  # noqa: F401
+from igni_core.core.approvals import tables as _approval_tables  # noqa: F401
 from igni_core.core.db.base import Base
 from igni_core.core.loop import db_models as _loop_models  # noqa: F401
 from igni_core.core.scheduler import db_models as _scheduler_models  # noqa: F401

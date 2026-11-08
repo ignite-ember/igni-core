@@ -586,7 +586,7 @@ async def test_a_sub_agents_approval_is_answered_after_a_cold_restart(
     main_run = await _stored_run(after.agno_db, after.collect.events[-1].run_id)
     assert main_run.status == RunStatus.completed
     assert after.hitl.waiting_messages() == []
-    assert ApprovalJournal(store.state()).spawn(paused.run_id) is None
+    assert ApprovalJournal(store.state()).spawns.get(paused.run_id) is None
 
     running.cancel()
     del dead
@@ -844,7 +844,7 @@ async def test_a_turn_shared_with_other_calls_continues_complete_after_a_restart
     assert side.calls.count("stall started") == 1, "the interrupted call is not run again"
     assert side.calls.count("note hi") == 1
     main_run_id = after.collect.events[-1].run_id
-    assert ApprovalJournal(store.state()).turn_results(main_run_id) == {}, "forgotten once used"
+    assert ApprovalJournal(store.state()).turns.of_run(main_run_id) == {}, "forgotten once used"
 
     running.cancel()
     del dead

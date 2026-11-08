@@ -30,7 +30,7 @@ from click.testing import CliRunner
 from sqlalchemy.engine import make_url
 
 from igni_core.cli.migrate import migrate
-from igni_core.core.approvals import journal as approval_journal  # noqa: F401 — its tables
+from igni_core.core.approvals import tables as approval_tables  # noqa: F401 — its tables
 from igni_core.core.db.base import Base
 from igni_core.core.db.database import Database
 from igni_core.core.db.engine import cache

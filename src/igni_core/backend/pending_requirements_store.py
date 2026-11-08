@@ -22,7 +22,8 @@ from collections.abc import Callable
 from agno.run.requirement import RunRequirement
 
 from igni_core.backend.schemas_pause import PendingRequirement
-from igni_core.core.approvals.journal import ApprovalJournal, ApprovalOrigin
+from igni_core.core.approvals.journal import ApprovalJournal
+from igni_core.core.approvals.records import ApprovalOrigin
 from igni_core.protocol import messages as msg
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ class PendingRequirementsStore:
     def register(self, req_id: str, entry: PendingRequirement) -> None:
         """Stash a requirement waiting for the user."""
         self._pending[req_id] = entry
-        if self._journal is not None:
+        if self._journal is not None and isinstance(entry.req, RunRequirement):
             self._journal.record(
                 requirement_id=req_id,
                 session_id=self._current_session(),
