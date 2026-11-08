@@ -56,7 +56,7 @@ if TYPE_CHECKING:
     from igni_core.core.scheduler.models import ScheduledTask
     from igni_core.core.session.core import Session
     from igni_core.core.session.queued_messages import DurableMessageQueue
-    from igni_core.core.session.schemas import McpServerStatus
+    from igni_core.core.session.schemas import ContextBreakdown, McpServerStatus
     from igni_core.core.skills import SkillPool
     from igni_core.core.skills.parser import SkillInfo
     from igni_core.core.tools.orchestrate_events import OnProgress
@@ -293,7 +293,7 @@ class BackendServer:
     async def count_context_tokens(self) -> int:
         return await self.controllers.context.count_context_tokens()
 
-    async def context_breakdown(self) -> dict:
+    async def context_breakdown(self) -> ContextBreakdown:
         return await self.controllers.context.context_breakdown()
 
     async def get_pending_messages(self, session_id: str) -> list[PendingMessage]:

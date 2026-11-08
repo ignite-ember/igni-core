@@ -14,7 +14,7 @@ class SessionRpcArgs(BaseModel):
 
 
 class SessionIdArgs(SessionRpcArgs):
-    """``get_pending_messages`` / ``get_interrupted_runs`` /
+    """``get_chat_history`` / ``get_pending_messages`` / ``get_interrupted_runs`` /
     ``switch_session``: the session to act on."""
 
     session_id: str
@@ -39,3 +39,17 @@ class AgentRunArgs(SessionRpcArgs):
     by the controller)."""
 
     run_id: str = ""
+
+
+class SearchChatArgs(SessionIdArgs):
+    """``search_chat``: the text to find in one session's history, and
+    at most how many hits to return."""
+
+    query: str
+    limit: int = 50
+
+
+class TruncateHistoryArgs(SessionIdArgs):
+    """``truncate_history``: the run to drop, with every later run."""
+
+    run_id: str

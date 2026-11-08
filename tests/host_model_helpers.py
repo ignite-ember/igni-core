@@ -43,7 +43,7 @@ from igni_core.core.approvals.events import approval_events
 from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.hooks.extension_gate import ExtensionHookGate
 from igni_core.core.session.event_log_schema import SessionEvent
-from igni_core.core.session.schemas import PersistResult
+from igni_core.core.session.schemas import ContextBreakdown, PersistResult
 from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.model import HostModel
@@ -224,8 +224,8 @@ class FakeSession:
     async def count_context_tokens(self) -> int:
         return 1234
 
-    async def context_breakdown(self) -> dict:
-        return {"history": 1000, "system": 234}
+    async def context_breakdown(self) -> ContextBreakdown:
+        return ContextBreakdown.from_totals(total=1234, runs=1000)
 
     def get_latest_plan(self) -> dict:
         return {"latest": "", "history": [], "tasks": [], "state": ""}

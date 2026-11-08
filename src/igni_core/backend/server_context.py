@@ -42,6 +42,7 @@ from igni_core.backend.schemas_context import (
 )
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.session.persistence.run_history import RunHistory
+from igni_core.core.session.schemas import ContextBreakdown
 from igni_core.core.session.token_estimate import TokenEstimate
 from igni_core.protocol import messages as msg
 
@@ -121,7 +122,7 @@ class ContextController:
             logger.debug("group theme unavailable (%s); using the shipped palette", exc)
             return None
 
-    async def context_breakdown(self) -> dict:
+    async def context_breakdown(self) -> ContextBreakdown:
         """What the context is made of, for the ``/ctx`` page.
 
         ``count_context_tokens`` answers how big it is; this answers
@@ -129,13 +130,8 @@ class ContextController:
         versus the floor (system prompt, tool schemas, project rules,
         memories, injected summary) that is rebaked into every prompt
         and cannot be compacted away.
-
-        A plain dict on the wire: the page renders three numbers, and
-        a model here would be a second place to change when the domain
-        one grows a field.
         """
-        b = await self._session.context_breakdown()
-        return {"total": b.total, "runs": b.runs, "floor": b.floor}
+        return await self._session.context_breakdown()
 
     async def count_context_tokens(self) -> int:
         """The conversation's size: the server's count at the last answer, plus the tail after it."""
