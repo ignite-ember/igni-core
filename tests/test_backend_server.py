@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from igni_core.backend.command_result import CommandResult
-from igni_core.backend.run_controller import RunController
+from igni_core.backend.model_http_client_manager import ModelHttpClientManager
 from igni_core.backend.schemas_model import ModelSwitchResult
 from igni_core.backend.server import BackendServer
 from igni_core.protocol import messages as msg
@@ -139,7 +139,7 @@ class TestFromParts:
 
 
 class TestCloseModelHttpClient:
-    """Test that RunController.close_model_http_client properly closes and replaces the httpx client."""
+    """``ModelHttpClientManager.close_and_replace`` closes and replaces the httpx client."""
 
     @pytest.mark.asyncio
     async def test_closes_async_client(self):
@@ -149,7 +149,7 @@ class TestCloseModelHttpClient:
         team = MagicMock()
         team.model = model
 
-        await RunController.close_model_http_client(team)
+        await ModelHttpClientManager().close_and_replace(team)
 
         assert client.is_closed
         assert isinstance(model.http_client, httpx.AsyncClient)
@@ -163,7 +163,7 @@ class TestCloseModelHttpClient:
         team = MagicMock()
         team.model = model
 
-        await RunController.close_model_http_client(team)
+        await ModelHttpClientManager().close_and_replace(team)
 
         new_client = model.http_client
         pool = new_client._transport._pool
@@ -174,7 +174,7 @@ class TestCloseModelHttpClient:
     async def test_noop_when_no_model(self):
         """Should not raise when team has no model."""
         team = MagicMock(spec=[])  # no model attribute
-        await RunController.close_model_http_client(team)  # should not raise
+        await ModelHttpClientManager().close_and_replace(team)  # should not raise
 
     @pytest.mark.asyncio
     async def test_noop_when_no_http_client(self):
@@ -184,7 +184,7 @@ class TestCloseModelHttpClient:
         team = MagicMock()
         team.model = model
 
-        await RunController.close_model_http_client(team)  # should not raise
+        await ModelHttpClientManager().close_and_replace(team)  # should not raise
 
     @pytest.mark.asyncio
     async def test_noop_when_sync_client(self):
@@ -195,7 +195,7 @@ class TestCloseModelHttpClient:
         team = MagicMock()
         team.model = model
 
-        await RunController.close_model_http_client(team)
+        await ModelHttpClientManager().close_and_replace(team)
 
         assert not client.is_closed  # sync client should be left alone
         client.close()  # cleanup

@@ -260,7 +260,7 @@ class TestSubprocessCrashSurvival:
 
         async def simulate_crashed_run():
             # Pre-persist (the new behaviour at the top of
-            # ``RunController.run_locked``).
+            # ``RunController._run_locked``).
             mid = await store.arecord_received("sess-async", "long question")
             # "Streaming" — yields control, then gets cancelled
             # before the success-path mark_completed.
@@ -325,7 +325,7 @@ class TestPendingNotDiscardedUntilConsumed:
     ``detect_interrupted_run``, so by the time the FE asked the
     backend for them, they were gone — the interrupted question
     never made it to the conversation pane. The pending rows must
-    survive until ``RunController.run_locked`` actually consumes them."""
+    survive until ``RunController._run_locked`` actually consumes them."""
 
     @pytest.mark.asyncio
     async def test_detect_keeps_pending_alive(self, tmp_path):
@@ -393,7 +393,7 @@ class TestInterruptedDetectionUsesPendingStore:
         records which pending ids should be dropped next, but the
         rows themselves stay alive so the FE can fetch them via
         ``get_pending_messages``. Actual ``discard`` happens inside
-        ``RunController.run_locked`` when the agent consumes the
+        ``RunController._run_locked`` when the agent consumes the
         summary."""
         session = MagicMock()
         session.session_id = "sess"

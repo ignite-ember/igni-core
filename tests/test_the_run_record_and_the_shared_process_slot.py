@@ -105,6 +105,7 @@ def _controller(stream_messages: list[msg.Message]) -> tuple[RunController, _Jou
     controller._session = SimpleNamespace(
         main_team=SimpleNamespace(arun=lambda *a, **k: None),
         guardrail_runner=SimpleNamespace(warning_prefix=_no_prefix),
+        memory_mirror=None,
     )
     controller._stream_factory = _stream
     controller._message_queue = None

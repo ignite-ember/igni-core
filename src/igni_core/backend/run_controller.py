@@ -22,7 +22,7 @@ Plus one class for the httpx close/replace:
 Public API (used by ``BackendServer``):
 
 * :meth:`run_message` — serialises submits on :attr:`run_lock`,
-  tracks the running task and drives :meth:`run_locked`.
+  tracks the running task and drives the locked run body.
 * :meth:`is_processing` — bool for the FE's ``get_processing``
   RPC — forwarded via ``BackendServer.processing``.
 * :meth:`set_interrupted_summary` — writer used by
@@ -37,7 +37,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from agno.agent import Agent
 from agno.team import Team
@@ -53,9 +53,9 @@ from igni_core.backend.session_checkpointer import SessionCheckpointer
 from igni_core.backend.stream_event_dispatcher import StreamEventDispatcher
 from igni_core.core.activity import background
 from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.session.pending_messages import InterruptedReason
 from igni_core.core.session.queued_messages import DurableMessageQueue
 from igni_core.core.tools.process_supervisor_locator import supervisors
-from igni_core.core.utils.memory_files import MemoryMirror
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
@@ -123,13 +123,6 @@ class RunController:
         return self._phase
 
     @property
-    def http_client_manager(self) -> ModelHttpClientManager:
-        """The httpx-client manager — exposed so tests can swap or
-        spy on it without monkey-patching a module-level free
-        function."""
-        return self._http_client_manager
-
-    @property
     def run_lock(self) -> asyncio.Lock:
         """The outer serialization lock guarding every ``run_message``
         invocation."""
@@ -193,10 +186,6 @@ class RunController:
         guards / logging."""
         self._phase = phase
 
-    async def _close_http_client(self, team: Team) -> None:
-        """Close the model httpx client via the manager."""
-        await self._http_client_manager.close_and_replace(team)
-
     # ── Run entry / cancel (moved from BackendServer) ────────────────
 
     async def run_message(
@@ -213,7 +202,7 @@ class RunController:
         async with self._run_lock:
             self._current_run_task = asyncio.current_task()
             try:
-                async for proto in self.run_locked(text, media):
+                async for proto in self._run_locked(text, media):
                     yield proto
             except asyncio.CancelledError:
                 yield msg.Info(text="Run cancelled by user.")
@@ -235,21 +224,16 @@ class RunController:
                 if self._phase.is_active():
                     self._transition_to(RunPhase.done)
 
-    async def run_locked(
-        self, text: str, media: MediaAttachments | None
-    ) -> AsyncGenerator[msg.Message, None]:
-        """Public rename of :meth:`_run_locked` — the body executed
-        inside :attr:`run_lock`."""
-        async for proto in self._run_locked(text, media):
-            yield proto
-
     def cancel_run(self) -> None:
         """Cancel the currently running agent and kill any
         foreground process.
 
-        Moved from ``BackendServer.cancel_run``. Fetches the run id
-        off the main team, cancels the Agno run, and then cancels
-        the outer task tracked by :attr:`current_run_task`.
+        Moved from ``BackendServer.cancel_run``. Cancels the outer
+        task tracked by :attr:`current_run_task`; the
+        ``CancelledError`` unwinds through ``team.arun``'s generator,
+        which is what stops the Agno run. (It also used to call
+        ``Agent.cancel_run(team.run_id)``, but Agno's ``Agent`` has no
+        ``run_id`` attribute, so that branch never fired.)
 
         Also stamps the pending user message as an explicit
         interrupted run (``reason='cancelled'``) so the FE has a
@@ -259,14 +243,6 @@ class RunController:
         forget so the cancel response doesn't wait on the disk.
         """
         self._cancel_own_foreground()
-
-        try:
-            team = self._session.main_team
-            run_id = getattr(team, "run_id", None)
-            if run_id:
-                Agent.cancel_run(run_id)
-        except Exception as exc:
-            logger.debug("Failed to cancel run: %s", exc)
 
         self._stamp_interrupted("cancelled", last_error=None)
 
@@ -306,7 +282,7 @@ class RunController:
 
     def _stamp_interrupted(
         self,
-        reason: str,
+        reason: InterruptedReason,
         last_error: str | None,
     ) -> None:
         """Schedule a fire-and-forget mark-interrupted on the pending row.
@@ -326,19 +302,12 @@ class RunController:
         pending_id = self._pending_id_for_cancel
         if pending_id is None:
             return
-        try:
-            asyncio.get_running_loop()
-            background.start(
-                self._pending_journal.mark_interrupted(pending_id, reason, last_error),
-                holder="run",
-                reason="recording an interrupted run",
-                name=f"mark_interrupted:{reason}:{pending_id[:8]}",
-            )
-        except RuntimeError:
-            # No running loop — a sync caller outside asyncio (tests).
-            # Skip silently; the legacy heuristic covers
-            # this in tests.
-            pass
+        background.start(
+            self._pending_journal.mark_interrupted(pending_id, reason, last_error),
+            holder="run",
+            reason="recording an interrupted run",
+            name=f"mark_interrupted:{reason}:{pending_id[:8]}",
+        )
 
     def cancel_agent_run(self, run_id: str) -> CancelAgentRunResult:
         """Cancel a specific sub-agent run by its Agno ``run_id``.
@@ -359,7 +328,7 @@ class RunController:
 
     # ── Checkpointing (moved from BackendServer) ────────────────────
 
-    async def checkpoint(self, team: Any) -> None:
+    async def checkpoint(self, team: Team) -> None:
         """Force Agno to persist the in-flight session — one-shot.
 
         A method (not a static) so ``patch.object`` on the
@@ -367,7 +336,7 @@ class RunController:
         """
         await SessionCheckpointer(team).snapshot()
 
-    async def periodic_checkpoint(self, team: Any, interval: float = 3.0) -> None:
+    async def periodic_checkpoint(self, team: Team, interval: float = 3.0) -> None:
         """Loop that snapshots the session every ``interval`` seconds.
 
         Each tick calls :meth:`checkpoint`.
@@ -377,14 +346,6 @@ class RunController:
             interval=interval,
             checkpoint_hook=self.checkpoint,
         )
-
-    @staticmethod
-    async def close_model_http_client(team: Any) -> None:
-        """Thin shim over :meth:`ModelHttpClientManager.close_and_replace`.
-
-        Static so callers (and tests) can invoke without an instance.
-        """
-        await ModelHttpClientManager().close_and_replace(team)
 
     # ── Stream outcome ──────────────────────────────────────────────
 
@@ -532,14 +493,14 @@ class RunController:
             checkpoint_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await checkpoint_task
-            await self._close_http_client(team)
+            await self._http_client_manager.close_and_replace(team)
             # Queued messages this run took are deleted once the saved
             # conversation holds them (``DurableMessageQueue``).
-            if isinstance(self._message_queue, DurableMessageQueue):
+            if self._message_queue is not None:
                 await self._message_queue.settle(self._session.db)
             # Memory files the run wrote, whatever tool wrote them.
-            mirror = getattr(self._session, "memory_mirror", None)
-            if isinstance(mirror, MemoryMirror):
+            mirror = self._session.memory_mirror
+            if mirror is not None:
                 await asyncio.to_thread(mirror.sync)
 
         # Fire Stop hook after the natural end-of-run.
