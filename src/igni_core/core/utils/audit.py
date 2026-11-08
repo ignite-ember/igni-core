@@ -26,6 +26,7 @@ from pathlib import Path
 
 from igni_core.core.config.settings import Settings
 from igni_core.core.layer import Layers
+from igni_core.core.log_fields import LogFields
 from igni_core.core.utils.audit_schemas import (
     AuditDetails,
     AuditEntry,
@@ -104,7 +105,8 @@ class AuditLogger:
         """
         if self._to_stdout:
             self.CLOUD_LOGGER.info(
-                "audit", extra={"fields": {"audit": json.loads(entry.to_jsonl_line())}}
+                "audit",
+                extra=LogFields(sections={"audit": json.loads(entry.to_jsonl_line())}).extra(),
             )
             return AuditWriteResult(ok=True)
         try:

@@ -68,6 +68,7 @@ from igni_core.core.activity import ActivityRegistry
 from igni_core.core.db.engine import cache
 from igni_core.core.db.scope import Tenant
 from igni_core.core.layer import BackendHooks
+from igni_core.core.log_fields import LogFields
 from igni_core.protocol import messages as msg
 
 logger = logging.getLogger(__name__)
@@ -165,7 +166,7 @@ class CloudGuest(BackendHooks):
             log = logger.info if result.ok else logger.warning
             log(
                 "first answer practised" if result.ok else "first answer not practised",
-                extra={"fields": {"practice": result.model_dump(mode="json")}},
+                extra=LogFields.of(practice=result).extra(),
             )
         if self._gc_freeze:
             # What the warm base holds is every producer's. Immortal, using

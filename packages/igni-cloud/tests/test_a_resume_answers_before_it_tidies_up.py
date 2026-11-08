@@ -29,12 +29,13 @@ from igni_cloud.guest.files import AtomicFile
 from igni_cloud.guest.paths import GuestPaths
 from igni_cloud.guest.practice import FirstAnswerPractice
 from igni_cloud.guest.resume import RestoreStep, RestoreWatch
-from igni_cloud.guest.timeline import ResumeTimeline
+from igni_cloud.guest.timeline import ResumeTimeline, ResumeTimelineRecord
 from igni_cloud.guest.watch import DirectoryWatch
 from igni_cloud.layer import CloudLayer
 from igni_cloud.logs import StdoutLog
 
 from igni_core.backend.host_backend import ObservedTransport
+from igni_core.core.log_fields import LogFields
 from igni_core.protocol import messages as msg
 from igni_core.transport.websocket import WebSocketServerTransport
 
@@ -125,12 +126,14 @@ async def test_each_restore_logs_its_timeline(
         await watch.stop()
     records = [r for r in caplog.records if r.getMessage() == "resume timeline"]
     assert len(records) == 1
-    timeline = records[0].fields["timeline"]  # type: ignore[attr-defined]
-    assert timeline["generation"] == 1 and timeline["answered"]
-    steps = [s["step"] for s in timeline["steps"]]
+    fields = LogFields.carried_by(records[0])
+    assert fields is not None
+    timeline = ResumeTimelineRecord.model_validate(fields.sections["timeline"])
+    assert timeline.generation == 1 and timeline.answered
+    steps = [s.step for s in timeline.steps]
     assert steps[:3] == ["pools", "first answer", "reseed"]
     assert steps[-2:] == ["notifications", "timers"]
-    assert all(s["minor_faults"] >= 0 and s["took_ms"] >= 0 for s in timeline["steps"])
+    assert all(s.minor_faults >= 0 and s.took_ms >= 0 for s in timeline.steps)
 
 
 async def test_a_restore_nobody_answers_is_logged_by_its_deadline(

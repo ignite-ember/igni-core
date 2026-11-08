@@ -4,7 +4,8 @@ In the cloud (:class:`igni_cloud.layer.CloudLayer`) nothing writes a log
 file: the node collects the VM's standard output. Every logger that
 writes a file on the desktop writes here instead, one JSON object per
 line — ``ts``, ``level``, ``logger``, ``message``, and whatever
-structured ``fields`` a record carries (the audit log's entries, say).
+structured :class:`~igni_core.core.log_fields.LogFields` a record
+carries (the audit log's entries, say).
 
 Written by a thread of its own, never by the code that logs: in a VM
 standard output is the serial console, where each byte is a trap to the
@@ -33,27 +34,53 @@ import queue
 import sys
 import threading
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import ClassVar
+
+from pydantic import BaseModel, ConfigDict
+
+from igni_core.core.log_fields import LogFields
+
+
+class LogLine(BaseModel):
+    """One record as its line: who logged what, when, and the fields it carries."""
+
+    model_config = ConfigDict(frozen=True)
+
+    #: ISO 8601, ``+00:00``: the record's own time, not the writer's.
+    ts: str
+    level: str
+    logger: str
+    message: str
+    fields: LogFields | None = None
+    exception: str | None = None
+
+    def to_json(self) -> str:
+        """The line: ``ts``, ``level``, ``logger``, ``message``, then each
+        field section as a key of its own, then ``exception`` if there was one."""
+        line = self.model_dump(mode="json", include={"ts", "level", "logger", "message"})
+        if self.fields is not None:
+            line.update(self.fields.sections)
+        if self.exception is not None:
+            line["exception"] = self.exception
+        return json.dumps(line, default=str)
 
 
 class JsonLineFormatter(logging.Formatter):
     """One JSON object per record."""
 
     def format(self, record: logging.LogRecord) -> str:
-        line: dict[str, Any] = {
-            "ts": datetime.fromtimestamp(record.created, UTC).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-        }
-        fields = getattr(record, "fields", None)
-        if isinstance(fields, dict):
-            line.update(fields)
         if record.exc_info:
-            line["exception"] = self.formatException(record.exc_info)
-        elif record.exc_text:
-            line["exception"] = record.exc_text
-        return json.dumps(line, default=str)
+            exception: str | None = self.formatException(record.exc_info)
+        else:
+            exception = record.exc_text or None
+        return LogLine(
+            ts=datetime.fromtimestamp(record.created, UTC).isoformat(),
+            level=record.levelname,
+            logger=record.name,
+            message=record.getMessage(),
+            fields=LogFields.carried_by(record),
+            exception=exception,
+        ).to_json()
 
 
 class QueuedRecords(logging.handlers.QueueHandler):
@@ -166,4 +193,4 @@ class StdoutLog:
         return target
 
 
-__all__ = ["JsonLineFormatter", "QueuedRecords", "StdoutLog"]
+__all__ = ["JsonLineFormatter", "LogLine", "QueuedRecords", "StdoutLog"]
