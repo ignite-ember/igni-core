@@ -319,7 +319,6 @@ def test_an_unconfigured_session_start_clones_no_marketplace(tmp_path):
 
     from igni_core.core.config.schemas import StorageConfig
     from igni_core.core.config.settings import Settings
-    from igni_core.core.session.core import Session
     from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
 
     started: list[list[str]] = []
@@ -330,10 +329,8 @@ def test_an_unconfigured_session_start_clones_no_marketplace(tmp_path):
 
     settings = Settings(storage=StorageConfig(data_dir=str(tmp_path / "data")))
     assert settings.air_gapped is False
-    session = Session.__new__(Session)
-    session.settings = settings
     with patch("igni_core.core.plugins.git.subprocess.run", no_git):
-        asyncio.run(MarketplaceWarmupPhase(session)._refresh_all())
+        asyncio.run(MarketplaceWarmupPhase(settings_ref=lambda: settings)._refresh_all())
 
     assert started == []
 

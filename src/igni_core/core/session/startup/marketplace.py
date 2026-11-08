@@ -27,8 +27,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
+
+from igni_core.core.config.settings import Settings
 
 # Module-attribute pattern — tests patch
 # ``igni_core.core.plugins.marketplaces.load_registry`` /
@@ -63,6 +66,10 @@ class MarketplaceWarmupPhase(SessionStartupPhase):
     #: A catalog younger than this is not fetched again at session start.
     REFRESH_EVERY_SECONDS: ClassVar[float] = 6 * 3600.0
 
+    def __init__(self, settings_ref: Callable[[], Settings]) -> None:
+        # A callable: a workspace-trust change replaces the session's settings.
+        self._settings_ref = settings_ref
+
     def start_background(self) -> None:
         """Kick the marketplace refresh sequence in the background."""
         self._schedule_on_loop(self._refresh_all)
@@ -71,7 +78,7 @@ class MarketplaceWarmupPhase(SessionStartupPhase):
         """Auto-register defaults then refresh every entry now
         present in the registry. Idempotent — re-runs on subsequent
         sessions no-op the auto-register step."""
-        data_dir = self.session.settings.storage.data_dir
+        data_dir = self._settings_ref().storage.data_dir
         registry = _marketplaces.load_registry(data_dir)
         await self._auto_register_defaults(registry, data_dir)
         # Re-read the registry since the auto-register step may have
@@ -81,7 +88,7 @@ class MarketplaceWarmupPhase(SessionStartupPhase):
 
     def _policy(self) -> PluginSourcePolicy:
         """Read fresh from the session's settings on every pass."""
-        return PluginSourcePolicy.from_settings(self.session.settings)
+        return PluginSourcePolicy.from_settings(self._settings_ref())
 
     async def _auto_register_defaults(self, registry: MarketplaceRegistry, data_dir: Path) -> None:
         """Auto-register the default marketplace (when allowed) and the

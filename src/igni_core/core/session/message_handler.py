@@ -14,19 +14,13 @@ methods that own the headless message path:
   formatted error return.
 
 Constructor takes explicit collaborators — no reach-back
-into :class:`Session`. ``team_ref`` is a **callable**, not the
-live agent — the session rebuilds ``main_team`` under
-compact / plugin-reload / MCP-rebuild / prompt-refresh, so
-storing a bare reference would go stale.
-
-Same reasoning for ``session_id_ref`` and ``context_window_ref``:
-both were captured by value and both went stale silently. ``/clear``
-and ``/fork`` rotate the session id (``SessionIdentity.rotate``) and
-``/model`` swaps the model's context window, and a handler holding
-the construction-time copies kept stamping hook payloads and audit
-rows with the dead id and thresholding compaction against the
-previous model's window. Anything the session can change under us is
-read through a callable, not copied.
+into :class:`Session`. Anything the session can change under the
+handler is read live, never copied: ``team_ref`` and ``session_id_ref``
+are callables (the team is rebuilt, ``/clear`` and ``/fork`` rotate the
+id), the hook executor is read from the stable :class:`SessionHooks` on
+every call (``/hooks reload`` and plugin reloads replace it), and the
+context window is read from the stable :class:`ContextBudget` (``/model``
+resizes it).
 """
 
 from __future__ import annotations
@@ -35,8 +29,9 @@ import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
+from igni_core.core.config.permission_eval import PermissionDecision
 from igni_core.core.guardrails.runner import GuardrailRunner
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
@@ -46,19 +41,26 @@ from igni_core.core.hooks.extension_gate import (
     UserPromptSubmitValue,
 )
 from igni_core.core.paths import MAIN_AGENT_NAME
+from igni_core.core.session.compaction.context_budget import ContextBudget
 from igni_core.core.session.schemas import (
     McpInitResult,
+    MessageMedia,
     StopFailureHookPayload,
     StopHookPayload,
     UserPromptSubmitHookPayload,
 )
+from igni_core.core.utils import response as response_text
 from igni_core.core.utils.audit import AuditEntry, AuditLogger
 from igni_core.core.utils.display import DisplayManager
-from igni_core.core.utils.response import (
-    extract_response_text as _default_extract_response_text,
-)
 
 logger = logging.getLogger(__name__)
+
+
+class HookExecutorSource(Protocol):
+    """Where the current :class:`HookExecutor` is read from (:class:`SessionHooks`)."""
+
+    @property
+    def executor(self) -> HookExecutor: ...
 
 
 class SessionMessageHandler:
@@ -81,7 +83,7 @@ class SessionMessageHandler:
     def __init__(
         self,
         *,
-        hook_executor: HookExecutor,
+        hooks: HookExecutorSource,
         audit: AuditLogger,
         display: DisplayManager,
         guardrail_runner: GuardrailRunner,
@@ -90,12 +92,11 @@ class SessionMessageHandler:
         compact_hook: Callable[[int, int], Awaitable[bool]],
         ensure_mcp: Callable[[], Awaitable[McpInitResult]],
         session_id_ref: Callable[[], str],
-        context_window_ref: Callable[[], int],
-        latch_input_tokens: Callable[[int], None],
+        budget: ContextBudget,
         extract_response_text: Callable[[Any], str] | None = None,
         permission_evaluator_ref: Callable[[], Any] | None = None,
     ) -> None:
-        self._hook_executor = hook_executor
+        self._hooks = hooks
         self._audit = audit
         self._display = display
         self._guardrail_runner = guardrail_runner
@@ -104,26 +105,25 @@ class SessionMessageHandler:
         self._compact_hook = compact_hook
         self._ensure_mcp = ensure_mcp
         self._session_id_ref = session_id_ref
-        self._context_window_ref = context_window_ref
-        self._latch_input_tokens = latch_input_tokens
+        self._budget = budget
         #: Why the last :meth:`handle` failed, or ``""`` when it did not —
         #: what a headless run's exit code is made from.
         self.last_failure = ""
-        # Extractor injection — Session passes its own module's
-        # ``extract_response_text`` binding so
-        # ``patch("igni_core.core.session.core.extract_response_text")``
-        # in tests still intercepts.
-        self._extract_response_text = extract_response_text or _default_extract_response_text
+        self._extractor = extract_response_text
         # Read through a callable for the same reason as the refs above: the
         # session rebuilds its evaluator with the team.
         self._permission_evaluator_ref = permission_evaluator_ref or (lambda: None)
 
-    async def handle(self, message: str, **media_kwargs: Any) -> str:
-        """Handle a single user message and return the response.
+    @property
+    def _hook_executor(self) -> HookExecutor:
+        return self._hooks.executor
 
-        Accepts optional media keyword arguments (images, audio,
-        videos, files) which are forwarded directly to ``team.arun``.
-        """
+    def _extract_response_text(self, response: Any) -> str:
+        extract = self._extractor or response_text.extract_response_text
+        return extract(response)
+
+    async def handle(self, message: str, media: MessageMedia | None = None) -> str:
+        """Handle a single user message and return the response."""
         self.last_failure = ""
         await self._ensure_mcp()
 
@@ -143,6 +143,7 @@ class SessionMessageHandler:
 
         try:
             team = self._team_ref()
+            media_kwargs = media.to_kwargs() if media is not None else {}
             response = await team.arun(effective_message, stream=False, **media_kwargs)
             response = await self._resume_what_the_policy_decided(team, response)
             self._reject_paused_run(response)
@@ -172,8 +173,8 @@ class SessionMessageHandler:
             metrics = getattr(final_run, "metrics", None)
             if metrics:
                 input_tokens = getattr(metrics, "input_tokens", 0) or 0
-                self._latch_input_tokens(input_tokens)
-                await self._compact_hook(input_tokens, self._context_window_ref())
+                self._budget.latch(input_tokens)
+                await self._compact_hook(input_tokens, self._budget.window)
 
             return response_text
 
@@ -208,7 +209,6 @@ class SessionMessageHandler:
         evaluator = self._permission_evaluator_ref()
         if evaluator is None:
             return response
-        from igni_core.core.config.permission_eval import PermissionDecision
 
         for _ in range(self._MAX_POLICY_RESUMES):
             if not _is_paused(response):

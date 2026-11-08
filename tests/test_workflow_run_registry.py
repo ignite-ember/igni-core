@@ -162,7 +162,7 @@ async def test_cancel_all_ends_every_run_even_when_one_stop_fails() -> None:
     assert activity.busy() == []
     assert all(run.phase is WorkflowRunPhase.CANCELLED for run in runs)
     for session in sessions:
-        record = session.append_event.await_args.args[1]
+        record = session.append_event.await_args.args[0].payload
         assert record["payload"]["status"] == "cancelled"
 
 

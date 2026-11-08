@@ -22,6 +22,7 @@ from types import SimpleNamespace
 import pytest
 
 from igni_core.backend.cmd_eject import EJECTABLE, EjectCommand
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.paths import CONFIG_DIR
 
 
@@ -38,14 +39,9 @@ def _session(tmp_path: Path, group: dict[str, dict[str, str]] | None = None):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
 
-    def group_root(kind: str) -> Path | None:
-        subdir, _ = EJECTABLE.get(kind, (kind, ""))
-        directory = cache / subdir
-        return directory if directory.is_dir() and any(directory.iterdir()) else None
-
     return SimpleNamespace(
         project_dir=project,
-        group_root=group_root,
+        group_policy=GroupPolicyLayout.for_data_dir(tmp_path),
         reload_group_agents=lambda: True,
     )
 

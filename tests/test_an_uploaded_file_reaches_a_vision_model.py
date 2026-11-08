@@ -33,6 +33,7 @@ from igni_core.backend.schemas_run import PromptBuildResult
 from igni_core.backend.server_files import FilesController
 from igni_core.backend.service_item_desk import PoolChatDesk
 from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.utils.media import MediaResolver
 from tests.service_item_rig import Desk, Files, Inbox, message
 
@@ -104,7 +105,7 @@ class Workspace:
                 ),
             ),
             inject_learnings=self._nothing_learned,
-            _drain_pending_reminders=list,
+            reminders=PendingReminderQueue(),
         )
         self.endpoint = RecordedRequests()
 

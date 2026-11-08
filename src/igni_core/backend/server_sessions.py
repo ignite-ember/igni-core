@@ -92,7 +92,7 @@ class SessionsController:
         """Name this session now — before its first run, too — so no auto-name replaces it."""
         result = await self._session.persistence.title(name)
         if result.ok:
-            self._session.session_named = True
+            self._session.identity.mark_named()
         return result
 
     async def switch_session(self, session_id: str) -> msg.Info:

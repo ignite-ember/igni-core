@@ -36,7 +36,7 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,6 +50,18 @@ from igni_core.protocol.agno_tool_formatter import default_registry
 
 if TYPE_CHECKING:
     from agno.run.base import RunRequirement
+
+
+class PendingRequirement(Protocol):
+    """What the coordinator and the dialog touch on a requirement that is
+    not an Agno ``RunRequirement`` (a single-call safety question)."""
+
+    tool_execution: Any
+    details: str
+
+    def confirm(self) -> None: ...
+
+    def reject(self, note: str = "") -> None: ...
 
 
 class _PendingEntry(BaseModel):
@@ -296,7 +308,7 @@ class SubAgentHITLCoordinator:
 
     async def push_requirement(
         self,
-        req: RunRequirement,
+        req: RunRequirement | PendingRequirement,
         run_id: str,
         agent_path: list[str] | None = None,
         session_id: str = "",
@@ -405,7 +417,7 @@ class SubAgentHITLCoordinator:
         self._forget(req_id)
         return True
 
-    async def wait_resolved(self, req_id: str) -> RunRequirement:
+    async def wait_resolved(self, req_id: str) -> RunRequirement | PendingRequirement:
         """Called from the sub-agent stream handler. Blocks until user resolves."""
         entry = self._pending[req_id]
         self._awaited.add(req_id)

@@ -285,26 +285,23 @@ def test_the_pipeline_runs_it_last_and_blocks_on_its_word(project):
 
 
 class TestAskingThroughTheSessionsApprovalChannel:
-    def _session(self):
-        from types import SimpleNamespace
-
-        from igni_core.core.session.core import Session
+    def _channel(self):
+        from igni_core.core.session.tool_approval import ToolCallApprovalChannel
         from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 
-        session = SimpleNamespace(sub_agent_hitl=SubAgentHITLCoordinator())
-        return session, Session._ask_about_tool_call
+        coordinator = SubAgentHITLCoordinator()
+        return coordinator, ToolCallApprovalChannel(coordinator).ask
 
     def test_with_no_relay_running_nobody_can_answer(self):
-        session, ask = self._session()
-        assert asyncio.run(ask(session, "run_shell_command", {"command": "x"}, "why", [])) is None
+        _, ask = self._channel()
+        assert asyncio.run(ask("run_shell_command", {"command": "x"}, "why", [])) is None
 
     def test_the_answer_comes_back_from_the_dialog(self):
         async def scenario(action):
-            session, ask = self._session()
-            coordinator = session.sub_agent_hitl
+            coordinator, ask = self._channel()
             coordinator.listeners = 1
             task = asyncio.create_task(
-                ask(session, "run_shell_command", {"command": "rm -rf ~"}, "deletes ~", ["editor"])
+                ask("run_shell_command", {"command": "rm -rf ~"}, "deletes ~", ["editor"])
             )
             await coordinator.new_arrival.wait()
             [(req_id, entry)] = coordinator.list_new_pending()
@@ -318,13 +315,14 @@ class TestAskingThroughTheSessionsApprovalChannel:
 
     def test_the_dialog_is_told_why(self):
         from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
-        from igni_core.core.session.core import _GuardRequirement
+        from igni_core.core.session.tool_approval import GuardRequirement, GuardToolExecution
         from igni_core.core.sub_agent_hitl import _PendingEntry
 
         entry = _PendingEntry(
-            requirement=_GuardRequirement(
-                tool_name="run_shell_command",
-                tool_args={"command": "rm -rf ~"},
+            requirement=GuardRequirement(
+                tool_execution=GuardToolExecution(
+                    tool_name="run_shell_command", tool_args={"command": "rm -rf ~"}
+                ),
                 details="deletes ~",
             ),
             run_id="r",
@@ -366,7 +364,7 @@ def test_the_real_model_separates_a_harmful_call_from_an_ordinary_one():
 from igni_core.backend.hitl_controller import HitlController  # noqa: E402
 from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer  # noqa: E402
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore  # noqa: E402
-from igni_core.core.session.core import Session  # noqa: E402
+from igni_core.core.session.tool_approval import ToolCallApprovalChannel  # noqa: E402
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator  # noqa: E402
 from igni_core.protocol import messages as msg  # noqa: E402
 
@@ -384,7 +382,7 @@ def test_the_dialog_pops_up_and_its_answer_decides(tmp_path, action, expect_ran)
             config=BypassGuardConfig(),
             project_dir=tmp_path,
             in_bypass=lambda: True,
-            ask=lambda *a, **kw: Session._ask_about_tool_call(session, *a, **kw),
+            ask=ToolCallApprovalChannel(session.sub_agent_hitl).ask,
             judge=NoJudge(),
         )
         outcome = {}

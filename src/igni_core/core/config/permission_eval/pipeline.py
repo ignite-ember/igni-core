@@ -193,6 +193,21 @@ class PermissionEvaluator:
         evaluator.read_only = perms.read_only
         return evaluator
 
+    def adopt(self, fresh: PermissionEvaluator, previous_default: str) -> None:
+        """Take ``fresh``'s rules, keeping this instance and the person's mode.
+
+        The lists are replaced in place, because the hook pipeline holds
+        references to them. ``read_only`` is only ever tightened, and the
+        mode follows the new default only when the person never moved off
+        ``previous_default``.
+        """
+        self.deny[:] = fresh.deny
+        self.ask[:] = fresh.ask
+        self.allow[:] = fresh.allow
+        self.read_only = self.read_only or fresh.read_only
+        if self.mode.value == previous_default and fresh.mode.value != previous_default:
+            self.set_mode(fresh.mode)
+
     # ── Pipeline entry points ─────────────────────────────────────
 
     def evaluate(self, tool_name: str, tool_args: dict[str, Any]) -> PermissionDecision:

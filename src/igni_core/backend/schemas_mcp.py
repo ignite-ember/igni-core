@@ -45,6 +45,7 @@ from igni_core.core.mcp.schemas import MCPPrompt, MCPResource
 
 if TYPE_CHECKING:
     from igni_core.core.mcp.client import MCPClientManager
+    from igni_core.core.session.mcp_ops import McpFailureCache
 
 
 class MCPToolToggleResult(BaseModel):
@@ -115,7 +116,7 @@ class MCPServerSnapshot(BaseModel):
         mgr: MCPClientManager,
         name: str,
         *,
-        failures: dict[str, str] | None = None,
+        failures: McpFailureCache | None = None,
     ) -> MCPServerSnapshot:
         """Project one manager entry into the full panel snapshot.
 
@@ -124,8 +125,8 @@ class MCPServerSnapshot(BaseModel):
         connected servers. Disconnected servers skip both calls
         and get empty lists.
 
-        ``failures`` is the session-scoped ``{name: reason}``
-        cache built by
+        ``failures`` is the session-scoped :class:`McpFailureCache`
+        written by
         :class:`~igni_core.core.session.startup.mcp.McpInitPhase`
         (and the ``/mcp`` command). When omitted the ``error``
         field is empty — matches the pre-refactor "no side
@@ -143,6 +144,6 @@ class MCPServerSnapshot(BaseModel):
             tools_disabled=mgr.get_disabled_tools(name),
             resources=await mgr.get_resources(name) if connected else [],
             prompts=await mgr.get_prompts(name) if connected else [],
-            error=(failures or {}).get(name, ""),
+            error=failures.reason(name) if failures is not None else "",
             policy_blocked=mgr.is_policy_denied(name),
         )

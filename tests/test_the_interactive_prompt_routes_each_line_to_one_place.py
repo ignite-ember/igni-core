@@ -32,6 +32,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.session.interactive_loop import InteractiveSessionLoop
@@ -66,9 +67,8 @@ class _Session:
         self.hook_executor = HookExecutor({})
         self.messages: list[str] = []
         self.last_turn_failure: str | None = None
-
-    def group_root(self, _kind: str) -> Path | None:
-        return None
+        # Nothing cached, so the group ships nothing of any kind.
+        self.group_policy = GroupPolicyLayout.for_data_dir(tmp_path / "data")
 
     async def handle_message(self, message: str) -> str:
         self.messages.append(message)

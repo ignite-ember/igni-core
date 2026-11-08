@@ -2,8 +2,8 @@
 
 Owns the once-per-session ``_initialized`` flag: :meth:`ensure`
 is the SOLE writer, so the "who flipped this to True" question
-has exactly one answer. Every other reader (Session's
-``_mcp_initialized`` compat property, backend / test writes)
+has exactly one answer. Every other reader
+(``SessionStartupCoordinator.mcp_initialized``, backend / test writes)
 routes through the property so the invariant holds.
 
 Both entry points return a typed :class:`McpInitResult` /
@@ -15,15 +15,33 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any, ClassVar
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, ClassVar
 
+from igni_core.core.agents import AgentPool
+from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.session.mcp_ops import McpFailureCache
 from igni_core.core.session.schemas import McpClientBundle, McpInitResult
 from igni_core.core.session.startup.base import SessionStartupPhase
-
-if TYPE_CHECKING:
-    from igni_core.core.session.core import Session
+from igni_core.core.utils.display import DisplayManager
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class McpInitDeps:
+    """What the MCP phase reads: the manager it connects through, where it
+    records failures, where it tells the person, and how it rebuilds.
+
+    ``pool_ref`` is a callable because a plugin reload builds a new pool.
+    """
+
+    mcp_manager: MCPClientManager
+    failures: McpFailureCache
+    display: DisplayManager
+    pool_ref: Callable[[], AgentPool]
+    rebuild_team: Callable[[], None]
 
 
 class McpInitPhase(SessionStartupPhase):
@@ -37,8 +55,8 @@ class McpInitPhase(SessionStartupPhase):
 
     _MCP_CONNECT_INFO: ClassVar[str] = "MCP init: connecting %d server(s): %s"
 
-    def __init__(self, session: Session) -> None:
-        super().__init__(session)
+    def __init__(self, deps: McpInitDeps) -> None:
+        self._deps = deps
         self._initialized: bool = False
 
     @property
@@ -70,8 +88,7 @@ class McpInitPhase(SessionStartupPhase):
         # ``self.initialized`` / Session's compat property.
         self._initialized = True
 
-        session = self.session
-        available = session.mcp_manager.list_servers()
+        available = self._deps.mcp_manager.list_servers()
         if not available:
             logger.info("MCP init: no configured servers; skipping connect loop")
             return McpInitResult(skipped_reason="no_configured_servers")
@@ -100,18 +117,18 @@ class McpInitPhase(SessionStartupPhase):
         timing and tool-count. Returns the connected-clients bundle
         alongside a ``name → error string`` map for the failed set.
 
-        Also mirrors the failure map into ``session.mcp_failures``
+        Also records each result in the failure cache
         so the ``/mcp`` status command and the panel snapshot can
         render the error column without a manager side-channel.
         """
-        session = self.session
+        deps = self._deps
         clients: dict[str, Any] = {}
         failed: dict[str, str] = {}
         for name in available:
             t0 = time.monotonic()
-            result = await session.mcp_manager.connect(name)
+            result = await deps.mcp_manager.connect(name)
             elapsed = time.monotonic() - t0
-            session.record_mcp_result(name, result)
+            deps.failures.record(name, result)
             if result.ok:
                 client = result.client
                 # Tool count surfaces the most common silent-failure
@@ -135,7 +152,7 @@ class McpInitPhase(SessionStartupPhase):
                     elapsed,
                     error,
                 )
-                session.display.print_info(f"MCP '{name}' connection failed: {error}")
+                deps.display.print_info(f"MCP '{name}' connection failed: {error}")
         return McpClientBundle(clients=clients), failed
 
     def _rebuild(self, bundle: McpClientBundle) -> None:
@@ -144,13 +161,12 @@ class McpInitPhase(SessionStartupPhase):
         Split out of :meth:`ensure` so the "have clients → rebuild"
         step is a single call the failure branches skip cleanly.
         """
-        session = self.session
         logger.info(
             "MCP init: rebuilding agents + main team with %d MCP client(s)",
             len(bundle),
         )
-        session.pool.build_agents(mcp_clients=bundle.clients)
-        session.rebuild_main_team()
+        self._deps.pool_ref().build_agents(mcp_clients=bundle.clients)
+        self._deps.rebuild_team()
         logger.info("MCP init: agents + main team rebuilt — tools active")
 
     def rebuild_current(self) -> None:
@@ -162,10 +178,10 @@ class McpInitPhase(SessionStartupPhase):
         to the legacy ``_clients`` dict lookup only when the manager
         stub predates the public accessor (test fixtures).
         """
-        session = self.session
-        connected = session.mcp_manager.list_connected()
+        manager = self._deps.mcp_manager
+        connected = manager.list_connected()
         clients: dict[str, Any] = {}
-        getter = getattr(session.mcp_manager, "get_client", None)
+        getter = getattr(manager, "get_client", None)
         for name in connected:
             if callable(getter):
                 client = getter(name)
@@ -173,8 +189,8 @@ class McpInitPhase(SessionStartupPhase):
                 # Legacy path — test fixtures with a stubbed manager
                 # that lacks ``get_client``. Real production callers
                 # get the public accessor.
-                client = getattr(session.mcp_manager, "_clients", {}).get(name)
+                client = getattr(manager, "_clients", {}).get(name)
             if client is not None:
                 clients[name] = client
-        session.pool.build_agents(mcp_clients=clients if clients else None)
-        session.rebuild_main_team()
+        self._deps.pool_ref().build_agents(mcp_clients=clients if clients else None)
+        self._deps.rebuild_team()

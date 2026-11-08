@@ -77,16 +77,16 @@ class McpController:
         mgr = self._session.mcp_manager
         if connect:
             result = await mgr.connect(server_name)
-            self._session.record_mcp_result(server_name, result)
+            self._session.mcp_failures.record(server_name, result)
         else:
             await mgr.disconnect_one(server_name)
-            self._session.record_mcp_result(server_name, None)
+            self._session.mcp_failures.record(server_name, None)
         self._session.rebuild_mcp()
         return msg.Info(text=f"MCP {'connected' if connect else 'disconnected'}: {server_name}")
 
     def status(self) -> list[McpServerStatus]:
         """Get MCP server connection status."""
-        return self._session.get_mcp_status()
+        return self._session.mcp_lifecycle.status()
 
     def set_tool_enabled(self, server: str, tool: str, enabled: bool) -> MCPToolToggleResult:
         """Enable or disable a single tool on an MCP server.
@@ -120,13 +120,13 @@ class McpController:
     async def connect(self, server_name: str) -> msg.Info:
         """Connect a single MCP server."""
         result = await self._session.mcp_manager.connect(server_name)
-        self._session.record_mcp_result(server_name, result)
+        self._session.mcp_failures.record(server_name, result)
         self._session.rebuild_mcp()
         return msg.Info(text=f"Connected MCP: {server_name}")
 
     async def disconnect(self, server_name: str) -> msg.Info:
         """Disconnect a single MCP server."""
         await self._session.mcp_manager.disconnect_one(server_name)
-        self._session.record_mcp_result(server_name, None)
+        self._session.mcp_failures.record(server_name, None)
         self._session.rebuild_mcp()
         return msg.Info(text=f"Disconnected MCP: {server_name}")

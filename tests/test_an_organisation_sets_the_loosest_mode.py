@@ -35,6 +35,7 @@ from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
 from igni_core.core.tools.slash import SlashCommandTool
 from igni_core.protocol.messages import CommandResultKind
+from tests.session_coordinators import wire_coordinators
 
 
 @pytest.fixture(autouse=True)
@@ -82,6 +83,7 @@ def _session(settings: Settings) -> Session:
     session.settings = settings
     session.broadcast_bus = BroadcastBus()
     session.permission_evaluator = PermissionEvaluator.from_strings(mode=settings.permissions.mode)
+    wire_coordinators(session)
     return session
 
 

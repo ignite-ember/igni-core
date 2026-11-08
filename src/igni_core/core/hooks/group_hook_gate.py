@@ -47,7 +47,7 @@ from igni_core.core.hooks.schemas import HookDefinition
 logger = logging.getLogger(__name__)
 
 #: ``(name, details, reason, agent_path) -> True / False / None`` — the
-#: session's in-run approval channel (``Session._ask_about_tool_call``); ``None``
+#: session's in-run approval channel (``ToolCallApprovalChannel.ask``); ``None``
 #: means nobody can answer. The same shape as the permission pipeline's
 #: ``AskPerson``.
 AskAboutGroupHook = Callable[[str, dict[str, Any], str, list[str]], Awaitable[bool | None]]

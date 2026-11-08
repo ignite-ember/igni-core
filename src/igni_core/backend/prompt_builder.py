@@ -226,7 +226,7 @@ class PromptBuilder:
         position (ahead of ``<system-context>``) as the CLI so the
         two paths compose an identical prompt.
         """
-        reminders = self._session._drain_pending_reminders()
+        reminders = self._session.reminders.drain()
         if not reminders:
             return message
         joined = "\n".join(reminders)

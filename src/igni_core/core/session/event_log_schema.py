@@ -17,7 +17,46 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class SessionEventDraft(BaseModel):
+    """An event on its way into the log: everything but the ``seq`` and
+    timestamp the log stamps on it.
+
+    Producers hand the log one of these instead of a ``(type, payload)``
+    pair. A producer whose payload is a model builds the draft with
+    :meth:`of`, so the dump happens in one place.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    run_id: str = ""
+
+    @field_validator("run_id", mode="before")
+    @classmethod
+    def _run_id_as_text(cls, value: object) -> str:
+        return "" if value is None else str(value)
+
+    @classmethod
+    def of(cls, event_type: str, payload: BaseModel, run_id: str = "") -> SessionEventDraft:
+        """A draft whose payload is ``payload`` dumped."""
+        return cls(type=event_type, payload=payload.model_dump(), run_id=run_id)
+
+    def stamped(self, seq: int) -> SessionEvent:
+        """The logged event, at ``seq``.
+
+        The payload is copied, so a producer mutating its dict after the
+        append does not change the stored entry.
+        """
+        return SessionEvent(
+            seq=seq,
+            run_id=self.run_id,
+            type=self.type,
+            payload=dict(self.payload),
+        )
 
 
 class SessionEvent(BaseModel):
@@ -46,31 +85,6 @@ class SessionEvent(BaseModel):
     timestamp_ms: int = Field(default_factory=lambda: int(time.time() * 1000))
     type: str
     payload: dict[str, Any] = Field(default_factory=dict)
-
-    @classmethod
-    def build(
-        cls,
-        *,
-        seq: int,
-        event_type: str,
-        payload: dict[str, Any],
-        run_id: str = "",
-    ) -> SessionEvent:
-        """Construction helper mirroring the legacy
-        :meth:`Session.append_event` signature (``event_type``
-        parameter name, defensive ``str()`` / ``dict()`` copies).
-
-        Copies ``payload`` so a caller mutating their input after
-        the append doesn't bleed into the stored entry — matches
-        the pre-refactor behaviour and is verified by
-        ``test_event_log::test_payload_is_copied_not_referenced``.
-        """
-        return cls(
-            seq=seq,
-            run_id=str(run_id or ""),
-            type=str(event_type),
-            payload=dict(payload),
-        )
 
     @classmethod
     def from_wire(cls, entry: dict[str, Any]) -> SessionEvent | None:

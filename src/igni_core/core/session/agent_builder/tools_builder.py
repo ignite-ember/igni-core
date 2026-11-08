@@ -207,7 +207,7 @@ class ToolsBuilder:
         loaded = registry.load_custom_tools(
             self._project_dir,
             plugin_tool_dirs=plugin_tool_dirs,
-            group_tools_dir=self._session.group_dir_for("tools"),
+            group_tools_dir=self._session.group_policy.dir_for("tools"),
         )
         return list(loaded) if loaded else []
 

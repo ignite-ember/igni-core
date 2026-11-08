@@ -41,7 +41,6 @@ from igni_core.core.plugins.installer import PluginError, PluginInstaller
 from igni_core.core.plugins.models import MarketplaceEntry, MarketplaceRegistry
 from igni_core.core.plugins.source_policy import PluginSourcePolicy
 from igni_core.core.plugins.state import load_state, save_state
-from igni_core.core.session.core import Session
 from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.tool_spec import (
@@ -77,10 +76,8 @@ class GitRecorder:
         return [c[-2] for c in self.calls if c[:2] == ["git", "clone"]]
 
 
-def _session_with(settings: Settings) -> Session:
-    sess = Session.__new__(Session)
-    sess.settings = settings
-    return sess
+def _warmup(settings: Settings) -> MarketplaceWarmupPhase:
+    return MarketplaceWarmupPhase(settings_ref=lambda: settings)
 
 
 def _air_gapped(tmp_path: Path, **plugins) -> Settings:
@@ -189,7 +186,7 @@ class TestTheMarketplaceClone:
         """Not even with the opt-in on: air-gapped mode overrules it."""
         git = GitRecorder()
         settings = _air_gapped(tmp_path, default_marketplace=True)
-        phase = MarketplaceWarmupPhase(_session_with(settings))
+        phase = _warmup(settings)
         with patch("igni_core.core.plugins.git.subprocess.run", git):
             await phase._refresh_all()
         assert git.calls == []
@@ -201,7 +198,7 @@ class TestTheMarketplaceClone:
         _register(Path(settings.storage.data_dir), MarketplaceEntry(name="official", url=OFFICIAL))
         git = GitRecorder()
         with patch("igni_core.core.plugins.git.subprocess.run", git):
-            await MarketplaceWarmupPhase(_session_with(settings))._refresh_all()
+            await _warmup(settings)._refresh_all()
         assert git.calls == []
 
     async def test_the_clone_has_its_own_switch(self, tmp_path):
@@ -211,7 +208,7 @@ class TestTheMarketplaceClone:
         )
         git = GitRecorder()
         with patch("igni_core.core.plugins.git.subprocess.run", git):
-            await MarketplaceWarmupPhase(_session_with(settings))._refresh_all()
+            await _warmup(settings)._refresh_all()
         assert git.calls == []
 
     async def test_the_customers_own_marketplace_is_registered(self, tmp_path):
@@ -219,7 +216,7 @@ class TestTheMarketplaceClone:
         settings = _air_gapped(tmp_path, marketplaces=[str(repo)])
         git = GitRecorder(passthrough=True)
         with patch("igni_core.core.plugins.git.subprocess.run", git):
-            await MarketplaceWarmupPhase(_session_with(settings))._refresh_all()
+            await _warmup(settings)._refresh_all()
 
         assert git.clone_urls() == [str(repo)]
         registry = _marketplaces.load_registry(settings.storage.data_dir)

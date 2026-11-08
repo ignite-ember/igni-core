@@ -1,11 +1,10 @@
 """MCP tool resolver used by ``mcp_tool``-type hooks.
 
-Extracted from :mod:`igni_core.core.session.core` — the
-``_mcp_resolver`` helper that :class:`HookExecutor` calls to
-look up an MCP server's tool by (server, tool) name pair.
+:class:`HookExecutor` calls it to look up an MCP server's tool by
+(server, tool) name pair.
 
-Composed by :class:`Session` and passed as
-``HookExecutor(mcp_resolver=self._mcp_resolver_obj.resolve)`` so
+Owned by :class:`SessionHooks` and passed as
+``HookExecutor(mcp_resolver=self.resolver.resolve)`` so
 the executor never reaches into :class:`MCPClientManager`
 internals directly. Uses the public
 :meth:`MCPClientManager.all_clients` accessor — no reach-in to

@@ -49,7 +49,7 @@ class TestBackendServerCommands:
         # The header names the account, not just the org, so the
         # status push carries the address too.
         session.cloud_email = "maya@acme.test"
-        session.last_input_tokens = 1234
+        session.context_budget.last_input_tokens = 1234
         # ``Session.permission_mode_value`` is the wire-safe string
         # StatusUpdate needs — MagicMock returns another MagicMock
         # for arbitrary attribute access, which then fails pydantic
@@ -328,7 +328,7 @@ class TestBackendServerRealConstruction:
 
         # _init_mcp_client_manager — MCP manager + init flag.
         assert session.mcp_manager is not None
-        assert session._mcp_initialized is False
+        assert session.startup.mcp_initialized is False
 
         # _init_lsp_and_monitors — LSP manager + monitor manager.
         assert session.lsp_manager is not None

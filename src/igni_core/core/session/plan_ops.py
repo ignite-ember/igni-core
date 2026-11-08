@@ -3,9 +3,7 @@
 Owns the persist-then-mode-flip flow for a user's approve /
 dismiss decision on a plan the agent submitted via
 ``exit_plan_mode``. Session composes one
-:class:`PlanCoordinator` instance in
-``Session._init_per_session_scratch``; the thin ``Session``
-delegators forward to it.
+:class:`PlanCoordinator` instance, handed a :class:`PlanDeps`.
 
 Side-effect ordering matters and is now an ENFORCED contract
 rather than a "log-and-hope": the persistence write happens
@@ -30,32 +28,59 @@ PlanDecisionResult`` working for legacy callers.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from igni_core.core.config.permission_eval import PermissionMode
+from igni_core.core.session.broadcast import BroadcastBus
+from igni_core.core.session.persistence import SessionPersistence
 from igni_core.core.session.schemas import (
     PlanDecidedEvent,
     PlanDecisionResult,
 )
-from igni_core.core.tools.plan import PlanDecision
-
-if TYPE_CHECKING:
-    from igni_core.core.session.core import Session
+from igni_core.core.tools.plan import PlanDecision, PlanStore
 
 logger = logging.getLogger(__name__)
 
 
-class PlanCoordinator:
-    """Owns the persist-then-mode-flip flow for plan decisions.
+@dataclass(frozen=True)
+class PlanDeps:
+    """What recording a plan decision touches.
 
-    Constructor holds a reference to the session so it can reach
-    the ``plan_store`` / ``persistence`` / ``broadcast_bus`` /
-    ``set_permission_mode`` bound method at call time. Session
-    composes one instance in ``_init_per_session_scratch``.
+    * ``plan_store`` / ``persistence`` — where the decision is kept and
+      written; ``None`` makes a decision fail with a reason instead.
+    * ``bus`` — where :class:`PlanDecidedEvent` goes.
+    * ``set_permission_mode`` / ``starting_mode`` — the mode
+      coordinator's switch (which enforces the organisation's floor)
+      and where an approval returns to.
     """
 
-    def __init__(self, session: Session) -> None:
-        self._session = session
+    plan_store: PlanStore | None
+    persistence: SessionPersistence | None
+    bus: BroadcastBus
+    set_permission_mode: Callable[[str], str]
+    starting_mode: Callable[[], PermissionMode]
+
+
+class PlanCoordinator:
+    """Owns the persist-then-mode-flip flow for plan decisions."""
+
+    def __init__(self, deps: PlanDeps) -> None:
+        self._deps = deps
+        self._research_armed = False
+
+    @property
+    def research_armed(self) -> bool:
+        return self._research_armed
+
+    def arm_research(self, armed: bool) -> None:
+        """Arm or disarm the plan-mode researcher nudge for the next turn."""
+        self._research_armed = armed
+
+    def consume_research_flag(self) -> bool:
+        """Whether the nudge is armed, disarming it."""
+        armed, self._research_armed = self._research_armed, False
+        return armed
 
     async def approve(self, run_id: str) -> PlanDecisionResult:
         """Record the user's approval and flip out of plan mode."""
@@ -88,8 +113,8 @@ class PlanCoordinator:
                 ok=False,
                 error="run_id must be non-empty",
             )
-        session = self._session
-        store = getattr(session, "plan_store", None)
+        deps = self._deps
+        store = deps.plan_store
         if store is None:
             return PlanDecisionResult(
                 run_id=run_id,
@@ -104,7 +129,7 @@ class PlanCoordinator:
         # ``decisions_snapshot`` returns a typed :class:`PlanDecisionsBlob`
         # which persistence dumps at its own boundary — the caller-side
         # dict comprehension is gone (Rule 1).
-        persistence = getattr(session, "persistence", None)
+        persistence = deps.persistence
         if persistence is None:
             return PlanDecisionResult(
                 run_id=run_id,
@@ -144,12 +169,11 @@ class PlanCoordinator:
             # ``set_permission_mode`` like every other switch, so an
             # organisation's floor still holds: a plan-mode floor keeps
             # the session in plan mode and ``mode_status`` says why.
-            starting = getattr(session, "permission_starting_mode", None)
-            start = starting() if callable(starting) else PermissionMode.DEFAULT
-            if not isinstance(start, PermissionMode) or start is PermissionMode.PLAN:
+            start = deps.starting_mode()
+            if start is PermissionMode.PLAN:
                 start = PermissionMode.DEFAULT
-            mode_status = session.set_permission_mode(start.value)
-        session.broadcast_bus.emit(PlanDecidedEvent(run_id=run_id, decision=decision))
+            mode_status = deps.set_permission_mode(start.value)
+        deps.bus.emit(PlanDecidedEvent(run_id=run_id, decision=decision))
         return PlanDecisionResult(
             run_id=run_id,
             decision=decision,
@@ -165,4 +189,4 @@ class PlanCoordinator:
 # ``from igni_core.core.session.plan_ops import
 # PlanDecisionResult`` imports working.
 
-__all__ = ["PlanCoordinator", "PlanDecisionResult"]
+__all__ = ["PlanCoordinator", "PlanDecisionResult", "PlanDeps"]

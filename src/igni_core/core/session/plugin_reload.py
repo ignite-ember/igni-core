@@ -76,7 +76,7 @@ class PluginReloadOrchestrator:
         Re-scans every plugin root and re-applies each enabled
         plugin's bundled contents to the four wiring points:
 
-        * **Hooks** — rebuilt via ``_hook_loader`` then merged.
+        * **Hooks** — rebuilt by :meth:`SessionHooks.load`, plugins merged.
         * **Skills** — fresh :class:`SkillPool` reload from disk.
         * **Agents** — fresh :class:`AgentPool` rebuilt; the main
           team is rebuilt at the end so the new agents are

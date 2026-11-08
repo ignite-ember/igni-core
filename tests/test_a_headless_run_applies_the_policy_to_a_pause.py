@@ -26,6 +26,7 @@ from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 from igni_core.core.config.settings import Settings
 from igni_core.core.guardrails.runner import GuardrailRunner
 from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.session.compaction.context_budget import ContextBudget
 from igni_core.core.session.message_handler import SessionMessageHandler
 
 
@@ -73,7 +74,7 @@ class _Team:
 
 def _handler(team: _Team, evaluator: PermissionEvaluator | None) -> SessionMessageHandler:
     return SessionMessageHandler(
-        hook_executor=HookExecutor({}),
+        hooks=SimpleNamespace(executor=HookExecutor({})),
         audit=MagicMock(),
         display=MagicMock(),
         guardrail_runner=GuardrailRunner(Settings()),
@@ -82,8 +83,7 @@ def _handler(team: _Team, evaluator: PermissionEvaluator | None) -> SessionMessa
         compact_hook=AsyncMock(return_value=False),
         ensure_mcp=AsyncMock(),
         session_id_ref=lambda: "s1",
-        context_window_ref=lambda: 100_000,
-        latch_input_tokens=lambda _tokens: None,
+        budget=ContextBudget(window=100_000),
         permission_evaluator_ref=lambda: evaluator,
     )
 

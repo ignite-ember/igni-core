@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import ClassVar
 
@@ -9,6 +10,8 @@ from pydantic import BaseModel, ConfigDict
 
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.paths import home_config_dir
+
+logger = logging.getLogger(__name__)
 
 
 class EntryPlacement(BaseModel):
@@ -78,6 +81,23 @@ class GroupPolicyLayout(BaseModel):
     def dir_for(self, kind: str) -> Path:
         """The directory this kind's entries live in. Not created."""
         return self.root / kind
+
+    def shipped_dir(self, kind: str) -> Path | None:
+        """This kind's directory when the pack ships something of it, else ``None``.
+
+        ``None`` rather than a path that may not exist, so a loader can tell
+        "the group ships nothing" from "we passed the wrong path".
+        """
+        return self.dir_for(kind) if self.ships(kind) else None
+
+    def ships(self, kind: str) -> bool:
+        """Whether the cached pack carries anything of this kind."""
+        directory = self.dir_for(kind)
+        try:
+            return directory.is_dir() and any(directory.iterdir())
+        except OSError as exc:
+            logger.debug("Could not inspect the group %s directory: %s", kind, exc)
+            return False
 
     def ensure_dir(self, kind: str) -> Path:
         """The directory this kind's entries live in, created on demand."""

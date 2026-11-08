@@ -302,7 +302,7 @@ async def test_event_drain_persists_and_pushes(tmp_path: Path) -> None:
     assert session.append_event.await_count == 3
     assert push.workflow_event.call_count == 3
     # Persisted envelope has the workflow_run_id + event type.
-    first_payload = session.append_event.await_args_list[0].args[1]
+    first_payload = session.append_event.await_args_list[0].args[0].payload
     assert first_payload["workflow_run_id"] == "wf_abc"
     assert first_payload["type"] == "workflow_started"
     # The terminal event moved the phase, so finish() adds nothing.
@@ -327,8 +327,8 @@ async def test_synthetic_workflow_failed_on_non_zero_exit(tmp_path: Path) -> Non
     await run.finish()
 
     # The synthetic event is the 2nd call (after the started line).
-    types = [c.args[0] for c in session.append_event.await_args_list]
-    payloads = [c.args[1] for c in session.append_event.await_args_list]
+    types = [c.args[0].type for c in session.append_event.await_args_list]
+    payloads = [c.args[0].payload for c in session.append_event.await_args_list]
     assert types == ["workflow_event", "workflow_event"]
     assert payloads[1]["type"] == "workflow_failed"
     assert payloads[1]["payload"]["exit_code"] == 2

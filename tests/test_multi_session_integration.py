@@ -605,7 +605,7 @@ async def test_real_handle_message_routes_two_sessions_through_production_path()
         session.session_id = session_id
         session.project_dir = Path("/tmp")  # unused by the paths exercised here
         # A MagicMock flag is truthy; nothing armed ``/plan`` here.
-        session.consume_plan_research_flag.return_value = False
+        session.plan.consume_research_flag.return_value = False
         be = make_backend(session, settings=MagicMock())
         be.cancel_run = MagicMock()
         be.shutdown = AsyncMock()

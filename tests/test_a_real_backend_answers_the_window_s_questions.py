@@ -202,7 +202,7 @@ def test_switching_the_model_rebuilds_the_team_on_the_new_one(backend):
 def test_the_plan_research_flag_is_read_once(backend):
     assert backend.consume_plan_research_flag() is False
 
-    backend._session._plan_research_armed = True
+    backend._session.plan.arm_research(True)
 
     assert backend.consume_plan_research_flag() is True
     assert backend.consume_plan_research_flag() is False

@@ -33,6 +33,7 @@ from igni_core.core.tools.plan import PlanStore, PlanTool
 from igni_core.core.tools.todo import TodoItem, TodoStore, TodoTools
 from igni_core.protocol.rpc import RpcMethod
 from tests.backend_server_factory import make_backend
+from tests.session_coordinators import wire_coordinators
 
 # ── PlanStore ─────────────────────────────────────────────
 
@@ -168,6 +169,7 @@ class TestPlanTool:
         session.plan_store = PlanStore()
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
+        wire_coordinators(session)
         captured: list[tuple[str, dict]] = []
         session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = PlanTool(session)
@@ -242,6 +244,7 @@ class TestTheFloorJudgesNoPlan:
         session.broadcast_bus = _BroadcastBus()
         session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
         session.main_team = None  # no spawn target, enter_plan_mode falls through
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -271,6 +274,7 @@ class TestEnterPlanModeSpawnsResearcher:
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
         session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -342,6 +346,7 @@ class TestTodoWriteBroadcastsState:
         session = Session.__new__(Session)
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
+        wire_coordinators(session)
         captured: list[tuple[str, dict]] = []
         session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = TodoTools(session)
@@ -364,6 +369,7 @@ class TestTodoWriteBroadcastsState:
         session = Session.__new__(Session)
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
+        wire_coordinators(session)
         captured: list[tuple[str, dict]] = []
         session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = TodoTools(session)
@@ -385,6 +391,7 @@ class TestEnterPlanMode:
         session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
         session.broadcast_bus = _BroadcastBus()
         session.plan_store = PlanStore()
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -467,6 +474,7 @@ class TestSetPermissionMode:
         session = Session.__new__(Session)
         session.broadcast_bus = _BroadcastBus()
         session.permission_evaluator = PermissionEvaluator.from_strings(mode=initial)
+        wire_coordinators(session)
         return session
 
     def test_flips_mode_to_plan(self):
@@ -495,6 +503,7 @@ class TestSetPermissionMode:
         # correctly raises rather than pretending to work.
         session = Session.__new__(Session)
         session.broadcast_bus = _BroadcastBus()
+        wire_coordinators(session)
         with pytest.raises(AttributeError):
             session.set_permission_mode("plan")
 
@@ -507,8 +516,7 @@ class TestPlanSlashCommand:
         session = Session.__new__(Session)
         session.broadcast_bus = _BroadcastBus()
         session.permission_evaluator = PermissionEvaluator.from_strings(mode=initial_mode)
-        # Bind ``set_permission_mode`` since we constructed via
-        # __new__ without running __init__.
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -571,17 +579,17 @@ class TestPlanSlashCommand:
 
     @pytest.mark.asyncio
     async def test_entering_plan_arms_research_nudge(self):
-        # The slash command sets ``_plan_research_armed`` so the
+        # The slash command arms the research nudge so the
         # UserMessage handler can prepend a ``<system-context>``
         # nudge on the next turn — telling the agent to call
         # ``enter_plan_mode(task=...)`` first. Without this, the
         # agent has no signal that the user (not the agent) just
         # entered plan mode and skips the researcher.
         session = self._make_session("default")
-        assert getattr(session, "_plan_research_armed", False) is False
+        assert session.plan.research_armed is False
         handler = CommandHandler(session)
         await handler.handle("/plan")
-        assert session._plan_research_armed is True
+        assert session.plan.research_armed is True
 
     @pytest.mark.asyncio
     async def test_re_entering_plan_does_not_re_arm(self):
@@ -590,12 +598,12 @@ class TestPlanSlashCommand:
         # cause a wasted researcher run on the next user message
         # (the researcher already ran the first time).
         session = self._make_session("plan")
-        session._plan_research_armed = False  # explicitly disarmed
+        session.plan.arm_research(False)  # explicitly disarmed
         handler = CommandHandler(session)
         await handler.handle("/plan on")
         # Still in plan mode AND still not armed.
         assert session.permission_evaluator.mode is PermissionMode.PLAN
-        assert session._plan_research_armed is False
+        assert session.plan.research_armed is False
 
     @pytest.mark.asyncio
     async def test_leaving_plan_disarms_pending_nudge(self):
@@ -606,9 +614,9 @@ class TestPlanSlashCommand:
         session = self._make_session("default")
         handler = CommandHandler(session)
         await handler.handle("/plan")
-        assert session._plan_research_armed is True
+        assert session.plan.research_armed is True
         await handler.handle("/plan off")
-        assert session._plan_research_armed is False
+        assert session.plan.research_armed is False
 
     @pytest.mark.asyncio
     async def test_status_command_does_not_change_armed_flag(self):
@@ -616,10 +624,10 @@ class TestPlanSlashCommand:
         # current mode without flipping anything and must not
         # arm/disarm the researcher nudge either.
         session = self._make_session("plan")
-        session._plan_research_armed = True
+        session.plan.arm_research(True)
         handler = CommandHandler(session)
         await handler.handle("/plan status")
-        assert session._plan_research_armed is True
+        assert session.plan.research_armed is True
 
 
 class TestAcceptSlashCommand:
@@ -630,6 +638,7 @@ class TestAcceptSlashCommand:
         session = Session.__new__(Session)
         session.permission_evaluator = PermissionEvaluator.from_strings(mode=initial_mode)
         session.broadcast_bus = _BroadcastBus()
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -715,6 +724,7 @@ class TestBypassSlashCommand:
         session = Session.__new__(Session)
         session.permission_evaluator = PermissionEvaluator.from_strings(mode=initial_mode)
         session.broadcast_bus = _BroadcastBus()
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -860,6 +870,7 @@ class TestPlanModeLifecycle:
         session.broadcast_bus = _BroadcastBus()
         session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
         session.plan_store = PlanStore()
+        wire_coordinators(session)
         handler = CommandHandler(session)
 
         await handler.handle("/plan")

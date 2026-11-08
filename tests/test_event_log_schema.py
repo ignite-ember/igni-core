@@ -1,6 +1,6 @@
 """Schema-level tests for :class:`SessionEvent`.
 
-The construction path from ``Session.append_event`` is exercised
+The append path through ``Session.append_event`` is exercised
 in ``test_event_log.py``; this file locks in the model's own
 invariants (validation, defaults, wire round-trip, defensive
 payload copy) so future edits to the schema fail loud rather
@@ -10,43 +10,47 @@ than silently drifting the shape.
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from igni_core.core.session.event_log_schema import SessionEvent
+from igni_core.core.session.event_log_schema import SessionEvent, SessionEventDraft
 
 
-class TestBuild:
-    def test_build_preserves_fields(self):
-        event = SessionEvent.build(
-            seq=42,
-            event_type="visualization_delta",
+class TestStamped:
+    def test_stamped_preserves_fields(self):
+        event = SessionEventDraft(
+            type="visualization_delta",
             payload={"spec_id": "s1", "json": "{}"},
             run_id="run-x",
-        )
+        ).stamped(42)
         assert event.seq == 42
         assert event.type == "visualization_delta"
         assert event.run_id == "run-x"
         assert event.payload == {"spec_id": "s1", "json": "{}"}
 
-    def test_build_defaults_run_id_to_empty(self):
-        event = SessionEvent.build(seq=1, event_type="x", payload={})
+    def test_run_id_defaults_to_empty(self):
+        event = SessionEventDraft(type="x").stamped(1)
         assert event.run_id == ""
 
-    def test_build_coerces_run_id_to_str(self):
+    def test_run_id_is_coerced_to_str(self):
         # ``run_id`` accepts anything with a ``__str__``; None → "".
-        event = SessionEvent.build(seq=1, event_type="x", payload={}, run_id=None)  # type: ignore[arg-type]
-        assert event.run_id == ""
-        event2 = SessionEvent.build(seq=1, event_type="x", payload={}, run_id=123)  # type: ignore[arg-type]
-        assert event2.run_id == "123"
+        assert SessionEventDraft(type="x", run_id=None).stamped(1).run_id == ""  # type: ignore[arg-type]
+        assert SessionEventDraft(type="x", run_id=123).stamped(1).run_id == "123"  # type: ignore[arg-type]
 
-    def test_build_copies_payload_defensively(self):
-        # Mutating the caller's dict after build must not affect
-        # the stored payload. Matches the pre-refactor behaviour in
-        # ``Session.append_event`` (dict(payload)).
-        source = {"a": 1}
-        event = SessionEvent.build(seq=1, event_type="x", payload=source)
-        source["a"] = 999
+    def test_stamped_copies_payload_defensively(self):
+        # Mutating the producer's dict after the append must not
+        # affect the stored payload.
+        draft = SessionEventDraft(type="x", payload={"a": 1})
+        event = draft.stamped(1)
+        draft.payload["a"] = 999
         assert event.payload == {"a": 1}
+
+    def test_of_dumps_a_model_payload(self):
+        class Card(BaseModel):
+            title: str
+
+        draft = SessionEventDraft.of("extension_card", Card(title="Deploys"), run_id="r1")
+        assert draft.payload == {"title": "Deploys"}
+        assert draft.run_id == "r1"
 
 
 class TestValidation:
@@ -124,12 +128,11 @@ class TestModelDump:
         # The pre-iter-45 ``append_event`` built dicts of exactly
         # this shape. ``.model_dump()`` must produce the same keys /
         # types so the splicer + persistence path see no change.
-        event = SessionEvent.build(
-            seq=1,
-            event_type="visualization_delta",
+        event = SessionEventDraft(
+            type="visualization_delta",
             payload={"spec_id": "s1", "json": "{}"},
             run_id="r1",
-        )
+        ).stamped(1)
         dumped = event.model_dump()
         assert set(dumped.keys()) == {"seq", "run_id", "timestamp_ms", "type", "payload"}
         assert dumped["seq"] == 1

@@ -5,7 +5,7 @@ back-compat free functions (``approve_plan`` / ``dismiss_plan`` /
 ``_record_plan_decision`` / ``_coord_for``) were deleted after
 grep confirmed no live external callers. These tests drive the
 coordinator methods directly on a bare Session stub with a
-freshly-attached ``session.plan = PlanCoordinator(session)``.
+freshly-attached ``session.plan``, built from its own ``PlanDeps``.
 
 Headline invariant pinned here: persist-before-flip-mode
 ordering — the whole point of this code path existing (regression
@@ -21,12 +21,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.session.broadcast import BroadcastBus
-from igni_core.core.session.plan_ops import PlanCoordinator
+from igni_core.core.session.plan_ops import PlanCoordinator, PlanDeps
 from igni_core.core.tools.plan import PlanDecision, PlanDecisionsBlob
 
 
-def _bare_session(*, has_persistence: bool = True):
+def _bare_session(*, has_persistence: bool = True, has_plan_store: bool = True):
     """Session-shaped stub carrying only what plan_ops reads,
     with a freshly-attached :class:`PlanCoordinator`."""
     session = SimpleNamespace()
@@ -41,7 +42,16 @@ def _bare_session(*, has_persistence: bool = True):
         session.persistence.save_plan_decisions = AsyncMock()
     session.set_permission_mode = MagicMock(return_value="mode → default")
     session.broadcast_bus = BroadcastBus()
-    session.plan = PlanCoordinator(session)
+    session.plan = PlanCoordinator(
+        PlanDeps(
+            plan_store=session.plan_store if has_plan_store else None,
+            persistence=getattr(session, "persistence", None),
+            bus=session.broadcast_bus,
+            # Read per call, so a test can swap the stub's method afterwards.
+            set_permission_mode=lambda mode: session.set_permission_mode(mode),
+            starting_mode=lambda: PermissionMode.DEFAULT,
+        )
+    )
     return session
 
 
@@ -118,8 +128,7 @@ class TestRecordPlanDecision:
 
     @pytest.mark.asyncio
     async def test_missing_plan_store_returns_error_envelope(self):
-        s = _bare_session()
-        s.plan_store = None
+        s = _bare_session(has_plan_store=False)
         out = await s.plan._record("run-1", PlanDecision.APPROVED, flip_mode=True)
         assert out.ok is False
         assert out.error is not None and "plan_store" in out.error

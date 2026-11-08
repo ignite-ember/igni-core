@@ -2,7 +2,7 @@
 
 ``check_group_config.py`` proves each subsystem *can* read the group's
 directory when handed it. This proves the session actually hands it
-over — the wiring between ``group_dir_for(kind)`` and eight call sites.
+over — the wiring between ``group_policy.dir_for(kind)`` and eight call sites.
 The distinction is not academic: it is how MCP servers were found to be
 loading from a directory nothing passed to the manager, with every
 lower-level test passing.
@@ -108,7 +108,7 @@ async def main() -> int:
         registered = {
             h.command
             for event in ("PreToolUse", "PostToolUse", "Stop", "SubagentStop")
-            for h in session._hook_registry.for_event(event)
+            for h in session.hooks.hooks_map.get(event, [])
         }
         check(wanted <= registered, f"group hooks registered ({', '.join(sorted(wanted))})")
 
@@ -129,11 +129,12 @@ async def main() -> int:
 
     print("\nWhat the session decided about igni's own copies")
     check(
-        session._group_ships("agents") == ("agents" in by_kind),
+        session.group_policy.ships("agents") == ("agents" in by_kind),
         "knows whether the group ships agents",
     )
     check(
-        session._group_ships("hooks") == ("hooks" in by_kind), "knows whether the group ships hooks"
+        session.group_policy.ships("hooks") == ("hooks" in by_kind),
+        "knows whether the group ships hooks",
     )
     # Inverted deliberately. This used to assert the project directory
     # HELD the group's agents, because a sync copied them there. That

@@ -1,6 +1,7 @@
 """Tests for the background marketplace refresh.
 
-Verifies that :meth:`Session.start_marketplace_refresh_background`:
+Verifies that :meth:`MarketplaceWarmupPhase.start_background` (what
+:meth:`Session.start_marketplace_refresh_background` runs):
 
   - Schedules an asyncio task on the running loop.
   - Calls ``refresh_marketplace`` for each registered marketplace.
@@ -10,9 +11,8 @@ Verifies that :meth:`Session.start_marketplace_refresh_background`:
     from a sync context doesn't raise).
   - Is a no-op when no marketplaces are registered.
 
-The Session machinery is heavy, so these tests construct a minimal
-session-like object with just the attributes the refresh function
-reads (``settings.storage.data_dir``). Real ``load_registry`` /
+The phase is handed settings carrying just what the refresh reads
+(``settings.storage.data_dir``). Real ``load_registry`` /
 ``refresh_marketplace`` are patched to avoid network access.
 """
 
@@ -24,7 +24,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from igni_core.core.plugins.models import MarketplaceCatalog, MarketplaceEntry
-from igni_core.core.session.core import Session
 from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
 
 # Async tests pick up the asyncio mark via pytest-asyncio's auto mode.
@@ -35,17 +34,12 @@ from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
 # ── Test harness ────────────────────────────────────────────────────
 
 
-def _make_session_stub(tmp_path: Path) -> Session:
-    """A minimal Session object carrying just what
-    ``start_marketplace_refresh_background`` reads.
-
-    We bypass ``Session.__init__`` (which would pull in DB, MCP, all
-    pools, etc.) and assemble the fields by hand. Cheaper than the
-    real fixture and stays focused on the refresh logic."""
-    sess = Session.__new__(Session)
-    sess.settings = MagicMock()
-    sess.settings.storage.data_dir = str(tmp_path / "ember")
-    return sess
+def _warmup(tmp_path: Path) -> MarketplaceWarmupPhase:
+    """The marketplace warmup phase a session builds, over settings that
+    carry just what the refresh reads (``storage.data_dir``)."""
+    settings = MagicMock()
+    settings.storage.data_dir = str(tmp_path / "ember")
+    return MarketplaceWarmupPhase(settings_ref=lambda: settings)
 
 
 # ── Behavior ───────────────────────────────────────────────────────
@@ -73,8 +67,8 @@ async def test_refresh_calls_refresh_marketplace_for_each_entry(
     ):
         mock_load.return_value = fake_registry
         mock_refresh.return_value = MagicMock()
-        sess = _make_session_stub(tmp_path)
-        sess.start_marketplace_refresh_background()
+        warmup = _warmup(tmp_path)
+        warmup.start_background()
 
         # Wait for any spawned tasks (other than this test's task)
         # to finish. The refresh task should call refresh_marketplace
@@ -115,8 +109,8 @@ async def test_refresh_continues_past_failures(tmp_path: Path) -> None:
     ):
         mock_load.return_value = fake_registry
         mock_refresh.side_effect = _side_effect
-        sess = _make_session_stub(tmp_path)
-        sess.start_marketplace_refresh_background()
+        warmup = _warmup(tmp_path)
+        warmup.start_background()
         pending = [
             t for t in asyncio.all_tasks() if t is not asyncio.current_task() and not t.done()
         ]
@@ -142,8 +136,8 @@ async def test_refresh_no_marketplaces_is_noop(tmp_path: Path) -> None:
         patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh,
     ):
         mock_load.return_value = fake_registry
-        sess = _make_session_stub(tmp_path)
-        sess.start_marketplace_refresh_background()
+        warmup = _warmup(tmp_path)
+        warmup.start_background()
         pending = [
             t for t in asyncio.all_tasks() if t is not asyncio.current_task() and not t.done()
         ]
@@ -160,9 +154,9 @@ def test_refresh_without_running_loop_is_noop(tmp_path: Path) -> None:
     these eagerly from sync contexts (e.g. test harnesses) without
     needing a loop. (This test runs sync so the function sees no
     running loop.)"""
-    sess = _make_session_stub(tmp_path)
+    warmup = _warmup(tmp_path)
     # No exception means pass — the early-return on RuntimeError fires.
-    sess.start_marketplace_refresh_background()
+    warmup.start_background()
 
 
 async def test_refresh_passes_data_dir_through(tmp_path: Path) -> None:
@@ -195,8 +189,8 @@ async def test_refresh_passes_data_dir_through(tmp_path: Path) -> None:
         mock_load.return_value = fake_registry
         mock_refresh.return_value = MagicMock()
         mock_add.return_value = MagicMock()
-        sess = _make_session_stub(tmp_path)
-        sess.start_marketplace_refresh_background()
+        warmup = _warmup(tmp_path)
+        warmup.start_background()
         pending = [
             t for t in asyncio.all_tasks() if t is not asyncio.current_task() and not t.done()
         ]
@@ -221,7 +215,7 @@ async def test_a_catalog_fetched_recently_is_not_fetched_again(tmp_path: Path) -
     stale.fetched_within.return_value = False
     registry = MagicMock()
     registry.marketplaces = [fresh, stale]
-    phase = MarketplaceWarmupPhase(_make_session_stub(tmp_path))
+    phase = _warmup(tmp_path)
     with patch(
         "igni_core.core.plugins.marketplaces.refresh_marketplace", return_value=None
     ) as refresh:

@@ -30,7 +30,7 @@ Housed here:
   :meth:`Session.reload_plugins` (previously inline in
   ``core.py``).
 * :class:`McpServerStatus` — typed row for
-  :meth:`Session.get_mcp_status` (replaces raw
+  :meth:`McpLifecycleCoordinator.status` (replaces raw
   ``list[tuple[str, bool]]``).
 * :class:`StopHookPayload` / :class:`StopFailureHookPayload` /
   :class:`UserPromptSubmitHookPayload` /
@@ -280,7 +280,7 @@ class PluginReloadCounts(BaseModel):
 
 
 class McpServerStatus(BaseModel):
-    """Typed row for :meth:`Session.get_mcp_status`.
+    """Typed row for :meth:`McpLifecycleCoordinator.status`.
 
     Replaces the raw ``(name, connected)`` tuple so consumers
     (backend RPC, TUI panel) reach for named attributes instead

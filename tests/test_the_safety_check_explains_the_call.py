@@ -22,7 +22,7 @@ from igni_core.backend.pending_requirements_store import PendingRequirementsStor
 from igni_core.core.config.schemas.safety import BypassGuardConfig
 from igni_core.core.hooks.bypass_explainer import CallExplainer, clean
 from igni_core.core.hooks.bypass_guard import BypassGuard, Verdict, explained
-from igni_core.core.session.core import Session
+from igni_core.core.session.tool_approval import ToolCallApprovalChannel
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
 
@@ -290,7 +290,7 @@ async def _through_the_relay(tmp_path, explainer):
     session = SimpleNamespace(sub_agent_hitl=SubAgentHITLCoordinator(), project_dir=tmp_path)
     guard = _guard(
         tmp_path,
-        ask=lambda *a, **kw: Session._ask_about_tool_call(session, *a, **kw),
+        ask=ToolCallApprovalChannel(session.sub_agent_hitl).ask,
         explainer=explainer,
     )
     outcome = {}
@@ -367,18 +367,14 @@ def test_answering_first_stops_the_explainer(tmp_path):
     async def scenario():
         coordinator = SubAgentHITLCoordinator()
         coordinator.listeners = 1
-        session = SimpleNamespace(sub_agent_hitl=coordinator)
+        ask = ToolCallApprovalChannel(coordinator).ask
         started = asyncio.Event()
 
         async def follow_up():
             started.set()
             await asyncio.sleep(3600)
 
-        task = asyncio.create_task(
-            Session._ask_about_tool_call(
-                session, "bash", {"command": "x"}, "stock", [], follow_up=follow_up
-            )
-        )
+        task = asyncio.create_task(ask("bash", {"command": "x"}, "stock", [], follow_up=follow_up))
         await coordinator.new_arrival.wait()
         [(req_id, _)] = coordinator.list_new_pending()
         await started.wait()

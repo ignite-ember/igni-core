@@ -171,12 +171,10 @@ class PlanModeToggle(ModeToggle):
     exit_tail: str = "\n\nPlan mode exited. The agent can now execute as normal."
 
     def enter(self, session: Session) -> None:
-        session.set_plan_research_armed(True)
+        session.plan.arm_research(True)
 
     def exit(self, session: Session) -> None:
-        # ``set_plan_research_armed`` is a Session method — no
-        # attribute reach-in needed, and Session owns the semantics.
-        session.set_plan_research_armed(False)
+        session.plan.arm_research(False)
 
 
 class AcceptModeToggle(ModeToggle):
@@ -277,9 +275,7 @@ class ModesCommand:
                 content=f"Permission mode: **{current.value}**",
             )
 
-        target, error = toggle.target_for(
-            normalized, current, self._session.permission_starting_mode()
-        )
+        target, error = toggle.target_for(normalized, current, self._session.mode.starting_mode)
         if error:
             return CommandResult.error(error)
         assert target is not None  # status branch returned above

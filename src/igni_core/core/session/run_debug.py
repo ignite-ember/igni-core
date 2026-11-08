@@ -1,10 +1,8 @@
 """Debug-level dump of an Agno team's last-run message list.
 
-Extracted from :mod:`igni_core.core.session.core` — the
-module-level ``_log_run_messages_debug`` free function graduates
-to :class:`RunMessagesDebugDumper`. Session composes an instance
-on demand (``RunMessagesDebugDumper(self.main_team).dump()``);
-the class shape lets the dumper be unit-tested in isolation.
+Session calls :meth:`RunMessagesDebugDumper.dump_team` after each
+headless turn; the class shape lets the dumper be unit-tested in
+isolation.
 
 Used for diagnosing tool-result delivery issues — surfaces
 ``role`` / ``tool_call_id`` / ``tool_calls`` / compression state

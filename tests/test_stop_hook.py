@@ -42,7 +42,7 @@ class TestStopHookBlocking:
     async def test_stop_hook_allows_response(self, session):
         """When Stop hook allows, response is returned normally."""
         with patch(
-            "igni_core.core.session.core.extract_response_text", return_value="Good response"
+            "igni_core.core.utils.response.extract_response_text", return_value="Good response"
         ):
             result = await session.handle_message("Hi")
             assert result == "Good response"
@@ -69,7 +69,7 @@ class TestStopHookBlocking:
             call_count += 1
             return result
 
-        with patch("igni_core.core.session.core.extract_response_text", side_effect=fake_extract):
+        with patch("igni_core.core.utils.response.extract_response_text", side_effect=fake_extract):
             result = await session.handle_message("test")
             assert result == "Clean response"
             # Agent should have been called twice: original + retry
@@ -88,7 +88,7 @@ class TestStopHookBlocking:
         # UserPromptSubmit allows, then Stop blocks 3 times
         session.hook_executor.execute = AsyncMock(side_effect=[allowed, blocked, blocked, blocked])
 
-        with patch("igni_core.core.session.core.extract_response_text", return_value="response"):
+        with patch("igni_core.core.utils.response.extract_response_text", return_value="response"):
             result = await session.handle_message("test")
             # After 3 blocks, the loop exits and returns the last response
             assert result == "response"
@@ -107,7 +107,7 @@ class TestStopHookBlocking:
 
         session.hook_executor.execute = AsyncMock(side_effect=[allowed, blocked, allowed])
 
-        with patch("igni_core.core.session.core.extract_response_text", return_value="ok"):
+        with patch("igni_core.core.utils.response.extract_response_text", return_value="ok"):
             await session.handle_message("test")
             # Second call should be the retry with system message
             retry_call = session.main_team.arun.call_args_list[1]

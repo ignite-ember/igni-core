@@ -221,7 +221,7 @@ class TestForkSlashCommand:
         await handler.handle("/fork My Project Branch")
         # fork() called with the name.
         session.persistence.fork.assert_awaited_once_with(name="My Project Branch")
-        assert session.session_named is True
+        session.identity.set_named.assert_called_once_with(True)
 
     @pytest.mark.asyncio
     async def test_fork_without_name_flags_session_named_false(self):
@@ -231,7 +231,7 @@ class TestForkSlashCommand:
         handler = CommandHandler(session)
         await handler.handle("/fork")
         session.persistence.fork.assert_awaited_once_with(name=None)
-        assert session.session_named is False
+        session.identity.set_named.assert_called_once_with(False)
 
     @pytest.mark.asyncio
     async def test_fork_failure_returns_error(self):

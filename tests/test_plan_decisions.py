@@ -33,6 +33,7 @@ from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
 from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore, PlanSubmittedEvent
+from tests.session_coordinators import wire_coordinators
 
 # ── PlanStore.decisions ─────────────────────────────────────
 
@@ -183,6 +184,7 @@ def _build_session() -> object:
     session.plan_store = PlanStore()
     session.permission_evaluator = _StubPermissionEvaluator()
     session.persistence = _StubPersistence()
+    wire_coordinators(session)
     return session
 
 
@@ -480,6 +482,7 @@ class TestPostRunBroadcastRunIdStamp:
     def _bus_session(self):
         session = Session.__new__(Session)
         session.broadcast_bus = BroadcastBus()
+        wire_coordinators(session)
         return session
 
     def test_drain_stamps_run_id_into_payload(self) -> None:

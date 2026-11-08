@@ -206,8 +206,8 @@ class MessageDispatcher:
     def _maybe_wrap_plan_hint(self, text: str) -> str:
         """One-shot ``/plan`` → ``enter_plan_mode`` nudge.
 
-        When the user just typed ``/plan`` (slash command armed
-        ``_plan_research_armed`` on the session), prepend a
+        When the user just typed ``/plan`` (the slash command armed
+        :meth:`PlanCoordinator.arm_research`), prepend a
         ``<system-context>`` instruction so the agent spawns the
         ``plan_researcher`` sub-agent on this exact request.
 

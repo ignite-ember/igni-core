@@ -15,9 +15,8 @@ from tests.test_session import _session_patches, _start_patches, _stop_patches
 def _load_result(hooks: dict) -> HookLoadResult:
     """Build a :class:`HookLoadResult` for mocking ``HookLoader.load``.
 
-    ``session.reload_hooks`` now unwraps ``load().registry.raw``, so
-    the mock must return a full result envelope rather than the raw
-    dict the old contract used.
+    :class:`SessionHooks` unwraps ``load().registry``, so the mock must
+    return a full result envelope.
     """
     return HookLoadResult(registry=HookRegistry(hooks), warnings=[])
 
@@ -37,7 +36,7 @@ class TestHooksReload:
     def test_reload_hooks_returns_count(self, session):
         """reload_hooks() returns number of hooks loaded."""
         # Mock the loader to return 2 hooks
-        session._hook_loader.load.return_value = _load_result(
+        session.hooks._loader.load.return_value = _load_result(
             {
                 "PreToolUse": [
                     HookDefinition(type="command", command="echo pre"),
@@ -52,7 +51,7 @@ class TestHooksReload:
 
     def test_reload_hooks_zero_when_empty(self, session):
         """reload_hooks() returns 0 when no hooks configured."""
-        session._hook_loader.load.return_value = _load_result({})
+        session.hooks._loader.load.return_value = _load_result({})
         count = session.reload_hooks()
         assert count == 0
 
@@ -61,16 +60,16 @@ class TestHooksReload:
         new_hooks = {
             "Stop": [HookDefinition(type="command", command="echo stop")],
         }
-        session._hook_loader.load.return_value = _load_result(new_hooks)
+        session.hooks._loader.load.return_value = _load_result(new_hooks)
         session.reload_hooks()
         assert "Stop" in session.hooks_map
 
     def test_reload_calls_hook_loader(self, session):
         """reload_hooks() calls the loader to refresh hooks."""
-        session._hook_loader.load.return_value = _load_result({})
+        session.hooks._loader.load.return_value = _load_result({})
         session.reload_hooks()
         # Loader should have been called during reload (in addition to __init__)
-        assert session._hook_loader.load.call_count >= 1
+        assert session.hooks._loader.load.call_count >= 1
 
 
 class TestHooksReloadCommand:
@@ -82,7 +81,7 @@ class TestHooksReloadCommand:
         _start_patches(patches)
 
         session = Session(Settings(), project_dir=tmp_path)
-        session._hook_loader.load.return_value = _load_result(
+        session.hooks._loader.load.return_value = _load_result(
             {
                 "PreToolUse": [HookDefinition(type="command", command="echo test")],
             }

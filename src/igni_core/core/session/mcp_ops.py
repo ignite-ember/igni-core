@@ -23,12 +23,38 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, ItemsView
 from dataclasses import dataclass
 
 from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.mcp.schemas import MCPConnectResult
+from igni_core.core.session.schemas import McpServerStatus
 
 logger = logging.getLogger(__name__)
+
+
+class McpFailureCache:
+    """Why each MCP server's last connect failed, for status rendering.
+
+    Written by every site that calls ``mcp_manager.connect`` so ``/mcp`` and
+    the panel can show the reason without asking the manager afterwards.
+    """
+
+    def __init__(self) -> None:
+        self._reasons: dict[str, str] = {}
+
+    def record(self, name: str, result: MCPConnectResult | None) -> None:
+        """Cache a failed connect's reason; a success or a disconnect (``None``) clears it."""
+        if result is None or result.ok:
+            self._reasons.pop(name, None)
+        else:
+            self._reasons[name] = result.reason or ""
+
+    def reason(self, name: str) -> str:
+        return self._reasons.get(name, "")
+
+    def items(self) -> ItemsView[str, str]:
+        return self._reasons.items()
 
 
 @dataclass(frozen=True)
@@ -64,6 +90,15 @@ class McpLifecycleCoordinator:
 
     def __init__(self, deps: McpLifecycleDeps) -> None:
         self._deps = deps
+
+    def status(self) -> list[McpServerStatus]:
+        """One row per configured server, with whether it is connected."""
+        manager = self._deps.mcp_manager
+        connected = set(manager.list_connected())
+        return [
+            McpServerStatus(name=name, connected=name in connected)
+            for name in set(manager.list_servers())
+        ]
 
     async def disconnect(self, names: set[str]) -> None:
         """Disconnect MCP servers whose owning plugin was just disabled
@@ -146,6 +181,7 @@ class McpLifecycleCoordinator:
 
 
 __all__ = [
+    "McpFailureCache",
     "McpLifecycleCoordinator",
     "McpLifecycleDeps",
 ]

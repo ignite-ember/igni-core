@@ -85,7 +85,7 @@ class ContextController:
             cloud_connected=self._session.cloud_connected,
             cloud_org=self._session.cloud_org_name or "",
             cloud_email=self._session.cloud_email or "",
-            context_tokens=self._session.last_input_tokens,
+            context_tokens=self._session.context_budget.last_input_tokens,
             max_context=self._settings.models.max_context_window,
             permission_mode=self._session.permission_mode_value,
             theme=self._group_theme(),
@@ -157,7 +157,7 @@ class ContextController:
         n = TokenEstimate.of(messages)
         # Latch only when we actually measured something.
         if n > 0:
-            self._session.latch_input_tokens(n)
+            self._session.context_budget.latch(n)
         return n
 
     async def compact_if_needed(self, ctx_tokens: int, max_ctx: int) -> msg.SessionCleared | None:
@@ -183,8 +183,7 @@ class ContextController:
 
         Thin forward to :meth:`Session.extract_learnings` — the
         None-guard on the learning machine and the background-task
-        launch both live on :class:`Session`, so this coordinator
-        stops reaching into ``session._learning``.
+        launch both live on :class:`Session`.
         """
         await self._session.extract_learnings(user_msg, assistant_msg)
 
@@ -219,7 +218,7 @@ class ContextController:
         # The latched context-token count was computed against the
         # pre-truncate session; invalidate it so the next status
         # read recomputes from the new (shorter) history.
-        self._session.latch_input_tokens(0)
+        self._session.context_budget.latch(0)
         return TruncateHistoryResult(removed=removed)
 
     async def get_pending_messages(self, session_id: str) -> list[PendingMessage]:

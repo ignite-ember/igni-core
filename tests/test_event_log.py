@@ -14,24 +14,31 @@ import json as _json
 from unittest.mock import AsyncMock, MagicMock
 
 from igni_core.core.session.core import Session
+from igni_core.core.session.event_log import SessionEventLog
+from igni_core.core.session.event_log_schema import SessionEventDraft
 
 
 def _bare_session() -> Session:
     """Build a Session without running ``__init__`` — we only
     need the event-log attributes for these tests."""
     sess = Session.__new__(Session)
-    sess.event_log = []
-    sess._event_seq = 0
     sess.persistence = None
+    sess.event_log_store = SessionEventLog(persist_ref=lambda: sess.persistence)
     return sess
 
 
 class TestAppendEvent:
     async def test_seq_monotonic(self):
         sess = _bare_session()
-        await sess.append_event("visualization_delta", {"a": 1}, run_id="r1")
-        await sess.append_event("visualization_delta", {"a": 2}, run_id="r1")
-        await sess.append_event("visualization_delta", {"a": 3}, run_id="r2")
+        await sess.append_event(
+            SessionEventDraft(type="visualization_delta", payload={"a": 1}, run_id="r1")
+        )
+        await sess.append_event(
+            SessionEventDraft(type="visualization_delta", payload={"a": 2}, run_id="r1")
+        )
+        await sess.append_event(
+            SessionEventDraft(type="visualization_delta", payload={"a": 3}, run_id="r2")
+        )
 
         seqs = [e.seq for e in sess.event_log]
         assert seqs == [1, 2, 3]
@@ -42,13 +49,17 @@ class TestAppendEvent:
         # exactly what was live at emission time.
         sess = _bare_session()
         payload = {"json": "abc"}
-        await sess.append_event("visualization_delta", payload, run_id="r1")
+        await sess.append_event(
+            SessionEventDraft(type="visualization_delta", payload=payload, run_id="r1")
+        )
         payload["json"] = "MUTATED"
         assert sess.event_log[0].payload["json"] == "abc"
 
     async def test_carries_run_id_and_type(self):
         sess = _bare_session()
-        await sess.append_event("visualization_delta", {"x": 1}, run_id="run-42")
+        await sess.append_event(
+            SessionEventDraft(type="visualization_delta", payload={"x": 1}, run_id="run-42")
+        )
         entry = sess.event_log[0]
         assert entry.run_id == "run-42"
         assert entry.type == "visualization_delta"
@@ -62,8 +73,12 @@ class TestAppendEvent:
         sess.persistence = MagicMock()
         sess.persistence.save_event_log = AsyncMock()
 
-        await sess.append_event("visualization_delta", {"x": 1}, run_id="r1")
-        await sess.append_event("visualization_delta", {"x": 2}, run_id="r1")
+        await sess.append_event(
+            SessionEventDraft(type="visualization_delta", payload={"x": 1}, run_id="r1")
+        )
+        await sess.append_event(
+            SessionEventDraft(type="visualization_delta", payload={"x": 2}, run_id="r1")
+        )
 
         assert sess.persistence.save_event_log.await_count == 2
         # Last call sees BOTH entries — atomic-replace semantics.
@@ -79,7 +94,9 @@ class TestAppendEvent:
         sess.persistence = MagicMock()
         sess.persistence.save_event_log = AsyncMock(side_effect=RuntimeError("db down"))
 
-        await sess.append_event("visualization_delta", {"x": 1}, run_id="r1")
+        await sess.append_event(
+            SessionEventDraft(type="visualization_delta", payload={"x": 1}, run_id="r1")
+        )
 
         assert len(sess.event_log) == 1
         assert sess.event_log[0].payload == {"x": 1}

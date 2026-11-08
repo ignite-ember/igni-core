@@ -1,15 +1,21 @@
 """Tests for session/core.py — Session construction and message handling."""
 
+from types import SimpleNamespace
 from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from igni_core.core.agents.tool_check import UnresolvedAgentTools
 from igni_core.core.broadcast_schema import BroadcastEvent
+from igni_core.core.config.schemas.permissions import PermissionsConfig
 from igni_core.core.config.settings import Settings
 from igni_core.core.learn import LearnBootResult
+from igni_core.core.session.agent_builder.main_tools import MainToolSet
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
+from igni_core.core.session.mcp_resolver import MCPToolResolver
+from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.tools.plan import PlanSubmittedEvent
 from igni_core.core.utils import context as ctx_mod
 
@@ -64,18 +70,35 @@ def _session_patches(**overrides):
         "load_prompt": "You are an assistant.",
     }
     defaults.update(overrides)
+    return _patches_for(defaults)
 
+
+#: Where each patched name is looked up, when not only in ``session.core``.
+_PATCH_MODULES: dict[str, tuple[str, ...]] = {
+    "HookLoader": ("igni_core.core.session.hooks",),
+    "HookExecutor": ("igni_core.core.session.hooks",),
+    "ModelRegistry": (
+        "igni_core.core.session.core",
+        "igni_core.core.session.compaction.context_budget",
+    ),
+}
+
+
+def _patches_for(defaults: dict) -> list:
+    """One shared mock per name, patched into every module that looks it up.
+
+    Classes (uppercase first letter) get no return_value, so the mock acts
+    as a callable returning a fresh MagicMock.
+    """
     patches = []
     for name, rv in defaults.items():
-        target = f"igni_core.core.session.core.{name}"
-        # For classes (uppercase first letter), don't set return_value so
-        # the mock acts as a callable that returns a fresh MagicMock.
-        if name[0].isupper():
-            p = patch(target)
-            patches.append(p)
-        else:
-            patches.append(patch(target, return_value=rv))
-
+        shared = MagicMock() if name[0].isupper() else MagicMock(return_value=rv)
+        if name == "AgentPool":
+            # A mocked pool has no agents: an empty catalog, nothing unresolved.
+            shared.return_value.catalog_text.return_value = ""
+            shared.return_value.unresolved_tools.return_value = UnresolvedAgentTools()
+        for module in _PATCH_MODULES.get(name, ("igni_core.core.session.core",)):
+            patches.append(patch(f"{module}.{name}", new=shared))
     return patches
 
 
@@ -187,7 +210,7 @@ class TestSessionMessageHandling:
 
     @pytest.mark.asyncio
     async def test_handle_message_returns_response(self, session):
-        with patch("igni_core.core.session.core.extract_response_text", return_value="Hello!"):
+        with patch("igni_core.core.utils.response.extract_response_text", return_value="Hello!"):
             result = await session.handle_message("Hi there")
             assert result == "Hello!"
             # Message includes a UTC timestamp prefix
@@ -307,7 +330,7 @@ class TestSessionLearning:
             settings = Settings()
             settings.learning.enabled = False
             session = Session(settings, project_dir=tmp_path)
-            assert session._learning is None
+            assert session.learning is None
         finally:
             _stop_patches(patches)
 
@@ -319,7 +342,7 @@ class TestSessionLearning:
             settings = Settings()
             settings.learning.enabled = True
             session = Session(settings, project_dir=tmp_path)
-            assert session._learning is fake_lm
+            assert session.learning is fake_lm
         finally:
             _stop_patches(patches)
 
@@ -347,13 +370,13 @@ class TestSessionLearning:
             agent_cls = mocks["Agent"]
             assert agent_cls.called
             call_kwargs = agent_cls.call_args[1]
-            assert call_kwargs["learning"] is session._learning
+            assert call_kwargs["learning"] is session.learning
             assert call_kwargs["add_learnings_to_context"] is True
         finally:
             _stop_patches(patches)
 
     def test_learning_not_passed_when_disabled(self, tmp_path):
-        """With learning disabled, ``self._learning`` stays ``None`` and the
+        """With learning disabled, ``session.learning`` stays ``None`` and the
         Agent receives ``learning=None`` — no ``update_user_memory`` tool."""
         patches = _session_patches()
         mocks = {}
@@ -400,14 +423,7 @@ def _patches_with_real_context_loader():
         "Agent": None,
         "load_prompt": "You are an assistant.",
     }
-    patches = []
-    for name, rv in overrides.items():
-        target = f"igni_core.core.session.core.{name}"
-        if name[0].isupper():
-            patches.append(patch(target))
-        else:
-            patches.append(patch(target, return_value=rv))
-    return patches
+    return _patches_for(overrides)
 
 
 def _agent_instructions(agent_mock) -> list[str]:
@@ -608,10 +624,10 @@ class TestRulesReachAgent:
             _stop_patches(patches)
 
 
-# ── Session._queue_rewake (asyncRewake callback target) ───────
+# ── session.reminders (asyncRewake callback target) ───────────
 #
-# Background hooks that exit-2 fire ``_queue_rewake(text)`` → the
-# text buffers in ``_pending_reminders`` until the next
+# Background hooks that exit-2 fire ``reminders.queue(text)`` → the
+# text buffers in ``reminders.pending`` until the next
 # ``handle_message`` turn drains it (we can't interrupt an
 # in-flight response). The executor side is tested in
 # ``test_hook_async_rewake.py``; these lock down the Session-side
@@ -619,11 +635,11 @@ class TestRulesReachAgent:
 
 
 class TestSessionQueueRewake:
-    """Direct unit tests for ``Session._queue_rewake``."""
+    """Direct unit tests for the session's :class:`PendingReminderQueue`."""
 
     def _bare_session(self):
         session = Session.__new__(Session)
-        session._pending_reminders = []
+        session.reminders = PendingReminderQueue()
         return session
 
     def test_empty_text_is_dropped(self):
@@ -632,13 +648,13 @@ class TestSessionQueueRewake:
         # that prepends ``\n\n`` to the next turn and confuses
         # the agent. Empty → no-op.
         session = self._bare_session()
-        session._queue_rewake("")
-        assert session._pending_reminders == []
+        session.reminders.queue("")
+        assert session.reminders.pending == []
 
     def test_appends_single_reminder(self):
         session = self._bare_session()
-        session._queue_rewake("the hook reported")
-        assert session._pending_reminders == ["the hook reported"]
+        session.reminders.queue("the hook reported")
+        assert session.reminders.pending == ["the hook reported"]
 
     def test_accumulates_in_call_order(self):
         # Two background hooks landing in the same gap between
@@ -648,13 +664,13 @@ class TestSessionQueueRewake:
         # the contract so an accidental swap to a set would
         # trip it.
         session = self._bare_session()
-        session._queue_rewake("first")
-        session._queue_rewake("second")
-        session._queue_rewake("third")
-        assert session._pending_reminders == ["first", "second", "third"]
+        session.reminders.queue("first")
+        session.reminders.queue("second")
+        session.reminders.queue("third")
+        assert session.reminders.pending == ["first", "second", "third"]
 
 
-# ── Session._mcp_resolver (mcp_tool hook target) ──────────────
+# ── MCPToolResolver (mcp_tool hook target) ────────────────────
 #
 # Resolver passed to ``HookExecutor`` so ``mcp_tool``-type hooks
 # can invoke MCP tools without the executor knowing about the
@@ -665,25 +681,24 @@ class TestSessionQueueRewake:
 
 
 class TestSessionMcpResolver:
-    """``Session._mcp_resolver(server, tool)`` walks
-    ``self.mcp_manager._clients[server].functions[tool]`` and
+    """The hooks' resolver walks
+    ``mcp_manager._clients[server].functions[tool]`` and
     returns ``None`` at the first missing hop."""
 
     def _bare_session(self):
-        return Session.__new__(Session)
+        session = SimpleNamespace(mcp_manager=None)
+        session.resolve = MCPToolResolver(lambda: session.mcp_manager).resolve
+        return session
 
     def test_returns_none_when_manager_absent(self):
-        # The manager attribute may be unset entirely (MCP
-        # compiled out, or session built before MCP init
-        # completes). ``getattr`` with default None makes the
-        # chain safe.
-        session = self._bare_session()
-        assert session._mcp_resolver("slack", "send") is None
+        # MCP compiled out, or the session built before MCP init
+        # completes.
+        assert MCPToolResolver(lambda: None).resolve("slack", "send") is None
 
     def test_returns_none_when_manager_is_none(self):
         session = self._bare_session()
         session.mcp_manager = None
-        assert session._mcp_resolver("slack", "send") is None
+        assert session.resolve("slack", "send") is None
 
     def test_returns_none_when_server_not_in_clients(self):
         # Manager present + has _clients, but the named server
@@ -693,7 +708,7 @@ class TestSessionMcpResolver:
         manager = MagicMock()
         manager._clients = {}
         session.mcp_manager = manager
-        assert session._mcp_resolver("missing", "any") is None
+        assert session.resolve("missing", "any") is None
 
     def test_returns_none_when_tool_not_in_functions(self):
         # Server connected, but doesn't expose the named tool
@@ -704,7 +719,7 @@ class TestSessionMcpResolver:
         manager = MagicMock()
         manager._clients = {"slack": client}
         session.mcp_manager = manager
-        assert session._mcp_resolver("slack", "send_message") is None
+        assert session.resolve("slack", "send_message") is None
 
     def test_returns_function_when_fully_resolved(self):
         # Happy path — function found, returned for the executor
@@ -717,7 +732,7 @@ class TestSessionMcpResolver:
         manager = MagicMock()
         manager._clients = {"slack": client}
         session.mcp_manager = manager
-        assert session._mcp_resolver("slack", "send_message") is target
+        assert session.resolve("slack", "send_message") is target
 
     def test_returns_none_when_client_has_no_functions_attr(self):
         # Older client classes didn't expose ``functions``.
@@ -729,7 +744,7 @@ class TestSessionMcpResolver:
         manager = MagicMock()
         manager._clients = {"slack": client}
         session.mcp_manager = manager
-        assert session._mcp_resolver("slack", "send") is None
+        assert session.resolve("slack", "send") is None
 
 
 # ── Session.broadcast + register_broadcast_callback ──────────
@@ -894,26 +909,16 @@ class TestMainTeamToolkit:
     """
 
     @staticmethod
-    def _stub_session(
+    def _tool_set(
         *,
         web: str = "ask",
         fetch: str = "ask",
-    ):
-        """Cheap stub: just enough state for
-        ``_resolve_main_tool_names`` to run, without booting Agno,
-        the DB, etc. The method only reads ``settings.permissions``."""
-        session = Session.__new__(Session)
-        permissions = MagicMock()
-        permissions.web_search = web
-        permissions.web_fetch = fetch
-        settings = MagicMock()
-        settings.permissions = permissions
-        session.settings = settings
-        return session
+    ) -> MainToolSet:
+        return MainToolSet(PermissionsConfig(web_search=web, web_fetch=fetch))
 
     @staticmethod
     def _stub_registry():
-        """ToolRegistry stub — ``_resolve_main_tool_names`` only
+        """ToolRegistry stub — :class:`MainToolSet` only
         uses ``.resolve([...])`` to probe whether a tool's
         dependencies are importable. Return a no-op success so
         every optional tool gets added when its permission/flag
@@ -922,8 +927,8 @@ class TestMainTeamToolkit:
         return MagicMock(resolve=MagicMock(return_value=[]))
 
     def test_core_toolkit_is_shell_first(self):
-        session = self._stub_session()
-        names = session._resolve_main_tool_names(self._stub_registry())
+        tool_set = self._tool_set()
+        names = tool_set.names(self._stub_registry())
         # The 5 always-on tools — shell-first design.
         for required in ("Write", "Edit", "Bash", "Schedule", "NotebookEdit"):
             assert required in names, f"main team must always include {required}"
@@ -933,8 +938,8 @@ class TestMainTeamToolkit:
         # (available to sub-agents that opt in). They MUST NOT
         # appear in the main team's toolkit. A regression here
         # silently re-introduces tool overlap with Bash.
-        session = self._stub_session()
-        names = session._resolve_main_tool_names(self._stub_registry())
+        tool_set = self._tool_set()
+        names = tool_set.names(self._stub_registry())
         for forbidden in ("Read", "Grep", "Glob", "LS", "Python"):
             assert forbidden not in names, (
                 f"{forbidden} is registry-only — sub-agents opt in via "
@@ -946,27 +951,27 @@ class TestMainTeamToolkit:
         # ``permissions.web_search: deny`` (e.g. ``--no-web`` CLI
         # flag) hides the WebSearch toolkit from the agent's
         # catalog entirely. Same for WebFetch.
-        session = self._stub_session(web="deny", fetch="deny")
-        names = session._resolve_main_tool_names(self._stub_registry())
+        tool_set = self._tool_set(web="deny", fetch="deny")
+        names = tool_set.names(self._stub_registry())
         assert "WebSearch" not in names
         assert "WebFetch" not in names
 
     def test_web_tools_included_when_allowed(self):
-        session = self._stub_session(web="ask", fetch="ask")
-        names = session._resolve_main_tool_names(self._stub_registry())
+        tool_set = self._tool_set(web="ask", fetch="ask")
+        names = tool_set.names(self._stub_registry())
         assert "WebSearch" in names
         assert "WebFetch" in names
 
     def test_web_tools_silently_skipped_on_import_error(self):
         # Optional extras may not be installed (e.g. headless
         # builds without DuckDuckGo). The registry raises
-        # ``ImportError``; ``_resolve_main_tool_names`` swallows
+        # ``ImportError``; :class:`MainToolSet` swallows
         # it and just omits the tool — no crash, no warning to
         # the user that doesn't want the dep anyway.
-        session = self._stub_session(web="ask", fetch="ask")
+        tool_set = self._tool_set(web="ask", fetch="ask")
         registry = MagicMock()
         registry.resolve = MagicMock(side_effect=ImportError("no ddgs"))
-        names = session._resolve_main_tool_names(registry)
+        names = tool_set.names(registry)
         assert "WebSearch" not in names
         assert "WebFetch" not in names
         # Core tools still landed.
@@ -974,15 +979,15 @@ class TestMainTeamToolkit:
 
     def test_igni_has_no_codeindex_tool(self):
         """CodeIndex is an extension: its tool reaches the agent over MCP."""
-        names = self._stub_session()._resolve_main_tool_names(self._stub_registry())
+        names = self._tool_set().names(self._stub_registry())
         assert "CodeIndex" not in names
 
     def test_core_tools_constant_is_immutable(self):
         # The 5-tool core is class-level + a tuple so a future
-        # contributor can't accidentally ``Session._MAIN_CORE_TOOLS
+        # contributor can't accidentally ``MainToolSet.CORE
         # .append("Read")`` and silently regress the design.
-        assert isinstance(Session._MAIN_CORE_TOOLS, tuple)
-        assert Session._MAIN_CORE_TOOLS == (
+        assert isinstance(MainToolSet.CORE, tuple)
+        assert MainToolSet.CORE == (
             "Write",
             "Edit",
             "Bash",

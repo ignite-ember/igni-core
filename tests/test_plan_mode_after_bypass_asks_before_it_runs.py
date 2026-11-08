@@ -29,6 +29,7 @@ from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
 from igni_core.core.tools.registry import ToolRegistry
+from tests.session_coordinators import wire_coordinators
 
 
 class _SilentExecutor(HookExecutor):
@@ -57,9 +58,11 @@ def _started_in(mode: str, tmp_path: Path):
     agent = SimpleNamespace(name="main", tools=[shell])
 
     session = Session.__new__(Session)
+
     session.settings = settings
     session.broadcast_bus = BroadcastBus()
     session.permission_evaluator = PermissionEvaluator.from_strings(mode=mode)
+    wire_coordinators(session)
     return session, agent
 
 

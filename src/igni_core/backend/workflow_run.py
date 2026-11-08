@@ -28,6 +28,7 @@ from igni_core.backend.schemas_workflows import (
 from igni_core.backend.workflow_agent_bridge import WorkflowAgentBridge
 from igni_core.backend.workflow_runtime_process import WorkflowRuntimeProcess
 from igni_core.core.activity import background
+from igni_core.core.session.event_log_schema import SessionEventDraft
 from igni_core.protocol.schemas.enums import PushChannel
 
 if TYPE_CHECKING:
@@ -50,7 +51,9 @@ class WorkflowEventSink:
 
     async def publish(self, record: WorkflowEventRecord) -> None:
         try:
-            await self._session.append_event(PushChannel.WORKFLOW_EVENT.value, record.model_dump())
+            await self._session.append_event(
+                SessionEventDraft.of(PushChannel.WORKFLOW_EVENT.value, record)
+            )
         except Exception:  # a failed persist must not stop the push
             logger.exception("workflow event persist failed for %s", record.workflow_run_id)
         self._push.workflow_event(record)

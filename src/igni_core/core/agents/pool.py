@@ -34,13 +34,17 @@ from igni_core.core.agents.schemas import (
     LoadReport,
     McpClient,
 )
+from igni_core.core.agents.tool_check import UnresolvedAgentTool, UnresolvedAgentTools
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
 from igni_core.core.prompts.contributions import PromptContributions, prompt_contributions
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
+from igni_core.core.tools.tool_spec import ToolResolutionRequest
 
 if TYPE_CHECKING:
     from agno.agent import Agent
+
+    from igni_core.core.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -320,6 +324,29 @@ class AgentPool:
                 f"- **{defn.name}**: {defn.description} [tools: {tools_str}] [tags: {tags_str}]"
             )
         return "\n".join(lines)
+
+    def catalog_text(self) -> str:
+        """The specialist-agent catalog for the main agent's system prompt."""
+        lines = []
+        for defn in self.list_agents():
+            tools_str = ", ".join(defn.tools) if defn.tools else "none"
+            lines.append(f"- **{defn.name}**: {defn.description} (tools: {tools_str})")
+        return "\n".join(lines)
+
+    def unresolved_tools(self, registry: ToolRegistry) -> UnresolvedAgentTools:
+        """Agents naming tools ``registry`` cannot resolve.
+
+        Trustworthy only once the pools are built: custom Python tools
+        register when they are discovered.
+        """
+        entries = []
+        for defn in self.list_agents():
+            if not defn.tools:
+                continue
+            result = registry.resolve_typed(ToolResolutionRequest(tool_names=list(defn.tools)))
+            if result.unknown:
+                entries.append(UnresolvedAgentTool(agent=defn.name, tools=list(result.unknown)))
+        return UnresolvedAgentTools(entries=entries, available=list(registry.available_tools))
 
     def get_member_agents(self) -> list[Agent]:
         """Every agent as a list (team-member composition)."""

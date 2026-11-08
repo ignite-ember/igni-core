@@ -26,6 +26,7 @@ from igni_core.backend.controller_registry import ControllerRegistry, Controller
 from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustController, reload_settings
 from igni_core.core.broadcast_schema import BroadcastSink
+from igni_core.core.session.event_log_schema import SessionEvent, SessionEventDraft
 from igni_core.core.session.schemas import PersistResult
 from igni_core.protocol import messages as msg
 
@@ -54,7 +55,6 @@ if TYPE_CHECKING:
     from igni_core.core.plugins.models import MarketplaceInfo, PluginInfo
     from igni_core.core.scheduler.models import ScheduledTask
     from igni_core.core.session.core import Session
-    from igni_core.core.session.event_log_schema import SessionEvent
     from igni_core.core.session.queued_messages import DurableMessageQueue
     from igni_core.core.session.schemas import McpServerStatus
     from igni_core.core.skills import SkillPool
@@ -190,7 +190,7 @@ class BackendServer:
         await self.controllers.lifecycle.shutdown()
 
     def start_boot_background_services(self) -> None:
-        self._session.start_boot_background_services()
+        self._session.start_marketplace_refresh_background()
 
     def register_broadcast(self, subscriber: BroadcastSink) -> None:
         self._session.broadcast_bus.register(subscriber)
@@ -227,7 +227,7 @@ class BackendServer:
         self.controllers.runs.cancel_run()
 
     def consume_plan_research_flag(self) -> bool:
-        return self._session.consume_plan_research_flag()
+        return self._session.plan.consume_research_flag()
 
     async def resolve_hitl_batch(
         self, decisions: list[msg.HITLDecision]
@@ -276,7 +276,9 @@ class BackendServer:
 
     async def record_event(self, event_type: str, payload: dict, run_id: str = "") -> None:
         """Keep an event in the session's log, which a reload replays."""
-        await self._session.append_event(event_type, payload, run_id)
+        await self._session.append_event(
+            SessionEventDraft(type=event_type, payload=payload, run_id=run_id)
+        )
 
     def session_events(self, event_type: str) -> list[SessionEvent]:
         """The session's logged events of one type, oldest first."""

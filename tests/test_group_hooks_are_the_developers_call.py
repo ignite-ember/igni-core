@@ -473,29 +473,40 @@ class TestNoPathAroundTheGate:
         assert sites == ["core/hooks/handlers/registry.py"]
 
     def test_the_session_hands_its_executors_a_gate(self):
-        source = (SRC / "core" / "session" / "core.py").read_text(encoding="utf-8")
+        """:class:`SessionHooks` is the one place a session builds an executor."""
+        source = (SRC / "core" / "session" / "hooks.py").read_text(encoding="utf-8")
         constructions = source.count("HookExecutor(")
 
         assert constructions >= 1
-        assert source.count("group_hook_gate=self._group_hook_gate()") == constructions
+        assert source.count("group_hook_gate=self._gate") == constructions
+        session_source = (SRC / "core" / "session" / "core.py").read_text(encoding="utf-8")
+        assert "HookExecutor(" not in session_source
 
-    def test_the_sessions_gate_reads_the_live_setting(self):
-        from igni_core.core.session.core import Session
+    def test_the_sessions_gate_reads_the_live_setting(self, tmp_path: Path):
+        from igni_core.core.session.hooks import SessionHooks
+        from igni_core.core.session.mcp_resolver import MCPToolResolver
+        from igni_core.core.session.reminders import PendingReminderQueue
 
-        class Holder:
-            settings = load_settings()
+        async def nobody(*_: Any, **__: Any) -> bool | None:
+            return None
 
-            async def _ask_about_tool_call(self, *_: Any) -> bool | None:
-                return None
-
-        holder = Holder()
-        gate = Session._group_hook_gate(holder)  # type: ignore[arg-type]
+        settings = load_settings()
+        hooks = SessionHooks(
+            project_dir=tmp_path,
+            settings=settings,
+            group_hooks_dir=tmp_path / "group-hooks",
+            reminders=PendingReminderQueue(),
+            resolver=MCPToolResolver(lambda: None),
+            ask=nobody,
+        )
+        gate = hooks.gate
         assert gate.mode() == "run"
 
-        holder.settings.hooks.group = "refuse"
+        settings.hooks.group = "refuse"
 
         assert gate.mode() == "refuse"
-        assert Session._group_hook_gate(holder) is gate  # type: ignore[arg-type]
+        hooks.reload()
+        assert hooks.gate is gate
 
 
 class TestStrictSaysSo:

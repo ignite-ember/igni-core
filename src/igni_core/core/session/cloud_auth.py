@@ -1,7 +1,6 @@
 """Cloud auth coordinator for :class:`Session`.
 
-Extracted from :mod:`igni_core.core.session.core` — the pair of
-private fields (``_cloud``, ``_cloud_server_url``) plus the four
+Owns the session's cloud credentials and server URL, the
 public accessors (``cloud_connected`` / ``cloud_org_id`` /
 ``cloud_org_name`` / ``cloud_access_token`` / ``cloud_server_url``)
 plus the credential-swap invariant (``replace_cloud_credentials``
@@ -57,11 +56,7 @@ class SessionCloudAuth:
 
     @property
     def credentials(self) -> CloudCredentials:
-        """Return the live :class:`CloudCredentials` object.
-
-        Exposed so legacy call sites that used to read
-        ``session._cloud`` have a public accessor to migrate onto.
-        """
+        """Return the live :class:`CloudCredentials` object."""
         return self._creds
 
     @property
@@ -109,9 +104,7 @@ class SessionCloudAuth:
         up the new token.
 
         Owns the two-line invariant (assign creds first, then
-        rebuild) so external callers stop reaching into
-        ``session._cloud`` and ``session._build_main_agent()`` by
-        name.
+        rebuild) in one place.
         """
         self._creds = creds
         self._rebuild_team()

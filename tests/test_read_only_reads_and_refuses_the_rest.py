@@ -222,7 +222,7 @@ def test_the_session_evaluator_carries_the_flag(tmp_path):
         settings=load_settings(cli_overrides=payload),
         rules_index=MagicMock(),
         project_dir=tmp_path,
-        hook_executor_ref=MagicMock(),
+        hooks=MagicMock(),
         session_id_ref=lambda: "s",
     )
     assert factory.permission_evaluator.read_only is True

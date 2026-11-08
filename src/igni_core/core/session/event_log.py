@@ -1,8 +1,7 @@
 """Append-only event log coordinator for :class:`Session`.
 
-Extracted from :mod:`igni_core.core.session.core` — the
-``event_log`` / ``_event_seq`` / ``append_event`` /
-``restore_event_log`` orbit graduates to a dedicated class here.
+Owns the session's ``event_log``, its ``seq`` counter, ``append`` and
+``restore``.
 
 Owns the "seq monotonic within a session" invariant: every append
 increments the counter before the event is built, so persisted
@@ -22,7 +21,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from igni_core.core.session.event_log_schema import SessionEvent
+from igni_core.core.session.event_log_schema import SessionEvent, SessionEventDraft
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +44,8 @@ class SessionEventLog:
         self._seq: int = 0
         self._persist_ref = persist_ref or (lambda: None)
 
-    async def append(
-        self,
-        event_type: str,
-        payload: dict[str, Any],
-        run_id: str = "",
-    ) -> None:
-        """Record ``(type, payload)`` on the log and persist.
+    async def append(self, draft: SessionEventDraft) -> None:
+        """Record ``draft`` on the log and persist.
 
         The counter is incremented BEFORE the event is built so a
         concurrent read of :attr:`events` mid-append never sees a
@@ -60,12 +54,7 @@ class SessionEventLog:
         live clients.
         """
         self._seq += 1
-        event = SessionEvent.build(
-            seq=self._seq,
-            event_type=event_type,
-            payload=payload,
-            run_id=run_id,
-        )
+        event = draft.stamped(self._seq)
         self._events.append(event)
         persistence = self._persist_ref()
         if persistence is None:

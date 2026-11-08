@@ -78,7 +78,7 @@ def _make_handler(tmp_path: Path) -> CommandHandler:
     # A real session answers None when the group ships no commands. Left
     # as a bare MagicMock it would hand the loader a Mock to scan, which
     # is neither of the two states the code has to handle.
-    session.group_root.return_value = None
+    session.group_policy.shipped_dir.return_value = None
     return CommandHandler(session)
 
 

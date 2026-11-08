@@ -30,7 +30,7 @@ class AgentsPanelController:
     def snapshot(self) -> list[AgentInfo]:
         """Snapshot of every loaded agent for the panel UI."""
         pool = self._session.pool
-        unknown = self._session.unknown_agent_tools()
+        unknown = self._session.agent_tool_check.by_agent()
         results: list[AgentInfo] = []
         for defn in pool.list_agents():
             results.append(

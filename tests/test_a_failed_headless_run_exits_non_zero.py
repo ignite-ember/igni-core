@@ -23,6 +23,7 @@ from igni_core.core.config.null_model import NoModelConfigured
 from igni_core.core.config.settings import Settings
 from igni_core.core.guardrails.runner import GuardrailRunner
 from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.session.compaction.context_budget import ContextBudget
 from igni_core.core.session.message_handler import SessionMessageHandler
 from igni_core.core.session.runner import run_single_message
 from igni_core.core.session.single_message_run import SingleMessageRun
@@ -41,7 +42,7 @@ class _Team:
 def _session(team: Any) -> MagicMock:
     display = MagicMock()
     handler = SessionMessageHandler(
-        hook_executor=HookExecutor({}),
+        hooks=SimpleNamespace(executor=HookExecutor({})),
         audit=MagicMock(),
         display=display,
         guardrail_runner=GuardrailRunner(Settings()),
@@ -50,8 +51,7 @@ def _session(team: Any) -> MagicMock:
         compact_hook=AsyncMock(return_value=False),
         ensure_mcp=AsyncMock(),
         session_id_ref=lambda: "s1",
-        context_window_ref=lambda: 100_000,
-        latch_input_tokens=lambda _tokens: None,
+        budget=ContextBudget(window=100_000),
     )
     session = MagicMock()
     session.session_id = "s1"

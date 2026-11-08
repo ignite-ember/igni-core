@@ -79,7 +79,7 @@ class SessionCommand:
         self._session.rotate_id(new_id)
         # Latched ctx counter belongs to the previous conversation;
         # the backend reads this and exposes get_status().
-        self._session.latch_input_tokens(0)
+        self._session.context_budget.latch(0)
 
         background.start(
             self._revalidate_group(), holder="session", reason="revalidating the group"
@@ -126,7 +126,7 @@ class SessionCommand:
         # ``session_named`` is documented as "resumed *or has been
         # renamed*", and only ``/fork`` and ``rebind`` ever set it. A
         # name the user chose must outrank an auto-generated one.
-        self._session.session_named = True
+        self._session.identity.mark_named()
         return CommandResult.info(f"Session renamed to: {name}")
 
     async def fork(self, args: str) -> CommandResult:
@@ -146,7 +146,7 @@ class SessionCommand:
         # Re-bind every component that holds the active session id
         # so the next user turn lands in the fork, not the source.
         self._session.rotate_id(new_id)
-        self._session.session_named = bool(name)
+        self._session.identity.set_named(bool(name))
         return CommandResult.fork(new_id)
 
     # ── Private helpers ──────────────────────────────────────────
@@ -159,7 +159,7 @@ class SessionCommand:
         the previous one had. Inside the fire-and-forget task, so the
         command returns immediately either way.
         """
-        hook = getattr(self._session, "on_new_dialogue", None)
+        hook = self._session.on_new_dialogue
         if hook is None:
             return
         with contextlib.suppress(Exception):

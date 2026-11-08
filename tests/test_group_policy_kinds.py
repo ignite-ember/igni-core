@@ -362,15 +362,25 @@ class TestWhatTheGroupStopsShipping:
         assert not (cache.layout.dir_for("commands") / "ship.md").exists()
 
 
-def test_the_session_knows_where_each_kind_lives(tmp_path: Path):
+def test_the_layout_knows_where_each_kind_lives(tmp_path: Path):
     """One method answers it, so eight loaders cannot disagree."""
-    from igni_core.core.session.core import Session
+    layout = GroupPolicyLayout.for_data_dir(tmp_path)
 
-    session = Session.__new__(Session)
-    session._group_policy = GroupPolicyLayout.for_data_dir(tmp_path)
+    assert layout.dir_for("skills") == tmp_path / "group-policy" / "skills"
+    assert layout.dir_for("workflows") == tmp_path / "group-policy" / "workflows"
 
-    assert session.group_dir_for("skills") == tmp_path / "group-policy" / "skills"
-    assert session.group_dir_for("workflows") == tmp_path / "group-policy" / "workflows"
+
+def test_a_kind_ships_only_when_its_directory_has_something(tmp_path: Path):
+    layout = GroupPolicyLayout.for_data_dir(tmp_path)
+    assert layout.ships("skills") is False
+    assert layout.shipped_dir("skills") is None
+
+    layout.ensure_dir("skills")
+    assert layout.shipped_dir("skills") is None
+
+    (layout.dir_for("skills") / "x.md").write_text("x", encoding="utf-8")
+    assert layout.ships("skills") is True
+    assert layout.shipped_dir("skills") == layout.dir_for("skills")
 
 
 class TestWhatIgniShipsStandsDown:

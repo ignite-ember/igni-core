@@ -121,7 +121,7 @@ class MarkdownCommandDispatcher:
             commands = self._discover(
                 self._session.project_dir,
                 read_claude=read_claude,
-                group_dir=self._session.group_root("commands"),
+                group_dir=self._session.group_policy.shipped_dir("commands"),
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("Markdown command discovery failed: %s", exc)

@@ -74,7 +74,7 @@ return { ok: true }
     # workflow_completed. We assert >=4 because the log event is
     # a "capture for diagnostics" path that the reducer ignores.
     assert session.append_event.await_count >= 4
-    types = [c.args[1]["type"] for c in session.append_event.await_args_list]
+    types = [c.args[0].payload["type"] for c in session.append_event.await_args_list]
     assert "workflow_started" in types
     assert "phase_started" in types
     assert "phase_completed" in types

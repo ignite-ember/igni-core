@@ -176,7 +176,7 @@ class InteractiveCommandDispatcher:
                 tools = mgr.get_tools(status.name)
                 lines.append(f"- ● {status.name} — connected ({len(tools)} tools)")
             else:
-                error = failures.get(status.name, "")
+                error = failures.reason(status.name)
                 detail = f"error: {error}" if error else "disconnected"
                 lines.append(f"- ○ {status.name} — {detail}")
         display.print_markdown("\n".join(lines))
