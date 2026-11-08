@@ -17,13 +17,16 @@ set, on PostgreSQL (``tests/storage_backends.py``):
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 from agno.models.response import ToolExecution
 from agno.run.requirement import RunRequirement
 
 from igni_core.backend.hitl_controller import HitlController
+from igni_core.backend.host_backend import OrchestratorHostBackend
 from igni_core.backend.pause_handler import PauseHandler
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.backend.session_pool import SessionRuntime
@@ -34,6 +37,7 @@ from igni_core.core.hooks.queue import QueueBridge
 from igni_core.core.session.queued_messages import DurableMessageQueue, QueuedMessageStore
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
+from tests.backend_server_factory import make_backend
 from tests.storage_backends import Scopes
 
 SESSION = "s1"
@@ -298,7 +302,7 @@ async def test_a_window_attaching_is_shown_what_waits(database_url: DatabaseUrl)
     )
     transport = RecordingTransport()
     runtime = SessionRuntime(
-        backend=SimpleNamespace(hitl=restarted),  # type: ignore[arg-type]
+        backend=SimpleNamespace(controllers=SimpleNamespace(hitl=restarted)),  # type: ignore[arg-type]
         rpc_table={},
         queue=[],
         transport=transport,
@@ -308,3 +312,34 @@ async def test_a_window_attaching_is_shown_what_waits(database_url: DatabaseUrl)
     assert isinstance(shown, msg.RunPaused)
     assert shown.run_id == "run-6"
     assert shown.requirements[0].tool_args == {"command": "make deploy"}
+
+
+async def test_the_host_model_sees_a_real_backends_waiting_approval(
+    database_url: DatabaseUrl, tmp_path: Path
+):
+    """The host's ``waiting_approvals`` reads the approvals of a real
+    :class:`BackendServer`, reached through its controllers."""
+    db = Database(database_url, scope=Scopes.fresh())
+    store = _store(db)
+    PauseHandler(evaluator=None, store=store).handle(
+        SimpleNamespace(run_id="run-7", active_requirements=[_requirement("call-7")])
+    )
+    session = MagicMock()
+    session.session_id = SESSION
+    session.sub_agent_hitl = SubAgentHITLCoordinator()
+    backend = make_backend(session, settings=MagicMock(), hitl_store=store)
+    runtime = SessionRuntime(
+        backend=backend, rpc_table={}, queue=[], transport=RecordingTransport()
+    )
+    host = OrchestratorHostBackend(
+        orchestrator=SimpleNamespace(pool=SimpleNamespace(find=lambda _: runtime)),  # type: ignore[arg-type]
+        transport=MagicMock(),
+        project_dir=tmp_path,
+        client_state=None,
+    )
+
+    (waiting,) = host.waiting_approvals(SESSION)
+
+    assert isinstance(waiting, msg.RunPaused)
+    assert waiting.run_id == "run-7"
+    assert waiting.requirements[0].tool_args == {"command": "make deploy"}

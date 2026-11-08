@@ -32,38 +32,26 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from igni_core.backend.server import BackendServer
+from igni_core.backend.hitl_controller import HitlController
+from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.core.config.permission_eval import PermissionDecision, PermissionEvaluator
 from igni_core.core.paths import CONFIG_DIR
 
 
-def _make_server(project_dir: Path, with_evaluator: bool = False) -> BackendServer:
-    """Build a BackendServer shell that can call
-    ``_maybe_persist_choice``. Skips Agno / persistence init
-    — we only need ``self._session.project_dir`` for the
-    ToolPermissions constructor.
+def _make_hitl(project_dir: Path, evaluator: PermissionEvaluator | None = None) -> HitlController:
+    """A :class:`HitlController` that can run ``maybe_persist_choice``.
+    Skips Agno / persistence init — only ``session.project_dir`` is
+    needed for the ToolPermissions constructor.
 
-    ``with_evaluator=True`` attaches a real ``PermissionEvaluator``
-    to ``self._session.permission_evaluator`` so tests can verify
-    the in-memory patch that stops the next-call re-prompt loop."""
-    from igni_core.backend.pending_requirements_store import PendingRequirementsStore
-
-    server = BackendServer.__new__(BackendServer)
-    evaluator = PermissionEvaluator.from_strings() if with_evaluator else None
-    server._session = SimpleNamespace(
-        project_dir=project_dir,
-        permission_evaluator=evaluator,
-    )
-    # HitlController takes a PendingRequirementsStore; tests exercise
-    # the persist-choice path only, so a fresh empty store is enough.
-    server._hitl_store = PendingRequirementsStore()
-    server._stream_with_subagent_hitl = None
-    return server
+    A real ``evaluator`` lets tests verify the in-memory patch that
+    stops the next-call re-prompt loop."""
+    session = SimpleNamespace(project_dir=project_dir, permission_evaluator=evaluator)
+    return HitlController(session=session, store=PendingRequirementsStore())  # type: ignore[arg-type]
 
 
 def _requirement_for(tool_name: str, tool_args: dict) -> MagicMock:
     """Build a fake requirement with a ``tool_execution`` sub-
-    object shaped like Agno's. ``_maybe_persist_choice`` reads
+    object shaped like Agno's. ``maybe_persist_choice`` reads
     ``req.tool_execution.tool_name`` + ``.tool_args``."""
     req = MagicMock()
     req.tool_execution = SimpleNamespace(tool_name=tool_name, tool_args=tool_args)
@@ -85,9 +73,9 @@ class TestAlwaysAllowPersists:
         # should persist as an allow rule keyed to that exact
         # command. The user's shell command should never prompt
         # again on this project.
-        server = _make_server(tmp_path)
+        hitl = _make_hitl(tmp_path)
         req = _requirement_for("run_shell_command", {"command": "python3 -m http.server 8000"})
-        server._maybe_persist_choice(SimpleNamespace(choice="always"), req)
+        hitl.maybe_persist_choice(SimpleNamespace(choice="always"), req)
 
         saved = _load_saved_rules(tmp_path)
         assert "Bash(python3 -m http.server 8000)" in saved.get("allow", []), (
@@ -106,26 +94,26 @@ class TestAlwaysAllowPersists:
         # session's PermissionEvaluator can actually match against
         # the raw command string — see build_pattern_rule for the
         # matcher-mismatch bug this format guards.
-        server = _make_server(tmp_path)
+        hitl = _make_hitl(tmp_path)
         req = _requirement_for("run_shell_command", {"command": "python3 -m http.server 8000"})
-        server._maybe_persist_choice(SimpleNamespace(choice="similar"), req)
+        hitl.maybe_persist_choice(SimpleNamespace(choice="similar"), req)
         saved = _load_saved_rules(tmp_path)
         assert "Bash(python3 *)" in saved.get("allow", [])
 
     def test_once_persists_nothing(self, tmp_path: Path) -> None:
         # "Allow once" is per-invocation; no sticky rule.
-        server = _make_server(tmp_path)
+        hitl = _make_hitl(tmp_path)
         req = _requirement_for("run_shell_command", {"command": "ls"})
-        server._maybe_persist_choice(SimpleNamespace(choice="once"), req)
+        hitl.maybe_persist_choice(SimpleNamespace(choice="once"), req)
 
         assert _load_saved_rules(tmp_path) == {}, "'once' must not leak a persisted rule"
 
     def test_deny_writes_specific_deny_rule(self, tmp_path: Path) -> None:
         # "Deny" (from the reject branch) writes a persistent
         # deny that blocks the same command next time.
-        server = _make_server(tmp_path)
+        hitl = _make_hitl(tmp_path)
         req = _requirement_for("run_shell_command", {"command": "rm -rf /"})
-        server._maybe_persist_choice(SimpleNamespace(choice="deny"), req)
+        hitl.maybe_persist_choice(SimpleNamespace(choice="deny"), req)
 
         saved = _load_saved_rules(tmp_path)
         assert "Bash(rm -rf /)" in saved.get("deny", [])
@@ -134,18 +122,18 @@ class TestAlwaysAllowPersists:
         # Older Agno versions might not populate ``tool_execution``
         # on the requirement — the helper must degrade
         # gracefully rather than raise inside the resolve loop.
-        server = _make_server(tmp_path)
+        hitl = _make_hitl(tmp_path)
         req = SimpleNamespace(tool_execution=None)
-        server._maybe_persist_choice(SimpleNamespace(choice="always"), req)
+        hitl.maybe_persist_choice(SimpleNamespace(choice="always"), req)
         assert _load_saved_rules(tmp_path) == {}
 
     def test_unknown_choice_is_noop(self, tmp_path: Path) -> None:
         # A client sending an unrecognised choice string
         # shouldn't accidentally persist under some default
         # level.
-        server = _make_server(tmp_path)
+        hitl = _make_hitl(tmp_path)
         req = _requirement_for("run_shell_command", {"command": "ls"})
-        server._maybe_persist_choice(SimpleNamespace(choice="banana"), req)
+        hitl.maybe_persist_choice(SimpleNamespace(choice="banana"), req)
         assert _load_saved_rules(tmp_path) == {}
 
 
@@ -163,18 +151,18 @@ class TestInMemoryEvaluatorPatch:
     evaluator get the new rule immediately."""
 
     def test_always_appends_to_evaluator_allow(self, tmp_path: Path) -> None:
-        server = _make_server(tmp_path, with_evaluator=True)
+        evaluator = PermissionEvaluator.from_strings()
+        hitl = _make_hitl(tmp_path, evaluator)
         req = _requirement_for("run_shell_command", {"command": "python3 -m http.server 8000"})
         # Before: evaluator hasn't seen this command → DEFER.
         # (DEFER surfaces as the requirement being deferred to the
         # user prompt path — i.e. dialog fires.)
-        evaluator = server._session.permission_evaluator
         assert (
             evaluator.evaluate("run_shell_command", {"command": "python3 -m http.server 8000"})
             is PermissionDecision.DEFER
         )
 
-        server._maybe_persist_choice(SimpleNamespace(choice="always"), req)
+        hitl.maybe_persist_choice(SimpleNamespace(choice="always"), req)
 
         # After: same evaluator, same call — must resolve to ALLOW
         # without needing a rebuild. If this fails, the user's
@@ -187,11 +175,10 @@ class TestInMemoryEvaluatorPatch:
         )
 
     def test_similar_pattern_matches_family_via_evaluator(self, tmp_path: Path) -> None:
-        server = _make_server(tmp_path, with_evaluator=True)
+        evaluator = PermissionEvaluator.from_strings()
+        hitl = _make_hitl(tmp_path, evaluator)
         req = _requirement_for("run_shell_command", {"command": "python3 -m http.server 8000"})
-        server._maybe_persist_choice(SimpleNamespace(choice="similar"), req)
-
-        evaluator = server._session.permission_evaluator
+        hitl.maybe_persist_choice(SimpleNamespace(choice="similar"), req)
         # Different command, same family (leading ``python3``) —
         # the pattern rule should cover it. This is the whole
         # point of "Allow similar": one prompt, family whitelisted.
@@ -201,11 +188,10 @@ class TestInMemoryEvaluatorPatch:
         )
 
     def test_deny_appends_to_evaluator_deny(self, tmp_path: Path) -> None:
-        server = _make_server(tmp_path, with_evaluator=True)
+        evaluator = PermissionEvaluator.from_strings()
+        hitl = _make_hitl(tmp_path, evaluator)
         req = _requirement_for("run_shell_command", {"command": "rm -rf /"})
-        server._maybe_persist_choice(SimpleNamespace(choice="deny"), req)
-
-        evaluator = server._session.permission_evaluator
+        hitl.maybe_persist_choice(SimpleNamespace(choice="deny"), req)
         assert (
             evaluator.evaluate("run_shell_command", {"command": "rm -rf /"})
             is PermissionDecision.DENY
@@ -214,9 +200,9 @@ class TestInMemoryEvaluatorPatch:
     def test_missing_evaluator_is_noop(self, tmp_path: Path) -> None:
         # Older session shapes that don't expose
         # ``permission_evaluator`` mustn't crash the resolve loop.
-        server = _make_server(tmp_path, with_evaluator=False)
+        hitl = _make_hitl(tmp_path)
         req = _requirement_for("run_shell_command", {"command": "ls"})
-        server._maybe_persist_choice(SimpleNamespace(choice="always"), req)  # must not raise
+        hitl.maybe_persist_choice(SimpleNamespace(choice="always"), req)  # must not raise
         assert "Bash(ls)" in _load_saved_rules(tmp_path).get("allow", [])
 
 
@@ -231,22 +217,22 @@ class TestFuncNameCanonicalization:
         # with the rest of the read/search toolkits, so ``read_file``
         # no longer canonicalises to anything — ``save_file`` is the
         # surviving FileTools function and exercises the same mapping.
-        server = _make_server(tmp_path)
+        hitl = _make_hitl(tmp_path)
         req = _requirement_for("save_file", {"file_name": "src/main.py"})
-        server._maybe_persist_choice(SimpleNamespace(choice="always"), req)
+        hitl.maybe_persist_choice(SimpleNamespace(choice="always"), req)
 
         saved = _load_saved_rules(tmp_path)
         assert any(r.startswith("Write(") for r in saved.get("allow", [])), saved
 
     def test_web_fetch_similar_uses_domain(self, tmp_path: Path) -> None:
         # "Allow similar" for a web fetch broadens to the domain.
-        server = _make_server(tmp_path)
+        hitl = _make_hitl(tmp_path)
         # ``fetch_url``, not ``web_fetch``: the latter is not a function
         # any toolkit registers, so this assertion used to pass only
         # because FUNC_TO_TOOL carried the same invented name. See
         # tests/test_web_permission_names_are_real.py.
         req = _requirement_for("fetch_url", {"url": "https://github.com/anthropics/claude-code"})
-        server._maybe_persist_choice(SimpleNamespace(choice="similar"), req)
+        hitl.maybe_persist_choice(SimpleNamespace(choice="similar"), req)
 
         saved = _load_saved_rules(tmp_path)
         assert "WebFetch(domain:github.com)" in saved.get("allow", [])

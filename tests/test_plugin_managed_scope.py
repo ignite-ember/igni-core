@@ -19,8 +19,6 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from igni_core.backend import server as server_mod
-from igni_core.backend.server import BackendServer
 from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.plugins import state as state_mod
@@ -31,6 +29,7 @@ from igni_core.core.plugins.models import (
     PluginManifest,
     PluginSource,
 )
+from tests.backend_server_factory import make_backend
 
 # Alias for the deleted ``settings._platform_managed_settings_path``
 # shim — kept as a local name so the assertion site below reads
@@ -227,10 +226,9 @@ class TestSetPluginEnabledRefusesManaged:
         session = MagicMock()
         session.plugin_loader.get.return_value = managed_plugin
         session.plugin_state.disabled = []
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
 
-        result = backend.set_plugin_enabled("org-policy", enabled=False)
+        result = backend.controllers.plugins.set_enabled("org-policy", enabled=False)
         # The error text should mention "managed" so the user
         # understands WHY the toggle didn't take effect.
         assert "managed" in result.text.lower()
@@ -254,15 +252,13 @@ class TestSetPluginEnabledRefusesManaged:
         session.plugin_loader.get.return_value = managed_plugin
         session.plugin_state.disabled = []
         session.settings.storage.data_dir = str(tmp_path / "data")
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
 
         # The hot-reload + state-save aren't what we're testing
         # here — neutralise both so the MagicMock state object
         # doesn't get serialised.
         monkeypatch.setattr(state_mod, "save_state", lambda *a, **kw: None)
-        monkeypatch.setattr(server_mod, "BackendServer", BackendServer)
-        result = backend.set_plugin_enabled("org-policy", enabled=True)
+        result = backend.controllers.plugins.set_enabled("org-policy", enabled=True)
         # No managed-refusal text in the reply.
         assert "cannot be disabled" not in result.text.lower()
         assert "enabled" in result.text.lower()

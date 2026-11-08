@@ -28,13 +28,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.backend.server import BackendServer
+from igni_core.backend.server_history import ChatHistoryRebuilder
 from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
 from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore, PlanSubmittedEvent
 
 # ── PlanStore.decisions ─────────────────────────────────────
+
+
+async def _history(session: MagicMock) -> list[dict]:
+    """The rebuilt history as the RPC puts it on the wire."""
+    turns = await ChatHistoryRebuilder(session=session).rebuild("sess")
+    return [t.model_dump(mode="json") for t in turns]
 
 
 class TestPlanStoreDecisions:
@@ -328,19 +334,16 @@ class TestNeverApprovedRegression:
         )
         agno_session = SimpleNamespace(runs=[run])
 
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(return_value=agno_session)
+        session = MagicMock()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(return_value=agno_session)
         # The exact failure condition from the bug report: mode
         # flipped to default, but no plan_decisions entry for R1.
-        server._session.permission_evaluator = SimpleNamespace(
-            mode=SimpleNamespace(value="default")
-        )
-        server._session.plan_store = PlanStore()  # empty decisions
+        session.permission_evaluator = SimpleNamespace(mode=SimpleNamespace(value="default"))
+        session.plan_store = PlanStore()  # empty decisions
 
-        history = await server.get_chat_history("sess")
+        history = await _history(session)
         plan_turns = [t for t in history if t.get("role") == "plan"]
         assert len(plan_turns) == 1
         assert plan_turns[0]["state"] == "pending", (
@@ -386,19 +389,18 @@ class TestNeverApprovedRegression:
         )
         agno_session = SimpleNamespace(runs=[run])
 
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(return_value=agno_session)
-        server._session.permission_evaluator = SimpleNamespace(
+        session = MagicMock()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(return_value=agno_session)
+        session.permission_evaluator = SimpleNamespace(
             mode=SimpleNamespace(value="plan")  # still in plan mode...
         )
         store = PlanStore()
         store.set_decision("R2", "approved")  # ...but user approved
-        server._session.plan_store = store
+        session.plan_store = store
 
-        history = await server.get_chat_history("sess")
+        history = await _history(session)
         plan_turns = [t for t in history if t.get("role") == "plan"]
         assert plan_turns[0]["state"] == "approved", (
             "Recorded approval must take precedence over mode. The "
@@ -447,17 +449,14 @@ class TestNeverApprovedRegression:
             runs=[_run("R-old", "Old plan", 10), _run("R-new", "New plan", 20)]
         )
 
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(return_value=agno_session)
-        server._session.permission_evaluator = SimpleNamespace(
-            mode=SimpleNamespace(value="default")
-        )
-        server._session.plan_store = PlanStore()
+        session = MagicMock()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(return_value=agno_session)
+        session.permission_evaluator = SimpleNamespace(mode=SimpleNamespace(value="default"))
+        session.plan_store = PlanStore()
 
-        history = await server.get_chat_history("sess")
+        history = await _history(session)
         plan_turns = [t for t in history if t.get("role") == "plan"]
         assert len(plan_turns) == 2
         # Older plan: user moved on without clicking. We render

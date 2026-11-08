@@ -38,6 +38,7 @@ from pydantic import BaseModel
 from igni_core.backend.message_dispatcher import ExtensionMessage, MessageDispatcher
 from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.core.activity import background
+from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.extensions.registry import ExtensionRefused
 from igni_core.protocol import messages as msg
 
@@ -64,6 +65,11 @@ class _Runs:
         self.pending_journal = _Journal()
 
 
+class _Controllers:
+    def __init__(self) -> None:
+        self.runs = _Runs()
+
+
 class _Runtime:
     def __init__(self) -> None:
         self.spawned: list[Any] = []
@@ -78,7 +84,7 @@ class _Backend:
     def __init__(self, *, runtime: _Runtime | None = None, auto_name: str = "") -> None:
         self.runtime = runtime
         self.session_id = "s-1"
-        self._runs = _Runs()
+        self.controllers = _Controllers()
         self.plan_armed = False
         self.auto_name = auto_name
         self.calls: list[tuple[str, Any]] = []
@@ -88,7 +94,7 @@ class _Backend:
         armed, self.plan_armed = self.plan_armed, False
         return armed
 
-    async def run_message(self, text: str, media: dict[str, str]) -> AsyncIterator[Any]:
+    async def run_message(self, text: str, media: MediaAttachments | None) -> AsyncIterator[Any]:
         self.calls.append(("run_message", (text, media)))
         yield msg.Info(text="thinking")
         yield msg.Info(text="done")
@@ -179,7 +185,9 @@ async def test_a_user_message_is_mirrored_then_streamed_under_its_id():
     echo = transport.sent[0]
     assert (echo.text, echo.client_id) == ("hello", "tab-a")
     assert all(m.id == "r1" for m in transport.sent[1:])
-    assert backend.calls == [("run_message", ("hello", {"a.py": "x"}))]
+    assert backend.calls == [
+        ("run_message", ("hello", MediaAttachments.from_optional_dict({"a.py": "x"})))
+    ]
     assert len(backend.runtime.spawned) == 1
     backend.runtime.spawned[0].close()
 
@@ -198,18 +206,7 @@ async def test_retry_clears_the_stale_pending_rows_first():
 
     await dispatcher.dispatch(msg.UserMessage(id="r", text="again", force=True))
 
-    assert backend._runs.pending_journal.discards == 1
-    backend.runtime.spawned[0].close()
-
-
-async def test_retry_on_a_backend_without_a_run_journal_still_runs():
-    backend = _Backend(runtime=_Runtime())
-    del backend._runs
-    dispatcher, transport, _, _ = _dispatcher(backend)
-
-    await dispatcher.dispatch(msg.UserMessage(id="r", text="again", force=True))
-
-    assert transport.sent[-1].type == "stream_end"
+    assert backend.controllers.runs.pending_journal.discards == 1
     backend.runtime.spawned[0].close()
 
 

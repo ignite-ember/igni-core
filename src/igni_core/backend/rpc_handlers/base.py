@@ -13,12 +13,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.workflow_runner import WorkflowRunner
 from igni_core.protocol.rpc import RpcMethod
+
+if TYPE_CHECKING:
+    from igni_core.backend.controller_registry import Controllers
 
 # Attribute name the decorator uses to tag handler methods with
 # their :class:`RpcMethod`. Private + underscored so a regular method
@@ -91,6 +94,11 @@ class RpcHandler:
 
     def __init__(self, ctx: RpcHandlerContext) -> None:
         self._ctx = ctx
+
+    @property
+    def _controllers(self) -> Controllers:
+        """The backend's controller bag, for RPCs with no facade method."""
+        return self._ctx.backend.controllers
 
     def methods(self) -> dict[RpcMethod, Callable[[dict[str, Any]], Any]]:
         """Return ``{RpcMethod.X: self._x}`` for every ``@rpc``-tagged

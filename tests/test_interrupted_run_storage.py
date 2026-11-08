@@ -322,7 +322,9 @@ class TestInterruptedRunsRpcDispatch:
     def _make_backend(self) -> MagicMock:
         backend = MagicMock()
         backend.get_interrupted_runs = AsyncMock(return_value=[])
-        backend.discard_interrupted_run = AsyncMock(return_value={"ok": True, "error": ""})
+        backend.controllers.context.discard_interrupted_run = AsyncMock(
+            return_value={"ok": True, "error": ""}
+        )
         return backend
 
     def test_get_interrupted_runs_extracts_session_id(self) -> None:
@@ -342,10 +344,11 @@ class TestInterruptedRunsRpcDispatch:
         from igni_core.protocol.rpc import RpcMethod
 
         backend = MagicMock()
-        backend.discard_interrupted_run = AsyncMock(return_value={"ok": True, "error": ""})
+        context = backend.controllers.context
+        context.discard_interrupted_run = AsyncMock(return_value={"ok": True, "error": ""})
         table = _build_rpc_table(backend, MagicMock(), {})
         table[RpcMethod.DISCARD_INTERRUPTED_RUN]({"session_id": "sess-1", "message_id": "msg-42"})
-        backend.discard_interrupted_run.assert_called_once_with("sess-1", "msg-42")
+        context.discard_interrupted_run.assert_called_once_with("sess-1", "msg-42")
 
 
 # ── Wire model projection ───────────────────────────────────

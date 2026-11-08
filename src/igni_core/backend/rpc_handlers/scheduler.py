@@ -16,11 +16,11 @@ class SchedulerRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.EXECUTE_SCHEDULED_TASK)
     def execute_scheduled_task(self, args: dict) -> Any:
-        return self._ctx.backend.execute_scheduled_task(args["description"])
+        return self._controllers.loop.scheduler.execute(args["description"])
 
     @rpc(RpcMethod.CANCEL_SCHEDULED_TASK)
     def cancel_scheduled_task(self, args: dict) -> Any:
-        return self._ctx.backend.cancel_scheduled_task(args["task_id"])
+        return self._controllers.loop.scheduler.cancel(args["task_id"])
 
     @rpc(RpcMethod.GET_SCHEDULED_TASKS)
     def get_scheduled_tasks(self, args: dict) -> Any:

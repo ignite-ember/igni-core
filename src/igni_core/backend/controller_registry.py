@@ -1,25 +1,11 @@
-"""Central registry for every ``BackendServer`` sub-controller.
-
-Extracted from :mod:`igni_core.backend.server` — the previous
-composition-root file carried 17 near-identical lazy-init
-``@property`` blocks (one per controller, ~15 LoC each) with a
-uniform ``getattr(self, '_ctrl', None) or construct`` shape.
-That's a class-shaped concern hiding as a copy-paste in
-``BackendServer``.
-
-The refactor:
+"""Builds every ``BackendServer`` sub-controller, once, eagerly.
 
 * :class:`Controllers` — a plain attribute-holder class with one
-  slot per controller (mcp / hitl / context / auth / …). Built
-  eagerly by :meth:`ControllerRegistry.build`.
-* :class:`ControllerRegistry` — the builder. Constructs the full
-  :class:`Controllers` bag for a production ``BackendServer`` and
-  exposes :meth:`for_partial_init` — the ONE tolerance path for
-  ``__new__``-bypass test fixtures. Any controller whose
-  constructor tolerates missing state (``ContextController``,
-  ``LoopController``, …) is still built; the tests get identical
-  behaviour without every property re-implementing the
-  ``getattr`` guard.
+  slot per controller (mcp / hitl / context / auth / …).
+* :class:`ControllerRegistry` — the builder. Wires each controller
+  to its collaborators (other controllers, stores, the message
+  queue) directly; no controller holds a reference back to
+  ``BackendServer``.
 """
 
 from __future__ import annotations
@@ -50,10 +36,10 @@ from igni_core.backend.team_wiring import TeamWiring
 from igni_core.backend.visualization_action_bus import VisualizationActionBus
 
 if TYPE_CHECKING:
-    from igni_core.backend.server import BackendServer
     from igni_core.core.config.settings import Settings
     from igni_core.core.session import Session
     from igni_core.core.session.pending_messages import PendingMessageStore
+    from igni_core.core.session.queued_messages import DurableMessageQueue
     from igni_core.core.session.session_preferences import SessionPreferencesStore
 
 
@@ -115,25 +101,20 @@ class Controllers:
 
 
 class ControllerRegistry:
-    """Builds the :class:`Controllers` bag for a ``BackendServer``.
-
-    Production path uses :meth:`build`; the test-bypass path uses
-    :meth:`for_partial_init` — a single classmethod replaces the
-    17 duplicated ``getattr`` guards that used to live on
-    ``BackendServer``'s @property blocks.
-    """
+    """Builds the :class:`Controllers` bag for a ``BackendServer``."""
 
     @classmethod
     def build(
         cls,
-        backend: BackendServer,
+        *,
         session: Session,
         settings: Settings,
         hitl_store: PendingRequirementsStore,
         pending_store: PendingMessageStore,
         session_prefs: SessionPreferencesStore,
         user_config_store: Any,
-        hitl_tracer: HITLTracer,
+        hitl_tracer: HITLTracer | None,
+        message_queue: DurableMessageQueue | None,
     ) -> Controllers:
         """Full production wiring — every controller built eagerly."""
         # ── Foundation controllers (session-only deps) ──────────────
@@ -158,9 +139,10 @@ class ControllerRegistry:
 
         # RunController owns the run pipeline (lock, task, checkpoint).
         runs = RunController(
-            backend=backend,
             session=session,
             pending_store=pending_store,
+            message_queue=message_queue,
+            stream_factory=hitl.stream_with_subagent,
         )
 
         # Context needs pending_store for the crash-survival RPC.
@@ -170,20 +152,16 @@ class ControllerRegistry:
             pending_store=pending_store,
         )
 
-        # Sessions needs a chat-history provider — call through the
-        # backend's public wire method so the wire dumping continues
-        # to happen at the same boundary.
+        chat_history = ChatHistoryRebuilder(session=session)
         sessions = SessionsController(
             session=session,
-            chat_history_provider=backend.get_chat_history,
+            chat_history_provider=chat_history.rebuild,
         )
 
-        # Auth needs a status provider — call through the backend's
-        # public wire method (context.get_status behind the facade).
         auth = AuthController(
             session=session,
             settings=settings,
-            status_provider=backend.get_status,
+            status_provider=context.get_status,
         )
 
         # Loop reads settings for the pump.
@@ -192,27 +170,20 @@ class ControllerRegistry:
             settings=settings,
         )
 
-        # Lifecycle composes multiple concerns (rehydrate + runs +
-        # scheduler + backend).
         lifecycle = LifecycleController(
             session=session,
             pending_store=pending_store,
             runs=runs,
             rehydrate=rehydrate,
             scheduler_stop=loop.scheduler.stop,
-            backend=backend,
+            message_queue=message_queue,
         )
 
-        # ModelSwitcher used to inline-import UserConfigStore inside
-        # its property. That import is now hoisted to the bootstrap
-        # so the class boundary carries the dependency explicitly.
         model_switcher = ModelSwitcher(
             session=session,
             session_prefs=session_prefs,
             user_config_store=user_config_store,
         )
-
-        chat_history = ChatHistoryRebuilder(session=session)
 
         return Controllers(
             mcp=mcp,

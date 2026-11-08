@@ -189,9 +189,9 @@ class SessionRuntime:
         the run. What the previous backend was continuing when it died
         goes on now, where a window can see it.
         """
-        for paused in self.backend.hitl.waiting_messages():
+        for paused in self.backend.controllers.hitl.waiting_messages():
             await self.transport.send(paused)
-        async for proto in self.backend.hitl.resume_interrupted():
+        async for proto in self.backend.controllers.hitl.resume_interrupted():
             await self.transport.send(proto)
 
     def spawn_auto_name(self, coro: Coroutine[Any, Any, None]) -> asyncio.Task[None]:

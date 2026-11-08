@@ -204,15 +204,12 @@ class PoolDesk(Desk):
     def __init__(self, session: SimpleNamespace) -> None:
         super().__init__()
 
-        class Backend:
-            def upload_attachment(self, filename: str, content_base64: str) -> Any:
-                return FilesController(session).upload_attachment(  # type: ignore[arg-type]
-                    filename, content_base64
-                )
+        files = FilesController(session)  # type: ignore[arg-type]
+        backend = SimpleNamespace(controllers=SimpleNamespace(files=files))
 
         class Pool:
             async def get_or_create(self, session_id: str) -> Any:
-                return SimpleNamespace(backend=Backend())
+                return SimpleNamespace(backend=backend)
 
         self._pool_desk = PoolChatDesk(SimpleNamespace(pool=Pool()))
 

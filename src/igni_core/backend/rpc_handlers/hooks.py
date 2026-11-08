@@ -18,4 +18,4 @@ class HooksRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.RELOAD_HOOKS)
     def reload_hooks(self, args: dict) -> Any:
-        return self._ctx.backend.reload_hooks_rpc()
+        return self._controllers.panels.reload_hooks()

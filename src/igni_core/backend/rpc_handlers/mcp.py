@@ -14,7 +14,7 @@ class McpRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.ENSURE_MCP)
     def ensure_mcp(self, args: dict) -> Any:
-        return self._ctx.backend.ensure_mcp()
+        return self._controllers.mcp.ensure()
 
     @rpc(RpcMethod.MCP_CONNECT)
     def mcp_connect(self, args: dict) -> Any:
@@ -22,7 +22,7 @@ class McpRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.MCP_DISCONNECT)
     def mcp_disconnect(self, args: dict) -> Any:
-        return self._ctx.backend.mcp_disconnect(args["server_name"])
+        return self._controllers.mcp.disconnect(args["server_name"])
 
     @rpc(RpcMethod.GET_MCP_STATUS)
     def mcp_status(self, args: dict) -> Any:
@@ -38,7 +38,7 @@ class McpRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.SET_MCP_TOOL_ENABLED)
     def mcp_set_tool_enabled(self, args: dict) -> Any:
-        return self._ctx.backend.set_mcp_tool_enabled(
+        return self._controllers.mcp.set_tool_enabled(
             server=args["server"],
             tool=args["tool"],
             enabled=args["enabled"],

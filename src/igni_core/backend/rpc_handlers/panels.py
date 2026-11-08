@@ -48,7 +48,7 @@ class PanelRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.SEARCH_CODE)
     def search_code(self, args: dict) -> Any:
-        return self._ctx.backend.search_code(args["query"])
+        return self._controllers.search.search_code(args["query"])
 
     @rpc(RpcMethod.RUN_SHELL)
     async def run_shell(self, args: dict) -> RunShellResult:
@@ -98,7 +98,7 @@ class PanelRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.DISCARD_EPHEMERAL_AGENT)
     def discard_ephemeral_agent(self, args: dict) -> DiscardEphemeralResult:
-        return self._ctx.backend.discard_ephemeral_agent(args["name"])
+        return self._controllers.panels.discard_ephemeral_agent(args["name"])
 
     @rpc(RpcMethod.GET_SLASH_COMMANDS)
     def get_slash_commands(self, args: dict) -> list[SlashCommandEntry]:
@@ -116,19 +116,20 @@ class PanelRpcHandler(RpcHandler):
         )
 
     @rpc(RpcMethod.LIST_BACKGROUND_PROCESSES)
-    def list_bg_processes(self, args: dict) -> Any:
-        return self._ctx.backend.list_background_processes()
+    def list_bg_processes(self, args: dict) -> list[dict[str, Any]]:
+        return [row.model_dump() for row in self._ctx.backend.list_background_processes()]
 
     @rpc(RpcMethod.READ_PROCESS_TAIL)
-    def read_process_tail(self, args: dict) -> Any:
-        return self._ctx.backend.read_process_tail(
+    def read_process_tail(self, args: dict) -> dict[str, Any]:
+        return self._controllers.processes.read_tail(
             pid=int(args.get("pid", 0)),
             tail=int(args.get("tail", 200)),
-        )
+        ).model_dump()
 
     @rpc(RpcMethod.STOP_BACKGROUND_PROCESS)
-    def stop_bg_process(self, args: dict) -> Any:
-        return self._ctx.backend.stop_background_process(pid=int(args.get("pid", 0)))
+    async def stop_bg_process(self, args: dict) -> dict[str, Any]:
+        result = await self._controllers.processes.stop(pid=int(args.get("pid", 0)))
+        return result.model_dump()
 
     @rpc(RpcMethod.GET_OUTPUT_STYLES)
     def get_output_styles(self, args: dict) -> OutputStylesResult:

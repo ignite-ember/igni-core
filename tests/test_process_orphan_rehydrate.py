@@ -40,7 +40,7 @@ from pathlib import Path
 
 import pytest
 
-from igni_core.backend.server import BackendServer
+from igni_core.backend.server_processes import ProcessesController
 from igni_core.core.db.database import Database
 from igni_core.core.tools import process_store as ps_mod
 from igni_core.core.tools.orphan_process import OrphanProcess
@@ -412,7 +412,7 @@ class TestOrphanRehydratorRun:
         assert "store_init" in failure.reason
 
 
-# ── BackendServer.stop_background_process for orphans ────────
+# ── ProcessesController.stop for orphans ────────
 
 
 class TestStopOrphanProcess:
@@ -443,10 +443,9 @@ class TestStopOrphanProcess:
         fake = _Fake(pid=12345, cmd="fake", started_epoch=int(time.time()), pgid=12345)
         supervisor.registry.add(fake)  # type: ignore[arg-type]
 
-        server = BackendServer.__new__(BackendServer)
-        result = await server.stop_background_process(pid=12345)
+        result = await ProcessesController().stop(pid=12345)
 
-        assert result["killed"] is True
+        assert result.killed is True
         assert kill_calls == [12345]
         # Orphan path explicitly removed the registry row.
         assert supervisor.registry.get(12345) is None

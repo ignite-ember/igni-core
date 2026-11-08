@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -84,7 +85,7 @@ class _Backend:
         self.processing = False
         self.runtime: Any = None
         self.message_queue: list[str] = []
-        self.hitl = _Hitl(waiting or [])
+        self.controllers = SimpleNamespace(hitl=_Hitl(waiting or []))
         self.reloads = 0
         self.broadcasts: list[Any] = []
         self.handled: list[str] = []

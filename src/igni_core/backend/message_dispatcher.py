@@ -29,6 +29,7 @@ from typing import Any
 
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.core.activity import BusyKind, background
+from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.extensions.registry import ExtensionRefused
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.protocol import messages as msg
@@ -142,19 +143,19 @@ class MessageDispatcher:
         # before ``run_message`` so the inner ``record_received``
         # call lands on a clean slate.
         if message.force:
-            journal = getattr(self._backend, "_runs", None)
-            if journal is not None:
-                discarded = await journal.pending_journal.discard_all_for_session()
-                logger.debug(
-                    "user_message(force=true) discarded %d stale row(s) for session",
-                    discarded,
-                )
+            journal = self._backend.controllers.runs.pending_journal
+            discarded = await journal.discard_all_for_session()
+            logger.debug(
+                "user_message(force=true) discarded %d stale row(s) for session",
+                discarded,
+            )
         agent_text = self._maybe_wrap_plan_hint(message.text)
         await self._run_turn(agent_text, message.file_contents, req_id)
 
     async def _run_turn(self, agent_text: str, media: dict[str, str], req_id: str) -> None:
         """Run one turn and stream it to every view."""
-        async for proto in self._backend.run_message(agent_text, media=media):
+        attachments = MediaAttachments.from_optional_dict(media)
+        async for proto in self._backend.run_message(agent_text, media=attachments):
             if req_id:
                 proto = proto.model_copy(update={"id": req_id})
             await self._transport.send(proto)

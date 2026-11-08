@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
 class PluginController:
     """Plugin lifecycle: preview / list / toggle / install / update /
-    remove. Composed onto :class:`BackendServer` as ``self.plugins``.
+    remove. Built once per session in :class:`ControllerRegistry`.
     """
 
     def __init__(self, session: Session) -> None:
@@ -156,6 +156,16 @@ class PluginController:
             )
             for p in loader.list_plugins()
         ]
+
+    def contents(self, name: str) -> PluginContents:
+        """Detailed inventory of one installed plugin."""
+        plugin = next(
+            (p for p in self._session.plugin_loader.list_plugins() if p.name == name),
+            None,
+        )
+        if plugin is None:
+            return PluginContents(error=f"Plugin '{name}' not found")
+        return PluginContents.from_directory(plugin.root_path, name=name)
 
     # ── Enable / disable toggle ────────────────────────────────────
 

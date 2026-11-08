@@ -164,7 +164,7 @@ class TestPostingWhereNobodyIsLooking:
 
         assert ok(await rig.ask(ext, "get", "chat.session_id", session="s-2")) == "s-2"
         messages = ok(await rig.ask(ext, "get", "chat.messages", session="s-2"))
-        assert messages == [{"role": "user", "content": "an earlier turn"}]
+        assert [(m["role"], m["content"]) for m in messages] == [("user", "an earlier turn")]
         assert ok(await rig.ask(ext, "get", "chat.messages")) == [], "host.chat is unchanged"
 
     async def test_a_session_in_the_list_but_not_loaded_is_reached(self, rig: HostRig) -> None:

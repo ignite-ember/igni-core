@@ -14,10 +14,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from igni_core.backend.__main__ import _build_rpc_table
-from igni_core.backend.server import BackendServer
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.skills.parser import SkillDefinition
 from igni_core.protocol.rpc import RpcMethod
+from tests.backend_server_factory import make_backend
 
 
 def _write(p: Path, text: str) -> None:
@@ -33,8 +33,7 @@ def _make_backend(project_dir: Path, *, skills: list | None = None, cross_tool: 
     session.project_dir = project_dir
     session.settings.rules.cross_tool_support = cross_tool
     session.skill_pool.list_skills.return_value = skills or []
-    backend = BackendServer.__new__(BackendServer)
-    backend._session = session
+    backend = make_backend(session)
     return backend
 
 
@@ -184,8 +183,7 @@ class TestGetSlashCommands:
         session.project_dir = tmp_path
         session.settings.rules.cross_tool_support = True
         session.skill_pool.list_skills.side_effect = RuntimeError("boom")
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
 
         out = backend.get_slash_commands()
         sources = {e.source for e in out}

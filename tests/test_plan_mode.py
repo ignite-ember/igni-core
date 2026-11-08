@@ -23,7 +23,7 @@ import pytest
 
 from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.command_handler import CommandHandler
-from igni_core.backend.server import BackendServer
+from igni_core.backend.plan_snapshot_builder import PlanSnapshotBuilder
 from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
 from igni_core.core.prompts.contributions import EditOp, PromptEdit, prompt_contributions
 from igni_core.core.session.broadcast import BroadcastBus as _BroadcastBus
@@ -32,6 +32,7 @@ from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.plan import PlanStore, PlanTool
 from igni_core.core.tools.todo import TodoItem, TodoStore, TodoTools
 from igni_core.protocol.rpc import RpcMethod
+from tests.backend_server_factory import make_backend
 
 # ── PlanStore ─────────────────────────────────────────────
 
@@ -806,9 +807,7 @@ class TestGetLatestPlanRpc:
         session = MagicMock(spec=["plan_store", "todo_store"])
         session.plan_store = PlanStore()
         session.todo_store = None
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
-        snap = backend.get_latest_plan()
+        snap = PlanSnapshotBuilder(session).latest()
         assert snap.latest == ""
         assert snap.history == []
         assert snap.tasks == []
@@ -820,9 +819,7 @@ class TestGetLatestPlanRpc:
         session.plan_store = PlanStore()
         session.plan_store.set_plan("first plan")
         session.plan_store.set_plan("second plan")
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
-        snap = backend.get_latest_plan()
+        snap = PlanSnapshotBuilder(session).latest()
         assert snap.latest == "second plan"
         assert snap.history == ["first plan"]
 
@@ -831,9 +828,7 @@ class TestGetLatestPlanRpc:
         without a ``plan_store`` attribute must return empty
         rather than crash."""
         session = MagicMock(spec=[])  # no attributes
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
-        snap = backend.get_latest_plan()
+        snap = PlanSnapshotBuilder(session).latest()
         assert snap.latest == ""
         assert snap.history == []
         assert snap.tasks == []
@@ -843,8 +838,7 @@ class TestGetLatestPlanRpc:
         session = MagicMock()
         session.plan_store = PlanStore()
         session.plan_store.set_plan("test plan")
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session, settings=MagicMock())
 
         table = _build_rpc_table(backend, transport=MagicMock(), login_state={})
         handler = table.get(RpcMethod.GET_LATEST_PLAN)

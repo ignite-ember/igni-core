@@ -21,11 +21,8 @@ Plus one class for the httpx close/replace:
 
 Public API (used by ``BackendServer``):
 
-* :meth:`_run_locked` — the async-generator body invoked by
-  ``BackendServer._run_message_locked`` inside the outer
-  ``_run_lock`` block. Kept single-underscored (rather than
-  making it fully public) because the outer lock + task-tracking
-  live on ``BackendServer`` and the two must be paired.
+* :meth:`run_message` — serialises submits on :attr:`run_lock`,
+  tracks the running task and drives :meth:`run_locked`.
 * :meth:`is_processing` — bool for the FE's ``get_processing``
   RPC — forwarded via ``BackendServer.processing``.
 * :meth:`set_interrupted_summary` — writer used by
@@ -49,6 +46,7 @@ from igni_core.backend.model_http_client_manager import ModelHttpClientManager
 from igni_core.backend.pending_message_journal import PendingMessageJournal
 from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.backend.run_hook_gate import RunHookGate
+from igni_core.backend.schemas_hitl import StreamFactory
 from igni_core.backend.schemas_lifecycle import InterruptedRunSummary
 from igni_core.backend.schemas_run import CancelAgentRunResult, MediaAttachments, RunPhase
 from igni_core.backend.session_checkpointer import SessionCheckpointer
@@ -61,7 +59,6 @@ from igni_core.core.utils.memory_files import MemoryMirror
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
-    from igni_core.backend.server import BackendServer
     from igni_core.core.session import Session
     from igni_core.core.session.pending_messages import PendingMessageStore
 
@@ -73,40 +70,35 @@ class RunController:
     """Owns the run lifecycle for a single ``BackendServer``.
 
     One instance per ``BackendServer`` — reused across every
-    ``run_message`` call. Tracks the phase, the interrupted-run
-    handoff, and drives the pre-run pipeline + streaming loop.
+    ``run_message`` call. Sole owner of the run phase, the run lock,
+    the running task and the interrupted-run handoff; drives the
+    pre-run pipeline + streaming loop.
 
-    Serialization + task-tracking still live on ``BackendServer``
-    (the lock is exposed there because tests set it on partial
-    instances built via ``__new__``); this controller owns the
-    body-of-the-run only.
+    ``stream_factory`` wraps the team stream with sub-agent HITL
+    multiplexing (:meth:`HitlController.stream_with_subagent` in
+    production). ``message_queue`` is the durable queue settled
+    after each run.
     """
 
     def __init__(
         self,
-        backend: BackendServer,
         session: Session,
         pending_store: PendingMessageStore,
+        message_queue: DurableMessageQueue | None,
+        stream_factory: StreamFactory,
         http_client_manager: ModelHttpClientManager | None = None,
     ) -> None:
-        self._backend = backend
         self._session = session
+        self._message_queue = message_queue
+        self._stream_factory = stream_factory
         self._pending_journal = PendingMessageJournal(pending_store, session.session_id)
         self._http_client_manager = http_client_manager or ModelHttpClientManager()
         self._prompt_builder = PromptBuilder(session)
         self._hook_gate = RunHookGate(session.hook_executor, session.session_id)
-        # ``StreamEventDispatcher`` needs late binding for
-        # ``_checkpoint_session`` because tests patch the method on
-        # ``BackendServer`` AFTER the controller is constructed.
-        self._dispatcher = StreamEventDispatcher(session, self._checkpoint_via_backend)
-        # Lifecycle state — instance attributes rather than
-        # ``BackendServer._x`` privates.
+        self._dispatcher = StreamEventDispatcher(session, self.checkpoint)
         self._phase = RunPhase.idle
         self._interrupted_summary: InterruptedRunSummary | None = None
-        # Serialisation + cancellation state. Owned here (with
-        # server.py exposing thin properties for the __new__-bypass
-        # test fixtures) so Pattern 1 (single owner of run phase +
-        # task) holds. See :attr:`run_lock` / :attr:`current_run_task`.
+        # Serialisation + cancellation state — single owner (Pattern 1).
         self._run_lock = asyncio.Lock()
         self._current_run_task: asyncio.Task | None = None
         # The pending-message id stamped by :meth:`_run_locked`
@@ -140,8 +132,7 @@ class RunController:
     @property
     def run_lock(self) -> asyncio.Lock:
         """The outer serialization lock guarding every ``run_message``
-        invocation. Owned by the pipeline; server.py forwards to
-        this attribute for its wire-facing public API."""
+        invocation."""
         return self._run_lock
 
     @property
@@ -201,29 +192,6 @@ class RunController:
         assignments has one method to grep and one place to add
         guards / logging."""
         self._phase = phase
-
-    # ── Late-binding shims ──────────────────────────────────────────
-    # Route through the backend's methods so tests that
-    # ``patch.object(BackendServer, "_stream_with_subagent_hitl", ...)``
-    # (or the checkpoint / http-close variants) still intercept
-    # AFTER this controller has been constructed. Fetching the method
-    # off ``self._backend`` at call time (rather than binding it in
-    # ``__init__``) gives us the late binding the tests rely on.
-
-    async def _checkpoint_via_backend(self, team: Team) -> None:
-        """Dispatch to ``backend._checkpoint_session`` at call time."""
-        await self._backend._checkpoint_session(team)
-
-    def _stream_via_backend(
-        self, team_stream: AsyncGenerator[msg.Message, None]
-    ) -> AsyncGenerator[msg.Message, None]:
-        """Dispatch to ``backend._stream_with_subagent_hitl``. Returns
-        the async generator; the caller does ``async for``."""
-        return self._backend._stream_with_subagent_hitl(team_stream)
-
-    async def _periodic_checkpoint_via_backend(self, team: Team) -> None:
-        """Dispatch to ``backend._periodic_checkpoint`` at call time."""
-        await self._backend._periodic_checkpoint(team)
 
     async def _close_http_client(self, team: Team) -> None:
         """Close the model httpx client via the manager."""
@@ -367,8 +335,8 @@ class RunController:
                 name=f"mark_interrupted:{reason}:{pending_id[:8]}",
             )
         except RuntimeError:
-            # No running loop — happens in __new__-bypass test
-            # fixtures. Skip silently; the legacy heuristic covers
+            # No running loop — a sync caller outside asyncio (tests).
+            # Skip silently; the legacy heuristic covers
             # this in tests.
             pass
 
@@ -394,24 +362,20 @@ class RunController:
     async def checkpoint(self, team: Any) -> None:
         """Force Agno to persist the in-flight session — one-shot.
 
-        Moved from ``BackendServer._checkpoint_session``. Kept as a
-        method (not a static) so ``patch.object`` on the pipeline
-        intercepts the call from :meth:`periodic_checkpoint`.
+        A method (not a static) so ``patch.object`` on the
+        controller intercepts the call from :meth:`periodic_checkpoint`.
         """
         await SessionCheckpointer(team).snapshot()
 
     async def periodic_checkpoint(self, team: Any, interval: float = 3.0) -> None:
         """Loop that snapshots the session every ``interval`` seconds.
 
-        Moved from ``BackendServer._periodic_checkpoint``. Uses a
-        callback into :meth:`checkpoint` so tests binding a spy
-        onto the pipeline (or the legacy ``server._checkpoint_session``
-        seam) still intercept on every tick.
+        Each tick calls :meth:`checkpoint`.
         """
         checkpointer = SessionCheckpointer(team)
         await checkpointer.run_forever(
             interval=interval,
-            checkpoint_hook=self._checkpoint_via_backend,
+            checkpoint_hook=self.checkpoint,
         )
 
     @staticmethod
@@ -419,7 +383,6 @@ class RunController:
         """Thin shim over :meth:`ModelHttpClientManager.close_and_replace`.
 
         Static so callers (and tests) can invoke without an instance.
-        Migrated from ``BackendServer._close_model_http_client``.
         """
         await ModelHttpClientManager().close_and_replace(team)
 
@@ -454,9 +417,8 @@ class RunController:
     async def _run_locked(
         self, text: str, media: MediaAttachments | None
     ) -> AsyncGenerator[msg.Message, None]:
-        """The full pipeline body — invoked by
-        ``BackendServer._run_message_locked`` inside the outer
-        ``async with self._run_lock`` block.
+        """The full pipeline body — invoked by :meth:`run_message`
+        inside the outer ``async with self._run_lock`` block.
 
         Split into named sub-methods so each concern (prompt
         assembly, hook gate, streaming loop, finalize) is one line
@@ -526,17 +488,14 @@ class RunController:
         # later cancel that arrives after completion is a no-op.
         self._pending_id_for_cancel = pending_id
 
-        # Periodic checkpoint task — see SessionCheckpointer.run_forever
-        # (BackendServer._periodic_checkpoint is the late-binding hook).
-        checkpoint_task = background.daemon(
-            self._periodic_checkpoint_via_backend(team), name="run-checkpoint"
-        )
+        # Periodic checkpoint task — see SessionCheckpointer.run_forever.
+        checkpoint_task = background.daemon(self.periodic_checkpoint(team), name="run-checkpoint")
 
         media_kwargs = media.to_kwargs() if media is not None else {}
         self._transition_to(RunPhase.streaming)
         try:
             stream_failure: str | None = None
-            async for proto in self._stream_via_backend(
+            async for proto in self._stream_factory(
                 team.arun(message, stream=True, **media_kwargs)
             ):
                 yield proto
@@ -576,9 +535,8 @@ class RunController:
             await self._close_http_client(team)
             # Queued messages this run took are deleted once the saved
             # conversation holds them (``DurableMessageQueue``).
-            queue = getattr(self._backend, "message_queue", None)
-            if isinstance(queue, DurableMessageQueue):
-                await queue.settle(self._session.db)
+            if isinstance(self._message_queue, DurableMessageQueue):
+                await self._message_queue.settle(self._session.db)
             # Memory files the run wrote, whatever tool wrote them.
             mirror = getattr(self._session, "memory_mirror", None)
             if isinstance(mirror, MemoryMirror):

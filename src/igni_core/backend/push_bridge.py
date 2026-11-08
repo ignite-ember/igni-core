@@ -173,7 +173,7 @@ class PushNotificationBridge:
         """Kick off the scheduled-task poller with our push
         callbacks. Replaces the old free-function
         ``_start_scheduler_with_push``."""
-        backend.start_scheduler(
+        backend.controllers.loop.scheduler.start(
             on_task_started=self._on_scheduler_started,
             on_task_completed=self._on_scheduler_completed,
         )

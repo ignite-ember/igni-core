@@ -23,8 +23,8 @@ attributes:
 * :attr:`user_config_store` — :class:`UserConfigStore`.
 
 ``BackendServer.__init__`` shrinks to a one-liner + a controller-
-registry build. Tests that construct via ``BackendServer.__new__``
-bypass this file entirely — the seam is preserved.
+registry build. ``BackendServer.from_parts`` (tests) skips this
+file and takes already-built collaborators instead.
 """
 
 from __future__ import annotations
@@ -50,8 +50,8 @@ class BackendBootstrap:
     needs before the controller registry can fire.
 
     Instantiate once per production ``BackendServer`` — every
-    attribute is a one-shot construction. Test fixtures that build
-    ``BackendServer`` via ``__new__`` never touch this class.
+    attribute is a one-shot construction. ``BackendServer.from_parts``
+    never touches this class.
     """
 
     def __init__(

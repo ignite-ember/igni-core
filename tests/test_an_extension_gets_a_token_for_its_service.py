@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -433,7 +434,7 @@ async def test_a_distributed_python_extension_fetches_its_token(tmp_path, endpoi
 # ── Sign-in brings the extensions ──────────────────────────────────
 
 
-class FakeBackend:
+class FakeAuth:
     def __init__(self, ok: bool) -> None:
         self.ok = ok
 
@@ -442,6 +443,11 @@ class FakeBackend:
 
     def reload_cloud_credentials(self) -> None:
         return None
+
+
+class FakeBackend:
+    def __init__(self, ok: bool) -> None:
+        self.controllers = SimpleNamespace(auth=FakeAuth(ok))
 
 
 class FakePush:

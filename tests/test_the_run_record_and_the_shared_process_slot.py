@@ -106,10 +106,9 @@ def _controller(stream_messages: list[msg.Message]) -> tuple[RunController, _Jou
         main_team=SimpleNamespace(arun=lambda *a, **k: None),
         guardrail_runner=SimpleNamespace(warning_prefix=_no_prefix),
     )
-    controller._backend = SimpleNamespace(
-        _stream_with_subagent_hitl=_stream,
-        _periodic_checkpoint=_forever,
-    )
+    controller._stream_factory = _stream
+    controller._message_queue = None
+    controller.periodic_checkpoint = _forever  # type: ignore[method-assign]
     controller._http_client_manager = SimpleNamespace(close_and_replace=_noop_async)
     return controller, journal
 

@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from igni_core.backend.__main__ import _build_rpc_table
-from igni_core.backend.server import BackendServer
+from igni_core.backend.plan_snapshot_builder import PlanSnapshotBuilder
 from igni_core.core.tools.todo import (
     TodoItem,
     TodoStore,
@@ -24,6 +24,7 @@ from igni_core.core.tools.todo import (
     _coerce_items,
 )
 from igni_core.protocol.rpc import RpcMethod
+from tests.backend_server_factory import make_backend
 
 # ── Pure data layer ───────────────────────────────────────────
 
@@ -187,8 +188,7 @@ class TestGetTodosRpc:
         session = MagicMock()
         session.todo_store = TodoStore()
         session.todo_store.set([TodoItem("Run tests", "in_progress", "Running tests")])
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
         out = backend.get_todos()
         assert out == [
             {"content": "Run tests", "status": "in_progress", "activeForm": "Running tests"}
@@ -199,8 +199,7 @@ class TestGetTodosRpc:
         exists but is empty — RPC returns ``[]`` cleanly."""
         session = MagicMock()
         session.todo_store = TodoStore()
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
         assert backend.get_todos() == []
 
     def test_returns_empty_when_store_missing(self):
@@ -208,17 +207,14 @@ class TestGetTodosRpc:
         without a ``todo_store`` attribute (legacy serialised
         session, partial init), the RPC mustn't crash."""
         session = MagicMock(spec=[])  # No attributes at all.
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
-        assert backend.get_todos() == []
+        assert PlanSnapshotBuilder(session).todos() == []
 
     @pytest.mark.asyncio
     async def test_dispatch_table_routes_get_todos(self):
         session = MagicMock()
         session.todo_store = TodoStore()
         session.todo_store.set([TodoItem("planned", "pending")])
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
 
         table = _build_rpc_table(backend, transport=MagicMock(), login_state={})
         handler = table.get(RpcMethod.GET_TODOS)
@@ -240,8 +236,7 @@ class TestEndToEnd:
         session = MagicMock()
         session.todo_store = TodoStore()
         tool = TodoTools(session)
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
 
         # First call: plan three items.
         await tool.todo_write(

@@ -4,7 +4,7 @@ Same architectural smell as the plan-decisions bug: before this
 fix, ``todo_write`` only mutated the in-memory ``TodoStore`` and
 broadcast ``todos_updated``. The status flips (pending →
 in_progress → completed) reached the FE for the live session
-but were lost on restart — ``_rehydrate_plan_store`` re-seeded
+but were lost on restart — ``RehydrateController.plan_store`` re-seeded
 from the plan's original ``exit_plan_mode(tasks=...)`` args
 (everything pending), erasing all execution progress.
 
@@ -14,7 +14,7 @@ tests pin the contract end to end:
 
 * ``TodoTools.todo_write`` calls ``SessionPersistence.save_todos``
   with the post-set snapshot.
-* ``_rehydrate_todos`` overwrites the plan-args seed when a
+* ``RehydrateController.todos`` overwrites the plan-args seed when a
   snapshot exists.
 * Headline regression: agent flips task A → in_progress, BE
   restarts, FE sees in_progress (NOT pending) on the restored
@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from igni_core.backend.server import BackendServer
+from igni_core.backend.server_rehydrate import RehydrateController
 from igni_core.core.tools.todo import TodoStore, TodoTools, _coerce_items
 
 
@@ -125,7 +125,7 @@ class TestTodoWritePersists:
         ]
 
 
-# ── _rehydrate_todos ─────────────────────────────────────────
+# ── RehydrateController.todos ─────────────────────────────────────────
 
 
 class TestRehydrateTodos:
@@ -135,9 +135,8 @@ class TestRehydrateTodos:
         # state). A snapshot with task A flipped to in_progress
         # is the real execution state — rehydration must prefer
         # it.
-        server = BackendServer.__new__(BackendServer)
         store = TodoStore()
-        # Pre-seed as if ``_rehydrate_plan_store`` already ran.
+        # Pre-seed as if ``RehydrateController.plan_store`` already ran.
         seed_items, _ = _coerce_items(
             [
                 {"content": "Task A", "status": "pending"},
@@ -146,7 +145,7 @@ class TestRehydrateTodos:
         )
         store.set(seed_items)
 
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             todo_store=store,
             persistence=_CapturingPersistence(
                 prefill=[
@@ -156,7 +155,7 @@ class TestRehydrateTodos:
             ),
         )
 
-        await server._rehydrate_todos()
+        await RehydrateController(session).todos()
 
         assert store.snapshot() == [
             {"content": "Task A", "status": "in_progress", "activeForm": ""},
@@ -173,24 +172,22 @@ class TestRehydrateTodos:
         # _rehydrate_plan_store seeded. Otherwise a fresh plan
         # submission with tasks would render with an empty
         # checklist.
-        server = BackendServer.__new__(BackendServer)
         store = TodoStore()
         seed_items, _ = _coerce_items([{"content": "Task A", "status": "pending"}])
         store.set(seed_items)
 
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             todo_store=store,
             persistence=_CapturingPersistence(prefill=[]),
         )
 
-        await server._rehydrate_todos()
+        await RehydrateController(session).todos()
 
         assert store.snapshot() == [{"content": "Task A", "status": "pending", "activeForm": ""}]
 
     async def test_load_failure_preserves_seed(self) -> None:
         # DB blip on restart → fall back to the plan-args seed
         # rather than crash the boot.
-        server = BackendServer.__new__(BackendServer)
         store = TodoStore()
         seed_items, _ = _coerce_items([{"content": "Task A", "status": "pending"}])
         store.set(seed_items)
@@ -199,9 +196,9 @@ class TestRehydrateTodos:
             prefill=[{"content": "X", "status": "completed", "activeForm": ""}]
         )
         persistence.fail_load = True
-        server._session = SimpleNamespace(todo_store=store, persistence=persistence)
+        session = SimpleNamespace(todo_store=store, persistence=persistence)
 
-        await server._rehydrate_todos()  # must not raise
+        await RehydrateController(session).todos()  # must not raise
 
         # Original seed intact — no partial overwrite.
         assert store.snapshot() == [{"content": "Task A", "status": "pending", "activeForm": ""}]
@@ -210,11 +207,10 @@ class TestRehydrateTodos:
         # Test sessions / headless callers may build a session
         # without a persistence layer. Rehydrate must skip
         # cleanly, leaving any prior seed in place.
-        server = BackendServer.__new__(BackendServer)
         store = TodoStore()
-        server._session = SimpleNamespace(todo_store=store, persistence=None)
+        session = SimpleNamespace(todo_store=store, persistence=None)
 
-        await server._rehydrate_todos()
+        await RehydrateController(session).todos()
         assert store.snapshot() == []
 
 
@@ -245,7 +241,7 @@ class TestEndToEndRestartSurvives:
         persisted_blob = live_persistence.saved[-1]
 
         # Step 3: simulate restart. Fresh session, fresh store.
-        # ``_rehydrate_plan_store`` would normally re-seed from
+        # ``RehydrateController.plan_store`` would normally re-seed from
         # the plan's original args (everything pending) — we
         # simulate that step by pre-seeding the store the same
         # way.
@@ -258,14 +254,13 @@ class TestEndToEndRestartSurvives:
         )
         restarted_store.set(plan_args_seed)
 
-        # ``_rehydrate_todos`` then loads the persisted snapshot.
+        # ``RehydrateController.todos`` then loads the persisted snapshot.
         restarted_persistence = _CapturingPersistence(prefill=persisted_blob)
-        server = BackendServer.__new__(BackendServer)
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             todo_store=restarted_store,
             persistence=restarted_persistence,
         )
-        await server._rehydrate_todos()
+        await RehydrateController(session).todos()
 
         # Step 4: restored state matches the live state at restart.
         assert restarted_store.snapshot() == [

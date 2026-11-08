@@ -23,7 +23,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from igni_core.backend.__main__ import _build_rpc_table
-from igni_core.backend.server import BackendServer
+from igni_core.backend.schemas_processes import ProcessTailResult, StopProcessResult
+from igni_core.backend.server_processes import ProcessesController
 from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.protocol.rpc import RpcMethod
 
@@ -132,14 +133,14 @@ class TestStartSubscriber:
         assert survivor[0]["pid"] == 1
 
 
-# ── BackendServer methods ────────────────────────────────────
+# ── ProcessesController (what the RPCs dump) ────────────────────────────────────
 
 
 class TestListBackgroundProcesses:
     def test_empty_registry_returns_empty(self, monkeypatch) -> None:
         monkeypatch.setattr(supervisors.default().registry, "all_known", lambda: [], raising=True)
-        server = BackendServer.__new__(BackendServer)
-        assert server.list_background_processes() == []
+        processes = ProcessesController()
+        assert [row.model_dump() for row in processes.list()] == []
 
     def test_returns_pid_cmd_elapsed_per_process(self, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -151,8 +152,8 @@ class TestListBackgroundProcesses:
             ],
             raising=True,
         )
-        server = BackendServer.__new__(BackendServer)
-        result = server.list_background_processes()
+        processes = ProcessesController()
+        result = [row.model_dump() for row in processes.list()]
         assert result == [
             {
                 "pid": 101,
@@ -180,8 +181,8 @@ class TestListBackgroundProcesses:
             lambda: [(303, "pytest -x", 31.0, False, 1)],
             raising=True,
         )
-        server = BackendServer.__new__(BackendServer)
-        assert server.list_background_processes() == [
+        processes = ProcessesController()
+        assert [row.model_dump() for row in processes.list()] == [
             {
                 "pid": 303,
                 "cmd": "pytest -x",
@@ -195,8 +196,8 @@ class TestListBackgroundProcesses:
 class TestReadProcessTail:
     def test_unknown_pid_returns_safe_shape(self, monkeypatch) -> None:
         monkeypatch.setattr(supervisors.default().registry, "get", lambda _pid: None, raising=True)
-        server = BackendServer.__new__(BackendServer)
-        out = server.read_process_tail(pid=9999)
+        processes = ProcessesController()
+        out = processes.read_tail(pid=9999).model_dump()
         assert out == {
             "pid": 9999,
             "output": "",
@@ -211,8 +212,8 @@ class TestReadProcessTail:
         mp.returncode.return_value = None
         monkeypatch.setattr(supervisors.default().registry, "get", lambda _pid: mp, raising=True)
 
-        server = BackendServer.__new__(BackendServer)
-        out = server.read_process_tail(pid=42, tail=50)
+        processes = ProcessesController()
+        out = processes.read_tail(pid=42, tail=50).model_dump()
         assert out == {
             "pid": 42,
             "output": "line1\nline2",
@@ -231,8 +232,8 @@ class TestReadProcessTail:
         mp.returncode.return_value = 0
         monkeypatch.setattr(supervisors.default().registry, "get", lambda _pid: mp, raising=True)
 
-        server = BackendServer.__new__(BackendServer)
-        out = server.read_process_tail(pid=7, tail=100)
+        processes = ProcessesController()
+        out = processes.read_tail(pid=7, tail=100).model_dump()
         assert out["exit_code"] == 0
         assert out["is_running"] is False
 
@@ -240,8 +241,8 @@ class TestReadProcessTail:
 class TestStopBackgroundProcess:
     async def test_unknown_pid_returns_killed_false(self, monkeypatch) -> None:
         monkeypatch.setattr(supervisors.default().registry, "get", lambda _pid: None, raising=True)
-        server = BackendServer.__new__(BackendServer)
-        out = await server.stop_background_process(pid=9999)
+        processes = ProcessesController()
+        out = (await processes.stop(pid=9999)).model_dump()
         assert out["killed"] is False
         assert "not in registry" in out["message"]
 
@@ -251,8 +252,8 @@ class TestStopBackgroundProcess:
         mp.returncode.return_value = 137
         monkeypatch.setattr(supervisors.default().registry, "get", lambda _pid: mp, raising=True)
 
-        server = BackendServer.__new__(BackendServer)
-        out = await server.stop_background_process(pid=1)
+        processes = ProcessesController()
+        out = (await processes.stop(pid=1)).model_dump()
         assert out["killed"] is False
         assert "already exited" in out["message"]
         mp.kill.assert_not_called()
@@ -264,8 +265,8 @@ class TestStopBackgroundProcess:
         mp._reader_task = None  # no reader to await — skip the wait_for branch
         monkeypatch.setattr(supervisors.default().registry, "get", lambda _pid: mp, raising=True)
 
-        server = BackendServer.__new__(BackendServer)
-        out = await server.stop_background_process(pid=42)
+        processes = ProcessesController()
+        out = (await processes.stop(pid=42)).model_dump()
         mp.kill.assert_called_once()
         assert out["killed"] is True
         assert out["pid"] == 42
@@ -276,17 +277,17 @@ class TestStopBackgroundProcess:
 
 class TestWatcherRpcDispatch:
     """The three watcher RPCs must route from the dispatch lambda
-    to the right BackendServer method with args extracted as the
+    to the right backend or controller method with args extracted as the
     right types. Same shape as ``test_plan_rpc_wiring.py``."""
 
     def _make_backend(self) -> MagicMock:
         backend = MagicMock()
         backend.list_background_processes = MagicMock(return_value=[])
-        backend.read_process_tail = MagicMock(
-            return_value={"pid": 0, "output": "", "is_running": False, "exit_code": None}
+        backend.controllers.processes.read_tail = MagicMock(
+            return_value=ProcessTailResult(pid=0, output="", is_running=False, exit_code=None)
         )
-        backend.stop_background_process = AsyncMock(
-            return_value={"pid": 0, "killed": False, "message": ""}
+        backend.controllers.processes.stop = AsyncMock(
+            return_value=StopProcessResult(pid=0, killed=False, message="")
         )
         return backend
 
@@ -300,13 +301,13 @@ class TestWatcherRpcDispatch:
         backend = self._make_backend()
         table = _build_rpc_table(backend, MagicMock(), {})
         table[RpcMethod.READ_PROCESS_TAIL]({"pid": "42", "tail": "50"})
-        backend.read_process_tail.assert_called_once_with(pid=42, tail=50)
+        backend.controllers.processes.read_tail.assert_called_once_with(pid=42, tail=50)
 
     def test_read_dispatch_defaults_tail_to_200(self) -> None:
         backend = self._make_backend()
         table = _build_rpc_table(backend, MagicMock(), {})
         table[RpcMethod.READ_PROCESS_TAIL]({"pid": 42})
-        backend.read_process_tail.assert_called_once_with(pid=42, tail=200)
+        backend.controllers.processes.read_tail.assert_called_once_with(pid=42, tail=200)
 
     async def test_stop_dispatch_extracts_pid(self) -> None:
         backend = self._make_backend()
@@ -315,7 +316,7 @@ class TestWatcherRpcDispatch:
         # Lambda returns the coroutine — await to drive the call.
         if asyncio.iscoroutine(result):
             await result
-        backend.stop_background_process.assert_called_once_with(pid=99)
+        backend.controllers.processes.stop.assert_called_once_with(pid=99)
 
     def test_pool_runtime_routes_to_pool_backend(self) -> None:
         # Same isolation contract as the plan-decision RPCs:

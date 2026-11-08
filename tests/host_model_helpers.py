@@ -28,9 +28,11 @@ from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.schemas_history import UserTurn
 from igni_core.backend.schemas_panels import OutputStyleInfo, OutputStylesResult
 from igni_core.backend.schemas_pool import ProjectDirs
 from igni_core.backend.schemas_rpc import GroupPolicyPackResult
+from igni_core.backend.server_processes import ProcessRow
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
@@ -103,6 +105,8 @@ class FakeSession:
         self.run_release: asyncio.Event | None = None
         self.titles: list[str] = []
         self.promoted: list[tuple[str, str]] = []
+        # The approvals still waiting, as a backend's HITL controller holds them.
+        self.controllers = SimpleNamespace(hitl=SimpleNamespace(waiting_messages=lambda: []))
 
     # ── Lifecycle the pool and dispatcher touch ───────────────────
 
@@ -178,8 +182,8 @@ class FakeSession:
         self.switched_to.append(session_id)
         return msg.Info(text=f"Switched to session: {session_id}")
 
-    async def get_chat_history(self, session_id: str) -> list[dict]:
-        return [{"role": "user", "content": text} for text, _ in self.ran]
+    async def get_chat_history(self, session_id: str) -> list[UserTurn]:
+        return [UserTurn(content=text) for text, _ in self.ran]
 
     async def search_chat(self, session_id: str, query: str, limit: int = 50) -> list[dict]:
         return [{"text": t} for t, _ in self.ran if query in t][:limit]
@@ -238,7 +242,7 @@ class FakeSession:
     async def get_scheduled_tasks(self, include_done: bool = True) -> list[dict]:
         return [{"id": "t1", "description": "nightly"}]
 
-    def list_background_processes(self) -> list[dict]:
+    def list_background_processes(self) -> list[ProcessRow]:
         return []
 
     def get_mcp_servers(self) -> list[dict]:

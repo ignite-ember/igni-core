@@ -23,7 +23,7 @@ class SessionRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.UPLOAD_ATTACHMENT)
     def upload_attachment(self, args: dict) -> Any:
-        return self._ctx.backend.upload_attachment(args["filename"], args["content_base64"])
+        return self._controllers.files.upload_attachment(args["filename"], args["content_base64"])
 
     @rpc(RpcMethod.GET_PENDING_MESSAGES)
     def get_pending_messages(self, args: dict) -> Any:
@@ -42,7 +42,9 @@ class SessionRpcHandler(RpcHandler):
         # missing rows (the controller returns ``ok=True`` either
         # way) so the FE can retry on transient errors without
         # worrying about double-delete.
-        return self._ctx.backend.discard_interrupted_run(args["session_id"], args["message_id"])
+        return self._controllers.context.discard_interrupted_run(
+            args["session_id"], args["message_id"]
+        )
 
     @rpc(RpcMethod.LIST_SESSIONS)
     def list_sessions(self, args: dict) -> Any:
@@ -74,7 +76,7 @@ class SessionRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.CANCEL_AGENT_RUN)
     def cancel_agent_run(self, args: dict) -> Any:
-        return self._ctx.backend.cancel_agent_run(args.get("run_id", ""))
+        return self._controllers.runs.cancel_agent_run(args.get("run_id", ""))
 
     @rpc(RpcMethod.FIRE_SESSION_START_HOOK)
     def fire_session_start_hook(self, args: dict) -> Any:

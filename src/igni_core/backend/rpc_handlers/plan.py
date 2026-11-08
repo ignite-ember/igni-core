@@ -21,8 +21,8 @@ class PlanRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.APPROVE_PLAN)
     def approve_plan(self, args: dict) -> Awaitable[Any]:
-        return self._ctx.backend.approve_plan(run_id=str(args.get("run_id", "")))
+        return self._ctx.backend.session.approve_plan(run_id=str(args.get("run_id", "")))
 
     @rpc(RpcMethod.DISMISS_PLAN)
     def dismiss_plan(self, args: dict) -> Awaitable[Any]:
-        return self._ctx.backend.dismiss_plan(run_id=str(args.get("run_id", "")))
+        return self._ctx.backend.session.dismiss_plan(run_id=str(args.get("run_id", "")))

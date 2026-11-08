@@ -15,11 +15,11 @@ class LoopRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.POP_PENDING_LOOP_ITERATION)
     def loop_pop(self, args: dict) -> Any:
-        return self._ctx.backend.pop_pending_loop_iteration()
+        return self._controllers.loop.pop_pending_iteration()
 
     @rpc(RpcMethod.CANCEL_PENDING_LOOP)
     def loop_cancel(self, args: dict) -> Any:
-        return self._ctx.backend.cancel_pending_loop()
+        return self._controllers.loop.cancel_pending()
 
     @rpc(RpcMethod.LOOP_STATUS)
     def loop_status(self, args: dict) -> Any:
@@ -27,7 +27,7 @@ class LoopRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.LOOP_RESUME)
     def loop_resume(self, args: dict) -> Any:
-        return self._ctx.backend.loop_resume()
+        return self._controllers.loop.resume()
 
     @rpc(RpcMethod.LOOP_PAUSE)
     def loop_pause(self, args: dict) -> Any:
@@ -35,8 +35,8 @@ class LoopRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.COMPACT_IF_NEEDED)
     def compact_if_needed(self, args: dict) -> Any:
-        return self._ctx.backend.compact_if_needed(args["ctx_tokens"], args["max_ctx"])
+        return self._controllers.context.compact_if_needed(args["ctx_tokens"], args["max_ctx"])
 
     @rpc(RpcMethod.EXTRACT_LEARNINGS)
     def extract_learnings(self, args: dict) -> Any:
-        return self._ctx.backend.extract_learnings(args["user_msg"], args["assistant_msg"])
+        return self._controllers.context.extract_learnings(args["user_msg"], args["assistant_msg"])

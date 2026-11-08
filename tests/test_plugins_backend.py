@@ -23,6 +23,7 @@ from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.plugins.loader import PluginLoader
 from igni_core.core.plugins.state import PluginsState, load_state, save_state
 from igni_core.core.session.core import PluginReloadCounts
+from tests.backend_server_factory import make_backend
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -82,8 +83,7 @@ def _make_backend(
     # when they want to assert on specific counts.
     session.reload_plugins.return_value = PluginReloadCounts(plugins=0, skills=0, agents=0, hooks=0)
 
-    backend = BackendServer.__new__(BackendServer)
-    backend._session = session
+    backend = make_backend(session)
     return backend
 
 
@@ -157,7 +157,7 @@ def test_set_plugin_enabled_persists(tmp_path: Path) -> None:
     relies on this exact return shape; the message itself is
     hot-reload-aware (no longer asks the user to restart)."""
     backend = _make_backend(tmp_path, plugins=[("alpha", {})])
-    result = backend.set_plugin_enabled("alpha", False)
+    result = backend.controllers.plugins.set_enabled("alpha", False)
     assert "disabled" in result.text
     # Surface which subsystems were touched — replaces the old
     # "restart required" message now that hot-reload handles it.
@@ -168,7 +168,7 @@ def test_set_plugin_enabled_persists(tmp_path: Path) -> None:
 
 def test_set_plugin_enabled_unknown_plugin(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
-    result = backend.set_plugin_enabled("ghost", False)
+    result = backend.controllers.plugins.set_enabled("ghost", False)
     assert "ghost" in result.text
     # State unchanged.
     persisted = load_state(data_dir=tmp_path / "ember")
@@ -179,8 +179,8 @@ def test_set_plugin_enabled_round_trip(tmp_path: Path) -> None:
     """Disable, then re-enable. Final state should be back to empty
     disabled list — toggling is symmetric."""
     backend = _make_backend(tmp_path, plugins=[("alpha", {})])
-    backend.set_plugin_enabled("alpha", False)
-    backend.set_plugin_enabled("alpha", True)
+    backend.controllers.plugins.set_enabled("alpha", False)
+    backend.controllers.plugins.set_enabled("alpha", True)
     persisted = load_state(data_dir=tmp_path / "ember")
     assert "alpha" not in persisted.disabled
 
@@ -204,7 +204,7 @@ def test_install_plugin_url_delegates_to_installer(tmp_path: Path) -> None:
         backend._session.reload_plugins.return_value = PluginReloadCounts(
             plugins=0, skills=0, agents=0, hooks=0
         )
-        result = backend.install_plugin("https://x/y.git")
+        result = backend.controllers.plugins.install("https://x/y.git")
     # Bare-URL installs pass ``subdir=None`` since the plugin lives
     # at the clone root.
     installer.install.assert_called_once_with("https://x/y.git", ref=None, subdir=None)
@@ -245,7 +245,7 @@ def test_install_plugin_marketplace_ref(tmp_path: Path) -> None:
         backend._session.reload_plugins.return_value = PluginReloadCounts(
             plugins=0, skills=0, agents=0, hooks=0
         )
-        backend.install_plugin("@m/p")
+        backend.controllers.plugins.install("@m/p")
     installer.install.assert_called_once_with(
         "https://resolved.git",
         ref="release",
@@ -279,7 +279,7 @@ def test_install_plugin_explicit_ref_wins_over_catalog_branch(tmp_path: Path) ->
         backend._session.reload_plugins.return_value = PluginReloadCounts(
             plugins=0, skills=0, agents=0, hooks=0
         )
-        backend.install_plugin("@m/p", install_ref="user-pin")
+        backend.controllers.plugins.install("@m/p", install_ref="user-pin")
     # User-supplied ``install_ref`` overrides the resolver's ref —
     # see ``install_plugin``'s "honors explicit choice" branch.
     installer.install.assert_called_once_with(
@@ -299,7 +299,7 @@ def test_install_plugin_unresolved_marketplace_ref(tmp_path: Path) -> None:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         mock_resolve.return_value = None
-        result = backend.install_plugin("@ghost/p")
+        result = backend.controllers.plugins.install("@ghost/p")
     installer.install.assert_not_called()
     assert "marketplace" in result.text.lower()
 
@@ -309,7 +309,7 @@ def test_install_plugin_no_git(tmp_path: Path) -> None:
     with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = False
-        result = backend.install_plugin("https://x.git")
+        result = backend.controllers.plugins.install("https://x.git")
     assert "git not found" in result.text.lower()
     installer.install.assert_not_called()
 
@@ -322,7 +322,7 @@ def test_install_plugin_surfaces_git_error(tmp_path: Path) -> None:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.install.side_effect = GitError("clone failed")
-        result = backend.install_plugin("https://x.git")
+        result = backend.controllers.plugins.install("https://x.git")
     assert "git error" in result.text.lower()
     assert "clone failed" in result.text
 
@@ -335,7 +335,7 @@ def test_install_plugin_surfaces_plugin_error(tmp_path: Path) -> None:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.install.side_effect = PluginError("already installed")
-        result = backend.install_plugin("https://x.git")
+        result = backend.controllers.plugins.install("https://x.git")
     assert "already installed" in result.text
 
 
@@ -348,7 +348,7 @@ def test_update_plugin_delegates(tmp_path: Path) -> None:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.update.return_value = "a" * 40
-        result = backend.update_plugin("foo")
+        result = backend.controllers.plugins.update("foo")
     installer.update.assert_called_once_with("foo", ref=None)
     assert "a" * 12 in result.text
 
@@ -359,7 +359,7 @@ def test_update_plugin_with_ref(tmp_path: Path) -> None:
         installer = mock_cls.return_value
         installer.is_git_available.return_value = True
         installer.update.return_value = "b" * 40
-        backend.update_plugin("foo", "dev")
+        backend.controllers.plugins.update("foo", "dev")
     installer.update.assert_called_once_with("foo", ref="dev")
 
 
@@ -367,7 +367,7 @@ def test_remove_plugin_delegates(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
     with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
-        result = backend.remove_plugin("foo")
+        result = backend.controllers.plugins.remove("foo")
     installer.remove.assert_called_once_with("foo")
     assert "foo" in result.text
     # The post-remove message names the affected subsystems instead
@@ -382,7 +382,7 @@ def test_remove_plugin_surfaces_error(tmp_path: Path) -> None:
     with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
         installer = mock_cls.return_value
         installer.remove.side_effect = PluginError("not installed")
-        result = backend.remove_plugin("ghost")
+        result = backend.controllers.plugins.remove("ghost")
     assert "not installed" in result.text
 
 
@@ -448,7 +448,7 @@ def test_add_marketplace_delegates(tmp_path: Path) -> None:
     fake_entry.cached.plugins = [MagicMock(), MagicMock()]
     with patch("igni_core.core.plugins.marketplaces.add_marketplace") as mock_add:
         mock_add.return_value = fake_entry
-        result = backend.add_marketplace("https://m.git")
+        result = backend.controllers.marketplaces.add("https://m.git")
     args, kwargs = mock_add.call_args
     assert "https://m.git" in (args + tuple(kwargs.values()))
     assert "m1" in result.text
@@ -461,7 +461,7 @@ def test_add_marketplace_surfaces_git_error(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
     with patch("igni_core.core.plugins.marketplaces.add_marketplace") as mock_add:
         mock_add.side_effect = GitError("auth required")
-        result = backend.add_marketplace("https://m.git")
+        result = backend.controllers.marketplaces.add("https://m.git")
     assert "git error" in result.text.lower()
 
 
@@ -469,7 +469,7 @@ def test_remove_marketplace_delegates(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
     with patch("igni_core.core.plugins.marketplaces.remove_marketplace") as mock_remove:
         mock_remove.return_value = True
-        result = backend.remove_marketplace("m1")
+        result = backend.controllers.marketplaces.remove("m1")
     assert "m1" in result.text
 
 
@@ -477,7 +477,7 @@ def test_remove_marketplace_unknown(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
     with patch("igni_core.core.plugins.marketplaces.remove_marketplace") as mock_remove:
         mock_remove.return_value = False
-        result = backend.remove_marketplace("ghost")
+        result = backend.controllers.marketplaces.remove("ghost")
     assert "ghost" in result.text
     assert "no marketplace" in result.text.lower()
 
@@ -490,7 +490,7 @@ def test_refresh_marketplaces_named(tmp_path: Path) -> None:
     fake_entry.cached.plugins = [MagicMock(), MagicMock(), MagicMock()]
     with patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh:
         mock_refresh.return_value = fake_entry
-        result = backend.refresh_marketplaces("m1")
+        result = backend.controllers.marketplaces.refresh("m1")
     assert "m1" in result.text
     assert "3 plugin" in result.text
 
@@ -499,7 +499,7 @@ def test_refresh_marketplaces_named_unknown(tmp_path: Path) -> None:
     backend = _make_backend(tmp_path)
     with patch("igni_core.core.plugins.marketplaces.refresh_marketplace") as mock_refresh:
         mock_refresh.return_value = None
-        result = backend.refresh_marketplaces("ghost")
+        result = backend.controllers.marketplaces.refresh("ghost")
     assert "ghost" in result.text
 
 
@@ -526,7 +526,7 @@ def test_refresh_marketplaces_all_aggregates_errors(tmp_path: Path) -> None:
     ):
         mock_load.return_value = fake_registry
         mock_refresh.side_effect = _refresh_side_effect
-        result = backend.refresh_marketplaces(None)
+        result = backend.controllers.marketplaces.refresh(None)
     assert "1 ok" in result.text
     assert "1 failed" in result.text
     assert "m2" in result.text  # failure listed by name
@@ -538,5 +538,5 @@ def test_refresh_marketplaces_all_empty_registry(tmp_path: Path) -> None:
     fake_registry.marketplaces = []
     with patch("igni_core.core.plugins.marketplaces.load_registry") as mock_load:
         mock_load.return_value = fake_registry
-        result = backend.refresh_marketplaces(None)
+        result = backend.controllers.marketplaces.refresh(None)
     assert "no marketplaces" in result.text.lower()

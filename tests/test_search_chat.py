@@ -8,9 +8,9 @@ Two layers:
   :class:`ChatHistoryEntry` list, trivially testable without Agno.
   The bulk of the contract lives here (snippet truncation, ellipses,
   match offsets, limit cap, defensive skips for empty content).
-* ``BackendServer.search_chat`` — thin wrapper that strips the
-  query, fetches history, delegates. Tests verify the strip +
-  delegation + empty-query short-circuit.
+* ``SessionsController.search_chat`` (behind ``BackendServer.search_chat``)
+  — strips the query, fetches history, delegates. Tests verify the
+  strip + delegation + empty-query short-circuit.
 """
 
 from __future__ import annotations
@@ -18,12 +18,23 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import TypeAdapter
 
 from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.chat_history_searcher import ChatHistorySearcher
-from igni_core.backend.schemas_history import ChatHistoryEntry
+from igni_core.backend.schemas_history import (
+    AssistantTurn,
+    ChatHistoryEntry,
+    ChatTurn,
+    StatsTurn,
+    UserTurn,
+)
 from igni_core.backend.server import BackendServer
+from igni_core.backend.server_sessions import SessionsController
 from igni_core.protocol.rpc import RpcMethod
+from tests.backend_server_factory import make_backend
+
+_CHAT_TURN = TypeAdapter(ChatTurn)
 
 # Default snippet half-width — mirrors ChatHistorySearcher's default
 # so test assertions can compute expected snippet lengths without
@@ -201,23 +212,20 @@ class TestSearchHistoryFieldDefaults:
         assert isinstance(out[0].created_at, int)
 
 
-# ── BackendServer.search_chat wrapper ──────────────────────
+# ── BackendServer.search_chat → SessionsController ─────────
 
 
 class TestSearchChatWrapper:
-    def _backend(self, history: list):
-        """Build a BackendServer stub. The wire path emits
-        ``list[dict]`` from ``get_chat_history``; the controller
-        re-validates each entry into :class:`ChatHistoryEntry` at
-        the RPC seam, so we hand the mock a list of dicts to match
-        the production shape."""
-        backend = BackendServer.__new__(BackendServer)
-        wire_shape = [
-            entry.model_dump(mode="json") if isinstance(entry, ChatHistoryEntry) else entry
-            for entry in history
-        ]
-        backend.get_chat_history = AsyncMock(return_value=wire_shape)
-        backend._session = MagicMock()
+    def _backend(self, history: list[ChatHistoryEntry]) -> BackendServer:
+        """A composed backend whose history provider returns typed
+        :class:`ChatTurn` objects — what
+        :meth:`ChatHistoryRebuilder.rebuild` hands the controller."""
+        turns = [_CHAT_TURN.validate_python(entry.model_dump(mode="json")) for entry in history]
+        backend = make_backend(MagicMock(), settings=MagicMock())
+        self.provider = AsyncMock(return_value=turns)
+        backend.controllers.sessions = SessionsController(
+            session=backend.session, chat_history_provider=self.provider
+        )
         return backend
 
     @pytest.mark.asyncio
@@ -228,14 +236,14 @@ class TestSearchChatWrapper:
         backend = self._backend([_turn("ignored")])
         out = await backend.search_chat("s1", "")
         assert out == []
-        backend.get_chat_history.assert_not_awaited()
+        self.provider.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_whitespace_only_query_short_circuits(self):
         backend = self._backend([_turn("ignored")])
         out = await backend.search_chat("s1", "   \t\n  ")
         assert out == []
-        backend.get_chat_history.assert_not_awaited()
+        self.provider.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_query_stripped_before_search(self):
@@ -247,10 +255,10 @@ class TestSearchChatWrapper:
         assert len(out) == 1
 
     @pytest.mark.asyncio
-    async def test_delegates_to_get_chat_history(self):
+    async def test_delegates_to_the_history_provider(self):
         backend = self._backend([_turn("NEEDLE here")])
         await backend.search_chat("abc123", "needle")
-        backend.get_chat_history.assert_awaited_once_with("abc123")
+        self.provider.assert_awaited_once_with("abc123")
 
     @pytest.mark.asyncio
     async def test_limit_propagates(self):
@@ -276,3 +284,34 @@ class TestSearchChatWrapper:
         # awaiting it gives back the match list.
         out = await handler({"session_id": "s1", "query": "needle", "limit": 50})
         assert len(out) == 1
+
+
+class TestHitIndicesFollowTheRebuiltHistory:
+    """The FE maps ``history_index`` onto the chat items it built from
+    ``get_chat_history``. The controller now receives typed
+    :class:`ChatTurn` objects instead of the dicts the wire carries;
+    the hits must be the same either way."""
+
+    @pytest.mark.asyncio
+    async def test_typed_turns_and_wire_dicts_give_the_same_hits(self):
+        turns = [
+            UserTurn(content="first NEEDLE", run_id="r1", created_at=1),
+            AssistantTurn(content="no match here", run_id="r1", created_at=2),
+            StatsTurn(run_id="r1"),
+            AssistantTurn(content="second needle", run_id="r2", created_at=3),
+        ]
+        typed = SessionsController(
+            session=MagicMock(), chat_history_provider=AsyncMock(return_value=turns)
+        )
+        wire = SessionsController(
+            session=MagicMock(),
+            chat_history_provider=AsyncMock(
+                return_value=[t.model_dump(mode="json") for t in turns]
+            ),
+        )
+
+        typed_hits = await typed.search_chat("s1", "needle")
+        wire_hits = await wire.search_chat("s1", "needle")
+
+        assert typed_hits == wire_hits
+        assert [h.history_index for h in typed_hits] == [0, 3]

@@ -17,8 +17,9 @@ class SessionHistoryRpcHandler(RpcHandler):
     """Chat log query + search + truncate + context-token count."""
 
     @rpc(RpcMethod.GET_CHAT_HISTORY)
-    def get_chat_history(self, args: dict) -> Any:
-        return self._ctx.backend.get_chat_history(args["session_id"])
+    async def get_chat_history(self, args: dict) -> list[dict[str, Any]]:
+        turns = await self._ctx.backend.get_chat_history(args["session_id"])
+        return [t.model_dump(mode="json") for t in turns]
 
     @rpc(RpcMethod.SEARCH_CHAT)
     def search_chat(self, args: dict) -> Any:

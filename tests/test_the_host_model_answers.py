@@ -331,7 +331,7 @@ class TestApprovals:
             run_id="r",
             requirements=[msg.HITLRequest(requirement_id="q9", tool_name="shell")],
         )
-        rig.session.hitl = SimpleNamespace(waiting_messages=lambda: [restored])
+        rig.session.controllers.hitl = SimpleNamespace(waiting_messages=lambda: [restored])
         [waiting] = ok(await rig.ask(ext, "get", "chat.approvals.waiting"))
         assert waiting["requirement_id"] == "q9"
         ok(

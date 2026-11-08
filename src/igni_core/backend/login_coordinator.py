@@ -77,9 +77,11 @@ class LoginCoordinator:
 
     async def _run_login(self) -> None:
         try:
-            res: LoginResult = await self._backend.login(on_status=self._push.on_login_status)
+            res: LoginResult = await self._backend.controllers.auth.login(
+                on_status=self._push.on_login_status
+            )
             if res.ok:
-                self._backend.reload_cloud_credentials()
+                self._backend.controllers.auth.reload_cloud_credentials()
                 self._notify_signed_in()
             await self._push.on_login_result(success=res.ok, result=res.wire_result_string())
         except asyncio.CancelledError:

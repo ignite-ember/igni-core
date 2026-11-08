@@ -12,12 +12,13 @@ import pytest
 
 from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.command_handler import CommandHandler
-from igni_core.backend.server import BackendServer
+from igni_core.backend.server_panels import PanelsController
 from igni_core.core.output_styles import OutputStyle, discover_output_styles
 from igni_core.core.output_styles.loader import _parse_frontmatter
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.core import Session
 from igni_core.protocol.rpc import RpcMethod
+from tests.backend_server_factory import make_backend
 
 
 def _write(p: Path, body: str) -> None:
@@ -308,8 +309,7 @@ class TestGetOutputStylesRpc:
         }
         session._active_output_style = "learning"
         session.active_output_style = "learning"
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
         out = backend.get_output_styles()
         assert out.active == "learning"
         names = [s.name for s in out.styles]
@@ -319,9 +319,7 @@ class TestGetOutputStylesRpc:
         session = MagicMock(spec=["output_styles", "active_output_style"])
         session.output_styles = {}
         session.active_output_style = ""
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
-        out = backend.get_output_styles()
+        out = PanelsController(session).output_styles()
         assert out.active == ""
         assert out.styles == []
 
@@ -337,8 +335,7 @@ class TestGetOutputStylesRpc:
         }
         session._active_output_style = "default"
         session.active_output_style = "default"
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
 
         table = _build_rpc_table(backend, transport=MagicMock(), login_state={})
         handler = table.get(RpcMethod.GET_OUTPUT_STYLES)

@@ -72,8 +72,8 @@ class SchedulerController:
         execute_fn: Callable[[str], Awaitable[str]] | None = None,
     ) -> None:
         self._session = session
-        # ``settings`` may be ``None`` on ``BackendServer.__new__``-bypass
-        # test fixtures that only care about the loop pump. Every
+        # ``settings`` may be ``None`` in loop-pump-only test
+        # fixtures that only care about the loop pump. Every
         # method that actually consults settings raises the natural
         # ``AttributeError`` in that state; the pump-only tests never
         # reach those methods.

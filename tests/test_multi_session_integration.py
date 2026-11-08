@@ -27,6 +27,7 @@ import json
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -39,6 +40,7 @@ from igni_core.backend.session_pool import (
 )
 from igni_core.protocol import messages as msg
 from igni_core.transport.websocket import WebSocketServerTransport
+from tests.backend_server_factory import make_backend
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -586,25 +588,25 @@ async def test_real_handle_message_routes_two_sessions_through_production_path()
     path that runs in the BE process.
 
     What's mocked: only the heavy bits of ``BackendServer`` — the
-    Agno team in particular — by bypassing ``__init__`` and stubbing
+    Agno team in particular — by composing it over a stub session and stubbing
     ``run_message`` to yield a deterministic ContentDelta + Assistant
     Message stream. Everything else (the dispatch wiring, the stamping
     wrapper, the WS broadcast, the StreamEnd + UserMessageReceived
     book-ending) is real production code.
     """
     from igni_core.backend.__main__ import _handle_message
-    from igni_core.backend.server import BackendServer
 
     def _fake_backend(session_id: str) -> Any:
-        """Real ``BackendServer`` instance with ``__init__`` skipped —
-        same trick used in ``tests/test_backend_server.py``."""
-        be = BackendServer.__new__(BackendServer)
+        """A real ``BackendServer`` composed over a stub session
+        (:func:`tests.backend_server_factory.make_backend`)."""
         # ``session_id`` and ``project_dir`` are properties delegating
-        # to ``_session.{session_id,project_dir}`` — stand up a stub
-        # ``_session`` exposing both so the property reads work.
-        be._session = MagicMock()
-        be._session.session_id = session_id
-        be._session.project_dir = "/tmp"  # unused by the paths exercised here
+        # to the session — stand up a stub exposing both.
+        session = MagicMock()
+        session.session_id = session_id
+        session.project_dir = Path("/tmp")  # unused by the paths exercised here
+        # A MagicMock flag is truthy; nothing armed ``/plan`` here.
+        session.consume_plan_research_flag.return_value = False
+        be = make_backend(session, settings=MagicMock())
         be.cancel_run = MagicMock()
         be.shutdown = AsyncMock()
         be.handle_command = AsyncMock()
