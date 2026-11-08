@@ -21,7 +21,8 @@ from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.core.config.schemas.safety import BypassGuardConfig
 from igni_core.core.hooks.bypass_explainer import CallExplainer, clean
-from igni_core.core.hooks.bypass_guard import BypassGuard, Verdict, explained
+from igni_core.core.hooks.bypass_guard import BypassGuard, Verdict
+from igni_core.core.hooks.bypass_judge import HarmScore
 from igni_core.core.session.tool_approval import ToolCallApprovalChannel
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
@@ -44,7 +45,7 @@ class FakeExplainer:
 
 class NoJudge:
     async def score(self, text):
-        return 0.0, "destructive"
+        return HarmScore(probability=0.0, question="destructive")
 
 
 def _guard(project: Path, *, ask, explainer=None) -> BypassGuard:
@@ -77,7 +78,7 @@ class TestTheAnswer:
 
     def test_the_sentence_is_followed_by_what_stopped_the_call(self):
         rule = Verdict(needs_approval=True, reason="force-pushes, rewriting shared history")
-        assert explained(rule, _SENTENCE) == (
+        assert rule.explained(_SENTENCE) == (
             f"{_SENTENCE}. Bypass paused here because a safety rule matched "
             "(force-pushes, rewriting shared history)."
         )
@@ -85,10 +86,10 @@ class TestTheAnswer:
             needs_approval=True, reason="might delete or overwrite data", score=0.91, judged=True
         )
         assert "the safety model rated it 0.91 of 1 (might delete or overwrite data)" in (
-            explained(judged, "Deletes the build cache.")
+            judged.explained("Deletes the build cache.")
         )
         unchecked = Verdict(needs_approval=True, reason="could not be checked for safety")
-        assert explained(unchecked, "Runs a script.").endswith(
+        assert unchecked.explained("Runs a script.").endswith(
             "because the call could not be checked for safety."
         )
 

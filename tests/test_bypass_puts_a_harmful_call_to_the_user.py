@@ -16,8 +16,10 @@ from types import SimpleNamespace
 import pytest
 
 from igni_core.core.config.schemas.safety import BypassGuardConfig
-from igni_core.core.hooks.bypass_guard import BypassGuard
+from igni_core.core.hooks.bypass_guard import NOT_RUN, BypassGuard, Verdict
+from igni_core.core.hooks.bypass_judge import HarmJudge, HarmScore
 from igni_core.core.hooks.bypass_rules import flag_shell, flag_write
+from igni_core.core.hooks.bypass_tool_kind import ToolKind
 
 
 @pytest.fixture
@@ -109,7 +111,7 @@ class FakeJudge:
         self.calls += 1
         if self.error:
             raise self.error
-        return self.probability, self.question
+        return HarmScore(probability=self.probability, question=self.question)
 
 
 class Asker:
@@ -177,7 +179,6 @@ class TestARejectedCallLooksRejected:
     """Not ✓ (it never ran) and not ✗ (nothing failed): its own state."""
 
     def test_the_guards_wording_is_what_the_card_recognises(self):
-        from igni_core.core.hooks.bypass_guard import NOT_RUN
         from igni_core.protocol.tool_error_conventions import ToolResultErrorDetector
 
         detector = ToolResultErrorDetector.default()
@@ -344,11 +345,9 @@ def _model_cached() -> bool:
 
 @pytest.mark.skipif(not _model_cached(), reason="laya-typed-decisions is not in the local cache")
 def test_the_real_model_separates_a_harmful_call_from_an_ordinary_one():
-    from igni_core.core.hooks.bypass_guard import HarmJudge
-
     judge = HarmJudge()
-    harmful, _ = asyncio.run(judge.score("Bash: kubectl delete namespace production"))
-    ordinary, _ = asyncio.run(judge.score("Bash: ls -la src/"))
+    harmful = asyncio.run(judge.score("Bash: kubectl delete namespace production")).probability
+    ordinary = asyncio.run(judge.score("Bash: ls -la src/")).probability
     assert harmful > ordinary
     assert ordinary < 0.75
 
@@ -371,7 +370,7 @@ from igni_core.protocol import messages as msg  # noqa: E402
 
 class NoJudge:
     async def score(self, text):
-        return 0.0, "destructive"
+        return HarmScore(probability=0.0, question="destructive")
 
 
 @pytest.mark.parametrize("action,expect_ran", [("confirm", True), ("reject", False)])
@@ -475,27 +474,19 @@ class TestTheDialogSaysWhy:
     """
 
     def test_a_rule_reads_as_a_sentence(self):
-        from igni_core.core.hooks.bypass_guard import Verdict, explain
-
-        text = explain(
-            "run_shell_command",
-            Verdict(needs_approval=True, reason="force-pushes, rewriting shared history"),
+        text = Verdict(needs_approval=True, reason="force-pushes, rewriting shared history").prompt(
+            ToolKind.of("run_shell_command")
         )
         assert text.startswith("This command force-pushes, rewriting shared history.")
         assert "Bypass mode skips approvals" in text
 
     def test_the_model_says_it_judged_and_how_strongly(self):
-        from igni_core.core.hooks.bypass_guard import Verdict, explain
-
-        text = explain(
-            "write_file",
-            Verdict(
-                needs_approval=True,
-                reason="might delete or overwrite data",
-                score=0.83,
-                judged=True,
-            ),
-        )
+        text = Verdict(
+            needs_approval=True,
+            reason="might delete or overwrite data",
+            score=0.83,
+            judged=True,
+        ).prompt(ToolKind.of("write_file"))
         assert text.startswith("This file write might delete or overwrite data")
         assert "safety model's judgment" in text and "0.83" in text
 
