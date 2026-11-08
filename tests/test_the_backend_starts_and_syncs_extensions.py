@@ -1,8 +1,8 @@
 """The backend's half: start what is stored, then sync in the background.
 
-``BackendApp._start_extensions`` is where the store, the installer, the
-token endpoint and the distribution sync meet. These check the wiring
-rather than the parts — each part has its own file:
+:class:`ExtensionStartup` is where the store, the installer, the token
+endpoint and the distribution sync meet. These check the wiring rather
+than the parts — each part has its own file:
 
 * a stored development install starts only with ``IGNI_DEV_EXTENSIONS``;
 * the sync is scheduled at start-up, never awaited by it;
@@ -18,8 +18,14 @@ from typing import Any
 
 import pytest
 
-from igni_core.backend.app import BackendApp
+from igni_core.backend.extension_startup import ExtensionStartup, ExtensionStartupContext
+from igni_core.backend.extensions_runtime import ExtensionsRuntime
+from igni_core.backend.igni_server_access import IgniServerAccess
 from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.core.config.settings import Settings
+from igni_core.core.plugins.installer import PluginInstaller
+from igni_core.extensions.contributions import ExtensionContributions
+from igni_core.extensions.health import ExtensionHealth
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
@@ -29,6 +35,7 @@ from igni_core.extensions.store import ExtensionStore
 class StubMcp:
     def __init__(self) -> None:
         self.configs: dict[str, Any] = {}
+        self.extension_request_meta: Any = None
 
     async def connect(self, name: str) -> Any:
         return SimpleNamespace(ok=True, reason="")
@@ -57,31 +64,68 @@ class NoBackend:
         return None
 
 
+class MountingOrchestrator:
+    """Takes the pool RPCs the start-up mounts; serves nothing."""
+
+    def __init__(self) -> None:
+        self.mounted: list[Any] = []
+
+    def mount(self, rpc: Any) -> None:
+        self.mounted.append(rpc)
+
+
 @pytest.fixture
-def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BackendApp:
+def mcp() -> StubMcp:
+    return StubMcp()
+
+
+@pytest.fixture
+def runtime(mcp: StubMcp) -> ExtensionsRuntime:
+    rpc = ExtensionRpc(ExtensionRegistry())
+    return ExtensionsRuntime(
+        rpc=rpc,
+        origins=ExtensionOrigins(),
+        health=ExtensionHealth(registry=rpc.registry, rpc=rpc, mcp=mcp),
+        contributions=ExtensionContributions(registry=rpc.registry, rpc=rpc),
+    )
+
+
+@pytest.fixture
+def login() -> LoginCoordinator:
+    return LoginCoordinator(backend=NoBackend(), push_bridge=None)  # type: ignore[arg-type]
+
+
+@pytest.fixture
+def startup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mcp: StubMcp,
+    runtime: ExtensionsRuntime,
+    login: LoginCoordinator,
+) -> ExtensionStartup:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     monkeypatch.delenv("IGNI_DEV_EXTENSIONS", raising=False)
-    built = BackendApp(
-        socket_path=None,
-        ws_port=None,
-        project_dir=tmp_path / "project",
-        resume_session_id=None,
-        additional_dirs=None,
+    credentials = str(tmp_path / "credentials.json")
+    settings = Settings.model_validate(
+        {
+            "api_url": "",
+            "auth": {"credentials_file": credentials},
+            "storage": {"data_dir": str(tmp_path / "data")},
+        }
     )
-    built._backend = SimpleNamespace(  # type: ignore[assignment]
-        settings=SimpleNamespace(
-            api_url="",
-            auth=SimpleNamespace(credentials_file=str(tmp_path / "credentials.json")),
-            storage=SimpleNamespace(data_dir=str(tmp_path / "data")),
+    return ExtensionStartup(
+        runtime=runtime,
+        context=ExtensionStartupContext(
+            settings=settings,
+            project_dir=tmp_path / "project",
+            plugins_dir=PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir,
+            store=ExtensionStore(),
+            access=IgniServerAccess(credentials_file=credentials, api_url=lambda: ""),
+            mcp=mcp,
+            login=login,
+            orchestrator=MountingOrchestrator(),
         ),
-        mcp_manager=StubMcp(),
     )
-    registry = ExtensionRegistry()
-    built._extensions = ExtensionRpc(registry)
-    built._origins = ExtensionOrigins()
-    built._extension_contributions = None  # type: ignore[assignment]
-    built._login = LoginCoordinator(backend=NoBackend(), push_bridge=None)  # type: ignore[arg-type]
-    return built
 
 
 def _dev_install(tmp_path: Path) -> None:
@@ -101,37 +145,37 @@ def _dev_install(tmp_path: Path) -> None:
     ExtensionStore().add(source)
 
 
-async def _settle(app: BackendApp) -> None:
-    assert app._distribution is not None
-    for task in list(app._distribution._tasks):
+async def _settle(startup: ExtensionStartup) -> None:
+    assert startup.distribution is not None
+    for task in list(startup.distribution._tasks):
         await task
 
 
-async def test_a_stored_development_install_needs_the_flag(app, tmp_path):
+async def test_a_stored_development_install_needs_the_flag(startup, runtime, tmp_path):
     _dev_install(tmp_path)
-    await app._start_extensions()
-    await _settle(app)
-    assert app._extensions.registry.get("acme.mine") is None
-    await app._service_tokens.stop()
+    await startup.start()
+    await _settle(startup)
+    assert runtime.registry.get("acme.mine") is None
+    await startup.stop()
 
 
-async def test_with_the_flag_it_starts(app, tmp_path, monkeypatch):
+async def test_with_the_flag_it_starts(startup, runtime, tmp_path, monkeypatch):
     _dev_install(tmp_path)
     monkeypatch.setenv("IGNI_DEV_EXTENSIONS", "1")
-    await app._start_extensions()
-    await _settle(app)
-    entry = app._extensions.registry.get("acme.mine")
+    await startup.start()
+    await _settle(startup)
+    entry = runtime.registry.get("acme.mine")
     assert entry is not None and entry.state is ExtensionState.READY, entry
-    await app._service_tokens.stop()
+    await startup.stop()
 
 
-async def test_a_sync_is_scheduled_at_start_and_on_sign_in(app):
-    await app._start_extensions()
-    assert app._distribution is not None
-    assert app._distribution._tasks, "start-up schedules a sync without waiting for it"
-    await _settle(app)
+async def test_a_sync_is_scheduled_at_start_and_on_sign_in(startup, login):
+    await startup.start()
+    assert startup.distribution is not None
+    assert startup.distribution._tasks, "start-up schedules a sync without waiting for it"
+    await _settle(startup)
 
-    app._login._notify_signed_in()
-    assert app._distribution._tasks, "a sign-in schedules another"
-    await _settle(app)
-    await app._service_tokens.stop()
+    login._notify_signed_in()
+    assert startup.distribution._tasks, "a sign-in schedules another"
+    await _settle(startup)
+    await startup.stop()

@@ -33,6 +33,7 @@ from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.message_dispatcher import MessageDispatcher, _serialize
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.backend.schemas_rpc import (
     AttachSessionResult,
     BackendReadyLine,
@@ -154,12 +155,14 @@ def main(
     # every store, so all of them open the same ``state.db``.
     resolved_project = canonical_project_dir(project_dir)
     app = BackendApp(
-        socket_path=socket_path,
-        ws_port=ws_port,
-        project_dir=resolved_project,
-        resume_session_id=resume_session_id,
-        additional_dirs=extra_dirs,
-        ws_token=ws_token,
+        BackendLaunch(
+            socket_path=socket_path,
+            ws_port=ws_port,
+            project_dir=resolved_project,
+            resume_session_id=resume_session_id,
+            additional_dirs=extra_dirs,
+            ws_token=ws_token,
+        )
     )
     asyncio.run(app.run())
 

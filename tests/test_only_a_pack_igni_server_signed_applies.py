@@ -36,6 +36,7 @@ import click
 import httpx
 import pytest
 
+from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.core.auth.schemas import SignedInSession
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
@@ -335,21 +336,12 @@ class TestRequiredFailsClosed:
     def test_the_backend_boots_but_runs_no_agent(self, tmp_path, monkeypatch):
         """The backend has to come up — signing in is how a valid pack is
         fetched — but no run starts, and the refusal says what to do."""
-        from igni_core.backend.app import BackendApp
         from igni_core.backend.run_controller import RunController
         from igni_core.protocol import messages as msg
 
         _configure(signed_in_as=None)
         _managed(tmp_path, monkeypatch, "group_policy:\n  required: true\n")
-        app = BackendApp(
-            socket_path=None,
-            ws_port=None,
-            project_dir=tmp_path,
-            resume_session_id=None,
-            additional_dirs=None,
-        )
-
-        app._load_settings_with_group_policy()
+        BackendSettingsLoader(project_dir=tmp_path).load()
 
         assert GroupPolicyGate.reason() and "sign in" in GroupPolicyGate.reason()
         controller = RunController.__new__(RunController)

@@ -83,6 +83,21 @@ class PushNotificationBridge:
         # thing that gates conversation injection.
         self._live_session_count: Callable[[], int] = lambda: 1
 
+    @classmethod
+    def wired(
+        cls, *, transport: Any, loop: asyncio.AbstractEventLoop, backend: Any
+    ) -> PushNotificationBridge:
+        """The boot session's bridge, every push channel bound.
+
+        Its queue is the backend's durable one, so what a previous
+        backend left waiting is in it already.
+        """
+        queue = backend.message_queue
+        bridge = cls(transport=transport, loop=loop, queue=queue)
+        backend.wire_queue_hook(queue)
+        bridge.wire_all(backend)
+        return bridge
+
     # ── Runtime binding ─────────────────────────────────────────
 
     def set_live_session_count(self, probe: Callable[[], int]) -> None:
@@ -318,7 +333,7 @@ class PushNotificationBridge:
 
     def wire_all(self, backend: Any) -> None:
         """One call = every push channel bound to its source.
-        Called by :class:`BackendApp` after backend + session are
+        Called by :meth:`wired` after backend + session are
         up. Individual ``bind_*`` methods stay public so tests can
         wire selectively."""
         self.bind_to_process_supervisor()

@@ -159,6 +159,27 @@ class BackendSupervisor:
         self._evictor_task: asyncio.Task[None] | None = None
         self._lockfile: Lockfile | None = None
 
+    @classmethod
+    def started(
+        cls,
+        *,
+        transport: Any,
+        loop: asyncio.AbstractEventLoop,
+        project_dir: Path,
+        backend: Any,
+    ) -> BackendSupervisor:
+        """A supervisor already watching: signals, the parent, the transport.
+
+        ``backend`` is the shutdown target until the pool exists
+        (:meth:`set_backend_fallback`).
+        """
+        supervisor = cls(transport=transport, loop=loop, project_dir=project_dir)
+        supervisor.set_backend_fallback(backend)
+        supervisor.install_signal_handlers()
+        supervisor.start_parent_watchdog()
+        supervisor.start_transport_close_watcher()
+        return supervisor
+
     # ── State access ─────────────────────────────────────────────
 
     @property

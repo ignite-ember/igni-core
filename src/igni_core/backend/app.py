@@ -1,253 +1,96 @@
 """Composition root for the backend process.
 
-Replaces the ~700-line ``_run`` function that used to live in
-:mod:`igni_core.backend.__main__`. That function was one big
-imperative script — every collaborator was a nested closure, every
-piece of shared state was a captured local, and shutdown ordering
-lived in a wall of ``with contextlib.suppress`` blocks. This module
-turns the same lifecycle into two classes:
-
-* :class:`TransportBuilder` — pick the transport shape (Unix, WS,
-  or the composite of both) from the CLI flags.
-* :class:`BackendApp` — the composition root. Its constructor
-  wires every coordinator together; its :meth:`run` method walks
-  the lifecycle in order and hands ``teardown`` to
-  :class:`BackendSupervisor` in a ``finally`` block.
+:class:`BackendApp` runs the boot in order: listen, load settings, build the
+session and its collaborators, print the ready line, then hand everything to
+:class:`~igni_core.backend.serving_backend.ServingBackend`, which serves and
+owns the teardown order.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import json
 import logging
 import os
-from collections.abc import MutableSequence
-from pathlib import Path
-from typing import Any
 
 from igni_core.backend.agent_refresh import AgentRefresh
-from igni_core.backend.command_handler import CommandHandler
-from igni_core.backend.host_backend import HostModelWiring, ObservedTransport
+from igni_core.backend.backend_notifications import BackendNotifications
+from igni_core.backend.extension_startup import ExtensionStartup, ExtensionStartupContext
+from igni_core.backend.extensions_runtime import ExtensionsRuntime
+from igni_core.backend.host_backend import ObservedTransport
+from igni_core.backend.host_model_runtime import HostModelRuntime
+from igni_core.backend.igni_server_access import IgniServerAccess
 from igni_core.backend.login_coordinator import LoginCoordinator
-from igni_core.backend.pool_rpcs import ApproverTokenRpc, PageTokenRpc, ServiceEventRpc
+from igni_core.backend.pool_rpcs import ApproverTokenRpc
 from igni_core.backend.pool_wiring import PoolWiring
+from igni_core.backend.process_environment import ProcessEnvironment
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.backend.schemas_pool import ProjectDirs
-from igni_core.backend.schemas_rpc import BackendReadyLine
+from igni_core.backend.schemas_rpc import LifecyclePhase
 from igni_core.backend.server import BackendServer
-from igni_core.backend.service_event_delivery import ExtensionEventHandler
-from igni_core.backend.service_item_desk import HeldPostFlusher, PoolChatDesk
+from igni_core.backend.service_event_ingress import ServiceEventIngress
+from igni_core.backend.serving_backend import BackendParts, ServingBackend
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_runtime_factory import BootRuntime
+from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.backend.supervisor import BackendSupervisor
-from igni_core.backend.workspace_signals import WorkspaceSignals
-from igni_core.core import air_gap
-from igni_core.core.activity import background
-from igni_core.core.agno_telemetry import AgnoTelemetry
-from igni_core.core.config.group_policy.gate import GroupPolicyGate
-from igni_core.core.config.group_policy.settings_fetcher import (
-    CachedSettingsFetcher,
-    GroupPolicyUnavailable,
-)
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.backend.transport_builder import TransportBuilder
+from igni_core.core.config.settings import Settings
 from igni_core.core.db.locator import StorageLocator
-from igni_core.core.db.scope import tenancy
-from igni_core.core.layer import Layers
+from igni_core.core.layer import BackendHooks, Layers
 from igni_core.core.observability import OtelRuntime
 from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.prompts.contributions import prompt_contributions
-from igni_core.extensions.contributions import (
-    ExtensionConditionReceiver,
-    ExtensionContributions,
-)
-from igni_core.extensions.distribution import ExtensionDistribution
-from igni_core.extensions.event_pull import PersonEventPull
 from igni_core.extensions.faults import ExtensionFaults
-from igni_core.extensions.health import ExtensionHealth
-from igni_core.extensions.host.channel import HostChannel
-from igni_core.extensions.host.hooks import ExtensionHooks
-from igni_core.extensions.host.model import HostModel
-from igni_core.extensions.impact import IgniCommands
-from igni_core.extensions.installer import ExtensionInstaller
-from igni_core.extensions.launcher import ExtensionLauncher
-from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.principal import SignedInPerson
-from igni_core.extensions.profile import DeploymentProfile, DevelopmentFlag
-from igni_core.extensions.python_env import PythonEnvironments
-from igni_core.extensions.registry import ExtensionRegistry
-from igni_core.extensions.rpc import ExtensionRpc
-from igni_core.extensions.sandbox import ExtensionSandbox
-from igni_core.extensions.service_attachments import ServerAttachments
-from igni_core.extensions.service_events import DeliveredEvents, ServiceEventInbox
-from igni_core.extensions.service_landing import Lander
-from igni_core.extensions.service_threads import HeldPosts, ServiceThreads
-from igni_core.extensions.service_token import (
-    CredentialsSession,
-    PageServiceTokens,
-    ServiceTokenEndpoint,
-    ServiceTokenExchange,
-)
 from igni_core.extensions.store import ExtensionStore
-from igni_core.notifications.center import NotificationCenter
-from igni_core.notifications.extension_notices import ExtensionNoticeReceiver, FaultNotices
-from igni_core.notifications.local_store import LocalNotificationStore
-from igni_core.notifications.server_client import SignedInServer
 
 logger = logging.getLogger(__name__)
 
 
-class TransportBuilder:
-    """Pick and build the right transport for the CLI flags.
-
-    Both flags together = mirrored session: the TUI attaches over
-    the Unix socket while GUI tabs attach over WS, and every view
-    receives every broadcast (via the composite transport's fan-out).
-    """
-
-    def __init__(
-        self, *, socket_path: str | None, ws_port: int | None, ws_token: str | None = None
-    ) -> None:
-        self._socket_path = socket_path
-        self._ws_port = ws_port
-        # The launcher's per-launch secret; every WS connection must
-        # offer it (``transport/ws_auth.py``). ``None``: Origin check only.
-        self._ws_token = ws_token
-        self._ws_transport: Any = None
-
-    @property
-    def program_token(self) -> str | None:
-        """The token a program attaching to this backend offers, published
-        in the owner-only lockfile. Never the launch secret, which is the
-        window's alone (``transport/ws_auth.py``)."""
-        if self._ws_transport is None:
-            return None
-        return self._ws_transport.program_token
-
-    @property
-    def ws_transport(self) -> Any:
-        """The WS transport instance (if any). Exposed so the app
-        can read the bound port for the ready line + lockfile."""
-        return self._ws_transport
-
-    async def build(self) -> Any:
-        children: list[Any] = []
-        if self._socket_path is not None:
-            from igni_core.transport.unix_socket import UnixSocketServerTransport
-
-            children.append(UnixSocketServerTransport(self._socket_path))
-        if self._ws_port is not None:
-            from igni_core.transport.websocket import WebSocketServerTransport
-
-            self._ws_transport = WebSocketServerTransport(port=self._ws_port, token=self._ws_token)
-            children.append(self._ws_transport)
-
-        if len(children) == 1:
-            transport: Any = children[0]
-        else:
-            from igni_core.transport.websocket import CompositeTransport
-
-            transport = CompositeTransport(children)
-        await transport.start()
-        return transport
-
-
 class BackendApp:
-    """The BE's composition root.
+    """The backend's composition root: boots, serves, and tears down.
 
-    Owns the whole lifecycle end-to-end: transport build → backend
-    construct → collaborator wire-up → ready line → serve →
-    shutdown. Every collaborator is stored as an instance attribute
-    so tests can construct the app with dependency-injected
-    replacements if needed.
+    :attr:`transport` and :attr:`supervisor` stay ``None`` until the boot
+    reaches them; they are what a caller watching the boot polls.
     """
 
-    def __init__(
-        self,
-        *,
-        socket_path: str | None,
-        ws_port: int | None,
-        project_dir: Path,
-        resume_session_id: str | None,
-        additional_dirs: list[Path] | None,
-        ws_token: str | None = None,
-    ) -> None:
-        self._socket_path = socket_path
-        self._ws_port = ws_port
-        self._project_dir = project_dir
-        self._resume_session_id = resume_session_id
-        self._additional_dirs = additional_dirs
-
-        self._transport_builder = TransportBuilder(
-            socket_path=socket_path, ws_port=ws_port, ws_token=ws_token
-        )
-        # Wired in ``run`` — kept as attributes so shutdown/teardown
-        # can access whatever the boot happened to build.
-        self._transport: Any = None
-        self._backend: BackendServer | None = None
-        self._supervisor: BackendSupervisor | None = None
-        self._push_bridge: PushNotificationBridge | None = None
-        self._login: LoginCoordinator | None = None
-        self._rpc_router: RpcRouter | None = None
-        self._orchestrator: SessionOrchestrator | None = None
-        self._queue: MutableSequence[str] = []
-        # Built in ``_start_extensions``, once there is an MCP manager
-        # to start extensions with.
-        self._distribution: ExtensionDistribution | None = None
-        self._service_tokens: ServiceTokenEndpoint | None = None
-        self._notifications: NotificationCenter | None = None
-        self._notices: ExtensionNoticeReceiver | None = None
-        # The host object model and the socket processes reach it on.
-        self._host_model: HostModel | None = None
-        self._host_channel: HostChannel | None = None
-        self._event_pull: PersonEventPull | None = None
-        self._held_posts: HeldPostFlusher | None = None
-        #: What the deployment layer does around boot and serving (``core/layer.py``).
+    def __init__(self, launch: BackendLaunch) -> None:
+        self._launch = launch
+        # Cached: the layer builds new hooks on every ask (``core/layer.py``).
         self._guest = Layers.current().backend()
+        self._transport_builder = TransportBuilder(
+            socket_path=launch.socket_path, ws_port=launch.ws_port, ws_token=launch.ws_token
+        )
+        self._transport: ObservedTransport | None = None
+        self._supervisor: BackendSupervisor | None = None
 
-    def _load_settings_with_group_policy(self) -> Settings:
-        """Build this process's ``Settings`` with the org's policy applied.
+    @property
+    def guest(self) -> BackendHooks:
+        """What the deployment layer does around boot and serving."""
+        return self._guest
 
-        This is the backend's half of SWP-23. ``GroupPolicyTier`` has always
-        known how to merge a group's ``settings`` entries between the CLI and
-        the sysadmin file, and nothing ever handed it a pack — so an admin
-        publishing ``{"permissions": {"web_fetch": "deny"}}`` was ignored, silently,
-        everywhere. Here is where that is turned on: the backend is the process
-        that owns the session, holds the cloud token, and starts exactly once,
-        which is all three things the tier needs.
+    @property
+    def transport(self) -> ObservedTransport | None:
+        return self._transport
 
-        Loaded twice, on purpose, and the second load is the one that counts.
-        The cache the policy lives in sits under ``storage.data_dir``, and
-        ``storage.data_dir`` is itself a setting — so the first pass exists
-        only to answer "which directory", using local configuration. A group
-        that relocates ``data_dir`` therefore does not move its own cache,
-        which is the only sane reading: the machine decides where igni keeps
-        its files, the org decides what is in them. Both passes are file reads
-        of a handful of small YAML/JSON files; neither touches the network.
+    @property
+    def supervisor(self) -> BackendSupervisor | None:
+        return self._supervisor
 
-        The fetcher reads the pack ``AuthController`` last wrote to disk — the
-        live portal call cannot happen here, because the token this process
-        authenticates with is read out of the ``Settings`` being built. See
-        :class:`~igni_core.core.config.group_policy.settings_fetcher.CachedSettingsFetcher`.
+    @property
+    def serving_port(self) -> int | None:
+        """The WebSocket port, once the backend serves; ``None`` before and after."""
+        ws = self._transport_builder.ws_transport
+        supervisor = self._supervisor
+        if ws is None or supervisor is None or supervisor.phase is not LifecyclePhase.RUNNING:
+            return None
+        return ws.port
 
-        The fetcher verifies the pack before any of it is merged, and when the
-        managed setting ``group_policy.required`` is on and no verified pack
-        can be had, it raises. The backend still comes up — on local settings,
-        so the person can sign in, which is how a valid pack is fetched — but
-        with :class:`~igni_core.core.config.group_policy.gate.GroupPolicyGate`
-        closed, so no agent run starts and each attempt says why.
-        """
-        local_only = load_settings(project_dir=self._project_dir)
-        try:
-            return load_settings(
-                project_dir=self._project_dir,
-                group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
-            )
-        except GroupPolicyUnavailable as exc:
-            logger.error("group-policy: %s", exc)
-            GroupPolicyGate.close(str(exc))
-            return local_only
+    def request_shutdown(self) -> None:
+        if self._supervisor is not None:
+            self._supervisor.request_shutdown()
 
     async def run(self) -> None:
         """Boot, serve, and tear down. Exceptions in the boot or
@@ -262,486 +105,174 @@ class BackendApp:
             OtelRuntime.stop()
 
     async def _boot_and_serve(self) -> None:
-        # The layer's (``core/layer.py``); the desktop's do nothing.
+        transport = await self._listen()
+        settings = BackendSettingsLoader(self._launch.project_dir).load()
+        store = ExtensionStore()
+        ProcessEnvironment.enter(
+            settings,
+            tenant=self._guest.tenant,
+            person=SignedInPerson(settings.auth.credentials_file, store),
+        )
+        parts = await self._assemble(transport, settings, store)
+        await ServingBackend(parts).serve()
+
+    async def _listen(self) -> ObservedTransport:
         guest = self._guest
         guest.starting()
-        # Wrapped once, at the root, so the host object model sees
-        # every message igni sends any window — see ``host_backend``.
-        self._transport = ObservedTransport(await self._transport_builder.build())
+        # Wrapped once, at the root, so the host object model sees every
+        # message igni sends any window (``host_backend``).
+        transport = ObservedTransport(await self._transport_builder.build())
+        self._transport = transport
         # Listening, imports done. A layer may wait here for what it needs
         # before igni opens any state (the cloud's: a producer to bind to).
-        await guest.listening(self._transport)
-        if await guest.bind(self._transport):
+        await guest.listening(transport)
+        if await guest.bind(transport):
             # Something was mounted since: a working directory taken
             # before it would still be the old one.
-            os.chdir(self._project_dir)
+            os.chdir(self._launch.project_dir)
+        return transport
 
-        settings = self._load_settings_with_group_policy()
-        # The processes this backend starts — the decisions service above
-        # all, which reads no settings — inherit the air-gap decision.
-        air_gap.export_to(os.environ, settings.air_gapped)
-        # Agno's own run telemetry stays off when air-gapped, whatever the
-        # environment said; and traces go to the organisation's collector,
-        # if it named one (``core/observability``).
-        AgnoTelemetry.enforce(os.environ, air_gapped=settings.air_gapped)
-        OtelRuntime.start(settings)
-        # Whose rows a shared database holds: the producer signed in
-        # here (docs/CLOUD.md §9). Asked only when ``IGNI_DATABASE_URL``
-        # names one — the desktop's files are nobody else's.
-        # A layer may decide whose rows they are (the cloud's: the
-        # producer its VM is for, signed in or not yet).
-        bound = guest.tenant
-        tenancy.use(
-            (lambda: bound)
-            if bound is not None
-            else SignedInPerson(settings.auth.credentials_file, ExtensionStore()).tenant
-        )
-        self._backend = BackendServer(
+    async def _assemble(
+        self, transport: ObservedTransport, settings: Settings, store: ExtensionStore
+    ) -> BackendParts:
+        launch = self._launch
+        builder = self._transport_builder
+        backend = BackendServer(
             settings,
-            project_dir=self._project_dir,
-            resume_session_id=self._resume_session_id,
-            additional_dirs=self._additional_dirs,
+            project_dir=launch.project_dir,
+            resume_session_id=launch.resume_session_id,
+            additional_dirs=launch.additional_dirs,
         )
-        # Async post-construction wiring (hydrate any persisted
-        # ``/loop`` state from the project's ``state.db``).
-        await self._backend.startup()
-        # The boot session's queue of messages typed during a run is
-        # the backend's durable one: what a previous backend left
-        # waiting is in it already.
-        self._queue = self._backend.message_queue
-
+        # Hydrates any persisted ``/loop`` state from the project's ``state.db``.
+        await backend.startup()
         loop = asyncio.get_running_loop()
-        self._supervisor = BackendSupervisor(
-            transport=self._transport,
-            loop=loop,
-            project_dir=self._project_dir,
+        supervisor = BackendSupervisor.started(
+            transport=transport, loop=loop, project_dir=launch.project_dir, backend=backend
         )
-        self._supervisor.set_backend_fallback(self._backend)
-        self._supervisor.install_signal_handlers()
-        self._supervisor.start_parent_watchdog()
-        self._supervisor.start_transport_close_watcher()
-
-        # Push bridge — the sink every callback/listener ends up
-        # pushing through.
-        self._push_bridge = PushNotificationBridge(
-            transport=self._transport,
-            loop=loop,
-            queue=self._queue,
+        self._supervisor = supervisor
+        push_bridge = PushNotificationBridge.wired(transport=transport, loop=loop, backend=backend)
+        login = LoginCoordinator(backend=backend, push_bridge=push_bridge)
+        plugins_dir = PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir
+        extensions = ExtensionsRuntime.build(
+            mcp=backend.mcp_manager, plugins_dir=plugins_dir, store=store
         )
-        self._backend.wire_queue_hook(self._queue)
-        self._push_bridge.wire_all(self._backend)
-
-        self._login = LoginCoordinator(backend=self._backend, push_bridge=self._push_bridge)
-        # Process-level, not per-session. An extension is installed
-        # into a deployment, so a second session must not see a
-        # different set of them — and the boot RPC table is built
-        # here, before the orchestrator exists, so this is the level
-        # that can hand the same objects to both.
-        self._extensions = ExtensionRpc(ExtensionRegistry())
-        self._origins = ExtensionOrigins()
-        # ``ExtensionState`` was written once, at install, and never
-        # again — so a service that died ten minutes later left the
-        # registry, and therefore the UI, saying READY. This keeps it
-        # true, and asks immediately when a call fails rather than
-        # waiting out its interval while the panel contradicts what
-        # the user just saw.
-        self._extension_health = ExtensionHealth(
-            registry=self._extensions.registry,
-            rpc=self._extensions,
-            mcp=self._backend.mcp_manager,
+        # Read per call: signing in can change which server it is.
+        access = IgniServerAccess(
+            credentials_file=settings.auth.credentials_file,
+            api_url=lambda: backend.settings.api_url,
         )
-        self._extensions.watch(self._extension_health.on_call_failed)
-        # What an extension adds to the *agent* — what it does to the
-        # prompts and the agents, its anchors, its commands. Tied to
-        # READY rather than to being installed: an extension whose
-        # service has died must stop telling the model about data it
-        # can no longer fetch. Collisions between extensions are
-        # settled by the super admin's priority order, from the store.
-        extension_store = ExtensionStore()
-        self._extension_contributions = ExtensionContributions(
-            registry=self._extensions.registry,
-            rpc=self._extensions,
-            plugins_dir=PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir,
-            priority=extension_store.priority,
-            igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
+        notifications = BackendNotifications.build(
+            settings=settings,
+            access=access,
+            push_bridge=push_bridge,
+            runtime=extensions,
+            mcp=backend.mcp_manager,
+            login=login,
         )
-        self._extension_contributions.attach()
-        # When what extensions do to the prompts changes — one became
-        # ready, a condition it reports moved — every session's agent
-        # is rebuilt, once, on the next turn of the loop.
-        self._agent_refresh = AgentRefresh(loop=loop, refresh=self._refresh_agents)
-        prompt_contributions.watch(self._agent_refresh.request)
-        # The project's git state, as the host model's workspace
-        # signals. Owns the poll, which does no git work until some
-        # extension entitled to the workspace is subscribed.
-        self._workspace_signals = WorkspaceSignals(project_dir=self._project_dir)
-        notifications = self._build_notifications(settings)
-        self._notifications = notifications
-        # An extension that keeps timing out or crashing is restarted,
-        # and the person is told (``ExtensionFaults``).
-        faults = ExtensionFaults.shared()
-        faults.attach(self._extensions.registry)
-        faults.on_faulty(self._extension_health.restart_faulty)
-        faults.on_faulty(FaultNotices(self._extensions.registry, notifications).told)
-        self._rpc_router = RpcRouter(
-            backend=self._backend,
-            transport=self._transport,
-            login=self._login,
-            push=self._push_bridge,
-            extensions=self._extensions,
-            origins=self._origins,
-            notifications=self._notifications,
+        extensions.attach_faults(ExtensionFaults.shared(), notifications.center)
+        router = RpcRouter(
+            backend=backend,
+            transport=transport,
+            login=login,
+            push=push_bridge,
+            extensions=extensions.rpc,
+            origins=extensions.origins,
+            notifications=notifications.center,
         )
-        rpc_table = self._rpc_router.build_table()
+        rpc_table = router.build_table()
 
-        # Emit the "ready" line BEFORE background services fire —
-        # the FE gates on this line and knowledge load is
-        # GIL-heavy, so if we started it first the FE would think
-        # we hung.
-        self._emit_ready_line()
-
-        # Background services now that the ready line is out.
-        self._backend.start_boot_background_services()
-
-        # Scheduler auto-start is idempotent (see
-        # ``core.session.scheduler``); if it fails we log and
-        # move on — the FE can retry via the ``start_scheduler``
-        # RPC.
+        # A second client opening the same project finds this backend here.
+        if ws := builder.ws_transport:
+            supervisor.write_discovery_lockfile(ws.port, ws_token=builder.program_token)
+        # Before background services: the shell gates on this line, and
+        # knowledge load is GIL-heavy enough to look like a hang.
+        builder.ready_line().emit()
+        backend.start_boot_background_services()
+        # Idempotent; the window can retry with the ``start_scheduler`` RPC.
         try:
-            self._push_bridge.start_scheduler(self._backend)
+            push_bridge.start_scheduler(backend)
         except Exception:
             logger.exception("Auto-start of scheduler failed; will retry on client RPC")
 
-        # Orchestrator: builds the pool, wires the default runtime,
-        # registers itself as the receive-loop consumer.
-        self._orchestrator = SessionOrchestrator.start(
+        orchestrator = SessionOrchestrator.start(
             boot=BootRuntime(
-                backend=self._backend,
-                rpc_table=rpc_table,
-                router=self._rpc_router,
-                queue=self._queue,
+                backend=backend, rpc_table=rpc_table, router=router, queue=backend.message_queue
             ),
             wiring=PoolWiring(
-                transport=self._transport,
-                push_bridge=self._push_bridge,
-                login=self._login,
-                extensions=self._extensions,
-                origins=self._origins,
-                notifications=self._notifications,
+                transport=transport,
+                push_bridge=push_bridge,
+                login=login,
+                extensions=extensions.rpc,
+                origins=extensions.origins,
+                notifications=notifications.center,
             ),
             settings=settings,
-            dirs=ProjectDirs(project_dir=self._project_dir, additional_dirs=self._additional_dirs),
+            dirs=ProjectDirs(
+                project_dir=launch.project_dir, additional_dirs=launch.additional_dirs
+            ),
+        )
+        # When what extensions do to the prompts changes, every session's
+        # agent is rebuilt, once, on the next turn of the loop.
+        prompt_contributions.watch(
+            AgentRefresh(loop=loop, refresh=orchestrator.refresh_agents).request
         )
         # The WebSocket's guard mints the tokens igni's window hands a
         # program it lets answer approval requests.
-        self._orchestrator.mount(ApproverTokenRpc(self._transport_builder.ws_transport))
-        pool = self._orchestrator.pool
-        self._supervisor.set_pool(pool)
-        self._start_host_model()
-        # The platform's ``deliver_service_events``, once each: an event to
-        # its extension, which posts if it wants the agent to act; anything
-        # else into its thread's chat, or the extension's own
-        # (``extensions/service_events.py``, ``docs/CLOUD.md`` §6.1).
-        # Its files are fetched as the producer: the person's session here,
-        # the VM's own token in the cloud.
-        producer_db = StorageLocator.from_settings(settings).project_database(self._project_dir)
-        session = CredentialsSession(settings.auth.credentials_file)
-        signed_in = SignedInServer(api_url=self._igni_api_url, session=session, ready=session.ready)
-        desk = PoolChatDesk(self._orchestrator)
-        held = HeldPosts(producer_db)
-        self._held_posts = HeldPostFlusher(held=held, desk=desk)
-        inbox = ServiceEventInbox(
-            delivered=DeliveredEvents(producer_db),
-            lander=Lander(
-                desk=desk,
-                threads=ServiceThreads(producer_db),
-                held=held,
-                files=ServerAttachments(signed_in),
-            ),
-            hand_event=ExtensionEventHandler(),
+        orchestrator.mount(ApproverTokenRpc(builder.ws_transport))
+        pool = orchestrator.pool
+        supervisor.set_pool(pool)
+        host = HostModelRuntime.build(
+            orchestrator=orchestrator,
+            transport=transport,
+            runtime=extensions,
+            project_dir=launch.project_dir,
+            store=store,
+            notices=notifications.notices,
         )
-        self._orchestrator.mount(ServiceEventRpc(inbox))
-        # On the desktop igni also fetches the person's events itself, while
-        # online (``extensions/event_pull.py``); a layer may leave that to its
-        # platform (the cloud's gateway delivers them).
-        self._event_pull = (
-            PersonEventPull(server=signed_in, inbox=inbox)
-            if Layers.current().fetches_own_events()
-            else None
+        ingress = ServiceEventIngress.build(
+            producer_db=StorageLocator.from_settings(settings).project_database(launch.project_dir),
+            signed_in=access.signed_in_server(),
+            orchestrator=orchestrator,
+            fetches_own_events=Layers.current().fetches_own_events(),
         )
-        # The push bridge subscribes to the process-wide shell bus and
-        # narrates background-process completions into ITS session's
-        # conversation. Once the pool holds more than the boot
-        # runtime that narration is addressed to the wrong window, so
-        # the bridge needs to know how many sessions are live.
-        self._push_bridge.set_live_session_count(lambda: len(pool.runtimes))
-        self._supervisor.start_evictor()
-        self._supervisor.mark_running()
+        orchestrator.mount(ingress.rpc())
+        # Background-process narration goes to the boot session only while
+        # it is the only one.
+        push_bridge.set_live_session_count(lambda: len(pool.runtimes))
+        supervisor.start_evictor()
+        supervisor.mark_running()
         # Before any window connects: an idle process nobody is looking at
         # is the one a layer that suspends most wants to know about.
-        guest.serving(
-            model=self._host_model,
-            transport=self._transport,
-            orchestrator=self._orchestrator,
-            notifications=notifications,
-            on_rebind=self._supervisor.request_shutdown,
-            api_url=self._igni_api_url,
+        self._guest.serving(
+            model=host.model,
+            transport=transport,
+            orchestrator=orchestrator,
+            notifications=notifications.center,
+            on_rebind=supervisor.request_shutdown,
+            api_url=access.api_url,
         )
-
-        try:
-            if not await self._wait_for_a_window():
-                logger.info("Shutdown requested before any window connected")
-                return
-            await self._start_extensions()
-            # Read igni server's notifications and follow its stream;
-            # after the client is connected, so the counts this pushes
-            # have somebody to reach.
-            notifications.start()
-            if self._event_pull is not None:
-                self._event_pull.start()
-            if self._held_posts is not None:
-                self._held_posts.start()
-            # Probing starts once there is a loop to run it on, and
-            # after the installs above, so the first sweep has
-            # something to sweep.
-            self._extension_health.start()
-            # After the installs, for the same reason health is:
-            # the first poll asks "is anyone listening", and before
-            # this point the answer is always no.
-            await self._workspace_signals.start()
-            logger.info("FE connected, processing messages")
-            await self._orchestrator.serve(self._supervisor.shutdown_event)
-        except Exception as exc:
-            logger.error("Backend error: %s", exc, exc_info=True)
-        finally:
-            if self._event_pull is not None:
-                await self._event_pull.stop()
-            if self._held_posts is not None:
-                await self._held_posts.stop()
-            await notifications.stop()
-            if self._host_channel is not None:
-                await self._host_channel.stop()
-            await self._workspace_signals.stop()
-            await self._extension_health.stop()
-            if self._distribution is not None:
-                await self._distribution.stop()
-            if self._service_tokens is not None:
-                await self._service_tokens.stop()
-            await self._origins.stop_all()
-            await self._supervisor.teardown()
-
-    async def _wait_for_a_window(self) -> bool:
-        """Wait for the first client, or for shutdown, whichever comes first.
-
-        ``True`` when a window connected; ``False`` when shutdown was asked
-        for first. GUI clients (the Tauri desktop app, the web client) may open
-        long after the BE is ready and webviews reload at will, so on
-        WebSocket there is no timeout — shutdown comes from signals, the
-        parent watchdog, or an explicit Shutdown message instead.
-
-        It used to await the connection alone. Closing the transport, which
-        is all a shutdown does to it, does not wake a wait for the first
-        client — so a SIGTERM before any window connected left the backend
-        serving nobody forever: teardown never ran and the discovery
-        lockfile stayed behind for the next launch to find.
-        """
-        assert self._supervisor is not None
-        if self._ws_port is not None:
-            connecting = self._transport.wait_for_connection(timeout=None)
-        else:
-            connecting = self._transport.wait_for_connection()
-        # Daemons, not busy work: a backend waiting for its first window is
-        # idle, and a layer that suspends idle processes may suspend it.
-        connected = background.daemon(connecting, name="first-window")
-        stopping = background.daemon(self._supervisor.wait_for_shutdown(), name="first-window-stop")
-        try:
-            await asyncio.wait({connected, stopping}, return_when=asyncio.FIRST_COMPLETED)
-        finally:
-            for waiter in (connected, stopping):
-                if not waiter.done():
-                    waiter.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await waiter
-        if stopping.done() and not stopping.cancelled():
-            return False
-        connected.result()  # a timed-out wait raises here, as it always did
-        return True
-
-    def _build_notifications(self, settings: Settings) -> NotificationCenter:
-        """The floor's notifications, both paths (igni server's ``docs/service-identity.md`` §10).
-
-        igni server's half follows the signed-in person, so it starts
-        again on every sign-in. The local half is whatever an extension's
-        process says with ``notifications/igni/notify`` on its own MCP
-        connection — taken out of every stdio connection the manager
-        opens, and accepted only as coming from the extension that
-        connection belongs to.
-        """
-        assert self._push_bridge is not None and self._backend is not None
-        session = CredentialsSession(settings.auth.credentials_file)
-        center = NotificationCenter(
-            server=SignedInServer(api_url=self._igni_api_url, session=session, ready=session.ready),
-            local=LocalNotificationStore.from_locator(StorageLocator.from_settings(settings)),
-            announce=self._push_bridge.notifications_changed,
-        )
-        receiver = ExtensionNoticeReceiver(registry=self._extensions.registry, sink=center)
-        self._notices = receiver
-        router = getattr(self._backend.mcp_manager, "notifications", None)
-        if router is not None:
-            router.handle(ExtensionNoticeReceiver.METHOD, receiver)
-            # And what an extension says holds — the ``when`` of its
-            # prompt contributions. On the same connections, for the
-            # same reason: the connection names the sender.
-            router.handle(
-                ExtensionConditionReceiver.METHOD,
-                ExtensionConditionReceiver(
-                    registry=self._extensions.registry,
-                    refetch=(
-                        self._extension_contributions.refetch
-                        if self._extension_contributions is not None
-                        else None
-                    ),
-                ),
-            )
-        if self._login is not None:
-            self._login.on_signed_in(center.schedule_signed_in)
-        return center
-
-    def _start_host_model(self) -> None:
-        """Build the host object model over the pool, and tell it everything.
-
-        ``docs/HOST_OBJECT_MODEL.md``. One model for every extension,
-        reached by a process over :class:`HostChannel` and by a page over
-        the ``host_model`` RPC. It hears igni through four taps: every
-        outbound message, every window RPC (to signal writes), every
-        registry change, and the workspace poll.
-        """
-        assert self._orchestrator is not None
-        model = HostModelWiring.build(
-            orchestrator=self._orchestrator,
-            transport=self._transport,
-            registry=self._extensions.registry,
-            project_dir=self._project_dir,
-            store=ExtensionStore(),
-            notices=self._notices,
-            workspace_signals=self._workspace_signals,
-        )
-        self._host_model = model
-        self._host_channel = HostChannel(model)
-
-    async def _start_extensions(self) -> None:
-        """Start what is installed, then bring it up to date.
-
-        Two sources, one boot path. What is already in the store —
-        extensions igni distributed earlier, and development installs
-        ``igni ext install`` put there — starts first, from disk, with
-        no network. Then, in the background, the distribution sync asks
-        igni server which extensions its approved services ship, and
-        installs, upgrades or removes to match (igni server's ``docs/service-identity.md``
-        §8). Start-up never waits for that: a machine that cannot reach
-        igni runs what it has.
-
-        Failures are logged and skipped. One extension that will not
-        start must not stop the backend, and the registry records why
-        so the UI can say it rather than the user finding out by
-        opening a blank page.
-        """
-        assert self._backend is not None
-        settings = self._backend.settings
-        store = ExtensionStore()
-        session = CredentialsSession(settings.auth.credentials_file)
-        # Whom every call into an extension is for: on this backend, the
-        # person signed in here (docs/EXTENSION_ROUTING_AND_CONCURRENCY.md).
-        person = SignedInPerson(settings.auth.credentials_file, store)
-        self._backend.mcp_manager.extension_request_meta = person.meta
-        ExtensionHooks.shared().set_principal(person)
-        # One exchange, one cache: an extension's process and its page
-        # ask for the same token and igni is asked once.
-        exchange = ServiceTokenExchange(
-            api_url=self._igni_api_url, session=session, ready=session.ready
-        )
-        self._service_tokens = ServiceTokenEndpoint(exchange, principal=person)
-        if self._orchestrator is not None and self._origins is not None:
-            self._orchestrator.mount(
-                PageTokenRpc(PageServiceTokens(origins=self._origins, exchange=exchange))
-            )
-        installer = ExtensionInstaller(
-            registry=self._extensions.registry,
-            rpc=self._extensions,
-            mcp=self._backend.mcp_manager,
-            origins=self._origins,
-            project_dir=self._project_dir,
-            profile=DeploymentProfile.current(),
-            # Where a plugin an extension carries goes. The same
-            # directory ``igni plugin install`` writes to, because
-            # the loader only looks in one place and an extension's
-            # agents are not a different kind of agent.
-            plugins_dir=PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir,
-            allow_development=DevelopmentFlag.enabled(),
-            store=store,
-            environments=PythonEnvironments(store.environments_root),
-            service_tokens=self._service_tokens,
-            host_channel=self._host_channel,
-            # Its air gap narrows what an extension's process may reach.
-            sandbox=ExtensionSandbox.for_settings(settings),
-        )
-        launcher = ExtensionLauncher(
-            store=store,
-            installer=installer,
-            registry=self._extensions.registry,
-            contributions=self._extension_contributions,
-        )
-        await launcher.start_installed()
-
-        self._distribution = ExtensionDistribution(
-            store,
-            api_url=self._igni_api_url,
-            session=session,
-            lifecycle=launcher,
-            on_priority=(
-                self._extension_contributions.priority_changed
-                if self._extension_contributions is not None
-                else None
+        startup = ExtensionStartup(
+            runtime=extensions,
+            context=ExtensionStartupContext(
+                settings=settings,
+                project_dir=launch.project_dir,
+                plugins_dir=plugins_dir,
+                store=store,
+                access=access,
+                mcp=backend.mcp_manager,
+                login=login,
+                orchestrator=orchestrator,
+                host_channel=host.channel,
             ),
         )
-        self._distribution.schedule()
-        # And again whenever somebody signs in: the listing is the
-        # signed-in person's, and before that there was none.
-        if self._login is not None:
-            self._login.on_signed_in(self._distribution.schedule)
-
-    def _refresh_agents(self) -> None:
-        """Rebuild every session's agents with the prompts as they are now."""
-        if self._orchestrator is not None:
-            self._orchestrator.refresh_agents()
-
-    def _igni_api_url(self) -> str | None:
-        """igni server's URL as it is configured now — read per call,
-        because signing in can change which server that is."""
-        return self._backend.settings.api_url if self._backend is not None else None
-
-    def _emit_ready_line(self) -> None:
-        """Write the "ready" JSON line to stdout so the parent
-        knows how to connect. Serialised via
-        :class:`BackendReadyLine` so the wire shape is typed —
-        ``model_dump_json(exclude_none=True)`` produces bytes
-        byte-compatible with the old ``json.dumps(dict)`` output
-        (verified by ``tests/test_backend_ready_line.py``)."""
-        ws_transport = self._transport_builder.ws_transport
-        ready = BackendReadyLine(status="ready")
-        if ws_transport is not None:
-            ready.ws_port = ws_transport.port
-            ready.ws_url = f"ws://127.0.0.1:{ws_transport.port}"
-            # Publish the port + version at
-            # ``<project>/.igni/backend.lock`` so a second client
-            # opening the same project can discover this BE.
-            assert self._supervisor is not None
-            self._supervisor.write_discovery_lockfile(
-                ws_transport.port, ws_token=self._transport_builder.program_token
-            )
-        if self._socket_path is not None:
-            ready.socket = str(self._socket_path)
-        # ``exclude_none`` matches the legacy shape: keys the caller
-        # didn't set are omitted rather than serialised as null.
-        payload = json.loads(ready.model_dump_json(exclude_none=True))
-        print(json.dumps(payload), flush=True)
+        return BackendParts(
+            supervisor=supervisor,
+            orchestrator=orchestrator,
+            transport=transport,
+            no_timeout=launch.ws_port is not None,
+            notifications=notifications,
+            ingress=ingress,
+            extensions=extensions,
+            startup=startup,
+            host=host,
+        )

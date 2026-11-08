@@ -191,7 +191,8 @@ surface is now the React clients under `clients/`.
 
 | Class | File | Responsibility |
 |---|---|---|
-| `BackendApp` | `backend/app.py` | Process shell: transport setup, wiring, lifecycle |
+| `BackendApp` | `backend/app.py` | Composition root: runs the boot in order, hands off to `ServingBackend` |
+| `ServingBackend` | `backend/serving_backend.py` | Serves the first window onward; owns the teardown order |
 | `SessionPool` | `backend/session_pool.py` | Per-project `SessionRuntime` instances, switching |
 | `RunController` | `backend/run_controller.py` | Execution pipeline, streaming, cancellation |
 | `StreamEventDispatcher` | `backend/stream_event_dispatcher.py` | Agno run events → wire messages |
@@ -322,8 +323,10 @@ and `ignite-ember` are the non-interactive CLI, and chat happens in the
 clients under `clients/`, which connect to the server started by
 `python -m igni_core.backend`. Splitting the front-end out means the
 same backend serves the desktop app and the web client over one wire
-protocol. Inside the backend, `BackendApp` is a thin shell that
-delegates to the controllers listed above; each stays testable in
+protocol. Inside the backend, `BackendApp` is a thin composition root
+that builds one small class per subsystem (`ExtensionsRuntime`,
+`ExtensionStartup`, `BackendNotifications`, `ServiceEventIngress`,
+`HostModelRuntime`) and delegates to the controllers listed above; each stays testable in
 isolation and none of them becomes the god-class.
 
 ## Roadmap

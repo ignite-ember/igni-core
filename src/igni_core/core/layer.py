@@ -55,7 +55,8 @@ logger = logging.getLogger(__name__)
 class BackendHooks:
     """What a layer does around a backend's boot and serving. The desktop does nothing.
 
-    Called by :class:`~igni_core.backend.app.BackendApp`, in order:
+    Called by :class:`~igni_core.backend.app.BackendApp` (its ``_listen``,
+    ``_assemble`` and ``run``), in order:
     :meth:`starting`, :meth:`listening` once the transport listens,
     :meth:`bind` before any settings or database are opened,
     :meth:`serving` once the backend serves, :meth:`stop` at exit.

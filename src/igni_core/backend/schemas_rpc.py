@@ -13,6 +13,7 @@ imports.
 
 from __future__ import annotations
 
+import json
 import os
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -234,15 +235,20 @@ class AttachSessionResult(BaseModel):
 
 class BackendReadyLine(BaseModel):
     """Line one of BE stdout: the "I'm ready, connect here" payload
-    the parent process parses to learn transport specifics. Golden
-    string: dumped via ``model_dump_json(exclude_none=True)`` so the
-    FE's byte-oriented parser sees the exact same bytes it always
-    has (the boot line is stable wire, not a versioned RPC)."""
+    the parent process parses to learn transport specifics. The boot
+    line is stable wire, not a versioned RPC: the shell's parser is
+    byte-oriented, so :meth:`emit` keeps ``json.dumps``'s separators
+    (``model_dump_json`` is compact and would change them). Pinned by
+    ``tests/test_backend_ready_line.py``."""
 
     status: str = "ready"
     ws_port: int | None = None
     ws_url: str | None = None
     socket: str | None = None
+
+    def emit(self) -> None:
+        """Print the line and flush. Keys nobody set are left out, not null."""
+        print(json.dumps(self.model_dump(exclude_none=True)), flush=True)
 
 
 class SessionPoolConfig(BaseModel):

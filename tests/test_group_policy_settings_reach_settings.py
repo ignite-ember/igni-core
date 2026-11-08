@@ -16,7 +16,7 @@ nothing did, and nothing could: ``GroupPolicyCache.materialize`` never wrote
 there was nothing for a fetcher to read. Now the cache persists the pack as
 igni server signed it (``pack.jws``), ``CachedSettingsFetcher`` verifies and
 reads it, and both
-entry points that build a real ``Settings`` — ``BackendApp.run`` and
+entry points that build a real ``Settings`` — ``BackendSettingsLoader.load`` and
 ``load_settings_from_options`` — construct one. The end-to-end claim being
 tested is the one an admin makes: publish ``{"learning": {"enabled": false}}``
 and the session comes up with learning off.
@@ -34,6 +34,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
@@ -287,34 +288,15 @@ class TestTheEntryPointsBuildOne:
     """The decision this fix had to make: *where* the fetcher is built."""
 
     def test_the_backend_applies_group_policy_at_boot(self, tmp_path: Path):
-        """``BackendApp`` — the process that owns the session, holds the
+        """The backend — the process that owns the session, holds the
         token, and starts once. This is the settings object handed to
         ``BackendServer`` and to every runtime in the pool."""
-        from igni_core.backend.app import BackendApp
-
         _publish({"learning": {"enabled": False}})
-        app = BackendApp(
-            socket_path=None,
-            ws_port=None,
-            project_dir=tmp_path,
-            resume_session_id=None,
-            additional_dirs=None,
-        )
 
-        assert app._load_settings_with_group_policy().learning.enabled is False
+        assert BackendSettingsLoader(project_dir=tmp_path).load().learning.enabled is False
 
     def test_the_backend_still_boots_without_a_policy(self, tmp_path: Path):
-        from igni_core.backend.app import BackendApp
-
-        app = BackendApp(
-            socket_path=None,
-            ws_port=None,
-            project_dir=tmp_path,
-            resume_session_id=None,
-            additional_dirs=None,
-        )
-
-        assert app._load_settings_with_group_policy().learning.enabled is True
+        assert BackendSettingsLoader(project_dir=tmp_path).load().learning.enabled is True
 
     def test_the_cli_applies_group_policy_too(self):
         """``igni -m`` runs a real session in this process, so a policy that

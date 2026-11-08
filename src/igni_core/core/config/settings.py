@@ -382,7 +382,7 @@ def load_settings(
     publishing ``{"permissions": {"web_fetch": "deny"}}`` could not have it applied
     even by a caller that wanted to. Production now passes
     :class:`~igni_core.core.config.group_policy.settings_fetcher.CachedSettingsFetcher` from
-    ``BackendApp.run`` and ``load_settings_from_options``; callers that want no
+    ``BackendSettingsLoader.load`` and ``load_settings_from_options``; callers that want no
     org policy (tests, tooling) simply leave it ``None``.
     """
     return SettingsLoader.load(

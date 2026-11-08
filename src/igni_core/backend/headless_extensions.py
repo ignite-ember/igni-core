@@ -3,7 +3,7 @@
 An extension's backend logic runs in every mode; only its UI needs an
 app to load into. A headless run is one session, one message, no
 window — so it starts the extensions installed on this machine the way
-the app does (:meth:`~igni_core.backend.app.BackendApp._start_extensions`,
+the app does (:meth:`~igni_core.backend.extension_startup.ExtensionStartup.start`,
 without the distribution sync), and their tools, hooks and prompt
 contributions apply to it. Without this a policy extension's
 ``PreToolUse`` hook could be stepped around by running igni with ``-m``.

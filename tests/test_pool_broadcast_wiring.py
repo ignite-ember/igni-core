@@ -228,12 +228,12 @@ class TestPostRunDeferral:
 
 class TestOrchestratorAndAppWiring:
     """Confirm the broadcast-bus binding runs in BOTH the boot path
-    (``BackendApp.setup`` → ``PushNotificationBridge.wire_all``) and
+    (``PushNotificationBridge.wired`` → ``PushNotificationBridge.wire_all``) and
     the pool path (``SessionRuntimeFactory.create`` →
     ``bind_to_broadcast_bus`` on the runtime's own bridge)."""
 
     def test_boot_wires_broadcast_via_push_bridge(self) -> None:
-        # ``wire_all`` is what ``BackendApp.setup`` calls — must
+        # ``wire_all`` is what ``PushNotificationBridge.wired`` calls — must
         # include the broadcast-bus bind for the default runtime.
         assert "bind_to_broadcast_bus" in inspect.getsource(PushNotificationBridge.wire_all), (
             "PushNotificationBridge.wire_all must bind the broadcast "

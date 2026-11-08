@@ -44,6 +44,8 @@ from websockets.asyncio.client import connect
 
 from igni_core.backend.activity import Activity, ActivityState, SessionActivity
 from igni_core.backend.app import BackendApp
+from igni_core.backend.schemas_lifecycle import BackendLaunch
+from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.config.schemas.storage_and_paths import StorageConfig
 from igni_core.core.config.settings import load_settings
@@ -466,24 +468,18 @@ async def test_the_backend_loads_nothing_of_a_producer_before_it_is_bound(
     (run_dir / "ready").write_text("left by an igni that exited\n")
     seen: dict[str, Any] = {}
 
-    def load_settings_now(_self: BackendApp) -> Any:
+    def load_settings_now(_self: BackendSettingsLoader) -> Any:
         seen["database_url"] = os.environ.get(StorageConfig.DATABASE_URL_ENV)
         seen["cwd"] = Path(os.getcwd()).resolve()
         raise Booted
 
-    monkeypatch.setattr(BackendApp, "_load_settings_with_group_policy", load_settings_now)
-    app = BackendApp(
-        socket_path=None,
-        ws_port=0,
-        project_dir=project,
-        resume_session_id=None,
-        additional_dirs=None,
-    )
-    assert isinstance(app._guest, CloudGuest)
+    monkeypatch.setattr(BackendSettingsLoader, "load", load_settings_now)
+    app = BackendApp(BackendLaunch(ws_port=0, project_dir=project))
+    assert isinstance(app.guest, CloudGuest)
     run = asyncio.create_task(app.run())
     try:
         for _ in range(500):
-            if app._transport is not None:
+            if app.transport is not None:
                 break
             await asyncio.sleep(0.01)
         assert (run_dir / "ready").read_text().strip() == str(os.getpid())
@@ -493,8 +489,8 @@ async def test_the_backend_loads_nothing_of_a_producer_before_it_is_bound(
         with pytest.raises(Booted):
             await asyncio.wait_for(run, timeout=5)
     finally:
-        if app._transport is not None:
-            await app._transport.close()
+        if app.transport is not None:
+            await app.transport.close()
     assert seen == {"database_url": f"sqlite:///{tmp_path / 'shared.db'}", "cwd": project.resolve()}
     assert not (run_dir / "ready").exists(), "an igni that stopped is not ready"
 
