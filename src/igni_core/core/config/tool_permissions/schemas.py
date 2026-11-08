@@ -1,8 +1,7 @@
 """Pydantic schemas + typed models for the tool-permissions subsystem.
 
-Mirrors the sibling ``permissions/schemas.py`` shape: this file owns
-the wire models, the polymorphic rule hierarchy, and the value objects
-that used to live as anonymous ``dict[str, Any]`` blobs and module-level
+This file owns the wire models, the polymorphic rule hierarchy, and the
+value objects that used to live as anonymous ``dict[str, Any]`` blobs and module-level
 dispatch tables inside ``tool_permissions.py``.
 
 Key type map (old → new):
@@ -53,10 +52,7 @@ logger = logging.getLogger(__name__)
 # ``backend/schemas_hitl.py`` types ``level: PermissionLevel | None``
 # on a Pydantic wire model. Switching to a StrEnum would flow through
 # every consumer of that wire schema. The three lowercase strings
-# ``"allow" / "ask" / "deny"`` are the wire contract; the sibling
-# ``permissions/schemas.PermissionLevel`` StrEnum happens to serialize
-# to the same three strings, so a future migration is a one-liner
-# once the wire consumers are audited.
+# ``"allow" / "ask" / "deny"`` are the wire contract.
 PermissionLevel = Literal["allow", "ask", "deny"]
 
 _LEVELS: tuple[PermissionLevel, ...] = ("allow", "ask", "deny")
