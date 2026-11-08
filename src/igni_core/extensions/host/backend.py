@@ -16,7 +16,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
+from igni_core.backend.activity import Activity
 from igni_core.core.session.schemas import PersistResult
+from igni_core.extensions.host.broadcasts.views import ViewShown
+from igni_core.extensions.host.values import SessionAttached
 from igni_core.extensions.service_events import UnattendedPost
 from igni_core.protocol.messages import Message
 from igni_core.protocol.rpc import RpcMethod
@@ -59,7 +62,7 @@ class HostBackend(Protocol):
         """Send a UI action whose answer comes back here, not to the windows."""
         ...
 
-    async def attach(self, session_id: str, project_dir: str | None) -> dict[str, str]:
+    async def attach(self, session_id: str, project_dir: str | None) -> SessionAttached:
         """``attach_session``: make a session live, refused where the person's would be."""
         ...
 
@@ -97,13 +100,13 @@ class HostBackend(Protocol):
         """Put a json-render block in a session's transcript, and keep it."""
         ...
 
-    def views(self, session_id: str) -> list[dict[str, Any]]:
+    def views(self, session_id: str) -> list[ViewShown]:
         """Every json-render block a session's transcript holds."""
         ...
 
     def project_dir_of(self, session_id: str) -> Path: ...
 
-    def activity(self) -> dict[str, Any]:
+    def activity(self) -> Activity:
         """``app.activity``: running, waiting on a person, or idle."""
         ...
 

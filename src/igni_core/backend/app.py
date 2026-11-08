@@ -16,10 +16,10 @@ from igni_core.backend.agent_refresh import AgentRefresh
 from igni_core.backend.backend_notifications import BackendNotifications
 from igni_core.backend.extension_startup import ExtensionStartup, ExtensionStartupContext
 from igni_core.backend.extensions_runtime import ExtensionsRuntime
-from igni_core.backend.host_backend import ObservedTransport
 from igni_core.backend.host_model_runtime import HostModelRuntime
 from igni_core.backend.igni_server_access import IgniServerAccess
 from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.observed_transport import ObservedTransport
 from igni_core.backend.pool_rpcs import ApproverTokenRpc
 from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.process_environment import ProcessEnvironment
@@ -120,7 +120,7 @@ class BackendApp:
         guest = self._guest
         guest.starting()
         # Wrapped once, at the root, so the host object model sees every
-        # message igni sends any window (``host_backend``).
+        # message igni sends any window (``observed_transport``).
         transport = ObservedTransport(await self._transport_builder.build())
         self._transport = transport
         # Listening, imports done. A layer may wait here for what it needs

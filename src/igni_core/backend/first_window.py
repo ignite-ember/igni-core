@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 from enum import Enum
 
-from igni_core.backend.host_backend import ObservedTransport
+from igni_core.backend.observed_transport import ObservedTransport
 from igni_core.backend.supervisor import BackendSupervisor
 from igni_core.core.activity import background
 

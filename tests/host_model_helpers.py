@@ -22,9 +22,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from igni_core.backend.activity import ActivityState, SessionActivity
 from igni_core.backend.command_result import CommandResult
-from igni_core.backend.host_backend import HostModelWiring, ObservedTransport
+from igni_core.backend.host_model_wiring import HostModelHubs, HostModelWiring
 from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.observed_transport import ObservedTransport
 from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_router import RpcRouter
@@ -36,7 +38,10 @@ from igni_core.backend.server_processes import ProcessRow
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
+from igni_core.core.activity import ActivityRegistry
+from igni_core.core.approvals.events import approval_events
 from igni_core.core.config.schemas.display import DisplayConfig
+from igni_core.core.hooks.extension_gate import ExtensionHookGate
 from igni_core.core.session.event_log_schema import SessionEvent
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.host.caller import Caller
@@ -48,21 +53,43 @@ from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.store import ExtensionStore
 from igni_core.protocol import messages as msg
+from igni_core.transport.base import ListeningTransport
 from tests.siblings import IGNI_SDK
 
 REPO = Path(__file__).resolve().parent.parent
 SDK_SRC = IGNI_SDK / "packages" / "igni-extension" / "src"
 
 
-class CapturingTransport:
+class CapturingTransport(ListeningTransport):
     """The windows, as a list: every message igni sent them."""
 
     def __init__(self) -> None:
         self.sent: list[msg.Message] = []
-        self.is_closed = False
+        self._closed = False
 
     async def send(self, message: msg.Message) -> None:
         self.sent.append(message)
+
+    async def receive(self) -> AsyncIterator[msg.Message]:
+        return
+        yield
+
+    async def close(self) -> None:
+        self._closed = True
+
+    @property
+    def is_closed(self) -> bool:
+        return self._closed
+
+    async def start(self) -> None:
+        return None
+
+    async def wait_for_connection(self, timeout: float | None = 30.0) -> None:
+        return None
+
+    @property
+    def client_count(self) -> int:
+        return 0
 
     def of(self, kind: type[msg.Message]) -> list[Any]:
         return [m for m in self.sent if isinstance(m, kind)]
@@ -301,6 +328,9 @@ class FakeSession:
     async def truncate_history(self, session_id: str, run_id: str) -> dict:
         return {"ok": True, "run_id": run_id}
 
+    def activity(self) -> SessionActivity:
+        return SessionActivity(session_id=self.session_id, state=ActivityState.IDLE)
+
     # ── The event log ─────────────────────────────────────────────
 
     async def record_event(self, event_type: str, payload: dict, run_id: str = "") -> None:
@@ -400,6 +430,11 @@ class HostRig:
             transport=self.transport,
             registry=self.registry,
             project_dir=self.project,
+            hubs=HostModelHubs(
+                approvals=approval_events,
+                activities=ActivityRegistry.shared(),
+                install_hooks=ExtensionHookGate.install,
+            ),
             store=self.store,
             strict=strict,
         )

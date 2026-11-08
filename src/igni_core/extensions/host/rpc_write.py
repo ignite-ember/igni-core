@@ -2,7 +2,7 @@
 
 It sits beside the gateway rather than in :mod:`.broadcasts` because both
 ends use it: :class:`~.backend_gateway.HostBackendGateway` and the backend's
-``RpcWatch`` make one, and
+``RpcWatch`` (``backend/rpc_watch.py``) make one, and
 :class:`~.broadcasts.rpc_writes.RpcWriteSignals` turns it into a signal.
 """
 

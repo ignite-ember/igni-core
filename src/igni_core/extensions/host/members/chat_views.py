@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 from igni_core.core.tools.orchestrate_events import VisualizationDeltaEvent
+from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.members.base import Members
 from igni_core.extensions.host.members.call import Call
@@ -68,7 +69,7 @@ class ChatViewMembers(Members):
         )
 
     @get("chat.views.list")
-    async def view_list(self, c: Call) -> Any:
+    async def view_list(self, c: Call) -> list[ViewShown]:
         return self.host.backend.views(c.session_id)
 
     @call("chat.views.dispatch")

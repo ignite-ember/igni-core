@@ -34,7 +34,7 @@ from igni_cloud.guest.watch import DirectoryWatch
 from igni_cloud.layer import CloudLayer
 from igni_cloud.logs import StdoutLog
 
-from igni_core.backend.host_backend import ObservedTransport
+from igni_core.backend.observed_transport import ObservedTransport
 from igni_core.core.log_fields import LogFields
 from igni_core.protocol import messages as msg
 from igni_core.transport.websocket import WebSocketServerTransport

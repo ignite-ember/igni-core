@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from pydantic import BaseModel
 
+from igni_core.backend.activity import Activity
 from igni_core.extensions.host.signal_values import Emit
 from igni_core.protocol import messages as msg
 
@@ -15,15 +16,15 @@ logger = logging.getLogger(__name__)
 
 ACTIVITY_CHANGED = "app.activity_changed"
 
-ActivityListener = Callable[[dict[str, Any]], None]
+ActivityListener = Callable[[Activity], None]
 
 
 class ActivityRead(BaseModel):
     """The backend's activity, or why it could not be read."""
 
     ok: bool
-    #: ``HostBackend.activity()``'s answer, as the backend gives it.
-    value: dict[str, Any] | None = None
+    #: ``HostBackend.activity()``'s answer.
+    value: Activity | None = None
     reason: str = ""
 
 
@@ -44,10 +45,10 @@ class ActivityWatch:
         }
     )
 
-    def __init__(self, read: Callable[[], dict[str, Any]], emit: Emit) -> None:
+    def __init__(self, read: Callable[[], Activity], emit: Emit) -> None:
         self._read_activity = read
         self._emit = emit
-        self._last: dict[str, Any] | None = None
+        self._last: Activity | None = None
         self._listeners: list[ActivityListener] = []
 
     def listen(self, listener: ActivityListener) -> None:
@@ -68,7 +69,7 @@ class ActivityWatch:
         if read.value == self._last:
             return
         self._last = read.value
-        self._emit(ACTIVITY_CHANGED, read.value)
+        self._emit(ACTIVITY_CHANGED, read.value.model_dump(mode="json"))
         for listener in list(self._listeners):
             try:
                 listener(read.value)

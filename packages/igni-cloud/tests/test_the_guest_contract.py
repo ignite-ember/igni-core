@@ -270,9 +270,9 @@ async def test_it_follows_activity_changed_and_is_removed_when_igni_stops(tmp_pa
 
 def test_activity_changed_reaches_a_listener():
     class Backend:
-        value: dict[str, Any] = {"state": "idle"}
+        value = Activity.of([])
 
-        def activity(self) -> dict[str, Any]:
+        def activity(self) -> Activity:
             return self.value
 
     backend = Backend()
@@ -283,13 +283,14 @@ def test_activity_changed_reaches_a_listener():
         return []
 
     watch = ActivityWatch(backend.activity, emit)
-    heard: list[dict[str, Any]] = []
+    heard: list[Activity] = []
     watch.listen(heard.append)
     watch.moved()
     watch.moved()
-    backend.value = {"state": "running"}
+    running = SessionActivity(session_id="s1", state=ActivityState.RUNNING)
+    backend.value = Activity.of([running])
     watch.moved()
-    assert heard == [{"state": "idle"}, {"state": "running"}]
+    assert [a.state for a in heard] == [ActivityState.IDLE, ActivityState.RUNNING]
     assert emitted == ["app.activity_changed", "app.activity_changed"]
 
 
@@ -698,8 +699,8 @@ async def test_serving_keeps_the_file_and_reconnects_after_a_restore(run_dir: Pa
             self.services = types.SimpleNamespace(backend=self, activity_watch=self)
             self.listeners: list[Any] = []
 
-        def activity(self) -> dict[str, Any]:
-            return Activity.of([]).model_dump(mode="json")
+        def activity(self) -> Activity:
+            return Activity.of([])
 
         def listen(self, listener: Any) -> None:
             self.listeners.append(listener)
@@ -769,8 +770,8 @@ async def test_bound_before_any_sign_in_says_so_to_the_windows_and_the_node_agen
         def __init__(self) -> None:
             self.services = types.SimpleNamespace(backend=self, activity_watch=self)
 
-        def activity(self) -> dict[str, Any]:
-            return Activity.of([]).model_dump(mode="json")
+        def activity(self) -> Activity:
+            return Activity.of([])
 
         def listen(self, listener: Any) -> None:
             pass

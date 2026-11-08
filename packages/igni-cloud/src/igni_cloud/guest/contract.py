@@ -62,7 +62,6 @@ from igni_cloud.guest.suspend import SuspendWatch
 from igni_cloud.guest.warm import WarmImports
 from igni_cloud.guest.watch import DirectoryWatches
 from igni_cloud.logs import StdoutLog
-from igni_core.backend.activity import Activity
 from igni_core.backend.pool_rpcs import VmSignInRpc
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.db.engine import cache
@@ -211,7 +210,7 @@ class CloudGuest(BackendHooks):
         backend = model.services.backend
         self.activity = activity = ActivityFile(
             self.paths.activity,
-            activity=lambda: Activity.model_validate(backend.activity()),
+            activity=backend.activity,
             clients=lambda: transport.client_count,
             credential=self.credential.state,
         )

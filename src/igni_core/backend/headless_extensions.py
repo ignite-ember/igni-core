@@ -32,12 +32,14 @@ from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.distribution import OneShotSync
+from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.host.model_config import HostModelConfig
 from igni_core.extensions.host.spec import ErrorCode
+from igni_core.extensions.host.values import SessionAttached
 from igni_core.extensions.impact import IgniCommands
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.launcher import ExtensionLauncher
@@ -100,7 +102,7 @@ class HeadlessHostBackend:
     async def ask(self, message: Message, *, session_id: str, timeout: float = 120.0) -> Message:
         raise self._refused(type(message).__name__)
 
-    async def attach(self, session_id: str, project_dir: str | None) -> dict[str, str]:
+    async def attach(self, session_id: str, project_dir: str | None) -> SessionAttached:
         raise self._refused("attach_session")
 
     async def post(
@@ -130,12 +132,12 @@ class HeadlessHostBackend:
     async def show_view(self, *, session_id: str, payload: dict[str, Any], run_id: str) -> None:
         raise self._refused("chat.show")
 
-    def views(self, session_id: str) -> list[dict[str, Any]]:
+    def views(self, session_id: str) -> list[ViewShown]:
         return []
 
-    def activity(self) -> dict[str, Any]:
+    def activity(self) -> Activity:
         # A headless run is its own process; nothing here suspends it.
-        return Activity.of([]).model_dump(mode="json")
+        return Activity.of([])
 
     def waiting_approvals(self, session_id: str) -> list[Message]:
         # Headless runs ask nobody: nothing waits on a person.

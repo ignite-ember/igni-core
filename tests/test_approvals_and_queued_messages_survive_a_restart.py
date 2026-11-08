@@ -30,6 +30,7 @@ from igni_core.backend.host_backend import OrchestratorHostBackend
 from igni_core.backend.pause_handler import PauseHandler
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.backend.session_pool import SessionRuntime
+from igni_core.core.activity import ActivityRegistry
 from igni_core.core.approvals.journal import ApprovalJournal
 from igni_core.core.db.database import Database
 from igni_core.core.db.urls import DatabaseUrl
@@ -336,7 +337,8 @@ async def test_the_host_model_sees_a_real_backends_waiting_approval(
         orchestrator=SimpleNamespace(pool=SimpleNamespace(find=lambda _: runtime)),  # type: ignore[arg-type]
         transport=MagicMock(),
         project_dir=tmp_path,
-        client_state=None,
+        client_state=None,  # type: ignore[arg-type]
+        activities=ActivityRegistry(),
     )
 
     (waiting,) = host.waiting_approvals(SESSION)

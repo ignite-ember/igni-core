@@ -10,16 +10,17 @@ of probing for them, and a test hands it something that has just those.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Protocol
 
 from igni_cloud.guest.resume import Restored
+from igni_core.backend.activity import Activity
 from igni_core.backend.pool_rpcs.base import PoolRpc
 from igni_core.extensions.host.activity import ActivityListener
 from igni_core.protocol import messages as msg
 
 
 class GuestTransport(Protocol):
-    """The backend's root transport (:class:`~igni_core.backend.host_backend.ObservedTransport`)."""
+    """The backend's root transport (:class:`~igni_core.backend.observed_transport.ObservedTransport`)."""
 
     async def send(self, message: msg.Message) -> None: ...
 
@@ -36,7 +37,7 @@ class GuestTransport(Protocol):
 
 
 class ActivitySource(Protocol):
-    def activity(self) -> dict[str, Any]:
+    def activity(self) -> Activity:
         """``app.activity``: running, waiting on a person, or idle."""
         ...
 

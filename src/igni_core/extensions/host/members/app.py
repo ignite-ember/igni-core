@@ -7,6 +7,7 @@ from typing import Any, ClassVar
 from pydantic import ValidationError
 
 from igni_core import __version__
+from igni_core.backend.activity import Activity
 from igni_core.extensions.host.display import Display, DisplayReader
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.external_link import ExternalLink
@@ -47,7 +48,7 @@ class AppMembers(Members):
         return self.host.state.update
 
     @get("app.activity")
-    async def activity(self, c: Call) -> Any:
+    async def activity(self, c: Call) -> Activity:
         return self.host.backend.activity()
 
     @get("app.connection")

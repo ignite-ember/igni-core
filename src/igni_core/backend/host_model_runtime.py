@@ -9,9 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from igni_core.backend.extensions_runtime import ExtensionsRuntime
-from igni_core.backend.host_backend import HostModelWiring, ObservedTransport
+from igni_core.backend.host_model_wiring import HostModelHubs, HostModelWiring
+from igni_core.backend.observed_transport import ObservedTransport
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.workspace_signals import WorkspaceSignals
+from igni_core.core.activity import ActivityRegistry
+from igni_core.core.approvals.events import approval_events
+from igni_core.core.hooks.extension_gate import ExtensionHookGate
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.store import ExtensionStore
@@ -47,6 +51,11 @@ class HostModelRuntime:
             transport=transport,
             registry=runtime.registry,
             project_dir=project_dir,
+            hubs=HostModelHubs(
+                approvals=approval_events,
+                activities=ActivityRegistry.shared(),
+                install_hooks=ExtensionHookGate.install,
+            ),
             store=store,
             notices=notices,
             workspace_signals=signals,

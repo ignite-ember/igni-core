@@ -11,8 +11,8 @@ from igni_core.backend.backend_notifications import BackendNotifications
 from igni_core.backend.extension_startup import ExtensionStartup
 from igni_core.backend.extensions_runtime import ExtensionsRuntime
 from igni_core.backend.first_window import FirstWindow, FirstWindowOutcome
-from igni_core.backend.host_backend import ObservedTransport
 from igni_core.backend.host_model_runtime import HostModelRuntime
+from igni_core.backend.observed_transport import ObservedTransport
 from igni_core.backend.service_event_ingress import ServiceEventIngress
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.supervisor import BackendSupervisor

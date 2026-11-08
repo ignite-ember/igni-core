@@ -479,7 +479,7 @@ async def test_a_failing_activity_listener_does_not_stop_the_others(rig, heard):
 
     await _send(rig, msg.RunStarted(session_id="boot", run_id="r1"))
 
-    assert told == heard.values("app.activity_changed")
+    assert [a.model_dump(mode="json") for a in told] == heard.values("app.activity_changed")
     assert len(told) == 1
 
 

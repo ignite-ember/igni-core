@@ -35,8 +35,10 @@ from igni_core.protocol import messages as msg
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from igni_core.backend.activity import SessionActivity
     from igni_core.backend.controller_registry import Controllers
     from igni_core.backend.session_pool import SessionRuntime
+    from igni_core.core.session.event_log_schema import SessionEvent
 
 
 class AutoNameResult(BaseModel):
@@ -144,6 +146,9 @@ class BackendLike(Protocol):
     def wire_queue_hook(self, queue: list[str]) -> None: ...
     def attach_runtime(self, runtime: SessionRuntime) -> None: ...
     def reload_agents(self) -> bool: ...
+    def activity(self) -> SessionActivity: ...
+    async def record_event(self, event_type: str, payload: dict, run_id: str = "") -> None: ...
+    def session_events(self, event_type: str) -> list[SessionEvent]: ...
 
 
 class TransportLike(Protocol):

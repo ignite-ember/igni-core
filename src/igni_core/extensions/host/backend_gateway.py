@@ -58,10 +58,9 @@ class HostBackendGateway:
 
     async def attach(self, session_id: str, project_dir: str | None) -> SessionAttached:
         try:
-            attached = await self._backend.attach(session_id, project_dir)
+            return await self._backend.attach(session_id, project_dir)
         except ValueError as exc:
             raise HostModelError(ErrorCode.REFUSED, str(exc)) from None
-        return SessionAttached.model_validate(attached)
 
     async def account(self, session_id: str) -> Account:
         status = await self._backend.rpc(RpcMethod.GET_STATUS, {}, session_id=session_id)
