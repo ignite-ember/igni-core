@@ -2644,7 +2644,7 @@
           "name": "check_for_update",
           "params": [],
           "result": "UpdateInfo | None",
-          "doc": "Ask whether a newer igni exists.",
+          "doc": "Ask whether a newer igni exists: `None` when none does. A check that could not reach an answer (offline, an HTTP error, an unreadable reply) is refused (`refused`) rather than answered `None`.",
           "permission": null,
           "inherit_permission": true,
           "stage": 1,

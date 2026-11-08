@@ -994,7 +994,11 @@ OBJECTS = (
                 result="Display",
             ),
             method(
-                "check_for_update", "Ask whether a newer igni exists.", result="UpdateInfo | None"
+                "check_for_update",
+                "Ask whether a newer igni exists: `None` when none does. A check that could "
+                "not reach an answer (offline, an HTTP error, an unreadable reply) is refused "
+                "(`refused`) rather than answered `None`.",
+                result="UpdateInfo | None",
             ),
             method(
                 "open_external",
