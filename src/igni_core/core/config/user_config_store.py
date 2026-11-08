@@ -60,9 +60,11 @@ class UserConfigStore:
         with open(self._path, "w") as f:
             yaml.safe_dump(payload, f, default_flow_style=False, sort_keys=False)
 
-    def set_default_model(self, model_name: str) -> None:
+    def set_default_model(self, model_name: str) -> bool:
         """Persist a model choice to the user config so it survives
-        across app restarts.
+        across app restarts. Returns ``False`` (and logs) when the
+        file can't be read or written, so the caller can tell the
+        user the choice wasn't saved.
 
         Reads the existing file (or starts blank), sets/updates
         ``models.default``, and writes back. If ``models`` exists
@@ -76,10 +78,15 @@ class UserConfigStore:
         start, so freezing it would just stale-out as new models
         ship. Only the default identity is sticky.
         """
-        existing = self.read()
-        models_block = existing.setdefault("models", {})
-        if not isinstance(models_block, dict):
-            models_block = {}
-            existing["models"] = models_block
-        models_block["default"] = model_name
-        self.write(existing)
+        try:
+            existing = self.read()
+            models_block = existing.setdefault("models", {})
+            if not isinstance(models_block, dict):
+                models_block = {}
+                existing["models"] = models_block
+            models_block["default"] = model_name
+            self.write(existing)
+        except (OSError, yaml.YAMLError) as exc:
+            logger.warning("failed to save default model to %s: %s", self._path, exc)
+            return False
+        return True

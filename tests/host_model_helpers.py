@@ -312,7 +312,10 @@ class FakeSession:
     def toggle_verbose(self) -> bool:
         return self.settings.display.toggle_show_routing()
 
-    def switch_model(self, model_name: str) -> msg.Info:
+    def switch_model(self, model_name: str) -> msg.Info | msg.Error:
+        # Refuses a name the registry doesn't know, as the real switcher does.
+        if model_name not in self.settings.models.registry:
+            return msg.Error(text=f"Unknown model: '{model_name}'.")
         self.settings.models.default = model_name
         return msg.Info(text=f"Switched to {model_name}")
 

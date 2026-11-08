@@ -193,10 +193,22 @@ def test_toggling_verbose_flips_it_and_back(backend):
 
 
 def test_switching_the_model_rebuilds_the_team_on_the_new_one(backend):
+    backend.settings.models.registry["another-model"] = {"model_id": "another"}
+
     reply = backend.switch_model("another-model")
 
     assert isinstance(reply, msg.Info)
     assert backend.settings.models.default == "another-model"
+
+
+def test_a_model_the_registry_does_not_know_is_refused(backend):
+    before = backend.settings.models.default
+
+    reply = backend.switch_model("no-such-model")
+
+    assert isinstance(reply, msg.Error)
+    assert "no-such-model" in reply.text
+    assert backend.settings.models.default == before
 
 
 def test_the_plan_research_flag_is_read_once(backend):

@@ -30,11 +30,16 @@ class ModelSwitchResult(BaseModel):
     available: list[str] = []
     error: str | None = None
 
+    @property
+    def failure_text(self) -> str:
+        """The user-facing refusal for an ``ok=False`` result."""
+        avail = ", ".join(sorted(self.available))
+        reason = self.error or f"Unknown model: '{self.model_name}'."
+        return f"{reason} Available: {avail}"
+
     def to_command_result(self) -> CommandResult:
         if not self.ok:
-            avail = ", ".join(sorted(self.available))
-            reason = self.error or f"Unknown model: '{self.model_name}'."
-            return CommandResult.error(f"{reason} Available: {avail}")
+            return CommandResult.error(self.failure_text)
         # ``action="model_switched"`` tells the FE to refresh the
         # status-bar model slot. Without it the bar showed the OLD
         # model after ``/model <name>`` direct switches — nothing

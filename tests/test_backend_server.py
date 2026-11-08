@@ -8,6 +8,7 @@ import pytest
 
 from igni_core.backend.command_result import CommandResult
 from igni_core.backend.run_controller import RunController
+from igni_core.backend.schemas_model import ModelSwitchResult
 from igni_core.backend.server import BackendServer
 from igni_core.protocol import messages as msg
 from igni_core.protocol.registry import MessageRegistry
@@ -71,12 +72,39 @@ class TestBackendServerCommands:
     @pytest.mark.asyncio
     async def test_switch_model(self):
         session = MagicMock()
-        session.rebuild_main_team = MagicMock()
         session.session_id = "test-sess"
+        session.set_default_model.return_value = ModelSwitchResult(ok=True, model_name="new-model")
+        session.settings.models.has_vision.return_value = False
         session_prefs = MagicMock()
+        session_prefs.set_model.return_value = True
         # The persistence side-effect lives on :class:`UserConfigStore`;
         # a stand-in keeps the real user config file untouched.
         user_config_store = MagicMock()
+        user_config_store.set_default_model.return_value = True
+        server = make_backend(
+            session,
+            settings=MagicMock(),
+            session_prefs=session_prefs,
+            user_config_store=user_config_store,
+        )
+
+        result = server.switch_model("new-model")
+
+        assert result == msg.Info(text="Switched to new-model")
+        session.set_default_model.assert_called_once_with("new-model")
+        user_config_store.set_default_model.assert_called_once_with("new-model")
+        session_prefs.set_model.assert_called_once_with("test-sess", "new-model")
+
+    @pytest.mark.asyncio
+    async def test_switch_model_says_which_save_did_not_land(self):
+        session = MagicMock()
+        session.session_id = "test-sess"
+        session.set_default_model.return_value = ModelSwitchResult(ok=True, model_name="new-model")
+        session.settings.models.has_vision.return_value = False
+        session_prefs = MagicMock()
+        session_prefs.set_model.return_value = False
+        user_config_store = MagicMock()
+        user_config_store.set_default_model.return_value = False
         server = make_backend(
             session,
             settings=MagicMock(),
@@ -87,9 +115,8 @@ class TestBackendServerCommands:
         result = server.switch_model("new-model")
 
         assert isinstance(result, msg.Info)
-        assert "new-model" in result.text
-        session.rebuild_main_team.assert_called_once()
-        session_prefs.set_model.assert_called_once_with("test-sess", "new-model")
+        assert "default for new sessions" in result.text
+        assert "--continue" in result.text
 
 
 class TestFromParts:

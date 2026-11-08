@@ -13,6 +13,7 @@ from igni_core.backend.schemas_rpc import (
     UpdateAvailable,
 )
 from igni_core.core.utils.update_checker import PackageMetadata, check_for_update
+from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,12 @@ class ModelsRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.SWITCH_MODEL)
     def switch_model(self, args: dict) -> Any:
-        return self._ctx.backend.switch_model(args["model_name"])
+        reply = self._ctx.backend.switch_model(args["model_name"])
+        if isinstance(reply, msg.Error):
+            # A refused switch fails the call, so write listeners
+            # never announce a model that never became current.
+            raise ValueError(reply.text)
+        return reply
 
     @rpc(RpcMethod.TOGGLE_VERBOSE)
     def toggle_verbose(self, args: dict) -> Any:

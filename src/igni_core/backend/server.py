@@ -304,7 +304,7 @@ class BackendServer:
     async def truncate_history(self, session_id: str, run_id: str) -> TruncateHistoryResult:
         return await self.controllers.context.truncate_history(session_id, run_id)
 
-    def switch_model(self, model_name: str) -> msg.Info:
+    def switch_model(self, model_name: str) -> msg.Info | msg.Error:
         return self.controllers.model_switcher.switch(model_name)
 
     def toggle_verbose(self) -> bool:

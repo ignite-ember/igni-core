@@ -1,23 +1,13 @@
-"""Model-switching logic — extracted from :class:`BackendServer`.
+"""Model switching for the window's model picker.
 
-The previous ``BackendServer.switch_model`` was a 46-LoC method
-reaching into five private-attributes of :class:`Session`
-(``settings.models.default``, ``main_team``, ``_build_main_agent``,
-``session_id``) plus writing to two persistence layers (user-level
-config file + per-session prefs table). Extracting the logic into a
-dedicated class keeps the god-class small and gives the switch
-concern one testable owner.
-
-The controller takes :class:`Session` + :class:`SessionPreferencesStore`
-+ :class:`UserConfigStore` — three real collaborator objects rather
-than a mix of state + a bound-method callback (the previous
-``save_default_model`` callable pattern only existed to route around
-a module-level shim that has now been deleted).
+:class:`ModelSwitcher` owns the ``switch_model`` request: it swaps the
+session's default model through :meth:`Session.set_default_model` and
+persists the choice at both the user level and the session level,
+telling the user when either save didn't land.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from igni_core.protocol import messages as msg
@@ -26,8 +16,6 @@ if TYPE_CHECKING:
     from igni_core.core.config.user_config_store import UserConfigStore
     from igni_core.core.session import Session
     from igni_core.core.session.session_preferences import SessionPreferencesStore
-
-logger = logging.getLogger(__name__)
 
 
 class ModelSwitcher:
@@ -44,65 +32,40 @@ class ModelSwitcher:
         self._session_prefs = session_prefs
         self._user_config_store = user_config_store
 
-    def switch(self, model_name: str) -> msg.Info:
+    def switch(self, model_name: str) -> msg.Info | msg.Error:
         """Switch the active model and persist the choice.
 
         Two layers of persistence so the choice survives both an
         app restart AND a session resume:
 
-        * **User-level default** — written to ``~/.igni/config.yaml``
-          via :class:`UserConfigStore` so any new session opened
-          next launch uses this model. Best-effort: a save failure
-          is logged but doesn't fail the switch (the in-memory
-          state is already updated).
-        * **Per-session preference** — written to ``state.db``'s
-          ``ember_session_preferences`` table keyed by session_id.
-          ``--continue`` consults this on startup.
+        * **User-level default** — ``~/.igni/config.yaml`` via
+          :class:`UserConfigStore`, so the next launch opens on it.
+        * **Per-session preference** — ``state.db``'s
+          ``ember_session_preferences`` table, which ``--continue``
+          consults on startup.
+
+        A model the registry doesn't know is refused, as ``/model``
+        refuses it. A failed save doesn't undo the switch (the
+        in-memory state is already updated); the reply says which
+        save didn't land.
         """
-        old_name = self._session.settings.models.default
-        # Registry rows are heterogeneous — typed
-        # :class:`ModelRegistryEntry` from cloud discovery vs. raw
-        # dicts from user YAML. ``_row_has_vision`` normalises the
-        # vision-attribute lookup across both shapes.
-        registry = self._session.settings.models.registry
-        old_vision = self._row_has_vision(registry.get(old_name))
-        new_vision = self._row_has_vision(registry.get(model_name))
+        models = self._session.settings.models
+        old_vision = models.has_vision(models.default)
 
-        self._session.settings.models.default = model_name
-        self._session.rebuild_main_team()
+        result = self._session.set_default_model(model_name)
+        if not result.ok:
+            return msg.Error(text=result.failure_text)
 
-        # User-level persistence.
-        try:
-            self._user_config_store.set_default_model(model_name)
-        except Exception as exc:
-            logger.warning("failed to persist model choice to user config: %s", exc)
-
-        # Per-session persistence.
-        try:
-            self._session_prefs.set_model(self._session.session_id, model_name)
-        except Exception as exc:
-            logger.debug("failed to persist per-session model preference: %s", exc)
-
-        note = f"Switched to {model_name}"
+        lines = [f"Switched to {model_name}"]
+        if not self._user_config_store.set_default_model(model_name):
+            lines.append("Note: couldn't save it as the default for new sessions.")
+        if not self._session_prefs.set_model(self._session.session_id, model_name):
+            lines.append("Note: couldn't save it for this session; --continue won't restore it.")
         # Warn if switching from vision to non-vision with media in
         # history.
-        if old_vision and not new_vision:
-            note += (
-                "\nNote: previous messages may contain images/files. "
+        if old_vision and not models.has_vision(model_name):
+            lines.append(
+                "Note: previous messages may contain images/files. "
                 "Use /clear to reset if you get errors."
             )
-        return msg.Info(text=note)
-
-    @staticmethod
-    def _row_has_vision(row: object) -> bool:
-        """Read the ``vision`` flag from a registry row, tolerating
-        both the typed :class:`ModelRegistryEntry` shape and the raw
-        dict shape (user YAML). Missing / non-conformant rows are
-        treated as non-vision."""
-        if row is None:
-            return False
-        if hasattr(row, "vision"):
-            return bool(getattr(row, "vision", False))
-        if isinstance(row, dict):
-            return bool(row.get("vision"))
-        return False
+        return msg.Info(text="\n".join(lines))

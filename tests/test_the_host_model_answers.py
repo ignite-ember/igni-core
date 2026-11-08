@@ -619,6 +619,19 @@ class TestSignals:
         )
         assert sink.values("models.changed") == [{"current": "large"}]
 
+    async def test_a_refused_window_switch_is_not_a_signal(self, rig: HostRig) -> None:
+        ext = rig.install(host=["models"])
+        assert rig.model is not None
+        sink = Sink()
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["models.changed"]
+        )
+        assert rig.orchestrator is not None
+        await rig.orchestrator.dispatch(
+            msg.RPCRequest(id="fe-2", method="switch_model", args={"model_name": "no-such-model"})
+        )
+        assert sink.values("models.changed") == []
+
 
 class TestExtensionsAndTheirWebHome:
     async def test_web_url_is_the_service_a_dev_install_names(self, rig: HostRig) -> None:

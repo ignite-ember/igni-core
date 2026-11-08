@@ -78,6 +78,12 @@ class ModelsConfig(BaseModel):
                 continue
             yield name, entry
 
+    def has_vision(self, name: str) -> bool:
+        """True when ``name`` is a registry entry flagged ``vision``.
+        Unknown names are non-vision."""
+        entry = self._entry(self.registry.get(name))
+        return entry is not None and entry.vision
+
     def current_uses_cloud_token(self) -> bool:
         """True when :attr:`default` resolves to a registry entry
         whose ``api_key`` is the cloud sentinel. False when the
