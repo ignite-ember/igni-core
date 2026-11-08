@@ -10,18 +10,29 @@ the watcher/panel cluster.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
-
 from igni_core.backend.dir_scanner import DirScanner
 from igni_core.backend.folder_picker import NativeFolderPicker
-from igni_core.backend.rpc_handlers.base import RpcHandler, rpc
+from igni_core.backend.rpc_handlers.base import RpcHandler, WireArgs, rpc
+from igni_core.backend.rpc_handlers.panel_args import (
+    AgentNameArgs,
+    CompleteFilesArgs,
+    ListDirsArgs,
+    PickDirArgs,
+    ProcessArgs,
+    ProcessTailArgs,
+    PromoteAgentArgs,
+    ReadFileArgs,
+    RunShellArgs,
+    SearchCodeArgs,
+    VisualizationActionArgs,
+)
 from igni_core.backend.schemas_panels import (
     DiscardEphemeralResult,
     OutputStylesResult,
     PromoteEphemeralResult,
     SlashCommandEntry,
 )
+from igni_core.backend.schemas_processes import ProcessRow, ProcessTailResult, StopProcessResult
 from igni_core.backend.schemas_rpc import (
     DirListResult,
     FileCompletion,
@@ -29,48 +40,48 @@ from igni_core.backend.schemas_rpc import (
     PickDirResult,
     RunShellResult,
 )
+from igni_core.backend.schemas_search import SearchCodeResult
+from igni_core.backend.schemas_visualization import VisualizationActionResult
+from igni_core.backend.server_files import ReadFileResult
 from igni_core.core.agents import AgentInfo
+from igni_core.core.tools.todo import TodoItemWire
 from igni_core.protocol.rpc import RpcMethod
 
 
 class PanelRpcHandler(RpcHandler):
     """GUI panel + watcher RPC surface."""
 
-    @rpc(RpcMethod.COMPLETE_FILES)
-    async def complete_files(self, args: dict) -> FileCompletion:
-        query = str(args.get("query", ""))
-        limit = int(args.get("limit", 50))
-        return await self._ctx.file_completion.complete(query, limit)
+    @rpc(RpcMethod.COMPLETE_FILES, args=CompleteFilesArgs)
+    async def complete_files(self, args: CompleteFilesArgs) -> FileCompletion:
+        return await self._ctx.file_completion.complete(args.query, args.limit)
 
-    @rpc(RpcMethod.READ_FILE)
-    def read_file(self, args: dict) -> Any:
-        return self._ctx.backend.read_file(args["path"])
+    @rpc(RpcMethod.READ_FILE, args=ReadFileArgs)
+    def read_file(self, args: ReadFileArgs) -> ReadFileResult:
+        return self._ctx.backend.read_file(args.path)
 
-    @rpc(RpcMethod.SEARCH_CODE)
-    def search_code(self, args: dict) -> Any:
-        return self._controllers.search.search_code(args["query"])
+    @rpc(RpcMethod.SEARCH_CODE, args=SearchCodeArgs)
+    def search_code(self, args: SearchCodeArgs) -> SearchCodeResult:
+        return self._controllers.search.search_code(args.query)
 
-    @rpc(RpcMethod.RUN_SHELL)
-    async def run_shell(self, args: dict) -> RunShellResult:
+    @rpc(RpcMethod.RUN_SHELL, args=RunShellArgs)
+    async def run_shell(self, args: RunShellArgs) -> RunShellResult:
         """``$``-prefix shell mode. Captured (non-interactive) by
         design — parity with the TUI's inline shell for the common
         cases."""
-        return await self._ctx.shell_runner.run(str(args.get("command", "")))
+        return await self._ctx.shell_runner.run(args.command)
 
-    @rpc(RpcMethod.LIST_DIRS)
-    async def list_dirs(self, args: dict) -> DirListResult:
+    @rpc(RpcMethod.LIST_DIRS, args=ListDirsArgs)
+    async def list_dirs(self, args: ListDirsArgs) -> DirListResult:
         """Subdirectory listing for the GUI folder browser.
 
         Same trust level as ``run_shell`` (local user over loopback).
         Dot-dirs are filtered unless ``show_hidden`` — the browser is
         for picking project roots, not spelunking.
         """
-        raw = str(args.get("path") or Path.home())
-        show_hidden = bool(args.get("show_hidden", False))
-        return await DirScanner(Path(raw), show_hidden).scan_async()
+        return await DirScanner(args.root, args.show_hidden).scan_async()
 
-    @rpc(RpcMethod.PICK_DIR_NATIVE)
-    async def pick_dir_native(self, args: dict) -> PickDirResult:
+    @rpc(RpcMethod.PICK_DIR_NATIVE, args=PickDirArgs)
+    async def pick_dir_native(self, args: PickDirArgs) -> PickDirResult:
         """Open the OS folder picker on this machine, return the path.
 
         The BE always runs on the user's machine (loopback-only
@@ -80,61 +91,51 @@ class PanelRpcHandler(RpcHandler):
         the user may take their time; the FE uses a long RPC timeout
         for this call.
         """
-        start = Path(str(args.get("start") or self._ctx.backend.project_dir)).expanduser()
-        start_dir = str(start) if start.is_dir() else ""
-        picker = NativeFolderPicker.for_platform(start_dir)
-        return await picker.pick()
+        start_dir = args.start_dir(self._ctx.backend.project_dir)
+        return await NativeFolderPicker.for_platform(start_dir).pick()
 
     @rpc(RpcMethod.GET_AGENT_DETAILS)
-    def get_agent_details(self, args: dict) -> list[AgentInfo]:
+    def get_agent_details(self, args: WireArgs) -> list[AgentInfo]:
         return self._ctx.backend.get_agent_details()
 
-    @rpc(RpcMethod.PROMOTE_EPHEMERAL_AGENT)
-    def promote_ephemeral_agent(self, args: dict) -> PromoteEphemeralResult:
-        # ``target``: "project" (the default) or "personal".
-        return self._ctx.backend.promote_ephemeral_agent(
-            args["name"], str(args.get("target") or "project")
-        )
+    @rpc(RpcMethod.PROMOTE_EPHEMERAL_AGENT, args=PromoteAgentArgs)
+    def promote_ephemeral_agent(self, args: PromoteAgentArgs) -> PromoteEphemeralResult:
+        return self._ctx.backend.promote_ephemeral_agent(args.name, args.destination)
 
-    @rpc(RpcMethod.DISCARD_EPHEMERAL_AGENT)
-    def discard_ephemeral_agent(self, args: dict) -> DiscardEphemeralResult:
-        return self._controllers.panels.discard_ephemeral_agent(args["name"])
+    @rpc(RpcMethod.DISCARD_EPHEMERAL_AGENT, args=AgentNameArgs)
+    def discard_ephemeral_agent(self, args: AgentNameArgs) -> DiscardEphemeralResult:
+        return self._controllers.panels.discard_ephemeral_agent(args.name)
 
     @rpc(RpcMethod.GET_SLASH_COMMANDS)
-    def get_slash_commands(self, args: dict) -> list[SlashCommandEntry]:
+    def get_slash_commands(self, args: WireArgs) -> list[SlashCommandEntry]:
         return self._ctx.backend.get_slash_commands()
 
     @rpc(RpcMethod.GET_TODOS)
-    def get_todos(self, args: dict) -> Any:
+    def get_todos(self, args: WireArgs) -> list[TodoItemWire]:
         return self._ctx.backend.get_todos()
 
-    @rpc(RpcMethod.DISPATCH_VISUALIZATION_ACTION)
-    def dispatch_visualization_action(self, args: dict) -> Any:
-        return self._ctx.backend.dispatch_visualization_action(
-            action=str(args.get("action", "")),
-            params=args.get("params") or {},
-        )
+    @rpc(RpcMethod.DISPATCH_VISUALIZATION_ACTION, args=VisualizationActionArgs)
+    def dispatch_visualization_action(
+        self, args: VisualizationActionArgs
+    ) -> VisualizationActionResult:
+        return self._ctx.backend.dispatch_visualization_action(args.action, args.params)
 
     @rpc(RpcMethod.LIST_BACKGROUND_PROCESSES)
-    def list_bg_processes(self, args: dict) -> list[dict[str, Any]]:
-        return [row.model_dump() for row in self._ctx.backend.list_background_processes()]
+    def list_bg_processes(self, args: WireArgs) -> list[ProcessRow]:
+        return self._ctx.backend.list_background_processes()
 
-    @rpc(RpcMethod.READ_PROCESS_TAIL)
-    def read_process_tail(self, args: dict) -> dict[str, Any]:
-        return self._controllers.processes.read_tail(
-            pid=int(args.get("pid", 0)),
-            tail=int(args.get("tail", 200)),
-        ).model_dump()
+    @rpc(RpcMethod.READ_PROCESS_TAIL, args=ProcessTailArgs)
+    def read_process_tail(self, args: ProcessTailArgs) -> ProcessTailResult:
+        return self._controllers.processes.read_tail(pid=args.pid, tail=args.tail)
 
-    @rpc(RpcMethod.STOP_BACKGROUND_PROCESS)
-    async def stop_bg_process(self, args: dict) -> dict[str, Any]:
-        result = await self._controllers.processes.stop(pid=int(args.get("pid", 0)))
-        return result.model_dump()
+    @rpc(RpcMethod.STOP_BACKGROUND_PROCESS, args=ProcessArgs)
+    async def stop_bg_process(self, args: ProcessArgs) -> StopProcessResult:
+        return await self._controllers.processes.stop(pid=args.pid)
 
     @rpc(RpcMethod.GET_OUTPUT_STYLES)
-    def get_output_styles(self, args: dict) -> OutputStylesResult:
+    def get_output_styles(self, args: WireArgs) -> OutputStylesResult:
         return self._ctx.backend.get_output_styles()
 
     @rpc(RpcMethod.GET_GROUP_POLICY)
-    def get_group_policy(self, args: dict) -> GroupPolicyPackResult:
+    def get_group_policy(self, args: WireArgs) -> GroupPolicyPackResult:
         return self._ctx.backend.get_group_policy()
