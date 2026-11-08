@@ -27,6 +27,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.core.auth.schemas import SignedInSession
 from igni_core.core.config.group_policy.answers import SignedAbsence
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
@@ -211,24 +212,20 @@ class TestTheFilesAreRebuiltFromThePack:
 
 class TestNoPackIsASignedAnswer:
     def _controller(self, tmp_path: Path):
-        from igni_core.backend.server_auth import AuthController
-
-        ctrl = AuthController.__new__(AuthController)
-        ctrl._settings = SimpleNamespace(
+        settings = SimpleNamespace(
             api_url=ISSUER,
             storage=SimpleNamespace(data_dir=str(_home())),
             auth=SimpleNamespace(credentials_file=str(_home() / "credentials.json")),
             group_policy=SimpleNamespace(trusted_keys=[], required=False),
         )
-        ctrl._portal = MagicMock()
-        ctrl._portal.fetch_group_pack = AsyncMock()
-        ctrl._portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
-        ctrl._session = MagicMock()
-        ctrl._hydration_lock = None
+        portal = MagicMock()
+        portal.fetch_group_pack = AsyncMock()
+        portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
+        ctrl = GroupPolicySync(session=MagicMock(), settings=settings, portal=portal)
         return ctrl
 
     def _hydrate(self, ctrl) -> bool:
-        return asyncio.run(ctrl._hydrate_group_policy(session_token(), force=True))
+        return asyncio.run(ctrl.hydrate(session_token(), force=True))
 
     def test_a_signed_absence_clears_the_pack_and_what_it_installed(self, tmp_path):
         _configure()
@@ -387,22 +384,19 @@ def _plugin_pack(*, with_plugin: bool = True) -> GroupPolicyPack:
 
 class TestGroupPluginsLiveWithThePack:
     def _hydrate(self, pack: GroupPolicyPack, git: _FakeGit, *, version: int | None = None) -> bool:
-        from igni_core.backend.server_auth import AuthController
         from igni_core.core.plugins.installer import PluginInstaller
 
-        ctrl = AuthController.__new__(AuthController)
-        ctrl._settings = SimpleNamespace(
+        settings = SimpleNamespace(
             api_url=ISSUER,
             storage=SimpleNamespace(data_dir=str(_home())),
             auth=SimpleNamespace(credentials_file=str(_home() / "credentials.json")),
             group_policy=SimpleNamespace(trusted_keys=[], required=False),
             air_gapped=False,
         )
-        ctrl._portal = MagicMock()
-        ctrl._portal.fetch_group_pack = AsyncMock(return_value=KEY.signed(pack, version=version))
-        ctrl._portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
-        ctrl._session = MagicMock()
-        ctrl._hydration_lock = None
+        portal = MagicMock()
+        portal.fetch_group_pack = AsyncMock(return_value=KEY.signed(pack, version=version))
+        portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
+        ctrl = GroupPolicySync(session=MagicMock(), settings=settings, portal=portal)
         real_init = PluginInstaller.__init__
 
         def with_fake_git(self, *args, **kwargs):
@@ -411,7 +405,7 @@ class TestGroupPluginsLiveWithThePack:
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(PluginInstaller, "__init__", with_fake_git)
-            return asyncio.run(ctrl._hydrate_group_policy(session_token(), force=True))
+            return asyncio.run(ctrl.hydrate(session_token(), force=True))
 
     def _installed(self) -> Path:
         return _cache() / "plugins" / "remote-tool"

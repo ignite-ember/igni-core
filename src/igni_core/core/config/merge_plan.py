@@ -638,7 +638,7 @@ class GroupPolicyTier(Tier):
 
     That fetcher reads the pack the last refresh left on disk rather than
     calling the portal, because a settings load runs before this process holds
-    a bearer token. The fetch lives in ``AuthController._hydrate_group_policy``
+    a bearer token. The fetch lives in ``GroupPolicySync.hydrate``
     — cold start, login, and every ``group_policy.poll_seconds`` — and the read
     lives here; see :class:`CachedSettingsFetcher` for what that split buys and
     what it costs.

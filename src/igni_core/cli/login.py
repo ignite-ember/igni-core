@@ -22,11 +22,13 @@ from typing import Any
 
 import click
 
+from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.backend.server_auth import AuthController
 from igni_core.core.auth.credentials import Credentials, CredentialsStore
 from igni_core.core.auth.portal_client import PortalClient
 from igni_core.core.auth.schemas import JwtClaims
 from igni_core.core.config.endpoint import ApiUrlNotConfigured, require_api_url
+from igni_core.core.config.user_config_store import UserConfigStore
 
 
 def _settings() -> Any:
@@ -78,7 +80,16 @@ def login(token_stdin: bool, timeout: float) -> None:
             raise click.ClickException("no token on stdin")
         email = asyncio.run(_keep(settings, api_url, token))
     else:
-        controller = AuthController(_NoSession(), settings, lambda: None)  # type: ignore[arg-type]
+        session = _NoSession()
+        portal = PortalClient(api_url=api_url, portal_url=settings.portal_url or None)
+        controller = AuthController(
+            session,  # type: ignore[arg-type]
+            settings,
+            lambda: None,  # type: ignore[arg-type,return-value]
+            portal=portal,
+            group_policy=GroupPolicySync(session, settings, portal),  # type: ignore[arg-type]
+            user_config_store=UserConfigStore(),
+        )
 
         def status(text: str) -> None:
             click.echo(text)

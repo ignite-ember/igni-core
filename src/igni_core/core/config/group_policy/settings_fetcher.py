@@ -45,7 +45,7 @@ class CachedSettingsFetcher:
 
     A settings load runs before the process holds a bearer token, so a
     fetcher that called the portal would make every start-up wait on a round
-    trip that can hang. The fetch is ``AuthController._hydrate_group_policy``
+    trip that can hang. The fetch is ``GroupPolicySync.hydrate``
     (:class:`~.refresher.PackRefresher`) — cold start, login, and every
     ``group_policy.poll_seconds`` — which verifies the pack and stores it as
     igni server signed it. The read is here, and it verifies again: the file

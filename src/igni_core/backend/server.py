@@ -128,7 +128,7 @@ class BackendServer:
         self.message_queue = message_queue
         self._runtime: Any = None
         # A new dialogue should pick up an admin's change.
-        session.on_new_dialogue = controllers.auth.revalidate_for_new_dialogue
+        session.on_new_dialogue = controllers.group_policy.revalidate_for_new_dialogue
 
     # ── Runtime + session identity ────────────────────────────────
 
@@ -209,7 +209,7 @@ class BackendServer:
         slightly stale pack.
         """
         try:
-            await self.controllers.auth.revalidate_for_new_dialogue()
+            await self.controllers.group_policy.revalidate_for_new_dialogue()
         except Exception:
             logger.warning(
                 "group-policy revalidation failed; continuing with cached pack", exc_info=True

@@ -22,13 +22,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.backend.server_auth import AuthController
+from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.core.config.group_policy.answers import PACK_UNCHANGED
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.group_policy.refresher import PackRefresher, RefreshStatus
+from igni_core.core.config.settings import Settings
 
 
 def _pack(names: list[str], etag: str | None = None) -> GroupPolicyPack:
@@ -49,31 +50,26 @@ def _pack(names: list[str], etag: str | None = None) -> GroupPolicyPack:
     )
 
 
-def _controller(tmp_path: Path, poll_seconds: int = 300) -> AuthController:
-    ctrl = AuthController.__new__(AuthController)
-    ctrl._settings = SimpleNamespace(
+def _controller(tmp_path: Path, poll_seconds: int = 300) -> GroupPolicySync:
+    settings = SimpleNamespace(
         api_url="https://api.example.invalid",
         storage=SimpleNamespace(data_dir=str(tmp_path)),
-        auth=SimpleNamespace(credentials_file=str(tmp_path / "credentials.json"), access_token="t"),
         group_policy=SimpleNamespace(poll_seconds=poll_seconds),
     )
-    ctrl._portal = MagicMock()
-    ctrl._hydration_lock = None
-    ctrl._status_provider = MagicMock()
-    ctrl._session = MagicMock()
-    ctrl._poll_task = None
-    return ctrl
+    return GroupPolicySync(
+        session=MagicMock(cloud_access_token="t"), settings=settings, portal=MagicMock()
+    )
 
 
 class TestTheTimer:
     @pytest.mark.asyncio
     async def test_it_starts(self, tmp_path: Path):
         ctrl = _controller(tmp_path)
-        ctrl.start_group_policy_polling()
+        ctrl.start_polling()
         try:
-            assert ctrl._poll_task is not None
+            assert ctrl.polling
         finally:
-            ctrl.stop_group_policy_polling()
+            ctrl.stop_polling()
 
     @pytest.mark.asyncio
     async def test_zero_turns_it_off(self, tmp_path: Path):
@@ -81,36 +77,36 @@ class TestTheTimer:
         startup."""
         ctrl = _controller(tmp_path, poll_seconds=0)
 
-        ctrl.start_group_policy_polling()
+        ctrl.start_polling()
 
-        assert ctrl._poll_task is None
+        assert not ctrl.polling
 
     @pytest.mark.asyncio
     async def test_starting_twice_does_not_make_two(self, tmp_path: Path):
         ctrl = _controller(tmp_path)
-        ctrl.start_group_policy_polling()
+        ctrl.start_polling()
         first = ctrl._poll_task
         try:
-            ctrl.start_group_policy_polling()
+            ctrl.start_polling()
             assert ctrl._poll_task is first
         finally:
-            ctrl.stop_group_policy_polling()
+            ctrl.stop_polling()
 
     @pytest.mark.asyncio
     async def test_stopping_is_safe_when_it_never_started(self, tmp_path: Path):
-        _controller(tmp_path).stop_group_policy_polling()
+        _controller(tmp_path).stop_polling()
 
     @pytest.mark.asyncio
     async def test_it_actually_hydrates(self, tmp_path: Path):
         ctrl = _controller(tmp_path)
-        ctrl._hydrate_group_policy = AsyncMock(return_value=True)
+        ctrl.hydrate = AsyncMock(return_value=True)
 
-        task = asyncio.get_running_loop().create_task(ctrl._poll_group_policy(0))
+        task = asyncio.get_running_loop().create_task(ctrl._poll(0))
         await asyncio.sleep(0)
         await asyncio.sleep(0)
         task.cancel()
 
-        ctrl._hydrate_group_policy.assert_awaited()
+        ctrl.hydrate.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_an_error_does_not_stop_it(self, tmp_path: Path):
@@ -125,8 +121,8 @@ class TestTheTimer:
                 raise ConnectionError("server restarting")
             return True
 
-        ctrl._hydrate_group_policy = flaky
-        task = asyncio.get_running_loop().create_task(ctrl._poll_group_policy(0))
+        ctrl.hydrate = flaky
+        task = asyncio.get_running_loop().create_task(ctrl._poll(0))
         for _ in range(8):
             await asyncio.sleep(0)
         task.cancel()
@@ -136,9 +132,9 @@ class TestTheTimer:
     @pytest.mark.asyncio
     async def test_cancelling_ends_it(self, tmp_path: Path):
         ctrl = _controller(tmp_path)
-        ctrl._hydrate_group_policy = AsyncMock(return_value=False)
+        ctrl.hydrate = AsyncMock(return_value=False)
 
-        task = asyncio.get_running_loop().create_task(ctrl._poll_group_policy(0))
+        task = asyncio.get_running_loop().create_task(ctrl._poll(0))
         await asyncio.sleep(0)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -291,15 +287,13 @@ class TestRevalidationCannotStopASessionStarting:
 
     @pytest.mark.asyncio
     async def test_a_hanging_server_does_not_hang_the_caller(self, tmp_path: Path, monkeypatch):
-        import igni_core.backend.server_auth as sa
-
         ctrl = _controller(tmp_path)
-        monkeypatch.setattr(sa, "_NEW_DIALOGUE_REVALIDATE_TIMEOUT", 0.05)
+        monkeypatch.setattr(GroupPolicySync, "NEW_DIALOGUE_TIMEOUT", 0.05)
 
         async def never_returns(*_a, **_k):
             await asyncio.sleep(30)
 
-        ctrl._hydrate_group_policy = never_returns  # type: ignore[method-assign]
+        ctrl.hydrate = never_returns  # type: ignore[method-assign]
 
         result = await asyncio.wait_for(ctrl.revalidate_for_new_dialogue(), timeout=2)
         assert result is False, "a timeout is not a refresh"
@@ -311,15 +305,15 @@ class TestRevalidationCannotStopASessionStarting:
         async def boom(*_a, **_k):
             raise RuntimeError("portal is down")
 
-        ctrl._hydrate_group_policy = boom  # type: ignore[method-assign]
+        ctrl.hydrate = boom  # type: ignore[method-assign]
         assert await ctrl.revalidate_for_new_dialogue() is False
 
     @pytest.mark.asyncio
     async def test_no_token_means_no_request(self, tmp_path: Path):
         ctrl = _controller(tmp_path)
-        ctrl._settings.auth.access_token = ""
+        ctrl._session.cloud_access_token = None
         called = AsyncMock()
-        ctrl._hydrate_group_policy = called  # type: ignore[method-assign]
+        ctrl.hydrate = called  # type: ignore[method-assign]
 
         assert await ctrl.revalidate_for_new_dialogue() is False
         called.assert_not_awaited()
@@ -334,6 +328,26 @@ class TestRevalidationCannotStopASessionStarting:
             seen.update(kwargs)
             return True
 
-        ctrl._hydrate_group_policy = record  # type: ignore[method-assign]
+        ctrl.hydrate = record  # type: ignore[method-assign]
         assert await ctrl.revalidate_for_new_dialogue() is True
         assert seen.get("force") is True
+
+
+class TestTheTokenComesFromTheSignedInSession:
+    """``settings.auth`` holds the credentials file's path, not a token.
+
+    Reading ``settings.auth.access_token`` raised ``AttributeError`` on a
+    real :class:`Settings`, and the broad ``except`` around every caller
+    swallowed it — so cold start, the timer and new-dialogue revalidation
+    never asked the server; only a fresh sign-in did.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_real_settings_object_reaches_hydration(self, tmp_path: Path):
+        sync = GroupPolicySync(
+            session=MagicMock(cloud_access_token="t"), settings=Settings(), portal=MagicMock()
+        )
+        sync.hydrate = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+        assert await sync.revalidate_for_new_dialogue() is True
+        sync.hydrate.assert_awaited_once_with("t", force=True)

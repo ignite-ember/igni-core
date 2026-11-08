@@ -16,12 +16,18 @@ to a host we were *told* about rather than one we chose.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
 
+from igni_core.backend.group_policy_sync import GroupPolicySync
+from igni_core.backend.server_auth import AuthController
 from igni_core.core.auth import discovery
 from igni_core.core.auth.discovery import Discovered, discover, domain_of
+from igni_core.core.auth.portal_client import PortalClient
+from igni_core.core.config.user_config_store import UserConfigStore
 
 
 def _answering(handler) -> None:
@@ -385,54 +391,59 @@ class TestWritingTheServerDown:
     """
 
     @staticmethod
-    def _controller(tmp_path, monkeypatch):
-        from types import SimpleNamespace
-
-        from igni_core.backend import server_auth
-        from igni_core.core.config.user_config_store import UserConfigStore
-
+    def _controller(tmp_path):
         store = UserConfigStore(tmp_path / "config.yaml")
-        monkeypatch.setattr(server_auth, "UserConfigStore", lambda *a, **k: store)
-        controller = server_auth.AuthController.__new__(server_auth.AuthController)
-        controller._settings = SimpleNamespace(api_url="", portal_url="")
-        controller._portal = None
+        settings = SimpleNamespace(
+            api_url="",
+            portal_url="",
+            auth=SimpleNamespace(credentials_file=str(tmp_path / "credentials.json")),
+        )
+        portal = PortalClient(api_url="")
+        controller = AuthController(
+            MagicMock(),
+            settings,
+            MagicMock(),
+            portal=portal,
+            group_policy=GroupPolicySync(MagicMock(), settings, portal),
+            user_config_store=store,
+        )
         return controller, store
 
-    def test_an_https_server_is_written_down(self, tmp_path, monkeypatch):
-        controller, store = self._controller(tmp_path, monkeypatch)
+    def test_an_https_server_is_written_down(self, tmp_path):
+        controller, store = self._controller(tmp_path)
 
         answer = controller.set_server("https://igni.acme.example")
 
         assert answer.api_url == "https://igni.acme.example"
         assert store.read()["api_url"] == "https://igni.acme.example"
 
-    def test_the_running_process_learns_too(self, tmp_path, monkeypatch):
+    def test_the_running_process_learns_too(self, tmp_path):
         # A config file the running process disagrees with is the
         # confusing half of this operation.
-        controller, _ = self._controller(tmp_path, monkeypatch)
+        controller, _ = self._controller(tmp_path)
 
         controller.set_server("https://igni.acme.example", "https://portal.acme.example")
 
         assert controller._settings.api_url == "https://igni.acme.example"
         assert controller._settings.portal_url == "https://portal.acme.example"
 
-    def test_a_plaintext_server_is_refused(self, tmp_path, monkeypatch):
-        controller, store = self._controller(tmp_path, monkeypatch)
+    def test_a_plaintext_server_is_refused(self, tmp_path):
+        controller, store = self._controller(tmp_path)
 
         answer = controller.set_server("http://igni.acme.example")
 
         assert "not an https address" in answer.error
         assert store.read() == {}
 
-    def test_nothing_typed_is_refused(self, tmp_path, monkeypatch):
-        controller, store = self._controller(tmp_path, monkeypatch)
+    def test_nothing_typed_is_refused(self, tmp_path):
+        controller, store = self._controller(tmp_path)
 
         assert controller.set_server("   ").error
         assert store.read() == {}
 
-    def test_an_existing_config_keeps_its_other_keys(self, tmp_path, monkeypatch):
+    def test_an_existing_config_keeps_its_other_keys(self, tmp_path):
         # This is somebody's config file, not ours to rewrite.
-        controller, store = self._controller(tmp_path, monkeypatch)
+        controller, store = self._controller(tmp_path)
         store.write({"models": {"default": "MiniMax-M2.7"}})
 
         controller.set_server("https://igni.acme.example")
@@ -441,7 +452,7 @@ class TestWritingTheServerDown:
         assert config["models"] == {"default": "MiniMax-M2.7"}
         assert config["api_url"] == "https://igni.acme.example"
 
-    def test_a_local_deployment_may_be_named(self, tmp_path, monkeypatch):
-        controller, store = self._controller(tmp_path, monkeypatch)
+    def test_a_local_deployment_may_be_named(self, tmp_path):
+        controller, store = self._controller(tmp_path)
 
         assert controller.set_server("http://127.0.0.1:7777").api_url == "http://127.0.0.1:7777"

@@ -36,7 +36,7 @@ class Verification(BaseModel):
 class PackVerifier:
     """Checks a fetched pack against :class:`PackTrust` and igni server's live keys.
 
-    Used by ``AuthController._hydrate_group_policy``. The keys come from
+    Used by ``GroupPolicySync.hydrate``. The keys come from
     ``jwks_fetch`` — igni server's ``/.well-known/jwks.json``, fetched now —
     narrowed to the pinned thumbprints when there are any. Without a pin the
     JWKS is trusted only over TLS (or from loopback): over plain HTTP it

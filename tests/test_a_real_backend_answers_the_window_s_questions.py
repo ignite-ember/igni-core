@@ -295,7 +295,7 @@ async def test_the_session_start_hook_fires_even_if_revalidating_policy_fails(ba
     async def _hook() -> None:
         fired.append(True)
 
-    backend.controllers.auth.revalidate_for_new_dialogue = _fails
+    backend.controllers.group_policy.revalidate_for_new_dialogue = _fails
     backend._session.fire_session_start_hook = _hook
 
     await backend.fire_session_start_hook()

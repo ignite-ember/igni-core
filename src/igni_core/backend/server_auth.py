@@ -1,19 +1,19 @@
-"""Cloud auth RPCs — login, credential reload/clear.
+"""Cloud auth RPCs — login, credential reload/clear, server choice.
 
-Exposes a single class, :class:`AuthController`, constructed with
-``(session, settings, status_provider)``:
+Exposes a single class, :class:`AuthController`:
 
 * :meth:`AuthController.login` — browser-callback OAuth flow.
 * :meth:`AuthController.reload_cloud_credentials` — refresh
   :class:`CloudCredentials` on the session (post-login) and rebuild
   the main team.
 * :meth:`AuthController.clear_cloud_credentials` — logout inverse.
+* :meth:`AuthController.discover_server` / :meth:`AuthController.set_server`
+  — which server this install talks to.
 
-Wire schema :class:`~igni_core.backend.schemas_rpc.LoginResult` lives
-in ``schemas_rpc.py`` beside the sibling :class:`LoginStarted` — every
-backend wire shape belongs in ``schemas_*.py``. It is re-exported from
-this module to preserve the ``from igni_core.backend.server_auth
-import LoginResult`` import path.
+Keeping the group-policy pack current is
+:class:`~igni_core.backend.group_policy_sync.GroupPolicySync`'s job; this
+controller only asks it to refresh after a sign-in, and points it at a
+newly chosen server.
 """
 
 from __future__ import annotations
@@ -24,9 +24,9 @@ import logging
 import webbrowser
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING
 
+from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.backend.schemas_auth import ServerChoice, ServerFound
 from igni_core.backend.schemas_rpc import CloudPlan, LoginResult
 from igni_core.core.activity import background
@@ -37,32 +37,16 @@ from igni_core.core.auth.credentials import (
 )
 from igni_core.core.auth.discovery import discover, is_safe_url
 from igni_core.core.auth.portal_client import PortalClient
-from igni_core.core.auth.schemas import JwtClaims, SignedInSession
-from igni_core.core.config.group_policy.cache import GroupPolicyCache
-from igni_core.core.config.group_policy.refresher import PackRefresher
-from igni_core.core.config.group_policy.trust import PackTrust
-from igni_core.core.config.group_policy.verifier import PackVerifier
+from igni_core.core.auth.schemas import JwtClaims
+from igni_core.core.config.endpoint import ApiUrlNotConfigured
 from igni_core.core.config.user_config_store import UserConfigStore
-from igni_core.core.plugins.installer import PluginInstaller
-from igni_core.core.plugins.source_policy import PluginSourcePolicy
 from igni_core.protocol import messages as msg
-
-logger = logging.getLogger(__name__)
-
-#: How long a new dialogue waits for the server before giving up and
-#: using the cached pack. Short on purpose: the point of the on-disk
-#: cache is that a session starts without the portal, and blocking
-#: startup on a slow network would undo it.
-_NEW_DIALOGUE_REVALIDATE_TIMEOUT = 3.0
-
-# Re-exported so ``from igni_core.backend.server_auth import LoginResult``
-# keeps working — the canonical definition lives in ``schemas_rpc``.
-__all__ = ["AuthController", "CloudPlan", "LoginResult"]
-
 
 if TYPE_CHECKING:
     from igni_core.core.config.settings import Settings
     from igni_core.core.session import Session
+
+logger = logging.getLogger(__name__)
 
 
 StatusCallback = Callable[[str], Awaitable[None] | None] | None
@@ -97,9 +81,10 @@ class _StatusForwarder:
 class AuthController:
     """Cloud auth controller for a single session + settings pair.
 
-    Constructed once per :class:`BackendServer` (or per test); holds
-    no mutable state — every operation reads/writes the injected
-    session/settings collaborators.
+    Constructed once per :class:`BackendServer` (or per test). Every
+    collaborator is injected: ``portal`` is shared with ``group_policy``
+    so both talk to the same server, and ``user_config_store`` is where
+    a chosen server is written down.
     """
 
     def __init__(
@@ -107,6 +92,10 @@ class AuthController:
         session: Session,
         settings: Settings,
         status_provider: Callable[[], msg.StatusUpdate],
+        *,
+        portal: PortalClient,
+        group_policy: GroupPolicySync,
+        user_config_store: UserConfigStore,
     ) -> None:
         self._session = session
         self._settings = settings
@@ -116,109 +105,13 @@ class AuthController:
         # without this class needing to know the ``ContextController``
         # exists.
         self._status_provider = status_provider
-        # One :class:`PortalClient` per controller — the endpoint
-        # URLs are read once from ``settings`` and reused across
-        # login / plan-fetch calls instead of threading them through
-        # every free-function default.
-        # ``portal_url`` is passed through rather than left to the
-        # derivation, which only rewrites host labels and so cannot
-        # express a portal that differs from the API by port. Empty
-        # keeps the derivation, which is right wherever it was right
-        # before.
-        self._portal = PortalClient(
-            api_url=self._settings.api_url,
-            portal_url=self._settings.portal_url or None,
-        )
+        self._portal = portal
+        self._group_policy = group_policy
+        self._user_config_store = user_config_store
         # One :class:`CredentialsStore` per controller so the login
         # write + the :class:`CloudCredentials` read below share a
-        # single path source (previously two independent free-function
-        # calls both defaulted to ``~/.igni/credentials.json``).
+        # single path source.
         self._store = CredentialsStore(self._settings.auth.credentials_file)
-        # Serializes concurrent :meth:`_hydrate_group_policy` calls so a
-        # cold-start hook and a fresh login can't race on the same
-        # ``pack_meta.json`` write. Lazy because ``asyncio.Lock`` binds
-        # to the current event loop; constructed on first async use.
-        self._hydration_lock: asyncio.Lock | None = None
-
-        # Hydrate the on-disk group-policy cache from the portal if a
-        # stored token already exists. Fire-and-forget — start-up does
-        # not block on the fetch; cold-start failures just mean the
-        # next CLI invocation will retry (after the 5-min TTL or the
-        # next login, whichever comes first). ``asyncio.create_task``
-        # needs a running loop; the loop exists in every backend
-        # process we ship, but catch the corner case so a bare CLI
-        # utility import doesn't blow up.
-        try:
-            existing_token = self._settings.auth.access_token
-        except Exception:
-            existing_token = None
-        #: The periodic re-check, if one is running.
-        self._poll_task: asyncio.Task | None = None
-
-        if existing_token:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop is not None:
-                background.start(
-                    self._hydrate_group_policy(existing_token, force=True),
-                    holder="group-policy",
-                    reason="reading the group's policy",
-                    loop=loop,
-                )
-                self.start_group_policy_polling()
-
-    def start_group_policy_polling(self) -> None:
-        """Re-check the group on a timer, if the deployment wants one.
-
-        A session used to learn its group once, at start: an admin who
-        moved somebody at nine reached a session opened at eight only
-        when it was restarted. Now it asks again every
-        ``settings.group_policy.poll_seconds``, and the ask is cheap —
-        the server answers 304 with no body when nothing has changed,
-        so the usual cost of a poll is a round trip and a hash
-        comparison.
-
-        Zero turns it off, for a deployment that would rather its
-        machines only check at startup.
-        """
-        interval = getattr(self._settings.group_policy, "poll_seconds", 0)
-        if interval <= 0 or self._poll_task is not None:
-            return
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-        self._poll_task = background.daemon(
-            self._poll_group_policy(interval), name="group-policy-poll", loop=loop
-        )
-
-    def stop_group_policy_polling(self) -> None:
-        """Cancel the timer. Idempotent; safe on a loop that has gone."""
-        if self._poll_task is not None:
-            self._poll_task.cancel()
-            self._poll_task = None
-
-    async def _poll_group_policy(self, interval: int) -> None:
-        """Ask again, forever, until cancelled.
-
-        Every failure mode here is a reason to keep going rather than
-        stop: a server restart, a laptop asleep, a token that expired
-        and will be replaced by the next login. A polling loop that
-        dies on the first error is worse than none, because nothing
-        says it stopped.
-        """
-        while True:
-            try:
-                await asyncio.sleep(interval)
-                token = self._settings.auth.access_token
-                if token:
-                    await self._hydrate_group_policy(token)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # noqa: BLE001 — the loop outlives its errors
-                logger.debug("group-policy poll failed: %s", exc)
 
     async def login(self, on_status: StatusCallback = None) -> LoginResult:
         """Run the browser-callback login flow.
@@ -226,6 +119,10 @@ class AuthController:
         Returns a :class:`LoginResult` with named ``ok`` / ``email`` /
         ``error`` fields. Status callbacks are forwarded to
         ``on_status`` so the caller can echo progress into the FE.
+
+        The failures a sign-in expects — no server configured, a port
+        that will not bind, a credentials file that cannot be written —
+        come back as ``ok=False``; anything else is a bug and raises.
         """
         status = _StatusForwarder(on_status)
         try:
@@ -233,7 +130,8 @@ class AuthController:
             async with self._portal.start_callback() as callback:
                 login_url = self._portal.login_url(callback.port)
 
-                with contextlib.suppress(Exception):
+                # No browser is not a failure: the address is printed next.
+                with contextlib.suppress(webbrowser.Error, OSError):
                     webbrowser.open(login_url)
 
                 status.emit(
@@ -247,161 +145,30 @@ class AuthController:
             status.emit("Fetching user info...")
             validation = await self._portal.validate_token(token)
             email = validation.user.email if validation.ok and validation.user else ""
-
-            # Read expiry from JWT for accurate TTL — falls back to
-            # the :meth:`Credentials.new` default when the JWT has no
-            # ``exp`` or can't be decoded.
-            claims = JwtClaims.decode(token)
-            if claims is not None and claims.exp:
-                now = datetime.now(timezone.utc)
-                exp = datetime.fromtimestamp(claims.exp, tz=timezone.utc)
-                ttl = max(int((exp - now).total_seconds()), 0)
-                self._store.save(Credentials.new(token, email, ttl=ttl))
-            else:
-                self._store.save(Credentials.new(token, email))
-
-            # Refresh the on-disk group policy pack with the freshly
-            # issued token so admin-side overrides take effect
-            # immediately on the next request rather than waiting for
-            # the 5-min TTL. ``force`` is what makes that true: without
-            # it the stale check returned early and a login inside the
-            # window did nothing, which is what this comment used to
-            # claim it avoided. Failures are non-fatal — the cold-start
-            # hook already fires on every backend start-up.
-            await self._hydrate_group_policy(token, force=True)
-
-            self.reload_cloud_credentials()
-            return LoginResult(ok=True, email=email)
-
-        except Exception as exc:
+            self._store.save(self._credentials(token, email))
+        except (ApiUrlNotConfigured, OSError) as exc:
             return LoginResult(ok=False, error=str(exc))
 
-    async def _hydrate_group_policy(self, token: str, *, force: bool = False) -> bool:
-        """Refresh the cached group policy pack if stale.
+        # Refresh the on-disk group policy pack with the freshly issued
+        # token so admin-side overrides take effect immediately rather
+        # than waiting for the 5-min TTL. ``force`` is what makes that
+        # true: without it a login inside the window did nothing.
+        # Failures are non-fatal — hydration reports them as ``False``.
+        await self._group_policy.hydrate(token, force=True)
 
-        Wraps :class:`PackRefresher` so this controller doesn't need to
-        know which on-disk path the cache writes to — that decision
-        lives in :class:`GroupPolicyLayout`.
+        self.reload_cloud_credentials()
+        return LoginResult(ok=True, email=email)
 
-        Constructs a fresh :class:`PluginInstaller` so plugin overrides
-        with ``source_url`` get git-installed instead of being logged
-        and skipped. The installer is built per-call (cheap, no IO at
-        construction) rather than cached on ``self`` because hydration
-        is rare and the installer's state is per-data-dir.
-
-        Outcomes are surfaced via ``_status_provider`` and the
-        ``logger`` so FE / ops see when the portal is unreachable
-        instead of silently seeing "no group" for hours.
-        """
-        data_dir = Path(self._settings.storage.data_dir).expanduser()
-        # A group's plugin sources are the admin's, but an air-gapped install
-        # still fetches only from inside its network.
-        installer = PluginInstaller(
-            data_dir=data_dir, source_policy=PluginSourcePolicy.from_settings(self._settings)
-        )
-
-        # Serialize concurrent hydrations (cold-start + login race) so
-        # two parallel ``refresh`` calls don't trample each other's
-        # ``pack_meta.json`` writes. Lazy bind to the running loop.
-        if self._hydration_lock is None:
-            self._hydration_lock = asyncio.Lock()
-
-        async def _emit(message: str) -> None:
-            # Status provider returns a fresh StatusUpdate — harmless
-            # to call when the FE isn't listening. Echo through the
-            # logger so the audit log picks it up.
-            with contextlib.suppress(Exception):
-                self._status_provider()
-            logger.info("group-policy: %s", message)
-
-        async with self._hydration_lock:
-            if not token:
-                await _emit("skipped hydration (no bearer token)")
-                return False
-            try:
-                # Cheap stale check first so we don't surface noise on
-                # every CLI invocation when the cache is fresh. Skipped
-                # when ``force`` is set — a login or a new dialogue
-                # should pick up an admin's change now, and the ETag
-                # makes an unchanged pack a 304 rather than a download.
-                cache = GroupPolicyCache.for_data_dir(data_dir, installer=installer)
-                if not force and not cache.meta.is_stale():
-                    return False
-                result = await PackRefresher(cache, self._pack_verifier(token)).refresh_if_stale(
-                    token, self._portal.fetch_group_pack, force=force
-                )
-                # ``unchanged`` is a 304: nothing new was written, so nothing reloads.
-                refreshed = result.ok
-                if refreshed:
-                    await _emit("group policy pack refreshed")
-                    # An admin moving somebody between groups should
-                    # change what they have, not tell them to restart.
-                    with contextlib.suppress(Exception):
-                        if self._session.reload_group_agents():
-                            await _emit("group agents reloaded")
-                return refreshed
-            except Exception as exc:
-                # Network blip, schema drift, or PortalClient bug — at
-                # minimum log loud; the cached pack (if any) is left
-                # untouched so the next invocation can retry.
-                logger.warning("group-policy hydration failed: %s", exc)
-                with contextlib.suppress(Exception):
-                    self._status_provider()
-                return False
-
-    def _pack_verifier(self, token: str) -> PackVerifier:
-        """What checks a fetched pack before any of it is written.
-
-        Bound to the person this token is for (``sub``) and its organisation
-        (``org``, when it names one), the configured
-        ``api_url`` (``iss``) and the pinned keys, which only the managed
-        file or the environment can set. The keys themselves come from igni
-        server's JWKS, fetched now. See ``core/config/group_policy_signature.py``.
-        """
+    @staticmethod
+    def _credentials(token: str, email: str) -> Credentials:
+        """Credentials expiring when the JWT does — or at the
+        :meth:`Credentials.new` default when it carries no ``exp``."""
         claims = JwtClaims.decode(token)
-        trust = PackTrust(
-            api_url=self._settings.api_url or None,
-            session=SignedInSession(
-                subject=claims.sub if claims else None,
-                org=claims.org if claims else None,
-                token=token,
-            ),
-            pins=tuple(self._settings.group_policy.trusted_keys or ()),
-        )
-        return PackVerifier(trust=trust, jwks_fetch=self._portal.fetch_jwks)
-
-    async def revalidate_for_new_dialogue(self) -> bool:
-        """Ask the server whether the group changed, bounded by a timeout.
-
-        A new dialogue is the moment somebody should pick up an admin's
-        change, and it is rare enough to afford a round trip — unlike a
-        CLI invocation, which is what the 5-minute age check exists to
-        keep quiet. The ETag makes an unchanged pack a 304, so the usual
-        cost is one small request.
-
-        **Bounded on purpose.** A session that will not start because
-        the portal is slow is a worse failure than one running a
-        five-minute-old pack: the on-disk cache exists so sessions work
-        offline, and this must not undo that. On timeout the cached pack
-        stands and the background poller catches up.
-        """
-        token = self._settings.auth.access_token
-        if not token:
-            return False
-        try:
-            return await asyncio.wait_for(
-                self._hydrate_group_policy(token, force=True),
-                timeout=_NEW_DIALOGUE_REVALIDATE_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            logger.info(
-                "group-policy revalidation timed out after %ss; using the cached pack",
-                _NEW_DIALOGUE_REVALIDATE_TIMEOUT,
-            )
-            return False
-        except Exception as exc:
-            logger.warning("group-policy revalidation failed: %s", exc)
-            return False
+        if claims is None or not claims.exp:
+            return Credentials.new(token, email)
+        now = datetime.now(timezone.utc)
+        exp = datetime.fromtimestamp(claims.exp, tz=timezone.utc)
+        return Credentials.new(token, email, ttl=max(int((exp - now).total_seconds()), 0))
 
     def reload_cloud_credentials(self) -> msg.StatusUpdate:
         """Reload cloud credentials after login."""
@@ -466,12 +233,7 @@ class AuthController:
         if portal and not is_safe_url(portal):
             return ServerChoice.refused(f"{portal} is not an https address.")
 
-        store = UserConfigStore()
-        config = store.read()
-        config["api_url"] = chosen
-        if portal:
-            config["portal_url"] = portal
-        store.write(config)
+        self._user_config_store.set_server(chosen, portal)
         # The settings object this controller was built with is the
         # one every later call reads, so it has to learn too — a
         # config file the running process disagrees with is the
@@ -480,5 +242,6 @@ class AuthController:
         if portal:
             self._settings.portal_url = portal
         self._portal = PortalClient(api_url=chosen, portal_url=portal or None)
+        self._group_policy.use_portal(self._portal)
         logger.info("server set to %s", chosen)
         return ServerChoice(api_url=chosen, portal_url=portal)

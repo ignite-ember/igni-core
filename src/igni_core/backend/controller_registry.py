@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.backend.hitl_controller import HitlController
 from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.marketplace_controller import MarketplaceController
@@ -34,6 +35,7 @@ from igni_core.backend.server_search import SearchController
 from igni_core.backend.server_sessions import SessionsController
 from igni_core.backend.team_wiring import TeamWiring
 from igni_core.backend.visualization_action_bus import VisualizationActionBus
+from igni_core.core.auth.portal_client import PortalClient
 
 if TYPE_CHECKING:
     from igni_core.core.config.settings import Settings
@@ -61,6 +63,7 @@ class Controllers:
         hitl: HitlController,
         context: ContextController,
         auth: AuthController,
+        group_policy: GroupPolicySync,
         files: FilesController,
         search: SearchController,
         panels: PanelsController,
@@ -82,6 +85,7 @@ class Controllers:
         self.hitl = hitl
         self.context = context
         self.auth = auth
+        self.group_policy = group_policy
         self.files = files
         self.search = search
         self.panels = panels
@@ -158,11 +162,23 @@ class ControllerRegistry:
             chat_history_provider=chat_history.rebuild,
         )
 
+        # One portal client, shared: sign-in and the group-policy fetch
+        # must talk to the same server. ``portal_url`` is passed through
+        # rather than left to the derivation, which only rewrites host
+        # labels and so cannot express a portal that differs from the API
+        # by port; empty keeps the derivation.
+        portal = PortalClient(api_url=settings.api_url, portal_url=settings.portal_url or None)
+        group_policy = GroupPolicySync(session=session, settings=settings, portal=portal)
         auth = AuthController(
             session=session,
             settings=settings,
             status_provider=context.get_status,
+            portal=portal,
+            group_policy=group_policy,
+            user_config_store=user_config_store,
         )
+        # Cold start: refresh from a stored token and start the timer.
+        group_policy.start()
 
         # Loop reads settings for the pump.
         loop = LoopController(
@@ -190,6 +206,7 @@ class ControllerRegistry:
             hitl=hitl,
             context=context,
             auth=auth,
+            group_policy=group_policy,
             files=files,
             search=search,
             panels=panels,

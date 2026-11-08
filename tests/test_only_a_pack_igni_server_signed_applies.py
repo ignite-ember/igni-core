@@ -36,6 +36,7 @@ import click
 import httpx
 import pytest
 
+from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.core.auth.schemas import SignedInSession
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
@@ -432,29 +433,26 @@ class TestOnlyAnAdministratorPinsAKey:
 
 
 class TestTheFetchIsVerifiedToo:
-    """``AuthController._hydrate_group_policy`` writes nothing it cannot verify."""
+    """``GroupPolicySync.hydrate`` writes nothing it cannot verify."""
 
     def _controller(self, tmp_path: Path, *, api_url: str = ISSUER, pins: list | None = None):
-        from igni_core.backend.server_auth import AuthController
-
-        ctrl = AuthController.__new__(AuthController)
-        ctrl._settings = SimpleNamespace(
+        settings = SimpleNamespace(
             api_url=api_url,
             storage=SimpleNamespace(data_dir=str(tmp_path)),
             auth=SimpleNamespace(credentials_file=str(tmp_path / "credentials.json")),
             group_policy=SimpleNamespace(trusted_keys=pins or [], required=False),
         )
-        ctrl._portal = MagicMock()
-        ctrl._portal.fetch_group_pack = AsyncMock()
-        ctrl._portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
-        ctrl._hydration_lock = None
+        portal = MagicMock()
+        portal.fetch_group_pack = AsyncMock()
+        portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
+        ctrl = GroupPolicySync(session=MagicMock(), settings=settings, portal=portal)
         return ctrl
 
     def test_a_genuine_pack_is_stored_with_its_keys_and_version(self, tmp_path):
         ctrl = self._controller(tmp_path)
         ctrl._portal.fetch_group_pack.return_value = KEY.signed(_pack(), version=42)
 
-        assert asyncio.run(ctrl._hydrate_group_policy(session_token(), force=True)) is True
+        assert asyncio.run(ctrl.hydrate(session_token(), force=True)) is True
         cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
         assert cache.signed.signed_text()
         assert cache.signed.jwks().as_mapping() == KEY.jwks
@@ -464,14 +462,14 @@ class TestTheFetchIsVerifiedToo:
         ctrl = self._controller(tmp_path)
         ctrl._portal.fetch_group_pack.return_value = STRANGER.signed(_pack())
 
-        assert asyncio.run(ctrl._hydrate_group_policy(session_token(), force=True)) is False
+        assert asyncio.run(ctrl.hydrate(session_token(), force=True)) is False
         assert not (tmp_path / "group-policy" / GroupPolicyLayout.SIGNED_PACK_FILE).exists()
 
     def test_an_unsigned_pack_from_the_wire_writes_nothing(self, tmp_path):
         ctrl = self._controller(tmp_path)
         ctrl._portal.fetch_group_pack.return_value = _pack()
 
-        assert asyncio.run(ctrl._hydrate_group_policy(session_token(), force=True)) is False
+        assert asyncio.run(ctrl.hydrate(session_token(), force=True)) is False
         assert not (tmp_path / "group-policy").exists() or not any(
             (tmp_path / "group-policy").iterdir()
         )

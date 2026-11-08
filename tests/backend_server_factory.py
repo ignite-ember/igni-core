@@ -39,10 +39,10 @@ def make_backend(
     """
     if settings is None:
         settings = getattr(session, "settings", None)
-    if isinstance(settings, MagicMock) and isinstance(settings.auth.access_token, MagicMock):
-        # A stand-in settings object has no stored token: building the
-        # AuthController must not start a portal fetch with a mock one.
-        settings.auth.access_token = ""
+    if isinstance(session, MagicMock) and isinstance(session.cloud_access_token, MagicMock):
+        # A stand-in session has no stored token: building the controllers
+        # must not start a group-policy fetch with a mock one.
+        session.cloud_access_token = None
     if pending_store is None and tmp_path is not None:
         pending_store = PendingMessageStore(tmp_path / "pending.db")
     controllers = ControllerRegistry.build(

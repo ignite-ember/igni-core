@@ -1,10 +1,10 @@
-"""Tests for :meth:`AuthController._hydrate_group_policy`.
+"""Tests for :meth:`GroupPolicySync.hydrate`.
 
-The controller exposes this method purely so it's reachable from a
-unit test — production code reaches it via the cold-start ``__init__``
-hook and post-login :meth:`login` hook. Tests construct a minimal
-``AuthController`` shell with stubbed collaborators so we can drive
-the method directly without booting a full ``BackendServer``.
+Production reaches it via the cold-start :meth:`GroupPolicySync.start`,
+the poll timer, a new dialogue and the post-login
+:meth:`AuthController.login`. Tests construct a :class:`GroupPolicySync`
+over stubbed collaborators so we can drive the method directly without
+booting a full ``BackendServer``.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.backend.server_auth import AuthController
+from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.core.config.group_policy import refresher as refresher_mod
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
@@ -29,14 +29,11 @@ from tests.group_policy_signing import ISSUER, KEY, session_token
 TOKEN = session_token()
 
 
-def _make_controller(tmp_path: Path) -> AuthController:
-    """Construct the AuthController with minimal stubs.
+def _make_controller(tmp_path: Path) -> GroupPolicySync:
+    """A :class:`GroupPolicySync` over minimal stubs.
 
-    We bypass ``__init__``'s cold-start hook (which would otherwise
-    schedule an async task) by setting attributes directly. The
-    production wiring is exercised in the integration paths and
-    covered by the existing group-policy source tests at the
-    cache level.
+    ``start`` is never called, so nothing is scheduled: each test drives
+    :meth:`GroupPolicySync.hydrate` itself.
     """
 
     settings = SimpleNamespace(
@@ -49,13 +46,7 @@ def _make_controller(tmp_path: Path) -> AuthController:
     portal.fetch_group_pack = AsyncMock()
     # igni server's published keys, which a fetched pack is verified against.
     portal.fetch_jwks = AsyncMock(return_value=KEY.key_set)
-
-    # Bypass __init__ — we only want _hydrate_group_policy reachable.
-    ctrl = AuthController.__new__(AuthController)
-    ctrl._settings = settings
-    ctrl._portal = portal
-    ctrl._hydration_lock = None  # Lazy-bound on first hydration call.
-    return ctrl
+    return GroupPolicySync(session=MagicMock(), settings=settings, portal=portal)
 
 
 def _sample_pack() -> GroupPolicyPack:
@@ -86,7 +77,7 @@ async def test_hydrate_fetches_and_materializes(tmp_path: Path):
     pack = _sample_pack()
     ctrl._portal.fetch_group_pack.return_value = pack
 
-    refreshed = await ctrl._hydrate_group_policy(token=TOKEN)
+    refreshed = await ctrl.hydrate(token=TOKEN)
 
     assert refreshed is True
     # Called with the tag we hold, so an unchanged pack costs a 304.
@@ -105,7 +96,7 @@ async def test_hydrate_handles_fetch_failure(tmp_path: Path):
     # Must not raise; the controller returns False to signal "no
     # update landed" so callers / audit logs can distinguish from
     # "cache was fresh, no fetch needed".
-    refreshed = await ctrl._hydrate_group_policy(token=TOKEN)
+    refreshed = await ctrl.hydrate(token=TOKEN)
     assert refreshed is False
     assert not (tmp_path / "group-policy").exists()
 
@@ -115,7 +106,7 @@ async def test_hydrate_handles_none_pack(tmp_path: Path):
     ctrl = _make_controller(tmp_path)
     ctrl._portal.fetch_group_pack.return_value = None
 
-    refreshed = await ctrl._hydrate_group_policy(token=TOKEN)
+    refreshed = await ctrl.hydrate(token=TOKEN)
     # No update landed (None pack), so the controller reports False.
     assert refreshed is False
     # No files written.
@@ -130,7 +121,7 @@ async def test_hydrate_skipped_when_cache_fresh(tmp_path: Path):
     cache.materialize(_sample_pack())
 
     ctrl = _make_controller(tmp_path)
-    refreshed = await ctrl._hydrate_group_policy(token=TOKEN)
+    refreshed = await ctrl.hydrate(token=TOKEN)
     # The fetch was attempted because we constructed cache directly
     # with ``cache_dir`` not derived from ``data_dir`` — but actually
     # the helper derives cache_dir from data_dir when omitted, so we
@@ -142,7 +133,7 @@ async def test_hydrate_skipped_when_cache_fresh(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_hydrate_passes_plugin_installer_to_cache(tmp_path: Path):
-    """The AuthController must hand the cache a real ``PluginInstaller``
+    """Hydration must hand the cache a real ``PluginInstaller``
     so ``source_url`` plugins get installed, not skipped-with-warning.
     """
     from igni_core.core.plugins.installer import PluginInstaller
@@ -179,16 +170,16 @@ async def test_hydrate_passes_plugin_installer_to_cache(tmp_path: Path):
     import unittest.mock
 
     with unittest.mock.patch.object(PluginInstaller, "__init__", spy_init):
-        refreshed = await ctrl._hydrate_group_policy(token=TOKEN)
+        refreshed = await ctrl.hydrate(token=TOKEN)
 
     assert refreshed is True
-    assert calls, "AuthController must instantiate PluginInstaller"
+    assert calls, "hydration must instantiate PluginInstaller"
     assert calls[0].get("data_dir") == tmp_path
 
 
 @pytest.mark.asyncio
 async def test_concurrent_hydrations_serialize(tmp_path: Path):
-    """Two concurrent ``_hydrate_group_policy`` calls must serialize —
+    """Two concurrent ``hydrate`` calls must serialize —
     not double-fetch, not stamp pack_meta twice.
     """
 
@@ -207,8 +198,8 @@ async def test_concurrent_hydrations_serialize(tmp_path: Path):
 
     # Fire two hydrations concurrently.
     results = await asyncio.gather(
-        ctrl._hydrate_group_policy(token=TOKEN),
-        ctrl._hydrate_group_policy(token=TOKEN),
+        ctrl.hydrate(token=TOKEN),
+        ctrl.hydrate(token=TOKEN),
     )
 
     # One ran, one was blocked on the lock and saw the fresh cache.
@@ -242,7 +233,7 @@ async def test_hydrate_logs_warning_on_failure(tmp_path, monkeypatch):
 
     ctrl = _make_controller(tmp_path)
     ctrl._portal.fetch_group_pack.side_effect = RuntimeError("portal down")
-    refreshed = await ctrl._hydrate_group_policy(token=TOKEN)
+    refreshed = await ctrl.hydrate(token=TOKEN)
 
     assert refreshed is False
     assert any("portal down" in m for m in messages), (
@@ -256,7 +247,7 @@ async def test_hydrate_logs_info_on_success(tmp_path, monkeypatch):
     log records when admin pushes propagate. Same logger-patch
     rationale as the warning test (see ``caplog`` caveat there).
     """
-    from igni_core.backend import server_auth as auth_mod
+    from igni_core.backend import group_policy_sync as auth_mod
 
     messages: list[str] = []
     real_info = auth_mod.logger.info
@@ -273,7 +264,7 @@ async def test_hydrate_logs_info_on_success(tmp_path, monkeypatch):
     pack = _sample_pack()
     ctrl = _make_controller(tmp_path)
     ctrl._portal.fetch_group_pack.return_value = pack
-    refreshed = await ctrl._hydrate_group_policy(token=TOKEN)
+    refreshed = await ctrl.hydrate(token=TOKEN)
 
     assert refreshed is True
     assert any("refreshed" in m for m in messages), (

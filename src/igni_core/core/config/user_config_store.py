@@ -90,3 +90,19 @@ class UserConfigStore:
             logger.warning("failed to save default model to %s: %s", self._path, exc)
             return False
         return True
+
+    def set_server(self, api_url: str, portal_url: str = "") -> None:
+        """Persist the server this install talks to.
+
+        Sets ``api_url`` and, when given, ``portal_url``; every other key
+        in the file is kept — it is the user's config, not ours to
+        rewrite. An empty ``portal_url`` leaves any stored one alone, so
+        it keeps meaning "derive it" wherever nothing was stored. Raises
+        on an unreadable or unwritable file: unlike a remembered model,
+        a server that was not written down is not a choice to shrug off.
+        """
+        config = self.read()
+        config["api_url"] = api_url
+        if portal_url:
+            config["portal_url"] = portal_url
+        self.write(config)

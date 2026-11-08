@@ -251,7 +251,7 @@ def load_settings_from_options(options: CliOptions) -> Settings:
     # answers "which directory" from local configuration alone. Both passes
     # read a handful of small files; neither touches the network.
     #
-    # The fetcher reads what the backend's ``AuthController`` last cached — a
+    # The fetcher reads what the backend's ``GroupPolicySync`` last cached — a
     # CLI invocation has no token of its own at settings-load time and must
     # not stall on a portal call. See ``CachedSettingsFetcher``.
     # The pack is verified before it is merged; with ``group_policy.required``

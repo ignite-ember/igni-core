@@ -135,7 +135,9 @@ class TestFromParts:
             "_runtime",
         }
         assert server.runtime is None
-        assert session.on_new_dialogue == server.controllers.auth.revalidate_for_new_dialogue
+        assert (
+            session.on_new_dialogue == server.controllers.group_policy.revalidate_for_new_dialogue
+        )
 
 
 class TestCloseModelHttpClient:

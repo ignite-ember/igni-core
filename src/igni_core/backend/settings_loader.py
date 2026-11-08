@@ -22,7 +22,7 @@ class BackendSettingsLoader:
     itself a setting, so the first pass (local configuration only) answers
     "which directory" and the second, with the cached pack, is the one that
     counts. Neither touches the network: the pack is the one
-    ``AuthController`` last wrote to disk (:class:`CachedSettingsFetcher`).
+    ``GroupPolicySync`` last wrote to disk (:class:`CachedSettingsFetcher`).
 
     When ``group_policy.required`` is on and no verified pack can be had, the
     backend still comes up on local settings, so the person can sign in and
