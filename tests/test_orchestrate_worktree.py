@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -46,8 +47,6 @@ def _mock_stream(content: str):
 
 
 def _mock_pool(content: str = "agent response", agent_tools: list | None = None):
-    from igni_core.core.tools.orchestrate_budget import SpawnBudget
-
     pool = MagicMock()
     agent = MagicMock()
     agent.arun = MagicMock(return_value=_mock_stream(content))
@@ -61,10 +60,7 @@ def _mock_pool(content: str = "agent response", agent_tools: list | None = None)
     defn.tools = ["Read", "Write"]
     defn.force_isolation = None
     pool.get.return_value = agent
-    pool.get_definition.return_value = defn
-    # Real SpawnBudget so OrchestrateTools.__init__ gets a live
-    # counter (max=20 matches _settings.orchestration.max_total_agents).
-    pool.spawn_budget.return_value = SpawnBudget(20)
+    pool.get_entry.return_value = SimpleNamespace(definition=defn)
     return pool
 
 

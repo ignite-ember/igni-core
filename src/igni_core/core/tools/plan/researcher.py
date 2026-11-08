@@ -69,9 +69,7 @@ class PlanResearcherRunner:
         # Check the agent is registered. Whichever version is live —
         # the plain one, or an extension's override of it — registers
         # under the same canonical name.
-        try:
-            orchestrate.pool.get("plan_researcher")
-        except KeyError:
+        if orchestrate.pool.get_entry("plan_researcher") is None:
             logger.debug("plan_researcher agent definition not found in pool")
             return ""
 
@@ -82,9 +80,9 @@ class PlanResearcherRunner:
             # cooperative shutdown, so a CancelledError here must
             # propagate.
             raise
-        except (KeyError, LookupError, ValueError, RuntimeError) as exc:
+        except (LookupError, ValueError, RuntimeError) as exc:
             # Narrow catch of the documented spawn failure modes:
-            # KeyError / LookupError from a pool miss race, ValueError
+            # LookupError from a pool miss race, ValueError
             # from bad task shape, RuntimeError from Agno's inner
             # spawn path when the model init trips.
             logger.warning("plan_researcher spawn failed: %s", exc)

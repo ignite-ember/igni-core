@@ -1,5 +1,6 @@
 """Tests for SubagentStart/SubagentStop hooks in OrchestrateTools."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,23 +19,16 @@ def _settings():
 
 
 def _pool(*agents):
-    from igni_core.core.tools.orchestrate_budget import SpawnBudget
-
     pool = MagicMock()
     m = {a.name: a for a in agents}
 
-    def get(name):
-        if name not in m:
-            raise KeyError(f"'{name}' not found")
-        return m[name]
-
-    pool.get.side_effect = get
+    pool.get.side_effect = m.get
+    pool.missing.side_effect = lambda name: f"'{name}' not found"
     defn = MagicMock()
     defn.description = "Test"
     defn.tools = ["Read"]
     defn.force_isolation = None
-    pool.get_definition.return_value = defn
-    pool.spawn_budget.return_value = SpawnBudget(20)
+    pool.get_entry.return_value = SimpleNamespace(definition=defn)
     return pool
 
 

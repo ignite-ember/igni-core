@@ -22,7 +22,7 @@ def _make_session():
     session = MagicMock()
     session._ensure_knowledge = AsyncMock()
     session.pool.list_agents.return_value = []
-    session.pool.list_ephemeral.return_value = []
+    session.pool.ephemeral.list_agents.return_value = []
     session.skill_pool.list_skills.return_value = []
     session.skill_pool.match_user_command.return_value = None
     session.hooks_map = {}

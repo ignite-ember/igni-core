@@ -425,10 +425,9 @@ class AgentSpawn(SpawnRunner):
         agent names / worktree creation failures land as
         ``AgentBuildResult(agent=None, error='...')``.
         """
-        try:
-            shared = self._pool.get(self._agent_name)
-        except KeyError as e:
-            return AgentBuildResult(agent=None, error=str(e))
+        shared = self._pool.get(self._agent_name)
+        if shared is None:
+            return AgentBuildResult(agent=None, error=self._pool.missing(self._agent_name))
 
         # Shallow-copy per spawn. Agno ``Agent`` instances hold per-
         # run state (``run_id``, ``session_id``, ``run_response``);
@@ -443,7 +442,8 @@ class AgentSpawn(SpawnRunner):
         if isinstance(self._hitl_coordinator, TurnResultSink):
             agent.tool_hooks = [*agent.tool_hooks, TurnResultHook(self._hitl_coordinator)]
 
-        defn = self._pool.get_definition(self._agent_name)
+        entry = self._pool.get_entry(self._agent_name)
+        defn = entry.definition if entry is not None else None
         self._grant_nested_orchestration(agent, defn)
 
         # Plugin-shipped agents force their own isolation regardless
@@ -507,14 +507,14 @@ class AgentSpawn(SpawnRunner):
             session_id=self._session_id,
             hitl_coordinator=self._hitl_coordinator,
             project_dir=self._project_dir,
+            budget=self._budget,
         )
         # The three collaborators the session wires onto the top-level
         # toolkit after construction. Without them a nested spawn runs
         # invisibly — no progress card, nothing in the event log to
         # replay on reload, and no registry entry, which means ESC
-        # does not reach it. The budget needs no wiring: it is looked
-        # up from the pool by ``session_id``, so every depth draws on
-        # the one session-wide cap.
+        # does not reach it. The budget is handed over at construction,
+        # so every depth draws on the one session-wide cap.
         nested.on_progress = self._on_progress
         nested.event_appender = self._event_appender
         nested.subagent_registry = self._subagent_registry
@@ -677,8 +677,8 @@ class TeamSpawn(SpawnRunner):
 
         member_lines = []
         for n in self._names:
-            defn = self._pool.get_definition(n)
-            desc = defn.description[:60] if defn else ""
+            entry = self._pool.get_entry(n)
+            desc = entry.definition.description[:60] if entry is not None else ""
             member_lines.append(f"  - {n}: {desc}")
         self._member_lines = member_lines
         self._team_label = f"team({self._mode.value}:{','.join(self._names)})"
@@ -714,10 +714,10 @@ class TeamSpawn(SpawnRunner):
         (``backend/cold_spawn_resume.py``)."""
         members = []
         for name in names:
-            try:
-                member = copy.copy(pool.get(name))
-            except KeyError as e:
-                return SubTeamBuildResult(team=None, mode=None, error=str(e))
+            shared = pool.get(name)
+            if shared is None:
+                return SubTeamBuildResult(team=None, mode=None, error=pool.missing(name))
+            member = copy.copy(shared)
             member.tool_hooks = UntrustedOutputHook.on(getattr(member, "tool_hooks", None))
             members.append(member)
 

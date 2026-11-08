@@ -95,7 +95,8 @@ class PoolCleanupStep(ShutdownStep):
     label: ClassVar[str] = "pool_cleanup"
 
     async def _run(self, session: Session, result: ShutdownResult) -> None:
-        session.pool.cleanup_ephemeral_if_auto(session.settings)
+        if session.settings.orchestration.auto_cleanup and session.pool.has_ephemeral:
+            session.pool.ephemeral.cleanup()
         result.mark_pool_cleaned()
 
 

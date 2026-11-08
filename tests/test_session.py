@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from igni_core.core.agents.tool_check import UnresolvedAgentTools
 from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.config.schemas.permissions import PermissionsConfig
 from igni_core.core.config.settings import Settings
@@ -95,8 +94,7 @@ def _patches_for(defaults: dict) -> list:
         shared = MagicMock() if name[0].isupper() else MagicMock(return_value=rv)
         if name == "AgentPool":
             # A mocked pool has no agents: an empty catalog, nothing unresolved.
-            shared.return_value.catalog_text.return_value = ""
-            shared.return_value.unresolved_tools.return_value = UnresolvedAgentTools()
+            shared.return_value.list_agents.return_value = []
         for module in _PATCH_MODULES.get(name, ("igni_core.core.session.core",)):
             patches.append(patch(f"{module}.{name}", new=shared))
     return patches

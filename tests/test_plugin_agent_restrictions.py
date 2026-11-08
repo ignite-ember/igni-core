@@ -18,6 +18,7 @@ Three layers covered:
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -194,7 +195,7 @@ class TestAgentPoolPluginRestrictedLoad:
             namespace="evil-plugin",
             restriction_policy=PluginRestrictionPolicy.strict(),
         )
-        defn = pool.get_definition("evil-plugin:bad")
+        defn = pool.get_entry("evil-plugin:bad").definition
         assert defn.mcp_servers == []
         assert defn.force_isolation == "worktree"
         # And the warning fired — visible in logs for audit.
@@ -217,7 +218,7 @@ class TestAgentPoolPluginRestrictedLoad:
             namespace="plug",
             restriction_policy=PluginRestrictionPolicy.strict(),
         )
-        defn = pool.get_definition("plug:p")
+        defn = pool.get_entry("plug:p").definition
         assert defn.force_isolation == "worktree"
         joined = " ".join(captured_pool_warnings)
         assert "hooks" in joined
@@ -233,9 +234,9 @@ class TestAgentPoolPluginRestrictedLoad:
             "userp",
             extra_frontmatter="mcp_servers:\n  - my-server\n",
         )
-        pool = AgentPool()
-        pool.load_directory(tmp_path, priority=1, settings=settings)
-        defn = pool.get_definition("userp")
+        pool = AgentPool(settings=settings)
+        pool.load_directory(tmp_path, priority=1)
+        defn = pool.get_entry("userp").definition
         assert defn.mcp_servers == ["my-server"]
         assert defn.force_isolation is None
         # And NO warning fires for user / project agents.
@@ -264,8 +265,6 @@ def _mock_stream(content: str):
 
 
 def _mock_pool_with_definition(definition: AgentDefinition):
-    from igni_core.core.tools.orchestrate_budget import SpawnBudget
-
     pool = MagicMock()
     agent = MagicMock()
     agent.arun = MagicMock(return_value=_mock_stream("ok"))
@@ -275,8 +274,7 @@ def _mock_pool_with_definition(definition: AgentDefinition):
     agent.aget_last_run_output = AsyncMock(return_value=run_output)
     agent.tools = []
     pool.get.return_value = agent
-    pool.get_definition.return_value = definition
-    pool.spawn_budget.return_value = SpawnBudget(20)
+    pool.get_entry.return_value = SimpleNamespace(definition=definition)
     return pool
 
 

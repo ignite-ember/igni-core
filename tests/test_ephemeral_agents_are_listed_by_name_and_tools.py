@@ -17,7 +17,8 @@ from igni_core.protocol.messages import CommandResultKind
 
 def _command(*agents: AgentDefinition) -> AgentsCommand:
     pool = MagicMock()
-    pool.list_ephemeral.return_value = list(agents)
+    pool.has_ephemeral = True
+    pool.ephemeral.list_agents.return_value = list(agents)
     return AgentsCommand(SimpleNamespace(pool=pool))
 
 

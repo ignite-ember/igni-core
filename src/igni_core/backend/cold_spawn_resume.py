@@ -326,11 +326,11 @@ class ColdSpawnResume:
         return parent.agent_name == (self._session.main_team.name or "")
 
     def _pool_agent(self, name: str) -> Agent | None:
-        try:
-            return copy.copy(self._session.pool.get(name))
-        except KeyError:
+        agent = self._session.pool.get(name)
+        if agent is None:
             logger.warning("cold resume: no agent %r in the pool", name)
             return None
+        return copy.copy(agent)
 
     def _orchestrate_tools(self) -> OrchestrateTools | None:
         for tool in self._session.main_team.tools or []:

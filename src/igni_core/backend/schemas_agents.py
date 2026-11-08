@@ -15,9 +15,9 @@ from igni_core.core.agents.schemas import AgentDefinition
 
 
 class PromoteResult(BaseModel):
-    """Outcome of :meth:`AgentPool.promote_ephemeral` wrapped as a
-    typed result envelope. The pool itself still raises (tests
-    lock that in) — the coordinator catches once and packages it.
+    """Outcome of :meth:`EphemeralAgentStore.promote` wrapped as a
+    typed result envelope. The store raises — the coordinator
+    catches once and packages it.
     """
 
     ok: bool
@@ -31,7 +31,7 @@ class PromoteResult(BaseModel):
 
 
 class DiscardResult(BaseModel):
-    """Outcome of :meth:`AgentPool.discard_ephemeral` — same shape
+    """Outcome of :meth:`EphemeralAgentStore.discard` — same shape
     as :class:`PromoteResult` minus the destination field.
     """
 
@@ -46,7 +46,7 @@ class DiscardResult(BaseModel):
 
 class EphemeralAgentsView(BaseModel):
     """Wraps the ``list[AgentDefinition]`` returned by
-    :meth:`AgentPool.list_ephemeral`. Empty list renders as an
+    :meth:`EphemeralAgentStore.list_agents`. Empty list renders as an
     info result; non-empty renders a markdown catalogue.
 
     ``AgentDefinition`` is imported at runtime, not under

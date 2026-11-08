@@ -326,16 +326,19 @@ class SuiteRunner:
         and returns ``None`` — the caller treats that as "suite done".
         """
         try:
-            return self._pool.get(self._suite.agent)
-        except (KeyError, ValueError) as exc:
+            agent = self._pool.get(self._suite.agent)
+            reason = self._pool.missing(self._suite.agent) if agent is None else ""
+        except ValueError as exc:
+            agent, reason = None, str(exc)
+        if agent is None:
             for case in self._suite.cases:
                 suite_result.case_results.append(
                     CaseResult(
                         case=case,
-                        error=f"agent '{self._suite.agent}' not found: {exc}",
+                        error=f"agent '{self._suite.agent}' not found: {reason}",
                     )
                 )
-            return None
+        return agent
 
     def _resolve_fixtures_root(self) -> Path:
         """Look in ``evals/fixtures/`` first (committed datasets shipped

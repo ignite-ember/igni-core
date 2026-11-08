@@ -7,8 +7,8 @@ construct the appropriate :class:`SpawnRunner` and delegate.
 Sibling modules own the rest:
 
 * :class:`SpawnBudget` (``orchestrate_budget.py``) — per-session
-  sub-agent counter, one instance per session vended by
-  :meth:`AgentPool.spawn_budget`.
+  sub-agent counter, owned by the session and handed to every
+  toolkit it builds (nested toolkits get their parent's).
 * :class:`SpawnSandbox` (``orchestrate_sandbox.py``) — one
   per-spawn worktree lifecycle. Failure mode is a typed
   :class:`SandboxSetupResult` envelope.
@@ -88,6 +88,7 @@ class OrchestrateTools(Toolkit):
         session_id: str = "",
         hitl_coordinator: HitlCoordinatorProtocol | None = None,
         project_dir: Path | None = None,
+        budget: SpawnBudget | None = None,
     ):
         super().__init__(name="ember_orchestrate")
         self.pool = pool
@@ -101,9 +102,12 @@ class OrchestrateTools(Toolkit):
         # feature (spawn_agent returns an error if the agent
         # requests it without a project_dir wired in).
         self._project_dir = project_dir
-        # Per-session budget owned by the pool (one instance per
-        # session_id — see :meth:`AgentPool.spawn_budget`).
-        self._budget: SpawnBudget = pool.spawn_budget(session_id)
+        # The session's sub-agent cap, shared by every toolkit of the
+        # session at every depth. A toolkit built on its own gets a
+        # fresh one at the configured cap.
+        self._budget: SpawnBudget = (
+            budget if budget is not None else SpawnBudget(settings.orchestration.max_total_agents)
+        )
         # Progress callback wired by
         # :meth:`TeamWiring.wire_orchestrate_progress` at session
         # bootstrap. When set, sub-agent lifecycle events get
@@ -346,7 +350,7 @@ class OrchestrateTools(Toolkit):
         # not lists, so a ``list[str]`` here breaks the tool contract.
         tool_list = [t.strip() for t in tools.split(",") if t.strip()]
         try:
-            self.pool.register_ephemeral(
+            self.pool.ephemeral.register(
                 name=name,
                 description=description,
                 system_prompt=system_prompt,

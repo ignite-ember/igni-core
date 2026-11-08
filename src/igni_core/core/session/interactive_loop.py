@@ -210,8 +210,8 @@ class InteractiveSessionLoop(SessionRun):
     async def _shutdown(self) -> None:
         """Cleanup ephemeral agents, emit SessionEnd."""
         session = self._session
-        if session.settings.orchestration.auto_cleanup:
-            removed = session.pool.cleanup_ephemeral()
+        if session.settings.orchestration.auto_cleanup and session.pool.has_ephemeral:
+            removed = session.pool.ephemeral.cleanup()
             if removed:
                 session.display.print_info(f"Cleaned up {removed} ephemeral agent(s).")
         await self._fire_session_end()
@@ -283,7 +283,7 @@ class InteractiveSessionLoop(SessionRun):
             version=__version__,
             tip=get_tip(session.settings, session.project_dir),
             update_message=await self._check_update(),
-            agent_names=list(session.pool.agent_names),
+            agent_names=sorted(d.name for d in session.pool.list_agents()),
             skill_names=[s.name for s in session.skill_pool.list_skills()],
             hook_count=sum(len(v) for v in session.hooks_map.values()),
             session_id=session.session_id,

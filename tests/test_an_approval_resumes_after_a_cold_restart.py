@@ -407,6 +407,7 @@ class Backend:
                     settings=settings,
                     session_id=SESSION,
                     hitl_coordinator=self.coordinator,
+                    budget=self.pool.budget,
                 ),
                 *(extra_tools or []),
             ]
@@ -461,13 +462,13 @@ class FakePool:
         self._coordinator = coordinator
         self._settings = settings
         self._thorough = thorough
-        self._budget = SpawnBudget(max_agents=10)
+        self.budget = SpawnBudget(max_agents=10)
 
     @property
     def db(self) -> Any:
         return self._db
 
-    def get(self, name: str) -> Agent:
+    def get(self, name: str) -> Agent | None:
         if name == "writer":
             return Agent(
                 name="writer",
@@ -496,18 +497,19 @@ class FakePool:
                         session_id=SESSION,
                         hitl_coordinator=self._coordinator,
                         current_depth=1,
+                        budget=self.budget,
                     ),
                     _publish_tool(self._side),
                 ],
                 db=self._db,
             )
-        raise KeyError(name)
-
-    def get_definition(self, name: str) -> Any:
         return None
 
-    def spawn_budget(self, session_id: str) -> SpawnBudget:
-        return self._budget
+    def missing(self, name: str) -> str:
+        return f"Agent '{name}' not found"
+
+    def get_entry(self, name: str) -> Any:
+        return None
 
 
 async def _stored_run(db: Any, run_id: str) -> Any:

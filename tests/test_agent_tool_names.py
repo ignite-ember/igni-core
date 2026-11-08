@@ -13,7 +13,6 @@ do — treat an MCP name as a mistake, or stop a session from starting.
 
 from __future__ import annotations
 
-from igni_core.core.agents import AgentPool
 from igni_core.core.agents.tool_check import UnresolvedAgentTools
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.tool_spec import ToolResolutionRequest
@@ -46,21 +45,12 @@ class TestWhatResolvesAndWhatDoesNot:
         assert result.unknown == []
 
 
-class _Pool(AgentPool):
-    def __init__(self, agents: list) -> None:
-        super().__init__()
-        self._agents_listed = agents
-
-    def list_agents(self):  # type: ignore[override]
-        return self._agents_listed
-
-
 class TestThePoolCheck:
     """Driven against the real registry — the answer is only as good as
     what it can resolve."""
 
     def _check(self, tmp_path, agents) -> UnresolvedAgentTools:
-        return _Pool(agents).unresolved_tools(ToolRegistry(base_dir=str(tmp_path)))
+        return UnresolvedAgentTools.check(agents, ToolRegistry(base_dir=str(tmp_path)))
 
     @staticmethod
     def _agent(name: str, tools: list[str]):
@@ -97,7 +87,7 @@ class TestThePoolCheck:
         from igni_core.core.session.core import Session
 
         class Exploding:
-            def unresolved_tools(self, registry):
+            def list_agents(self):
                 raise RuntimeError("no pool")
 
         session = Session.__new__(Session)

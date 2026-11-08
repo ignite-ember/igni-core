@@ -308,7 +308,7 @@ class TestEnterPlanModeSpawnsResearcher:
         fake_orch.spawn_agent = AsyncMock(
             return_value="## Codebase Findings\nFound stuff in `src/x.py`",
         )
-        fake_orch.pool.get.return_value = MagicMock()  # registered
+        fake_orch.pool.get_entry.return_value = MagicMock()  # registered
         team = MagicMock()
         team.tools = [fake_orch]
         session.main_team = team

@@ -1,5 +1,6 @@
 """Tests for tools/orchestrate.py — agent and team spawning."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -27,8 +28,6 @@ async def _mock_stream(content="agent response"):
 
 
 def _mock_pool(content: str = "agent response"):
-    from igni_core.core.tools.orchestrate_budget import SpawnBudget
-
     pool = MagicMock()
     agent = MagicMock()
     agent.arun = MagicMock(return_value=_mock_stream(content))
@@ -44,8 +43,7 @@ def _mock_pool(content: str = "agent response"):
     defn.tools = ["Read", "Write"]
     defn.force_isolation = None
     pool.get.return_value = agent
-    pool.get_definition.return_value = defn
-    pool.spawn_budget.return_value = SpawnBudget(20)
+    pool.get_entry.return_value = SimpleNamespace(definition=defn)
     return pool
 
 

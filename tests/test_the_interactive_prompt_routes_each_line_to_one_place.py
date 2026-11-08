@@ -32,6 +32,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from igni_core.core.agents.schemas import AgentDefinition
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.executor import HookExecutor
@@ -42,15 +43,27 @@ from igni_core.core.utils.update_checker_schemas import UpdateError, UpdateInfo
 LOOP = "igni_core.core.session.interactive_loop"
 
 
-class _Pool:
-    def __init__(self, ephemeral: int = 0) -> None:
-        self._ephemeral = ephemeral
-        self.agent_names = ["editor", "reviewer"]
+class _EphemeralStore:
+    def __init__(self, count: int) -> None:
+        self._count = count
         self.cleaned = False
 
-    def cleanup_ephemeral(self) -> int:
+    def cleanup(self) -> int:
         self.cleaned = True
-        return self._ephemeral
+        return self._count
+
+
+class _Pool:
+    has_ephemeral = True
+
+    def __init__(self, ephemeral: int = 0) -> None:
+        self.ephemeral = _EphemeralStore(ephemeral)
+
+    def list_agents(self) -> list[AgentDefinition]:
+        return [
+            AgentDefinition(name="reviewer", description="", system_prompt=""),
+            AgentDefinition(name="editor", description="", system_prompt=""),
+        ]
 
 
 class _Session:
@@ -285,7 +298,7 @@ async def test_ephemeral_agents_are_cleaned_up_at_the_end(make_loop):
 
     await run.loop.run()
 
-    assert run.session.pool.cleaned
+    assert run.session.pool.ephemeral.cleaned
     assert "Cleaned up 3 ephemeral agent(s)." in run.infos()
 
 
@@ -295,4 +308,4 @@ async def test_nothing_is_cleaned_up_when_the_settings_say_not_to(make_loop):
 
     await run.loop.run()
 
-    assert not run.session.pool.cleaned
+    assert not run.session.pool.ephemeral.cleaned

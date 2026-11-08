@@ -5,7 +5,7 @@ Six phase methods (``build_tools`` / ``build_prompt`` /
 ``build``) each own one slice of the main-agent construction. All
 Session state is read through the session's public accessors
 (``cloud_access_token``,
-``active_output_style``, ``tool_event_hook()``, ``pool.catalog_text()``)
+``active_output_style``, ``tool_event_hook()``, ``agent_catalog(pool.list_agents())``)
 so this sub-package never reaches into ``session._underscore`` attributes.
 
 Constructor injection is required: the caller passes ``agent_cls`` /
@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from igni_core.core.agents.catalog import agent_catalog
 from igni_core.core.paths import MAIN_AGENT_NAME
 
 from .agent_build_spec import AgentBuildSpec
@@ -83,6 +84,7 @@ class MainAgentBuilder:
             pool=s.pool,
             hook_executor=s.hook_executor,
             session_id=s.session_id,
+            spawn_budget=s.spawn_budget,
             sub_agent_hitl=s.sub_agent_hitl,
             reasoning_factory=self._reasoning_factory,
             resolve_tool_names=MainToolSet(s.settings.permissions).names,
@@ -103,7 +105,7 @@ class MainAgentBuilder:
             # returns ``False`` otherwise). ``learning.enabled=false`` or a
             # session with no db both leave ``s.learning`` None.
             user_memory_available=s.learning is not None and s.settings.learning.user_memory,
-            agent_catalog=s.pool.catalog_text(),
+            agent_catalog=agent_catalog(s.pool.list_agents()),
             skill_descriptions=s.skill_pool.describe(),
             prompt_loader=self._prompt_loader,
         ).render()

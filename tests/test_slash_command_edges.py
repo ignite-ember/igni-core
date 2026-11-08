@@ -16,7 +16,7 @@ def _make_session():
     """Create a mock Session with enough attributes for CommandHandler."""
     session = MagicMock()
     session.pool.list_agents.return_value = []
-    session.pool.list_ephemeral.return_value = []
+    session.pool.ephemeral.list_agents.return_value = []
     session.skill_pool.list_skills.return_value = []
     session.skill_pool.match_user_command.return_value = None
     session.hooks_map = {}
@@ -131,7 +131,7 @@ class TestAgentsEdgeCases:
     async def test_agents_promote_nonexistent(self):
         """'/agents promote nonexistent' should show error."""
         session = _make_session()
-        session.pool.promote_ephemeral = MagicMock(side_effect=KeyError("not found"))
+        session.pool.ephemeral.promote = MagicMock(side_effect=ValueError("not found"))
         handler = CommandHandler(session)
         result = await handler.handle("/agents promote nonexistent")
         assert isinstance(result, CommandResult)

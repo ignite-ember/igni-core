@@ -269,7 +269,7 @@ class Orchestrator:
     async def handle(self, message: str, context: ConversationContext) -> Response:
         # Step 1: Analyze the task and decide on a team
         plan: TeamPlan = await self.planner.arun(
-            f"Agent pool:\n{self.pool.describe()}\n\n"
+            f"Agent pool:\n{agent_catalog(self.pool.list_agents())}\n\n"
             f"Conversation context:\n{context.summary()}\n\n"
             f"User message: {message}"
         )

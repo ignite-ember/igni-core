@@ -31,7 +31,6 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.tools.orchestrate import OrchestrateTools
-from igni_core.core.tools.orchestrate_budget import SpawnBudget
 from igni_core.core.tools.orchestrate_events import SpawnDeps
 from igni_core.core.tools.orchestrate_spawn import TeamSpawn
 
@@ -72,10 +71,11 @@ class _Spawns:
         settings = SimpleNamespace(orchestration=OrchestrationConfig(max_nesting_depth=4))
         pool = MagicMock()
         pool.get.side_effect = lambda name: Agent(name=name, tools=[])
-        pool.get_definition.return_value = SimpleNamespace(
-            can_orchestrate=True, description="", tools=[], force_isolation=None
+        pool.get_entry.return_value = SimpleNamespace(
+            definition=SimpleNamespace(
+                can_orchestrate=True, description="", tools=[], force_isolation=None
+            )
         )
-        pool.spawn_budget.return_value = SpawnBudget(20)
         pool.db = None
         self.pool = pool
         self.settings = settings

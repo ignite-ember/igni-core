@@ -82,8 +82,7 @@ def _spawn(*, depth: int, can_orchestrate: bool, max_depth: int = 5, agent=None)
     agent = agent if agent is not None else SimpleNamespace(tools=[])
     pool = MagicMock()
     pool.get.return_value = agent
-    pool.get_definition.return_value = defn
-    pool.spawn_budget.return_value = SpawnBudget(settings.orchestration.max_total_agents)
+    pool.get_entry.return_value = SimpleNamespace(definition=defn)
 
     return AgentSpawn(
         agent_name="archivist",
@@ -97,7 +96,7 @@ def _spawn(*, depth: int, can_orchestrate: bool, max_depth: int = 5, agent=None)
         event_appender=None,
         subagent_registry=SubAgentRegistry(),
         hitl_coordinator=None,
-        budget=pool.spawn_budget.return_value,
+        budget=SpawnBudget(settings.orchestration.max_total_agents),
         current_depth=depth,
         max_depth=max_depth,
         project_dir=Path("."),
@@ -135,7 +134,7 @@ class TestTheCounterMoves:
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=1, can_orchestrate=True, agent=agent)
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._pool.get_entry().definition)
 
         granted = _nested(agent)
         assert len(granted) == 1
@@ -150,7 +149,7 @@ class TestTheCounterMoves:
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=4, can_orchestrate=True, max_depth=5, agent=agent)
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._pool.get_entry().definition)
 
         assert _nested(agent) == []
 
@@ -158,7 +157,7 @@ class TestTheCounterMoves:
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=0, can_orchestrate=False, agent=agent)
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._pool.get_entry().definition)
 
         assert _nested(agent) == []
 
@@ -173,7 +172,7 @@ class TestTheGrantDoesNotLeak:
         agent = SimpleNamespace(tools=shared_list)
         spawn = _spawn(depth=1, can_orchestrate=True, agent=agent)
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._pool.get_entry().definition)
 
         assert shared_list == [], "the pool's tool list was mutated"
         assert len(_nested(agent)) == 1
@@ -184,9 +183,8 @@ class TestTheGrantDoesNotLeak:
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=1, can_orchestrate=True, agent=agent)
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._pool.get_entry().definition)
 
-        spawn._pool.spawn_budget.assert_called_with("s1")
         assert _nested(agent)[0]._budget is spawn._budget
 
 
@@ -212,7 +210,7 @@ class TestAgnoStillReadsToolsAtRunTime:
 
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=1, can_orchestrate=True, agent=agent)
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._pool.get_entry().definition)
 
         resolved = get_resolved_tools(agent)
 
@@ -234,7 +232,7 @@ class TestTheWiringSurvivesTheHop:
         progress, appender = MagicMock(), MagicMock()
         spawn._on_progress, spawn._event_appender = progress, appender
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._pool.get_entry().definition)
 
         granted = _nested(agent)[0]
         assert granted.on_progress is progress

@@ -11,11 +11,13 @@ Agents are built lazily on first :meth:`get`, so startup only
 pays the cost of parsing ``.md`` files (~50ms), not importing
 LLM provider modules (~350ms). Ephemeral CRUD lives on
 :class:`EphemeralAgentStore` and is reached via :attr:`ephemeral`.
+What extensions do to the loaded agents is
+:class:`AgentContributionApplier`'s job; the prompt catalog and the
+tool check read the pool's definitions from their own modules.
 """
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,7 +25,6 @@ from typing import TYPE_CHECKING
 from igni_core.core.agents.builder import AgentBuilder
 from igni_core.core.agents.ephemeral import EphemeralAgentStore
 from igni_core.core.agents.loader import AgentDefinitionLoader
-from igni_core.core.agents.markdown import AgentMarkdownFile
 from igni_core.core.agents.plugin_policy import PluginRestrictionPolicy
 from igni_core.core.agents.schemas import (
     AgentBuildContext,
@@ -34,33 +35,32 @@ from igni_core.core.agents.schemas import (
     LoadReport,
     McpClient,
 )
-from igni_core.core.agents.tool_check import UnresolvedAgentTool, UnresolvedAgentTools
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
-from igni_core.core.prompts.contributions import PromptContributions, prompt_contributions
-from igni_core.core.tools.orchestrate_budget import SpawnBudget
-from igni_core.core.tools.tool_spec import ToolResolutionRequest
 
 if TYPE_CHECKING:
     from agno.agent import Agent
-
-    from igni_core.core.tools.registry import ToolRegistry
-
-logger = logging.getLogger(__name__)
 
 
 class AgentPool:
     """Cache + orchestrator for the agent definitions and their
     built :class:`Agent` instances.
 
-    Kept intentionally lean — ~7 instance fields, ~14 public
-    methods. Discovery, build, and ephemeral CRUD are delegated
-    to the three collaborators (:class:`AgentDefinitionLoader`,
-    :class:`AgentBuilder`, :class:`EphemeralAgentStore`).
+    Discovery, build, and ephemeral CRUD are delegated to the three
+    collaborators (:class:`AgentDefinitionLoader`,
+    :class:`AgentBuilder`, :class:`EphemeralAgentStore`). Everything a
+    build needs (settings, base dir, MCP clients, DB, broadcast) is
+    one :class:`AgentBuildContext`.
+
+    A name nobody defines is an expected miss, not an error: the
+    lookups return ``None`` and :meth:`missing` words the miss for
+    whoever has to report it.
     """
 
     def __init__(
         self,
+        settings: Settings | None = None,
+        project_dir: Path | None = None,
         db: DbHandle | None = None,
         broadcast: BroadcastSink | None = None,
     ) -> None:
@@ -68,43 +68,37 @@ class AgentPool:
         self._agents: dict[str, Agent] = {}
         self._builder: AgentBuilder | None = None
         self._ephemeral: EphemeralAgentStore | None = None
-        # Stashed so we can construct the initial AgentBuildContext
-        # when ``load_definitions`` runs. ``AgentPool()`` calls
-        # deliberately allow these to be None (test scaffolding).
-        self._db: DbHandle | None = db
-        self._broadcast: BroadcastSink | None = broadcast
-        # Settings pointer stashed for ``build_agents``'s lazy
-        # re-context. Populated by ``load_definitions``.
-        self._settings: Settings | None = None
-        self._base_dir: str | None = None
-        # Per-session sub-agent budget cache — lazily constructed
-        # on first :meth:`spawn_budget` call so every
-        # :class:`OrchestrateTools` for the same session shares one
-        # counter.
-        self._spawn_budgets: dict[str, SpawnBudget] = {}
+        # ``settings`` may be ``None`` until :meth:`load_definitions`;
+        # :meth:`_settings` falls back to defaults for the
+        # single-directory loads that can run before it.
+        self._context = AgentBuildContext(
+            settings=settings,
+            base_dir=str(project_dir) if project_dir is not None else None,
+            db=db,
+            broadcast=broadcast,
+        )
 
-    # ── Introspection helpers used by the collaborators ─────────
+    # ── Entries ──────────────────────────────────────────────────
 
     def iter_entries(self) -> Iterable[AgentEntry]:
         """Iterate the current :class:`AgentEntry` values."""
         return self._entries.values()
 
-    def has_definition(self, name: str) -> bool:
-        return name in self._entries
+    def get_entry(self, name: str) -> AgentEntry | None:
+        return self._entries.get(name)
 
-    def get_entry(self, name: str) -> AgentEntry:
-        entry = self._entries.get(name)
-        if entry is None:
-            available = ", ".join(sorted(self._entries.keys()))
-            raise KeyError(f"Agent '{name}' not found. Available: {available}")
-        return entry
+    def missing(self, name: str) -> str:
+        """The message for a lookup of ``name`` that found nothing."""
+        available = ", ".join(sorted(self._entries))
+        return f"Agent '{name}' not found. Available: {available}"
 
     def upsert_entry(self, entry: AgentEntry) -> None:
         """Insert ``entry`` if new, or overwrite the existing
         same-name entry regardless of priority.
 
         Used by :class:`EphemeralAgentStore` to (re)register
-        ephemerals and to re-tag them after a ``promote()``.
+        ephemerals and re-tag them after a ``promote()``, and by
+        :class:`AgentContributionApplier` for what extensions did.
         """
         self._entries[entry.definition.name] = entry
         # Invalidate the cached Agent so the next ``get()`` rebuilds
@@ -116,33 +110,7 @@ class AgentPool:
         self._entries.pop(name, None)
         self._agents.pop(name, None)
 
-    def load_ephemeral_directory(self, path: Path) -> None:
-        """Merge a rehydrated ephemeral dir at
-        :attr:`AgentPriority.EPHEMERAL`. Called by
-        :class:`EphemeralAgentStore.init`."""
-        loader = self._make_base_loader()
-        report = loader.load_directory(path, AgentPriority.EPHEMERAL)
-        self._merge(report)
-
     # ── Phase 1: load ────────────────────────────────────────────
-
-    def clear_definitions(self, *, preserve_ephemeral: bool = True) -> None:
-        """Drop cached entries so the next :meth:`load_definitions`
-        actually re-picks prompt variants.
-
-        ``preserve_ephemeral=True`` (default) keeps runtime-
-        created agents — they have no ``.md`` on disk to reload
-        from, so wiping them would delete the user's work.
-        """
-        if preserve_ephemeral:
-            self._entries = {
-                name: entry
-                for name, entry in self._entries.items()
-                if entry.priority == AgentPriority.EPHEMERAL
-            }
-        else:
-            self._entries = {}
-        self._agents.clear()
 
     def load_definitions(
         self,
@@ -155,14 +123,12 @@ class AgentPool:
         No :class:`Agent` objects are created — just data. Returns
         the :class:`LoadReport` so callers can surface parse
         errors (``report.errors``) to the FE / audit log.
-
         """
         if project_dir is None:
             project_dir = Path.cwd()
-
-        self._settings = settings
-        self._base_dir = str(project_dir)
-
+        self._context = self._context.model_copy(
+            update={"settings": settings, "base_dir": str(project_dir)}
+        )
         loader = AgentDefinitionLoader(
             settings=settings,
             project_dir=project_dir,
@@ -176,19 +142,25 @@ class AgentPool:
         self,
         path: Path,
         priority: AgentPriority | int,
-        settings: Settings,
-        base_dir: str | None = None,
+        *,
+        namespace: str | None = None,
+        restriction_policy: PluginRestrictionPolicy | None = None,
     ) -> LoadReport:
-        """Load agents from a single directory. Test-focused
-        convenience — sets up the build context enough that a
-        subsequent ``get(...)`` works."""
-        self._settings = settings
-        self._base_dir = base_dir or str(path.parent)
-        loader = self._make_base_loader()
-        report = loader.load_directory(path, priority)
+        """Merge the agents of one directory at ``priority``.
+
+        ``restriction_policy`` is applied as-is: ``None`` means no
+        plugin envelope. :meth:`load_plugin_directory` is the call that
+        picks the strict one for plugins; the ephemeral store rehydrates
+        through here at :attr:`AgentPriority.EPHEMERAL`.
+        """
+        base_dir = self._context.base_dir
+        loader = AgentDefinitionLoader(
+            settings=self._settings(),
+            project_dir=Path(base_dir) if base_dir else Path.cwd(),
+            restriction_policy=restriction_policy,
+        )
+        report = loader.load_directory(path, priority, namespace=namespace)
         self._merge(report)
-        # Ensure the builder exists so lazy ``get()`` works.
-        self._ensure_builder()
         return report
 
     def load_plugin_directory(
@@ -205,61 +177,12 @@ class AgentPool:
         :class:`PluginRestrictionPolicy`) and namespaces every
         loaded agent as ``<namespace>:<name>``. Used by
         :class:`PluginLoader`."""
-        loader = self._make_base_loader(restriction_policy or PluginRestrictionPolicy.strict())
-        report = loader.load_directory(path, priority, namespace=namespace)
-        self._merge(report)
-        return report
-
-    def apply_prompt_contributions(self, contributions: PromptContributions | None = None) -> None:
-        """Every agent as extensions have shaped it: overridden, edited, or both.
-
-        Run once everything is loaded — igni's agents, the group's, the
-        project's and the plugins' — because an edit applies to
-        whichever definition won. An override stands at
-        :attr:`AgentPriority.EXTENSION_OVERRIDE`, above every file a
-        person or an organisation wrote, and defines the agent even
-        where igni has none; the moment the extension stops, or its
-        condition stops holding, it is gone from the table and the
-        agent is whatever it was before.
-
-        Text an extension wrote for an agent's header gets the plugin
-        security envelope a plugin's own agents get.
-        """
-        table = contributions if contributions is not None else prompt_contributions
-        for name in table.agents():
-            entry = self._entries.get(name)
-            source = entry.definition.source_path if entry is not None else None
-            base = None
-            if source is not None:
-                try:
-                    base = source.read_text(encoding="utf-8")
-                except OSError as exc:
-                    logger.warning("agent %s: %s could not be read: %s", name, source, exc)
-            try:
-                composition = table.compose(f"agent:{name}", base)
-            except ValueError as exc:
-                logger.warning("agent %s: what extensions do to it does not fit: %s", name, exc)
-                continue
-            if composition is None:
-                logger.info("agent %s: edited by an extension, and nobody defines it", name)
-                continue
-            path = composition.override_path or source or Path(f"{name}.md")
-            md = AgentMarkdownFile(path, content=composition.document.render())
-            try:
-                definition = md.parse().model_copy(update={"name": name})
-            except ValueError as exc:
-                logger.warning("agent %s, as extensions shaped it, does not load: %s", name, exc)
-                continue
-            if composition.frontmatter_owner is not None:
-                definition = PluginRestrictionPolicy.strict().apply(
-                    definition, md.raw_frontmatter_keys(), plugin_name=composition.frontmatter_owner
-                )
-            priority = (
-                AgentPriority.EXTENSION_OVERRIDE
-                if composition.override_owner is not None or entry is None
-                else entry.priority
-            )
-            self._entries[name] = AgentEntry(definition=definition, priority=priority)
+        return self.load_directory(
+            path,
+            priority,
+            namespace=namespace,
+            restriction_policy=restriction_policy or PluginRestrictionPolicy.strict(),
+        )
 
     # ── Phase 2: build ───────────────────────────────────────────
 
@@ -270,133 +193,37 @@ class AgentPool:
         Stores ``mcp_clients`` in the build context so the next
         :meth:`get` rebuilds against the current MCP set.
         """
-        assert self._settings is not None, "Call load_definitions() first"
-        context = AgentBuildContext(
-            settings=self._settings,
-            base_dir=self._base_dir,
-            mcp_clients=mcp_clients,
-            db=self._db,
-            broadcast=self._broadcast,
-        )
+        assert self._context.settings is not None, "Call load_definitions() first"
+        self._context = self._context.model_copy(update={"mcp_clients": mcp_clients})
         if self._builder is None:
-            self._builder = AgentBuilder(context)
+            self._builder = AgentBuilder(self._context)
         else:
-            self._builder.replace_context(context)
+            self._builder.replace_context(self._context)
         self._agents.clear()
-
-    def load_all(
-        self,
-        settings: Settings,
-        project_dir: Path | None = None,
-        mcp_clients: dict[str, McpClient] | None = None,
-    ) -> None:
-        """Shorthand — parse definitions AND construct build
-        context in one step."""
-        self.load_definitions(settings, project_dir)
-        self.build_agents(mcp_clients=mcp_clients)
 
     # ── Access ────────────────────────────────────────────────────
 
-    def get(self, name: str) -> Agent:
-        """Get an agent by name, building lazily if needed."""
+    def get(self, name: str) -> Agent | None:
+        """The agent called ``name``, built on first use; ``None`` when
+        no definition has that name."""
         if name not in self._agents:
-            if name not in self._entries:
-                available = ", ".join(sorted(self._entries.keys()))
-                raise KeyError(f"Agent not found: '{name}'. Available: {available}")
-            builder = self._ensure_builder()
-            self._agents[name] = builder.build(self._entries[name].definition)
+            entry = self._entries.get(name)
+            if entry is None:
+                return None
+            self._agents[name] = self._ensure_builder().build(entry.definition)
         return self._agents[name]
-
-    def get_definition(self, name: str) -> AgentDefinition:
-        return self.get_entry(name).definition
 
     def list_agents(self) -> list[AgentDefinition]:
         return [entry.definition for entry in self._entries.values()]
 
-    def describe(self) -> str:
-        """Summary line per agent for the Orchestrator prompt."""
-        lines: list[str] = []
-        for entry in self._entries.values():
-            defn = entry.definition
-            tools_str = ", ".join(defn.tools) if defn.tools else "none"
-            tags_str = ", ".join(defn.tags) if defn.tags else "none"
-            lines.append(
-                f"- **{defn.name}**: {defn.description} [tools: {tools_str}] [tags: {tags_str}]"
-            )
-        return "\n".join(lines)
-
-    def catalog_text(self) -> str:
-        """The specialist-agent catalog for the main agent's system prompt."""
-        lines = []
-        for defn in self.list_agents():
-            tools_str = ", ".join(defn.tools) if defn.tools else "none"
-            lines.append(f"- **{defn.name}**: {defn.description} (tools: {tools_str})")
-        return "\n".join(lines)
-
-    def unresolved_tools(self, registry: ToolRegistry) -> UnresolvedAgentTools:
-        """Agents naming tools ``registry`` cannot resolve.
-
-        Trustworthy only once the pools are built: custom Python tools
-        register when they are discovered.
-        """
-        entries = []
-        for defn in self.list_agents():
-            if not defn.tools:
-                continue
-            result = registry.resolve_typed(ToolResolutionRequest(tool_names=list(defn.tools)))
-            if result.unknown:
-                entries.append(UnresolvedAgentTool(agent=defn.name, tools=list(result.unknown)))
-        return UnresolvedAgentTools(entries=entries, available=list(registry.available_tools))
-
-    def get_member_agents(self) -> list[Agent]:
-        """Every agent as a list (team-member composition)."""
-        return [self.get(name) for name in sorted(self._entries.keys())]
-
-    @property
-    def agent_names(self) -> list[str]:
-        return sorted(self._entries.keys())
-
-    # ── Public db accessor + spawn-budget cache ─────────────────
-    #
-    # ``db`` replaces the ``getattr(pool, "_db", None)`` reach-in
-    # from :class:`OrchestrateTools._build_sub_team` (audit AP7).
-    # ``spawn_budget`` owns the per-session sub-agent counter that
-    # used to sit in module globals in ``orchestrate.py``.
-
     @property
     def db(self) -> DbHandle | None:
-        """Public read of the Agno DB handle threaded through the
-        pool. Used by :class:`SpawnRunner` when it builds sub-teams
-        so paused runs land in the same store as the parent."""
-        return self._db
+        """The Agno DB handle threaded through the pool. Used by
+        :class:`SpawnRunner` when it builds sub-teams so paused runs
+        land in the same store as the parent."""
+        return self._context.db
 
-    def spawn_budget(self, session_id: str) -> SpawnBudget:
-        """Return the :class:`SpawnBudget` for ``session_id``.
-
-        Lazy per-session — the first call constructs the budget,
-        subsequent calls return the same instance so every
-        :class:`OrchestrateTools` for that session shares one
-        counter. ``max_agents`` is drawn from
-        ``self._settings.orchestration.max_total_agents`` when
-        available; falls back to a large sentinel when settings
-        haven't been loaded.
-        """
-        budget = self._spawn_budgets.get(session_id)
-        if budget is None:
-            max_agents = (
-                int(self._settings.orchestration.max_total_agents)
-                if self._settings is not None
-                else 10_000
-            )
-            budget = SpawnBudget(max_agents)
-            self._spawn_budgets[session_id] = budget
-        return budget
-
-    def forget_spawn_budget(self, session_id: str) -> None:
-        """Drop the per-session budget on session teardown."""
-        self._spawn_budgets.pop(session_id, None)
-
-    # ── Ephemeral facade ─────────────────────────────────────────
+    # ── Ephemeral store ──────────────────────────────────────────
 
     @property
     def ephemeral(self) -> EphemeralAgentStore:
@@ -404,6 +231,12 @@ class AgentPool:
         if self._ephemeral is None:
             raise RuntimeError("Ephemeral agents not initialized. Call init_ephemeral() first.")
         return self._ephemeral
+
+    @property
+    def has_ephemeral(self) -> bool:
+        """Whether :meth:`init_ephemeral` has run (it does only when
+        ``orchestration.generate_ephemeral`` is on)."""
+        return self._ephemeral is not None
 
     def init_ephemeral(
         self,
@@ -418,65 +251,6 @@ class AgentPool:
         )
         self._ephemeral.init()
 
-    def register_ephemeral(
-        self,
-        name: str,
-        description: str,
-        system_prompt: str,
-        tools: list[str] | None = None,
-        model: str | None = None,
-    ) -> Agent:
-        return self.ephemeral.register(
-            name=name,
-            description=description,
-            system_prompt=system_prompt,
-            tools=tools,
-            model=model,
-        )
-
-    def list_ephemeral(self) -> list[AgentDefinition]:
-        if self._ephemeral is None:
-            return []
-        return self._ephemeral.list_agents()
-
-    def promote_ephemeral(self, name: str, project_dir: Path, target: str = "project") -> Path:
-        return self.ephemeral.promote(name, project_dir, target)
-
-    def discard_ephemeral(self, name: str) -> None:
-        self.ephemeral.discard(name)
-
-    def cleanup_ephemeral(self) -> int:
-        if self._ephemeral is None:
-            return 0
-        return self._ephemeral.cleanup()
-
-    def cleanup_ephemeral_if_auto(self, settings: Settings) -> int:
-        """Cleanup ephemeral agents iff auto-cleanup is enabled.
-
-        Encapsulates the ``settings.orchestration.auto_cleanup``
-        gate so callers (shutdown pipeline, interactive loop)
-        stop reaching into the settings object themselves.
-        Returns the number of ephemeral agents removed; ``0``
-        when the gate is off or the ephemeral store is not
-        initialised.
-        """
-        if not settings.orchestration.auto_cleanup:
-            return 0
-        return self.cleanup_ephemeral()
-
-    def is_ephemeral(self, defn: AgentDefinition) -> bool:
-        """Public predicate — is this definition an ephemeral agent?
-
-        Used by the agents panel snapshot. Returns ``False`` when the
-        ephemeral store isn't initialised, when the definition has
-        no source file, or when its file doesn't live inside the
-        ephemeral directory.
-        """
-        ephemeral_dir = self._ephemeral.directory if self._ephemeral else None
-        return bool(
-            ephemeral_dir and defn.source_path and ephemeral_dir in defn.source_path.parents
-        )
-
     # ── Internals ────────────────────────────────────────────────
 
     def _merge(self, report: LoadReport) -> None:
@@ -487,49 +261,24 @@ class AgentPool:
             if existing is None or entry.priority > existing.priority:
                 self._entries[name] = entry
 
-    def _make_base_loader(
-        self, restriction_policy: PluginRestrictionPolicy | None = None
-    ) -> AgentDefinitionLoader:
-        """Construct a loader for single-directory loads (tests,
-        ephemeral rehydrate, plugin directories).
-
-        ``restriction_policy`` is passed through as-is: ``None``
-        means no plugin envelope. Callers that need one choose it."""
-        return AgentDefinitionLoader(
-            settings=self._settings_or_bare(),
-            project_dir=Path(self._base_dir) if self._base_dir else Path.cwd(),
-            restriction_policy=restriction_policy,
-        )
-
     def _ensure_builder(self) -> AgentBuilder:
-        """Return the builder, constructing a bare one from
-        stashed settings if ``build_agents`` was never called."""
-        if self._builder is not None:
-            return self._builder
-        settings = self._settings_or_bare()
-        context = AgentBuildContext(
-            settings=settings,
-            base_dir=self._base_dir,
-            mcp_clients=None,
-            db=self._db,
-            broadcast=self._broadcast,
-        )
-        self._builder = AgentBuilder(context)
+        """Return the builder, constructing one from the current
+        context if ``build_agents`` was never called."""
+        if self._builder is None:
+            self._builder = AgentBuilder(
+                self._context.model_copy(update={"settings": self._settings()})
+            )
         return self._builder
 
-    def _settings_or_bare(self) -> Settings:
-        """Return the stashed :class:`Settings` or a fresh default.
+    def _settings(self) -> Settings:
+        """The settings in the build context, or defaults.
 
-        The default is used only by the plugin-load path when a
-        pool has never had ``load_definitions`` called on it (rare
-        — the plugin loader runs after the base load in prod). A
-        settings-less path still works because the plugin loader
-        only reads ``settings.agents.cross_tool_support`` — not
-        touched by ``load_directory``.
+        Defaults serve only a pool that was given no settings and
+        never had ``load_definitions`` called on it — in production
+        the session hands the pool its settings before anything else.
         """
-        if self._settings is not None:
-            return self._settings
-        return Settings()
+        settings = self._context.settings
+        return settings if settings is not None else Settings()
 
 
 __all__ = ["AgentPool"]

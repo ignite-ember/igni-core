@@ -36,6 +36,7 @@ from igni_core.core.tools.loop_progress import LoopProgressTool
 from igni_core.core.tools.lsp import LspTools
 from igni_core.core.tools.monitors import MonitorTools
 from igni_core.core.tools.orchestrate import OrchestrateTools
+from igni_core.core.tools.orchestrate_budget import SpawnBudget
 from igni_core.core.tools.plan import PlanTool
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.slash import SlashCommandTool
@@ -76,6 +77,7 @@ class ToolsBuilder:
         pool: AgentPool,
         hook_executor: HookExecutor,
         session_id: str,
+        spawn_budget: SpawnBudget,
         sub_agent_hitl: SubAgentHITLCoordinator,
         reasoning_factory: Callable[[Settings], Any],
         resolve_tool_names: Callable[[ToolRegistry], list[str]],
@@ -97,6 +99,7 @@ class ToolsBuilder:
         self._pool = pool
         self._hook_executor = hook_executor
         self._session_id = session_id
+        self._spawn_budget = spawn_budget
         self._sub_agent_hitl = sub_agent_hitl
         self._reasoning_factory = reasoning_factory
         self._resolve_tool_names = resolve_tool_names
@@ -144,6 +147,7 @@ class ToolsBuilder:
                 session_id=self._session_id,
                 hitl_coordinator=self._sub_agent_hitl,
                 project_dir=self._project_dir,
+                budget=self._spawn_budget,
             )
         ]
 

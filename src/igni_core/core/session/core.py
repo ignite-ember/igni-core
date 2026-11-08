@@ -51,7 +51,7 @@ from typing import Any
 from agno.agent import Agent
 
 from igni_core.backend.schemas_model import ModelSwitchResult
-from igni_core.core.agents import AgentPool
+from igni_core.core.agents import AgentContributionApplier, AgentPool
 from igni_core.core.agents.tool_check import UnresolvedAgentTools
 from igni_core.core.auth.credentials import CloudCredentials
 from igni_core.core.broadcast_schema import BroadcastEvent, BroadcastSink
@@ -79,6 +79,7 @@ from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.output_styles import OutputStyle, discover_output_styles
 from igni_core.core.plugins import PluginLoader, load_state
 from igni_core.core.prompts import load_prompt
+from igni_core.core.prompts.contributions import prompt_contributions
 from igni_core.core.session.agent_builder import MainAgentBuilder
 from igni_core.core.session.agent_factory import (
     create_guardrails,
@@ -135,6 +136,7 @@ from igni_core.core.session.tool_approval import ToolCallApprovalChannel
 from igni_core.core.session.tool_hook_factory import ToolEventHookFactory
 from igni_core.core.skills.loader import SkillPool
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
+from igni_core.core.tools.orchestrate_budget import SpawnBudget
 from igni_core.core.tools.plan import PlanStore
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.todo import TodoStore
@@ -425,7 +427,10 @@ class Session:
             group_dir=self.group_policy.shipped_dir("agents"),
         )
         self.plugin_loader.apply_to_agents(self.pool, disabled=self._disabled_plugins)
-        self.pool.apply_prompt_contributions()
+        AgentContributionApplier(prompt_contributions).apply_to(self.pool)
+        # One sub-agent cap for the session, drawn on by every
+        # OrchestrateTools at every depth.
+        self.spawn_budget = SpawnBudget(settings.orchestration.max_total_agents)
         if settings.orchestration.generate_ephemeral:
             self.pool.init_ephemeral(
                 self.project_dir, settings.orchestration.max_ephemeral_per_session
@@ -446,7 +451,9 @@ class Session:
 
     def _check_agent_tools(self) -> UnresolvedAgentTools:
         try:
-            return self.pool.unresolved_tools(ToolRegistry(base_dir=str(self.project_dir)))
+            return UnresolvedAgentTools.check(
+                self.pool.list_agents(), ToolRegistry(base_dir=str(self.project_dir))
+            )
         except Exception as exc:  # noqa: BLE001 — a diagnostic must not stop a start
             logger.debug("Could not check agent tools: %s", exc)
             return UnresolvedAgentTools()

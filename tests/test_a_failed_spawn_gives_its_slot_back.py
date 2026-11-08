@@ -8,7 +8,7 @@ never handed back. ``SpawnBudget`` had ``try_reserve`` and ``reset``
 (teardown only) and no way to undo a single reservation.
 
 The failure that matters is the one the model actually produces:
-inventing an agent name. ``AgentPool.get`` raises ``KeyError`` for it and
+inventing an agent name. ``AgentPool.get`` finds nothing for it and
 ``AgentSpawn._build_agent`` turns that into an error string — DPO-4 in
 the tracker found a phantom ``researcher`` named on 79 of 79 rejected
 sides. Twenty of those retired the session's whole 20-agent budget
@@ -39,10 +39,13 @@ class _Pool:
 
     def get(self, name: str) -> Any:
         if name != "reviewer":
-            raise KeyError(f"Agent '{name}' not found")
+            return None
         return SimpleNamespace(name=name)
 
-    def get_definition(self, name: str) -> Any:
+    def missing(self, name: str) -> str:
+        return f"Agent '{name}' not found"
+
+    def get_entry(self, name: str) -> Any:
         return None
 
 

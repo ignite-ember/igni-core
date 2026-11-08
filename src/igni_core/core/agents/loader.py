@@ -109,7 +109,7 @@ class AgentDefinitionLoader:
         ``namespace`` prefixes every loaded agent's ``name`` as
         ``<namespace>:<name>`` — used by the plugin loader, so a
         plugin's agents never take an igni agent's name. What an
-        extension does to an agent is :meth:`AgentPool.apply_prompt_contributions`.
+        extension does to an agent is :class:`AgentContributionApplier`.
         """
         report = LoadReport()
         if not path.exists():
