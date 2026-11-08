@@ -492,12 +492,12 @@ def test_managed_ask_beats_a_trusted_projects_allow(repo, managed):
 
     assert "shell_execute" in perms.final_fields
     assert ToolPermissions(project_dir=repo, settings_permissions=perms).get_level("Bash") == "ask"
-    deny, ask, allow = perms.category_rules()
+    category = perms.category_rules()
     evaluator = PermissionEvaluator.from_strings(
         mode=perms.mode,
-        deny=[*perms.deny, *deny],
-        ask=[*perms.ask, *ask],
-        allow=[*perms.allow, *allow],
+        deny=[*perms.deny, *category.deny],
+        ask=[*perms.ask, *category.ask],
+        allow=[*perms.allow, *category.allow],
     )
     decision = evaluator.evaluate("run_shell_command", {"command": "ls"})
     assert decision is PermissionDecision.ASK

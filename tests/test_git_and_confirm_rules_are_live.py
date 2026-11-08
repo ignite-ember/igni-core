@@ -22,18 +22,18 @@ Every assertion here fails on the pre-fix tree: ``category_rules()`` returned
 from __future__ import annotations
 
 from igni_core.core.config.permission_eval import PermissionEvaluator
-from igni_core.core.config.schemas.permissions import PermissionsConfig
+from igni_core.core.config.schemas.permissions import CategoryRules, PermissionsConfig
 from igni_core.core.config.settings import Settings
 
 
 def _decide(perms: PermissionsConfig, command: str) -> str:
     """Mirror exactly what ``ToolEventHookFactory.permission_evaluator`` builds."""
-    cat_deny, cat_ask, cat_allow = perms.category_rules()
+    category = perms.category_rules()
     evaluator = PermissionEvaluator.from_strings(
         mode=perms.mode,
-        deny=[*perms.deny, *cat_deny],
-        ask=[*perms.ask, *cat_ask],
-        allow=[*perms.allow, *cat_allow],
+        deny=[*perms.deny, *category.deny],
+        ask=[*perms.ask, *category.ask],
+        allow=[*perms.allow, *category.allow],
     )
     return evaluator.evaluate("run_shell_command", {"command": command}).name
 
@@ -72,7 +72,7 @@ class TestTheGitCategoriesAreWired:
     def test_a_default_config_still_emits_nothing(self):
         """The existing contract: only a level that differs from its default
         becomes a rule, so a default install is unchanged."""
-        assert PermissionsConfig().category_rules() == ([], [], [])
+        assert PermissionsConfig().category_rules() == CategoryRules()
 
 
 class TestRequireConfirmationReachesTheEvaluator:
@@ -117,4 +117,4 @@ class TestRequireConfirmationReachesTheEvaluator:
         settings = Settings(permissions={"mode": "dontAsk"})
 
         assert _decide(settings.permissions, "kubectl delete pod web-0") == "DENY"
-        assert settings.permissions.category_rules()[1] == []
+        assert settings.permissions.category_rules().ask == []

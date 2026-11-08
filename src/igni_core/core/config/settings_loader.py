@@ -377,10 +377,7 @@ class SettingsLoader:
         policy = ModePolicy.from_tiers(managed, group)
         perms = settings.permissions
         perms.set_mode_policy(policy)
-        try:
-            start = PermissionMode(perms.mode)
-        except ValueError:
-            return
+        start = PermissionMode(perms.mode)
         clamped = policy.clamp_start(start)
         if clamped is not start:
             logger.warning(
@@ -389,7 +386,7 @@ class SettingsLoader:
                 start.value,
                 clamped.value,
             )
-            perms.mode = clamped.value
+            perms.mode = clamped
 
 
 __all__ = ["SettingsLoader"]

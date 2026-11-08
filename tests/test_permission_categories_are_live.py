@@ -26,7 +26,7 @@ from __future__ import annotations
 import pytest
 
 from igni_core.core.config.permission_eval import PermissionEvaluator
-from igni_core.core.config.schemas.permissions import PermissionsConfig
+from igni_core.core.config.schemas.permissions import CategoryRules, PermissionsConfig
 
 
 def _decide(perms: PermissionsConfig, tool: str, args: dict) -> str:
@@ -58,7 +58,7 @@ class TestDefaultsStayOutOfTheWay:
     """A default install must behave exactly as it did before the wiring."""
 
     def test_a_default_config_emits_no_rules(self):
-        assert PermissionsConfig().category_rules() == ([], [], [])
+        assert PermissionsConfig().category_rules() == CategoryRules()
 
     def test_strict_does_not_gain_web_access(self):
         """The regression this design exists to avoid.

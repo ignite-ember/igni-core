@@ -397,12 +397,12 @@ def test_bypass_lets_the_web_through_unasked(tmp_path):
     assert not registry.needs_confirmation("WebSearch")
     assert not registry.needs_confirmation("WebFetch")
 
-    cat_deny, cat_ask, cat_allow = perms.category_rules()
+    category = perms.category_rules()
     evaluator = PermissionEvaluator.from_strings(
         mode=perms.mode,
-        deny=[*perms.deny, *cat_deny],
-        ask=[*perms.ask, *cat_ask, "WebSearch", "WebFetch"],
-        allow=[*perms.allow, *cat_allow],
+        deny=[*perms.deny, *category.deny],
+        ask=[*perms.ask, *category.ask, "WebSearch", "WebFetch"],
+        allow=[*perms.allow, *category.allow],
     )
     for tool, args in (
         ("web_search", {"query": "igni"}),

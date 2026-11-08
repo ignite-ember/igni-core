@@ -107,8 +107,8 @@ def test_an_ask_rule_outranks_a_read_tool_allow():
 def test_require_confirmation_still_asks_in_plan_mode():
     settings = Settings()
     settings.permissions.mode = "plan"
-    deny, ask, allow = settings.permissions.category_rules()
-    ev = _plan(deny=deny, ask=ask, allow=allow)
+    rules = settings.permissions.category_rules()
+    ev = _plan(deny=rules.deny, ask=rules.ask, allow=rules.allow)
     for command in ("git push", "terraform apply", "kubectl delete pod x"):
         assert _decide(ev, command) is PermissionDecision.ASK, command
 

@@ -1,6 +1,11 @@
-"""The permission category vocabulary shared by the tool-permission path."""
+"""The permission category and level vocabulary shared by the permission paths."""
 
 from enum import Enum
+from typing import Literal
+
+#: One permission level. A ``Literal`` rather than an enum because the three
+#: lowercase strings are the wire contract of ``backend/schemas_hitl.py``.
+PermissionLevel = Literal["allow", "ask", "deny"]
 
 
 class PermissionCategory(str, Enum):

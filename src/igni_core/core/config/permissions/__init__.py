@@ -16,9 +16,9 @@ passing tests covered the machinery, which is what made it look maintained.
 
 Those levels are now honoured by the live evaluator, via
 ``PermissionsConfig.category_rules``. What remains here is
-``PermissionCategory``, used by ``tool_permissions.schemas``.
+``PermissionCategory`` and ``PermissionLevel``.
 """
 
-from igni_core.core.config.permissions.schemas import PermissionCategory
+from igni_core.core.config.permissions.schemas import PermissionCategory, PermissionLevel
 
-__all__ = ["PermissionCategory"]
+__all__ = ["PermissionCategory", "PermissionLevel"]

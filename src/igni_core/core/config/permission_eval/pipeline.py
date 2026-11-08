@@ -183,12 +183,12 @@ class PermissionEvaluator:
         dropped; deny still runs first, so a category set to ``deny`` is not
         reopened by a specific allow.
         """
-        cat_deny, cat_ask, cat_allow = perms.category_rules()
+        category = perms.category_rules()
         evaluator = cls.from_strings(
             mode=perms.mode,
-            deny=[*perms.deny, *cat_deny],
-            ask=[*perms.ask, *cat_ask],
-            allow=[*perms.allow, *cat_allow],
+            deny=[*perms.deny, *category.deny],
+            ask=[*perms.ask, *category.ask],
+            allow=[*perms.allow, *category.allow],
         )
         evaluator.read_only = perms.read_only
         return evaluator

@@ -6,10 +6,9 @@ dispatch tables inside ``tool_permissions.py``.
 
 Key type map (old → new):
 
-* ``PermissionLevel = Literal["allow","ask","deny"]`` — preserved as a
-  ``Literal`` alias for wire compatibility with
-  :mod:`igni_core.backend.schemas_hitl` (Pydantic serializes existing
-  models to the exact same three lowercase strings).
+* ``PermissionLevel`` — the ``Literal["allow","ask","deny"]`` alias from
+  :mod:`igni_core.core.config.permissions.schemas`, shared with
+  ``PermissionsConfig``.
 * Old free-function ``_parse_rule`` / ``_match_rule_args`` /
   ``_args_to_str`` / ``_extract_domain`` collapse onto
   :class:`PermissionRule` and its composed :class:`RuleArgPattern`
@@ -34,26 +33,18 @@ from __future__ import annotations
 import fnmatch
 import logging
 import re
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from igni_core.core.config.permissions.schemas import PermissionCategory
+from igni_core.core.config.permissions.schemas import PermissionCategory, PermissionLevel
 
 if TYPE_CHECKING:
     from igni_core.core.config.settings import PermissionsConfig
 
 logger = logging.getLogger(__name__)
 
-
-# ── PermissionLevel — kept as Literal for wire compat ─────────────
-#
-# ``backend/schemas_hitl.py`` types ``level: PermissionLevel | None``
-# on a Pydantic wire model. Switching to a StrEnum would flow through
-# every consumer of that wire schema. The three lowercase strings
-# ``"allow" / "ask" / "deny"`` are the wire contract.
-PermissionLevel = Literal["allow", "ask", "deny"]
 
 _LEVELS: tuple[PermissionLevel, ...] = ("allow", "ask", "deny")
 
