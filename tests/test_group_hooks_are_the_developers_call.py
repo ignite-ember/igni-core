@@ -33,13 +33,11 @@ from igni_core.cli.options import CliOptions
 from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.schemas.orchestration import GroupHookMode
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.group_hook_gate import (
-    APPROVAL_NAME,
-    GroupHookDecisions,
-    GroupHookGate,
-)
+from igni_core.core.hooks.group_hook_decisions import GroupHookDecisions
+from igni_core.core.hooks.group_hook_gate import APPROVAL_NAME, GroupHookGate
 from igni_core.core.hooks.loader import HookLoader
 from igni_core.core.hooks.registry import HookRegistry
 from igni_core.core.hooks.schemas import HookDefinition, HookLoadResult, MergeStrategy
@@ -73,7 +71,7 @@ class Asker:
         return self.answer
 
 
-def _gate(tmp_path: Path, mode: str, asker: Asker | None = None) -> GroupHookGate:
+def _gate(tmp_path: Path, mode: GroupHookMode, asker: Asker | None = None) -> GroupHookGate:
     return GroupHookGate(
         mode=mode,
         ask=asker,
@@ -408,6 +406,50 @@ class TestAsk:
 
         assert asyncio.run(both()) == [True, True]
         assert len(asker.calls) == 1
+
+
+class TestTheDecisionsFile:
+    def test_an_answer_is_kept_with_what_the_hook_did(self, tmp_path: Path):
+        path = tmp_path / "decisions.json"
+        hook = HookDefinition(type="http", url="http://x").mark_from_group("g")
+
+        GroupHookDecisions(path).set(hook.digest(), "refuse", hook)
+
+        assert GroupHookDecisions(path).get(hook.digest()) == "refuse"
+        record = json.loads(path.read_text(encoding="utf-8"))["hooks"][hook.digest()]
+        assert record["what"] == "POST http://x"
+        assert record["source"] == "g"
+
+    def test_an_unreadable_file_asks_again(self, tmp_path: Path):
+        path = tmp_path / "decisions.json"
+        path.write_text('{"hooks": {"abc": {"decision": "maybe"}}}', encoding="utf-8")
+
+        assert GroupHookDecisions(path).get("abc") is None
+
+    def test_one_bad_entry_costs_only_its_own_answer(self, tmp_path: Path):
+        path = tmp_path / "decisions.json"
+        kept = {
+            "decision": "refuse",
+            "what": "x",
+            "source": "g",
+            "decided_at": "2026-01-01T00:00:00Z",
+        }
+        path.write_text(
+            json.dumps({"version": 1, "hooks": {"A": kept, "B": {"decision": "maybe"}}}),
+            encoding="utf-8",
+        )
+        hook = HookDefinition(type="prompt", text="hi").mark_from_group("g")
+
+        assert GroupHookDecisions(path).get("A") == "refuse"
+        assert GroupHookDecisions(path).get("B") is None
+
+        GroupHookDecisions(path).set(hook.digest(), "run", hook)
+
+        hooks = json.loads(path.read_text(encoding="utf-8"))["hooks"]
+        assert hooks["A"] == kept
+        assert hooks["B"] == {"decision": "maybe"}
+        assert GroupHookDecisions(path).get("A") == "refuse"
+        assert GroupHookDecisions(path).get(hook.digest()) == "run"
 
 
 class TestAskWithNobodyThere:

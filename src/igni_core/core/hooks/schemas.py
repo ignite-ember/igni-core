@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -146,6 +148,25 @@ class HookDefinition(BaseModel):
         """Record that the group policy shipped this hook, from ``source``."""
         self._group_source = str(source) or "group policy"
         return self
+
+    def describe(self) -> str:
+        """What the hook will do, in one line a person can judge."""
+        match self.type:
+            case "command":
+                return self.command
+            case "http":
+                return f"POST {self.url}"
+            case "mcp_tool":
+                return f"MCP tool {self.mcp_server}/{self.mcp_tool}"
+            case "prompt":
+                return f"Add to the conversation: {self.text}"
+            case _:
+                return f"{self.type} hook"
+
+    def digest(self) -> str:
+        """A digest of everything the hook does — its version, for asking about it."""
+        content = json.dumps(self.model_dump(mode="json"), sort_keys=True)
+        return hashlib.sha256(content.encode()).hexdigest()
 
     def matches(self, target: str) -> bool:
         """Whether this hook fires for ``target``.
