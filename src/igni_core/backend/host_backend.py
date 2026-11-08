@@ -71,6 +71,15 @@ class ObservedTransport:
     def observe(self, observer: Callable[[msg.Message], None]) -> None:
         self._observers.append(observer)
 
+    @property
+    def client_count(self) -> int:
+        """Clients connected to the root transport now."""
+        return int(self._inner.client_count)
+
+    def watch_connections(self, watcher: Callable[[str, str], None]) -> None:
+        """Be told of every view attaching to or detaching from the root transport."""
+        self._inner.watch_connections(watcher)
+
     def expect(self, message_id: str) -> asyncio.Future[msg.Message]:
         """The next message sent with ``message_id`` comes here, not to the windows."""
         future: asyncio.Future[msg.Message] = asyncio.get_running_loop().create_future()

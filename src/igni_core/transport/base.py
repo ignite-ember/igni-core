@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 from igni_core.protocol.messages import Message
 
@@ -61,3 +61,15 @@ class ListeningTransport(Transport):
     @abstractmethod
     async def wait_for_connection(self, timeout: float | None = 30.0) -> None:
         """Block until the first client attaches (or ``timeout`` expires)."""
+
+    @property
+    @abstractmethod
+    def client_count(self) -> int:
+        """How many clients are connected now."""
+
+    def watch_connections(self, watcher: Callable[[str, str], None]) -> None:
+        """Be told ``("attached" | "detached", client_id)`` for every view.
+
+        A transport that tells no views apart (one client on a socket)
+        reports none; one that does overrides this.
+        """

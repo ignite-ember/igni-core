@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from igni_core.core.auth.credentials import CredentialSource
+    from igni_core.core.db.scope import Tenant
     from igni_core.core.mcp.approval import McpApprovalPolicy
 
 logger = logging.getLogger(__name__)
@@ -62,8 +63,10 @@ class BackendHooks:
     :meth:`serving` once the backend serves, :meth:`stop` at exit.
     """
 
-    #: Whose rows a shared database holds, if the layer decides it.
-    tenant: Any = None
+    @property
+    def tenant(self) -> Tenant | None:
+        """Whose rows a shared database holds, if the layer decides it."""
+        return None
 
     def starting(self) -> None:
         pass

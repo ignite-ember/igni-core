@@ -174,14 +174,14 @@ def test_a_window_attaching_during_a_resume_leaves_the_file_for_later(tmp_path: 
 
 
 def test_the_layers_own_logs_reach_standard_output() -> None:
-    StdoutLog.reset()
+    layer = CloudLayer()
     try:
-        handler = CloudLayer().log_handler()
+        handler = layer.log_handler()
         assert handler in logging.getLogger("igni_cloud").handlers
         assert logging.getLogger("igni_cloud").getEffectiveLevel() <= logging.INFO
     finally:
         logging.getLogger("igni_cloud").removeHandler(handler)
-        StdoutLog.reset()
+        layer.logs.reset()
 
 
 class InotifyEvents:
@@ -297,21 +297,21 @@ def test_the_timeline_says_where_the_time_before_noticing_went() -> None:
 
 
 def test_the_log_writer_waits_for_the_first_answer(capsys: pytest.CaptureFixture[str]) -> None:
-    StdoutLog.reset()
-    log = StdoutLog.attach("igni_cloud.tests.held")
+    logs = StdoutLog()
+    log = logs.attach("igni_cloud.tests.held")
     try:
-        StdoutLog.hold()
+        logs.hold()
         log.info("first")
         log.info("second")
-        StdoutLog.flush()
+        logs.flush()
         assert capsys.readouterr().out == "", "nothing written while held"
-        StdoutLog.release()
-        StdoutLog.flush()
+        logs.release()
+        logs.flush()
         lines = [json.loads(line)["message"] for line in capsys.readouterr().out.splitlines()]
         assert lines == ["first", "second"]
     finally:
-        log.removeHandler(StdoutLog.handler())
-        StdoutLog.reset()
+        log.removeHandler(logs.handler())
+        logs.reset()
 
 
 async def test_the_warm_base_practises_its_first_answer_and_keeps_nothing() -> None:

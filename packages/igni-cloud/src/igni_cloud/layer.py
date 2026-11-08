@@ -50,6 +50,12 @@ class CloudLayer(Layer):
     def __init__(self) -> None:
         #: The process's credentials: the guest contract tells them who keeps the token.
         self._credentials = EnvironmentCredentials()
+        #: The process's standard output: the guest contract holds its writer after a restore.
+        self._logs = StdoutLog()
+
+    @property
+    def logs(self) -> StdoutLog:
+        return self._logs
 
     def log_files(self) -> bool:
         return False
@@ -58,8 +64,8 @@ class CloudLayer(Layer):
         # The core attaches the handler to its own loggers; the layer's
         # (the guest contract's: binding, restores, the resume timeline)
         # go to the same standard output.
-        StdoutLog.attach("igni_cloud")
-        return StdoutLog.handler()
+        self._logs.attach("igni_cloud")
+        return self._logs.handler()
 
     def credentials(self) -> EnvironmentCredentials:
         return self._credentials
@@ -98,7 +104,7 @@ class CloudLayer(Layer):
         return False
 
     def backend(self) -> BackendHooks:
-        return CloudGuest.from_env(tokens=self._credentials)
+        return CloudGuest.from_env(tokens=self._credentials, logs=self._logs)
 
 
 __all__ = ["CloudLayer"]

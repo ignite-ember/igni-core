@@ -705,7 +705,13 @@ async def test_serving_keeps_the_file_and_reconnects_after_a_restore(run_dir: Pa
             self.listeners.append(listener)
 
     class Transport:
-        inner = type("Inner", (), {"client_count": 3})()
+        client_count = 3
+
+        def observe(self, _observer: Any) -> None:
+            pass
+
+        def watch_connections(self, _watcher: Any) -> None:
+            pass
 
     model = Model()
     guest.serving(model=model, transport=Transport(), notifications=Notifications())
@@ -748,10 +754,16 @@ async def test_bound_before_any_sign_in_says_so_to_the_windows_and_the_node_agen
     sent: list[Any] = []
 
     class Transport:
-        inner = type("Inner", (), {"client_count": 1})()
+        client_count = 1
 
         async def send(self, message: Any) -> None:
             sent.append(message)
+
+        def observe(self, _observer: Any) -> None:
+            pass
+
+        def watch_connections(self, _watcher: Any) -> None:
+            pass
 
     class Model:
         def __init__(self) -> None:
@@ -766,7 +778,7 @@ async def test_bound_before_any_sign_in_says_so_to_the_windows_and_the_node_agen
     guest.serving(model=Model(), transport=Transport(), api_url=lambda: "https://igni.test")
     try:
         for _ in range(100):
-            if guest.credentials and guest.credentials.state.value == "needs_sign_in" and sent:
+            if guest.credential.state() == "needs_sign_in" and sent:
                 break
             await asyncio.sleep(0.01)
         written = json.loads((run_dir / "activity.json").read_text())

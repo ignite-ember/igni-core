@@ -100,72 +100,70 @@ class QueuedRecords(logging.handlers.QueueHandler):
 
 
 class StdoutLog:
-    """The process's one standard-output handler, and the loggers it serves."""
+    """A standard-output handler, and the loggers it serves.
 
-    _lock: ClassVar[threading.Lock] = threading.Lock()
-    _handler: ClassVar[QueuedRecords | None] = None
-    _queue: ClassVar[queue.Queue[logging.LogRecord] | None] = None
-    _writer: ClassVar[logging.handlers.QueueListener | None] = None
+    The cloud layer holds the process's one (:class:`igni_cloud.layer.CloudLayer`)
+    and hands it to the guest contract, which holds the writer after a restore.
+    """
 
-    @classmethod
-    def handler(cls) -> logging.Handler:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._handler: QueuedRecords | None = None
+        self._queue: queue.Queue[logging.LogRecord] | None = None
+        self._writer: logging.handlers.QueueListener | None = None
+
+    def handler(self) -> logging.Handler:
         """What loggers get: a handler that queues; a thread writes the line."""
-        with cls._lock:
-            if cls._handler is None:
+        with self._lock:
+            if self._handler is None:
                 stream = logging.StreamHandler(sys.stdout)
                 stream.setFormatter(JsonLineFormatter())
                 records: queue.Queue[logging.LogRecord] = queue.Queue()
                 writer = logging.handlers.QueueListener(records, stream)
                 writer.start()
-                cls._queue, cls._writer = records, writer
-                cls._handler = QueuedRecords(records)
-            return cls._handler
+                self._queue, self._writer = records, writer
+                self._handler = QueuedRecords(records)
+                # What was logged last is written before the process ends.
+                atexit.register(self.reset)
+            return self._handler
 
-    @classmethod
-    def hold(cls) -> None:
+    def hold(self) -> None:
         """Queue nothing for the writer until :meth:`release` (after a restore's first answer)."""
-        if cls._handler is not None:
-            cls._handler.hold_writer()
+        if self._handler is not None:
+            self._handler.hold_writer()
 
-    @classmethod
-    def release(cls) -> None:
+    def release(self) -> None:
         """Let the writer have what was held."""
-        if cls._handler is not None:
-            cls._handler.wake_writer()
+        if self._handler is not None:
+            self._handler.wake_writer()
 
-    @classmethod
-    def flush(cls) -> None:
+    def flush(self) -> None:
         """Until every record queued so far is written."""
-        records = cls._queue
+        records = self._queue
         if records is not None:
             records.join()
 
-    @classmethod
-    def reset(cls) -> None:
+    def reset(self) -> None:
         """Write what is queued and forget the handler, so the next one
         writes to the current ``sys.stdout`` (tests capture it)."""
-        with cls._lock:
-            if cls._handler is not None:
-                cls._handler.wake_writer()
-            writer = cls._writer
-            cls._handler = cls._queue = cls._writer = None
+        with self._lock:
+            if self._handler is not None:
+                self._handler.wake_writer()
+            writer = self._writer
+            self._handler = self._queue = self._writer = None
         if writer is not None:
+            atexit.unregister(self.reset)
             writer.stop()
 
-    @classmethod
-    def attach(cls, name: str, level: int = logging.INFO) -> logging.Logger:
+    def attach(self, name: str, level: int = logging.INFO) -> logging.Logger:
         """Send ``name``'s records to standard output (once)."""
         target = logging.getLogger(name)
-        handler = cls.handler()
+        handler = self.handler()
         if handler not in target.handlers:
             target.addHandler(handler)
         if target.level == logging.NOTSET or target.level > level:
             target.setLevel(level)
         return target
-
-
-# What was logged last is written before the process ends.
-atexit.register(StdoutLog.reset)
 
 
 __all__ = ["JsonLineFormatter", "QueuedRecords", "StdoutLog"]
