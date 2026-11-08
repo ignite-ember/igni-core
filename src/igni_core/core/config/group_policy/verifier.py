@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict
 
 from igni_core.core.config.group_policy.answers import SignedAbsence
 from igni_core.core.config.group_policy.jwks import Jwks
-from igni_core.core.config.group_policy.pack import GroupPolicyPack, SignedPolicy
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.group_policy.trust import PackTrust
 
 
@@ -65,13 +65,11 @@ class PackVerifier:
         verified = verdict.verified
         if isinstance(answer, SignedAbsence) != verified.absent:
             return Verification(reason="the signed answer does not say what the response says")
-        pack = None
-        if verified.policy is not None:
-            try:
-                policy = SignedPolicy.model_validate(verified.policy)
-            except ValidationError as exc:
-                return Verification(reason=f"the signed pack does not parse: {exc}")
-            pack = GroupPolicyPack.from_signed(policy, etag=answer.etag, signed_pack=compact)
+        pack = (
+            None
+            if verified.policy is None
+            else GroupPolicyPack.from_signed(verified.policy, etag=answer.etag, signed_pack=compact)
+        )
         return Verification(
             accepted=AcceptedPack(pack=pack, compact=compact, jwks=jwks, version=verified.version)
         )

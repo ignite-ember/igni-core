@@ -52,9 +52,9 @@ from igni_core.core.config.group_policy.answers import (
     PACK_UNCHANGED,
     PackAnswer,
 )
+from igni_core.core.config.group_policy.issuer import IgniServerUrl
 from igni_core.core.config.group_policy.jwks import Jwks
 from igni_core.core.config.group_policy.response import PackResponse
-from igni_core.core.config.group_policy_signature import jwks_url_for
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +234,7 @@ class PortalClient:
         configured ``api_url`` — over TLS, which is what makes the answer
         worth trusting; ``PackVerifier`` refuses an unpinned plain-HTTP one.
         """
-        url = jwks_url_for(self._base("Fetching igni server's signing keys"))
+        url = IgniServerUrl(url=self._base("Fetching igni server's signing keys")).jwks_url()
         try:
             resp = await self._get(url)
         except (httpx.HTTPError, OSError) as exc:

@@ -109,7 +109,7 @@ class GroupPackHydrator:
         (``org``, when it names one), the configured
         ``api_url`` (``iss``) and the pinned keys, which only the managed
         file or the environment can set. The keys themselves come from igni
-        server's JWKS, fetched now. See ``core/config/group_policy_signature.py``.
+        server's JWKS, fetched now. See ``core/config/group_policy/signature.py``.
         """
         claims = JwtClaims.decode(token)
         trust = PackTrust(

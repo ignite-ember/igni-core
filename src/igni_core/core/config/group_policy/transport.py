@@ -9,11 +9,11 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from igni_core.core.activity import http as busy_http
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.issuer import IgniServerUrl
 from igni_core.core.config.group_policy.jwks import Jwks
-from igni_core.core.config.group_policy.pack import GroupPolicyPack, SignedPolicy
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.group_policy.trust import PackTrust
 from igni_core.core.config.group_policy.verifier import AcceptedPack
-from igni_core.core.config.group_policy_signature import jwks_url_for
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class SignedPackTransport:
                         stored=False, reason=f"igni server answered {response.status_code}"
                     )
                 body = self._body(response.json())
-                jwks = Jwks.parse(client.get(jwks_url_for(api_url)).json())
+                jwks = Jwks.parse(client.get(IgniServerUrl(url=api_url).jwks_url()).json())
         except (httpx.HTTPError, OSError, ValueError) as exc:  # offline is what this is for
             logger.warning("group-policy: could not reach igni server (%s)", exc)
             return LiveFetchResult(stored=False, reason=f"could not reach igni server ({exc})")
@@ -80,17 +80,11 @@ class SignedPackTransport:
             )
             return LiveFetchResult(stored=False, reason=verdict.reason)
         verified = verdict.verified
-        try:
-            pack = (
-                None
-                if verified.policy is None
-                else GroupPolicyPack.from_signed(
-                    SignedPolicy.model_validate(verified.policy), signed_pack=compact
-                )
-            )
-        except ValidationError as exc:
-            logger.warning("group-policy: the signed pack does not parse (%s)", exc)
-            return LiveFetchResult(stored=False, reason=f"the signed pack does not parse: {exc}")
+        pack = (
+            None
+            if verified.policy is None
+            else GroupPolicyPack.from_signed(verified.policy, signed_pack=compact)
+        )
         cache.signed.store(
             AcceptedPack(pack=pack, compact=compact, jwks=jwks, version=verified.version)
         )

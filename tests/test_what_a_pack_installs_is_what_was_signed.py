@@ -32,6 +32,7 @@ from igni_core.core.auth.schemas import SignedInSession
 from igni_core.core.config.group_policy.answers import SignedAbsence
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.environment import GroupPolicyEnvironment
 from igni_core.core.config.group_policy.gate import GroupPolicyGate
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.group_policy.materializer import EntryMaterializer
@@ -42,10 +43,6 @@ from igni_core.core.config.group_policy.settings_fetcher import (
 )
 from igni_core.core.config.group_policy.trust import PackTrust
 from igni_core.core.config.group_policy.verifier import AcceptedPack, PackVerifier
-from igni_core.core.config.group_policy_signature import (
-    REQUIRED_ENV,
-    TRUSTED_KEYS_ENV,
-)
 from igni_core.core.config.settings import load_settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from tests.group_policy_signing import ISSUER, KEY, PERSON, ServerKey, session_token, sign_in, store
@@ -57,8 +54,8 @@ HOOK = {"hooks": {"PreToolUse": [{"command": "audit-everything"}]}}
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
-    monkeypatch.delenv(TRUSTED_KEYS_ENV, raising=False)
-    monkeypatch.delenv(REQUIRED_ENV, raising=False)
+    monkeypatch.delenv(GroupPolicyEnvironment.TRUSTED_KEYS_VAR, raising=False)
+    monkeypatch.delenv(GroupPolicyEnvironment.REQUIRED_VAR, raising=False)
     monkeypatch.setattr(
         SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: None)
     )

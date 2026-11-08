@@ -8,11 +8,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, StrictInt, ValidationError
 
 from igni_core.core.config.group_policy.jwks import Jwks
+from igni_core.core.config.group_policy.jws import CompactPack
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
-from igni_core.core.config.group_policy.pack import GroupPolicyPack, SignedPolicy
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.group_policy.trust import PackTrust
 from igni_core.core.config.group_policy.verifier import AcceptedPack
-from igni_core.core.config.group_policy_signature import unverified_claims
 
 
 class PackState(BaseModel):
@@ -115,13 +115,7 @@ class SignedPackStore:
             return StoredPackRead(status="rejected", reason=verdict.reason)
         if verdict.verified.absent or verdict.verified.policy is None:
             return StoredPackRead(status="absent")
-        try:
-            policy = SignedPolicy.model_validate(verdict.verified.policy)
-        except ValidationError as exc:
-            return StoredPackRead(
-                status="rejected", reason=f"the signed pack does not parse: {exc}"
-            )
-        pack = GroupPolicyPack.from_signed(policy, etag=etag, signed_pack=compact)
+        pack = GroupPolicyPack.from_signed(verdict.verified.policy, etag=etag, signed_pack=compact)
         return StoredPackRead(status="applied", pack=pack)
 
     def unverified_plugin_sources(self) -> list[PluginSourceClaim]:
@@ -132,8 +126,9 @@ class SignedPackStore:
         nothing else.
         """
         compact = self.signed_text()
-        policy = unverified_claims(compact).get("policy") if compact else None
-        entries = policy.get("entries") if isinstance(policy, dict) else None
+        pack_claims = CompactPack.unverified_claims(compact) if compact else None
+        policy = pack_claims.policy if pack_claims is not None else None
+        entries = policy.get("entries") if policy is not None else None
         claims: list[PluginSourceClaim] = []
         for entry in entries if isinstance(entries, list) else []:
             if not isinstance(entry, dict):

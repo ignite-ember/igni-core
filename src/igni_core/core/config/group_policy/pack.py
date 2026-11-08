@@ -83,7 +83,7 @@ class GroupPolicyPack(BaseModel):
 
     #: The same pack as igni server signed it — a compact JWS, kept exactly
     #: as received. Only a pack that arrived with one, and whose signature
-    #: verified, is ever applied (``group_policy_signature.py``).
+    #: verified, is ever applied (``group_policy/signature.py``).
     signed_pack: str | None = None
 
     @classmethod

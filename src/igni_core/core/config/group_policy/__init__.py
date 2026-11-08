@@ -4,7 +4,7 @@ A *pack* is everything an organisation's group gives its people: agents,
 skills, commands, rules, workflows, tools, scripts, hooks, MCP servers,
 plugins and ``settings`` entries. igni server signs each person's pack as a
 compact JWS; igni stores it exactly as received and applies it only once
-the signature verifies (``group_policy_signature.py``).
+the signature verifies (:mod:`.signature`).
 
 The fetch and the read happen in different places, and the split is
 explained on :class:`~.settings_fetcher.CachedSettingsFetcher`: the backend
@@ -17,6 +17,11 @@ Layout, one responsibility per module:
 * :mod:`.pack`             — the pack, and the signed ``policy`` claim it is built from.
 * :mod:`.answers`          — what a pack request can answer, and the fetcher protocol.
 * :mod:`.jwks`             — igni server's signing keys.
+* :mod:`.jws`              — a signed pack's wire form: the compact JWS, header, claims.
+* :mod:`.signing_key`      — one of those keys, ready to check a signature.
+* :mod:`.issuer`           — ``api_url`` as a pack's issuer and where its keys live.
+* :mod:`.environment`      — the pins and ``required`` the environment may set.
+* :mod:`.signature`        — whether a pack is genuine and meant for this install.
 * :mod:`.layout`           — the one derivation of the cache directory and its files.
 * :mod:`.meta`             — ``pack_meta.json``: identity and freshness for the frontend.
 * :mod:`.signed_store`     — ``pack.jws``, ``jwks.json`` and ``pack_state.json``.

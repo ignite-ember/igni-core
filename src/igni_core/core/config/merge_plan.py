@@ -651,7 +651,7 @@ class GroupPolicyTier(Tier):
     ``api_url``, ``sub`` against the person signed in, no rollback — before it
     reaches this tier. An unusable pack is never merged; with the managed-only
     ``group_policy.required`` the fetcher raises instead. See
-    ``core/config/group_policy_signature.py`` and :class:`ManagedOnlyTier`.
+    ``core/config/group_policy/signature.py`` and :class:`ManagedOnlyTier`.
 
     Tests and one-off migrations still pass their own fetcher, and a plan built
     without one skips the tier entirely.

@@ -41,22 +41,20 @@ from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.core.auth.schemas import SignedInSession
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.environment import GroupPolicyEnvironment
 from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.config.group_policy.issuer import IgniServerUrl
+from igni_core.core.config.group_policy.jws import PackRejected
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.group_policy.settings_fetcher import (
     CachedSettingsFetcher,
     GroupPolicyUnavailable,
 )
+from igni_core.core.config.group_policy.signature import PackSignatureVerifier
 from igni_core.core.config.group_policy.transport import LiveFetchResult, SignedPackTransport
 from igni_core.core.config.group_policy.trust import PackTrust
 from igni_core.core.config.group_policy.verifier import PackVerifier
-from igni_core.core.config.group_policy_signature import (
-    REQUIRED_ENV,
-    TRUSTED_KEYS_ENV,
-    PackRejected,
-    verify_pack,
-)
 from igni_core.core.config.settings import load_settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from tests.group_policy_signing import ISSUER, KEY, PERSON, ServerKey, session_token, sign_in, store
@@ -67,8 +65,8 @@ STRANGER = ServerKey()
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
-    monkeypatch.delenv(TRUSTED_KEYS_ENV, raising=False)
-    monkeypatch.delenv(REQUIRED_ENV, raising=False)
+    monkeypatch.delenv(GroupPolicyEnvironment.TRUSTED_KEYS_VAR, raising=False)
+    monkeypatch.delenv(GroupPolicyEnvironment.REQUIRED_VAR, raising=False)
     monkeypatch.setattr(
         SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: None)
     )
@@ -267,7 +265,9 @@ class TestARollbackIsRejected:
     def test_the_check_itself(self):
         compact = KEY.sign(_pack(), version=5)
         with pytest.raises(PackRejected, match="rollback"):
-            verify_pack(compact, jwks=KEY.jwks, api_url=ISSUER, subject=PERSON, min_version=6)
+            PackSignatureVerifier(issuer=IgniServerUrl(url=ISSUER), subject=PERSON).verify(
+                compact, KEY.key_set, min_version=6
+            )
 
 
 class TestRequiredFailsClosed:
@@ -319,7 +319,7 @@ class TestRequiredFailsClosed:
 
     def test_the_environment_can_require_it(self, tmp_path, monkeypatch):
         _configure(signed_in_as=None)
-        monkeypatch.setenv(REQUIRED_ENV, "1")
+        monkeypatch.setenv(GroupPolicyEnvironment.REQUIRED_VAR, "1")
 
         with pytest.raises(GroupPolicyUnavailable):
             _settings(tmp_path)
@@ -387,7 +387,7 @@ class TestOnlyAnAdministratorPinsAKey:
 
     def test_a_pin_in_the_environment_is_honoured(self, tmp_path, monkeypatch):
         _configure()
-        monkeypatch.setenv(TRUSTED_KEYS_ENV, STRANGER.thumbprint)
+        monkeypatch.setenv(GroupPolicyEnvironment.TRUSTED_KEYS_VAR, STRANGER.thumbprint)
         store(_cache_dir(), _pack())
 
         assert _settings(tmp_path).group_policy.trusted_keys == [STRANGER.thumbprint]
