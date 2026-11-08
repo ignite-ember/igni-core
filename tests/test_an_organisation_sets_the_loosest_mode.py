@@ -34,6 +34,7 @@ from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
 from igni_core.core.session.schemas import PermissionModeSwitch
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.core.tools.slash import SlashCommandTool
 from igni_core.protocol.messages import CommandResultKind
 from tests.session_coordinators import wire_coordinators
@@ -415,9 +416,7 @@ class TestARefusedFlipFromAnApprovalReachesThePerson:
         session.hook_executor.execute = AsyncMock(
             return_value=SimpleNamespace(should_continue=False, message="")
         )
-        session.sub_agent_hitl = SimpleNamespace(
-            resolve=lambda *_: False, take_ready_restored=lambda: []
-        )
+        session.sub_agent_hitl = SubAgentHITLCoordinator()
         store = PendingRequirementsStore()
         store.register("req-1", PendingRequirement(req=MagicMock(), run_id="run-1"))
 

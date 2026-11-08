@@ -38,6 +38,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from igni_core.core.sub_agent_hitl import PendingEntry
 from igni_core.protocol import messages as msg
 
 
@@ -141,7 +142,21 @@ class SubagentPause(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     kind: Literal["subagent_pause"] = "subagent_pause"
-    entries: list[Any] = Field(default_factory=list)
+    entries: list[tuple[str, PendingEntry]] = Field(default_factory=list)
+
+    def run_paused(self) -> msg.RunPaused:
+        """The batch as the ``RunPaused`` the FE opens its dialog for.
+
+        Bare ``HITLRequest`` falls through on the FE, so sub-agent
+        pauses take the same shape as the team's own. Resolution still
+        routes through the coordinator, not the main team's
+        ``acontinue_run`` (:meth:`HitlController.resolve_single`).
+        ``run_id`` is the sub-agent's — forwarded for logs only.
+        """
+        return msg.RunPaused(
+            run_id=self.entries[0][1].run_id if self.entries else "",
+            requirements=[entry.request(req_id) for req_id, entry in self.entries],
+        )
 
 
 class SubagentDetails(BaseModel):

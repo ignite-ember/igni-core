@@ -30,7 +30,7 @@ from agno.run.agent import (
 )
 from pydantic import BaseModel
 
-from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator, _PendingEntry
+from igni_core.core.sub_agent_hitl import PendingEntry, SubAgentHITLCoordinator
 from igni_core.core.tools.orchestrate import _run_agent_streaming
 
 
@@ -348,17 +348,17 @@ class TestSubAgentHITLPlumbing:
 
 
 class TestPendingEntryModel:
-    """Post-refactor ``_PendingEntry`` is a Pydantic BaseModel (Rule 1
+    """Post-refactor ``PendingEntry`` is a Pydantic BaseModel (Rule 1
     compliance — was a dataclass before). These tests lock in that the
     coordinator's public methods still round-trip data cleanly and
     that the mutable fields (``surfaced`` + ``event``) still flip
     from within the coordinator's methods."""
 
     def test_pending_entry_is_pydantic(self):
-        assert issubclass(_PendingEntry, BaseModel)
+        assert issubclass(PendingEntry, BaseModel)
 
     def test_pending_entry_defaults_and_mutability(self):
-        entry = _PendingEntry(requirement=object(), run_id="r1")
+        entry = PendingEntry(requirement=object(), run_id="r1")
         # Defaults survive the dataclass → BaseModel migration.
         assert entry.agent_path == []
         assert entry.surfaced is False

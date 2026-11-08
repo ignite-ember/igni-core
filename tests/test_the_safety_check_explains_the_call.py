@@ -368,7 +368,7 @@ def test_with_no_explanation_the_spinner_gives_way_to_the_plain_reason(tmp_path)
 def test_answering_first_stops_the_explainer(tmp_path):
     async def scenario():
         coordinator = SubAgentHITLCoordinator()
-        coordinator.listeners = 1
+        coordinator.open_relay()
         ask = ToolCallApprovalChannel(coordinator).ask
         started = asyncio.Event()
 

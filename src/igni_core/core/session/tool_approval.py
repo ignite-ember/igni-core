@@ -87,7 +87,7 @@ class ToolCallApprovalChannel:
         # With no relay running — a headless run — nobody can answer, and
         # waiting would hang the run for ever.
         hitl = self._hitl
-        if hitl.listeners <= 0:
+        if not hitl.has_relay:
             return None
         requirement = GuardRequirement(
             tool_execution=GuardToolExecution(tool_name=request.tool_name, tool_args=request.args),

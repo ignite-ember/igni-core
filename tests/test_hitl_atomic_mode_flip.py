@@ -40,6 +40,7 @@ from igni_core.backend.hitl_controller import HitlController
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.backend.schemas_pause import PendingRequirement
 from igni_core.core.session.schemas import PermissionModeSwitch
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
 
 
@@ -72,9 +73,7 @@ def _fake_session() -> MagicMock:
         return_value=SimpleNamespace(should_continue=False, message="")
     )
     # Sub-agent HITL — none in this test.
-    session.sub_agent_hitl = SimpleNamespace(
-        resolve=lambda *_: False, take_ready_restored=lambda: []
-    )
+    session.sub_agent_hitl = SubAgentHITLCoordinator()
     return session
 
 

@@ -40,21 +40,20 @@ from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
 from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.pause_handler import PauseHandler
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
-from igni_core.backend.schemas_pause import PendingRequirement
+from igni_core.backend.schemas_pause import PendingRequirement, SubagentPause
+from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
+from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
 
 
 class _Bus:
-    def __init__(self, fail: bool = False) -> None:
+    def __init__(self) -> None:
         self.drained: list[str | None] = []
-        self._fail = fail
 
     def drain_post_run(self, run_id: str | None) -> None:
         self.drained.append(run_id)
-        if self._fail:
-            raise RuntimeError("bus broke")
 
 
 class _Team:
@@ -70,7 +69,7 @@ class _Team:
 
 
 def _setup(
-    evaluator: PermissionEvaluator | None = None, bus: _Bus | None = None
+    evaluator: PermissionEvaluator | None = None, bus: _Bus | BroadcastBus | None = None
 ) -> tuple[HITLStreamMultiplexer, SimpleNamespace, PendingRequirementsStore]:
     store = PendingRequirementsStore()
     session = SimpleNamespace(
@@ -130,11 +129,17 @@ async def test_content_and_completion_pass_through_and_the_run_is_tidied_up():
     assert not store.has("stale")
     assert bus.drained == ["r1"]
     # The relay counted itself in and back out.
-    assert session.sub_agent_hitl.listeners == 0
+    assert not session.sub_agent_hitl.has_relay
 
 
-async def test_a_broken_post_run_broadcast_does_not_end_the_run_in_an_error():
-    mux, _, _ = _setup(bus=_Bus(fail=True))
+async def test_a_broken_post_run_subscriber_does_not_end_the_run_in_an_error():
+    def broken(_event: BroadcastEvent) -> None:
+        raise RuntimeError("subscriber broke")
+
+    bus = BroadcastBus()
+    bus.register(broken)
+    bus.queue_post_run(BroadcastEvent(channel="plan_submitted"))
+    mux, _, _ = _setup(bus=bus)
 
     out = await _collect(mux.stream(_events(RunCompletedEvent(run_id="r1"))))
 
@@ -152,7 +157,7 @@ async def test_a_team_stream_that_fails_becomes_an_error_the_ui_shows():
 
     assert [m.type for m in out] == ["content_delta", "error"]
     assert out[-1].text == "provider hung up"
-    assert session.sub_agent_hitl.listeners == 0
+    assert not session.sub_agent_hitl.has_relay
 
 
 async def test_a_timeout_says_the_model_took_too_long():
@@ -207,7 +212,7 @@ async def test_a_sub_agent_s_question_surfaces_while_the_team_is_still_streaming
 
 
 def test_an_empty_batch_of_sub_agent_questions_has_no_run_id():
-    paused = HITLStreamMultiplexer.build_subagent_paused([])
+    paused = SubagentPause().run_paused()
 
     assert (paused.run_id, paused.requirements) == ("", [])
 

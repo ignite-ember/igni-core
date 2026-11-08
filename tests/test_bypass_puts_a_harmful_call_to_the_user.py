@@ -299,7 +299,7 @@ class TestAskingThroughTheSessionsApprovalChannel:
     def test_the_answer_comes_back_from_the_dialog(self):
         async def scenario(action):
             coordinator, ask = self._channel()
-            coordinator.listeners = 1
+            coordinator.open_relay()
             task = asyncio.create_task(
                 ask("run_shell_command", {"command": "rm -rf ~"}, "deletes ~", ["editor"])
             )
@@ -314,11 +314,11 @@ class TestAskingThroughTheSessionsApprovalChannel:
         assert asyncio.run(scenario("reject")) is False
 
     def test_the_dialog_is_told_why(self):
-        from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
+        from igni_core.backend.schemas_pause import SubagentPause
         from igni_core.core.session.tool_approval import GuardRequirement, GuardToolExecution
-        from igni_core.core.sub_agent_hitl import _PendingEntry
+        from igni_core.core.sub_agent_hitl import PendingEntry
 
-        entry = _PendingEntry(
+        entry = PendingEntry(
             requirement=GuardRequirement(
                 tool_execution=GuardToolExecution(
                     tool_name="run_shell_command", tool_args={"command": "rm -rf ~"}
@@ -328,7 +328,7 @@ class TestAskingThroughTheSessionsApprovalChannel:
             run_id="r",
             agent_path=["safety check"],
         )
-        paused = HITLStreamMultiplexer.build_subagent_paused([("abc", entry)])
+        paused = SubagentPause(entries=[("abc", entry)]).run_paused()
         assert paused.requirements[0].details == "deletes ~"
         assert paused.requirements[0].tool_args == {"command": "rm -rf ~"}
 
@@ -437,7 +437,7 @@ def test_a_nested_resume_takes_over_the_relay():
     found clicking through Bypass in the real UI. The outer relay now
     stands down and hands back whatever it had taken."""
     from igni_core.backend.schemas_pause import SubagentPause, TeamStreamEvent
-    from igni_core.core.sub_agent_hitl import _PendingEntry
+    from igni_core.core.sub_agent_hitl import PendingEntry
 
     async def scenario():
         coordinator = SubAgentHITLCoordinator()
@@ -450,7 +450,7 @@ def test_a_nested_resume_takes_over_the_relay():
         )
         relay = asyncio.create_task(asyncio.sleep(3600))
         queue: asyncio.Queue = asyncio.Queue()
-        entry = _PendingEntry(requirement=object(), run_id="r", surfaced=True)
+        entry = PendingEntry(requirement=object(), run_id="r", surfaced=True)
         other = TeamStreamEvent(event="keep me")
         queue.put_nowait(SubagentPause(entries=[("req1", entry)]))
         queue.put_nowait(other)

@@ -64,7 +64,7 @@ class PendingRequirement(Protocol):
     def reject(self, note: str = "") -> None: ...
 
 
-class _PendingEntry(BaseModel):
+class PendingEntry(BaseModel):
     """One in-flight sub-agent HITL requirement.
 
     Rule 1 compliance — was a ``@dataclass`` before. Uses
@@ -88,6 +88,27 @@ class _PendingEntry(BaseModel):
     surfaced: bool = False  # True once forwarded to FE via list_new_pending
     event: asyncio.Event = Field(default_factory=asyncio.Event)
 
+    def request(self, req_id: str) -> msg.HITLRequest:
+        """The request a window is shown for this entry, as ``req_id``.
+
+        ``requirement`` is Agno's ``RunRequirement`` or a
+        :class:`PendingRequirement` safety question; only the latter
+        carries ``details`` (why the call is put to the person), so
+        those are read when present.
+        """
+        req = self.requirement
+        tool_exec = getattr(req, "tool_execution", None)
+        raw_name = str(getattr(tool_exec, "tool_name", "") if tool_exec else "")
+        return msg.HITLRequest(
+            requirement_id=req_id,
+            tool_name=raw_name,
+            friendly_name=default_registry().friendly_name(raw_name),
+            tool_args=dict(getattr(tool_exec, "tool_args", {}) if tool_exec else {}),
+            agent_path=list(self.agent_path),
+            details=str(getattr(req, "details", "") or ""),
+            details_pending=bool(getattr(req, "details_pending", False)),
+        )
+
 
 class RestoredRun(BaseModel):
     """A sub-agent run read back after a restart, all its approvals answered."""
@@ -106,7 +127,7 @@ class SubAgentHITLCoordinator:
     """
 
     def __init__(self) -> None:
-        self._pending: dict[str, _PendingEntry] = {}
+        self._pending: dict[str, PendingEntry] = {}
         # Set whenever a NEW requirement arrives. Backend awaits this to
         # know when to forward to FE without busy-polling.
         self.new_arrival = asyncio.Event()
@@ -116,7 +137,7 @@ class SubAgentHITLCoordinator:
         #: Forwarders currently relaying requirements to a person. Zero
         #: means a requirement pushed now would wait for ever — headless
         #: ``-p``, CI — so a caller that needs a yes must refuse instead.
-        self.listeners = 0
+        self._relays = 0
         self._journal: ApprovalJournal | None = None
         self._session_id: Callable[[], str] = lambda: ""
         #: Requests read back after a restart: nothing waits on them.
@@ -156,7 +177,7 @@ class SubAgentHITLCoordinator:
                 stored.requirement.details = stored.request.details  # type: ignore[attr-defined]
             # Already "surfaced": it reaches a window by
             # :meth:`waiting_requests`, when one attaches.
-            self._pending[stored.requirement_id] = _PendingEntry(
+            self._pending[stored.requirement_id] = PendingEntry(
                 requirement=stored.requirement,
                 run_id=stored.run_id,
                 agent_path=stored.agent_path,
@@ -204,20 +225,7 @@ class SubAgentHITLCoordinator:
     def request_for(self, req_id: str) -> msg.HITLRequest | None:
         """The request a window is shown for ``req_id``."""
         entry = self._pending.get(req_id)
-        if entry is None:
-            return None
-        req = entry.requirement
-        tool_exec = getattr(req, "tool_execution", None)
-        raw_name = str(getattr(tool_exec, "tool_name", "") if tool_exec else "")
-        return msg.HITLRequest(
-            requirement_id=req_id,
-            tool_name=raw_name,
-            friendly_name=default_registry().friendly_name(raw_name),
-            tool_args=dict(getattr(tool_exec, "tool_args", {}) if tool_exec else {}),
-            agent_path=list(entry.agent_path),
-            details=str(getattr(req, "details", "") or ""),
-            details_pending=bool(getattr(req, "details_pending", False)),
-        )
+        return None if entry is None else entry.request(req_id)
 
     def waiting_requests(self) -> list[msg.RunPaused]:
         """One ``RunPaused`` per sub-agent run with requests not yet
@@ -337,7 +345,7 @@ class SubAgentHITLCoordinator:
         else:
             self._trace_file(run_id, agent_path)
         req_id = str(uuid.uuid4())[:8]
-        self._pending[req_id] = _PendingEntry(
+        self._pending[req_id] = PendingEntry(
             requirement=req,
             run_id=run_id,
             agent_path=list(agent_path or []),
@@ -347,13 +355,34 @@ class SubAgentHITLCoordinator:
         self.new_arrival.set()
         return req_id
 
-    def list_new_pending(self) -> list[tuple[str, _PendingEntry]]:
+    # ── Relays ────────────────────────────────────────────────────
+
+    def open_relay(self) -> None:
+        """A forwarder starts relaying requirements to a person."""
+        self._relays += 1
+
+    def close_relay(self) -> None:
+        """A forwarder opened with :meth:`open_relay` has stopped."""
+        self._relays -= 1
+
+    @property
+    def has_relay(self) -> bool:
+        """Whether a requirement pushed now would reach a person."""
+        return self._relays > 0
+
+    def hand_back(self, entries: list[tuple[str, PendingEntry]]) -> None:
+        """Return taken-but-unshown entries for the next relay to surface."""
+        for _req_id, entry in entries:
+            entry.surfaced = False
+        self.new_arrival.set()
+
+    def list_new_pending(self) -> list[tuple[str, PendingEntry]]:
         """Return entries not yet surfaced to FE; mark them as surfaced.
 
         Called by the backend run loop. Idempotent across calls — once
         an entry is surfaced it won't be returned again.
         """
-        out: list[tuple[str, _PendingEntry]] = []
+        out: list[tuple[str, PendingEntry]] = []
         for req_id, entry in self._pending.items():
             if not entry.surfaced and not entry.event.is_set():
                 entry.surfaced = True
