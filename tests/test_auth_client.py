@@ -8,6 +8,7 @@ Exercises the OOP-first surface in
 from threading import Thread
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from igni_core.core.auth.callback_server import CallbackServer
@@ -153,7 +154,6 @@ class TestTheCallbackContract:
     def test_a_code_is_exchanged_for_the_token(self, monkeypatch):
         """The whole point: the URL carries a one-time code, and the
         token arrives over POST."""
-        import httpx
 
         exchanged: dict[str, object] = {}
 
@@ -185,7 +185,6 @@ class TestTheCallbackContract:
         would keep putting a credential in the address bar and nothing
         would say so.
         """
-        import httpx
 
         monkeypatch.setattr(
             httpx, "post", lambda *a, **k: pytest.fail("no exchange should be attempted")
@@ -210,7 +209,6 @@ class TestTheCallbackContract:
         whom "that one was valid a moment ago" is a useful signal — the
         same reasoning as the server's own exchange endpoint.
         """
-        import httpx
 
         monkeypatch.setattr(
             httpx,
@@ -233,7 +231,6 @@ class TestTheCallbackContract:
     def test_an_unreachable_server_does_not_hang_the_login(self, monkeypatch):
         """The code lives 30 seconds. A hang here spends all of it and
         leaves the user with a spinner and no explanation."""
-        import httpx
 
         def refuse(*_args, **_kwargs):
             raise httpx.ConnectError("connection refused")
@@ -333,7 +330,7 @@ class TestPortalClientValidateToken:
     @pytest.mark.asyncio
     async def test_network_error_returns_network_error_result(self):
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=Exception("connection refused"))
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 

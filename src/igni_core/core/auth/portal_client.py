@@ -30,11 +30,11 @@ Public surface:
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import webbrowser
 
 import httpx
+from pydantic import ValidationError
 
 from igni_core.core.activity.http import busy_call
 from igni_core.core.auth.callback_server import CallbackServer
@@ -51,11 +51,9 @@ from igni_core.core.config.endpoint import (
 from igni_core.core.config.group_policy.answers import (
     PACK_UNCHANGED,
     PackAnswer,
-    SignedAbsence,
 )
-from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.jwks import Jwks
-from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.response import PackResponse
 from igni_core.core.config.group_policy_signature import jwks_url_for
 
 logger = logging.getLogger(__name__)
@@ -143,6 +141,18 @@ class PortalClient:
         # portal now sends in place of the token. F124.
         return CallbackServer(api_url=self._base("Signing in"), http_timeout=self._http_timeout)
 
+    async def _get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+        """One GET to igni server, shown as busy while it runs."""
+        async with (
+            busy_call("igni-server"),
+            httpx.AsyncClient(timeout=self._http_timeout) as client,
+        ):
+            return await client.get(url, headers=headers)
+
+    @staticmethod
+    def _bearer(token: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {token}"}
+
     async def validate_token(self, token: str) -> ValidateResult:
         """Validate ``token`` against ``/v1/portal/me``.
 
@@ -153,46 +163,28 @@ class PortalClient:
         """
         url = f"{self._base('Validating your session')}/v1/portal/me"
         try:
-            async with (
-                busy_call("igni-server"),
-                httpx.AsyncClient(timeout=self._http_timeout) as client,
-            ):
-                resp = await client.get(url, headers={"Authorization": f"Bearer {token}"})
-        except Exception as exc:
+            resp = await self._get(url, headers=self._bearer(token))
+        except (httpx.HTTPError, OSError) as exc:
             logger.debug("Token validation network error: %s", exc)
-            return ValidateResult(
-                ok=False,
-                reason="network_error",
-                error=str(exc),
-            )
+            return ValidateResult(ok=False, reason="network_error", error=str(exc))
 
         if resp.status_code != 200:
-            return ValidateResult(
-                ok=False,
-                reason="http_error",
-                status_code=resp.status_code,
-            )
+            return ValidateResult(ok=False, reason="http_error", status_code=resp.status_code)
 
         try:
             payload = resp.json()
-        except Exception as exc:
+        except ValueError as exc:
             logger.debug("Token validation decode error: %s", exc)
             return ValidateResult(
-                ok=False,
-                reason="decode_error",
-                status_code=resp.status_code,
-                error=str(exc),
+                ok=False, reason="decode_error", status_code=resp.status_code, error=str(exc)
             )
 
         try:
             user = UserInfo.model_validate(payload)
-        except Exception as exc:
+        except ValidationError as exc:
             logger.debug("Token validation schema mismatch: %s", exc)
             return ValidateResult(
-                ok=False,
-                reason="schema_mismatch",
-                status_code=resp.status_code,
-                error=str(exc),
+                ok=False, reason="schema_mismatch", status_code=resp.status_code, error=str(exc)
             )
 
         return ValidateResult(ok=True, user=user, status_code=resp.status_code)
@@ -211,8 +203,13 @@ class PortalClient:
                 api_url=self._base("Signing in"), http_timeout=self._http_timeout
             ) as server:
                 login_url = self.login_url(server.port)
-                with contextlib.suppress(Exception):
+                try:
                     webbrowser.open(login_url)
+                except (webbrowser.Error, OSError) as exc:
+                    # The login can still finish: the user opens the URL by hand.
+                    logger.warning(
+                        "Could not open a browser; open %s to sign in: %s", login_url, exc
+                    )
 
                 token = await server.wait_for_token(timeout=timeout)
                 if token is None:
@@ -222,45 +219,12 @@ class PortalClient:
                         reason="timeout",
                         error="Login timed out — no callback received",
                     )
-                return LoginResult(
-                    ok=True,
-                    token=token,
-                    callback_url=server.callback_url,
-                )
+                return LoginResult(ok=True, token=token, callback_url=server.callback_url)
         except OSError as exc:
-            return LoginResult(
-                ok=False,
-                reason="port_bind_failed",
-                error=str(exc),
-            )
+            return LoginResult(ok=False, reason="port_bind_failed", error=str(exc))
         except Exception as exc:
+            logger.warning("Login failed: %s", exc)
             return LoginResult(ok=False, reason="handler_error", error=str(exc))
-
-    async def get_my_group_summary(self, token: str) -> dict | None:
-        """Fetch /v1/portal/me/group and return the group summary dict or None."""
-        url = f"{self._base('Fetching your group policy')}/v1/portal/me/group"
-        try:
-            async with (
-                busy_call("igni-server"),
-                httpx.AsyncClient(timeout=self._http_timeout) as client,
-            ):
-                resp = await client.get(url, headers={"Authorization": f"Bearer {token}"})
-        except Exception as exc:
-            logger.debug("get_my_group_summary network error: %s", exc)
-            return None
-
-        if resp.status_code == 404 or resp.status_code == 200 and not resp.json():
-            return None
-        if resp.status_code != 200:
-            return None
-
-        try:
-            payload = resp.json()
-            if payload is None:
-                return None
-            return payload
-        except Exception:
-            return None
 
     async def fetch_jwks(self) -> Jwks | None:
         """igni server's published signing keys, or ``None``.
@@ -272,19 +236,17 @@ class PortalClient:
         """
         url = jwks_url_for(self._base("Fetching igni server's signing keys"))
         try:
-            async with (
-                busy_call("igni-server"),
-                httpx.AsyncClient(timeout=self._http_timeout) as client,
-            ):
-                resp = await client.get(url)
-        except Exception as exc:
+            resp = await self._get(url)
+        except (httpx.HTTPError, OSError) as exc:
             logger.debug("fetch_jwks network error: %s", exc)
             return None
         if resp.status_code != 200:
+            logger.debug("fetch_jwks got status %s", resp.status_code)
             return None
         try:
             payload = resp.json()
-        except Exception:
+        except ValueError as exc:
+            logger.debug("fetch_jwks decode error: %s", exc)
             return None
         return Jwks.parse(payload)
 
@@ -295,7 +257,7 @@ class PortalClient:
     ) -> PackAnswer:
         """Fetch the group pack, or learn that it has not changed.
 
-        Three answers, and the caller has to tell them apart:
+        Four answers, and the caller has to tell them apart:
 
         * a :class:`GroupPolicyPack` — here is the group's configuration
         * ``None`` — no group, or the request failed; keep what you have
@@ -309,56 +271,25 @@ class PortalClient:
         prompts to say nothing had happened.
         """
         url = f"{self._base('Fetching your group policy')}/v1/portal/me/group/pack"
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = self._bearer(token)
         if etag:
             headers["If-None-Match"] = etag
         try:
-            async with (
-                busy_call("igni-server"),
-                httpx.AsyncClient(timeout=self._http_timeout) as client,
-            ):
-                resp = await client.get(url, headers=headers)
-        except Exception as exc:
+            resp = await self._get(url, headers=headers)
+        except (httpx.HTTPError, OSError) as exc:
             logger.debug("fetch_group_pack network error: %s", exc)
             return None
 
         if resp.status_code == 304:
             return PACK_UNCHANGED
-        if resp.status_code == 404:
-            return None
-        if resp.status_code == 204:
+        if resp.status_code in (204, 404):
             return None
         if resp.status_code != 200:
             logger.debug("fetch_group_pack got status %s", resp.status_code)
             return None
 
         try:
-            payload = resp.json()
-        except Exception as exc:
-            logger.debug("fetch_group_pack decode error: %s", exc)
-            return None
-
-        if isinstance(payload, dict) and payload.get("no_pack") and payload.get("signed_pack"):
-            # "No pack for you", signed — verified by ``PackVerifier`` before
-            # it clears anything.
-            return SignedAbsence(signed_pack=payload["signed_pack"], etag=resp.headers.get("etag"))
-
-        try:
-            entries = [GroupPolicyEntry(**o) for o in payload.get("entries", [])]
-            return GroupPolicyPack(
-                group_id=payload.get("group_id", ""),
-                group_name=payload.get("group_name", ""),
-                fetched_at=payload.get("fetched_at"),
-                # Dropped silently until now: the group's model reached
-                # the CLI as None however it was set on the server.
-                default_model=payload.get("default_model"),
-                entries=entries,
-                etag=resp.headers.get("etag"),
-                # The same pack, signed. Only this is applied, after
-                # ``PackVerifier`` has checked it; the fields above are
-                # what an older server sends, and alone they apply nothing.
-                signed_pack=payload.get("signed_pack"),
-            )
-        except Exception as exc:
-            logger.debug("fetch_group_pack schema error: %s", exc)
+            return PackResponse.model_validate(resp.json()).answer(resp.headers.get("etag"))
+        except ValueError as exc:  # a body that is not JSON, or not a pack
+            logger.debug("fetch_group_pack unreadable response: %s", exc)
             return None
