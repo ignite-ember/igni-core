@@ -19,7 +19,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from igni_core.backend.command_result import CommandResult
-from igni_core.core.auth.discovery import Discovered
+from igni_core.core.auth.discovery_schemas import Discovered
 from igni_core.protocol.messages import CommandAction, CommandResultKind
 
 

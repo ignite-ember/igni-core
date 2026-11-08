@@ -35,6 +35,7 @@ from igni_core.backend.server_search import SearchController
 from igni_core.backend.server_sessions import SessionsController
 from igni_core.backend.team_wiring import TeamWiring
 from igni_core.backend.visualization_action_bus import VisualizationActionBus
+from igni_core.core.auth.discovery import ServerDiscovery
 from igni_core.core.auth.portal_client import PortalClient
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.group_policy.meta import PackMetaStore
@@ -181,6 +182,7 @@ class ControllerRegistry:
             portal=portal,
             group_policy=group_policy,
             user_config_store=user_config_store,
+            server_discovery=ServerDiscovery(),
         )
         # Cold start: refresh from a stored token and start the timer.
         group_policy.start()

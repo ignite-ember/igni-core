@@ -19,32 +19,20 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import dns.exception
+import dns.resolver
 import httpx
 import pytest
 
 from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.backend.server_auth import AuthController
 from igni_core.core.auth import discovery
-from igni_core.core.auth.discovery import Discovered, discover, domain_of
+from igni_core.core.auth.discovery import ServerDiscovery
+from igni_core.core.auth.discovery_schemas import Discovered
 from igni_core.core.auth.portal_client import PortalClient
 from igni_core.core.config.user_config_store import UserConfigStore
 
-
-def _answering(handler) -> None:
-    """Point discovery at a transport instead of the network."""
-    original = httpx.AsyncClient
-
-    class _Client(original):  # type: ignore[misc,valid-type]
-        def __init__(self, *a, **kw):
-            kw["transport"] = httpx.MockTransport(handler)
-            super().__init__(*a, **kw)
-
-    discovery.httpx.AsyncClient = _Client  # type: ignore[misc]
-    return original
-
-
-def _record(**fields) -> httpx.Response:
-    return httpx.Response(200, content=json.dumps(fields).encode())
+domain_of = ServerDiscovery.domain_of
 
 
 class _Txt:
@@ -54,35 +42,57 @@ class _Txt:
         self.strings = list(strings)
 
 
-def _zone(*records: _Txt):
-    """Make the TXT lookup answer with these."""
+class _World:
+    """What answers discovery instead of the network and the DNS.
 
-    async def resolve(name, rdtype, **kw):
-        return list(records)
+    No test reaches the real network or the real DNS. A suite that
+    resolves `acme.example` for real is a suite whose results depend
+    on somebody else's nameserver. By default the web root serves
+    nothing and the zone has no record, the way a bare domain does.
+    """
 
-    discovery.dns.asyncresolver.resolve = resolve  # type: ignore[misc]
+    def __init__(self) -> None:
+        self.handler = lambda request: httpx.Response(404)
+        self.resolver = self._refusing(None)
+
+    def answering(self, handler) -> None:
+        """Serve the well-known file through this handler."""
+        self.handler = handler
+
+    def zone(self, *records: _Txt) -> None:
+        """Make the TXT lookup answer with these."""
+
+        async def resolve(name, rdtype, **kw):
+            return list(records)
+
+        self.resolver = resolve
+
+    def no_zone(self, exc: Exception | None = None) -> None:
+        """Make the TXT lookup find nothing."""
+        self.resolver = self._refusing(exc)
+
+    @staticmethod
+    def _refusing(exc: Exception | None):
+        async def resolve(name, rdtype, **kw):
+            raise exc or dns.resolver.NXDOMAIN()
+
+        return resolve
+
+    async def discover(self, email: str) -> Discovered:
+        async def resolve(*a, **kw):
+            return await self.resolver(*a, **kw)
+
+        transport = httpx.MockTransport(lambda request: self.handler(request))
+        return await ServerDiscovery(transport=transport, resolve=resolve).discover(email)
 
 
-def _no_zone(exc: Exception | None = None):
-    """Make the TXT lookup find nothing, the way a bare domain does."""
-
-    async def resolve(name, rdtype, **kw):
-        raise exc or Exception("NXDOMAIN")
-
-    discovery.dns.asyncresolver.resolve = resolve  # type: ignore[misc]
+@pytest.fixture
+def world() -> _World:
+    return _World()
 
 
-@pytest.fixture(autouse=True)
-def _restore():
-    original = httpx.AsyncClient
-    resolver = discovery.dns.asyncresolver.resolve
-    # No test reaches the real network or the real DNS. A suite that
-    # resolves `acme.example` for real is a suite whose results depend
-    # on somebody else's nameserver.
-    _no_zone()
-    yield
-    discovery.httpx.AsyncClient = original  # type: ignore[misc]
-    discovery.dns.asyncresolver.resolve = resolver  # type: ignore[misc]
+def _record(**fields) -> httpx.Response:
+    return httpx.Response(200, content=json.dumps(fields).encode())
 
 
 class TestReadingTheAddress:
@@ -122,16 +132,16 @@ class TestReadingTheAddress:
 
 class TestWhatTheDomainSays:
     @pytest.mark.asyncio
-    async def test_a_published_record_is_the_answer(self):
+    async def test_a_published_record_is_the_answer(self, world):
         seen: list[str] = []
 
         def handler(request):
             seen.append(str(request.url))
             return _record(api_url="https://igni.acme.example")
 
-        _answering(handler)
+        world.answering(handler)
 
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert found.found
         assert found.api_url == "https://igni.acme.example"
@@ -139,31 +149,31 @@ class TestWhatTheDomainSays:
         assert seen == ["https://acme.example/.well-known/igni.json"]
 
     @pytest.mark.asyncio
-    async def test_a_portal_url_is_carried_when_given(self):
-        _answering(
+    async def test_a_portal_url_is_carried_when_given(self, world):
+        world.answering(
             lambda r: _record(
                 api_url="https://igni.acme.example",
                 portal_url="https://portal.acme.example",
             )
         )
 
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert found.portal_url == "https://portal.acme.example"
 
     @pytest.mark.asyncio
-    async def test_a_trailing_slash_is_not_carried_into_the_config(self):
-        _answering(lambda r: _record(api_url="https://igni.acme.example/"))
+    async def test_a_trailing_slash_is_not_carried_into_the_config(self, world):
+        world.answering(lambda r: _record(api_url="https://igni.acme.example/"))
 
-        assert (await discover("sam@acme.example")).api_url == "https://igni.acme.example"
+        assert (await world.discover("sam@acme.example")).api_url == "https://igni.acme.example"
 
     @pytest.mark.asyncio
-    async def test_a_domain_with_no_record_is_not_an_error(self):
+    async def test_a_domain_with_no_record_is_not_an_error(self, world):
         # The common case. The screen offers the address field; it
         # does not report a fault.
-        _answering(lambda r: httpx.Response(404))
+        world.answering(lambda r: httpx.Response(404))
 
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert not found.found
         assert "no igni record" in found.reason
@@ -171,62 +181,64 @@ class TestWhatTheDomainSays:
 
 class TestItIsCarefulAboutWhatItIsTold:
     @pytest.mark.asyncio
-    async def test_a_plaintext_server_is_refused(self):
+    async def test_a_plaintext_server_is_refused(self, world):
         # Whoever can see the traffic would otherwise choose the server
         # that receives sign-ins for the whole company.
-        _answering(lambda r: _record(api_url="http://igni.acme.example"))
+        world.answering(lambda r: _record(api_url="http://igni.acme.example"))
 
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert not found.found
         assert "not an https URL" in found.reason
 
     @pytest.mark.asyncio
-    async def test_a_local_deployment_may_speak_plaintext(self):
+    async def test_a_local_deployment_may_speak_plaintext(self, world):
         # The one exception, for developing against your own box.
-        _answering(lambda r: _record(api_url="http://localhost:7777"))
+        world.answering(lambda r: _record(api_url="http://localhost:7777"))
 
-        assert (await discover("sam@acme.example")).api_url == "http://localhost:7777"
+        assert (await world.discover("sam@acme.example")).api_url == "http://localhost:7777"
 
     @pytest.mark.asyncio
-    async def test_a_redirect_is_not_followed(self):
+    async def test_a_redirect_is_not_followed(self, world):
         # A redirect is a different host answering a question asked of
         # this one.
-        _answering(lambda r: httpx.Response(302, headers={"location": "https://evil.test/r.json"}))
+        world.answering(
+            lambda r: httpx.Response(302, headers={"location": "https://evil.test/r.json"})
+        )
 
-        assert not (await discover("sam@acme.example")).found
+        assert not (await world.discover("sam@acme.example")).found
 
     @pytest.mark.asyncio
-    async def test_the_lookup_itself_is_https(self):
+    async def test_the_lookup_itself_is_https(self, world):
         seen: list[str] = []
 
         def handler(request):
             seen.append(request.url.scheme)
             return _record(api_url="https://igni.acme.example")
 
-        _answering(handler)
-        await discover("sam@acme.example")
+        world.answering(handler)
+        await world.discover("sam@acme.example")
 
         assert seen == ["https"]
 
     @pytest.mark.asyncio
-    async def test_an_unsafe_portal_url_does_not_sink_the_lookup(self):
+    async def test_an_unsafe_portal_url_does_not_sink_the_lookup(self, world):
         # The api_url is usable alone and the portal is derived when
         # absent, so one bad field is dropped rather than fatal.
-        _answering(
+        world.answering(
             lambda r: _record(api_url="https://igni.acme.example", portal_url="http://evil.test")
         )
 
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert found.api_url == "https://igni.acme.example"
         assert found.portal_url == ""
 
     @pytest.mark.asyncio
-    async def test_a_record_that_is_too_large_is_refused(self):
-        _answering(lambda r: httpx.Response(200, content=b"x" * (discovery.MAX_BYTES + 1)))
+    async def test_a_record_that_is_too_large_is_refused(self, world):
+        world.answering(lambda r: httpx.Response(200, content=b"x" * (discovery.MAX_BYTES + 1)))
 
-        assert not (await discover("sam@acme.example")).found
+        assert not (await world.discover("sam@acme.example")).found
 
 
 class TestItNeverRaises:
@@ -239,38 +251,44 @@ class TestItNeverRaises:
             httpx.ConnectTimeout("slow"),
         ],
     )
-    async def test_a_domain_that_answers_nowhere_is_a_reason_not_a_crash(self, boom):
+    async def test_a_domain_that_answers_nowhere_is_a_reason_not_a_crash(self, world, boom):
         def handler(request):
             raise boom
 
-        _answering(handler)
+        world.answering(handler)
 
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert isinstance(found, Discovered)
         assert not found.found
         assert "no igni record" in found.reason
 
     @pytest.mark.asyncio
-    async def test_a_record_that_is_not_json_is_a_reason(self):
-        _answering(lambda r: httpx.Response(200, content=b"<html>nope</html>"))
+    async def test_a_record_that_is_not_json_is_a_reason(self, world):
+        world.answering(lambda r: httpx.Response(200, content=b"<html>nope</html>"))
 
-        assert "not valid JSON" in (await discover("sam@acme.example")).reason
-
-    @pytest.mark.asyncio
-    async def test_a_record_without_an_api_url_is_a_reason(self):
-        _answering(lambda r: _record(something_else="x"))
-
-        assert "does not name an api_url" in (await discover("sam@acme.example")).reason
+        assert "not valid JSON" in (await world.discover("sam@acme.example")).reason
 
     @pytest.mark.asyncio
-    async def test_a_bad_address_never_reaches_the_network(self):
+    async def test_a_record_that_is_not_an_object_is_a_reason(self, world):
+        world.answering(lambda r: httpx.Response(200, content=b'["https://igni.acme.example"]'))
+
+        assert "not an object" in (await world.discover("sam@acme.example")).reason
+
+    @pytest.mark.asyncio
+    async def test_a_record_without_an_api_url_is_a_reason(self, world):
+        world.answering(lambda r: _record(something_else="x"))
+
+        assert "does not name an api_url" in (await world.discover("sam@acme.example")).reason
+
+    @pytest.mark.asyncio
+    async def test_a_bad_address_never_reaches_the_network(self, world):
         def handler(request):
             raise AssertionError(f"asked {request.url} about a non-address")
 
-        _answering(handler)
+        world.answering(handler)
 
-        assert "does not look like an email" in (await discover("not-an-address")).reason
+        assert "does not look like an email" in (await world.discover("not-an-address")).reason
 
 
 class TestTheZoneWhenThereIsNoFile:
@@ -283,17 +301,17 @@ class TestTheZoneWhenThereIsNoFile:
     """
 
     @pytest.mark.asyncio
-    async def test_a_txt_record_answers_when_no_file_is_served(self):
-        _answering(lambda r: httpx.Response(404))
-        _zone(_Txt(b"api_url=https://igni.acme.example"))
+    async def test_a_txt_record_answers_when_no_file_is_served(self, world):
+        world.answering(lambda r: httpx.Response(404))
+        world.zone(_Txt(b"api_url=https://igni.acme.example"))
 
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert found.api_url == "https://igni.acme.example"
         assert found.source == "dns"
 
     @pytest.mark.asyncio
-    async def test_it_is_asked_at_the_underscored_name(self):
+    async def test_it_is_asked_at_the_underscored_name(self, world):
         # Underscored so it cannot collide with a host somebody wants
         # to run.
         asked: list[str] = []
@@ -302,79 +320,81 @@ class TestTheZoneWhenThereIsNoFile:
             asked.append(f"{name}/{rdtype}")
             return [_Txt(b"api_url=https://igni.acme.example")]
 
-        _answering(lambda r: httpx.Response(404))
-        discovery.dns.asyncresolver.resolve = resolve
+        world.answering(lambda r: httpx.Response(404))
+        world.resolver = resolve
 
-        await discover("sam@acme.example")
+        await world.discover("sam@acme.example")
 
         assert asked == ["_igni.acme.example/TXT"]
 
     @pytest.mark.asyncio
-    async def test_a_portal_url_rides_along(self):
-        _answering(lambda r: httpx.Response(404))
-        _zone(_Txt(b"api_url=https://igni.acme.example portal_url=https://portal.acme.example"))
+    async def test_a_portal_url_rides_along(self, world):
+        world.answering(lambda r: httpx.Response(404))
+        world.zone(
+            _Txt(b"api_url=https://igni.acme.example portal_url=https://portal.acme.example")
+        )
 
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert found.portal_url == "https://portal.acme.example"
 
     @pytest.mark.asyncio
-    async def test_a_value_split_across_strings_is_rejoined(self):
+    async def test_a_value_split_across_strings_is_rejoined(self, world):
         # TXT holds character-strings of at most 255 bytes, so a long
         # URL arrives in pieces. Taking the first would truncate it.
-        _answering(lambda r: httpx.Response(404))
-        _zone(_Txt(b"api_url=https://igni.acme", b".example"))
+        world.answering(lambda r: httpx.Response(404))
+        world.zone(_Txt(b"api_url=https://igni.acme", b".example"))
 
-        assert (await discover("sam@acme.example")).api_url == "https://igni.acme.example"
+        assert (await world.discover("sam@acme.example")).api_url == "https://igni.acme.example"
 
     @pytest.mark.asyncio
-    async def test_an_unrelated_txt_record_is_skipped(self):
+    async def test_an_unrelated_txt_record_is_skipped(self, world):
         # A zone has SPF, verification strings and whatever else at
         # that name; ours is the one that names an api_url.
-        _answering(lambda r: httpx.Response(404))
-        _zone(_Txt(b"v=spf1 include:example.net ~all"), _Txt(b"api_url=https://igni.acme.example"))
+        world.answering(lambda r: httpx.Response(404))
+        world.zone(
+            _Txt(b"v=spf1 include:example.net ~all"), _Txt(b"api_url=https://igni.acme.example")
+        )
 
-        assert (await discover("sam@acme.example")).api_url == "https://igni.acme.example"
+        assert (await world.discover("sam@acme.example")).api_url == "https://igni.acme.example"
 
     @pytest.mark.asyncio
-    async def test_a_plaintext_server_in_dns_is_refused_too(self):
+    async def test_a_plaintext_server_in_dns_is_refused_too(self, world):
         # The same check as the file. How it arrived does not change
         # what it is.
-        _answering(lambda r: httpx.Response(404))
-        _zone(_Txt(b"api_url=http://igni.acme.example"))
+        world.answering(lambda r: httpx.Response(404))
+        world.zone(_Txt(b"api_url=http://igni.acme.example"))
 
-        assert not (await discover("sam@acme.example")).found
+        assert not (await world.discover("sam@acme.example")).found
 
     @pytest.mark.asyncio
-    async def test_the_file_wins_when_both_exist(self):
-        _answering(lambda r: _record(api_url="https://from-the-file.acme.example"))
-        _zone(_Txt(b"api_url=https://from-the-zone.acme.example"))
+    async def test_the_file_wins_when_both_exist(self, world):
+        world.answering(lambda r: _record(api_url="https://from-the-file.acme.example"))
+        world.zone(_Txt(b"api_url=https://from-the-zone.acme.example"))
 
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert found.api_url == "https://from-the-file.acme.example"
         assert found.source == "well-known"
 
     @pytest.mark.asyncio
-    async def test_a_served_file_that_is_wrong_is_not_papered_over_by_dns(self):
+    async def test_a_served_file_that_is_wrong_is_not_papered_over_by_dns(self, world):
         # Somebody published it. Falling through to the zone would
         # send them looking in the wrong place for the mistake.
-        _answering(lambda r: _record(api_url="http://insecure.acme.example"))
-        _zone(_Txt(b"api_url=https://igni.acme.example"))
+        world.answering(lambda r: _record(api_url="http://insecure.acme.example"))
+        world.zone(_Txt(b"api_url=https://igni.acme.example"))
 
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert not found.found
         assert "not an https URL" in found.reason
 
     @pytest.mark.asyncio
-    async def test_a_zone_that_refuses_is_a_reason_not_a_crash(self):
-        import dns.exception
+    async def test_a_zone_that_refuses_is_a_reason_not_a_crash(self, world):
+        world.answering(lambda r: httpx.Response(404))
+        world.no_zone(dns.exception.Timeout())
 
-        _answering(lambda r: httpx.Response(404))
-        _no_zone(dns.exception.Timeout())
-
-        found = await discover("sam@acme.example")
+        found = await world.discover("sam@acme.example")
 
         assert isinstance(found, Discovered)
         assert not found.found
@@ -406,6 +426,7 @@ class TestWritingTheServerDown:
             portal=portal,
             group_policy=GroupPolicySync(MagicMock(), settings, portal),
             user_config_store=store,
+            server_discovery=ServerDiscovery(),
         )
         return controller, store
 

@@ -27,8 +27,9 @@ from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.backend.schemas_auth import ServerChoice, ServerFound
 from igni_core.backend.schemas_rpc import CloudPlan, LoginResult
 from igni_core.core.auth.credentials import CloudCredentials, CredentialsStore
-from igni_core.core.auth.discovery import discover, is_safe_url
+from igni_core.core.auth.discovery import ServerDiscovery
 from igni_core.core.auth.portal_client import PortalClient
+from igni_core.core.auth.server_url import is_safe_url
 from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.protocol import messages as msg
 
@@ -44,8 +45,9 @@ class AuthController:
 
     Constructed once per :class:`BackendServer` (or per test). Every
     collaborator is injected: ``portal`` is shared with ``group_policy``
-    so both talk to the same server, and ``user_config_store`` is where
-    a chosen server is written down.
+    so both talk to the same server, ``user_config_store`` is where
+    a chosen server is written down, and ``server_discovery`` reads
+    where an address's organisation runs igni.
     """
 
     def __init__(
@@ -57,6 +59,7 @@ class AuthController:
         portal: PortalClient,
         group_policy: GroupPolicySync,
         user_config_store: UserConfigStore,
+        server_discovery: ServerDiscovery,
     ) -> None:
         self._session = session
         self._settings = settings
@@ -69,6 +72,7 @@ class AuthController:
         self._portal = portal
         self._group_policy = group_policy
         self._user_config_store = user_config_store
+        self._server_discovery = server_discovery
         # One :class:`CredentialsStore` per controller so the login
         # write + the :class:`CloudCredentials` read below share a
         # single path source.
@@ -127,7 +131,7 @@ class AuthController:
         domains have no record, and the screen offers an address field
         instead. ``reason`` is there for when somebody asks why.
         """
-        return ServerFound.from_discovered(await discover(email))
+        return ServerFound.from_discovered(await self._server_discovery.discover(email))
 
     def set_server(self, api_url: str, portal_url: str = "") -> ServerChoice:
         """Write the server down, so the next launch knows it.
