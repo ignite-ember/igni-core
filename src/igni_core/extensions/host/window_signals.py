@@ -13,21 +13,21 @@ from typing import Any, ClassVar, Self
 
 from pydantic import ConfigDict, Field
 
-from igni_core.extensions.host.signal_values import Emitter, Signal
+from igni_core.extensions.host.signal_values import Emitter, Windowed
 from igni_core.extensions.host.windows import WindowChange
 
 SessionSwitched = Callable[[str, str | None], None]
 ChangeHandler = Callable[[WindowChange], None]
 
 
-class Navigated(Signal):
+class Navigated(Windowed):
     WIRE: ClassVar[str] = "ui.navigated"
 
     window: str
     pages: Any
 
 
-class WindowFieldChanged(Signal):
+class WindowFieldChanged(Windowed):
     """``{window, <field>: value}`` — a field whose signal carries its new value."""
 
     #: The window-model field, and the key its value is told under.
@@ -75,7 +75,7 @@ class ComposerChanged(WindowFieldChanged):
     composer: Any
 
 
-class Scrolled(Signal):
+class Scrolled(Windowed):
     """The scroll as the window wrote it, and which window."""
 
     WIRE: ClassVar[str] = "ui.scrolled"
@@ -88,7 +88,7 @@ class Scrolled(Signal):
     window: str | None = None
 
 
-class ToastChanged(Signal):
+class ToastChanged(Windowed):
     """A toast shown or dismissed, and in which window."""
 
     window: str
@@ -103,7 +103,7 @@ class ToastDismissed(ToastChanged):
     WIRE: ClassVar[str] = "ui.toast_dismissed"
 
 
-class DialogOpened(Signal):
+class DialogOpened(Windowed):
     WIRE: ClassVar[str] = "ui.dialog_opened"
 
     window: str
@@ -112,7 +112,7 @@ class DialogOpened(Signal):
     answer: Any = Field(default=None, exclude=True)
 
 
-class DialogClosed(Signal):
+class DialogClosed(Windowed):
     WIRE: ClassVar[str] = "ui.dialog_closed"
 
     window: str

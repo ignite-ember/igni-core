@@ -7,7 +7,7 @@ from typing import ClassVar
 from pydantic import Field
 
 from igni_core.extensions.host.broadcasts.signal import Handler, RunRef
-from igni_core.extensions.host.signal_values import Emitter, Signal
+from igni_core.extensions.host.signal_values import Emitter, Signal, Windowed
 from igni_core.extensions.host.values import SessionInfo
 from igni_core.extensions.host.windows import Windows
 from igni_core.protocol import messages as msg
@@ -33,7 +33,7 @@ class MessageAdded(Signal):
         )
 
 
-class TypingSignal(Signal):
+class TypingSignal(Windowed):
     WIRE: ClassVar[str] = "chat.typing"
 
     session_id: str

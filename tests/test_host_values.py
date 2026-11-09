@@ -48,6 +48,7 @@ class _Bus:
         *,
         content: Content | None = None,
         only: str | None = None,
+        window: str | None = None,
     ) -> list[str]:
         self.told.append((wire, value))
         return []
