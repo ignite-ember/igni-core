@@ -163,7 +163,6 @@ class ProcessRegistry:
         # pid that exists.
         self._sleep_blocker.acquire()
         self.bus.emit(
-            "start",
             ProcessStartEvent(pid=mp.proc.pid, cmd=mp.cmd, started_at=time.time()),
         )
 
@@ -212,7 +211,6 @@ class ProcessRegistry:
         self._persist_finish(mp)
         self._sleep_blocker.release()
         self.bus.emit(
-            "exit",
             ProcessExitEvent(
                 pid=mp.proc.pid,
                 cmd=mp.cmd,
@@ -226,7 +224,7 @@ class ProcessRegistry:
         """Notify ``line`` subscribers. Hot path — the bus
         snapshots the subscriber list under its own lock, so this
         stays contention-free at the callsite."""
-        self.bus.emit("line", ProcessLineEvent(pid=pid, line=line))
+        self.bus.emit(ProcessLineEvent(pid=pid, line=line))
 
     # ── Query ───────────────────────────────────────────────────
 

@@ -23,6 +23,7 @@ import re
 
 import pytest
 
+from igni_core.core.tools.process_events import ProcessExitEvent
 from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.core.tools.shell import IgniShellTools
 
@@ -36,11 +37,11 @@ def collected_completions():
     anymore; ``ProcessEventBus.on/off`` is the sanctioned
     OOP entry point.
     """
-    seen: list[dict] = []
+    seen: list[ProcessExitEvent] = []
     seen_event = asyncio.Event()
 
-    def _cb(info: dict) -> None:
-        seen.append(info)
+    def _cb(event: ProcessExitEvent) -> None:
+        seen.append(event)
         seen_event.set()
 
     bus = supervisors.default().registry.bus
@@ -80,10 +81,10 @@ async def test_background_process_emits_completion(tmp_path, collected_completio
         pytest.fail("completion never fired")
 
     info = seen[0]
-    assert info["exit_code"] == 0
-    assert "echo" in info["cmd"]
-    assert info["duration_seconds"] >= 0
-    assert "done" in info["output_tail"]
+    assert info.exit_code == 0
+    assert "echo" in info.cmd
+    assert info.duration_seconds >= 0
+    assert "done" in info.output_tail
 
 
 @pytest.mark.asyncio
@@ -209,10 +210,10 @@ async def test_unsubscribe_stops_emissions(tmp_path):
     called — important for tests and for the BE's shutdown path so
     we don't leak into a process tree that's about to be killed
     anyway."""
-    seen: list[dict] = []
+    seen: list[ProcessExitEvent] = []
 
-    def _cb(info: dict) -> None:
-        seen.append(info)
+    def _cb(event: ProcessExitEvent) -> None:
+        seen.append(event)
 
     bus = supervisors.default().registry.bus
     bus.on("exit", _cb)

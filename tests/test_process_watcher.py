@@ -4,8 +4,8 @@ The FE's right-side watcher panel surfaces every backgrounded
 ``run_shell_command`` for live tail + explicit kill. It depends
 on three BE primitives this file pins:
 
-* Per-line + lifecycle subscribers in ``shell.py`` (line, start,
-  completion). The watcher uses all three; the agent's
+* Per-line + lifecycle subscribers on the process-event bus (line,
+  start, completion). The watcher uses all three; the agent's
   notify-on-completion still uses only ``completion``.
 * Three RPCs (``list_background_processes`` /
   ``read_process_tail`` / ``stop_background_process``) and their
@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from igni_core.backend.schemas_processes import ProcessTailResult, StopProcessResult
 from igni_core.backend.server_processes import ProcessesController
+from igni_core.core.tools.process_events import ProcessLineEvent, ProcessStartEvent
 from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.protocol.rpc import RpcMethod
 from tests.rpc_tables import rpc_table_for
@@ -42,19 +43,19 @@ class TestLineSubscriber:
 
     def test_subscribe_then_emit_fires_callback(self) -> None:
         registry = supervisors.default().registry
-        received: list[dict] = []
+        received: list[ProcessLineEvent] = []
         registry.bus.on("line", received.append)
 
         registry.emit_line(42, "hello from background")
 
-        assert received == [{"pid": 42, "line": "hello from background"}]
+        assert received == [ProcessLineEvent(pid=42, line="hello from background")]
 
     def test_unsubscribe_stops_callback(self) -> None:
         registry = supervisors.default().registry
-        received: list[dict] = []
+        received: list[ProcessLineEvent] = []
 
-        def cb(info: dict) -> None:
-            received.append(info)
+        def cb(event: ProcessLineEvent) -> None:
+            received.append(event)
 
         registry.bus.on("line", cb)
         registry.bus.off("line", cb)
@@ -66,23 +67,23 @@ class TestLineSubscriber:
         # Same callback registered twice should only fire once —
         # mirrors the completion subscriber contract.
         registry = supervisors.default().registry
-        received: list[dict] = []
+        received: list[ProcessLineEvent] = []
         cb = received.append
         registry.bus.on("line", cb)
         registry.bus.on("line", cb)
 
         registry.emit_line(1, "x")
 
-        assert received == [{"pid": 1, "line": "x"}]
+        assert received == [ProcessLineEvent(pid=1, line="x")]
 
     def test_subscriber_exception_does_not_block_others(self) -> None:
         # One bad callback can't sink the rest. Important because
         # the watcher's loop-hop subscriber would otherwise prevent
         # an unrelated plugin from receiving lines.
         registry = supervisors.default().registry
-        survivor: list[dict] = []
+        survivor: list[ProcessLineEvent] = []
 
-        def bad(_info: dict) -> None:
+        def bad(_event: ProcessLineEvent) -> None:
             raise RuntimeError("bad subscriber")
 
         registry.bus.on("line", bad)
@@ -90,7 +91,7 @@ class TestLineSubscriber:
 
         registry.emit_line(7, "still arrives")
 
-        assert survivor == [{"pid": 7, "line": "still arrives"}]
+        assert survivor == [ProcessLineEvent(pid=7, line="still arrives")]
 
     def test_no_subscribers_is_cheap_noop(self) -> None:
         # Hot path — must short-circuit when nothing is listening.
@@ -105,24 +106,24 @@ class TestStartSubscriber:
 
     def test_emit_start_publishes_pid_cmd_ts(self) -> None:
         registry = supervisors.default().registry
-        received: list[dict] = []
+        received: list[ProcessStartEvent] = []
         registry.bus.on("start", received.append)
 
         mp = SimpleNamespace(proc=SimpleNamespace(pid=123), cmd="tail -f x.log")
         registry.announce_start(mp)  # type: ignore[arg-type]
 
         assert len(received) == 1
-        assert received[0]["pid"] == 123
-        assert received[0]["cmd"] == "tail -f x.log"
+        assert received[0].pid == 123
+        assert received[0].cmd == "tail -f x.log"
         # ts is a real epoch — just sanity-check the field exists
         # and is a number.
-        assert isinstance(received[0]["started_at"], (int, float))
+        assert isinstance(received[0].started_at, (int, float))
 
     def test_start_subscriber_exception_isolated(self) -> None:
         registry = supervisors.default().registry
-        survivor: list[dict] = []
+        survivor: list[ProcessStartEvent] = []
 
-        def bad(_info: dict) -> None:
+        def bad(_event: ProcessStartEvent) -> None:
             raise RuntimeError("crash")
 
         registry.bus.on("start", bad)
@@ -130,7 +131,7 @@ class TestStartSubscriber:
         mp = SimpleNamespace(proc=SimpleNamespace(pid=1), cmd="x")
         registry.announce_start(mp)  # type: ignore[arg-type]
 
-        assert survivor[0]["pid"] == 1
+        assert survivor[0].pid == 1
 
 
 # ── ProcessesController (what the RPCs dump) ────────────────────────────────────

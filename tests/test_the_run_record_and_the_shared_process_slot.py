@@ -36,6 +36,7 @@ from igni_core.backend.run_controller import RunController
 from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
 from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.session.reminders import PendingReminderQueue
+from igni_core.core.tools.process_events import ProcessExitEvent
 from igni_core.protocol import messages as msg
 
 # ── Fakes ────────────────────────────────────────────────────────────
@@ -250,20 +251,20 @@ def _bridge(queue: list[str], live_sessions: int) -> PushNotificationBridge:
     return bridge
 
 
-_EXIT_EVENT = {
-    "pid": 8080,
-    "cmd": "npm run build",
-    "exit_code": 0,
-    "duration_seconds": 12.0,
-    "output_tail": "done",
-}
+_EXIT_EVENT = ProcessExitEvent(
+    pid=8080,
+    cmd="npm run build",
+    exit_code=0,
+    duration_seconds=12.0,
+    output_tail="done",
+)
 
 
 class TestBackgroundCompletionInjection:
     def test_a_single_session_still_hears_about_its_own_process(self):
         queue: list[str] = []
 
-        _bridge(queue, live_sessions=1)._on_process_done(dict(_EXIT_EVENT))
+        _bridge(queue, live_sessions=1)._on_process_done(_EXIT_EVENT)
 
         assert len(queue) == 1
         assert "npm run build" in queue[0]
@@ -278,7 +279,7 @@ class TestBackgroundCompletionInjection:
         """
         queue: list[str] = []
 
-        _bridge(queue, live_sessions=2)._on_process_done(dict(_EXIT_EVENT))
+        _bridge(queue, live_sessions=2)._on_process_done(_EXIT_EVENT)
 
         assert queue == [], (
             "a background process finished somewhere in this BE and its output "
@@ -296,7 +297,7 @@ class TestBackgroundCompletionInjection:
         boot = PushNotificationBridge(transport=_NullTransport(), loop=None, queue=boot_queue)
 
         sub = boot.for_transport(_NullTransport(), queue=runtime_queue)
-        sub._on_process_done(dict(_EXIT_EVENT))
+        sub._on_process_done(_EXIT_EVENT)
 
         assert boot_queue == []
         assert len(runtime_queue) == 1
