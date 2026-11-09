@@ -19,13 +19,21 @@ Cross-tool support is **enabled by default** — igni reads `CLAUDE.md` files, `
 ## Quick Start (for Claude Code users)
 
 ```bash
-brew install ignite-ember
-# or: pip install igni-core
-igni                                  # then type /login at the prompt
-igni                         # start — picks up existing agents, skills, CLAUDE.md automatically
+brew install ignite-ember/tap/ignite-ember
+# or: pip install ignite-ember
+
+igni login                            # sign in to your igni server account
+igni -m "explain this repository"      # run one task from the terminal
 ```
 
-Your existing Claude Code agents, skills, and `CLAUDE.md` files are picked up automatically — cross-tool support is enabled by default.
+That installs the last pre-split release (v1.0.3); the igni in this
+repository is not on PyPI yet — see
+[Quickstart](../README.md#quick-start) for how to run it from a checkout.
+
+The chat itself lives in the desktop app or the web client — `igni` on its
+own prints where to get them. Your existing Claude Code agents, skills, and
+`CLAUDE.md` files are picked up automatically — cross-tool support is enabled
+by default.
 
 ---
 
@@ -72,7 +80,7 @@ name: my-agent
 description: Does things
 tools: Read, Write, Edit, Bash
 
-# Ember extensions (ignored by Claude Code)
+# igni extensions (ignored by Claude Code)
 tags: [backend, api]
 reasoning: true
 can_orchestrate: true       # can this agent spawn sub-teams?
@@ -119,7 +127,7 @@ models:
 | `~/.claude/settings.json` | `~/.igni/settings.json` | Global settings |
 | `.claude/settings.json` | `.igni/settings.json` | Project settings |
 | `.claude/settings.local.json` | `.igni/settings.local.json` | Local overrides (gitignored) |
-| `CLAUDE.md` | `ember.md` | `CLAUDE.md` also read by default (cross-tool support) |
+| `CLAUDE.md` | `igni.md` | `CLAUDE.md` also read by default (cross-tool support) |
 | `~/.claude/CLAUDE.md` | `~/.igni/rules.md` | User-level global rules |
 | `.claude/agents/*.md` | `.igni/agents/*.md` | Agent definitions (both dirs scanned) |
 | `.mcp.json` | `.mcp.json` | MCP config (same file, same format) |
@@ -128,10 +136,10 @@ models:
 
 | Claude Code | igni | Notes |
 |---|---|---|
-| `claude` | `ignite-ember` | Main command |
+| `claude` | `igni` | Main command (`ignite-ember` is the old name and still works) |
 | `--model claude-sonnet-4-6` | `--model MiniMax-M2.7` | Different default, both support overrides |
-| `--continue` / `-c` | `--resume` | Resume last session |
-| `--resume <id>` | `--resume <id>` | Resume specific session |
+| `--continue` / `-c` | `--continue` | Resume last session |
+| `--resume <id>` | `--session-id <id>` | Resume specific session |
 | `--print` / `-p` | `-m "prompt"` | Non-interactive single task |
 | `--dangerously-skip-permissions` | `--auto-approve` | Skip all permission prompts |
 | `--permission-mode plan` | `--read-only` | Read-only mode: reading files (read-only shell commands) and the web (search, URL fetch) runs, everything that writes or executes is refused (plan mode would ask) |
@@ -139,9 +147,8 @@ models:
 | `--worktree` | `--worktree` | Isolated git worktree session |
 | `--effort low\|high` | Not applicable | igni uses Agno reasoning instead |
 | `--tools <list>` | Per-agent in `.md` file | Tool access is per-agent, not global |
-| N/A | `--no-tui` | Fall back to plain Rich CLI (TUI is the default) |
 | `--add-dir <path>` | `--add-dir <path>` | Additional directories (repeatable) |
-| `--file <path>` | N/A | Ember auto-detects file paths and URLs in message text instead |
+| `--file <path>` | N/A | igni auto-detects file paths and URLs in message text instead |
 
 ### Slash Commands
 
@@ -153,9 +160,6 @@ models:
 | `/model <name>` | `/model <name>` | Same |
 | `/agent` | `/agents` | List/manage agents |
 | `/hooks` | `/hooks` | View loaded hooks |
-| — | `/knowledge` | Knowledge base status |
-| — | `/knowledge add` | Add content to knowledge base |
-| — | `/knowledge search` | Search the knowledge base |
 | — | `/memory` | List stored memories |
 | — | `/memory optimize` | Consolidate memories |
 | — | `/sessions` | Browse and resume past sessions |
@@ -167,23 +171,22 @@ models:
 | — | `/whoami` | Show current user |
 | — | `/schedule` | Manage scheduled tasks |
 | — | `/evals` | Run agent evaluations |
-| — | `/sync-knowledge` | Sync knowledge base |
 
 ### Permissions
 
 | Claude Code | igni | Notes |
 |---|---|---|
 | `"allow": ["Bash(npm run *)"]` | `permissions.allow: ["Bash(npm run *)"]` | Same rule syntax |
-| `"deny": ["Read(.env)"]` | `safety.protected_paths: [".env"]` | Ember uses a dedicated protected paths list |
+| `"deny": ["Read(.env)"]` | `safety.protected_paths: [".env"]` | igni uses a dedicated protected paths list |
 | `"ask": ["Bash(git push *)"]` | `safety.require_confirmation: ["git push"]` | Same concept, different syntax |
 
 ### Memory & Storage
 
 | Claude Code | igni | Notes |
 |---|---|---|
-| `~/.claude/projects/<id>/memory/` | Agno Memory (DB-backed) | Ember uses Agno's memory system |
-| File-based `MEMORY.md` | `~/.igni/memory.db` (SQLite) | Structured storage, not files |
-| Local sessions only | SQLite default, remote backends available | Configure `storage.backend: "postgres"` to sync |
+| `~/.claude/projects/<id>/memory/` | Agno Memory (DB-backed) | igni uses Agno's memory system |
+| File-based `MEMORY.md` | `~/.igni/projects/<id>/state.db` (SQLite) | Structured storage, not files |
+| Local sessions only | SQLite by default, a shared database available | Set `storage.database_url` to sync |
 
 ---
 
@@ -191,17 +194,17 @@ models:
 
 ### Minimal (just switch)
 
-- [ ] `brew install ignite-ember` (or `pip install ignite-ember`)
-- [ ] `igni`, then `/login` at the prompt
-- [ ] Run `ignite-ember` — it automatically picks up:
+- [ ] `brew install ignite-ember/tap/ignite-ember` (or `pip install ignite-ember`)
+- [ ] `igni login` — sign in to your igni server account
+- [ ] Run `igni -m "…"` — it automatically picks up:
   - `.mcp.json` (your MCP servers)
-  - `ember.md` and `CLAUDE.md` (project instructions)
+  - `igni.md` and `CLAUDE.md` (project instructions)
   - `.claude/agents/` and `.claude/skills/` (cross-tool support is on by default)
 
 ### Recommended (get the full benefit)
 
-- [ ] Copy `CLAUDE.md` → `ember.md` (or keep both — Ember reads both by default)
-- [ ] Add Ember extensions to agents that benefit from them:
+- [ ] Copy `CLAUDE.md` → `igni.md` (or keep both — igni reads both by default)
+- [ ] Add igni extensions to agents that benefit from them:
   - `tags` for better Orchestrator routing
   - `reasoning: true` for agents that need chain-of-thought
   - `can_orchestrate: false` for agents that shouldn't spawn sub-teams
@@ -210,7 +213,7 @@ models:
 
 ### Optional (power features)
 
-- [ ] Set up a remote storage backend for cross-device sync
+- [ ] Set `storage.database_url` (or `IGNI_DATABASE_URL`) to a shared database for cross-device sync
 - [ ] Configure BYOM if you want to use specific models
 - [ ] Create project-specific evals for your custom agents
 - [ ] Add CodeIndex-aware search to your agents' system prompts
@@ -229,16 +232,16 @@ Features you get that Claude Code doesn't have:
 | **Ephemeral agents** | Auto-generated agents for tasks no existing agent fits |
 | **Agent evals** | Built-in regression testing for agent definitions |
 | **First-run onboarding** | Proposes project-specific agents based on your codebase |
-| **Cross-device sync** | Session + memory sync via remote storage backends |
+| **Cross-device sync** | Session + memory sync through a shared database (`storage.database_url`) |
 | **Model agnostic** | Any model from any provider (not just Anthropic) |
-| **Knowledge base** | ChromaDB vector store with custom embeddings for document/code search |
-| **Learning** | Agno LearningMachine builds user profiles, entity memory across sessions |
+| **Documents** | The Artifacts extension's document store; the code index is the CodeIndex extension's |
+| **Learning** | Agno LearningMachine carries user memory across sessions |
 | **Guardrails** | PII detection, prompt injection detection, content moderation as pre-hooks |
 | **HITL** | Agents pause for confirmation or user input before sensitive operations |
-| **Run cancellation** | Cancel running agents mid-execution (Escape in TUI) |
-| **TUI mode** | Full Textual-based terminal UI with streaming, session management, token tracking (default; `--no-tui` for plain Rich CLI) |
+| **Run cancellation** | Cancel a running agent mid-execution from the client |
+| **Where you chat** | The desktop app or the web client; the `igni` command runs work and exits |
 | **Task scheduling** | Schedule one-shot or recurring background tasks with configurable timeout and concurrency |
-| **Task visualization** | Live TUI widget showing task list, statuses, assignees, dependencies during tasks-mode execution |
+| **Task visualization** | Live task list showing the task, its statuses and assignees during tasks-mode execution |
 | **IDE MCP support** | Agents declare which MCP servers they use via `mcp_servers` in their `.md` file |
 | **Team modes** | Route, Coordinate, Broadcast, Tasks — right tool for each job |
 
@@ -250,7 +253,7 @@ Features in Claude Code that igni hasn't implemented:
 
 | Feature | Status | Notes |
 |---|---|---|
-| Effort levels (`--effort`) | N/A | Ember uses Agno reasoning instead |
+| Effort levels (`--effort`) | N/A | igni uses Agno reasoning instead |
 
 ---
 

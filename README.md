@@ -52,13 +52,32 @@ The architectural choices that drive the gap: (1) **CodeIndex queried first, not
 ```bash
 brew install ignite-ember/tap/ignite-ember  # or: pip install ignite-ember
 cd your-project
-igni -m "In one sentence, what does this project do?"
+igni -m "In one sentence, what does this project do?"   # `ignite-ember` if brew installed it
 ```
 
 `igni` is the command; `ignite-ember` is kept as an alias so existing
-shell aliases and scripts keep working. Both are the same entry point.
+shell aliases and scripts keep working. Both are the same entry point —
+pip installs both names, the Homebrew formula symlinks one, so a brew
+install gives you `ignite-ember` and a pip install gives you both.
 On the command line it runs **one task and exits** (`-m`, or `-p` for a
 pipe); there is no terminal chat UI any more — run it bare and it says so.
+
+**What the published package holds today.** `ignite-ember` on PyPI is
+**v1.0.3, the last pre-split release** — the monolith, packaged as the
+`ember_code` module. It is not the igni this repository builds:
+`igni-core` has never been published, and the `ignite-ember` alias that
+would point at it (`packages/ignite-ember/` — metadata and a dependency
+on `igni-core` at the same version) cannot be published before
+`igni-core` is. The command above works either way; the product behind
+it is the old one until the first split release is cut. For the igni in
+this repository:
+
+```bash
+git clone https://github.com/ignite-ember/igni-core.git
+cd igni-core
+uv venv && uv pip install -e ".[dev]"
+source .venv/bin/activate          # puts `igni` on your PATH
+```
 The interactive chat is the desktop app and the web client. A headless run cannot ask before it runs a command, so decide
 up front what it may do — see
 [A headless run cannot ask you anything](QUICKSTART.md#a-headless-run-cannot-ask-you-anything).
@@ -108,7 +127,9 @@ See [Quickstart](QUICKSTART.md) for the full setup guide.
 
 ### Quickstart (new setup)
 
-1. **Install** — `brew install ignite-ember/tap/ignite-ember` (or `pip install ignite-ember`)
+1. **Install** — `brew install ignite-ember/tap/ignite-ember` (or `pip install ignite-ember`).
+   That is the last pre-split release (v1.0.3); the igni in this repository is
+   not published yet, so install it from source — see [Quick Start](#quick-start).
 2. **Configure a model** — set `OPENAI_API_KEY` (or any provider key) and add the
    model to `.igni/config.yaml`; or point `api_url` at your igni server and run
    `igni login`
@@ -220,8 +241,8 @@ brew uninstall ignite-ember && brew untap ignite-ember/tap && brew tap ignite-em
 The Textual terminal UI was removed in v0.9.7, and the VS Code and JetBrains
 extensions are no longer shipped. igni ships the desktop app (Tauri), the web
 client and the CLI. The desktop app and the web client share one web UI,
-both in [igni-app](https://github.com/ignite-ember/igni-app); the desktop app talks to the backend over a Unix socket
-(`python -m igni_core.backend --socket <path>`). Features: streaming
+both in [igni-app](https://github.com/ignite-ember/igni-app); the desktop app spawns the backend and talks to it over a WebSocket
+(`python -m igni_core.backend --ws-port 0`). Features: streaming
 responses, agent tree visualization, token tracking, session picker, keyboard
 shortcuts, HITL confirmation dialogs. In a terminal, `igni -m` and `igni -p`
 run one task.

@@ -5,12 +5,18 @@ that its files are the ones this repository's release workflow built, and —
 once the release key exists — a signature from Ignite Ember. This page shows
 how to check each, on a connected machine and on one with no network at all.
 
-Two kinds of release come out of this repository:
+igni is released from three repositories, each with its own tag and its own
+evidence:
 
-| Tag | Workflow | What it ships |
-|---|---|---|
-| `v<version>` | `.github/workflows/release.yml` | the `ignite-ember` wheel and sdist, the desktop installers and macOS updater payload |
-| `sdk-v<version>` | `.github/workflows/sdk-release.yml` | `igni-service` and `igni-extension` wheels and sdists, the three `@ignite-ember/*` npm tarballs |
+| Repository | Tag | Workflow | What it ships |
+|---|---|---|---|
+| `ignite-ember/igni-core` | `v<version>` | `.github/workflows/release.yml` | the `igni-core` wheel and sdist, and the `ignite-ember` shim that depends on it |
+| `ignite-ember/igni-app` | `v<version>` | `.github/workflows/release.yml` | the desktop installers, the macOS updater payload and `latest.json` |
+| `ignite-ember/igni-sdk` | `sdk-v<version>` | `.github/workflows/sdk-release.yml` | `igni-service`, `igni-extension` and `igni-client` wheels and sdists, the three `@ignite-ember/*` npm tarballs |
+
+This page is in igni-core, so the commands below are written for its
+releases. The same commands work for the other two, with the repository and
+the tag changed.
 
 ## What is on a release
 
@@ -23,18 +29,19 @@ Two kinds of release come out of this repository:
 
 SBOMs, per thing you install:
 
-| SBOM | Covers | Built from |
-|---|---|---|
-| `ignite-ember-<v>.cdx.json` | the wheel / sdist, every optional extra | `uv.lock` |
-| `igni-desktop-<v>.cdx.json` | the desktop app: the Tauri shell's crates and the web UI's npm packages | `clients/tauri/src-tauri/Cargo.lock`, `clients/web/package-lock.json` |
-| `igni-service-<v>.cdx.json`, `igni-extension-<v>.cdx.json` | each Python SDK | its own `uv.lock` |
+| SBOM | Covers | Built from | Released by |
+|---|---|---|---|
+| `igni-core-<v>.cdx.json` | the wheel / sdist, every optional extra | `uv.lock` | igni-core |
+| `igni-desktop-<v>.cdx.json` | the desktop app: the Tauri shell's crates and the web UI's npm packages | `clients/tauri/src-tauri/Cargo.lock`, `clients/web/package-lock.json` | igni-app |
+| `igni-service-<v>.cdx.json`, `igni-extension-<v>.cdx.json`, `igni-client-<v>.cdx.json` | each Python SDK | its own `packages/<pkg>/uv.lock` | igni-sdk |
 
 The npm SDK packages declare no dependencies (`@ignite-ember/ui-react`'s are
 peer dependencies your application chooses), so they have no SBOM; npm's
 provenance covers them (below). Development dependencies are in no SBOM: they
-are not shipped. The desktop app downloads `uv`, Python and `ignite-ember` on
+are not shipped. The desktop app downloads `uv`, Python and `igni-core` on
 first launch; those are covered by the uv release's own checksums and by
-`ignite-ember-<v>.cdx.json`, not by the desktop SBOM.
+`igni-core-<v>.cdx.json` — the shim is the same code under its old name —
+not by the desktop SBOM.
 
 To scan one: `trivy sbom igni-desktop-1.0.4.cdx.json`, or
 `grype sbom:igni-desktop-1.0.4.cdx.json`.
@@ -56,24 +63,27 @@ names this repository, the workflow and the commit. It needs the GitHub CLI
 (`gh` 2.49 or later):
 
 ```bash
-gh attestation verify igni_1.0.4_aarch64.dmg --repo ignite-ember/igni
+gh attestation verify igni_core-1.0.4-py3-none-any.whl --repo ignite-ember/igni-core
 ```
 
 To also insist on the workflow and the tag that built it:
 
 ```bash
-gh attestation verify igni_1.0.4_aarch64.dmg --repo ignite-ember/igni \
-  --signer-workflow ignite-ember/igni/.github/workflows/release.yml \
+gh attestation verify igni_core-1.0.4-py3-none-any.whl --repo ignite-ember/igni-core \
+  --signer-workflow ignite-ember/igni-core/.github/workflows/release.yml \
   --source-ref refs/tags/v1.0.4
 ```
 
-(For SDK files, `sdk-release.yml` and `refs/tags/sdk-v<version>`.)
+(The desktop installers are built by igni-app, so they are verified against
+`ignite-ember/igni-app` and `ignite-ember/igni-app/.github/workflows/release.yml`.
+For SDK files, `ignite-ember/igni-sdk`, `sdk-release.yml` and
+`refs/tags/sdk-v<version>`.)
 
 Every file at once:
 
 ```bash
 while read -r _ file; do
-  [ -f "$file" ] && gh attestation verify "$file" --repo ignite-ember/igni >/dev/null && echo "OK  $file"
+  [ -f "$file" ] && gh attestation verify "$file" --repo ignite-ember/igni-core >/dev/null && echo "OK  $file"
 done < SHA256SUMS
 ```
 
@@ -90,7 +100,7 @@ public keys and certificate authorities the bundle chains to).
 **On a connected machine**, once per release:
 
 ```bash
-gh release download v1.0.4 --repo ignite-ember/igni --dir igni-1.0.4
+gh release download v1.0.4 --repo ignite-ember/igni-core --dir igni-1.0.4
 gh attestation trusted-root > igni-1.0.4/trusted_root.jsonl
 ```
 
@@ -98,7 +108,7 @@ gh attestation trusted-root > igni-1.0.4/trusted_root.jsonl
 rotates a key — but fetch it at or after the release date, so it includes
 the keys the release was signed under. If you prefer not to trust the bundle
 attached to the release, `gh attestation download <file> --repo
-ignite-ember/igni` fetches the same attestation from GitHub instead.
+ignite-ember/igni-core` fetches the same attestation from GitHub instead.
 
 **Carry the directory in. On the air-gapped machine** (a `gh` binary of 2.49
 or later; with `--bundle` and `--custom-trusted-root` it contacts nothing):
@@ -106,9 +116,9 @@ or later; with `--bundle` and `--custom-trusted-root` it contacts nothing):
 ```bash
 cd igni-1.0.4
 sha256sum --check --ignore-missing SHA256SUMS
-gh attestation verify igni_1.0.4_aarch64.dmg \
-  --repo ignite-ember/igni \
-  --bundle igni-1.0.4.provenance.sigstore.json \
+gh attestation verify igni_core-1.0.4-py3-none-any.whl \
+  --repo ignite-ember/igni-core \
+  --bundle igni_core-1.0.4.provenance.sigstore.json \
   --custom-trusted-root trusted_root.jsonl
 ```
 
@@ -167,8 +177,8 @@ These are separate from the evidence above and predate it:
 ## For maintainers: turning signing on
 
 `release.yml` (job `release-evidence`) and `sdk-release.yml` (job
-`github-release`) sign when all three of these exist on the repository, skip
-with a notice when none do, and fail when only some do:
+`github-release`, in igni-sdk) sign when all three of these exist on the
+repository, skip with a notice when none do, and fail when only some do:
 
 | Name | Kind | Content |
 |---|---|---|

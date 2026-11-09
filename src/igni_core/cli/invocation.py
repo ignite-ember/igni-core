@@ -41,9 +41,9 @@ _HELP_TEXT = (
     f'  • {COMMAND} -m "<message>"         one-shot message\n'
     f"  • {COMMAND} -p                      pipe mode (stdin → stdout)\n"
     f'  • {COMMAND} -c -m "<message>"      resume last session, one-shot\n'
-    "  • python -m igni_core.backend --socket <path>\n"
+    "  • python -m igni_core.backend --ws-port 0\n"
     "        start the backend for a React client (web / Tauri)\n"
-    "        to connect via Unix socket.\n"
+    "        to connect to over WebSocket.\n"
 )
 
 
