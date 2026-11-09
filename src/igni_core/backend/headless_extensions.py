@@ -199,6 +199,7 @@ class HeadlessExtensions:
             return
         rpc = ExtensionRpc(self._registry)
         plugins_dir = PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir
+        hooks = ExtensionHooks(registry=self._registry)
         contributions = ExtensionContributions(
             registry=self._registry,
             rpc=rpc,
@@ -207,6 +208,7 @@ class HeadlessExtensions:
             igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
             prompt_loader=session.prompt_loader,
             prompts=session.prompt_contributions,
+            hooks=hooks,
         )
         contributions.attach()
         model = HostModel.build(
@@ -216,8 +218,7 @@ class HeadlessExtensions:
                 store=store,
             )
         )
-        self._channel = HostChannel(model)
-        hooks = ExtensionHooks.wire(self._registry)
+        self._channel = HostChannel(model, hooks=hooks)
         extension_hook_gate.install(hooks)
         person = SignedInPerson(settings.auth.credentials_file, store)
         session.mcp_manager.extension_request_meta = person.meta

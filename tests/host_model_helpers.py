@@ -56,6 +56,7 @@ from igni_core.core.session.event_log_schema import (
 from igni_core.core.session.schemas import ContextBreakdown, PersistResult
 from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.channel import HostChannel
+from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.host.wire import Op, Request
 from igni_core.extensions.manifest import ExtensionManifest
@@ -405,6 +406,8 @@ class HostRig:
         self.windows = CapturingTransport()
         self.transport = ObservedTransport(self.windows)
         self.registry = ExtensionRegistry()
+        # The extensions' hooks: the rig's own, so a test can ask through them.
+        self.hooks = ExtensionHooks(registry=self.registry)
         # The default store, handed to the RPC handlers; ``conftest``
         # points the home directory it lives under at a temp dir.
         self.store = ExtensionStore()
@@ -450,6 +453,7 @@ class HostRig:
             orchestrator=self.orchestrator,
             transport=self.transport,
             registry=self.registry,
+            hooks=self.hooks,
             project_dir=self.project,
             hubs=HostModelHubs(
                 approvals=approval_events,
@@ -459,7 +463,7 @@ class HostRig:
             store=self.store,
             strict=strict,
         )
-        self.channel = HostChannel(self.model)
+        self.channel = HostChannel(self.model, hooks=self.hooks)
         return self
 
     async def stop(self) -> None:

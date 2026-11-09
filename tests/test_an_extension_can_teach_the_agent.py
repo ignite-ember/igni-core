@@ -33,6 +33,7 @@ from igni_core.extensions.contributions import (
     ExtensionConditionReceiver,
     ExtensionContributions,
 )
+from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.origin import ExtensionOrigins
@@ -72,6 +73,7 @@ class Wired:
             prompt_loader=self.prompt_loader,
             prompts=self.prompts,
             priority=lambda: self.priority,
+            hooks=ExtensionHooks(registry=self.registry),
         )
         self.contributions.attach()
         self.installer = ExtensionInstaller(
@@ -368,6 +370,7 @@ async def test_an_agent_override_is_read_from_the_installed_plugin(tmp_path):
         prompt_loader=PromptLoader(PromptFragments()),
         prompts=prompts,
         plugins_dir=plugins,
+        hooks=ExtensionHooks(registry=registry),
     )
     contributions.note_bundle("acme.scanner", bundle)
     manifest = ExtensionManifest.model_validate(

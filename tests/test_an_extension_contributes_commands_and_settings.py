@@ -27,6 +27,7 @@ from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import ExtensionContributions
+from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.origin import ExtensionOrigins
@@ -68,6 +69,7 @@ class Wired:
             commands=self.commands,
             prompt_loader=PromptLoader(PromptFragments()),
             prompts=PromptContributions(),
+            hooks=ExtensionHooks(registry=self.registry),
         )
         self.contributions.attach()
         self.installer = ExtensionInstaller(

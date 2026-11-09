@@ -28,6 +28,7 @@ from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.health import ExtensionHealth
+from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
@@ -85,6 +86,7 @@ def mcp() -> StubMcp:
 def runtime(mcp: StubMcp) -> ExtensionsRuntime:
     rpc = ExtensionRpc(ExtensionRegistry())
     prompts = PromptContributions()
+    hooks = ExtensionHooks(registry=rpc.registry)
     return ExtensionsRuntime(
         rpc=rpc,
         origins=ExtensionOrigins(),
@@ -94,8 +96,10 @@ def runtime(mcp: StubMcp) -> ExtensionsRuntime:
             rpc=rpc,
             prompt_loader=PromptLoader(PromptFragments()),
             prompts=prompts,
+            hooks=hooks,
         ),
         prompts=prompts,
+        hooks=hooks,
     )
 
 

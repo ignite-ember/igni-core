@@ -249,6 +249,7 @@ class BackendApp:
             producer_db=StorageLocator.from_settings(settings).project_database(launch.project_dir),
             signed_in=access.signed_in_server(),
             orchestrator=orchestrator,
+            hooks=extensions.hooks,
             fetches_own_events=layers.current().fetches_own_events(),
         )
         orchestrator.mount(ingress.rpc())

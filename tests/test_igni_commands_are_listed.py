@@ -24,6 +24,7 @@ from igni_core.backend.command_handler import CommandHandler
 from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import ExtensionContributions
+from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.impact import ExtensionImpact, IgniCommands, ImpactResolver
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry
@@ -78,6 +79,7 @@ def test_the_host_applies_it_without_a_decision():
         igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
         prompt_loader=PromptLoader(PromptFragments()),
         prompts=PromptContributions(),
+        hooks=ExtensionHooks(registry=registry),
     )
     registry.install(ExtensionManifest.model_validate(MANIFEST))
     contributions.resolve()

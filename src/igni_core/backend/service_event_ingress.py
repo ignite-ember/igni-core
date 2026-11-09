@@ -13,6 +13,7 @@ from igni_core.backend.service_item_desk import HeldPostFlusher, PoolChatDesk
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.core.db.database import Database
 from igni_core.extensions.event_pull import PersonEventPull
+from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.service_attachments import ServerAttachments
 from igni_core.extensions.service_events import DeliveredEvents, ServiceEventInbox
 from igni_core.extensions.service_landing import Lander
@@ -41,6 +42,7 @@ class ServiceEventIngress:
         producer_db: Database,
         signed_in: SignedInServer,
         orchestrator: SessionOrchestrator,
+        hooks: ExtensionHooks,
         fetches_own_events: bool,
     ) -> ServiceEventIngress:
         """``fetches_own_events``: igni pulls the person's events itself while
@@ -56,7 +58,7 @@ class ServiceEventIngress:
                 held=held,
                 files=ServerAttachments(signed_in),
             ),
-            hand_event=ExtensionEventHandler(),
+            hand_event=ExtensionEventHandler(hooks),
         )
         return cls(
             inbox=inbox,

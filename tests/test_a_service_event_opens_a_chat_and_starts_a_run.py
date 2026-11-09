@@ -92,7 +92,7 @@ async def test_the_handler_opens_a_titled_chat_and_its_post_starts_the_run(start
     rig, process = started
     window = await rig.window("w-main", session="boot")
 
-    handled = await ExtensionEventHandler()(_event())
+    handled = await ExtensionEventHandler(rig.hooks)(_event())
     did = await process.line()
     await rig.settle()
 

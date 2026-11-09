@@ -22,9 +22,10 @@ from igni_core.backend.service_item_desk import PoolChatDesk
 from igni_core.core.db.urls import DatabaseUrl
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.wire import HookAnswer, Outcome
+from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.service_events import EventHandling, NotHandled, ServiceEvent
 from igni_core.protocol import messages as msg
-from tests.host_model_helpers import HostRig
+from tests.host_model_helpers import HostRig, manifest
 from tests.service_item_rig import Inbox
 
 
@@ -37,6 +38,13 @@ def _event(event_id: str = "evt-1", **extra: Any) -> ServiceEvent:
         "payload": {"repo": "acme/api"},
     }
     return ServiceEvent.model_validate({**fields, **extra})
+
+
+def _hooks() -> ExtensionHooks:
+    """The hooks of a deployment where the indexer is installed."""
+    registry = ExtensionRegistry()
+    registry.install(manifest("acme.indexer"), state=ExtensionState.READY)
+    return ExtensionHooks(registry=registry)
 
 
 class Extension:
@@ -131,7 +139,7 @@ def _answering(hooks: ExtensionHooks, answer: HookAnswer) -> list[dict[str, Any]
 
 
 async def test_a_handler_that_ran_is_handled():
-    hooks = ExtensionHooks()
+    hooks = _hooks()
     frames = _answering(hooks, HookAnswer(hook="", outcome=Outcome.ALLOW))
     assert await ExtensionEventHandler(hooks)(_event()) == EventHandling(handled=True)
     [frame] = frames
@@ -139,18 +147,18 @@ async def test_a_handler_that_ran_is_handled():
 
 
 async def test_no_handler_or_a_failing_one_is_not_handled():
-    hooks = ExtensionHooks()
+    hooks = _hooks()
     _answering(hooks, HookAnswer(hook="", outcome=Outcome.REJECT, reason="no handler for x"))
     assert await ExtensionEventHandler(hooks)(_event()) == EventHandling(
         handled=False, reason="no handler for x"
     )
-    failing = ExtensionHooks()
+    failing = _hooks()
     _answering(failing, HookAnswer(hook="", outcome=Outcome.FAILED, reason="boom"))
     assert not (await ExtensionEventHandler(failing)(_event())).handled
 
 
 async def test_text_an_older_handler_returns_is_not_posted():
-    hooks = ExtensionHooks()
+    hooks = _hooks()
     _answering(hooks, HookAnswer(hook="", outcome=Outcome.MODIFY, value={"prompt": "Do it."}))
     assert await ExtensionEventHandler(hooks)(_event()) == EventHandling(handled=True)
 

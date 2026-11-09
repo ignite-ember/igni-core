@@ -13,8 +13,6 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
-from pydantic_core import to_jsonable_python
-
 from igni_core.backend.activity import ActivityState
 from igni_core.backend.schemas_pool import ExtensionPost
 from igni_core.backend.schemas_push import SessionNamedPayload
@@ -144,16 +142,15 @@ class ExtensionEventHandler:
     #: The frame's event name, the SDK's ``SERVICE_EVENT``.
     EVENT: ClassVar[str] = "ServiceEvent"
 
-    def __init__(self, hooks: ExtensionHooks | None = None) -> None:
+    def __init__(self, hooks: ExtensionHooks) -> None:
         self._hooks = hooks
 
     async def __call__(self, event: ServiceEvent) -> EventHandling:
-        hooks = self._hooks if self._hooks is not None else ExtensionHooks.shared()
         try:
-            answer = await hooks.ask_one(
+            answer = await self._hooks.ask_one(
                 event.extension_id,
                 self.EVENT,
-                to_jsonable_python(event.model_dump(mode="json")),
+                event,
                 timeout=self.TIMEOUT_S,
                 connect_timeout=self.CONNECT_TIMEOUT_S,
             )

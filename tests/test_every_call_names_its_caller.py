@@ -168,8 +168,7 @@ class TestAToolCallCarriesIt:
 async def test_a_hook_frame_names_its_principal() -> None:
     registry = ExtensionRegistry()
     registry.install(manifest("acme.a", hooks=["PreToolUse", "SessionStart"]))
-    hooks = ExtensionHooks(timeout=0.5)
-    hooks.attach(registry)
+    hooks = ExtensionHooks(registry=registry, timeout=0.5)
     hooks.set_principal(lambda: ADA)
     frames: list[dict[str, Any]] = []
 

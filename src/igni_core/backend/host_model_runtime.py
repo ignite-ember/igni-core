@@ -50,6 +50,7 @@ class HostModelRuntime:
             orchestrator=orchestrator,
             transport=transport,
             registry=runtime.registry,
+            hooks=runtime.hooks,
             project_dir=project_dir,
             hubs=HostModelHubs(
                 approvals=approval_events,
@@ -60,7 +61,7 @@ class HostModelRuntime:
             notices=notices,
             workspace_signals=signals,
         )
-        return cls(model=model, channel=HostChannel(model), signals=signals)
+        return cls(model=model, channel=HostChannel(model, hooks=runtime.hooks), signals=signals)
 
     @property
     def model(self) -> HostModel:

@@ -79,9 +79,7 @@ def faults(registry: ExtensionRegistry) -> ExtensionFaults:
 
 @pytest.fixture
 def hooks(registry: ExtensionRegistry) -> ExtensionHooks:
-    found = ExtensionHooks(timeout=0.2)
-    found.attach(registry)
-    return found
+    return ExtensionHooks(registry=registry, timeout=0.2)
 
 
 async def _hang_until_faulty(hooks: ExtensionHooks) -> None:

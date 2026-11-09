@@ -13,6 +13,7 @@ from igni_core.extensions.contributions import (
     ExtensionContributions,
 )
 from igni_core.extensions.health import ExtensionHealth
+from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.impact import IgniCommands
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry
@@ -38,12 +39,14 @@ class ExtensionsRuntime:
         health: ExtensionHealth,
         contributions: ExtensionContributions,
         prompts: PromptContributions,
+        hooks: ExtensionHooks,
     ) -> None:
         self._rpc = rpc
         self._origins = origins
         self._health = health
         self._contributions = contributions
         self._prompts = prompts
+        self._hooks = hooks
 
     @classmethod
     def build(
@@ -61,6 +64,9 @@ class ExtensionsRuntime:
         # when a call fails rather than waiting out its interval.
         health = ExtensionHealth(registry=rpc.registry, rpc=rpc, mcp=mcp)
         rpc.watch(health.on_call_failed)
+        # The extensions' hooks: one set for the deployment, read from the
+        # registry the rest of the extensions answer out of.
+        hooks = ExtensionHooks(registry=rpc.registry)
         # What an extension adds to the agent (prompts, agents, anchors,
         # commands), tied to READY rather than to being installed, so a
         # dead service stops telling the model about data it cannot fetch.
@@ -73,6 +79,7 @@ class ExtensionsRuntime:
             igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
             prompt_loader=prompt_loader,
             prompts=prompts,
+            hooks=hooks,
         )
         contributions.attach()
         return cls(
@@ -81,11 +88,17 @@ class ExtensionsRuntime:
             health=health,
             contributions=contributions,
             prompts=prompts,
+            hooks=hooks,
         )
 
     @property
     def rpc(self) -> ExtensionRpc:
         return self._rpc
+
+    @property
+    def hooks(self) -> ExtensionHooks:
+        """The extensions' hooks — the one set the deployment answers on."""
+        return self._hooks
 
     @property
     def registry(self) -> ExtensionRegistry:

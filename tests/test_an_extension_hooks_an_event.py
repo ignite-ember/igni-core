@@ -105,9 +105,7 @@ def registry() -> ExtensionRegistry:
 
 @pytest.fixture
 def hooks(registry: ExtensionRegistry) -> ExtensionHooks:
-    found = ExtensionHooks(timeout=0.2)
-    found.attach(registry)
-    return found
+    return ExtensionHooks(registry=registry, timeout=0.2)
 
 
 def allow(_: dict[str, Any]) -> dict[str, Any]:
@@ -249,8 +247,7 @@ async def test_a_process_that_failed_to_start_is_refused_at_once_with_why(
         state=ExtensionState.FAILED,
         reason="its environment would not install",
     )
-    slow = ExtensionHooks(timeout=30)
-    slow.attach(registry)
+    slow = ExtensionHooks(registry=registry, timeout=30)
 
     verdict = await asyncio.wait_for(slow.ask(CALL), 1)
 
@@ -613,7 +610,7 @@ async def test_a_process_answers_a_hook_over_its_socket(rig: HostRig) -> None:
     ) as socket:
         hello = json.loads(await socket.recv())
         assert hello["op"] == "hello"
-        asking = asyncio.create_task(ExtensionHooks.shared().ask(CALL))
+        asking = asyncio.create_task(rig.hooks.ask(CALL))
         frame = json.loads(await socket.recv())
         assert frame["op"] == "hook" and frame["event"] == "PreToolUse"
         # The host adds the manifest name; "" for a tool that is no extension's.
@@ -634,6 +631,47 @@ async def test_a_process_answers_a_hook_over_its_socket(rig: HostRig) -> None:
     assert not verdict.allowed and verdict.reason == "No. (the extension acme.guard)"
 
 
+async def test_a_change_that_is_not_a_value_is_the_extension_s_bug(rig: HostRig) -> None:
+    """A change that is not the event's value is refused as the extension's bug.
+
+    The extension answered — what it sent cannot be read as a change — so
+    it is not counted as a silence, never marked faulty, and its process
+    is not restarted.
+    """
+    rig.install("acme.guard", hooks=["PreToolUse"])
+    assert rig.channel is not None
+    env = await rig.channel.grant("acme.guard", secrets.token_urlsafe(16))
+
+    async with connect(
+        env["IGNI_HOST_URL"],
+        additional_headers={"Authorization": f"Bearer {env['IGNI_HOST_SECRET']}"},
+    ) as socket:
+        await socket.recv()
+        asking = asyncio.create_task(rig.hooks.ask(CALL))
+        frame = json.loads(await socket.recv())
+        await socket.send(
+            json.dumps(
+                {
+                    "id": 7,
+                    "op": "answer",
+                    "params": {
+                        "hook": frame["id"],
+                        "outcome": "modify",
+                        "value": ["not", "a", "value"],
+                    },
+                }
+            )
+        )
+        reply = json.loads(await socket.recv())
+        verdict = await asking
+
+    # The answer was taken, not refused: it was read and found wanting.
+    assert reply["ok"] is True
+    assert not verdict.allowed
+    assert "its change is not the event's value" in verdict.reason
+    assert not rig.registry.faults.faulty("acme.guard")
+
+
 async def test_a_process_that_goes_away_has_failed_what_it_owed(rig: HostRig) -> None:
     rig.install("acme.guard", hooks=["PreToolUse"])
     assert rig.channel is not None
@@ -644,7 +682,7 @@ async def test_a_process_that_goes_away_has_failed_what_it_owed(rig: HostRig) ->
         additional_headers={"Authorization": f"Bearer {env['IGNI_HOST_SECRET']}"},
     ) as socket:
         await socket.recv()
-        asking = asyncio.create_task(ExtensionHooks.shared().ask(CALL))
+        asking = asyncio.create_task(rig.hooks.ask(CALL))
         await socket.recv()
     verdict = await asking
 
