@@ -56,9 +56,10 @@ class McpRpcHandler(RpcHandler):
         """Connect one configured MCP server to this session.
 
         ``server_name`` is the server's name in the MCP configuration.
-        Returns an ``info`` message, sent in place of an ``rpc_response``.
-        A server that could not connect is not an error: read
-        ``get_mcp_server_details`` for its ``error``.
+        Returns an ``info`` message, sent in place of an ``rpc_response``,
+        once it is connected. Fails with the reason when it did not connect
+        (not configured, refused by policy, no tools, approval denied); the
+        reason is also ``get_mcp_server_details``'s ``error`` for it.
         """
         return await self._ctx.backend.mcp_connect(args.server_name)
 

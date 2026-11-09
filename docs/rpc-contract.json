@@ -10466,7 +10466,7 @@
       "args": {
         "$ref": "#/defs/McpServerArgs"
       },
-      "doc": "Connect one configured MCP server to this session.\n\n``server_name`` is the server's name in the MCP configuration.\nReturns an ``info`` message, sent in place of an ``rpc_response``.\nA server that could not connect is not an error: read\n``get_mcp_server_details`` for its ``error``.",
+      "doc": "Connect one configured MCP server to this session.\n\n``server_name`` is the server's name in the MCP configuration.\nReturns an ``info`` message, sent in place of an ``rpc_response``,\nonce it is connected. Fails with the reason when it did not connect\n(not configured, refused by policy, no tools, approval denied); the\nreason is also ``get_mcp_server_details``'s ``error`` for it.",
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"

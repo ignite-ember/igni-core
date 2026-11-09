@@ -112,10 +112,8 @@ def test_the_mcp_panel_is_empty_for_a_project_with_no_servers(backend):
 
 
 async def test_connecting_an_mcp_server_nobody_configured_says_so(backend):
-    reply = await backend.mcp_connect("nobody-configured-this")
-
-    assert isinstance(reply, msg.Info)
-    assert "nobody-configured-this" in reply.text
+    with pytest.raises(ValueError, match="nobody-configured-this: No config found"):
+        await backend.mcp_connect("nobody-configured-this")
 
 
 def test_the_plugin_panel_lists_nothing_and_a_missing_plugin_is_an_error(backend):
