@@ -381,7 +381,7 @@ def test_load_custom_tools_namespaces_plugin_toolkits(tmp_path: Path) -> None:
     ``custom_<plugin>_<file>``. The prefix prevents collisions with
     same-named user files in ``~/.igni/tools/``."""
     from igni_core.core.tools.custom_loader import CustomToolLoader
-    from igni_core.core.workspace_trust import WorkspaceTrust
+    from igni_core.core.workspace_trust import process_trust
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     _write_plugin_with_tools(user_ember, "mp", "demo")
@@ -390,7 +390,7 @@ def test_load_custom_tools_namespaces_plugin_toolkits(tmp_path: Path) -> None:
         loader = PluginLoader()
         loader.load_all(project_dir=tmp_path / "proj")
         plugin_dirs = loader.collect_tool_dirs()
-        result = CustomToolLoader(trust=WorkspaceTrust.shared()).discover(
+        result = CustomToolLoader(trust=process_trust()).discover(
             project_dir=tmp_path / "proj",
             plugin_tool_dirs=plugin_dirs,
         )

@@ -31,7 +31,11 @@ from agno.tools import tool
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.tools.custom_loader import CustomToolkit, CustomToolLoader
 from igni_core.core.tools.custom_loader_schemas import PluginToolDir
-from igni_core.core.workspace_trust import WorkspaceTrust, WorkspaceTrustStore
+from igni_core.core.workspace_trust import (
+    WorkspaceTrust,
+    WorkspaceTrustStore,
+    trust_service,
+)
 
 # ── helpers ───────────────────────────────────────────────────────
 
@@ -141,15 +145,16 @@ class TestTheTrustGate:
     def test_the_injected_trust_service_is_the_one_consulted(self, home, project, tmp_path):
         """The loader asks the service it was handed.
 
-        The process-wide service says the folder is trusted and the
-        injected one says it is not: the folder's tools stay unloaded,
-        because the loader's collaborator is the one that answers.
+        The process's service says the folder is trusted and the injected
+        one says it is not: the folder's tools stay unloaded, because the
+        loader's collaborator is the one that answers.
         """
         marker = tmp_path / "tool-ran"
         _write_tool_file(project / CONFIG_DIR / "tools", "x.py", _marker_tool(marker))
 
-        shared = WorkspaceTrust.shared()
-        shared.trust(project)
+        process_service = WorkspaceTrust(store=WorkspaceTrustStore(path=tmp_path / "process.json"))
+        process_service.trust(project)
+        trust_service.replace(process_service)
         injected = WorkspaceTrust(store=WorkspaceTrustStore(path=tmp_path / "trust.json"))
 
         result = _loader(injected).discover(project)
@@ -157,15 +162,17 @@ class TestTheTrustGate:
         assert not marker.exists()
         assert not result.toolkits
 
-    def test_the_process_wide_trust_service_is_not_consulted(self, home, project, tmp_path):
+    def test_the_process_s_trust_service_is_not_consulted(self, home, project, tmp_path):
         """The other way round: the injected service trusts the folder and
-        the process-wide one does not. The folder's tools still load."""
+        the process's one does not. The folder's tools still load."""
         marker = tmp_path / "tool-ran"
         _write_tool_file(project / CONFIG_DIR / "tools", "x.py", _marker_tool(marker))
 
-        # A process-wide service that trusts nothing, so a loader that
-        # reached for it would find the folder untrusted.
-        WorkspaceTrust.reset_shared(trust_everything=False)
+        # The process's service trusts nothing, so a loader that reached
+        # for it would find the folder untrusted.
+        trust_service.replace(
+            WorkspaceTrust(store=WorkspaceTrustStore(path=tmp_path / "process.json"))
+        )
         injected = WorkspaceTrust(store=WorkspaceTrustStore(path=tmp_path / "trust.json"))
         injected.trust(project)
 

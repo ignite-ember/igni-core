@@ -32,7 +32,7 @@ from igni_core.core.config.merge_plan import SettingsMergePlan
 from igni_core.core.config.organisation_tiers import OrganisationTiers
 from igni_core.core.config.permission_eval.schemas import PermissionMode
 from igni_core.core.config.settings import Settings
-from igni_core.core.workspace_trust import WorkspaceTrust
+from igni_core.core.workspace_trust import WorkspaceTrust, process_trust
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -67,7 +67,7 @@ class SettingsLoader:
             managed_path_provider=ManagedPolicySource.platform_path,
             group_policy_fetcher=group_policy_fetcher,
         )
-        trust = workspace_trust if workspace_trust is not None else WorkspaceTrust.shared()
+        trust = workspace_trust if workspace_trust is not None else process_trust()
         trust.set_policy(organisation.workspace_trust_policy())
 
         plan = SettingsMergePlan.default(

@@ -29,7 +29,7 @@ from igni_core.core.agents import AgentPool
 from igni_core.core.agents.schemas import AgentPriority
 from igni_core.core.init.project_initializer import ProjectInitializer
 from igni_core.core.paths import CONFIG_DIR
-from igni_core.core.workspace_trust import WorkspaceTrust
+from igni_core.core.workspace_trust import process_trust
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -51,7 +51,7 @@ def repo(tmp_path: Path) -> Path:
     repo.mkdir()
     _git(repo, "init", "-q")
     ProjectInitializer(
-        project_dir=repo, trust=WorkspaceTrust.shared(), home_igni=tmp_path / "home" / CONFIG_DIR
+        project_dir=repo, trust=process_trust(), home_igni=tmp_path / "home" / CONFIG_DIR
     ).run()
     return repo
 

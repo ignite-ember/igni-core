@@ -153,7 +153,7 @@ from igni_core.core.utils.display import DisplayManager
 from igni_core.core.utils.memory_files import MemoryMirror
 from igni_core.core.utils.rules_index import RulesIndex
 from igni_core.core.workspace import WorkspaceManager
-from igni_core.core.workspace_trust import WorkspaceTrust
+from igni_core.core.workspace_trust import process_trust
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +214,7 @@ class Session:
         # removed, and two sources would fight over one checksum file.
         ProjectInitializer(
             project_dir=self.project_dir,
-            trust=WorkspaceTrust.shared(),
+            trust=process_trust(),
             config=InitConfig(
                 skip_bundled_agents=self.group_policy.ships("agents"),
                 skip_builtin_hook_registration=self.group_policy.ships("hooks"),
@@ -517,7 +517,7 @@ class Session:
 
         monitor_configs = MonitorConfigLoader(
             self.project_dir,
-            trust=WorkspaceTrust.shared(),
+            trust=process_trust(),
             plugin_roots=self.plugin_loader.collect_monitor_roots(disabled=self._disabled_plugins),
         ).load()
         self.monitor_manager = MonitorManager(monitor_configs, self.project_dir)

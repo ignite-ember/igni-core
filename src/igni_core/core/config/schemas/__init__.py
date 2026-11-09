@@ -35,7 +35,7 @@ from igni_core.core.config.schemas.storage_and_paths import (
     StorageConfig,
 )
 from igni_core.core.config.schemas.telemetry import OtlpConfig, TelemetryConfig
-from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
+from igni_core.core.workspace_trust.policy import WorkspaceTrustConfig
 
 __all__ = [
     "AgentsConfig",

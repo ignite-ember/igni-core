@@ -27,7 +27,7 @@ from igni_core.core.workspace_trust import (
     GATED_SUMMARY,
     TrustDecision,
     TrustRefused,
-    WorkspaceTrust,
+    process_trust,
 )
 
 
@@ -51,7 +51,7 @@ class SessionTrust:
         self._pipe = pipe
         self._trust_flag = trust_flag
         self._quiet = quiet
-        self._trust = WorkspaceTrust.shared()
+        self._trust = process_trust()
 
     def settle(self) -> bool:
         """Ask or apply ``--trust`` as needed. True when the folder became
@@ -124,7 +124,7 @@ def trust_command(path: Path | None, revoke: bool, list_: bool) -> None:
     # Loads settings for the organisation's policy (``workspace_trust`` is
     # read from the managed file, the group policy and the environment).
     CliSettingsLoader(CliOptions()).load()
-    service = WorkspaceTrust.shared()
+    service = process_trust()
 
     if list_:
         entries = service.entries()

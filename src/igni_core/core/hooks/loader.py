@@ -31,6 +31,7 @@ from igni_core.core.hooks.schemas import (
     MergeStrategy,
 )
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.workspace_trust import TrustGate, WorkspaceTrust
 
 
 class _SettingsPathDiscovery:
@@ -54,9 +55,13 @@ class _SettingsPathDiscovery:
         *,
         cross_tool_support: bool,
         group_dir: Path | None = None,
+        trust: WorkspaceTrust | None = None,
     ):
         self._project_dir = project_dir
         self._cross_tool_support = cross_tool_support
+        #: The trust service that says whether the folder's own hooks
+        #: may run. The process's own, unless a caller says otherwise.
+        self._trust = TrustGate(trust)
         #: The org's hooks, written as a settings-shaped file by the
         #: policy cache. Last, so the group's declarations layer on top.
         self._group_dir = group_dir
@@ -77,9 +82,7 @@ class _SettingsPathDiscovery:
         # A folder's own hooks (``.igni`` and ``.claude``) are shell commands
         # it brings with it; they load only once the folder is trusted
         # (``core/workspace_trust``).
-        from igni_core.core.workspace_trust import WorkspaceTrust
-
-        trusted = WorkspaceTrust.shared().is_trusted(self._project_dir, what="hooks")
+        trusted = self._trust.is_trusted(self._project_dir, what="hooks")
         home_igni = Path.home() / CONFIG_DIR
         paths: list[Path] = [
             home_igni / "settings.json",
@@ -171,6 +174,8 @@ class HookLoader:
         project_dir: Path | None = None,
         cross_tool_support: bool = False,
         group_dir: Path | None = None,
+        *,
+        trust: WorkspaceTrust | None = None,
     ):
         self.project_dir = project_dir or Path.cwd()
         self.cross_tool_support = cross_tool_support
@@ -178,6 +183,7 @@ class HookLoader:
             self.project_dir,
             cross_tool_support=cross_tool_support,
             group_dir=group_dir,
+            trust=trust,
         )
         self._reader = _SettingsFileReader()
 

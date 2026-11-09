@@ -60,7 +60,9 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from igni_core.core.data_paths import canonical_project_dir
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.workspace_trust import process_trust
 
 logger = logging.getLogger(__name__)
 
@@ -139,14 +141,10 @@ class MarkdownCommand(BaseModel):
         are not the folder's, and run as before."""
         if project_dir is None:
             return True
-        from igni_core.core.data_paths import canonical_project_dir
-
         folder = canonical_project_dir(project_dir)
         if not self.path.resolve().is_relative_to(folder):
             return True
-        from igni_core.core.workspace_trust import WorkspaceTrust
-
-        return WorkspaceTrust.shared().is_trusted(folder, what="markdown-command shell tokens")
+        return process_trust().is_trusted(folder, what="markdown-command shell tokens")
 
     @classmethod
     def discover(
