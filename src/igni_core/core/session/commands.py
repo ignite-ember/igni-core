@@ -9,12 +9,17 @@ picker, MCP panel, login widget) get plain-text equivalents.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any, ClassVar
+from typing import Any
 
+from igni_core.backend.cmd_help import help_overview
 from igni_core.backend.command_handler import CommandHandler, CommandResult
 from igni_core.core.session.core import Session
 from igni_core.core.session.schemas import McpServerStatus
 from igni_core.protocol.messages import CommandAction, CommandResultKind
+
+#: A per-action renderer: takes the result and prints it — or raises,
+#: for the action that ends the REPL.
+ActionRenderer = Callable[[CommandResult], Awaitable[None]]
 
 
 class InteractiveCommandDispatcher:
@@ -22,24 +27,20 @@ class InteractiveCommandDispatcher:
 
     Wraps the shared :class:`CommandHandler` and routes each
     :class:`CommandResult` through a per-action method table
-    (see :attr:`_ACTION_HANDLERS`). Actions that only exist as
+    (see :attr:`_action_handlers`). Actions that only exist as
     interactive widgets in the TUI (sessions picker, model
     picker, MCP panel, login) get plain-text equivalents here.
     """
 
-    # Action → method-name map. Resolved via ``getattr(self, name)``
-    # inside :meth:`_render` so entries dispatch to bound methods.
-    _ACTION_HANDLERS: ClassVar[dict[CommandAction, str]] = {
-        CommandAction.QUIT: "_render_quit",
-        CommandAction.CLEAR: "_render_clear",
-        CommandAction.SESSIONS: "_render_sessions",
-        CommandAction.MODEL: "_render_model_picker",
-        CommandAction.MCP: "_render_mcp_status",
-        CommandAction.COMPACT: "_render_compact",
-        CommandAction.LOGIN: "_render_login",
-        CommandAction.RUN_PROMPT: "_render_run_prompt",
-        CommandAction.HELP: "_render_help",
-    }
+    #: What ``igni -m /login`` says. It pointed at a TUI and a ``--no-tui``
+    #: flag that were both removed in v0.9.7, so the one hint a person got
+    #: on the command line named nothing they could run.
+    LOGIN_HINT = (
+        "Signing in is its own command: run `igni login` (it prints the portal "
+        "address and waits for the browser), or `igni login --token-stdin` with "
+        "a token. Set `api_url` in ~/.igni/config.yaml first. The desktop app and "
+        "the IDE extensions sign in to the same ~/.igni/credentials.json."
+    )
 
     def __init__(
         self,
@@ -51,6 +52,23 @@ class InteractiveCommandDispatcher:
         # ``/loop <prompt>``) becomes a turn: the REPL passes its own
         # turn pipeline. Without one, the prompt is shown, not run.
         self._run_prompt = run_prompt
+        # Action → renderer map. Built per instance, holding BOUND
+        # methods: the dispatch is a dict hit on a callable, with no
+        # string method names to typo and no ``getattr`` to fail
+        # silently. An instance attribute, not a class-level table —
+        # the table is state, and it belongs to the object that owns
+        # the session it renders.
+        self._action_handlers: dict[CommandAction, ActionRenderer] = {
+            CommandAction.QUIT: self._render_quit,
+            CommandAction.CLEAR: self._render_clear,
+            CommandAction.SESSIONS: self._render_sessions,
+            CommandAction.MODEL: self._render_model_picker,
+            CommandAction.MCP: self._render_mcp_status,
+            CommandAction.COMPACT: self._render_compact,
+            CommandAction.LOGIN: self._render_login,
+            CommandAction.RUN_PROMPT: self._render_run_prompt,
+            CommandAction.HELP: self._render_help,
+        }
 
     async def dispatch(self, command: str) -> bool:
         """Dispatch a slash command. Returns True if handled, False if unknown."""
@@ -58,7 +76,7 @@ class InteractiveCommandDispatcher:
         result = await handler.handle(command.strip())
 
         # Unknown command — let the caller handle it (skill matching, etc.)
-        if result.kind == CommandResultKind.ERROR and "Unknown command" in result.content:
+        if result.is_unknown_command():
             return False
 
         await self._render(result)
@@ -66,9 +84,9 @@ class InteractiveCommandDispatcher:
 
     async def _render(self, result: CommandResult) -> None:
         """Render a CommandResult as plain text output."""
-        method_name = self._ACTION_HANDLERS.get(result.action)
-        if method_name is not None:
-            await getattr(self, method_name)(result)
+        renderer = self._action_handlers.get(result.action)
+        if renderer is not None:
+            await renderer(result)
             return
         # No dedicated action handler — fall through to the kind-based
         # renderers (MARKDOWN / INFO / ERROR). A ``CommandAction`` added
@@ -107,19 +125,7 @@ class InteractiveCommandDispatcher:
 
     async def _render_help(self, result: CommandResult) -> None:
         """A bare ``/help`` opens a panel elsewhere; here it is text."""
-        from igni_core.backend.cmd_help import help_overview
-
         self.session.display.print_markdown(help_overview())
-
-    #: What ``igni -m /login`` says. It pointed at a TUI and a ``--no-tui``
-    #: flag that were both removed in v0.9.7, so the one hint a person got
-    #: on the command line named nothing they could run.
-    LOGIN_HINT = (
-        "Signing in is its own command: run `igni login` (it prints the portal "
-        "address and waits for the browser), or `igni login --token-stdin` with "
-        "a token. Set `api_url` in ~/.igni/config.yaml first. The desktop app and "
-        "the IDE extensions sign in to the same ~/.igni/credentials.json."
-    )
 
     async def _render_login(self, result: CommandResult) -> None:
         self.session.display.print_info(self.LOGIN_HINT)
@@ -132,9 +138,8 @@ class InteractiveCommandDispatcher:
             display.print_info("No past sessions found.")
             return
         lines = ["## Sessions"]
-        for s in sessions[:20]:
-            label = s.get("name") or s.get("session_id") or ""
-            lines.append(f"- {label}")
+        for row in sessions[:20]:
+            lines.append(f"- {row.name or row.session_id}")
         lines.append("\n[dim]Use --resume <id> to resume a session.[/dim]")
         display.print_markdown("\n".join(lines))
 

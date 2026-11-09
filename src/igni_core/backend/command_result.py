@@ -1,6 +1,8 @@
 """Shared :class:`CommandResult` — the single slash-command result type.
 
-This module owns the ONE Python class every slash command returns.
+This module owns the ONE Python class every slash command returns
+(:class:`UnknownCommandResult` is that class's own subclass — the
+terminal "no command tier matched" case — not a second result type).
 It subclasses the wire model
 :class:`igni_core.protocol.messages.CommandResult`, so instances are
 already wire-shaped Pydantic messages (``type: "command_result"``,
@@ -40,6 +42,9 @@ does this result mean?" queries the FE bridge asks:
   :meth:`render_line` — encode "how do I read a result?" as
   methods on the class instead of ad-hoc call-site logic that
   reached in via ``getattr(result, ...)``.
+* One more query — :meth:`is_unknown_command` — answers "did any
+  tier understand this command?" from the result's type rather than
+  from a substring search over its prose.
 """
 
 from __future__ import annotations
@@ -130,5 +135,39 @@ class CommandResult(WireCommandResult):
         """
         return self.display_content or self.content
 
+    def is_unknown_command(self) -> bool:
+        """True when no command tier understood the input.
 
-__all__ = ["CommandResult"]
+        The plain-text REPL asks the result whether the command was
+        understood, so it can fall through to the model instead of
+        printing an error. The answer used to be a substring search
+        for ``"Unknown command"`` in ``content`` — prose matching,
+        which breaks the day the message is reworded. Only
+        :class:`UnknownCommandResult` answers True.
+        """
+        return False
+
+
+class UnknownCommandResult(CommandResult):
+    """The terminal result of the slash router: nothing matched.
+
+    A distinct class rather than a magic string inside ``content`` —
+    the plain-text REPL asks the result whether the command was
+    understood (see :meth:`CommandResult.is_unknown_command`).
+
+    The wire shape is unchanged: no new fields, so the FE still
+    receives and renders the red ``Unknown command: x`` error it
+    always did.
+    """
+
+    @classmethod
+    def unknown(cls, name: str) -> UnknownCommandResult:
+        """The error for a command no tier matched."""
+        return cls(kind=CommandResultKind.ERROR, content=f"Unknown command: {name}")
+
+    def is_unknown_command(self) -> bool:
+        """True — this result IS the "nothing matched" answer."""
+        return True
+
+
+__all__ = ["CommandResult", "UnknownCommandResult"]

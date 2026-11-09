@@ -16,7 +16,7 @@ coroutine:
   chain. Subclasses implement :meth:`handle` and return ``True``
   when they consumed the line. Replaces the five-way
   ``if/continue`` fall-through with polymorphism, mirroring
-  ``commands.py``'s ``_ACTION_HANDLERS`` dispatch style.
+  ``commands.py``'s per-action renderer table.
 * :class:`_QuitHandler` / :class:`_SlashCommandHandler` /
   :class:`_MessageHandler` — the three concrete handlers, evaluated
   in that order. ``_MessageHandler`` is the fall-through and must

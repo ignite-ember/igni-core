@@ -4,7 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from igni_core.backend.command_handler import CommandHandler
+from igni_core.backend.command_result import UnknownCommandResult
 from igni_core.core.session.commands import InteractiveCommandDispatcher
+from igni_core.core.session.schemas import SessionListRow
 
 
 async def dispatch(session, command):
@@ -63,6 +66,37 @@ class TestDispatch:
         session = _make_session()
         result = await dispatch(session, "/nonexistent")
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_command_is_answered_with_the_typed_result(self):
+        """The REPL asks the RESULT whether the command was understood.
+
+        It used to grep ``result.content`` for "Unknown command" — prose
+        matching that breaks the day the message is reworded. The router
+        now returns :class:`UnknownCommandResult`, and the dispatcher
+        asks the result instead of the sentence.
+        """
+        session = _make_session()
+        result = await CommandHandler(session).handle("/nonexistent")
+        assert isinstance(result, UnknownCommandResult)
+        assert result.is_unknown_command() is True
+        assert await dispatch(session, "/nonexistent") is False
+
+    @pytest.mark.asyncio
+    async def test_dispatch_sessions_lists_typed_rows(self):
+        """``/sessions`` reads the typed rows, not dict keys."""
+        session = _make_session()
+        session.persistence.list_sessions = AsyncMock(
+            return_value=[
+                SessionListRow(session_id="s1", name="My session"),
+                SessionListRow(session_id="s2"),
+            ]
+        )
+        result = await dispatch(session, "/sessions")
+        assert result is True
+        printed = session.display.print_markdown.call_args[0][0]
+        assert "- My session" in printed
+        assert "- s2" in printed
 
     @pytest.mark.asyncio
     async def test_dispatch_help(self):

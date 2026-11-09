@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from igni_core.backend.command_result import CommandResult
+from igni_core.backend.command_result import CommandResult, UnknownCommandResult
 from igni_core.protocol.messages import CommandAction, CommandResultKind
 
 if TYPE_CHECKING:
@@ -25,8 +25,9 @@ class SkillCommandDispatcher:
     pool. On a hit, render the skill body into a
     :class:`CommandResult` with the ``RUN_PROMPT`` action so the
     main streaming run loop feeds it into the agent. On a miss,
-    return the terminal ``Unknown command`` error — this is the
-    last-tier fallback of the slash router.
+    return the terminal :class:`UnknownCommandResult` — this is the
+    last-tier fallback of the slash router, and the typed answer to
+    "no tier understood this command".
     """
 
     def __init__(self, session: Session) -> None:
@@ -42,4 +43,4 @@ class SkillCommandDispatcher:
                 content=rendered,
                 action=CommandAction.RUN_PROMPT,
             )
-        return CommandResult.error(f"Unknown command: {stripped.split()[0]}")
+        return UnknownCommandResult.unknown(stripped.split()[0])

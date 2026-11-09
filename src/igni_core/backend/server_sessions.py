@@ -58,8 +58,12 @@ class SessionsController:
     async def list_sessions(self) -> msg.SessionListResult:
         """List all sessions for this project. No cap — the FE has
         virtualisation."""
-        raw = await self._session.persistence.list_sessions(limit=None)
-        return msg.SessionListResult(sessions=raw)
+        rows = await self._session.persistence.list_sessions(limit=None)
+        # The wire boundary is the one place a persistence row turns
+        # into JSON — the typed row in, the wire entry out.
+        return msg.SessionListResult(
+            sessions=[msg.SessionListEntry(**row.model_dump()) for row in rows]
+        )
 
     async def maybe_auto_name_session(self, *, model_busy: bool = False) -> AutoNameResult:
         """Auto-generate a name for the current session if it has none.

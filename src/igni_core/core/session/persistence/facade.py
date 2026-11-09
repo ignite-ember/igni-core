@@ -21,6 +21,12 @@ which re-raises on write failure so :class:`PlanCoordinator`'s
 persist-then-flip invariant path can honour the ``ok=False`` →
 "abort mode flip" contract.
 
+That follow-up has now landed for :meth:`list_sessions`, which
+returns typed :class:`SessionListRow` models rather than dicts —
+the callers (the REPL's ``/sessions``, the sessions controller, the
+CLI's resume lookup) read named attributes, and the one wire
+boundary dumps the row itself.
+
 Rule 6 (OOP): the god-class from the pre-refactor
 ``persistence.py`` dissolves into six ~30-70 LoC coordinators +
 one ~90 LoC service; this facade is the assembly point that
@@ -43,7 +49,7 @@ from igni_core.core.session.persistence.plan_decisions_store import (
     PlanDecisionsStore,
 )
 from igni_core.core.session.persistence.todos_store import TodoSnapshotStore
-from igni_core.core.session.schemas import PersistResult, SessionTitle
+from igni_core.core.session.schemas import PersistResult, SessionListRow, SessionTitle
 from igni_core.core.tools.plan import PlanDecisionsBlob
 from igni_core.core.tools.todo import TodoItemWire
 
@@ -119,17 +125,17 @@ class SessionPersistence:
 
     # ── Session listing ────────────────────────────────────────
 
-    async def list_sessions(self, limit: int | None = None) -> list[dict[str, Any]]:
+    async def list_sessions(self, limit: int | None = None) -> list[SessionListRow]:
         """List sessions from the Agno database.
 
-        Returns the historic ``list[dict]`` wire shape by dumping
-        each :class:`SessionListRow` at the facade boundary. On
-        DB failure the facade preserves the pre-refactor
-        "swallow-and-default-to-empty" contract.
+        Returns typed :class:`SessionListRow` models — the caller
+        reaches for named attributes instead of dict keys, and the
+        wire boundary (where a row becomes JSON) is the one place
+        that dumps. On DB failure the facade preserves the
+        pre-refactor "swallow-and-default-to-empty" contract.
         """
         result = await self._listing.list_sessions(limit=limit)
-        rows = result.value or []
-        return [row.model_dump() for row in rows]
+        return result.value or []
 
     # ── Session name ───────────────────────────────────────────
 

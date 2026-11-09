@@ -38,10 +38,10 @@ class TestSessionPersistence:
         result = await p.list_sessions(limit=10)
 
         assert len(result) == 1
-        assert result[0]["session_id"] == "s1"
-        assert result[0]["name"] == "my session"
-        assert result[0]["run_count"] == 2
-        assert result[0]["summary"] == "Test session"
+        assert result[0].session_id == "s1"
+        assert result[0].name == "my session"
+        assert result[0].run_count == 2
+        assert result[0].summary == "Test session"
 
     @pytest.mark.asyncio
     async def test_list_sessions_handles_tuple_return(self):
@@ -97,7 +97,7 @@ class TestSessionPersistence:
         p = SessionPersistence(db=db, session_id="current")
         result = await p.list_sessions()
 
-        ids = [r["session_id"] for r in result]
+        ids = [r.session_id for r in result]
         assert ids == ["top-1", "top-2"]
 
     @pytest.mark.asyncio
@@ -121,7 +121,7 @@ class TestSessionPersistence:
 
         p = SessionPersistence(db=db, session_id="current")
         result = await p.list_sessions()
-        assert [r["session_id"] for r in result] == ["legacy"]
+        assert [r.session_id for r in result] == ["legacy"]
 
     @pytest.mark.asyncio
     async def test_list_sessions_handles_exception(self):
