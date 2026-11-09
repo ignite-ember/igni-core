@@ -29,6 +29,7 @@ from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.session.compaction.context_budget import ContextBudget
 from igni_core.core.session.message_handler import MessageHandlerDeps, SessionMessageHandler
 from igni_core.core.session.runner import run_single_message
+from igni_core.core.tools.plan.store import PlanStore
 from igni_core.protocol import messages as msg
 from igni_core.protocol.serializer import serialize_event
 
@@ -195,7 +196,7 @@ async def test_a_cut_non_streamed_reply_fails_the_headless_run():
     session.settings.models.default = "igni-1.0-4b"
     session.hook_executor = HookExecutor({})
     session.display = display
-    session.plan_store = None
+    session.plan_store = PlanStore()
     session.handle_message = handler.handle
     type(session).last_turn_failure = PropertyMock(side_effect=lambda: handler.last_failure)
 

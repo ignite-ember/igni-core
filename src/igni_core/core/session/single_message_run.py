@@ -21,13 +21,12 @@ of these directly.
 
 from __future__ import annotations
 
-import logging
-
+from igni_core.backend.cmd_help import help_overview
 from igni_core.backend.command_handler import CommandHandler
+from igni_core.backend.headless_extensions import HeadlessExtensions
+from igni_core.core.session.commands import LOGIN_HINT
 from igni_core.core.session.session_run import SessionRun
 from igni_core.protocol.messages import CommandAction
-
-logger = logging.getLogger(__name__)
 
 
 class SingleMessageRun(SessionRun):
@@ -65,21 +64,17 @@ class SingleMessageRun(SessionRun):
         elif result.action == CommandAction.HELP:
             # A bare ``/help`` opens a panel in the clients; headless,
             # its content is empty, so print what the panel would show.
-            from igni_core.backend.cmd_help import help_overview
-
             self._session.display.print_markdown(help_overview())
         elif result.action == CommandAction.LOGIN:
             # ``/login`` is an action the clients carry out (a browser and a
             # callback); its result has no content, so ``igni -m /login``
             # printed nothing and exited 0, as if it had signed in.
-            from igni_core.core.session.commands import InteractiveCommandDispatcher
-
-            self._session.display.print_info(InteractiveCommandDispatcher.LOGIN_HINT)
+            self._session.display.print_info(LOGIN_HINT)
         return None
 
     # ── Public entry point ────────────────────────────────────────
 
-    async def run(self, message: str) -> None:  # type: ignore[override]
+    async def run(self, message: str) -> None:
         """Run one message: extensions up → SessionStart → dispatch → SessionEnd → extensions down.
 
         A built-in slash command runs without a model turn. A skill, a
@@ -90,11 +85,6 @@ class SingleMessageRun(SessionRun):
         """
         # The extensions installed here apply to a headless run as they
         # do in the app: their tools, hooks and prompt contributions.
-        # Imported here: the headless extensions reach the host channel,
-        # whose model reaches the session package this module is in, so a
-        # top-level import is a cycle for whoever imports the channel first.
-        from igni_core.backend.headless_extensions import HeadlessExtensions
-
         extensions = HeadlessExtensions(self._session)
         await extensions.start()
         try:
@@ -132,13 +122,8 @@ class SingleMessageRun(SessionRun):
         there is no second turn for an approval to unblock — so the useful
         outcome is the plan itself, delivered rather than filed.
         """
-        store = getattr(self._session, "plan_store", None)
-        plan = getattr(store, "latest", "") if store is not None else ""
-        # Typed check rather than truthiness. ``latest`` is a plain attribute, so
-        # anything holding the session loosely — the test doubles in this suite,
-        # a partially built session — offers a truthy non-string here and turns a
-        # reporting step into a TypeError at the end of an otherwise good run.
-        if not isinstance(plan, str) or not plan.strip():
+        plan = self._session.plan_store.latest
+        if not plan.strip():
             return
         self._session.display.print_info(
             "\n".join(
