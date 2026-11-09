@@ -4771,7 +4771,7 @@
       "type": "object"
     },
     "ProcessTailArgs": {
-      "description": "``read_process_tail``: the background process and how many lines.",
+      "description": "``read_process_tail``: the background process and how many lines\n(at least one: ``0`` used to answer the whole output).",
       "properties": {
         "pid": {
           "title": "Pid",
@@ -4779,6 +4779,7 @@
         },
         "tail": {
           "default": 200,
+          "minimum": 1,
           "title": "Tail",
           "type": "integer"
         }

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 
 class PanelArgs(BaseModel):
@@ -98,10 +98,11 @@ class VisualizationActionArgs(PanelArgs):
 
 
 class ProcessTailArgs(PanelArgs):
-    """``read_process_tail``: the background process and how many lines."""
+    """``read_process_tail``: the background process and how many lines
+    (at least one: ``0`` used to answer the whole output)."""
 
     pid: int
-    tail: int = 200
+    tail: int = Field(200, ge=1)
 
 
 class ProcessArgs(PanelArgs):
