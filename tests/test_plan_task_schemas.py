@@ -12,21 +12,17 @@ itself, so they are asserted exactly — not just "some error".
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 from pydantic import ValidationError
 
-from igni_core.core.session.broadcast import BroadcastBus
-from igni_core.core.session.core import Session
-from igni_core.core.tools.plan import PlanStore, PlanTool
+from igni_core.core.tools.plan import PlanTool
 from igni_core.core.tools.plan.schemas import (
     PlanExitResult,
     PlanSubmittedEvent,
     PlanTaskInput,
 )
-from igni_core.core.tools.todo import TodoItemWire, TodoStore
-from tests.session_coordinators import wire_coordinators
+from igni_core.core.tools.todo import TodoItemWire
+from tests.session_coordinators import plan_session, wire_coordinators
 
 
 class TestValidateBatch:
@@ -168,9 +164,7 @@ class TestResultEnvelope:
 async def test_exit_plan_mode_applies_valid_rows_and_names_the_bad_one():
     """End to end through the tool: the good rows land in the
     todo store, the bad one comes back as a named error."""
-    session = MagicMock()
-    session.plan_store = PlanStore()
-    session.todo_store = TodoStore()
+    session = plan_session()
     tool = PlanTool(session)
 
     reply = await tool.exit_plan_mode(
@@ -187,10 +181,7 @@ async def test_exit_plan_mode_applies_valid_rows_and_names_the_bad_one():
 
 @pytest.mark.asyncio
 async def test_exit_plan_mode_broadcast_carries_typed_rows():
-    session = Session.__new__(Session)
-    session.plan_store = PlanStore()
-    session.todo_store = TodoStore()
-    session.broadcast_bus = BroadcastBus()
+    session = plan_session()
     wire_coordinators(session)
     captured: list[tuple[str, dict]] = []
     session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))

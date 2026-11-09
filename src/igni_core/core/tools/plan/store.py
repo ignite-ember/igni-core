@@ -113,6 +113,24 @@ class PlanStore:
                 self.history = self.history[-self._max_history :]
         self.latest = plan
 
+    def reset_rejections(self) -> None:
+        """Forget the rejections — the count belongs to one plan.
+
+        Called when the agent enters plan mode: the plan being worked
+        on is a new one, so its first submission is attempt 0 again.
+        """
+        self.rejected = 0
+
+    def record_rejection(self) -> int:
+        """Count one rejected submission; return the new count.
+
+        The store owns the count — it is what a ``PlanSubmit`` hook is
+        told as ``attempt`` — so nothing outside the store increments
+        it.
+        """
+        self.rejected += 1
+        return self.rejected
+
     def set_decision(self, run_id: str, decision: PlanDecision | str) -> None:
         """Record the user's decision for a specific plan
         (identified by the ``run_id`` of the run in which

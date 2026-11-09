@@ -28,13 +28,30 @@ from igni_core.core.prompts.contribution_models import EditOp, PromptEdit
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.session.broadcast import BroadcastBus as _BroadcastBus
 from igni_core.core.session.core import Session
+from igni_core.core.session.schemas import PermissionModeSwitch
 from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.plan import PlanStore, PlanTool
 from igni_core.core.tools.todo import TodoItem, TodoStore, TodoTools
 from igni_core.protocol.rpc import RpcMethod
 from tests.backend_server_factory import make_backend
 from tests.rpc_tables import rpc_table_for
-from tests.session_coordinators import wire_coordinators
+from tests.session_coordinators import plan_session, wire_coordinators
+
+
+class _RefusingMode:
+    """A mode coordinator whose flip is refused.
+
+    The plan tool asks the session to switch to plan mode and the
+    session asks its mode coordinator. This one says no, the way a
+    policy that forbids the mode would.
+    """
+
+    def set_permission_mode(self, mode: str) -> PermissionModeSwitch:
+        return PermissionModeSwitch(
+            refused=True,
+            text="Error: your organisation does not allow plan mode.",
+        )
+
 
 # ── PlanStore ─────────────────────────────────────────────
 
@@ -82,8 +99,7 @@ class TestPlanStore:
 class TestPlanTool:
     @pytest.mark.asyncio
     async def test_exit_plan_mode_records_plan(self):
-        session = MagicMock()
-        session.plan_store = PlanStore()
+        session = plan_session()
         tool = PlanTool(session)
         result = await tool.exit_plan_mode("Run tests, then refactor.")
         assert "Plan submitted" in result
@@ -95,17 +111,14 @@ class TestPlanTool:
         plan mode on its own — the user controls that via
         ``/plan``. Verified by confirming the tool doesn't
         touch the permission evaluator."""
-        session = MagicMock()
-        session.plan_store = PlanStore()
-        session.permission_evaluator = PermissionEvaluator.from_strings(mode="plan")
+        session = plan_session(permission_evaluator=PermissionEvaluator.from_strings(mode="plan"))
         tool = PlanTool(session)
         await tool.exit_plan_mode("plan body")
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     @pytest.mark.asyncio
     async def test_exit_plan_mode_rejects_empty_plan(self):
-        session = MagicMock()
-        session.plan_store = PlanStore()
+        session = plan_session()
         tool = PlanTool(session)
         result = await tool.exit_plan_mode("   ")
         assert "Error" in result
@@ -117,8 +130,7 @@ class TestPlanTool:
         """The reply explicitly tells the agent NOT to continue
         executing — otherwise the model often plows ahead in the
         same turn, defeating the point of plan mode."""
-        session = MagicMock()
-        session.plan_store = PlanStore()
+        session = plan_session()
         tool = PlanTool(session)
         result = await tool.exit_plan_mode("plan body")
         assert "stop" in result.lower() or "do not continue" in result.lower()
@@ -128,9 +140,7 @@ class TestPlanTool:
         """When the agent passes ``tasks=[...]`` alongside the
         plan, the same call populates the TodoStore so the
         PlanCard can render a live checklist next to the prose."""
-        session = MagicMock()
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
+        session = plan_session()
         tool = PlanTool(session)
         result = await tool.exit_plan_mode(
             "## Refactor\n\nSteps inside.",
@@ -150,9 +160,7 @@ class TestPlanTool:
     async def test_exit_plan_mode_without_tasks_leaves_todo_store_alone(self):
         """Tasks are optional — submitting a prose-only plan
         must not blast the TodoStore."""
-        session = MagicMock()
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
+        session = plan_session()
         session.todo_store.set([TodoItem("Pre-existing", "in_progress", "")])
         tool = PlanTool(session)
         await tool.exit_plan_mode("just prose, no enumerable steps")
@@ -166,10 +174,7 @@ class TestPlanTool:
         structured tasks alongside the plan markdown so the FE
         seeds the PlanCard checklist on first render."""
         # Real session stand-in to exercise the broadcast.
-        session = Session.__new__(Session)
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
-        session.broadcast_bus = _BroadcastBus()
+        session = plan_session()
         wire_coordinators(session)
         captured: list[tuple[str, dict]] = []
         session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
@@ -193,9 +198,7 @@ class TestPlanTool:
         """Malformed task rows are dropped (so the rest still
         applies) and the errors come back in the reply so the
         agent can correct the next call."""
-        session = MagicMock()
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
+        session = plan_session()
         tool = PlanTool(session)
         result = await tool.exit_plan_mode(
             "plan",
@@ -242,13 +245,11 @@ class TestTheFloorJudgesNoPlan:
     """
 
     def _session(self, contributions: PromptContributions):
-        session = Session.__new__(Session)
+        session = plan_session(
+            permission_evaluator=PermissionEvaluator.from_strings(mode="default"),
+            main_team=None,  # no spawn target, enter_plan_mode falls through
+        )
         session._contributions = contributions
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
-        session.broadcast_bus = _BroadcastBus()
-        session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
-        session.main_team = None  # no spawn target, enter_plan_mode falls through
         wire_coordinators(session)
         return session
 
@@ -274,11 +275,9 @@ class TestEnterPlanModeSpawnsResearcher:
     its report."""
 
     def _session(self):
-        session = Session.__new__(Session)
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
-        session.broadcast_bus = _BroadcastBus()
-        session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
+        session = plan_session(
+            permission_evaluator=PermissionEvaluator.from_strings(mode="default")
+        )
         wire_coordinators(session)
         return session
 
@@ -392,10 +391,9 @@ class TestEnterPlanMode:
         """Build a stand-in session that has a real evaluator +
         the real ``set_permission_mode`` bound. ``PlanTool`` calls
         ``set_permission_mode`` and ``broadcast`` on the session."""
-        session = Session.__new__(Session)
-        session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
-        session.broadcast_bus = _BroadcastBus()
-        session.plan_store = PlanStore()
+        session = plan_session(
+            permission_evaluator=PermissionEvaluator.from_strings(mode="default")
+        )
         wire_coordinators(session)
         return session
 
@@ -448,15 +446,17 @@ class TestEnterPlanMode:
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     @pytest.mark.asyncio
-    async def test_enter_plan_mode_no_session_set_mode_returns_error(self):
-        """Defensive: a session stand-in without
-        ``set_permission_mode`` doesn't crash the tool — it
-        returns an error string for the agent."""
-        session = MagicMock(spec=["plan_store"])
-        session.plan_store = PlanStore()
+    async def test_enter_plan_mode_reports_a_refused_flip(self):
+        """The mode flip can be refused — the mode coordinator says
+        no. The agent is told why instead of being told it entered
+        plan mode, and nothing is broadcast."""
+        session = self._session_with_real_set_mode()
+        session.mode = _RefusingMode()
         tool = PlanTool(session)
         result = await tool.enter_plan_mode("x")
         assert "Error" in result
+        assert "does not allow plan mode" in result
+        assert "Entered plan mode" not in result
 
     @pytest.mark.asyncio
     async def test_enter_then_exit_keeps_mode_in_plan(self):
@@ -862,10 +862,9 @@ class TestPlanModeLifecycle:
         """Enter plan mode via ``/plan``, submit a plan via the
         tool, then exit via ``/plan``. Verifies the three pieces
         work as one workflow."""
-        session = Session.__new__(Session)
-        session.broadcast_bus = _BroadcastBus()
-        session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
-        session.plan_store = PlanStore()
+        session = plan_session(
+            permission_evaluator=PermissionEvaluator.from_strings(mode="default")
+        )
         wire_coordinators(session)
         handler = CommandHandler(session)
 

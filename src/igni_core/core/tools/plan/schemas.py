@@ -12,20 +12,16 @@ turn into — the one the ``plan_submitted`` broadcast and the
 :class:`~igni_core.core.tools.todo.TodoItemWire`, the same wire
 shape the todos panel already speaks.
 
-Beyond the broadcast payloads, this module also hosts the two
-typed envelopes :class:`PlanTransactionCoordinator` returns —
-:class:`PlanEnterResult` for ``enter_plan_mode`` and
-:class:`PlanExitResult` for ``exit_plan_mode``. :class:`PlanTool`
-consumes those envelopes and renders the agent-visible reply
-string from a single call site each, so the "Error: ..." /
-"Plan submitted" / "Entered plan mode"
+Beyond the broadcast payloads, this module also hosts the typed
+envelopes the plan transactions hand back —
+:class:`PlanEnterResult` for ``enter_plan_mode``,
+:class:`PlanExitResult` for ``exit_plan_mode``, and
+:class:`PlanSubmitDecision` for what the ``PlanSubmit`` gate
+decided. :class:`PlanTool` consumes those envelopes and renders the
+agent-visible reply string from a single call site each, so the
+"Error: ..." / "Plan submitted" / "Entered plan mode"
 substrings the tool used to build inline now live on the
-coordinator side of the boundary as ``reply_text``. And
-:class:`PlanExitInput` is the strict input model at the
-coordinator ``submit`` boundary — ``PlanTool.exit_plan_mode``
-keeps the agent-facing ``tasks: list | None`` (Agno reads that
-annotation to build the LLM-visible JSON-Schema), but the
-coordinator's internal boundary is strict.
+coordinator side of the boundary as ``reply_text``.
 """
 
 from __future__ import annotations
@@ -82,6 +78,23 @@ class PlanSubmitHookPayload(BaseModel):
     plan: str
     #: Plans rejected since the agent entered plan mode: 0 for the first.
     attempt: int
+
+
+class PlanSubmitDecision(BaseModel):
+    """What the ``PlanSubmit`` gate decided about a plan.
+
+    * ``allowed`` — may the plan go to the person?
+    * ``plan`` — the plan as the gate left it. An extension may have
+      changed it; igni's own ``PlanSubmit`` hooks then run on that.
+    * ``reason`` — why not, when it does not. The agent is told the
+      reason so it can do the work the plan needs and submit again.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    allowed: bool
+    plan: str = ""
+    reason: str = ""
 
 
 class PlanTaskInput(BaseModel):
@@ -175,21 +188,6 @@ class PlanTaskBatch(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
-class PlanExitInput(BaseModel):
-    """Strict input model at the :class:`PlanTransactionCoordinator`
-    ``submit`` boundary. ``PlanTool.exit_plan_mode`` keeps
-    ``tasks: list | None`` on its agent-facing signature (Agno
-    reads that annotation to build the LLM-visible JSON-Schema,
-    which shouldn't nest another Pydantic type); the coordinator
-    accepts this typed envelope internally so its boundary is
-    Rule-1-compliant."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    plan: str
-    tasks: list[PlanTaskInput] = Field(default_factory=list)
-
-
 class PlanEnterResult(BaseModel):
     """Typed envelope :meth:`PlanTransactionCoordinator.enter`
     returns. Replaces the old "Error: ..." string channel with a
@@ -272,9 +270,9 @@ class PlanExitResult(BaseModel):
 
 __all__ = [
     "PlanEnterResult",
-    "PlanExitInput",
     "PlanExitResult",
     "PlanModeEnteredEvent",
+    "PlanSubmitDecision",
     "PlanSubmitHookPayload",
     "PlanSubmittedEvent",
     "PlanTaskBatch",
