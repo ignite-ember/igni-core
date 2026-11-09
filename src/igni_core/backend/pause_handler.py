@@ -30,7 +30,7 @@ from igni_core.backend.schemas_pause import (
 )
 from igni_core.core.config.permission_eval import PermissionDecision
 from igni_core.protocol import messages as msg
-from igni_core.protocol.agno_tool_formatter import default_registry
+from igni_core.protocol.tool_friendly_names import ToolFriendlyNames
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class PauseHandler:
             request = msg.HITLRequest(
                 requirement_id=req_id,
                 tool_name=raw_name,
-                friendly_name=default_registry().friendly_name(raw_name),
+                friendly_name=ToolFriendlyNames.friendly_name(raw_name),
                 tool_args=tool_args,
             )
             self._store.register(
