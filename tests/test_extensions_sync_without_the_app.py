@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from click.testing import CliRunner
@@ -17,6 +18,7 @@ from click.testing import CliRunner
 from igni_core.backend.headless_extensions import HeadlessExtensions
 from igni_core.core.auth.credentials import Credentials, CredentialsStore
 from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.distribution import OneShotSync
@@ -48,6 +50,7 @@ class World:
             air_gapped=False,
             auth=SimpleNamespace(credentials_file=str(self.credentials)),
             storage=SimpleNamespace(data_dir=str(tmp_path / "data")),
+            group_policy=SimpleNamespace(trusted_keys=[], required=False),
         )
         monkeypatch.setattr(OneShotSync, "transport", self.igni.transport())
         monkeypatch.setattr(PolicySettingsLoader, "load", lambda _self: self.settings)
@@ -83,7 +86,7 @@ def test_sync_installs_what_igni_lists_for_the_persons_group(world):
     assert result.exit_code == 0, result.output
     assert "installed" in result.output and "acme.notes 1.0.0" in result.output
     assert "https://notes.example.com" in result.output
-    assert world.store.distribution_of("acme.notes") is not None
+    assert world.store.provenance.of("acme.notes") is not None
     # What to restart, said exactly.
     assert "quit the igni app" in result.output
 
@@ -171,10 +174,14 @@ def test_a_refused_listing_is_reported_not_a_traceback(world):
 
 
 class Mcp:
-    configs: dict = {}
+    def __init__(self) -> None:
+        self.configs: dict = {}
+
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
 
     async def connect(self, name):
-        return SimpleNamespace(ok=False, reason="not started in this test")
+        return MCPConnectResult.failure("not started in this test")
 
     async def disconnect_one(self, name):
         return False
@@ -204,7 +211,7 @@ async def test_a_headless_run_syncs_before_it_starts_extensions(world, monkeypat
     extensions = HeadlessExtensions(session)
     await extensions.start()
     try:
-        assert world.store.distribution_of("acme.notes") is not None
+        assert world.store.provenance.of("acme.notes") is not None
         assert extensions.registry.get("acme.notes") is not None
     finally:
         await extensions.stop()

@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, SkipValidation
 
 from igni_core.core.approvals.records import SpawnLink
 from igni_core.protocol import messages as msg
-from igni_core.protocol.agno_tool_formatter import default_registry
+from igni_core.protocol.tool_friendly_names import ToolFriendlyNames
 
 
 class ToolExecutionLike(Protocol):
@@ -125,7 +125,7 @@ class PendingEntry(BaseModel):
         return msg.HITLRequest(
             requirement_id=req_id,
             tool_name=raw_name,
-            friendly_name=default_registry().friendly_name(raw_name),
+            friendly_name=ToolFriendlyNames.friendly_name(raw_name),
             tool_args=self.tool_args,
             agent_path=list(self.agent_path),
             details=self.details,

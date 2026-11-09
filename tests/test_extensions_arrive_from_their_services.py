@@ -22,15 +22,18 @@ from typing import Any
 import httpx
 import pytest
 
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.extensions.bundle_signature import BundleSignatureError, PublisherKeys
 from igni_core.extensions.distribution import ExtensionDistribution
-from igni_core.extensions.installer import ExtensionInstaller, InstallError
+from igni_core.extensions.install_errors import InstallError
+from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.launcher import ExtensionLauncher
 from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.service_token import IgniSession
-from igni_core.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.store import ExtensionStore
 from tests.extension_distribution_helpers import (
     API_URL,
     SESSION,
@@ -168,7 +171,7 @@ async def test_a_listed_extension_is_installed_with_its_record(world):
 
     assert report.installed == ["acme.notes"], report
     assert (world.store.path_for("acme.notes") / "manifest.json").is_file()
-    record = world.store.distribution_of("acme.notes")
+    record = world.store.provenance.of("acme.notes")
     assert record is not None
     assert record.service_url == "https://notes.example.com"
     assert record.sha256 == entry.listed_sha256
@@ -184,7 +187,7 @@ async def test_the_priority_order_is_kept_and_announced_once(world):
 
     report = await world.distribution.sync()
     assert report.priority_changed
-    assert world.store.priority() == ["acme.notes", "acme.review"]
+    assert world.store.listing.priority() == ["acme.notes", "acme.review"]
     assert world.priority_changed == 1
 
     again = await world.distribution.sync()
@@ -193,7 +196,7 @@ async def test_the_priority_order_is_kept_and_announced_once(world):
 
     world.igni.priority = ["acme.review", "acme.notes"]
     await world.distribution.sync()
-    assert world.store.priority() == ["acme.review", "acme.notes"]
+    assert world.store.listing.priority() == ["acme.review", "acme.notes"]
     assert world.priority_changed == 2
 
 
@@ -202,7 +205,7 @@ async def test_a_failed_listing_keeps_the_priority_order(world):
     await world.distribution.sync()
     world.igni.listing_status = 503
     await world.distribution.sync()
-    assert world.store.priority() == ["a.b", "c.d"]
+    assert world.store.listing.priority() == ["a.b", "c.d"]
 
 
 async def test_the_listing_is_asked_for_as_the_signed_in_person(world):
@@ -230,7 +233,7 @@ async def test_a_new_version_replaces_the_old(world):
     report = await world.distribution.sync()
     assert report.installed == ["acme.notes"]
     assert world.store.read(world.store.path_for("acme.notes")).version == "1.1.0"
-    assert world.store.distribution_of("acme.notes").version == "1.1.0"
+    assert world.store.provenance.of("acme.notes").version == "1.1.0"
 
 
 async def test_new_bytes_under_the_same_version_are_fetched(world):
@@ -249,7 +252,7 @@ async def test_new_bytes_under_the_same_version_are_fetched(world):
 
 def _nothing_happened(world: World) -> None:
     assert not world.store.path_for("acme.notes").exists()
-    assert world.store.distribution_of("acme.notes") is None
+    assert world.store.provenance.of("acme.notes") is None
     assert world.lifecycle.calls == []
 
 
@@ -378,7 +381,7 @@ async def test_a_refused_upgrade_keeps_the_installed_version_running(world):
 
     report = await world.distribution.sync()
     assert "acme.notes" in report.failed
-    assert world.store.distribution_of("acme.notes").version == "1.0.0"
+    assert world.store.provenance.of("acme.notes").version == "1.0.0"
     assert world.lifecycle.calls == [], "the running version must not be stopped"
 
 
@@ -395,7 +398,7 @@ async def test_an_extension_whose_service_is_unlisted_is_removed(world):
     assert report.removed == ["acme.notes"]
     assert world.lifecycle.calls == [("deactivate", "acme.notes")]
     assert not world.store.path_for("acme.notes").exists()
-    assert world.store.distribution_of("acme.notes") is None
+    assert world.store.provenance.of("acme.notes") is None
 
 
 async def test_a_failed_listing_removes_nothing(world):
@@ -492,8 +495,11 @@ class StubMcp:
     def __init__(self) -> None:
         self.configs: dict[str, Any] = {}
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return type("Ok", (), {"ok": True, "reason": ""})()
+        return MCPConnectResult(ok=True)
 
     async def disconnect_one(self, name: str) -> None:
         self.configs.pop(name, None)
@@ -665,7 +671,7 @@ async def test_a_failed_store_keeps_and_restarts_the_old_version(world, monkeypa
 
     assert "disk full" in report.failed["acme.notes"]
     assert world.store.read(world.store.path_for("acme.notes")).version == "1.0.0"
-    assert world.store.distribution_of("acme.notes").version == "1.0.0"
+    assert world.store.provenance.of("acme.notes").version == "1.0.0"
     assert world.lifecycle.calls == [("deactivate", "acme.notes"), ("activate", "acme.notes")]
 
 
@@ -713,13 +719,13 @@ async def test_an_extension_on_for_another_group_is_not_installed(world):
 async def test_switched_off_for_their_group_it_is_removed(world):
     world.publish()
     await world.distribution.sync()
-    assert world.store.distribution_of("acme.notes") is not None
+    assert world.store.provenance.of("acme.notes") is not None
 
     world.igni.listed["acme.notes"].groups = []
     report = await world.distribution.sync()
 
     assert report.removed == ["acme.notes"]
-    assert world.store.distribution_of("acme.notes") is None
+    assert world.store.provenance.of("acme.notes") is None
 
 
 async def test_the_persons_group_is_kept(world):
@@ -728,7 +734,7 @@ async def test_the_persons_group_is_kept(world):
 
     await world.distribution.sync()
 
-    stored = world.store.group()
+    stored = world.store.listing.group()
     assert stored is not None and stored.group == "g-ops"
 
 

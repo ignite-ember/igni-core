@@ -15,9 +15,10 @@ from unittest.mock import MagicMock
 
 from igni_core.backend.rpc_handlers.base import RpcHandlerContext
 from igni_core.backend.rpc_handlers.extensions import ExtensionsRpcHandler
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
-from igni_core.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.store import ExtensionStore
 from igni_core.extensions.web_home import ExtensionWebHome
 from tests.host_model_helpers import manifest
 
@@ -30,7 +31,7 @@ def record(extension_id: str, service_url: str) -> DistributionRecord:
 
 def test_a_distributed_extension_is_at_its_service(tmp_path: Path) -> None:
     store = ExtensionStore(tmp_path)
-    store.record_distribution(record("acme.reviewer", "https://reviewer.acme.test"))
+    store.provenance.record(record("acme.reviewer", "https://reviewer.acme.test"))
     assert (
         ExtensionWebHome(store).url_for(manifest("acme.reviewer")) == "https://reviewer.acme.test"
     )
@@ -40,7 +41,7 @@ def test_the_distribution_record_wins_over_a_setting(tmp_path: Path) -> None:
     store = ExtensionStore(tmp_path)
     m = manifest("acme.reviewer")
     store.save_settings(m, {"serviceUrl": "https://dev.acme.test"})
-    store.record_distribution(record("acme.reviewer", "https://reviewer.acme.test"))
+    store.provenance.record(record("acme.reviewer", "https://reviewer.acme.test"))
     assert ExtensionWebHome(store).url_for(m) == "https://reviewer.acme.test"
 
 
@@ -66,7 +67,7 @@ async def test_the_extension_list_carries_it_for_the_window(tmp_path: Path) -> N
     registry.install(manifest("acme.reviewer", host=["chat.read"]), state=ExtensionState.READY)
     registry.install(manifest("acme.plain"), state=ExtensionState.READY)
     store = ExtensionStore(tmp_path)
-    store.record_distribution(record("acme.reviewer", "https://reviewer.acme.test"))
+    store.provenance.record(record("acme.reviewer", "https://reviewer.acme.test"))
     ctx = RpcHandlerContext(
         backend=None,
         file_completion=MagicMock(),

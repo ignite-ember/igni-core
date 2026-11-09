@@ -13,7 +13,7 @@ The class:
 * Supports dependency injection: tests build a resolver with an
   explicit ``friendly_names_provider`` dict; production code uses
   :meth:`FriendlyToolNameResolver.default` which pulls the mapping
-  from the shared ``ToolCallFormatterRegistry`` on first use.
+  from the immutable ``ToolFriendlyNames`` catalog on first use.
 * Ships a module-private cached ``default()`` instance so many
   evaluators constructed in a run share the reverse-index build
   cost — but each caller can still override with ``resolver=...``.
@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
-from igni_core.protocol.agno_tool_formatter import default_registry
+from igni_core.protocol.tool_friendly_names import ToolFriendlyNames
 
 
 class FriendlyToolNameResolver:
@@ -47,12 +47,12 @@ class FriendlyToolNameResolver:
 
         ``friendly_names_provider`` is a callable returning an
         ``internal_name → friendly_name`` mapping (matches the shape
-        exposed by :class:`ToolCallFormatterRegistry.friendly_names`).
-        Defaults to :func:`_registry_provider` — pulled from the
-        shared Agno registry the first time the reverse map is asked
-        for.
+        exposed by
+        :meth:`~igni_core.protocol.tool_friendly_names.ToolFriendlyNames.all_names`).
+        Defaults to :func:`_catalog_provider` — pulled from the
+        shared catalog the first time the reverse map is asked for.
         """
-        self._provider = friendly_names_provider or _registry_provider
+        self._provider = friendly_names_provider or _catalog_provider
         self._reverse: dict[str, frozenset[str]] | None = None
 
     def internals_for(self, friendly: str) -> frozenset[str]:
@@ -93,12 +93,12 @@ class FriendlyToolNameResolver:
         return cls._default_instance
 
 
-def _registry_provider() -> Mapping[str, str]:
-    """Default provider — pulls ``friendly_names`` from the shared
-    Agno tool-call formatter registry.
+def _catalog_provider() -> Mapping[str, str]:
+    """Default provider — pulls the catalog from the immutable
+    ``ToolFriendlyNames`` map.
 
     Kept as a module-level function (rather than inlined inside
     ``__init__``) so tests can compare identity when wiring a custom
     provider.
     """
-    return default_registry().friendly_names
+    return ToolFriendlyNames.all_names()

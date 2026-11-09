@@ -24,6 +24,7 @@ from igni_core.core.config.schemas.safety import BypassGuardConfig
 from igni_core.core.hooks.bypass_guard import BypassGuard
 from igni_core.core.hooks.bypass_judge import HarmScore
 from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
@@ -197,8 +198,11 @@ class HintedMcp:
         }
         self._reported = reported
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return type("Ok", (), {"ok": True, "reason": ""})()
+        return MCPConnectResult(ok=True)
 
     async def disconnect_one(self, name: str) -> None:
         self.configs.pop(name, None)

@@ -13,12 +13,11 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
-from pydantic_core import to_jsonable_python
-
 from igni_core.backend.activity import ActivityState
 from igni_core.backend.schemas_pool import ExtensionPost
 from igni_core.backend.schemas_push import SessionNamedPayload
 from igni_core.core.session.schemas import PersistResult
+from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.host.hooks import ExtensionHooks, HookFailure
 from igni_core.extensions.host.wire import Outcome
 from igni_core.extensions.service_events import EventHandling, ServiceEvent, UnattendedPost
@@ -63,7 +62,7 @@ class PoolSession:
         extension_id: str,
         text: str,
         queued: bool,
-        media: dict[str, str] | None = None,
+        media: ChatAttachments | None = None,
         from_service: str = "",
     ) -> None:
         """Posted as ``extension_id``'s; ``from_service`` is its service's client id
@@ -84,12 +83,12 @@ class PoolSession:
         *,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments | None,
         from_service: str = "",
     ) -> UnattendedPost:
         """Start a run with it, or queue it for the run going — as an event is."""
         queued = self.busy()
-        if queued and media:
+        if queued and media is not None and media.has_files():
             return UnattendedPost(
                 ok=False,
                 reason=f"a run is going in session {self.session_id}: a message queued for "
@@ -143,16 +142,15 @@ class ExtensionEventHandler:
     #: The frame's event name, the SDK's ``SERVICE_EVENT``.
     EVENT: ClassVar[str] = "ServiceEvent"
 
-    def __init__(self, hooks: ExtensionHooks | None = None) -> None:
+    def __init__(self, hooks: ExtensionHooks) -> None:
         self._hooks = hooks
 
     async def __call__(self, event: ServiceEvent) -> EventHandling:
-        hooks = self._hooks if self._hooks is not None else ExtensionHooks.shared()
         try:
-            answer = await hooks.ask_one(
+            answer = await self._hooks.ask_one(
                 event.extension_id,
                 self.EVENT,
-                to_jsonable_python(event.model_dump(mode="json")),
+                event,
                 timeout=self.TIMEOUT_S,
                 connect_timeout=self.CONNECT_TIMEOUT_S,
             )

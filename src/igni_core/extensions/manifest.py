@@ -476,6 +476,16 @@ class Setting(Strict):
             raise ValueError(f"setting {self.key!r} is an enum with no options")
         return self
 
+    def accepts(self, value: object) -> bool:
+        """Whether this setting may hold this value.
+
+        Only an enum says no: the other kinds are the host's to
+        render, and what it writes is what it read.
+        """
+        if self.type == "enum":
+            return value in self.options
+        return True
+
 
 class Contributes(Strict):
     pages: list[PageContribution] = Field(default_factory=list)

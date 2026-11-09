@@ -7,7 +7,7 @@ from typing import ClassVar
 from pydantic import Field
 
 from igni_core.extensions.host.broadcasts.signal import Handler, RunRef
-from igni_core.extensions.host.signal_values import Emitter, Signal
+from igni_core.extensions.host.signal_values import Emitter, Signal, Windowed
 from igni_core.extensions.host.values import SessionInfo
 from igni_core.extensions.host.windows import Windows
 from igni_core.protocol import messages as msg
@@ -33,7 +33,7 @@ class MessageAdded(Signal):
         )
 
 
-class TypingSignal(Signal):
+class TypingSignal(Windowed):
     WIRE: ClassVar[str] = "chat.typing"
 
     session_id: str
@@ -144,16 +144,16 @@ class ChatSignals:
         return lambda m: self._emitter.send(signal.of(m))
 
     def user_message_received(self, m: msg.UserMessageReceived) -> None:
-        self._windows.touch_connection(m.client_id)
+        self._windows.registry.touch_connection(m.client_id)
         self._emitter.send(MessageAdded.received(m))
 
     def typing(self, m: msg.Typing) -> None:
-        window = self._windows.by_connection(m.client_id)
+        window = self._windows.registry.by_connection(m.client_id)
         self._emitter.send(TypingSignal(session_id=m.session_id, text=m.text, window=window))
         if window is not None:
             # Typing is using the window. The draft itself is the
             # window's model, written by the window (``ui.composer``).
-            self._windows.touch(window)
+            self._windows.registry.touch(window)
 
     def session_list_result(self, m: msg.SessionListResult) -> None:
         sessions = [SessionInfo.from_entry(s.model_dump()) for s in m.sessions]

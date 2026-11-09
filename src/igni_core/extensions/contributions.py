@@ -89,7 +89,7 @@ from igni_core.extensions.impact import (
     ResolvedImpact,
     SwitchedOff,
 )
-from igni_core.extensions.installer import SERVER_PREFIX
+from igni_core.extensions.install_service import SERVER_PREFIX
 from igni_core.extensions.manifest import ExtensionManifest, FragmentSource
 from igni_core.extensions.registry import (
     ExtensionRegistry,
@@ -119,7 +119,7 @@ class ExtensionContributions:
         prompt_loader: PromptLoader,
         prompts: PromptContributions,
         commands: ContributedCommands | None = None,
-        hooks: ExtensionHooks | None = None,
+        hooks: ExtensionHooks,
     ) -> None:
         """
         Args:
@@ -139,6 +139,8 @@ class ExtensionContributions:
             prompt_loader: igni's prompt files, and the table of
                 anchors an extension fills. The same instance every
                 session of the deployment reads.
+            hooks: The extensions' hooks, whose priority the
+                super admin's order settles.
         """
         self._registry = registry
         self._rpc = rpc
@@ -152,7 +154,7 @@ class ExtensionContributions:
         self._fragments = prompt_loader.fragments
         self._prompts = prompts
         self._commands = commands if commands is not None else default_commands
-        self._hooks = hooks if hooks is not None else ExtensionHooks.shared()
+        self._hooks = hooks
         self._resolved = ResolvedImpact()
         #: ``{extension_id: [what it declared and igni would not take]}``
         #: — an override whose text does not have the sections it says.

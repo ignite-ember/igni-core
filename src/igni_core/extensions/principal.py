@@ -100,7 +100,7 @@ class SignedInPerson:
                 app=claims.app if claims is not None else None,
                 external_id=claims.external_id if claims is not None else None,
             )
-        listed = self._store.group()
+        listed = self._store.listing.group()
         return Principal(
             kind=PrincipalKind.PERSON,
             id=user_id,

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -23,11 +22,14 @@ from igni_core.backend.extensions_runtime import ExtensionsRuntime
 from igni_core.backend.igni_server_access import IgniServerAccess
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.core.config.settings import Settings
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.health import ExtensionHealth
+from igni_core.extensions.host.hooks import ExtensionHooks
+from igni_core.extensions.host.processes import ExtensionProcesses
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
@@ -39,8 +41,11 @@ class StubMcp:
         self.configs: dict[str, Any] = {}
         self.extension_request_meta: Any = None
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return SimpleNamespace(ok=True, reason="")
+        return MCPConnectResult(ok=True)
 
     async def disconnect_one(self, name: str) -> None:
         self.configs.pop(name, None)
@@ -85,17 +90,22 @@ def mcp() -> StubMcp:
 def runtime(mcp: StubMcp) -> ExtensionsRuntime:
     rpc = ExtensionRpc(ExtensionRegistry())
     prompts = PromptContributions()
+    hooks = ExtensionHooks(registry=rpc.registry)
+    processes = ExtensionProcesses()
     return ExtensionsRuntime(
         rpc=rpc,
         origins=ExtensionOrigins(),
-        health=ExtensionHealth(registry=rpc.registry, rpc=rpc, mcp=mcp),
+        health=ExtensionHealth(registry=rpc.registry, rpc=rpc, mcp=mcp, processes=processes),
         contributions=ExtensionContributions(
             registry=rpc.registry,
             rpc=rpc,
             prompt_loader=PromptLoader(PromptFragments()),
             prompts=prompts,
+            hooks=hooks,
         ),
         prompts=prompts,
+        hooks=hooks,
+        processes=processes,
     )
 
 

@@ -11,21 +11,19 @@ from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.members.base import Members
 from igni_core.extensions.host.members.call import Call
 from igni_core.extensions.host.members.tag import call, get, put
-from igni_core.extensions.host.members.window_values import (
+from igni_core.extensions.host.members.ui_values import DialogSpec, PanelKind, ToastKind
+from igni_core.extensions.host.spec import ErrorCode
+from igni_core.extensions.host.window_errors import WindowModelError, WindowStateError
+from igni_core.extensions.host.window_field import WindowFieldName
+from igni_core.extensions.host.window_values import (
     Composer,
-    DialogSpec,
     Page,
     Panel,
-    PanelKind,
-    PreviewTarget,
-    ScrollPosition,
+    Preview,
+    Scroll,
     Sidebar,
-    ToastKind,
-    ToastRequest,
-    WindowFieldName,
+    Toast,
 )
-from igni_core.extensions.host.spec import ErrorCode
-from igni_core.extensions.host.windows import WindowModelError, WindowStateError
 
 
 class WindowModelMembers(Members):
@@ -70,8 +68,8 @@ class UiNavigationMembers(WindowModelMembers):
 
     @call("ui.navigate")
     async def navigate(self, c: Call) -> Any:
-        page = Page.named(c.params["page"], c.params.get("params"))
-        return self.write(c, WindowFieldName.ROUTE, [page.model_dump()])
+        page = Page.named(str(c.params["page"]), c.params.get("params"))
+        return self.write(c, WindowFieldName.ROUTE, [page])
 
     @call("ui.back")
     async def back(self, c: Call) -> Any:
@@ -89,7 +87,7 @@ class UiNavigationMembers(WindowModelMembers):
     async def open_panel(self, c: Call) -> Any:
         kind = PanelKind.of(str(c.params["kind"]))
         panel = Panel(kind=kind.value, params=c.params.get("params") or {})
-        return self.write(c, WindowFieldName.PANEL, panel.model_dump())
+        return self.write(c, WindowFieldName.PANEL, panel)
 
     @call("ui.close_panel")
     async def close_panel(self, c: Call) -> None:
@@ -111,7 +109,7 @@ class UiNavigationMembers(WindowModelMembers):
             width=c.params.get("width"),
             section=c.params.get("section"),
         )
-        return self.write(c, WindowFieldName.SIDEBAR, sidebar.model_dump())
+        return self.write(c, WindowFieldName.SIDEBAR, sidebar)
 
 
 class UiContentMembers(WindowModelMembers):
@@ -131,7 +129,7 @@ class UiContentMembers(WindowModelMembers):
     async def open_preview(self, c: Call) -> Any:
         path = str(c.params["path"])
         c.grants.require_workspace_path(path)
-        return self.write(c, WindowFieldName.PREVIEW, PreviewTarget(path=path).model_dump())
+        return self.write(c, WindowFieldName.PREVIEW, Preview(path=path))
 
     @call("ui.close_preview")
     async def close_preview(self, c: Call) -> None:
@@ -164,9 +162,9 @@ class UiContentMembers(WindowModelMembers):
             str(c.params["text"]),
             c.params.get("attachments") or [],
             mode,
-            None if mode else self.read(c, WindowFieldName.COMPOSER).get("mode"),
+            None if mode else self.read(c, WindowFieldName.COMPOSER).mode,
         )
-        return self.write(c, WindowFieldName.COMPOSER, composer.model_dump())
+        return self.write(c, WindowFieldName.COMPOSER, composer)
 
     @get("ui.scroll")
     async def scroll(self, c: Call) -> Any:
@@ -174,8 +172,8 @@ class UiContentMembers(WindowModelMembers):
 
     @call("ui.scroll_to")
     async def scroll_to(self, c: Call) -> Any:
-        position = ScrollPosition.to(str(c.params["message_id"]))
-        return self.write(c, WindowFieldName.SCROLL, position.model_dump())
+        position = Scroll.to(str(c.params["message_id"]))
+        return self.write(c, WindowFieldName.SCROLL, position)
 
 
 class UiNoticeMembers(WindowModelMembers):
@@ -188,14 +186,18 @@ class UiNoticeMembers(WindowModelMembers):
     @call("ui.toast")
     async def toast(self, c: Call) -> Any:
         kind = ToastKind.of(c.params.get("kind") or "info")
-        request = ToastRequest(
-            text=c.params["text"],
+        try:
+            target = Page.of(c.params["target"]) if c.params.get("target") else None
+        except WindowModelError as exc:
+            raise HostModelError(ErrorCode.INVALID, str(exc)) from None
+        toast = Toast(
+            text=str(c.params["text"]),
             kind=kind.value,
             body=c.params.get("body"),
-            target=c.params.get("target"),
+            target=target,
             source=c.extension_id,
         )
-        return self.host.windows.toast(c.require_window(), request.model_dump())
+        return self.host.windows.toast(c.require_window(), toast)
 
     @call("ui.dismiss_toast")
     async def dismiss_toast(self, c: Call) -> None:
@@ -204,7 +206,7 @@ class UiNoticeMembers(WindowModelMembers):
         found = self.host.windows.toast_of(window, toast_id)
         if found is None:
             raise HostModelError(ErrorCode.NOT_FOUND, f"no toast {toast_id!r} is on screen")
-        if found.get("source") != c.extension_id:
+        if found.source != c.extension_id:
             raise HostModelError(ErrorCode.REFUSED, "an extension dismisses only its own toasts")
         self.host.windows.dismiss_toast(window, toast_id)
 

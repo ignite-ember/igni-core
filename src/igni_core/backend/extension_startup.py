@@ -24,7 +24,6 @@ from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.core.config.settings import Settings
 from igni_core.extensions.distribution import ExtensionDistribution
 from igni_core.extensions.host.channel import HostChannel
-from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.launcher import ExtensionLauncher
 from igni_core.extensions.principal import SignedInPerson
@@ -87,7 +86,7 @@ class ExtensionStartup:
         # person signed in here (docs/EXTENSION_ROUTING_AND_CONCURRENCY.md).
         person = SignedInPerson(context.settings.auth.credentials_file, store)
         context.mcp.extension_request_meta = person.meta
-        ExtensionHooks.shared().set_principal(person)
+        runtime.hooks.set_principal(person)
         # One exchange, one cache: an extension's process and its page ask
         # for the same token and igni is asked once.
         exchange = context.access.token_exchange()

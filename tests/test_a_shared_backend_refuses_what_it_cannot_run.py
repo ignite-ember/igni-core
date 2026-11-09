@@ -31,7 +31,8 @@ from pathlib import Path
 import pytest
 
 from igni_core.core.mcp.client import MCPClientManager
-from igni_core.extensions.installer import ExtensionInstaller, InstallError
+from igni_core.extensions.install_errors import InstallError
+from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.profile import ENV_VAR, DeploymentProfile
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState

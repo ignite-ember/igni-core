@@ -40,6 +40,7 @@ from igni_core.backend.message_dispatcher import MessageDispatcher
 from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.core.activity import background
 from igni_core.core.utils.media_schemas import MediaAttachments
+from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.registry import ExtensionRefused
 from igni_core.protocol import messages as msg
 
@@ -383,7 +384,9 @@ async def test_an_unknown_message_is_logged_not_raised(caplog):
 async def test_an_extension_s_message_is_labelled_as_its_own_and_runs_a_turn():
     dispatcher, transport, _, backend = _dispatcher()
 
-    await dispatcher.post_from_extension("acme.tickets", "Ticket 4 closed", {}, "svc-1")
+    await dispatcher.post_from_extension(
+        "acme.tickets", "Ticket 4 closed", ChatAttachments(), "svc-1"
+    )
 
     echo = transport.sent[0]
     assert (echo.text, echo.client_id, echo.extension_id, echo.service_client_id) == (

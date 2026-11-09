@@ -30,6 +30,7 @@ from igni_core.core.session.event_log_schema import (
     VisualizationDeltaPayload,
 )
 from igni_core.core.session.schemas import PersistResult
+from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.values import SessionAttached
 from igni_core.extensions.service_events import UnattendedPost
@@ -104,7 +105,7 @@ class OrchestratorHostBackend:
         session_id: str,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments,
         queued: bool,
     ) -> None:
         await self._orchestrator.post_from_extension(
@@ -123,7 +124,7 @@ class OrchestratorHostBackend:
         session_id: str,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments,
     ) -> UnattendedPost:
         return await PoolSession(self._orchestrator, session_id).deliver(
             extension_id=extension_id, text=text, media=media
@@ -132,17 +133,16 @@ class OrchestratorHostBackend:
     async def title(self, *, session_id: str, title: str) -> PersistResult:
         return await PoolSession(self._orchestrator, session_id).title(title)
 
-    async def show_view(self, *, session_id: str, payload: dict[str, Any], run_id: str) -> None:
+    async def show_view(
+        self, *, session_id: str, payload: VisualizationDeltaPayload, run_id: str
+    ) -> None:
         runtime = await self._orchestrator.pool.get_or_create(session_id)
         await runtime.transport.send(
-            msg.PushNotification(channel="orchestrate_event", payload=payload)
-        )
-        await runtime.backend.record_event(
-            VisualizationDeltaDraft(
-                payload=VisualizationDeltaPayload.model_validate(payload),
-                run_id=run_id,
+            msg.PushNotification(
+                channel="orchestrate_event", payload=payload.model_dump(by_alias=True)
             )
         )
+        await runtime.backend.record_event(VisualizationDeltaDraft(payload=payload, run_id=run_id))
 
     def views(self, session_id: str) -> list[ViewShown]:
         runtime = self._orchestrator.pool.find(session_id)

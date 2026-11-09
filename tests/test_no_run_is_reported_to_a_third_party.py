@@ -54,9 +54,8 @@ from pathlib import Path
 from igni_core.core.agents.schemas import AgentConstructorArgs
 from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.session.agent_builder.agent_build_spec import AgentBuildSpec
-from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.install_environment import ProcessEnvironment
 from igni_core.extensions.manifest import ExtensionManifest
-from igni_core.extensions.permissions import Permissions
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -168,12 +167,10 @@ class TestTheConstructorsSayItToo:
         source = (_ROOT / "src/igni_core/core/tools/orchestrate_spawn.py").read_text()
         assert '"telemetry": AgnoTelemetry.CONSTRUCTOR_VALUE' in source
 
-    def test_an_extension_service_is_handed_it_and_cannot_turn_it_on(self, tmp_path, monkeypatch):
+    def test_an_extension_service_is_handed_it_and_cannot_turn_it_on(self, monkeypatch):
         """An MCP stdio launch passes on only ``PATH``, ``HOME`` and a few
         more, so an extension built on Agno would run with Agno's default."""
         monkeypatch.setenv("AGNO_TELEMETRY", "false")
-        installer = ExtensionInstaller.__new__(ExtensionInstaller)
-        installer._project_dir = tmp_path
         manifest = ExtensionManifest.model_validate(
             {
                 "id": "acme.scanner",
@@ -183,6 +180,6 @@ class TestTheConstructorsSayItToo:
                 "dev": {"command": ["node", "server.js"], "env": {"AGNO_TELEMETRY": "true"}},
             }
         )
-        env = installer._process_environment(dict(manifest.dev.env), Permissions(manifest), {})
+        environment = ProcessEnvironment(literals=dict(manifest.dev.env or {}))
 
-        assert env["AGNO_TELEMETRY"] == "false"
+        assert environment.merged()["AGNO_TELEMETRY"] == "false"

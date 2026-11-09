@@ -24,7 +24,6 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from igni_core.extensions.faults import ExtensionFaults
 from igni_core.extensions.registry import (
     NAMESPACE,
     ExtensionRefused,
@@ -39,10 +38,9 @@ logger = logging.getLogger(__name__)
 class ExtensionRpc:
     """Authorise a namespaced call, then route it to its service."""
 
-    def __init__(self, registry: ExtensionRegistry, faults: ExtensionFaults | None = None) -> None:
+    def __init__(self, registry: ExtensionRegistry) -> None:
         self._registry = registry
-        self._faults = faults if faults is not None else ExtensionFaults.shared()
-        self._faults.attach(registry)
+        self._faults = registry.faults
         self._services: dict[str, ExtensionService] = {}
         self._on_failure: Callable[[str], None] | None = None
 

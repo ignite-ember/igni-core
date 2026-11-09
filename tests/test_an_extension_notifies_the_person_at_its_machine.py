@@ -28,7 +28,8 @@ from mcp.types import JSONRPCNotification
 
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.notification_tap import McpNotificationRouter
-from igni_core.extensions.installer import ExtensionInstaller, server_name
+from igni_core.extensions.install_service import server_name
+from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState

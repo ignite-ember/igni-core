@@ -36,7 +36,8 @@ from igni_core.core.layer import Layer, Layers, UnknownLayer, layers
 from igni_core.core.mcp.approval import MCPApprovalManager
 from igni_core.core.utils.audit import AuditLogger
 from igni_core.core.utils.audit_schemas import AuditEntry
-from igni_core.extensions.store import ExtensionStore, StoredGroup
+from igni_core.extensions.listing import StoredGroup
+from igni_core.extensions.store import ExtensionStore
 
 
 @pytest.fixture
@@ -167,10 +168,11 @@ def test_the_cloud_needs_its_database(cloud, tmp_path: Path):
 
 def test_priority_and_group_are_igni_servers_and_never_written(cloud, tmp_path: Path):
     root = tmp_path / "extensions"
-    assert ExtensionStore(root).record_priority(["acme.a", "acme.b"])
-    ExtensionStore(root).record_group("engineering")
-    assert ExtensionStore(root).priority() == ["acme.a", "acme.b"]
-    assert ExtensionStore(root).group() == StoredGroup(group="engineering")
+    store = ExtensionStore(root)
+    assert store.listing.record_priority(["acme.a", "acme.b"])
+    store.listing.record_group("engineering")
+    assert store.listing.priority() == ["acme.a", "acme.b"]
+    assert store.listing.group() == StoredGroup(group="engineering")
     assert not root.exists(), "nothing written in the VM"
 
 

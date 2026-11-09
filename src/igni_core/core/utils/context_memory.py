@@ -15,14 +15,8 @@ under those paths. That's the classic Rule 6 "implicit subject
 cluster" audit flag. The refactor promotes ``project_dir`` to
 constructor state on :class:`ProjectMemoryBank`, with the three
 public verbs (``ensure`` / ``load_index`` / ``writeback_instructions``)
-as instance methods.
-
-Free-function shims (:func:`ensure_memory_dir`,
-:func:`load_memory_index`, :func:`memory_writeback_instructions`)
-survive at the module bottom as one-liner delegations to the class
-— they're what :mod:`context` re-exports and what the test suite
-imports. Rewriting every call site to the class form is a separate
-concern from the OOP promotion happening here.
+as instance methods. The class is the module's API — there are no
+free-function delegations back to it.
 
 ## What lives here
 
@@ -39,12 +33,9 @@ concern from the OOP promotion happening here.
   project memory directory idempotently so the agent's first
   ``save_file`` doesn't fail on a missing parent.
 
-Backwards-compatible: :mod:`context` still re-exports the free-
-function names and the leading-underscore private helpers; tests
-that ``monkeypatch.setattr`` ``_igni_project_memory_dir`` on this
-module (or on ``context``) still take effect because
-:class:`ProjectMemoryBank` looks up the names on the module
-namespace at call time — see the module-late-binding pattern in
+The path helpers stay at module level because
+:class:`ProjectMemoryBank` resolves them on the module namespace at
+call time — see the module-late-binding pattern in
 :meth:`ProjectMemoryBank.igni_dir`.
 """
 
@@ -63,17 +54,9 @@ logger = logging.getLogger(__name__)
 
 # ── Module-level path helpers ─────────────────────────────────────
 #
-# Kept as module-level free functions (not class methods) because:
-#
-# * :mod:`context` re-exports every leading-underscore name so
-#   tests can ``monkeypatch.setattr(context, "_igni_project_memory_dir",
-#   ...)``. That patch reaches the ORIGINAL name here via
-#   ``sys.modules[__name__]`` lookup inside the class — see
-#   :meth:`ProjectMemoryBank.igni_dir`. If these lived on the class
-#   directly, the monkeypatch would silently miss.
-# * Tests also import them directly:
-#   ``from context_memory import _igni_project_memory_dir``. The
-#   module-level position preserves that.
+# Kept as module-level free functions (not class methods) because
+# :class:`ProjectMemoryBank` resolves them on the module namespace at
+# call time — see :meth:`ProjectMemoryBank.igni_dir`.
 
 
 #: Filename of the per-project memory INDEX. Individual memory files
@@ -295,36 +278,3 @@ class ProjectMemoryBank:
         the prompt.
         """
         return MemoryWritebackPrompt(self.igni_dir()).render()
-
-
-# ── Free-function shims ───────────────────────────────────────────
-#
-# One-liner delegations to :class:`ProjectMemoryBank`. Kept because:
-#
-# * :mod:`context` re-exports these names for backwards compat with
-#   ``session/core.py`` and other external callers.
-# * Every test in ``test_context.py::TestLoadMemoryIndex`` /
-#   ``TestEnsureMemoryDir`` / ``TestMemoryWritebackInstructions``
-#   calls them by the free-function name.
-#
-# Migrating every call site to the class form is out of scope for
-# this file's refactor — it would ripple through 20+ tests and the
-# :mod:`context` re-export block. Named as scope-limited debt.
-
-
-def ensure_memory_dir(project_dir: Path) -> Path:
-    """Backwards-compat shim — see :meth:`ProjectMemoryBank.ensure`."""
-    return ProjectMemoryBank(project_dir).ensure()
-
-
-def load_memory_index(project_dir: Path, read_claude_memory: bool = True) -> str:
-    """Backwards-compat shim — see :meth:`ProjectMemoryBank.load_index`."""
-    return ProjectMemoryBank(
-        project_dir,
-        read_claude_fallback=read_claude_memory,
-    ).load_index()
-
-
-def memory_writeback_instructions(project_dir: Path) -> str:
-    """Backwards-compat shim — see :meth:`ProjectMemoryBank.writeback_instructions`."""
-    return ProjectMemoryBank(project_dir).writeback_instructions()

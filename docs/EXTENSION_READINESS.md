@@ -174,7 +174,7 @@ shipping without it costs nothing.
 | H5 | ✅ | Producers. `WorkspaceWatcher` polls `git rev-parse` at 1 Hz and `git status` at half that — and does neither while nobody entitled is subscribed. `session.switched` fires from a window's session binding, deduped, because a page reload is not a switch. |
 | H6 | ✅ | The content rule. Each listener gets its own value: the workspace signals require `permissions.workspace`, and `files-changed` is filtered to each extension's `workspacePaths`. The grant says whether you are addressed; it does not say what you are handed. |
 | H7 | — | Retired. A service used to be told through the reserved `igni_on_event(topic, payload)` tool; a process now subscribes over its host channel. An `endpoint` service with no page hears nothing. |
-| H8 | ✅ | `permissions.tools` enforces something for the first time. `get_tools` returns registered names and a manifest declares the server's own; `_restrict_tools` compared them directly, so *every* tool was refused including the declared ones. Safe direction, which is why it looked like it worked — and the unit test agreed because it passed bare names. `bare_tool_name` is the conversion, pinned against a real server. |
+| H8 | ✅ | `permissions.tools` enforces something for the first time. `get_tools` returns registered names and a manifest declares the server's own; `restrict_tools` compared them directly, so *every* tool was refused including the declared ones. Safe direction, which is why it looked like it worked — and the unit test agreed because it passed bare names. `bare_tool_name` is the conversion, pinned against a real server. |
 
 ## Gate G — more than one person
 

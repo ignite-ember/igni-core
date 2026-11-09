@@ -26,27 +26,46 @@ module stays a leaf in the import graph and CODE_STANDARDS Rule 2
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.utils.context_schemas import (
+    ReadRulesDirFiles,
+    ReadWithImports,
+    UserRulesPaths,
+)
 
-# Path constants — public so tests + downstream can monkeypatch them
-# in a hermetic sandbox (see ``test_context.py::_isolate_user_rules``).
+# Path constants — the user's real global-rules locations. The loader
+# reads them through :func:`default_user_rules_paths`, so a caller that
+# wants different locations injects a :class:`UserRulesPaths` value
+# instead of relying on these.
 USER_RULES_PATH = Path.home() / CONFIG_DIR / "rules.md"
 USER_RULES_DIR = Path.home() / CONFIG_DIR / "rules"
 CLAUDE_USER_RULES_DIR = Path.home() / ".claude" / "rules"
 
 
+def default_user_rules_paths() -> UserRulesPaths:
+    """The user's real global-rules locations.
+
+    Built from the module-level constants, which are resolved from
+    ``Path.home()`` when this module is imported. A loader takes a
+    snapshot of them at construction time, so a caller that wants
+    different locations injects its own :class:`UserRulesPaths`.
+    """
+    return UserRulesPaths(
+        legacy_file=USER_RULES_PATH,
+        rules_dir=USER_RULES_DIR,
+        claude_rules_dir=CLAUDE_USER_RULES_DIR,
+    )
+
+
 def load_user_rules(
-    read_with_imports: Callable[..., str],
-    read_rules_dir_files: Callable[..., str],
+    read_with_imports: ReadWithImports,
+    read_rules_dir_files: ReadRulesDirFiles,
+    paths: UserRulesPaths,
     working_dir: Path | None = None,
     project_dir: Path | None = None,
     read_claude_rules: bool = True,
-    user_rules_path: Path = USER_RULES_PATH,
-    user_rules_dir: Path = USER_RULES_DIR,
-    claude_user_rules_dir: Path = CLAUDE_USER_RULES_DIR,
 ) -> str:
     """Load user-level global rules from all configured sources.
 
@@ -59,27 +78,21 @@ def load_user_rules(
     Files with ``paths:`` frontmatter contribute only when
     ``working_dir`` matches one of the globs.
 
-    Path arguments default to the module-level constants but tests
-    (or a caller) may override them — this preserves the old
-    ``monkeypatch.setattr(context, "USER_RULES_PATH", ...)`` idiom
-    at the wrapper layer: ``context.py`` passes its own module-level
-    names, which tests patch. Without the pass-through the extraction
-    would silently break every hermetic-sandbox rules test.
-
-    ``read_with_imports`` and ``read_rules_dir_files`` are injected
-    — they live in ``context.py`` and are shared across all rule
-    sources. Passing them by argument keeps this module a leaf in
-    the import graph (context.py imports us; we don't import back).
+    ``paths`` says where the three sources live; the caller injects
+    it. ``read_with_imports`` and ``read_rules_dir_files`` are
+    injected too — they are shared across all rule sources, and
+    passing them by argument keeps this module a leaf in the import
+    graph (the loader imports us; we don't import back).
     """
     sections: list[str] = []
-    legacy = read_with_imports(user_rules_path, allowed_root=user_rules_path.parent)
+    legacy = read_with_imports(paths.legacy_file, allowed_root=paths.legacy_file.parent)
     if legacy:
         sections.append(legacy)
-    igni_dir = read_rules_dir_files(user_rules_dir, working_dir, project_dir)
+    igni_dir = read_rules_dir_files(paths.rules_dir, working_dir, project_dir)
     if igni_dir:
         sections.append(igni_dir)
     if read_claude_rules:
-        claude_dir = read_rules_dir_files(claude_user_rules_dir, working_dir, project_dir)
+        claude_dir = read_rules_dir_files(paths.claude_rules_dir, working_dir, project_dir)
         if claude_dir:
             sections.append(claude_dir)
     return "\n\n".join(sections)
