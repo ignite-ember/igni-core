@@ -1911,15 +1911,26 @@
       "type": "object"
     },
     "HITLDecision": {
-      "description": "One row inside a ``HITLResponseBatch``. See :class:`HITLResponse`\nfor the ``action`` / ``choice`` typing note.\n\n``set_permission_mode`` is an optional atomic-mode-flip: when\nset, the BE applies the named mode to the session BEFORE\nresuming the agent \u2014 so the very next tool check after the\nHITL pause resolves sees the new mode. Used by the FE's\n\"Accept all edits during this session\" shortcut: a previous\nversion fired a separate ``/accept on`` slash command that\nraced the resume and lost ~half the time, causing the next\nedit to re-prompt instead of auto-approving. Default ``None``\nkeeps the wire shape unchanged for existing clients.",
+      "description": "One answer inside a ``hitl_response_batch``: as ``hitl_response``,\nplus a permission mode to switch to before the run resumes\n(``set_permission_mode``), so the very next tool call is checked\nunder it.",
       "properties": {
         "action": {
-          "default": "",
+          "default": "reject",
+          "enum": [
+            "confirm",
+            "reject"
+          ],
           "title": "Action",
           "type": "string"
         },
         "choice": {
           "default": "",
+          "enum": [
+            "",
+            "once",
+            "always",
+            "similar",
+            "deny"
+          ],
           "title": "Choice",
           "type": "string"
         },
@@ -1945,6 +1956,13 @@
         },
         "set_permission_mode": {
           "default": "",
+          "enum": [
+            "",
+            "default",
+            "plan",
+            "acceptEdits",
+            "bypassPermissions"
+          ],
           "title": "Set Permission Mode",
           "type": "string"
         },
@@ -2048,15 +2066,26 @@
       "type": "object"
     },
     "HITLResponse": {
-      "description": "User responded to a permission dialog.\n\n``action`` / ``choice`` stay as raw ``str`` on the wire; use\n:class:`HITLAction` / :class:`HITLChoice` members at producer\ncallsites for autocompletion + typo-checking. ``StrEnum``\ncoerces to the underlying string on assignment.",
+      "description": "The person's answer to one approval request.\n\n``requirement_id`` is the request's id (from ``run_paused``);\n``action`` is ``confirm`` or ``reject``; ``choice`` says whether to\nsave a rule from it.",
       "properties": {
         "action": {
-          "default": "",
+          "default": "reject",
+          "enum": [
+            "confirm",
+            "reject"
+          ],
           "title": "Action",
           "type": "string"
         },
         "choice": {
           "default": "",
+          "enum": [
+            "",
+            "once",
+            "always",
+            "similar",
+            "deny"
+          ],
           "title": "Choice",
           "type": "string"
         },
@@ -2091,7 +2120,7 @@
       "type": "object"
     },
     "HITLResponseBatch": {
-      "description": "User responded to *every* requirement in a multi-req pause.\n\nAgno's ``acontinue_run`` treats requirements not in the resolution\nlist as denied, so a per-req resolve loop dropped 7-of-8 calls in\na batched tool plan. The batch envelope carries every decision in\none round-trip so the backend can call ``acontinue_run`` exactly\nonce with the full set of resolved requirements.",
+      "description": "The person's answers to every approval request of one pause, sent\ntogether: a request left out is taken as rejected.",
       "properties": {
         "decisions": {
           "default": [],
@@ -8955,7 +8984,7 @@
     },
     "hitl_decision": {
       "direction": "to_igni",
-      "doc": "One row inside a ``HITLResponseBatch``. See :class:`HITLResponse`\nfor the ``action`` / ``choice`` typing note.\n\n``set_permission_mode`` is an optional atomic-mode-flip: when\nset, the BE applies the named mode to the session BEFORE\nresuming the agent \u2014 so the very next tool check after the\nHITL pause resolves sees the new mode. Used by the FE's\n\"Accept all edits during this session\" shortcut: a previous\nversion fired a separate ``/accept on`` slash command that\nraced the resume and lost ~half the time, causing the next\nedit to re-prompt instead of auto-approving. Default ``None``\nkeeps the wire shape unchanged for existing clients.",
+      "doc": "One answer inside a ``hitl_response_batch``: as ``hitl_response``,\nplus a permission mode to switch to before the run resumes\n(``set_permission_mode``), so the very next tool call is checked\nunder it.",
       "schema": {
         "$ref": "#/defs/HITLDecision"
       }
@@ -8969,14 +8998,14 @@
     },
     "hitl_response": {
       "direction": "to_igni",
-      "doc": "User responded to a permission dialog.\n\n``action`` / ``choice`` stay as raw ``str`` on the wire; use\n:class:`HITLAction` / :class:`HITLChoice` members at producer\ncallsites for autocompletion + typo-checking. ``StrEnum``\ncoerces to the underlying string on assignment.",
+      "doc": "The person's answer to one approval request.\n\n``requirement_id`` is the request's id (from ``run_paused``);\n``action`` is ``confirm`` or ``reject``; ``choice`` says whether to\nsave a rule from it.",
       "schema": {
         "$ref": "#/defs/HITLResponse"
       }
     },
     "hitl_response_batch": {
       "direction": "to_igni",
-      "doc": "User responded to *every* requirement in a multi-req pause.\n\nAgno's ``acontinue_run`` treats requirements not in the resolution\nlist as denied, so a per-req resolve loop dropped 7-of-8 calls in\na batched tool plan. The batch envelope carries every decision in\none round-trip so the backend can call ``acontinue_run`` exactly\nonce with the full set of resolved requirements.",
+      "doc": "The person's answers to every approval request of one pause, sent\ntogether: a request left out is taken as rejected.",
       "schema": {
         "$ref": "#/defs/HITLResponseBatch"
       }

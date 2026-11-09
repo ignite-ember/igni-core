@@ -56,56 +56,50 @@ class QueueMessage(Message):
     client_id: str = ""
 
 
-class HITLResponse(Message):
-    """User responded to a permission dialog.
+#: The person's answer to an approval request: run the tool call, or not.
+HitlActionValue = Literal["confirm", "reject"]
 
-    ``action`` / ``choice`` stay as raw ``str`` on the wire; use
-    :class:`HITLAction` / :class:`HITLChoice` members at producer
-    callsites for autocompletion + typo-checking. ``StrEnum``
-    coerces to the underlying string on assignment.
+#: How long the answer stands. ``once`` (or empty): this call only.
+#: ``always``: save a rule allowing this exact call. ``similar``: save a
+#: rule allowing calls like it. ``deny``: save a rule refusing it.
+HitlChoiceValue = Literal["", "once", "always", "similar", "deny"]
+
+#: A permission mode to switch to before the run resumes; empty for none.
+HitlModeValue = Literal["", "default", "plan", "acceptEdits", "bypassPermissions"]
+
+
+class HITLResponse(Message):
+    """The person's answer to one approval request.
+
+    ``requirement_id`` is the request's id (from ``run_paused``);
+    ``action`` is ``confirm`` or ``reject``; ``choice`` says whether to
+    save a rule from it.
     """
 
     type: Literal["hitl_response"] = "hitl_response"
     direction: ClassVar[Direction] = Direction.TO_IGNI
     requirement_id: str = ""
-    action: str = ""  # "confirm" | "reject" — see :class:`HITLAction`
-    choice: str = ""  # "once" | "always" | "similar" — see :class:`HITLChoice`
+    action: HitlActionValue = "reject"
+    choice: HitlChoiceValue = ""
 
 
 class HITLDecision(Message):
-    """One row inside a ``HITLResponseBatch``. See :class:`HITLResponse`
-    for the ``action`` / ``choice`` typing note.
-
-    ``set_permission_mode`` is an optional atomic-mode-flip: when
-    set, the BE applies the named mode to the session BEFORE
-    resuming the agent — so the very next tool check after the
-    HITL pause resolves sees the new mode. Used by the FE's
-    "Accept all edits during this session" shortcut: a previous
-    version fired a separate ``/accept on`` slash command that
-    raced the resume and lost ~half the time, causing the next
-    edit to re-prompt instead of auto-approving. Default ``None``
-    keeps the wire shape unchanged for existing clients.
-    """
+    """One answer inside a ``hitl_response_batch``: as ``hitl_response``,
+    plus a permission mode to switch to before the run resumes
+    (``set_permission_mode``), so the very next tool call is checked
+    under it."""
 
     type: Literal["hitl_decision"] = "hitl_decision"
     direction: ClassVar[Direction] = Direction.TO_IGNI
     requirement_id: str = ""
-    action: str = ""  # "confirm" | "reject" — see :class:`HITLAction`
-    choice: str = ""  # "once" | "always" | "similar" — see :class:`HITLChoice`
-    set_permission_mode: str = (
-        ""  # "" | "acceptEdits" | "bypassPermissions" — atomic flip before resume
-    )
+    action: HitlActionValue = "reject"
+    choice: HitlChoiceValue = ""
+    set_permission_mode: HitlModeValue = ""
 
 
 class HITLResponseBatch(Message):
-    """User responded to *every* requirement in a multi-req pause.
-
-    Agno's ``acontinue_run`` treats requirements not in the resolution
-    list as denied, so a per-req resolve loop dropped 7-of-8 calls in
-    a batched tool plan. The batch envelope carries every decision in
-    one round-trip so the backend can call ``acontinue_run`` exactly
-    once with the full set of resolved requirements.
-    """
+    """The person's answers to every approval request of one pause, sent
+    together: a request left out is taken as rejected."""
 
     type: Literal["hitl_response_batch"] = "hitl_response_batch"
     direction: ClassVar[Direction] = Direction.TO_IGNI
