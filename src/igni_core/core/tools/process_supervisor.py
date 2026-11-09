@@ -12,9 +12,9 @@ concerns now live in four collaborating classes:
 * :class:`~igni_core.core.tools.tool_result.LLMResultBuffer`
   — head/tail truncation of tool result strings (was
   ``_MAX_RESULT_CHARS`` + free ``_truncate``).
-* :class:`~igni_core.core.tools.process_supervisor_locator.SupervisorRegistry`
-  — instance-based process-wide locator; the module-level
-  ``_default_supervisor`` slot is gone.
+* :class:`~igni_core.core.tools.process_supervisor_locator.SupervisorLocator`
+  — the injected handle on the supervisor one backend process
+  shares; the module-level ``_default_supervisor`` slot is gone.
 
 The registry owns the rest: the event bus, the log store, the
 persistence writer (and the
@@ -91,10 +91,10 @@ class ProcessSupervisor:
     / ``self.registry.remove(pid)`` rather than reaching for
     private state.
 
-    Constructor args are optional so both the module-level locator
-    and fresh test instances build the same way; tests SHOULD
-    build a fresh one (or call :meth:`reset`) so state doesn't
-    leak across the suite.
+    Constructor args are optional so both the backend's injected
+    locator and fresh test instances build the same way; tests
+    SHOULD build a fresh one (or call :meth:`reset`) so state
+    doesn't leak across the suite.
     """
 
     #: How to see more of a finished foreground command's cut output.

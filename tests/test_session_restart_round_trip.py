@@ -34,6 +34,7 @@ from igni_core.backend.server_lifecycle import LifecycleController
 from igni_core.backend.server_rehydrate import RehydrateController
 from igni_core.core.session.persistence import SessionPersistence
 from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.todo import TodoItemWire, TodoStore
 
 
@@ -58,7 +59,7 @@ class _Boot:
             session=session,  # type: ignore[arg-type]
             pending_store=None,
             runs=None,
-            rehydrate=RehydrateController(session),  # type: ignore[arg-type]
+            rehydrate=RehydrateController(session, ProcessSupervisor()),  # type: ignore[arg-type]
         )
         self._lifecycle.detect_interrupted_run = AsyncMock()  # type: ignore[method-assign]
 

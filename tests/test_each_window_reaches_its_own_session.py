@@ -58,6 +58,8 @@ from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntim
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
 from igni_core.core.layer import layers
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 from igni_core.extensions.host.windows import WindowModelError
 from igni_core.extensions.service_events import DeliveryReceipt
 from igni_core.protocol import messages as msg
@@ -83,6 +85,9 @@ class _Backend:
     def __init__(self, session_id: str, project_dir: Path, waiting: list[Any] | None = None):
         self.session_id = session_id
         self.project_dir = project_dir
+        # The supervisor the backend process shares — the RPC router
+        # reads it to build the shell runner.
+        self.supervisor = ProcessSupervisor()
         self.processing = False
         self.runtime: Any = None
         self.message_queue: list[str] = []
@@ -145,8 +150,13 @@ class _Pooled(_Backend):
         additional_dirs: Any,
         contributions: Any = None,
         prompt_loader: Any = None,
+        supervisors: SupervisorLocator | None = None,
     ) -> None:
         super().__init__(resume_session_id, project_dir)
+        # The resumed session's processes land on the supervisor the
+        # backend process shares — the one the pool wiring carries.
+        if supervisors is not None:
+            self.supervisor = supervisors.supervisor
         _Pooled.made.append(self)
 
 
@@ -238,7 +248,12 @@ def _orchestrator(
         boot=BootRuntime(
             backend=backend, rpc_table=router.build_table(), router=router, queue=queue
         ),
-        wiring=PoolWiring(transport=transport, push_bridge=push, login=login),
+        wiring=PoolWiring(
+            transport=transport,
+            push_bridge=push,
+            login=login,
+            supervisors=SupervisorLocator(backend.supervisor),
+        ),
         settings=settings,
         dirs=ProjectDirs(project_dir=project),
         factory=_PooledRuntimes,

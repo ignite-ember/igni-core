@@ -15,6 +15,7 @@ from igni_core.backend.session_stamping_transport import SessionStampingTranspor
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
+from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.store import ExtensionStore
@@ -36,11 +37,17 @@ class PoolWiring:
     table of what extensions have done to the prompts and one table of
     the anchors they fill; the root ``transport`` is stamped with each
     session's id on the way out.
+
+    ``supervisors`` is the handle on the supervisor the backend
+    process shares — the registry the watcher panel reads and the
+    foreground slot the cancel path kills. Every session of the pool
+    is wired to it, so one backend process shows one watcher panel.
     """
 
     transport: Any
     push_bridge: PushNotificationBridge
     login: LoginCoordinator
+    supervisors: SupervisorLocator
     contributions: PromptContributions = field(default_factory=PromptContributions)
     prompt_loader: PromptLoader = field(default_factory=lambda: PromptLoader(PromptFragments()))
     extensions: ExtensionRpc = field(default_factory=_no_extensions)

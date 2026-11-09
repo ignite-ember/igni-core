@@ -59,6 +59,7 @@ class ToolsBuilder:
                 cloud_token=deps.cloud.token,
                 cloud_server_url=deps.cloud.server_url,
                 broadcast=deps.broadcast,
+                supervisor=deps.supervisor,
             )
         return self._registry
 

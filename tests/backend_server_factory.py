@@ -17,6 +17,8 @@ from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.backend.server import BackendServer
 from igni_core.core.session.pending_messages import PendingMessageStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 
 
 def make_backend(
@@ -45,6 +47,7 @@ def make_backend(
         session.cloud_access_token = None
     if pending_store is None and tmp_path is not None:
         pending_store = PendingMessageStore(tmp_path / "pending.db")
+    supervisor = _supervisor_for(session)
     controllers = ControllerRegistry.build(
         session=session,
         settings=settings,
@@ -54,10 +57,26 @@ def make_backend(
         user_config_store=user_config_store if user_config_store is not None else MagicMock(),
         hitl_tracer=HITLTracer(enabled=False),
         message_queue=message_queue,
+        supervisor=supervisor,
     )
     return BackendServer.from_parts(
         session=session,
         settings=settings,
         controllers=controllers,
         message_queue=message_queue,
+        supervisors=SupervisorLocator(supervisor),
     )
+
+
+def _supervisor_for(session: Any) -> ProcessSupervisor:
+    """The supervisor this backend shares with ``session``.
+
+    A real session carries the supervisor its backend process gave
+    it — reuse that one, so the watcher panel and the session's shell
+    toolkit see the same processes. A stand-in session (a mock) has
+    none, so the backend gets a supervisor of its own.
+    """
+    candidate = getattr(session, "supervisor", None)
+    if isinstance(candidate, ProcessSupervisor):
+        return candidate
+    return ProcessSupervisor()

@@ -30,7 +30,6 @@ from igni_core.backend.schemas_processes import (
     StopProcessResult,
 )
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
-from igni_core.core.tools.process_supervisor_locator import supervisors
 
 # Re-export the wire schemas so existing ``from
 # igni_core.backend.server_processes import ProcessRow`` style
@@ -49,14 +48,12 @@ class ProcessesController:
 
     Doesn't hold a session reference because every operation reads
     from a :class:`~igni_core.core.tools.process_supervisor.ProcessSupervisor`
-    — by default the process-wide supervisor from
-    :attr:`~igni_core.core.tools.process_supervisor_locator.supervisors`,
-    but tests can inject a stub via the ``supervisor`` constructor
-    argument.
+    — the one the backend process shares, injected by the controller
+    registry. A test hands it a fresh supervisor for isolation.
     """
 
-    def __init__(self, supervisor: ProcessSupervisor | None = None) -> None:
-        self._supervisor = supervisor or supervisors.default()
+    def __init__(self, supervisor: ProcessSupervisor) -> None:
+        self._supervisor = supervisor
 
     def list(self) -> list[ProcessRow]:
         """Every process the registry knows about, running or finished.

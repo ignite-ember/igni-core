@@ -26,13 +26,14 @@ import logging
 import os
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
 
 from igni_core.core.config.schemas import PermissionsConfig
 from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
 
@@ -132,6 +133,7 @@ def test_agent_builder_passes_settings_permissions_to_the_registry() -> None:
         artifact_mgr: Any = None
         db: Any = None
         broadcast: Any = None
+        supervisor: Any = field(default_factory=ProcessSupervisor)
 
     @dataclass
     class StubDefinition:

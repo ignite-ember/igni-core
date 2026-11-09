@@ -44,6 +44,7 @@ from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
+from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 from igni_core.extensions.faults import ExtensionFaults
 from igni_core.extensions.principal import SignedInPerson
 from igni_core.extensions.store import ExtensionStore
@@ -147,6 +148,11 @@ class BackendApp:
         # process: the extension system registers into it and every
         # session of this backend reads from it.
         prompt_loader = PromptLoader(PromptFragments())
+        # The supervisor this backend process shares — one registry,
+        # one watcher panel, one foreground slot, whatever the number
+        # of windows. Built here, at the composition root, and handed
+        # to everything that outlives a single session.
+        supervisors = SupervisorLocator()
         backend = BackendServer(
             settings,
             project_dir=launch.project_dir,
@@ -154,6 +160,7 @@ class BackendApp:
             additional_dirs=launch.additional_dirs,
             contributions=contributions,
             prompt_loader=prompt_loader,
+            supervisors=supervisors,
         )
         # Hydrates any persisted ``/loop`` state from the project's ``state.db``.
         await backend.startup()
@@ -218,6 +225,7 @@ class BackendApp:
                 transport=transport,
                 push_bridge=push_bridge,
                 login=login,
+                supervisors=supervisors,
                 contributions=contributions,
                 prompt_loader=prompt_loader,
                 extensions=extensions.rpc,

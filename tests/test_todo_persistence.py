@@ -27,6 +27,7 @@ from types import SimpleNamespace
 
 from igni_core.backend.server_rehydrate import RehydrateController
 from igni_core.core.session.schemas import PersistResult
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.todo import TodoItemWire, TodoStore, TodoTools, _coerce_items
 
 
@@ -161,7 +162,7 @@ class TestRehydrateTodos:
             ),
         )
 
-        await RehydrateController(session).todos()
+        await RehydrateController(session, ProcessSupervisor()).todos()
 
         assert store.snapshot() == [
             {"content": "Task A", "status": "in_progress", "activeForm": ""},
@@ -187,7 +188,7 @@ class TestRehydrateTodos:
             persistence=_CapturingPersistence(prefill=[]),
         )
 
-        await RehydrateController(session).todos()
+        await RehydrateController(session, ProcessSupervisor()).todos()
 
         assert store.snapshot() == [{"content": "Task A", "status": "pending", "activeForm": ""}]
 
@@ -202,7 +203,7 @@ class TestRehydrateTodos:
         persistence.fail_load = True
         session = SimpleNamespace(todo_store=store, persistence=persistence)
 
-        await RehydrateController(session).todos()  # must not raise
+        await RehydrateController(session, ProcessSupervisor()).todos()  # must not raise
 
         # Original seed intact — no partial overwrite.
         assert store.snapshot() == [{"content": "Task A", "status": "pending", "activeForm": ""}]
@@ -214,7 +215,7 @@ class TestRehydrateTodos:
         store = TodoStore()
         session = SimpleNamespace(todo_store=store, persistence=None)
 
-        await RehydrateController(session).todos()
+        await RehydrateController(session, ProcessSupervisor()).todos()
         assert store.snapshot() == []
 
 
@@ -264,7 +265,7 @@ class TestEndToEndRestartSurvives:
             todo_store=restarted_store,
             persistence=restarted_persistence,
         )
-        await RehydrateController(session).todos()
+        await RehydrateController(session, ProcessSupervisor()).todos()
 
         # Step 4: restored state matches the live state at restart.
         assert restarted_store.snapshot() == [

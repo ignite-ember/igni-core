@@ -37,6 +37,8 @@ from igni_core.core.session.core import Session
 from igni_core.core.session.schemas import PermissionModeChangedEvent
 from igni_core.core.session.session_directories import SessionDirectoryStore
 from igni_core.core.tools.plan import PlanModeEnteredEvent, PlanSubmittedEvent
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 from igni_core.protocol import messages as msg
 
 
@@ -52,11 +54,20 @@ class _PooledBackend:
         additional_dirs: Any = None,
         contributions: Any = None,
         prompt_loader: Any = None,
+        supervisors: SupervisorLocator | None = None,
     ) -> None:
         self.session_id = resume_session_id
         self.project_dir = project_dir
         self.message_queue: list[str] = []
         self.broadcast_bus = BroadcastBus()
+        # The supervisor the backend process shares — the factory
+        # hands the same locator the pool wiring carries.
+        self._supervisors = supervisors if supervisors is not None else SupervisorLocator()
+
+    @property
+    def supervisor(self) -> ProcessSupervisor:
+        """The supervisor this backend process shares."""
+        return self._supervisors.supervisor
 
     async def startup(self) -> None:
         pass
@@ -260,6 +271,7 @@ class TestOrchestratorAndAppWiring:
                 transport=windows,
                 push_bridge=push,
                 login=LoginCoordinator(backend=boot, push_bridge=push),
+                supervisors=SupervisorLocator(),
             ),
             settings=settings,
             dirs=directories,

@@ -34,6 +34,7 @@ from unittest.mock import AsyncMock, MagicMock
 from igni_core.backend.server_lifecycle import LifecycleController
 from igni_core.backend.server_rehydrate import RehydrateController
 from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.todo import TodoItemWire, TodoStore
 from igni_core.protocol.rpc import RpcMethod
 from tests.rpc_tables import rpc_table_for
@@ -175,7 +176,7 @@ def _lifecycle(session: SimpleNamespace) -> LifecycleController:
     """A :class:`LifecycleController` whose plan-decision and todo
     rehydrate steps are real; every other startup step is stubbed so
     the session only needs what those two read."""
-    rehydrate = RehydrateController(session)  # type: ignore[arg-type]
+    rehydrate = RehydrateController(session, ProcessSupervisor())  # type: ignore[arg-type]
     rehydrate.plan_store = AsyncMock()  # type: ignore[method-assign]
     rehydrate.event_log = AsyncMock()  # type: ignore[method-assign]
     rehydrate.orphan_processes = AsyncMock()  # type: ignore[method-assign]

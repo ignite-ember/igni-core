@@ -33,7 +33,7 @@ from igni_core.backend.agno_history_plan_scanner import AgnoHistoryPlanScanner
 from igni_core.backend.schemas_lifecycle import RehydrateOutcome
 from igni_core.core.session.queued_messages import DurableMessageQueue
 from igni_core.core.tools.orphan_rehydrator import build_rehydrator
-from igni_core.core.tools.process_supervisor_locator import supervisors
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.todo import _coerce_items
 
 if TYPE_CHECKING:
@@ -50,8 +50,11 @@ class RehydrateController:
     accumulates the five outcomes for a single summary log line.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, supervisor: ProcessSupervisor) -> None:
         self._session = session
+        # The supervisor the backend process shares — the registry the
+        # orphaned processes are re-adopted onto.
+        self._supervisor = supervisor
 
     async def event_log(self) -> RehydrateOutcome:
         """Load the persisted append-only event log onto the session."""
@@ -92,7 +95,7 @@ class RehydrateController:
         observable at INFO instead of collapsing to a silent
         ``ok=True``.
         """
-        supervisor = supervisors.default()
+        supervisor = self._supervisor
         project_dir = self._session.project_dir
         supervisor.configure_log_store(project_dir)
         if project_dir is None:

@@ -46,7 +46,7 @@ from igni_core.core.tools.process_events import (
     ProcessLineEvent,
     ProcessStartEvent,
 )
-from igni_core.core.tools.process_supervisor_locator import supervisors
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.notifications.schemas import NotificationCounts, NotificationsChanged
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.enums import PushChannel
@@ -186,10 +186,11 @@ class PushNotificationBridge:
 
     # ── Background-process channel ──────────────────────────────
 
-    def bind_to_process_supervisor(self) -> None:
+    def bind_to_process_supervisor(self, supervisor: ProcessSupervisor) -> None:
         """Subscribe our per-line / start / exit handlers on the
-        default process registry bus. Idempotent-safe: the bus
-        uses an append-only subscriber list.
+        process registry bus of ``supervisor`` — the one the backend
+        process shares. Idempotent-safe: the bus uses an append-only
+        subscriber list.
 
         Post-split (see ``process_supervisor.py`` module docstring)
         the bus lives on
@@ -202,7 +203,7 @@ class PushNotificationBridge:
         ``event.pid`` / ``event.line`` directly and no mapping is
         built anywhere on the way.
         """
-        bus = supervisors.default().registry.bus
+        bus = supervisor.registry.bus
         bus.on("start", self._on_process_started)
         bus.on("line", self._on_process_line)
         bus.on("exit", self._on_process_exited)
@@ -250,8 +251,8 @@ class PushNotificationBridge:
         # The FE push below is addressed to a pid, so it is always
         # safe. The queue append is not: it becomes a synthetic user
         # message in THIS bridge's conversation, and the process bus
-        # is process-wide (one ``supervisors.default()`` for every
-        # session in the BE — see ``bind_to_process_supervisor``).
+        # is process-wide (one supervisor for every session in the BE
+        # — see ``bind_to_process_supervisor``).
         # Only the boot bridge subscribes, so with a pool live, a
         # build finishing in one window was narrated into the boot
         # session's conversation — a different window, potentially a
@@ -336,7 +337,7 @@ class PushNotificationBridge:
         Called by :meth:`wired` after backend + session are
         up. Individual ``bind_*`` methods stay public so tests can
         wire selectively."""
-        self.bind_to_process_supervisor()
+        self.bind_to_process_supervisor(backend.supervisor)
         self.bind_to_file_edit_listener()
         backend.wire_orchestrate_progress(self.on_orchestrate_progress)
         self.bind_to_broadcast_bus(backend)

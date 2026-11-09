@@ -12,7 +12,8 @@
 * :class:`AgentConstructorArgs` — the typed bundle handed to Agno's
   ``Agent`` through :meth:`AgentConstructorArgs.to_agno_kwargs`.
 * :class:`AgentBuildContext` — the shared state (settings, base dir,
-  MCP clients, DB, broadcast) :class:`AgentBuilder` builds against.
+  MCP clients, DB, broadcast, supervisor) :class:`AgentBuilder`
+  builds against.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from igni_core.core.agents.trained_layout import TrainedLayout
 from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 
 class AgentPriority(IntEnum):
@@ -287,6 +289,11 @@ class AgentBuildContext(BaseModel):
     mcp_clients: dict[str, McpClient] | None = None
     db: DbHandle | None = None
     broadcast: BroadcastSink | None = None
+    # The supervisor the agent's shell toolkit runs on. The pool hands
+    # the builder the supervisor the backend process shares, so a
+    # sub-agent's background commands land in the same watcher panel
+    # as the main agent's.
+    supervisor: ProcessSupervisor
 
 
 __all__ = [

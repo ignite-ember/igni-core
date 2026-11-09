@@ -104,6 +104,7 @@ class MainAgentBuilder:
                     server_url=s.cloud_server_url,
                 ),
                 broadcast=s.broadcast,
+                supervisor=s.supervisor,
             ),
             sources=ToolSourceDeps(
                 plugin_loader=s.plugin_loader,

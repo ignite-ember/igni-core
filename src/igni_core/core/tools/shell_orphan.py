@@ -44,7 +44,7 @@ from igni_core.core.tools.orphan_rehydrator import (
     OrphanRehydrator,
     build_rehydrator,
 )
-from igni_core.core.tools.process_supervisor_locator import supervisors
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.shell_orphan_schemas import (
     OrphanProcStub,
     OrphanReadResult,
@@ -61,7 +61,9 @@ __all__ = [
 ]
 
 
-async def rehydrate_orphan_processes(project_dir: str | Path | None) -> int:
+async def rehydrate_orphan_processes(
+    project_dir: str | Path | None, supervisor: ProcessSupervisor
+) -> int:
     """Backward-compat wrapper around :meth:`OrphanRehydrator.run`.
 
     Preserves the ``int``-returning shape. Its only remaining caller
@@ -71,12 +73,14 @@ async def rehydrate_orphan_processes(project_dir: str | Path | None) -> int:
     :class:`RehydrateResult` flows through with its populated
     ``reason`` field.
 
+    ``supervisor`` is the registry the orphans are re-adopted onto —
+    the one the caller shares, injected rather than looked up.
+
     Store-init failures fall through to the "return 0" branch —
     the caller can't distinguish store-init from "no rows" here,
     which is the gap the typed :class:`RehydrateResult` closes on
     the direct path.
     """
-    supervisor = supervisors.default()
     build = build_rehydrator(supervisor, project_dir)
     if build.rehydrator is None:
         # ``build.result`` carries the reason when store construction

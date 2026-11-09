@@ -36,6 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.tools.edit import FileEditNotifier, IgniEditTools
 from igni_core.core.tools.notebook import NotebookTools
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.schedule import ScheduleTools
 from igni_core.core.tools.shell import IgniShellTools
 from igni_core.core.tools.visualize import VisualizeTools
@@ -66,6 +67,11 @@ class ToolBuildContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     base_dir: Path
+    # The supervisor the shell toolkit registers its processes on.
+    # Required: the registry hands every toolkit the supervisor the
+    # backend process shares, so the watcher panel sees every
+    # background command the process started.
+    supervisor: ProcessSupervisor
     broadcast: BroadcastSink | None = None
     cloud_token: str | None = None
     # DEC-14: no vendor default. Empty means "no server configured",
@@ -265,6 +271,18 @@ class BashSpec(ToolSpec):
     agno_function_names: tuple[str, ...] = ("run_shell_command",)
     confirm_function_names: tuple[str, ...] = ("run_shell_command", "stop_process")
     toolkit_cls: type[Toolkit] = IgniShellTools
+
+    def build(self, context: ToolBuildContext, confirm: bool) -> Toolkit:
+        """Build the shell toolkit on the context's supervisor.
+
+        The supervisor is required by :class:`IgniShellTools` — the
+        shell toolkit is the one toolkit whose collaborator cannot be
+        optional, because its processes have to land on the registry
+        the watcher panel reads.
+        """
+        kwargs = self._build_kwargs(context, confirm)
+        kwargs["supervisor"] = context.supervisor
+        return self.toolkit_cls(**kwargs)
 
 
 class _UnbuiltToolkit(Toolkit):

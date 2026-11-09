@@ -17,9 +17,9 @@ Public API:
   name.
 * :meth:`OrphanProcess.from_row` — classmethod constructor from a
   :class:`BackgroundProcessRow`. Preferred over the raw
-  ``__init__`` because it also lets the caller inject a
-  :class:`ProcessLogStore` so :meth:`OrphanProcess.read` doesn't
-  reach for the module-level supervisor singleton on every call.
+  ``__init__`` because it also takes the
+  :class:`ProcessLogStore` the orphan reads its captured output
+  from — the same store the writer appended to.
 * :meth:`OrphanProcess.probe_alive` — classmethod that delegates
   to :class:`~igni_core.backend.supervisor.ParentProcessProbe`,
   used both from within :meth:`is_running` and from
@@ -48,7 +48,6 @@ from typing import TYPE_CHECKING
 # ``core`` is the tidier fix and belongs to whoever owns that file.
 from igni_core.backend.supervisor import ParentProcessProbe
 from igni_core.core.tools.output_tail import OutputTail
-from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.core.tools.shell_orphan_schemas import (
     OrphanProcStub,
     OrphanReadResult,
@@ -106,7 +105,7 @@ class OrphanProcess:
         cmd: str,
         started_epoch: int,
         pgid: int | None,
-        log_store: ProcessLogStore | None = None,
+        log_store: ProcessLogStore,
     ) -> None:
         self.pid = pid
         self.cmd = cmd
@@ -124,13 +123,10 @@ class OrphanProcess:
         # Explicit annotation matches :class:`ManagedProcess` so
         # mypy/AP5 doesn't fall back to inferring ``None``.
         self._reader_task: asyncio.Task[None] | None = None
-        # Injected log store — replaces the module-level
-        # ``supervisors.default().log_store`` reach-in on every
-        # :meth:`read`. When ``None`` we fall back to the
-        # supervisor default at read time so pre-existing callers
-        # (and tests that build a bare ``OrphanProcess(...)``) keep
-        # working during the deprecation window.
-        self._log_store: ProcessLogStore | None = log_store
+        # The log store the orphan reads its captured output from —
+        # the same store the writer appended to. Injected, so a
+        # :meth:`read` never has to reach for a global to find it.
+        self._log_store = log_store
 
     # ── Classmethod constructors + probes ───────────────────────
 
@@ -138,7 +134,7 @@ class OrphanProcess:
     def from_row(
         cls,
         row: BackgroundProcessRow,
-        log_store: ProcessLogStore | None = None,
+        log_store: ProcessLogStore,
     ) -> OrphanProcess:
         """Build an :class:`OrphanProcess` from a persisted
         :class:`BackgroundProcessRow`. Preferred entry point over
@@ -270,7 +266,7 @@ class OrphanProcess:
         placeholder text from real captured output without
         substring-sniffing.
         """
-        store = self._resolve_log_store()
+        store = self._log_store
         content = store.tail(self.pid, n=tail) if store is not None else ""
         if content:
             return OrphanReadResult(content=content, is_placeholder=False)
@@ -287,7 +283,7 @@ class OrphanProcess:
         them counted — for a result the model reads, which must say
         when it is cut (:meth:`OutputTail.render`). The placeholder
         when there is no log, as :meth:`read` gives."""
-        store = self._resolve_log_store()
+        store = self._log_store
         lines = store.lines(self.pid) if store is not None else []
         if not lines:
             return OutputTail(lines=[self.read_typed(tail=tail).content])
@@ -299,23 +295,3 @@ class OrphanProcess:
     @property
     def started_epoch(self) -> int:
         return self._started_epoch
-
-    # ── Internals ───────────────────────────────────────────────
-
-    def _resolve_log_store(self) -> ProcessLogStore | None:
-        """Return the injected log store or fall back to the
-        supervisor default.
-
-        The fallback exists so existing tests (and the two
-        remaining call sites during the deprecation window) that
-        construct an :class:`OrphanProcess` without a log store
-        still read from the same on-disk location the writer used.
-        Prefer :meth:`from_row` with an explicit ``log_store`` for
-        new code.
-        """
-        if self._log_store is not None:
-            return self._log_store
-        # Fallback: reach for the process-wide supervisor default.
-        # Kept as a legacy path — new callers should inject via
-        # :meth:`from_row` so we don't reach through the locator.
-        return supervisors.default().log_store
