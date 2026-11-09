@@ -23,8 +23,8 @@ from igni_core.extensions.install_process import ExtensionProcess
 from igni_core.extensions.install_service import ExtensionConnection
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.permissions import Permissions
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.sandbox import Confinement
-from igni_core.extensions.store import DistributionRecord
 
 logger = logging.getLogger(__name__)
 

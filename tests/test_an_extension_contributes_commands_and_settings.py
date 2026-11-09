@@ -37,7 +37,9 @@ from igni_core.extensions.registry import (
     ExtensionState,
 )
 from igni_core.extensions.rpc import ExtensionRpc
-from igni_core.extensions.store import ExtensionStore, StoreError
+from igni_core.extensions.settings_values import FileSettingsValues
+from igni_core.extensions.store import ExtensionStore
+from igni_core.extensions.store_errors import StoreError
 
 # No module-level ``asyncio`` mark: this file mixes async and sync
 # tests, and the mark would be applied to the sync ones too — which
@@ -201,6 +203,17 @@ def manifest() -> ExtensionManifest:
     return ExtensionManifest.load(FIXTURE / "manifest.json")
 
 
+def _settings_file(store: ExtensionStore) -> Path:
+    """Where the store keeps this extension's settings values.
+
+    The store's own file: the settings flow goes through
+    :class:`~igni_core.extensions.settings_values.FileSettingsValues`,
+    and a test that wants a corrupt file writes one where the flow
+    will read it.
+    """
+    return FileSettingsValues(store.root).path("acme.scanner")
+
+
 def test_settings_start_at_their_declared_defaults(tmp_path):
     store = ExtensionStore(tmp_path)
     assert store.settings(manifest()) == {"failOn": "high", "notify": True}
@@ -232,15 +245,15 @@ def test_a_key_the_manifest_no_longer_declares_is_dropped(tmp_path):
     it — otherwise a stale option survives three upgrades."""
     store = ExtensionStore(tmp_path)
     store.save_settings(manifest(), {"failOn": "low"})
-    store.settings_path("acme.scanner").write_text(json.dumps({"failOn": "low", "gone": "stale"}))
+    _settings_file(store).write_text(json.dumps({"failOn": "low", "gone": "stale"}))
     assert "gone" not in store.settings(manifest())
 
 
 def test_a_corrupt_settings_file_falls_back_to_defaults(tmp_path):
     """Defaults are a working configuration; a crash is not."""
     store = ExtensionStore(tmp_path)
-    store._root.mkdir(parents=True, exist_ok=True)  # type: ignore[attr-defined]
-    store.settings_path("acme.scanner").write_text("{ not json")
+    store.root.mkdir(parents=True, exist_ok=True)
+    _settings_file(store).write_text("{ not json")
     assert store.settings(manifest()) == {"failOn": "high", "notify": True}
 
 
@@ -250,10 +263,10 @@ def test_removing_an_extension_takes_its_settings(tmp_path):
     store = ExtensionStore(tmp_path)
     store.add(FIXTURE)
     store.save_settings(manifest(), {"failOn": "low"})
-    assert store.settings_path("acme.scanner").is_file()
+    assert _settings_file(store).is_file()
 
     store.remove("acme.scanner")
-    assert not store.settings_path("acme.scanner").is_file()
+    assert not _settings_file(store).is_file()
 
 
 def test_an_extension_with_no_settings_has_none(tmp_path):

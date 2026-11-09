@@ -86,7 +86,7 @@ def test_sync_installs_what_igni_lists_for_the_persons_group(world):
     assert result.exit_code == 0, result.output
     assert "installed" in result.output and "acme.notes 1.0.0" in result.output
     assert "https://notes.example.com" in result.output
-    assert world.store.distribution_of("acme.notes") is not None
+    assert world.store.provenance.of("acme.notes") is not None
     # What to restart, said exactly.
     assert "quit the igni app" in result.output
 
@@ -211,7 +211,7 @@ async def test_a_headless_run_syncs_before_it_starts_extensions(world, monkeypat
     extensions = HeadlessExtensions(session)
     await extensions.start()
     try:
-        assert world.store.distribution_of("acme.notes") is not None
+        assert world.store.provenance.of("acme.notes") is not None
         assert extensions.registry.get("acme.notes") is not None
     finally:
         await extensions.stop()

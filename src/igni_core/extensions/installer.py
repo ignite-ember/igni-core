@@ -61,6 +61,7 @@ from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.mcp_manager import McpManager
 from igni_core.extensions.permissions import PermissionDenied
 from igni_core.extensions.profile import DeploymentProfile
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.python_env import PythonEnvironmentError, PythonEnvironments
 from igni_core.extensions.registry import (
     ExtensionRegistry,
@@ -70,7 +71,7 @@ from igni_core.extensions.registry import (
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.sandbox import ExtensionSandbox
 from igni_core.extensions.service_token import ServiceTokenEndpoint
-from igni_core.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.store import ExtensionStore
 
 if TYPE_CHECKING:
     from igni_core.extensions.host.channel import HostChannel

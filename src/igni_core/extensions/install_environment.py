@@ -38,8 +38,9 @@ from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.extensions.assets import ASSETS_DIR_ENV
 from igni_core.extensions.install_context import InstallContext
 from igni_core.extensions.permissions import Permissions
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.service_token import ServiceTokenEndpoint
-from igni_core.extensions.store import DATA_DIR, DATA_DIR_ENV, DistributionRecord, ExtensionStore
+from igni_core.extensions.store import DATA_DIR, DATA_DIR_ENV, ExtensionStore
 from igni_core.extensions.web_home import SERVICE_URL_SETTING
 
 if TYPE_CHECKING:

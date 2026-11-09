@@ -27,6 +27,7 @@ import pytest
 from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.python_env import (
     READY_MARKER,
     CommandOutcome,
@@ -36,7 +37,6 @@ from igni_core.extensions.python_env import (
 )
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
-from igni_core.extensions.store import DistributionRecord
 from tests.extension_distribution_helpers import build_wheel, manifest
 
 

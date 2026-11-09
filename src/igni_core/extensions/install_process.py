@@ -24,9 +24,10 @@ from igni_core.extensions.assets import (
 from igni_core.extensions.install_context import InstallContext
 from igni_core.extensions.install_errors import InstallError
 from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.python_env import PythonEnvironments
 from igni_core.extensions.sandbox import Confinement, ExtensionSandbox
-from igni_core.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.store import ExtensionStore
 
 logger = logging.getLogger(__name__)
 

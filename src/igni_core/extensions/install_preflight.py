@@ -18,7 +18,7 @@ from igni_core.extensions.install_context import InstallContext
 from igni_core.extensions.install_errors import InstallError
 from igni_core.extensions.manifest import ExtensionManifest, Workspace
 from igni_core.extensions.profile import DEV_FLAG
-from igni_core.extensions.store import DistributionRecord
+from igni_core.extensions.provenance import DistributionRecord
 
 logger = logging.getLogger(__name__)
 

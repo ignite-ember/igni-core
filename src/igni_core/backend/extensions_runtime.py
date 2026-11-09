@@ -82,7 +82,7 @@ class ExtensionsRuntime:
             registry=rpc.registry,
             rpc=rpc,
             plugins_dir=plugins_dir,
-            priority=store.priority,
+            priority=store.listing.priority,
             igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
             prompt_loader=prompt_loader,
             prompts=prompts,

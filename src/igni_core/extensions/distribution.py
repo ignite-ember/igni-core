@@ -21,7 +21,7 @@ is installed:
    platform that is not on this machine already —
    ``GET /v1/extensions/{id}/assets/{sha256}`` — and keep it only if it
    is the bytes the signed manifest pins (§8.2);
-6. store it with a :class:`~igni_core.extensions.store.DistributionRecord`
+6. store it with a :class:`~igni_core.extensions.provenance.DistributionRecord`
    and hand it to the ordinary boot path — trust, profile, capability
    resolution — through :class:`ExtensionLifecycle`.
 
@@ -72,8 +72,10 @@ from igni_core.extensions.assets import (
 )
 from igni_core.extensions.bundle_signature import BundleSignatureError, PublisherKeys
 from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.service_token import IgniSession
-from igni_core.extensions.store import DistributionRecord, ExtensionStore, StoreError
+from igni_core.extensions.store import ExtensionStore
+from igni_core.extensions.store_errors import StoreError
 
 logger = logging.getLogger(__name__)
 
@@ -421,10 +423,10 @@ class ExtensionDistribution:
 
             report = SyncReport()
             entitled = listing.entitled()
-            self._store.record_group(listing.group, name=listing.group_name)
+            self._store.listing.record_group(listing.group, name=listing.group_name)
             # The priority first: an extension installed below starts
             # with its collisions already settled.
-            if self._store.record_priority(listing.priority):
+            if self._store.listing.record_priority(listing.priority):
                 report.priority_changed = True
                 if self._on_priority is not None:
                     self._on_priority()
@@ -445,7 +447,7 @@ class ExtensionDistribution:
         except StoreError as exc:
             report.failed[extension_id] = str(exc)
             return
-        record = self._store.distribution_of(extension_id)
+        record = self._store.provenance.of(extension_id)
 
         if record is None and installed_at.is_dir():
             logger.info(
@@ -465,7 +467,7 @@ class ExtensionDistribution:
             if record.service_url != entry.service_url:
                 # Same bundle, service moved: the token audience
                 # changes, so the process is restarted with the new one.
-                self._store.record_distribution(self._record(entry))
+                self._store.provenance.record(self._record(entry))
                 await self._restart(extension_id, installed_at)
             report.unchanged.append(extension_id)
             return
@@ -560,7 +562,7 @@ class ExtensionDistribution:
         await self._lifecycle.activate(extension_id, bundle)
 
     async def _remove_unlisted(self, listed: set[str], report: SyncReport) -> None:
-        for record in self._store.distributed():
+        for record in self._store.provenance.records():
             if record.extension_id in listed:
                 continue
             if self._lifecycle is not None:
