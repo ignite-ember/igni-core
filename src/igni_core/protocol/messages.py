@@ -20,12 +20,12 @@ sub-modules under :mod:`igni_core.protocol.schemas` when the
 concern is clear (e.g. a slash-command handler importing from
 :mod:`.schemas.be_events`).
 
-The star-import is load-bearing:
-:class:`igni_core.protocol.registry.MessageRegistry` reflection-
-scans this module's namespace for :class:`Message` subclasses at
-construction time, so every wire message must land here for the
-deserializer to discover it. ``schemas.__all__`` is the source of
-truth for what's exported.
+The wire contract is *not* discovered from this namespace. It is
+stated explicitly in :mod:`igni_core.protocol.schemas.wire`, which
+names every message class that can arrive on the wire and builds the
+``type``-discriminated union the deserializer validates against.
+``schemas.__all__`` remains the source of truth for what this shim
+re-exports.
 """
 
 from __future__ import annotations

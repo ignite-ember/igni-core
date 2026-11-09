@@ -1,31 +1,35 @@
-"""Message-type registry — owns the ``type`` string → ``Message`` subclass map.
+"""Message-type registry — owns the ``type`` string → ``Message`` class map.
 
-Previously this responsibility was smeared across three module-level
-symbols in ``transport/unix_socket.py`` (a mutable dict, a
-``_build_registry`` initializer that inline-imported
-``protocol.messages``, and a ``deserialize_message`` free function that
-called into that dict). All three collapse into :class:`MessageRegistry`,
-whose ``__init__`` eagerly scans ``protocol.messages`` for
-:class:`Message` subclasses with a defaulted ``type`` field and stores
-the mapping on an instance attribute.
+The registry reads the wire contract — the explicit list of message
+classes in :mod:`igni_core.protocol.schemas.wire` — and answers two
+questions for the transports: which ``type`` strings can arrive, and
+what does a given frame become. Both answers come from the same list,
+so the contract the frontend is shown and the contract the wire accepts
+cannot drift apart.
 
-The registry is used by every stream-framed transport
+It is used by every stream-framed transport
 (:class:`~igni_core.transport.ndjson_stream.NDJsonStreamTransport` and
 :class:`~igni_core.transport.websocket.WebSocketServerTransport`). Each
-transport is constructor-injectable so tests can pass a fresh
-:class:`MessageRegistry` for isolation, and callers that don't care can
-use :meth:`MessageRegistry.default` for the process-shared singleton.
+transport is constructor-injectable, so a caller that wants a registry
+of its own hands one in; a caller that does not care lets the transport
+build one.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
+from typing import Any
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
-from igni_core.protocol import messages as msg_module
 from igni_core.protocol.messages import Message
+from igni_core.protocol.schemas.wire import (
+    WIRE_MESSAGE_TYPES,
+    wire_type_of,
+    wire_union,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,64 +37,22 @@ logger = logging.getLogger(__name__)
 class MessageRegistry:
     """Lookup table from wire ``type`` string to :class:`Message` subclass.
 
-    Reflection-populated at construction time from the classes exported
-    by :mod:`igni_core.protocol.messages`: any subclass of
-    :class:`Message` with a defaulted ``type`` field is enrolled under
-    that default. Subclasses defined outside that module can be
-    registered explicitly via :meth:`register`.
+    The wire contract is explicit: :data:`WIRE_MESSAGE_TYPES` names every
+    message class that can arrive, and a frame is validated against the
+    ``type``-discriminated union built from that list. Nothing is
+    discovered by scanning a module namespace, so a message that reaches
+    the schemas but not the list is a visible omission rather than a
+    silent one.
 
-    Instances are cheap; a process-shared default is available via
-    :meth:`default`. Per-test isolation is achieved by constructing a
-    fresh ``MessageRegistry()`` and threading it into the transport.
+    A registry is a value, not a singleton: build one, hand it to a
+    transport, throw it away. Two registries built from the same
+    contract accept the same frames.
     """
 
-    _default: MessageRegistry | None = None
-
-    def __init__(self) -> None:
-        self._by_type: dict[str, type[Message]] = {}
-        for name in dir(msg_module):
-            cls = getattr(msg_module, name)
-            if (
-                isinstance(cls, type)
-                and issubclass(cls, Message)
-                and cls is not Message
-                and hasattr(cls, "model_fields")
-            ):
-                type_field = cls.model_fields.get("type")
-                # Skip abstract intermediaries that inherit ``type: str``
-                # from :class:`Message` without defaulting it (e.g.
-                # :class:`RunScopedMessage`). Pydantic represents an
-                # un-defaulted field with ``PydanticUndefined`` — a
-                # sentinel that is truthy but not a wire string, so
-                # ``isinstance`` on ``str`` filters it cleanly.
-                if type_field and isinstance(type_field.default, str):
-                    self._by_type[type_field.default] = cls
-
-    @classmethod
-    def default(cls) -> MessageRegistry:
-        """Return the process-shared registry, constructing it on first use.
-
-        Callers that need isolation (typically tests) should construct a
-        fresh ``MessageRegistry()`` instead.
-        """
-        if cls._default is None:
-            cls._default = cls()
-        return cls._default
-
-    def register(self, message_cls: type[Message]) -> None:
-        """Enrol a :class:`Message` subclass defined outside ``protocol.messages``.
-
-        Reads the class's defaulted ``type`` field the same way the
-        constructor does. Raises ``ValueError`` if the class has no
-        default ``type`` — a registry entry needs a wire string to key on.
-        """
-        type_field = message_cls.model_fields.get("type")
-        if not (type_field and type_field.default):
-            raise ValueError(
-                f"{message_cls.__name__} has no default 'type' field; "
-                "cannot register without a wire discriminator"
-            )
-        self._by_type[type_field.default] = message_cls
+    def __init__(self, message_types: Sequence[type[Message]] = WIRE_MESSAGE_TYPES) -> None:
+        types = tuple(message_types)
+        self._by_type: dict[str, type[Message]] = {wire_type_of(cls): cls for cls in types}
+        self._adapter: TypeAdapter[Any] = TypeAdapter(wire_union(types))
 
     def known_types(self) -> list[str]:
         """Every wire ``type`` string this registry will accept.
@@ -109,21 +71,31 @@ class MessageRegistry:
         Returns ``None`` (with a warning log) on any of:
 
         * malformed JSON
-        * a ``type`` string not present in the registry
-        * a payload that fails Pydantic validation against the resolved
-          subclass
+        * a frame that is not a JSON object
+        * a ``type`` that is missing, is not a string, or is not in the
+          registry
+        * a payload that fails validation against the resolved class
 
         The transports treat ``None`` as "skip this frame" so a bad
         message never wedges the read loop.
         """
         try:
             data = json.loads(line)
-            msg_type = data.get("type", "")
-            cls = self._by_type.get(msg_type)
-            if cls is None:
-                logger.warning("Unknown message type: %s", msg_type)
-                return None
-            return cls.model_validate(data)
-        except (json.JSONDecodeError, ValidationError) as exc:
+        except json.JSONDecodeError as exc:
+            logger.warning("Failed to deserialize message: %s", exc)
+            return None
+        if not isinstance(data, dict):
+            logger.warning("Frame is not a JSON object: %s", type(data).__name__)
+            return None
+        msg_type = data.get("type")
+        if not isinstance(msg_type, str):
+            logger.warning("Frame carries no string 'type' field")
+            return None
+        if msg_type not in self._by_type:
+            logger.warning("Unknown message type: %s", msg_type)
+            return None
+        try:
+            return self._adapter.validate_python(data)
+        except ValidationError as exc:
             logger.warning("Failed to deserialize message: %s", exc)
             return None

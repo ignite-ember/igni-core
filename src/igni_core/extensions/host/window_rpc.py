@@ -8,17 +8,41 @@ so a window's change and an extension's are one change. One method per
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
-from igni_core.extensions.host.windows import WindowRequest, Windows
+from igni_core.extensions.host.window_values import Dialog, Toast, WindowModelState
+from igni_core.extensions.host.windows import Windows
+
+
+class WindowRequest(BaseModel):
+    """One ``window_model`` request: a window reading or writing its model.
+
+    ``hydrate`` answers the whole model and says the window is open;
+    ``write`` sets one field; ``toast`` and ``dismiss_toast`` add and
+    remove one toast; ``open_dialog`` shows igni's own dialog and
+    ``answer_dialog`` closes the open one with the person's answer
+    (``value``; ``None`` for dismissed). ``token`` is the window's own
+    name for the write, echoed on the push.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    op: Literal["hydrate", "write", "toast", "dismiss_toast", "open_dialog", "answer_dialog"]
+    window: str = Field(min_length=1)
+    field: str = ""
+    value: Any = None
+    token: str = ""
+    dialog_id: str = ""
+    connection_id: str = ""
+    kind: str = ""
 
 
 class Hydrated(BaseModel):
     """The whole model, its revision, and the fields nobody set."""
 
-    state: dict[str, Any]
+    state: WindowModelState
     rev: int
     unset: list[str]
 
@@ -28,7 +52,7 @@ class Written(BaseModel):
 
 
 class ToastAdded(BaseModel):
-    toast: dict[str, Any]
+    toast: Toast
     rev: int
 
 
@@ -39,7 +63,7 @@ class Revised(BaseModel):
 
 
 class DialogShown(BaseModel):
-    dialog: dict[str, Any]
+    dialog: Dialog
     rev: int
 
 
@@ -72,12 +96,12 @@ class WindowModelRpc:
 
     def handle(self, request: WindowRequest) -> WindowReply:
         """Answer one request. Raises
-        :class:`~igni_core.extensions.host.windows.WindowModelError`
+        :class:`~igni_core.extensions.host.window_errors.WindowModelError`
         for a write the model refuses."""
-        if request.op == "hydrate" or not self._windows.known(request.window):
+        if request.op == "hydrate" or not self._windows.registry.known(request.window):
             # A write from a window that has not hydrated in this process
             # is a reconnect racing its own hydrate: the window is open.
-            self._windows.attached(
+            self._windows.registry.attached(
                 request.window, connection_id=request.connection_id, kind=request.kind
             )
         return self._ops[request.op](request)
@@ -98,8 +122,9 @@ class WindowModelRpc:
 
     def _toast(self, request: WindowRequest) -> WindowReply:
         window = request.window
-        toast = self._windows.toast(window, dict(request.value or {}), token=request.token)
-        return ToastAdded(toast=toast, rev=self._windows.rev(window))
+        toast = Toast.model_validate(request.value or {})
+        shown = self._windows.toast(window, toast, token=request.token)
+        return ToastAdded(toast=shown, rev=self._windows.rev(window))
 
     def _dismiss_toast(self, request: WindowRequest) -> WindowReply:
         window = request.window
@@ -127,5 +152,6 @@ __all__ = [
     "ToastAdded",
     "WindowModelRpc",
     "WindowReply",
+    "WindowRequest",
     "Written",
 ]

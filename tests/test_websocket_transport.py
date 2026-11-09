@@ -14,9 +14,9 @@ import time
 import pytest
 
 from igni_core.protocol import messages as msg
+from igni_core.transport.composite import CompositeTransport
 from igni_core.transport.in_process import InProcessTransport
 from igni_core.transport.websocket import (
-    CompositeTransport,
     WebSocketServerTransport,
 )
 

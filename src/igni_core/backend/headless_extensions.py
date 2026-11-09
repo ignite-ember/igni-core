@@ -23,22 +23,26 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from igni_core.backend.activity import Activity
 from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.session.client_state import ClientStateRead, ClientStateResult
+from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.distribution import OneShotSync
+from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.host.model_config import HostModelConfig
+from igni_core.extensions.host.processes import ExtensionProcesses
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.values import SessionAttached
 from igni_core.extensions.impact import IgniCommands
@@ -59,6 +63,9 @@ from igni_core.extensions.service_token import (
 from igni_core.extensions.store import ExtensionStore
 from igni_core.protocol.messages import Message
 from igni_core.protocol.rpc import RpcMethod
+
+if TYPE_CHECKING:
+    from igni_core.extensions.sandbox import ExtensionSandbox
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +136,7 @@ class HeadlessHostBackend:
         session_id: str,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments,
         queued: bool,
     ) -> None:
         raise self._refused("chat.post")
@@ -140,14 +147,16 @@ class HeadlessHostBackend:
         session_id: str,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments,
     ) -> UnattendedPost:
         raise self._refused("chat.post")
 
     async def title(self, *, session_id: str, title: str) -> PersistResult:
         raise self._refused("sessions.create")
 
-    async def show_view(self, *, session_id: str, payload: dict[str, Any], run_id: str) -> None:
+    async def show_view(
+        self, *, session_id: str, payload: VisualizationDeltaPayload, run_id: str
+    ) -> None:
         raise self._refused("chat.show")
 
     def views(self, session_id: str) -> list[ViewShown]:
@@ -195,14 +204,16 @@ class HeadlessExtensions:
             return
         rpc = ExtensionRpc(self._registry)
         plugins_dir = PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir
+        hooks = ExtensionHooks(registry=self._registry)
         contributions = ExtensionContributions(
             registry=self._registry,
             rpc=rpc,
             plugins_dir=plugins_dir,
-            priority=store.priority,
+            priority=store.listing.priority,
             igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
             prompt_loader=session.prompt_loader,
             prompts=session.prompt_contributions,
+            hooks=hooks,
         )
         contributions.attach()
         model = HostModel.build(
@@ -212,8 +223,7 @@ class HeadlessExtensions:
                 store=store,
             )
         )
-        self._channel = HostChannel(model)
-        hooks = ExtensionHooks.wire(self._registry)
+        self._channel = HostChannel(model, hooks=hooks, processes=ExtensionProcesses())
         extension_hook_gate.install(hooks)
         person = SignedInPerson(settings.auth.credentials_file, store)
         session.mcp_manager.extension_request_meta = person.meta
@@ -279,7 +289,7 @@ class HeadlessExtensions:
             )
 
     @staticmethod
-    def _sandbox(settings: Any) -> Any:
+    def _sandbox(settings: Settings) -> ExtensionSandbox:
         """The OS sandbox every extension process here starts in.
 
         Imported here rather than at the top: this module is reached

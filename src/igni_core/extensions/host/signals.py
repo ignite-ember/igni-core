@@ -8,9 +8,9 @@ only the part of it the extension may see — a changed file outside its
 ``workspacePaths`` is not in the list it is handed.
 
 ``host.changed`` is produced here, from the others: whenever a signal
-fires, every property it reports a change of is announced as
-``Change{path, value}`` to the subscribers of ``changed`` that may see
-that property.
+fires, every property it reports a change of is announced as a
+:class:`Change` — the member's path, its new value, and the window it
+is about — to the subscribers of ``changed`` that may see that property.
 """
 
 from __future__ import annotations
@@ -62,6 +62,22 @@ class SubscribeOutcome(BaseModel):
     subscribed: list[str] = []
     not_granted: list[str] = []
     unknown: list[str] = []
+
+
+class Change(BaseModel):
+    """One change anywhere in the model, as ``host.changed`` reports it.
+
+    The shape the host schema publishes for the root signal
+    (``docs/host-schema.json``, ``Change``): the member that changed,
+    its new value, and the window it is about, for a per-window member.
+    """
+
+    #: The member that changed, ``object.member``.
+    path: str
+    #: Its new value, as the change signal carried it.
+    value: Any
+    #: The window, for a per-window member.
+    window: str | None = None
 
 
 class SignalBus:
@@ -160,12 +176,15 @@ class SignalBus:
         *,
         content: Content | None = None,
         only: str | None = None,
+        window: str | None = None,
     ) -> list[str]:
         """Fire one signal. Returns the extensions told.
 
         ``content`` replaces ``value`` with what each listener may see;
         ``only`` addresses one extension — for a signal about that
-        extension alone, which telling the others would leak.
+        extension alone, which telling the others would leak; ``window``
+        names the window the signal is about, which the ``changed``
+        report of a per-window member carries.
         """
         found = self._signals.get(wire)
         if found is None:
@@ -193,9 +212,10 @@ class SignalBus:
                     if prop is None or not grants.allows(owner.permission_of(prop)):
                         continue
                     path = f"{owner.path}.{prop_name}" if owner.path else prop_name
-                    window = seen.get("window") if isinstance(seen, dict) else None
-                    change = {"path": path, "value": seen, "window": window}
-                    self._deliver(subscriber, SignalMessage(signal=CHANGED, value=change))
+                    change = Change(path=path, value=seen, window=window)
+                    self._deliver(
+                        subscriber, SignalMessage(signal=CHANGED, value=change.model_dump())
+                    )
         return told
 
     @staticmethod
@@ -225,4 +245,12 @@ class _Nothing:
 
 _NOTHING: Any = _Nothing()
 
-__all__ = ["CHANGED", "Content", "SignalBus", "Sink", "SubscribeOutcome", "Subscriber"]
+__all__ = [
+    "CHANGED",
+    "Change",
+    "Content",
+    "SignalBus",
+    "Sink",
+    "SubscribeOutcome",
+    "Subscriber",
+]

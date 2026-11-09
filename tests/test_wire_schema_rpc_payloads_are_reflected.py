@@ -1,6 +1,6 @@
 """The non-envelope RPC payloads in the wire schema come from the models.
 
-``wire_schema.RPC_PAYLOADS`` used to be three hand-written field lists,
+The RPC payload list used to be three hand-written field lists,
 justified by a comment saying the producers were "plain dicts built by
 hand in the backend, so there is no model to reflect on". All three
 producers return Pydantic models:
@@ -14,30 +14,26 @@ missing ``tools_disabled``. The snapshot exists so a backend rename
 breaks a test instead of blanking the UI; a field the snapshot never
 knew about is a field that protection never covered.
 
-These tests assert the schema is derived from the models, so the next
-field added to any of the three cannot go missing.
+The list is now
+:data:`~igni_core.contracts.wire_schema.RPC_PAYLOAD_MODELS` — every
+non-envelope RPC payload and the model it is reflected from — and
+these tests assert the schema is derived from those models, so the next
+field added to any of them cannot go missing.
 """
 
 from __future__ import annotations
 
-from igni_core.backend.schemas_context import PendingMessage
-from igni_core.backend.schemas_loop import LoopStatusSnapshot
-from igni_core.backend.schemas_mcp import MCPServerSnapshot
-from igni_core.protocol.wire_schema import build_schema
-
-_MODELS = {
-    "loop_status": LoopStatusSnapshot,
-    "pending_message": PendingMessage,
-    "mcp_server": MCPServerSnapshot,
-}
+from igni_core.contracts.wire_schema import RPC_PAYLOAD_MODELS, WireSchemaPublisher
 
 
 def test_each_rpc_payload_matches_its_model_exactly():
     """Not "is a subset of" — exactly. A stale entry is as wrong as a
     missing one; the frontend contract test compares both directions."""
-    rpc = build_schema()["rpc"]
+    rpc = WireSchemaPublisher().build().rpc
 
-    for key, model in _MODELS.items():
+    assert rpc, "the wire schema has no RPC payloads at all"
+
+    for key, model in RPC_PAYLOAD_MODELS.items():
         assert rpc[key] == sorted(model.model_fields), (
             f"wire schema entry {key!r} has drifted from "
             f"{model.__name__}: schema={rpc[key]}, "
@@ -54,4 +50,4 @@ def test_mcp_server_carries_tools_disabled():
     it. Pinned by name because "the list is reflected now" is the
     general claim and this is the specific regression.
     """
-    assert "tools_disabled" in build_schema()["rpc"]["mcp_server"]
+    assert "tools_disabled" in WireSchemaPublisher().build().rpc["mcp_server"]

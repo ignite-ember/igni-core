@@ -38,8 +38,9 @@ from igni_core.extensions.host.members.call import Arguments, Call
 from igni_core.extensions.host.session_target import SessionTarget
 from igni_core.extensions.host.spec import ErrorCode, ObjectSpec, PropertySpec
 from igni_core.extensions.host.types import SchemaTypes
+from igni_core.extensions.host.window_errors import WindowStateError
 from igni_core.extensions.host.window_rpc import WindowModelRpc
-from igni_core.extensions.host.windows import Windows, WindowStateError
+from igni_core.extensions.host.windows import Windows
 from igni_core.extensions.host.wire import Op, Request
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
@@ -99,6 +100,10 @@ class _Host:
 
 class _PoolWindows:
     """The windows the pool asks about."""
+
+    @property
+    def registry(self) -> _PoolWindows:
+        return self
 
     def by_connection(self, connection_id: str) -> str | None:
         return None

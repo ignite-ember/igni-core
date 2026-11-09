@@ -1,90 +1,60 @@
-"""Explicit, named Agno-compatibility shim.
+"""Agno compatibility: the two shapes a run comes in.
 
-Replaces the pre-refactor import-time monkeypatch in the deleted
-``agno_events.py``. The bug: Agno's team HITL streaming code calls
-``run_response.agent_id`` on a :class:`TeamRunOutput` — which only
-has ``team_id``. The workaround is to add ``agent_id`` / ``agent_name``
-class attributes so attribute access resolves rather than
-``AttributeError``-crashing the event creation.
+Agno names the producer of a run one of two ways: an agent's run
+carries ``agent_id`` / ``agent_name``, a team's run carries
+``team_id`` / ``team_name``. One stream carries both — a team's own
+events and its members' events arrive interleaved — so a consumer that
+wants the producer has to know which spelling the event uses.
 
-The audit's AP6 finding: "invisible side effect at import time" —
-importing the old module patched Agno globally, and any code path
-that imported anything from that module (even ``TOOL_NAMES``) forced
-the patch. We move it here behind a named class + explicit
-``.apply()`` call so:
+:class:`RunProducer` is that knowledge in one place: it reads the
+producer off an Agno event or run output and hands back a typed value.
 
-* The patch has a clear, greppable call site
-  (:mod:`igni_core.protocol.__init__` — fired the first time any
-  protocol symbol is imported, which is early enough that any
-  team run is downstream of it).
-* ``.apply()`` is idempotent (``._applied`` class flag) so
-  repeated import cycles are harmless.
-* A test that skips the protocol package can still opt in with a
-  single call.
+Agno's classes are never patched to answer to the other spelling. A
+team that answers to ``agent_id`` cannot be told apart from an agent
+downstream, and a patch applied at import time is a side effect on a
+third-party class that no call site asked for. The producer is read
+where a run is consumed — the only place that knows which shape it is
+holding.
 """
 
 from __future__ import annotations
 
-import logging
+from typing import Any, Literal
 
-logger = logging.getLogger(__name__)
+from pydantic import BaseModel
 
 
-class AgnoCompatibilityShim:
-    """One-shot patcher for Agno's TeamRunOutput agent_* attrs.
+def _text(value: Any) -> str:
+    """The value as a string; empty when it is missing or falsy."""
+    return str(value) if value else ""
 
-    Class-level state so a re-import doesn't re-patch; the shim is
-    a singleton by convention (no instances exist — every operation
-    is a classmethod).
+
+class RunProducer(BaseModel):
+    """Who produced a run: the agent that ran, or the team it ran under.
+
+    ``kind`` says which of Agno's two shapes the producer was read from,
+    so a caller that has to tell an agent's run from a team's can. It
+    is ``"unknown"`` for a source that names no producer at all.
     """
 
-    _applied: bool = False
+    kind: Literal["agent", "team", "unknown"] = "unknown"
+    name: str = ""
 
     @classmethod
-    def is_applied(cls) -> bool:
-        """Return whether :meth:`apply` has already run."""
-        return cls._applied
+    def from_agno(cls, source: Any) -> RunProducer:
+        """Read the producer off an Agno event or run output.
 
-    @classmethod
-    def apply(cls) -> None:
-        """Install the ``TeamRunOutput.agent_id / agent_name`` shim.
-
-        Idempotent — subsequent calls short-circuit on the
-        ``_applied`` flag so mistakenly wiring this into multiple
-        boot paths is safe. On any import failure (Agno not
-        installed, e.g. in a CLI-only smoke test) the call is a
-        no-op — the shim only matters when Agno is actually
-        driving a team run.
+        Agno gives an agent's run ``agent_name`` and a team's run
+        ``team_name``. The agent spelling wins when a source carries
+        both — a run has one producer.
         """
-        if cls._applied:
-            return
-        try:
-            from agno.run.team import TeamRunOutput
-        except ImportError:
-            # Agno not installed in this environment — nothing to
-            # patch, nothing will crash on the un-patched class.
-            cls._applied = True
-            return
-
-        if not hasattr(TeamRunOutput, "agent_id"):
-            TeamRunOutput.agent_id = None  # type: ignore[attr-defined]
-        if not hasattr(TeamRunOutput, "agent_name"):
-            TeamRunOutput.agent_name = None  # type: ignore[attr-defined]
-
-        # Post-apply invariant: the two attrs must resolve. If a
-        # future Agno release makes them descriptors that reject
-        # None or raises inside the setter, we'd rather surface
-        # the change here than see a mysterious AttributeError
-        # deep in a team run.
-        assert hasattr(TeamRunOutput, "agent_id"), (
-            "AgnoCompatibilityShim: agent_id attribute still missing after patch"
-        )
-        assert hasattr(TeamRunOutput, "agent_name"), (
-            "AgnoCompatibilityShim: agent_name attribute still missing after patch"
-        )
-
-        cls._applied = True
-        logger.debug("AgnoCompatibilityShim applied: patched TeamRunOutput.agent_id/agent_name")
+        agent_name = _text(getattr(source, "agent_name", None))
+        if agent_name:
+            return cls(kind="agent", name=agent_name)
+        team_name = _text(getattr(source, "team_name", None))
+        if team_name:
+            return cls(kind="team", name=team_name)
+        return cls()
 
 
-__all__ = ["AgnoCompatibilityShim"]
+__all__ = ["RunProducer"]

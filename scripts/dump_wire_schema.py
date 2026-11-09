@@ -11,18 +11,22 @@ Regenerate after protocol changes:
     uv run python scripts/dump_wire_schema.py
 
 The reflection itself lives in
-:mod:`igni_core.protocol.wire_schema`, so a test can run it and
+:mod:`igni_core.contracts.wire_schema`, so a test can run it and
 compare against the committed file. It used to live here, where
 nothing could check it — and it silently produced an empty schema for
 however long it took anyone to look.
 """
 
-from igni_core.protocol.wire_schema import write
+from igni_core.contracts.wire_schema import EmptyWireContractError, WireSchemaPublisher
 
 
 def main() -> None:
-    path, schema = write()
-    print(f"wrote {path} ({len(schema['messages'])} messages, {len(schema['rpc'])} rpc payloads)")
+    publisher = WireSchemaPublisher()
+    try:
+        path, schema = publisher.write()
+    except EmptyWireContractError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"wrote {path} ({len(schema.messages)} messages, {len(schema.rpc)} rpc payloads)")
 
 
 if __name__ == "__main__":

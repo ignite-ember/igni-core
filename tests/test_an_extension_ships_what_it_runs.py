@@ -39,10 +39,11 @@ from igni_core.extensions.assets import (
 )
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.python_env import PythonEnvironments
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
-from igni_core.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.store import ExtensionStore
 from tests.extension_distribution_helpers import asset, manifest, tar_gz
 from tests.test_a_python_extension_installs_offline import (
     Pretending,

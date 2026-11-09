@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.members.answers import CompactResult, ContextUsage
 from igni_core.extensions.host.members.base import Members
@@ -79,6 +80,7 @@ class ChatWriteMembers(Members):
         text = str(c.params["text"])
         if not text.strip():
             raise HostModelError(ErrorCode.INVALID, "an empty message is not posted")
+        attachments = ChatAttachments(files=c.params.get("attachments") or {})
         if not c.on_screen:
             # Nobody may be watching: a service event's rules — start a
             # run, or wait for the one going; never answer an approval.
@@ -86,7 +88,7 @@ class ChatWriteMembers(Members):
                 session_id=c.session_id,
                 extension_id=c.extension_id,
                 text=text,
-                media=c.params.get("attachments") or None,
+                media=attachments,
             )
             if not posted.ok:
                 raise HostModelError(ErrorCode.REFUSED, posted.reason)
@@ -95,7 +97,7 @@ class ChatWriteMembers(Members):
             session_id=c.session_id,
             extension_id=c.extension_id,
             text=text,
-            media=c.params.get("attachments") or None,
+            media=attachments,
             queued=False,
         )
 
@@ -108,7 +110,7 @@ class ChatWriteMembers(Members):
             session_id=c.session_id,
             extension_id=c.extension_id,
             text=text,
-            media=None,
+            media=ChatAttachments(),
             queued=True,
         )
 

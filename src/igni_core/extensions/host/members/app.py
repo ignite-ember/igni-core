@@ -140,11 +140,11 @@ class AppStateMembers(Members):
 class WindowMembers(Members):
     @get("windows.list")
     async def window_list(self, c: Call) -> Any:
-        return self.host.windows.describe_all()
+        return self.host.windows.registry.describe_all()
 
     @get("windows.focused")
     async def focused(self, c: Call) -> Any:
-        return self.host.windows.focused()
+        return self.host.windows.registry.focused()
 
 
 __all__ = ["AppMembers", "AppStateChanged", "AppStateMembers", "WindowMembers"]

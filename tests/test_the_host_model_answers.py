@@ -426,7 +426,7 @@ class TestWindowsAndUi:
         await rig.window("w-1", connection="ws-a")
         [window] = ok(await rig.ask(ext, "get", "windows.list"))
         assert window["id"] == "w-1" and window["kind"] == "tauri"
-        rig.model.services.windows.detached("ws-a")
+        rig.model.services.windows.registry.detached("ws-a")
         assert ok(await rig.ask(ext, "get", "windows.list")) == []
         assert [v["id"] for v in sink.values("windows.opened")] == ["w-1"]
         assert [v["id"] for v in sink.values("windows.closed")] == ["w-1"]
@@ -463,6 +463,10 @@ class TestWindowsAndUi:
         assert sink.values("session.switched") == [{"session_id": "boot", "window": "w-1"}]
         changed = {c["path"] for c in sink.values("changed")}
         assert {"ui.sidebar", "sessions.current"} <= changed
+        # The change says which window it is about.
+        windows = {c["path"]: c["window"] for c in sink.values("changed")}
+        assert windows["ui.sidebar"] == "w-1"
+        assert windows["sessions.current"] == "w-1"
 
     async def test_a_page_reaches_its_own_window(self, rig: HostRig) -> None:
         ext = rig.install(host=["ui"])

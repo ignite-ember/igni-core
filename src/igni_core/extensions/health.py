@@ -34,11 +34,11 @@ import asyncio
 import contextlib
 import logging
 import time
-from typing import Any
 
 from igni_core.core.activity import background
 from igni_core.extensions.host.processes import ExtensionProcesses
-from igni_core.extensions.installer import server_name
+from igni_core.extensions.install_service import server_name
+from igni_core.extensions.mcp_manager import McpManager
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.service import McpExtensionService
@@ -70,12 +70,12 @@ class ExtensionHealth:
         *,
         registry: ExtensionRegistry,
         rpc: ExtensionRpc,
-        mcp: Any,
+        mcp: McpManager,
         interval_s: float = DEFAULT_INTERVAL_S,
-        processes: ExtensionProcesses | None = None,
+        processes: ExtensionProcesses,
     ) -> None:
         self._registry = registry
-        self._processes = processes if processes is not None else ExtensionProcesses.shared()
+        self._processes = processes
         self._rpc = rpc
         self._mcp = mcp
         self._interval = interval_s
@@ -256,8 +256,8 @@ class ExtensionHealth:
             self._fail(extension_id, f"its service could not be restarted: {exc}")
             return False
 
-        if not getattr(result, "ok", False):
-            reason = getattr(result, "reason", "") or "no reason given"
+        if not result.ok:
+            reason = result.reason or "no reason given"
             self._fail(extension_id, f"its service did not restart: {reason}")
             return False
 

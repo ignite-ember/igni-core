@@ -29,6 +29,7 @@ import pytest
 
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.extensions.health import ExtensionHealth
+from igni_core.extensions.host.processes import ExtensionProcesses
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRefused, ExtensionRegistry, ExtensionState
@@ -62,7 +63,11 @@ class Wired:
             allow_development=True,
         )
         self.health = ExtensionHealth(
-            registry=self.registry, rpc=self.rpc, mcp=self.mcp, interval_s=3600
+            registry=self.registry,
+            rpc=self.rpc,
+            mcp=self.mcp,
+            interval_s=3600,
+            processes=ExtensionProcesses(),
         )
         self.rpc.watch(self.health.on_call_failed)
 

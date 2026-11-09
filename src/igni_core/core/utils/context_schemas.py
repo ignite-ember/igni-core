@@ -15,8 +15,8 @@ typed data models, adjacent to the module that owns the behaviour.
   ``# {heading}\\n\\n{body}`` string is defined once, not
   duplicated by every tier.
 - :class:`RulesBundle` — an ordered list of :class:`RulesSection`.
-  Represents the full ``load_project_context`` output before it
-  gets flattened to a string. Owns :meth:`RulesBundle.render`
+  Represents the full ``RulesContextLoader.load_all`` output before
+  it gets flattened to a string. Owns :meth:`RulesBundle.render`
   which joins the sections with the ``\\n\\n---\\n\\n`` divider
   that the model consumes.
 - :class:`SubdirectoryRules` — one entry from the subdirectory
@@ -25,6 +25,8 @@ typed data models, adjacent to the module that owns the behaviour.
   raw ``list[tuple[str, str]]`` return that ``load_subdirectory_rules``
   used to have — Pattern 2 fix (structured data with >1 field
   gets a Pydantic model).
+- :class:`UserRulesPaths` — the three user-level locations the
+  user tier reads, as one injectable value.
 - Protocol classes for every helper the loader is willing to
   accept as a dependency. Closes the ``Callable[..., str]``
   AP5 violation at both the facade layer and the six sibling
@@ -54,8 +56,8 @@ class RulesSection(BaseModel):
     (e.g. ``"Managed Policy"``, ``"User Rules"``); ``body`` is
     the concatenated rule text. Rendering prepends ``# `` to the
     heading and separates it from the body with a blank line —
-    the exact shape ``load_project_context`` produced before the
-    refactor, pinned by ``test_managed_section_appears_first``
+    the exact shape the loader produced before the refactor,
+    pinned by ``test_managed_section_appears_first``
     and ``test_load_project_context_includes_shared_rules_section``.
     """
 
@@ -95,6 +97,24 @@ class SubdirectoryRules(BaseModel):
             heading=f"Directory Rules ({self.rel_path}/)",
             body=self.content,
         )
+
+
+class UserRulesPaths(BaseModel):
+    """Where the user's global rules live.
+
+    The three user-level locations the user tier reads, as one typed
+    value: the legacy ``rules.md`` file, the ``rules/`` directory
+    form, and the cross-tool ``~/.claude/rules/`` directory. The
+    loader injects this instead of holding three loose path
+    parameters, so a caller that wants different locations builds a
+    different value rather than reaching for a module-level constant.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    legacy_file: Path
+    rules_dir: Path
+    claude_rules_dir: Path
 
 
 class RulesBundle(BaseModel):
@@ -163,9 +183,3 @@ class ReadRulesDirFiles(Protocol):
         working_dir: Path | None = None,
         project_dir: Path | None = None,
     ) -> str: ...
-
-
-class PlatformDirFn(Protocol):
-    """Return the platform-specific managed-rules directory (or ``None``)."""
-
-    def __call__(self) -> Path | None: ...

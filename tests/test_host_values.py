@@ -26,9 +26,12 @@ from igni_core.extensions.host.values import (
     SessionStatus,
     UpdateInfo,
 )
-from igni_core.extensions.host.window_rpc import WindowModelRpc
+from igni_core.extensions.host.window_changes import WindowChange
+from igni_core.extensions.host.window_field import WindowFieldName
+from igni_core.extensions.host.window_rpc import WindowModelRpc, WindowRequest
 from igni_core.extensions.host.window_signals import WindowSignals
-from igni_core.extensions.host.windows import FIELDS, WindowChange, WindowRequest, Windows
+from igni_core.extensions.host.window_values import Dialog, Scroll
+from igni_core.extensions.host.windows import Windows
 from tests.host_model_helpers import manifest
 
 
@@ -48,6 +51,7 @@ class _Bus:
         *,
         content: Content | None = None,
         only: str | None = None,
+        window: str | None = None,
     ) -> list[str]:
         self.told.append((wire, value))
         return []
@@ -180,13 +184,16 @@ def test_every_window_model_op_is_answered():
 def test_every_window_field_but_the_folder_and_the_focus_is_signalled():
     signals = WindowSignals(Emitter(_Bus()), lambda session_id, window: None)
 
-    assert signals.fields() == set(FIELDS) - {"project_dir", "focused"}
+    assert signals.fields() == {name.value for name in WindowFieldName} - {
+        "project_dir",
+        "focused",
+    }
 
 
 def test_a_dialog_opened_carries_no_answer_and_a_dialog_closed_always_does():
     bus = _Bus()
     signals = WindowSignals(Emitter(bus), lambda session_id, window: None)
-    dialog = {"id": "d-1", "spec": {}, "source": None}
+    dialog = Dialog(id="d-1", spec={}, source=None)
 
     signals.changed(
         WindowChange(window="w", field="dialog", rev=1, event="dialog_opened", item=dialog)
@@ -196,16 +203,19 @@ def test_a_dialog_opened_carries_no_answer_and_a_dialog_closed_always_does():
     )
 
     assert bus.told == [
-        ("ui.dialog_opened", {"window": "w", "dialog": dialog}),
-        ("ui.dialog_closed", {"window": "w", "dialog": dialog, "answer": None}),
+        ("ui.dialog_opened", {"window": "w", "dialog": {"id": "d-1", "spec": {}, "source": None}}),
+        (
+            "ui.dialog_closed",
+            {"window": "w", "dialog": {"id": "d-1", "spec": {}, "source": None}, "answer": None},
+        ),
     ]
 
 
 def test_a_scroll_is_told_whole_with_its_window():
     bus = _Bus()
     signals = WindowSignals(Emitter(bus), lambda session_id, window: None)
-    scroll = {"message_id": None, "at_bottom": True, "offset": 12}
+    scroll = Scroll(message_id=None, at_bottom=True, offset=12)
 
     signals.changed(WindowChange(window="w", field="scroll", value=scroll, rev=1))
 
-    assert bus.told == [("ui.scrolled", {**scroll, "window": "w"})]
+    assert bus.told == [("ui.scrolled", {**scroll.model_dump(), "window": "w"})]

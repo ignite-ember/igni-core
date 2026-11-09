@@ -13,7 +13,6 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
 
-from igni_core.backend.transport_builder import ServerTransport
 from igni_core.protocol import messages as msg
 from igni_core.transport.base import ListeningTransport
 
@@ -23,13 +22,13 @@ logger = logging.getLogger(__name__)
 class ObservedTransport(ListeningTransport):
     """The root transport, with observers on the way out."""
 
-    def __init__(self, inner: ServerTransport) -> None:
+    def __init__(self, inner: ListeningTransport) -> None:
         self._inner = inner
         self._observers: list[Callable[[msg.Message], None]] = []
         self._waiting: dict[str, asyncio.Future[msg.Message]] = {}
 
     @property
-    def inner(self) -> ServerTransport:
+    def inner(self) -> ListeningTransport:
         return self._inner
 
     def observe(self, observer: Callable[[msg.Message], None]) -> None:
@@ -81,6 +80,10 @@ class ObservedTransport(ListeningTransport):
     def watch_connections(self, watcher: Callable[[str, str], None]) -> None:
         """Be told of every view attaching to or detaching from the root transport."""
         self._inner.watch_connections(watcher)
+
+    def owns_client(self, client_id: str) -> bool:
+        """Whether the root transport has the connection ``client_id``."""
+        return self._inner.owns_client(client_id)
 
 
 __all__ = ["ObservedTransport"]

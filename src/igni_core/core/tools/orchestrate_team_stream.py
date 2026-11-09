@@ -46,6 +46,7 @@ from igni_core.core.tools.orchestrate_events import (
 from igni_core.core.tools.orchestrate_preview import PREVIEWS
 from igni_core.core.tools.orchestrate_stream_handler import BaseStreamHandler
 from igni_core.core.tools.subagent_stream import TeamStreamState
+from igni_core.protocol.agno_compat import RunProducer
 
 _stream_log = logging.getLogger("igni_core.llm_calls")
 
@@ -191,18 +192,13 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
         ``team_name`` for nested teams), and using that prevents
         the "all tools land on the last started agent" bug.
         """
-        name = (
-            getattr(event, "agent_name", None)
-            or getattr(event, "team_name", None)
-            or self.state.current_agent
-            or ""
-        )
+        name = RunProducer.from_agno(event).name or self.state.current_agent or ""
         return self._agent_path_for(name), name
 
     # ── Per-event handlers ─────────────────────────────────────────
     def _on_agent_run_started(self, event: Any) -> None:
         state = self.state
-        name = getattr(event, "agent_name", None) or getattr(event, "team_name", None)
+        name = RunProducer.from_agno(event).name
         if not name or name == state.current_agent:
             return
         state.current_agent = name

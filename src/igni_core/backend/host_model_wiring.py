@@ -59,6 +59,7 @@ class HostModelWiring:
         orchestrator: SessionOrchestrator,
         transport: ObservedTransport,
         registry: ExtensionRegistry,
+        hooks: ExtensionHooks,
         project_dir: Path,
         hubs: HostModelHubs,
         store: ExtensionStore | None = None,
@@ -80,7 +81,7 @@ class HostModelWiring:
         )
         orchestrator.mount(HostModelRpcs(model))
         # igni's hook events reach the extensions that hook them.
-        hubs.install_hooks(ExtensionHooks.wire(registry))
+        hubs.install_hooks(hooks)
         transport.observe(model.broadcasts.outbound)
         watch = RpcWatch(model.broadcasts.after_rpc)
         orchestrator.watch_inbound(watch.inbound)
@@ -97,7 +98,7 @@ class HostModelWiring:
 
         def closed(event: str, connection_id: str) -> None:
             if event == "detached":
-                model.services.windows.detached(connection_id)
+                model.services.windows.registry.detached(connection_id)
 
         transport.watch_connections(closed)
         return model

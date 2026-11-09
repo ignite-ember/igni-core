@@ -51,7 +51,7 @@ class NDJsonStreamTransport(Transport):
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._closed = False
-        self._registry = registry or MessageRegistry.default()
+        self._registry = registry if registry is not None else MessageRegistry()
 
     async def send(self, message: Message) -> None:
         if self._writer is None or self._closed:

@@ -93,12 +93,12 @@ class HostChannel:
         model: HostModel,
         *,
         host: str = LOOPBACK,
-        hooks: ExtensionHooks | None = None,
-        processes: ExtensionProcesses | None = None,
+        hooks: ExtensionHooks,
+        processes: ExtensionProcesses,
     ) -> None:
         self._model = model
-        self._hooks = hooks if hooks is not None else ExtensionHooks.shared()
-        self._processes = processes if processes is not None else ExtensionProcesses.shared()
+        self._hooks = hooks
+        self._processes = processes
         self._host = host
         self._port = 0
         self._server: Server | None = None

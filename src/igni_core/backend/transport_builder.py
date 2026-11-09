@@ -8,10 +8,6 @@ from igni_core.transport.composite import CompositeTransport
 from igni_core.transport.unix_socket import UnixSocketServerTransport
 from igni_core.transport.websocket import WebSocketServerTransport
 
-#: What :meth:`TransportBuilder.build` returns: one listening transport,
-#: or the composite of both when both flags are given.
-ServerTransport = ListeningTransport | CompositeTransport
-
 
 class TransportBuilder:
     """Pick and build the right transport for the CLI flags.
@@ -45,7 +41,12 @@ class TransportBuilder:
         """The WS transport, once built, for its bound port."""
         return self._ws_transport
 
-    async def build(self) -> ServerTransport:
+    async def build(self) -> ListeningTransport:
+        """Build the transport the flags ask for.
+
+        One flag: that transport. Both: the composite of the two, so
+        every view mirrors one session.
+        """
         children: list[ListeningTransport] = []
         if self._socket_path is not None:
             children.append(UnixSocketServerTransport(self._socket_path))
@@ -53,7 +54,7 @@ class TransportBuilder:
             self._ws_transport = WebSocketServerTransport(port=self._ws_port, token=self._ws_token)
             children.append(self._ws_transport)
 
-        transport: ServerTransport = (
+        transport: ListeningTransport = (
             children[0] if len(children) == 1 else CompositeTransport(list(children))
         )
         await transport.start()
