@@ -101,9 +101,9 @@ Documentation must reflect the code, not the other way around. Before writing ab
 
 - For agents: read `agents/*.md` definition files
 - For skills: read `skills/*/SKILL.md` definition files
-- For configuration: read `src/igni_core/config/` source files
-- For tools: read `src/igni_core/tools/` source files
-- For TUI: read `src/igni_core/tui/` source files
+- For configuration: read `src/igni_core/core/config/` source files
+- For tools: read `src/igni_core/core/tools/` source files
+- For the CLI: read `src/igni_core/cli/` source files
 - For any feature: find and read the relevant source code
 
 ### Step 5: Make the updates
