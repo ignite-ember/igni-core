@@ -2084,12 +2084,12 @@
           "title": "Event",
           "type": "string"
         },
-        "headers": {
-          "additionalProperties": {
+        "header_names": {
+          "items": {
             "type": "string"
           },
-          "title": "Headers",
-          "type": "object"
+          "title": "Header Names",
+          "type": "array"
         },
         "matcher": {
           "default": "",
@@ -2120,7 +2120,7 @@
         "matcher",
         "timeout_ms",
         "background",
-        "headers"
+        "header_names"
       ],
       "title": "HookEntryView",
       "type": "object"
@@ -3236,57 +3236,9 @@
       "title": "ModelCompleted",
       "type": "object"
     },
-    "ModelRegistryEntry": {
-      "additionalProperties": {
-        "description": "Any JSON value.",
-        "type": [
-          "object",
-          "array",
-          "string",
-          "number",
-          "integer",
-          "boolean",
-          "null"
-        ]
-      },
-      "description": "One entry in ``settings.models.registry``.\n\nEverything the registry needs to know about a specific model\nlives here. Providers other than ``openai_like`` (``anthropic``,\n``gemini``) use a subset of these fields \u2014 the extras are\nignored during kwarg construction on the provider side. The last\nthree below are the ``anthropic`` provider's own.",
+    "ModelRegistryEntryView": {
+      "description": "One model as a client sees it: what it is and how it runs, never its key.\n\n:class:`ModelRegistryEntry` holds the key itself (``api_key``), the\ncommand that prints it (``api_key_cmd``), and whatever extra keys the\nconfiguration carried; none of that is a client's to read. The URL\nloses anything that can carry a credential.",
       "properties": {
-        "api_key": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Api Key"
-        },
-        "api_key_cmd": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Api Key Cmd"
-        },
-        "api_key_env": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Api Key Env"
-        },
         "context_window": {
           "anyOf": [
             {
@@ -3311,6 +3263,10 @@
           "default": null,
           "title": "Effort"
         },
+        "has_api_key": {
+          "title": "Has Api Key",
+          "type": "boolean"
+        },
         "max_tokens": {
           "anyOf": [
             {
@@ -3328,13 +3284,16 @@
           "type": "string"
         },
         "prompt_caching": {
-          "default": true,
           "title": "Prompt Caching",
           "type": "boolean"
         },
         "provider": {
-          "default": "openai_like",
           "title": "Provider",
+          "type": "string"
+        },
+        "source": {
+          "default": "",
+          "title": "Source",
           "type": "string"
         },
         "temperature": {
@@ -3374,7 +3333,6 @@
           "title": "Thinking"
         },
         "timeout": {
-          "default": 60,
           "title": "Timeout",
           "type": "integer"
         },
@@ -3391,7 +3349,6 @@
           "title": "Url"
         },
         "vision": {
-          "default": false,
           "title": "Vision",
           "type": "boolean"
         }
@@ -3400,9 +3357,7 @@
         "model_id",
         "provider",
         "url",
-        "api_key",
-        "api_key_env",
-        "api_key_cmd",
+        "has_api_key",
         "temperature",
         "max_tokens",
         "timeout",
@@ -3410,9 +3365,10 @@
         "context_window",
         "thinking",
         "effort",
-        "prompt_caching"
+        "prompt_caching",
+        "source"
       ],
-      "title": "ModelRegistryEntry",
+      "title": "ModelRegistryEntryView",
       "type": "object"
     },
     "ModelRegistryResult": {
@@ -3428,7 +3384,7 @@
         },
         "registry": {
           "additionalProperties": {
-            "$ref": "#/defs/ModelRegistryEntry"
+            "$ref": "#/defs/ModelRegistryEntryView"
           },
           "title": "Registry",
           "type": "object"

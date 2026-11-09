@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from pydantic import BaseModel, Field
 
 from igni_core.core.contributed_commands import ContributedCommand
+from igni_core.protocol.redaction import url_without_credentials
 
 if TYPE_CHECKING:
     from igni_core.core.hooks.schemas import HookDefinition
@@ -72,7 +73,9 @@ class HookEntryView(BaseModel):
     matcher: str = ""
     timeout_ms: int = 0
     background: bool = False
-    headers: dict[str, str] = Field(default_factory=dict)
+    #: The names of the headers an HTTP hook sends. Never their values:
+    #: an ``Authorization`` header is a credential.
+    header_names: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_hook(cls, hook: HookDefinition, event: object) -> HookEntryView:
@@ -80,7 +83,8 @@ class HookEntryView(BaseModel):
 
         Uses ``getattr`` defensively — the panel is used against
         older sessions whose hook objects predate newer optional
-        fields (``background``, structured ``headers``). The
+        fields (``background``, structured ``headers``). A header's value
+        and a URL's credentials stay out of it. The
         defensive reads live here so the callsite in
         :class:`HooksPanelController` stays clean.
         """
@@ -88,11 +92,11 @@ class HookEntryView(BaseModel):
             event=str(event),
             type=getattr(hook, "type", "") or "",
             command=getattr(hook, "command", "") or "",
-            url=getattr(hook, "url", "") or "",
+            url=url_without_credentials(getattr(hook, "url", "") or ""),
             matcher=getattr(hook, "matcher", "") or "",
             timeout_ms=int(getattr(hook, "timeout", 0) or 0),
             background=bool(getattr(hook, "background", False)),
-            headers=dict(getattr(hook, "headers", {}) or {}),
+            header_names=sorted(getattr(hook, "headers", {}) or {}),
         )
 
 

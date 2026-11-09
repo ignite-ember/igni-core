@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.protocol.json_value import WireJson
+from igni_core.protocol.redaction import url_without_credentials
 
 if TYPE_CHECKING:
     from igni_core.core.auth.schemas import UserInfo
@@ -171,6 +173,53 @@ class SkillDefinition(BaseModel):
     prompt: str
 
 
+class ModelRegistryEntryView(BaseModel):
+    """One model as a client sees it: what it is and how it runs, never its key.
+
+    :class:`ModelRegistryEntry` holds the key itself (``api_key``), the
+    command that prints it (``api_key_cmd``), and whatever extra keys the
+    configuration carried; none of that is a client's to read. The URL
+    loses anything that can carry a credential.
+    """
+
+    model_id: str
+    provider: str
+    url: str | None = None
+    #: Whether the entry says where its key comes from — a key, an
+    #: environment variable, a command. Never the key.
+    has_api_key: bool
+    temperature: float | None = None
+    max_tokens: int | None = None
+    timeout: int
+    vision: bool
+    context_window: int | None = None
+    thinking: dict[str, WireJson] | None = None
+    effort: str | None = None
+    prompt_caching: bool
+    #: Where the entry came from: ``cloud`` for igni server's models,
+    #: empty for the configuration's own.
+    source: str = ""
+
+    @classmethod
+    def of(cls, entry: ModelRegistryEntry) -> ModelRegistryEntryView:
+        extra = entry.model_extra or {}
+        return cls(
+            model_id=entry.model_id,
+            provider=entry.provider,
+            url=url_without_credentials(entry.url) if entry.url else entry.url,
+            has_api_key=bool(entry.api_key or entry.api_key_env or entry.api_key_cmd),
+            temperature=entry.temperature,
+            max_tokens=entry.max_tokens,
+            timeout=entry.timeout,
+            vision=entry.vision,
+            context_window=entry.context_window,
+            thinking=entry.thinking,
+            effort=entry.effort,
+            prompt_caching=entry.prompt_caching,
+            source=str(extra.get("source") or ""),
+        )
+
+
 class ModelRegistryResult(BaseModel):
     """Wire shape for the ``get_model_registry`` RPC — the FE's
     model-picker source of truth (default, ceiling, per-model
@@ -178,16 +227,18 @@ class ModelRegistryResult(BaseModel):
 
     default: str
     max_context_window: int
-    registry: dict[str, ModelRegistryEntry]
+    registry: dict[str, ModelRegistryEntryView]
 
     @classmethod
     def from_settings(cls, models: ModelsConfig) -> ModelRegistryResult:
         """Map ``settings.models`` into the wire shape, every registry
-        row typed as a :class:`ModelRegistryEntry`."""
+        row read as a :class:`ModelRegistryEntryView`."""
         return cls(
             default=models.default,
             max_context_window=models.max_context_window,
-            registry=dict(models.registry),
+            registry={
+                name: ModelRegistryEntryView.of(entry) for name, entry in models.registry.items()
+            },
         )
 
 
