@@ -385,13 +385,14 @@ class MessageDispatcher:
         await self._reply(message, msg.RPCResponse.ok(req_id, RpcResult.serialize(result)))
 
     async def _reply(self, request: msg.RPCRequest, response: Message) -> None:
-        """Answer a call; one made for an extension, on its window's connection only.
+        """Answer a call on the connection that made it, and no other.
 
-        A call made for an extension (``caller``) answers with that
-        extension's data — its service's replies, base data its manifest was
-        granted — and every other client attached would read it if it were
-        broadcast. igni's own calls are broadcast as before.
+        An answer is the caller's: a file's contents, a shell command's
+        output, an extension's data, a status. Broadcast, every client
+        attached — another window, a program with the lockfile's token —
+        read it too. A request from a transport without connections (the
+        terminal's) has no ``from_client``, and its answer goes out as
+        before.
         """
-        if request.caller:
-            response.address_to(request.from_client)
+        response.address_to(request.from_client)
         await self._transport.send(response)
