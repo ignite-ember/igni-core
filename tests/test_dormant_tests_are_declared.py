@@ -63,7 +63,10 @@ DECLARED_GATES: dict[str, str] = {
     "ANTHROPIC_API_KEY": (
         "One live call to Anthropic's API through `provider: anthropic` "
         "(tests/test_anthropic_live.py), which costs money per run. Not "
-        "in CI; the provider's other tests run against a local stub."
+        "in CI; the provider's other tests run against a local stub. The "
+        "key has to be Anthropic's own (it starts with `sk-ant-`): the "
+        "one Claude Code exports is for its own gateway and is refused "
+        "with a 401."
     ),
     "IGNI_TEST_DATABASE_URL": (
         "A PostgreSQL server the storage tests may create and drop "

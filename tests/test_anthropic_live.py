@@ -3,7 +3,8 @@
 ``test_anthropic_provider.py`` covers the provider against a stub; this
 checks the stub has not drifted from the real thing: a turn with a tool
 call, streamed, through the builder igni uses. Skips unless
-``ANTHROPIC_API_KEY`` is set, since every run costs money.
+``ANTHROPIC_API_KEY`` holds a key of Anthropic's own, since every run
+costs money.
 """
 
 from __future__ import annotations
@@ -18,10 +19,28 @@ from igni_core.core.config.llm_call_logger import LlmCallLogger
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.provider_builders import AnthropicBuilder
 
+
+def _anthropic_key() -> str | None:
+    """The key for Anthropic's own API, or ``None`` when there is none.
+
+    ``ANTHROPIC_API_KEY`` is also the variable Claude Code exports, and the
+    key it exports is for its own gateway rather than for
+    ``api.anthropic.com``: Anthropic refuses it with a 401. A live call
+    against such a key would fail for a reason that has nothing to do
+    with the code under test, and it would spend the run to find that
+    out. Anthropic's own keys all start with ``sk-ant-``.
+    """
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    return key if key.startswith("sk-ant-") else None
+
+
 pytestmark = [
     pytest.mark.skipif(
-        not os.environ.get("ANTHROPIC_API_KEY"),
-        reason="ANTHROPIC_API_KEY not set (export it to run the live Anthropic test)",
+        not _anthropic_key(),
+        reason=(
+            "no key for Anthropic's own API (export ANTHROPIC_API_KEY, an sk-ant- "
+            "key, to run the live Anthropic test)"
+        ),
     ),
     pytest.mark.reaches_the_internet,
 ]
@@ -47,7 +66,7 @@ async def test_a_streamed_tool_call_against_anthropic() -> None:
         name="live-claude",
         model=model,
         description="",
-        instructions="Use the add_numbers tool for arithmetic, then state the result.",
+        instructions=["Use the add_numbers tool for arithmetic, then state the result."],
         tools=[add_numbers],
         num_history_runs=1,
         retries=0,
