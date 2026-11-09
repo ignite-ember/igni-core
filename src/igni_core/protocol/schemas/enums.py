@@ -282,42 +282,19 @@ class PermissionModeName(StrEnum):
 
 
 class PushChannel(StrEnum):
-    """The known channels a
-    :class:`~igni_core.protocol.messages.PushNotification` can
-    carry — a *catalogue*, not a closed set.
+    """Every channel a :class:`~igni_core.protocol.messages.PushNotification`
+    is sent on.
 
-    Was the free-string ``channel`` field with a
-    ``"scheduler_event", "orchestrate_progress", "login_status"``
-    comment that didn't match every producer callsite (the actual
-    channels emitted include ``scheduler_started`` /
-    ``scheduler_completed`` / ``login_result`` /
-    ``session_named`` / ``permission_mode_changed`` /
-    ``file_edited`` / ``process_started`` / etc.).
-
-    The producer set is genuinely open, and this docstring used to
-    deny it: besides the :func:`~igni_core.protocol.schemas.push`
-    factories, ``push_bridge`` forwards raw channel strings and
-    bridges the whole session broadcast bus into pushes, and
-    the channel set is open by subclassing
-    :class:`~igni_core.core.broadcast_schema.BroadcastEvent`, so a
-    new tool introduces one with its own event class. Claiming closure here
-    bought nothing and went stale — six live channels
-    (``workflow_event``, ``todos_updated``, ``plan_decided``,
-    ``http_retry_attempt``, ``http_retry_succeeded``,
-    ``visualization_action_dispatched``) were missing from the
-    "authoritative" list while the FE routed on all of them.
-
-    So: ``PushNotification.channel`` stays a raw ``str`` on the wire,
-    ``_missing_`` maps anything unlisted to ``UNKNOWN``, and this
-    enum's job is to give the producer sites we *do* control a
-    symbol to reference. Add a member when you add a channel; the
-    wire keeps working either way.
+    Each channel has one payload model
+    (:data:`igni_core.backend.push_payloads.PUSH_PAYLOADS`), published
+    in ``docs/rpc-contract.json``. A broadcast-bus event names its
+    channel as a ``Literal``; a test holds each one to a member here.
+    ``channel`` stays a raw ``str`` on the wire, and ``_missing_`` maps
+    a value nobody listed to ``UNKNOWN``.
     """
 
     SCHEDULER_STARTED = "scheduler_started"
     SCHEDULER_COMPLETED = "scheduler_completed"
-    SCHEDULER_EVENT = "scheduler_event"
-    ORCHESTRATE_PROGRESS = "orchestrate_progress"
     ORCHESTRATE_EVENT = "orchestrate_event"
     LOGIN_STATUS = "login_status"
     LOGIN_RESULT = "login_result"

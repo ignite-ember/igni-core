@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from igni_core.extensions.host.windows import WindowChange
 from igni_core.extensions.host.wire import SignalMessage
 from igni_core.protocol import messages as msg
+from igni_core.protocol.json_value import WireJson
 from igni_core.protocol.schemas.enums import PushChannel
 
 Broadcast = Callable[[msg.Message], None]
@@ -33,7 +34,7 @@ class HostSignalPush(BaseModel):
 
     extension_id: str
     signal: str
-    value: Any = None
+    value: WireJson = None
 
 
 class WindowPushes:

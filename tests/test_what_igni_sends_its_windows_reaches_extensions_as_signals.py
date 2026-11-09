@@ -265,22 +265,17 @@ async def test_scheduler_pushes_become_scheduler_events(rig, heard):
         rig,
         _push("scheduler_started", task_id="c1", description="nightly"),
         _push("scheduler_completed", task_id="c1", error="timed out"),
-        _push("scheduler_event", task_id="c1", event_type="skipped"),
-        _push("scheduler_event", task_id="c1"),
     )
 
     assert [(v["kind"], v["result"]) for v in heard.values("scheduler.event")] == [
         ("started", ""),
         ("completed", "timed out"),
-        ("skipped", ""),
-        ("event", ""),
     ]
 
 
 async def test_an_agents_progress_and_a_finished_view_are_told(rig, heard):
     await _send(
         rig,
-        _push("orchestrate_progress", step=1),
         _push("orchestrate_event", type="agent_started", name="reviewer"),
         _push("orchestrate_event"),
         _push("orchestrate_event", type="visualization_delta", spec_id="v1", json="{"),
@@ -295,7 +290,6 @@ async def test_an_agents_progress_and_a_finished_view_are_told(rig, heard):
     )
 
     assert [v["kind"] for v in heard.values("chat.agent_event")] == [
-        "progress",
         "agent_started",
         "event",
     ]

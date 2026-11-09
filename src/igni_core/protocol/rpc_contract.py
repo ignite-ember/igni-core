@@ -30,6 +30,9 @@ The file has this shape::
       "messages": {
         "<message type>": {"direction": "to_client" | "to_igni" | "both",
                            "doc": "...", "schema": <JSON Schema>}
+      },
+      "push_channels": {
+        "<channel>": {"doc": "...", "schema": <JSON Schema of the payload>}
       }
     }
 
@@ -46,6 +49,7 @@ from __future__ import annotations
 import inspect
 import json
 import typing
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -188,6 +192,9 @@ def build() -> dict[str, Any]:
             "validation" if _direction(cls) is Direction.TO_IGNI else "serialization"
         )
         inputs.append(((_wire_type(cls), "message"), mode, TypeAdapter(cls)))
+    pushes = push_payloads()
+    for channel, payload in pushes.items():
+        inputs.append(((channel.value, "push"), payload.mode, TypeAdapter(payload.model)))
 
     schemas, top = TypeAdapter.json_schemas(
         inputs, ref_template=_REF_TEMPLATE, schema_generator=WireJsonSchema
@@ -222,7 +229,53 @@ def build() -> dict[str, Any]:
             "schema": schemas[((_wire_type(cls), "message"), mode)],
         }
 
-    return {"version": VERSION, "defs": defs, "methods": methods, "messages": wire_messages}
+    push_channels: dict[str, Any] = {}
+    for channel, payload in pushes.items():
+        schema = schemas[((channel.value, "push"), payload.mode)]
+        if _broadcast_events(payload.model):
+            schema = _without_channel(schema, defs)
+        push_channels[channel.value] = {"doc": payload.doc, "schema": schema}
+
+    return {
+        "version": VERSION,
+        "defs": defs,
+        "methods": methods,
+        "messages": wire_messages,
+        "push_channels": push_channels,
+    }
+
+
+def push_payloads() -> Mapping[PushChannel, Any]:
+    """Every push channel's payload, from :data:`~igni_core.backend.push_payloads.PUSH_PAYLOADS`."""
+    from igni_core.backend.push_payloads import PUSH_PAYLOADS
+
+    return dict(sorted(PUSH_PAYLOADS.items(), key=lambda item: item[0].value))
+
+
+def _broadcast_events(model: Any) -> bool:
+    """Whether ``model`` is a broadcast-bus event (or a union of them), whose
+    payload is its fields less ``channel``."""
+    from igni_core.core.broadcast_schema import BroadcastEvent
+
+    members = typing.get_args(model) or (model,)
+    return all(isinstance(m, type) and issubclass(m, BroadcastEvent) for m in members)
+
+
+def _without_channel(schema: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
+    """``schema`` with each event it names inlined, its ``channel`` dropped:
+    the payload carries every field but the one the push names."""
+    if "$ref" in schema:
+        event = dict(defs[schema["$ref"].rsplit("/", 1)[-1]])
+        event["properties"] = {
+            k: v for k, v in event.get("properties", {}).items() if k != "channel"
+        }
+        if "required" in event:
+            event["required"] = [k for k in event["required"] if k != "channel"]
+        return event
+    return {
+        **schema,
+        "anyOf": [_without_channel(member, defs) for member in schema.get("anyOf", [])],
+    }
 
 
 def render(contract: dict[str, Any] | None = None) -> str:

@@ -51,7 +51,6 @@ class SchedulerPush(PushPayload):
     description: Text = ""
     result: Any = ""
     error: Any = ""
-    event_type: Annotated[str, _or("event")] = "event"
 
     def outcome(self) -> str:
         """The result, or the error when there is none."""

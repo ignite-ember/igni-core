@@ -34,6 +34,7 @@ from pydantic import (
 )
 
 from igni_core.backend.schemas_workflows import WorkflowMeta, WorkflowRunIdentity, WorkflowRunPhase
+from igni_core.protocol.json_value import WireJson
 
 #: Per-agent timeout. 10 minutes matches ClaudeCode's default for one-shot
 #: agent calls; a workflow overrides it per call with ``timeoutSeconds``.
@@ -281,7 +282,7 @@ class WorkflowEventRecord(BaseModel):
     ts: int
     seq: int
     type: str
-    payload: dict[str, Any]
+    payload: dict[str, WireJson]
 
     @classmethod
     def from_event(

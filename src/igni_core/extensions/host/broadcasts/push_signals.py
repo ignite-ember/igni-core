@@ -116,7 +116,6 @@ class PushSignals:
         # as one, and a channel igni pushes that is not listed finds nothing.
         self._table: dict[str, PushHandler] = merged(
             {
-                PushChannel.ORCHESTRATE_PROGRESS: self._progress,
                 PushChannel.ORCHESTRATE_EVENT: self._orchestrate_event,
                 PushChannel.LOGIN_STATUS: lambda m: reads.account(m.session_id),
                 PushChannel.LOGIN_RESULT: lambda m: reads.account(m.session_id),
@@ -142,11 +141,6 @@ class PushSignals:
         handler = self._table.get(m.channel)
         if handler is not None:
             handler(m)
-
-    def _progress(self, m: msg.PushNotification) -> None:
-        self._emitter.send(
-            AgentEvent(session_id=m.session_id, kind="progress", payload=dict(m.payload))
-        )
 
     def _orchestrate_event(self, m: msg.PushNotification) -> None:
         delta = VisualizationDelta.model_validate(m.payload)

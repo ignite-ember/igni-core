@@ -291,8 +291,6 @@ BROADCAST_PARTS: dict[str, str] = {
 PUSH: dict[PushChannel, str] = {
     PushChannel.SCHEDULER_STARTED: "scheduler.event",
     PushChannel.SCHEDULER_COMPLETED: "scheduler.event",
-    PushChannel.SCHEDULER_EVENT: "scheduler.event",
-    PushChannel.ORCHESTRATE_PROGRESS: "chat.agent_event",
     PushChannel.ORCHESTRATE_EVENT: "chat.agent_event",
     PushChannel.LOGIN_STATUS: "account.changed",
     PushChannel.LOGIN_RESULT: "account.changed",

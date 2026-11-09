@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable, Iterable
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import jiter
 from pydantic import BaseModel, ConfigDict, Field
@@ -59,14 +59,14 @@ class _EventBase(BaseModel):
 
 
 class ToolStartedEvent(_EventBase):
-    type: str = Field(default="tool_started", frozen=True)
+    type: Literal["tool_started"] = Field(default="tool_started", frozen=True)
     tool: str
     tool_call_id: str | None = None
     args: str = ""
 
 
 class ToolCompletedEvent(_EventBase):
-    type: str = Field(default="tool_completed", frozen=True)
+    type: Literal["tool_completed"] = Field(default="tool_completed", frozen=True)
     tool: str
     tool_call_id: str | None = None
     result: str = ""
@@ -74,7 +74,7 @@ class ToolCompletedEvent(_EventBase):
 
 
 class AgentStartedEvent(_EventBase):
-    type: str = Field(default="agent_started", frozen=True)
+    type: Literal["agent_started"] = Field(default="agent_started", frozen=True)
     agent: str
     parent: str | None = None
     run_id: str | None = None
@@ -82,12 +82,12 @@ class AgentStartedEvent(_EventBase):
 
 
 class AgentPausedEvent(_EventBase):
-    type: str = Field(default="agent_paused", frozen=True)
+    type: Literal["agent_paused"] = Field(default="agent_paused", frozen=True)
     count: int = 1
 
 
 class AgentCompletedEvent(_EventBase):
-    type: str = Field(default="agent_completed", frozen=True)
+    type: Literal["agent_completed"] = Field(default="agent_completed", frozen=True)
     is_error: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
@@ -95,23 +95,23 @@ class AgentCompletedEvent(_EventBase):
 
 
 class RunErrorEvent(_EventBase):
-    type: str = Field(default="run_error", frozen=True)
+    type: Literal["run_error"] = Field(default="run_error", frozen=True)
     error: str
 
 
 class ContentPreviewEvent(_EventBase):
-    type: str = Field(default="content_preview", frozen=True)
+    type: Literal["content_preview"] = Field(default="content_preview", frozen=True)
     text: str
 
 
 class TaskCreatedEvent(_EventBase):
-    type: str = Field(default="task_created", frozen=True)
+    type: Literal["task_created"] = Field(default="task_created", frozen=True)
     title: str = ""
     assignee: str = ""
 
 
 class TaskUpdatedEvent(_EventBase):
-    type: str = Field(default="task_updated", frozen=True)
+    type: Literal["task_updated"] = Field(default="task_updated", frozen=True)
     status: str = ""
 
 
@@ -135,7 +135,7 @@ class VisualizationDeltaEvent(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    type: str = Field(default="visualization_delta", frozen=True)
+    type: Literal["visualization_delta"] = Field(default="visualization_delta", frozen=True)
     agent_path: str
     spec_id: str
     spec_json: str = Field(alias="json")

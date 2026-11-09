@@ -51,6 +51,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from igni_core.core.session.client_state import ClientStateStoreProtocol
 from igni_core.extensions.host.types import SchemaTypes
+from igni_core.protocol.json_value import WireJson
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,7 @@ class WindowChange(BaseModel):
 
     window: str
     field: str
-    value: Any = None
+    value: WireJson = None
     #: The window's revision after the change.
     rev: int
     #: The writer's token, echoed so the window that wrote it knows its
@@ -156,8 +157,8 @@ class WindowChange(BaseModel):
     #: ``toast_shown``, ``toast_dismissed``, ``dialog_opened``,
     #: ``dialog_closed`` — and to which one.
     event: str = ""
-    item: dict[str, Any] | None = None
-    answer: Any = None
+    item: dict[str, WireJson] | None = None
+    answer: WireJson = None
 
 
 class WindowRequest(BaseModel):

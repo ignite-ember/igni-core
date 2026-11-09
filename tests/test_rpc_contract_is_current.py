@@ -85,12 +85,54 @@ def test_no_message_carries_any_value(contract: dict[str, Any], message: type) -
     assert not loose, f"{wire} is not typed at: {loose}"
 
 
-def test_every_stream_is_a_message_or_a_push_channel(contract: dict[str, Any]) -> None:
+def test_every_stream_is_a_message_or_a_typed_push(contract: dict[str, Any]) -> None:
+    """A stream names a message the contract describes, or a push channel
+    whose payload it describes."""
     messages = set(contract["messages"])
-    channels = {f"push_notification:{c.value}" for c in PushChannel}
+    channels = {f"push_notification:{c}" for c in contract["push_channels"]}
     for method, entry in contract["methods"].items():
         unknown = set(entry["streams"]) - messages - channels
-        assert not unknown, f"{method} streams what the protocol does not have: {unknown}"
+        assert not unknown, f"{method} streams what the contract does not describe: {unknown}"
+
+
+def test_every_push_channel_has_a_payload(contract: dict[str, Any]) -> None:
+    assert set(contract["push_channels"]) == {c.value for c in PushChannel} - {"unknown"}
+
+
+@pytest.mark.parametrize("channel", sorted(c.value for c in PushChannel if c.value != "unknown"))
+def test_no_push_payload_carries_any_value(contract: dict[str, Any], channel: str) -> None:
+    entry = contract["push_channels"][channel]
+    assert entry["doc"].strip(), f"{channel} has no doc"
+    loose = list(_unconstrained(entry["schema"], contract["defs"], channel))
+    assert not loose, f"{channel}'s payload is not typed at: {loose}"
+
+
+def test_every_broadcast_event_is_its_channel_s_payload() -> None:
+    """A broadcast-bus event names its channel; the table must agree, or the
+    contract describes a payload nobody sends."""
+    import typing
+
+    import igni_core.backend.rpc_router  # noqa: F401  (imports every event's module)
+    from igni_core.backend.push_payloads import PUSH_PAYLOADS
+    from igni_core.core.broadcast_schema import BroadcastEvent, RunScopedBroadcastEvent
+
+    def concrete(cls: type) -> list[type]:
+        found = []
+        for sub in cls.__subclasses__():
+            found.extend(concrete(sub))
+            if sub is not RunScopedBroadcastEvent and not sub.__name__.startswith("_"):
+                found.append(sub)
+        return found
+
+    for event in concrete(BroadcastEvent):
+        if event.__module__.startswith("tests"):
+            continue
+        channel = PushChannel(event.model_fields["channel"].default)
+        assert channel is not PushChannel.UNKNOWN, f"{event.__name__} names no known channel"
+        model = PUSH_PAYLOADS[channel].model
+        assert event in (typing.get_args(model) or (model,)), (
+            f"{event.__name__} is sent on {channel.value} but is not its payload model"
+        )
 
 
 def test_every_message_says_which_way_it_travels(contract: dict[str, Any]) -> None:

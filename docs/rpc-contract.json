@@ -1,5 +1,56 @@
 {
   "defs": {
+    "AgentCompletedEvent": {
+      "properties": {
+        "agent_path": {
+          "title": "Agent Path",
+          "type": "string"
+        },
+        "card_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Id"
+        },
+        "input_tokens": {
+          "default": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "is_error": {
+          "default": false,
+          "title": "Is Error",
+          "type": "boolean"
+        },
+        "output_tokens": {
+          "default": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "default": 0,
+          "title": "Reasoning Tokens",
+          "type": "integer"
+        },
+        "type": {
+          "const": "agent_completed",
+          "default": "agent_completed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_path"
+      ],
+      "title": "AgentCompletedEvent",
+      "type": "object"
+    },
     "AgentInfo": {
       "description": "Wire format for one agent \u2014 emitted by\n:meth:`BackendServer.get_agent_details`, consumed by the\nagents panel.\n\nSub-set of :class:`AgentDefinition` adapted for JSON transport:\n``source_path`` is widened to ``str`` (Path doesn't serialize),\nand ``is_ephemeral`` is computed at the backend.",
       "properties": {
@@ -102,6 +153,42 @@
       "title": "AgentNameArgs",
       "type": "object"
     },
+    "AgentPausedEvent": {
+      "properties": {
+        "agent_path": {
+          "title": "Agent Path",
+          "type": "string"
+        },
+        "card_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Id"
+        },
+        "count": {
+          "default": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "type": {
+          "const": "agent_paused",
+          "default": "agent_paused",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_path"
+      ],
+      "title": "AgentPausedEvent",
+      "type": "object"
+    },
     "AgentRunArgs": {
       "description": "``cancel_agent_run``: the sub-agent run to stop (empty is refused\nby the controller).",
       "properties": {
@@ -112,6 +199,78 @@
         }
       },
       "title": "AgentRunArgs",
+      "type": "object"
+    },
+    "AgentStartedEvent": {
+      "properties": {
+        "agent": {
+          "title": "Agent",
+          "type": "string"
+        },
+        "agent_path": {
+          "title": "Agent Path",
+          "type": "string"
+        },
+        "card_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Id"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task"
+        },
+        "type": {
+          "const": "agent_started",
+          "default": "agent_started",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_path",
+        "agent"
+      ],
+      "title": "AgentStartedEvent",
       "type": "object"
     },
     "ApproverTokenMinted": {
@@ -211,6 +370,49 @@
         "project_dir"
       ],
       "title": "AttachSessionResult",
+      "type": "object"
+    },
+    "BackgroundProcessDonePayload": {
+      "description": "Channel ``background_process_done``. Best-effort ping so the\nUI can badge the watcher panel when a backgrounded shell command\nfinishes. The queue-injected assistant nudge carries the tail\noutput; this payload is a lightweight header.",
+      "properties": {
+        "cmd": {
+          "title": "Cmd",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Exit Code"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pid"
+        }
+      },
+      "required": [
+        "pid",
+        "cmd",
+        "exit_code",
+        "duration_seconds"
+      ],
+      "title": "BackgroundProcessDonePayload",
       "type": "object"
     },
     "BuiltinSlashCommand": {
@@ -661,6 +863,42 @@
         "is_thinking"
       ],
       "title": "ContentDelta",
+      "type": "object"
+    },
+    "ContentPreviewEvent": {
+      "properties": {
+        "agent_path": {
+          "title": "Agent Path",
+          "type": "string"
+        },
+        "card_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Id"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "content_preview",
+          "default": "content_preview",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_path",
+        "text"
+      ],
+      "title": "ContentPreviewEvent",
       "type": "object"
     },
     "ContextBreakdown": {
@@ -1375,6 +1613,30 @@
       "title": "ExtensionTool",
       "type": "object"
     },
+    "ExternalOpen": {
+      "description": "The ``open_external`` push: which window opens which link, for whom.",
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "window": {
+          "title": "Window",
+          "type": "string"
+        }
+      },
+      "required": [
+        "window",
+        "url",
+        "source"
+      ],
+      "title": "ExternalOpen",
+      "type": "object"
+    },
     "ExtractLearningsArgs": {
       "description": "``extract_learnings``: the turn's user and assistant messages.",
       "properties": {
@@ -1414,6 +1676,20 @@
         "total"
       ],
       "title": "FileCompletion",
+      "type": "object"
+    },
+    "FileEditedPayload": {
+      "description": "Channel ``file_edited``. Fired every time an edit tool writes\nto disk. A client with an editor buffer can refresh it; neither\nthe desktop app nor the web client acts on it today.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "FileEditedPayload",
       "type": "object"
     },
     "FloorNotification": {
@@ -1848,6 +2124,99 @@
       "title": "HookEntryView",
       "type": "object"
     },
+    "HostSignalPush": {
+      "description": "The ``host_signal`` push: one signal for one extension's pages.",
+      "properties": {
+        "extension_id": {
+          "title": "Extension Id",
+          "type": "string"
+        },
+        "signal": {
+          "title": "Signal",
+          "type": "string"
+        },
+        "value": {
+          "default": null,
+          "description": "Any JSON value.",
+          "title": "Value",
+          "type": [
+            "object",
+            "array",
+            "string",
+            "number",
+            "integer",
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "extension_id",
+        "signal",
+        "value"
+      ],
+      "title": "HostSignalPush",
+      "type": "object"
+    },
+    "HttpRetryAttemptEvent": {
+      "additionalProperties": false,
+      "description": "The ``http_retry_attempt`` broadcast, sent before each retry.",
+      "properties": {
+        "attempt": {
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "channel": {
+          "const": "http_retry_attempt",
+          "default": "http_retry_attempt",
+          "title": "Channel",
+          "type": "string"
+        },
+        "delay_seconds": {
+          "title": "Delay Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "channel",
+        "attempt",
+        "delay_seconds"
+      ],
+      "title": "HttpRetryAttemptEvent",
+      "type": "object"
+    },
+    "HttpRetrySucceededEvent": {
+      "additionalProperties": false,
+      "description": "The ``http_retry_succeeded`` broadcast, sent when a fetch\nsucceeds after at least one retry.",
+      "properties": {
+        "attempt_count": {
+          "title": "Attempt Count",
+          "type": "integer"
+        },
+        "channel": {
+          "const": "http_retry_succeeded",
+          "default": "http_retry_succeeded",
+          "title": "Channel",
+          "type": "string"
+        },
+        "delay_seconds": {
+          "title": "Delay Seconds",
+          "type": "number"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel",
+        "url",
+        "attempt_count",
+        "delay_seconds"
+      ],
+      "title": "HttpRetrySucceededEvent",
+      "type": "object"
+    },
     "Hydrated": {
       "description": "The whole model, its revision, and the fields nobody set.",
       "properties": {
@@ -2147,6 +2516,25 @@
       "title": "ListDirsArgs",
       "type": "object"
     },
+    "LoginResultPayload": {
+      "description": "Channel ``login_result``. Terminal result of a login attempt\n(success + reason string). Pushed after the RPC ack, once the\nAnthropic OAuth flow completes.",
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        },
+        "success": {
+          "title": "Success",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "result"
+      ],
+      "title": "LoginResultPayload",
+      "type": "object"
+    },
     "LoginStarted": {
       "description": "Wire shape for the ``login`` RPC \u2014 one-field ack that a login\ntask is now in flight; the actual result arrives asynchronously\nvia a ``login_result`` push notification.",
       "properties": {
@@ -2159,6 +2547,20 @@
         "started"
       ],
       "title": "LoginStarted",
+      "type": "object"
+    },
+    "LoginStatusPayload": {
+      "description": "Channel ``login_status``. Human-readable status text streamed\nwhile a login attempt is in flight.",
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "LoginStatusPayload",
       "type": "object"
     },
     "LoopAdvance": {
@@ -3153,6 +3555,19 @@
       "title": "NotificationTarget",
       "type": "object"
     },
+    "NotificationsChanged": {
+      "description": "The ``notifications_changed`` push: the counts moved.",
+      "properties": {
+        "counts": {
+          "$ref": "#/defs/NotificationCounts"
+        }
+      },
+      "required": [
+        "counts"
+      ],
+      "title": "NotificationsChanged",
+      "type": "object"
+    },
     "NotificationsListResult": {
       "description": "``notifications_list``: both paths, newest first, and the counts.",
       "properties": {
@@ -3210,6 +3625,33 @@
       ],
       "title": "Op",
       "type": "string"
+    },
+    "OutputStyleChangedEvent": {
+      "additionalProperties": false,
+      "description": "The ``output_style_changed`` broadcast, emitted by\n:meth:`RuntimeModeCoordinator.set_output_style` after the\nactive style has been swapped. The FE refreshes the status\nchip that shows the active style without polling.",
+      "properties": {
+        "channel": {
+          "const": "output_style_changed",
+          "default": "output_style_changed",
+          "title": "Channel",
+          "type": "string"
+        },
+        "previous": {
+          "title": "Previous",
+          "type": "string"
+        },
+        "style": {
+          "title": "Style",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel",
+        "style",
+        "previous"
+      ],
+      "title": "OutputStyleChangedEvent",
+      "type": "object"
     },
     "OutputStyleInfo": {
       "description": "One output-style entry in :attr:`OutputStylesResult.styles`.",
@@ -3425,6 +3867,43 @@
       "title": "PendingMessage",
       "type": "object"
     },
+    "PermissionMode": {
+      "description": "Top-level permission posture for a session.\n\nDefaults to ``DEFAULT``. ``DONT_ASK`` is the headless/CI mode\n(never prompt, deny unmatched). ``ACCEPT_EDITS`` auto-approves\nfile mutation tools. ``BYPASS_PERMISSIONS`` runs without\nprompts unless an explicit deny / ask rule matches.\n``PLAN`` forbids source edits entirely.",
+      "enum": [
+        "default",
+        "dontAsk",
+        "acceptEdits",
+        "bypassPermissions",
+        "plan"
+      ],
+      "title": "PermissionMode",
+      "type": "string"
+    },
+    "PermissionModeChangedEvent": {
+      "additionalProperties": false,
+      "description": "The ``permission_mode_changed`` broadcast, emitted by\n:meth:`RuntimeModeCoordinator.set_permission_mode` after the\nlive :class:`PermissionEvaluator` mode flip.",
+      "properties": {
+        "channel": {
+          "const": "permission_mode_changed",
+          "default": "permission_mode_changed",
+          "title": "Channel",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/defs/PermissionMode"
+        },
+        "previous": {
+          "$ref": "#/defs/PermissionMode"
+        }
+      },
+      "required": [
+        "channel",
+        "mode",
+        "previous"
+      ],
+      "title": "PermissionModeChangedEvent",
+      "type": "object"
+    },
     "PickDirArgs": {
       "description": "``pick_dir_native``: where the OS picker opens (the project folder\nwhen absent or empty).",
       "properties": {
@@ -3466,6 +3945,32 @@
         "error"
       ],
       "title": "PickDirResult",
+      "type": "object"
+    },
+    "PlanDecidedEvent": {
+      "additionalProperties": false,
+      "description": "The ``plan_decided`` broadcast. The FE listens on this\nchannel to flip the plan card from pending to\napproved/dismissed.",
+      "properties": {
+        "channel": {
+          "const": "plan_decided",
+          "default": "plan_decided",
+          "title": "Channel",
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/defs/PlanDecision"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel",
+        "run_id",
+        "decision"
+      ],
+      "title": "PlanDecidedEvent",
       "type": "object"
     },
     "PlanDecision": {
@@ -3520,6 +4025,49 @@
       "title": "PlanDecisionResult",
       "type": "object"
     },
+    "PlanModeEnteredEvent": {
+      "additionalProperties": false,
+      "description": "The ``permission_mode_changed`` broadcast the plan tool fires\nafter switching into plan mode. The base flip is already\nbroadcast by :class:`RuntimeModeCoordinator`; this follow-up\ncarries the agent-attribution + reason string the FE renders as\na small banner.",
+      "properties": {
+        "channel": {
+          "const": "permission_mode_changed",
+          "default": "permission_mode_changed",
+          "title": "Channel",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "default",
+            "plan",
+            "acceptEdits",
+            "bypassPermissions"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "agent",
+            "user"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel",
+        "mode",
+        "source",
+        "reason"
+      ],
+      "title": "PlanModeEnteredEvent",
+      "type": "object"
+    },
     "PlanRunArgs": {
       "additionalProperties": false,
       "description": "``approve_plan`` / ``dismiss_plan``: the run that submitted the plan.\nEmpty is refused in the answer (``ok: false``), not as an argument; a\nnumber is taken as its string.",
@@ -3531,6 +4079,48 @@
         }
       },
       "title": "PlanRunArgs",
+      "type": "object"
+    },
+    "PlanSubmittedEvent": {
+      "additionalProperties": false,
+      "description": "The ``plan_submitted`` broadcast queued by\n:meth:`PlanTool.exit_plan_mode`. ``tasks`` rides along so\nthe FE seeds the PlanCard checklist on first render \u2014 later\n``todos_updated`` pushes refresh statuses live.\n\nThe rows are :class:`TodoItemWire` checklist rows \u2014 the same\nshape the ``todos_updated`` broadcast carries, so the FE reads\none row type for both channels.",
+      "properties": {
+        "channel": {
+          "const": "plan_submitted",
+          "default": "plan_submitted",
+          "title": "Channel",
+          "type": "string"
+        },
+        "plan": {
+          "title": "Plan",
+          "type": "string"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/defs/TodoItemWire"
+          },
+          "title": "Tasks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "channel",
+        "plan",
+        "tasks"
+      ],
+      "title": "PlanSubmittedEvent",
       "type": "object"
     },
     "PlanTurn": {
@@ -3986,6 +4576,96 @@
       "title": "ProcessArgs",
       "type": "object"
     },
+    "ProcessExitedPayload": {
+      "description": "Channel ``process_exited``. A background process finished \u2014\nthe watcher panel flips its status pill.",
+      "properties": {
+        "cmd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cmd"
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Duration Seconds"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Exit Code"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pid"
+        }
+      },
+      "required": [
+        "pid",
+        "cmd",
+        "exit_code",
+        "duration_seconds"
+      ],
+      "title": "ProcessExitedPayload",
+      "type": "object"
+    },
+    "ProcessLinePayload": {
+      "description": "Channel ``process_line``. One line of stdout/stderr from a\nrunning background process (streamed live to the watcher panel).",
+      "properties": {
+        "line": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Line"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pid"
+        }
+      },
+      "required": [
+        "pid",
+        "line"
+      ],
+      "title": "ProcessLinePayload",
+      "type": "object"
+    },
     "ProcessRow": {
       "description": "One row of :meth:`ProcessesController.list`.\n\n``is_running`` / ``exit_code`` default to \"running\" so an older\nclient that predates them \u2014 and the test fixtures that build rows\nby hand \u2014 read a listed row the way they always did.",
       "properties": {
@@ -4027,6 +4707,51 @@
         "exit_code"
       ],
       "title": "ProcessRow",
+      "type": "object"
+    },
+    "ProcessStartedPayload": {
+      "description": "Channel ``process_started``. Emitted when the shell tool\nlaunches a new background process.",
+      "properties": {
+        "cmd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cmd"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pid"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Started At"
+        }
+      },
+      "required": [
+        "pid",
+        "cmd",
+        "started_at"
+      ],
+      "title": "ProcessStartedPayload",
       "type": "object"
     },
     "ProcessTailArgs": {
@@ -4744,6 +5469,42 @@
       "title": "RunError",
       "type": "object"
     },
+    "RunErrorEvent": {
+      "properties": {
+        "agent_path": {
+          "title": "Agent Path",
+          "type": "string"
+        },
+        "card_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Id"
+        },
+        "error": {
+          "title": "Error",
+          "type": "string"
+        },
+        "type": {
+          "const": "run_error",
+          "default": "run_error",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_path",
+        "error"
+      ],
+      "title": "RunErrorEvent",
+      "type": "object"
+    },
     "RunPaused": {
       "description": "Run paused for HITL \u2014 wraps hitl_request with run context.",
       "properties": {
@@ -4993,6 +5754,30 @@
       "title": "ScheduledTasksArgs",
       "type": "object"
     },
+    "SchedulerCompletedPayload": {
+      "description": "Channel ``scheduler_completed``. Terminal result of a\nscheduled task's execution.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "result": {
+          "title": "Result",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "description",
+        "result"
+      ],
+      "title": "SchedulerCompletedPayload",
+      "type": "object"
+    },
     "SchedulerEvent": {
       "description": "Notification about a scheduled task.\n\n``event_type`` stays a raw ``str`` on the wire; producers\nSHOULD use :class:`SchedulerEventType` members (``STARTED`` /\n``COMPLETED`` / ``FAILED`` / ``ERROR``). Kept as ``str`` for\nforward-compat with any un-enumerated event kind Agno / a\nfuture scheduler emits.",
       "properties": {
@@ -5049,6 +5834,25 @@
         "result"
       ],
       "title": "SchedulerEvent",
+      "type": "object"
+    },
+    "SchedulerStartedPayload": {
+      "description": "Channel ``scheduler_started``. The scheduled-task runner just\npicked up a task and started executing it.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "description"
+      ],
+      "title": "SchedulerStartedPayload",
       "type": "object"
     },
     "SearchChatArgs": {
@@ -5609,6 +6413,25 @@
         "sessions"
       ],
       "title": "SessionListResult",
+      "type": "object"
+    },
+    "SessionNamedPayload": {
+      "description": "Channel ``session_named``. The BE picked an auto-generated\ndisplay name for a freshly-created session.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "name"
+      ],
+      "title": "SessionNamedPayload",
       "type": "object"
     },
     "SessionSwitch": {
@@ -6189,6 +7012,47 @@
       "title": "TaskCreated",
       "type": "object"
     },
+    "TaskCreatedEvent": {
+      "properties": {
+        "agent_path": {
+          "title": "Agent Path",
+          "type": "string"
+        },
+        "assignee": {
+          "default": "",
+          "title": "Assignee",
+          "type": "string"
+        },
+        "card_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Id"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "const": "task_created",
+          "default": "task_created",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_path"
+      ],
+      "title": "TaskCreatedEvent",
+      "type": "object"
+    },
     "TaskIteration": {
       "description": "Task iteration progress.",
       "properties": {
@@ -6374,6 +7238,42 @@
       "title": "TaskUpdated",
       "type": "object"
     },
+    "TaskUpdatedEvent": {
+      "properties": {
+        "agent_path": {
+          "title": "Agent Path",
+          "type": "string"
+        },
+        "card_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Id"
+        },
+        "status": {
+          "default": "",
+          "title": "Status",
+          "type": "string"
+        },
+        "type": {
+          "const": "task_updated",
+          "default": "task_updated",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_path"
+      ],
+      "title": "TaskUpdatedEvent",
+      "type": "object"
+    },
     "ThinkingTurn": {
       "description": "A synthesized ``thinking`` card \u2014 either from Agno's\n``reasoning_content`` sidecar or from an inline ``<think>``\nblock in the assistant content.",
       "properties": {
@@ -6466,6 +7366,31 @@
         "activeForm"
       ],
       "title": "TodoItemWire",
+      "type": "object"
+    },
+    "TodosUpdatedEvent": {
+      "additionalProperties": false,
+      "description": "The ``todos_updated`` broadcast: the full todo snapshot in\nits :class:`TodoItemWire` camelCase shape.",
+      "properties": {
+        "channel": {
+          "const": "todos_updated",
+          "default": "todos_updated",
+          "title": "Channel",
+          "type": "string"
+        },
+        "todos": {
+          "items": {
+            "$ref": "#/defs/TodoItemWire"
+          },
+          "title": "Todos",
+          "type": "array"
+        }
+      },
+      "required": [
+        "channel",
+        "todos"
+      ],
+      "title": "TodosUpdatedEvent",
       "type": "object"
     },
     "ToolCallArgs": {
@@ -6609,6 +7534,64 @@
       "title": "ToolCompleted",
       "type": "object"
     },
+    "ToolCompletedEvent": {
+      "properties": {
+        "agent_path": {
+          "title": "Agent Path",
+          "type": "string"
+        },
+        "card_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Id"
+        },
+        "is_error": {
+          "default": false,
+          "title": "Is Error",
+          "type": "boolean"
+        },
+        "result": {
+          "default": "",
+          "title": "Result",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Call Id"
+        },
+        "type": {
+          "const": "tool_completed",
+          "default": "tool_completed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_path",
+        "tool"
+      ],
+      "title": "ToolCompletedEvent",
+      "type": "object"
+    },
     "ToolError": {
       "description": "A tool call failed.",
       "properties": {
@@ -6723,6 +7706,59 @@
         "args_summary"
       ],
       "title": "ToolStarted",
+      "type": "object"
+    },
+    "ToolStartedEvent": {
+      "properties": {
+        "agent_path": {
+          "title": "Agent Path",
+          "type": "string"
+        },
+        "args": {
+          "default": "",
+          "title": "Args",
+          "type": "string"
+        },
+        "card_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Id"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Call Id"
+        },
+        "type": {
+          "const": "tool_started",
+          "default": "tool_started",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_path",
+        "tool"
+      ],
+      "title": "ToolStartedEvent",
       "type": "object"
     },
     "ToolTurn": {
@@ -7173,6 +8209,36 @@
       "title": "VisualizationActionArgs",
       "type": "object"
     },
+    "VisualizationActionDispatchedEvent": {
+      "additionalProperties": false,
+      "description": "The ``visualization_action_dispatched`` broadcast, so log panels\nand dev tools can observe component interactions.",
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "channel": {
+          "const": "visualization_action_dispatched",
+          "default": "visualization_action_dispatched",
+          "title": "Channel",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/defs/JsonValue"
+          },
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "channel",
+        "action",
+        "params"
+      ],
+      "title": "VisualizationActionDispatchedEvent",
+      "type": "object"
+    },
     "VisualizationActionResult": {
       "description": "Wire shape for :meth:`VisualizationActionBus.dispatch` \u2014\nthe FE's tool result echo of the action name + user-supplied\nparams so it can render \"you clicked X\" in the conversation.",
       "properties": {
@@ -7198,6 +8264,49 @@
         "params"
       ],
       "title": "VisualizationActionResult",
+      "type": "object"
+    },
+    "VisualizationDeltaPayload": {
+      "description": "The payload of a ``visualization_delta`` entry: the viz card.\n\nSubclasses the wire event the visualizer and the extensions send,\nso the log keeps one shape for a card; the two additions are the\nlabels an extension's ``chat.append`` puts on its block \u2014 the\ncard's ``title`` and the extension's id as ``source``. The\nvisualizer sends neither, so both read empty.\n\n``final`` defaults to ``True`` here (the wire event defaults to\n``False``): a payload without the key means \"the card is\ncomplete\", which is the convention the view list and the history\nsplicer have always read. The card's own fields default too \u2014 a\nproducer that sends a partial card is logged as it sent it, and\nthe readers skip what they can't use.",
+      "properties": {
+        "agent_path": {
+          "default": "",
+          "title": "Agent Path",
+          "type": "string"
+        },
+        "final": {
+          "default": true,
+          "title": "Final",
+          "type": "boolean"
+        },
+        "json": {
+          "default": "",
+          "title": "Json",
+          "type": "string"
+        },
+        "source": {
+          "default": "",
+          "title": "Source",
+          "type": "string"
+        },
+        "spec_id": {
+          "default": "",
+          "title": "Spec Id",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "const": "visualization_delta",
+          "default": "visualization_delta",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "title": "VisualizationDeltaPayload",
       "type": "object"
     },
     "VisualizationTurn": {
@@ -7360,6 +8469,97 @@
       "title": "Welcome",
       "type": "object"
     },
+    "WindowChange": {
+      "description": "One change to one window's model, as listeners are told it.",
+      "properties": {
+        "answer": {
+          "default": null,
+          "description": "Any JSON value.",
+          "title": "Answer",
+          "type": [
+            "object",
+            "array",
+            "string",
+            "number",
+            "integer",
+            "boolean",
+            "null"
+          ]
+        },
+        "event": {
+          "default": "",
+          "title": "Event",
+          "type": "string"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "description": "Any JSON value.",
+                "type": [
+                  "object",
+                  "array",
+                  "string",
+                  "number",
+                  "integer",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item"
+        },
+        "rev": {
+          "title": "Rev",
+          "type": "integer"
+        },
+        "token": {
+          "default": "",
+          "title": "Token",
+          "type": "string"
+        },
+        "value": {
+          "default": null,
+          "description": "Any JSON value.",
+          "title": "Value",
+          "type": [
+            "object",
+            "array",
+            "string",
+            "number",
+            "integer",
+            "boolean",
+            "null"
+          ]
+        },
+        "window": {
+          "title": "Window",
+          "type": "string"
+        }
+      },
+      "required": [
+        "window",
+        "field",
+        "value",
+        "rev",
+        "token",
+        "event",
+        "item",
+        "answer"
+      ],
+      "title": "WindowChange",
+      "type": "object"
+    },
     "WindowModelArgs": {
       "additionalProperties": false,
       "description": "``window_model``: one window reading or writing its own model.",
@@ -7451,6 +8651,58 @@
         "workflow_run_id"
       ],
       "title": "WorkflowCancelResponse",
+      "type": "object"
+    },
+    "WorkflowEventRecord": {
+      "additionalProperties": false,
+      "description": "One workflow event as the session log stores it and the frontend\nreceives it on the ``workflow_event`` push channel.\n\n``payload`` is the runtime's payload, forwarded as-is, or a dumped\n:class:`SyntheticTerminalPayload`.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": {
+            "description": "Any JSON value.",
+            "type": [
+              "object",
+              "array",
+              "string",
+              "number",
+              "integer",
+              "boolean",
+              "null"
+            ]
+          },
+          "title": "Payload",
+          "type": "object"
+        },
+        "seq": {
+          "title": "Seq",
+          "type": "integer"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "integer"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "workflow_run_id": {
+          "title": "Workflow Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow_run_id",
+        "name",
+        "ts",
+        "seq",
+        "type",
+        "payload"
+      ],
+      "title": "WorkflowEventRecord",
       "type": "object"
     },
     "WorkflowListItem": {
@@ -9819,6 +11071,404 @@
         "push_notification:window_model_changed"
       ],
       "summary": "Read or change the calling window's own model: its fields, toasts and dialog."
+    }
+  },
+  "push_channels": {
+    "background_process_done": {
+      "doc": "A background process finished, as the agent is told.",
+      "schema": {
+        "$ref": "#/defs/BackgroundProcessDonePayload"
+      }
+    },
+    "file_edited": {
+      "doc": "An edit tool wrote a file.",
+      "schema": {
+        "$ref": "#/defs/FileEditedPayload"
+      }
+    },
+    "host_signal": {
+      "doc": "A host-model signal for one extension's pages.",
+      "schema": {
+        "$ref": "#/defs/HostSignalPush"
+      }
+    },
+    "http_retry_attempt": {
+      "doc": "A web fetch is about to be retried.",
+      "schema": {
+        "additionalProperties": false,
+        "description": "The ``http_retry_attempt`` broadcast, sent before each retry.",
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "delay_seconds": {
+            "title": "Delay Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "attempt",
+          "delay_seconds"
+        ],
+        "title": "HttpRetryAttemptEvent",
+        "type": "object"
+      }
+    },
+    "http_retry_succeeded": {
+      "doc": "A web fetch succeeded after retrying.",
+      "schema": {
+        "additionalProperties": false,
+        "description": "The ``http_retry_succeeded`` broadcast, sent when a fetch\nsucceeds after at least one retry.",
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "delay_seconds": {
+            "title": "Delay Seconds",
+            "type": "number"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "attempt_count",
+          "delay_seconds"
+        ],
+        "title": "HttpRetrySucceededEvent",
+        "type": "object"
+      }
+    },
+    "login_result": {
+      "doc": "How a sign-in started by ``login`` ended.",
+      "schema": {
+        "$ref": "#/defs/LoginResultPayload"
+      }
+    },
+    "login_status": {
+      "doc": "What a sign-in started by ``login`` is doing now.",
+      "schema": {
+        "$ref": "#/defs/LoginStatusPayload"
+      }
+    },
+    "notifications_changed": {
+      "doc": "The person's unread notification counts moved.",
+      "schema": {
+        "$ref": "#/defs/NotificationsChanged"
+      }
+    },
+    "open_external": {
+      "doc": "An extension asked a window to open a link in the browser.",
+      "schema": {
+        "$ref": "#/defs/ExternalOpen"
+      }
+    },
+    "orchestrate_event": {
+      "doc": "A sub-agent's progress (a tool call, its start, pause, end or error, a task) or a view the agent or an extension drew, told apart by ``type``.",
+      "schema": {
+        "discriminator": {
+          "mapping": {
+            "agent_completed": "#/defs/AgentCompletedEvent",
+            "agent_paused": "#/defs/AgentPausedEvent",
+            "agent_started": "#/defs/AgentStartedEvent",
+            "content_preview": "#/defs/ContentPreviewEvent",
+            "run_error": "#/defs/RunErrorEvent",
+            "task_created": "#/defs/TaskCreatedEvent",
+            "task_updated": "#/defs/TaskUpdatedEvent",
+            "tool_completed": "#/defs/ToolCompletedEvent",
+            "tool_started": "#/defs/ToolStartedEvent",
+            "visualization_delta": "#/defs/VisualizationDeltaPayload"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/defs/ToolStartedEvent"
+          },
+          {
+            "$ref": "#/defs/ToolCompletedEvent"
+          },
+          {
+            "$ref": "#/defs/AgentStartedEvent"
+          },
+          {
+            "$ref": "#/defs/AgentPausedEvent"
+          },
+          {
+            "$ref": "#/defs/AgentCompletedEvent"
+          },
+          {
+            "$ref": "#/defs/RunErrorEvent"
+          },
+          {
+            "$ref": "#/defs/ContentPreviewEvent"
+          },
+          {
+            "$ref": "#/defs/TaskCreatedEvent"
+          },
+          {
+            "$ref": "#/defs/TaskUpdatedEvent"
+          },
+          {
+            "$ref": "#/defs/VisualizationDeltaPayload"
+          }
+        ]
+      }
+    },
+    "output_style_changed": {
+      "doc": "The session's output style changed.",
+      "schema": {
+        "additionalProperties": false,
+        "description": "The ``output_style_changed`` broadcast, emitted by\n:meth:`RuntimeModeCoordinator.set_output_style` after the\nactive style has been swapped. The FE refreshes the status\nchip that shows the active style without polling.",
+        "properties": {
+          "previous": {
+            "title": "Previous",
+            "type": "string"
+          },
+          "style": {
+            "title": "Style",
+            "type": "string"
+          }
+        },
+        "required": [
+          "style",
+          "previous"
+        ],
+        "title": "OutputStyleChangedEvent",
+        "type": "object"
+      }
+    },
+    "permission_mode_changed": {
+      "doc": "The session's permission mode changed: the switch itself (``mode`` and ``previous``), or the plan tool's note that the agent entered plan mode (``mode``, ``source``, ``reason``).",
+      "schema": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "description": "The ``permission_mode_changed`` broadcast, emitted by\n:meth:`RuntimeModeCoordinator.set_permission_mode` after the\nlive :class:`PermissionEvaluator` mode flip.",
+            "properties": {
+              "mode": {
+                "$ref": "#/defs/PermissionMode"
+              },
+              "previous": {
+                "$ref": "#/defs/PermissionMode"
+              }
+            },
+            "required": [
+              "mode",
+              "previous"
+            ],
+            "title": "PermissionModeChangedEvent",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "The ``permission_mode_changed`` broadcast the plan tool fires\nafter switching into plan mode. The base flip is already\nbroadcast by :class:`RuntimeModeCoordinator`; this follow-up\ncarries the agent-attribution + reason string the FE renders as\na small banner.",
+            "properties": {
+              "mode": {
+                "enum": [
+                  "default",
+                  "plan",
+                  "acceptEdits",
+                  "bypassPermissions"
+                ],
+                "title": "Mode",
+                "type": "string"
+              },
+              "reason": {
+                "default": "",
+                "title": "Reason",
+                "type": "string"
+              },
+              "source": {
+                "enum": [
+                  "agent",
+                  "user"
+                ],
+                "title": "Source",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "source",
+              "reason"
+            ],
+            "title": "PlanModeEnteredEvent",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "plan_decided": {
+      "doc": "A submitted plan was approved or dismissed.",
+      "schema": {
+        "additionalProperties": false,
+        "description": "The ``plan_decided`` broadcast. The FE listens on this\nchannel to flip the plan card from pending to\napproved/dismissed.",
+        "properties": {
+          "decision": {
+            "$ref": "#/defs/PlanDecision"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "decision"
+        ],
+        "title": "PlanDecidedEvent",
+        "type": "object"
+      }
+    },
+    "plan_submitted": {
+      "doc": "The agent submitted a plan for the person to decide on.",
+      "schema": {
+        "additionalProperties": false,
+        "description": "The ``plan_submitted`` broadcast queued by\n:meth:`PlanTool.exit_plan_mode`. ``tasks`` rides along so\nthe FE seeds the PlanCard checklist on first render \u2014 later\n``todos_updated`` pushes refresh statuses live.\n\nThe rows are :class:`TodoItemWire` checklist rows \u2014 the same\nshape the ``todos_updated`` broadcast carries, so the FE reads\none row type for both channels.",
+        "properties": {
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/defs/TodoItemWire"
+            },
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plan",
+          "tasks"
+        ],
+        "title": "PlanSubmittedEvent",
+        "type": "object"
+      }
+    },
+    "process_exited": {
+      "doc": "A background process exited.",
+      "schema": {
+        "$ref": "#/defs/ProcessExitedPayload"
+      }
+    },
+    "process_line": {
+      "doc": "A background process printed a line.",
+      "schema": {
+        "$ref": "#/defs/ProcessLinePayload"
+      }
+    },
+    "process_started": {
+      "doc": "A background process started.",
+      "schema": {
+        "$ref": "#/defs/ProcessStartedPayload"
+      }
+    },
+    "scheduler_completed": {
+      "doc": "A scheduled task finished: its result, or why it failed.",
+      "schema": {
+        "$ref": "#/defs/SchedulerCompletedPayload"
+      }
+    },
+    "scheduler_started": {
+      "doc": "A scheduled task started running.",
+      "schema": {
+        "$ref": "#/defs/SchedulerStartedPayload"
+      }
+    },
+    "session_named": {
+      "doc": "A session was given a name.",
+      "schema": {
+        "$ref": "#/defs/SessionNamedPayload"
+      }
+    },
+    "todos_updated": {
+      "doc": "The agent's to-do list, whole, after it changed.",
+      "schema": {
+        "additionalProperties": false,
+        "description": "The ``todos_updated`` broadcast: the full todo snapshot in\nits :class:`TodoItemWire` camelCase shape.",
+        "properties": {
+          "todos": {
+            "items": {
+              "$ref": "#/defs/TodoItemWire"
+            },
+            "title": "Todos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "todos"
+        ],
+        "title": "TodosUpdatedEvent",
+        "type": "object"
+      }
+    },
+    "visualization_action_dispatched": {
+      "doc": "The person used a control in a view.",
+      "schema": {
+        "additionalProperties": false,
+        "description": "The ``visualization_action_dispatched`` broadcast, so log panels\nand dev tools can observe component interactions.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": {
+              "$ref": "#/defs/JsonValue"
+            },
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "action",
+          "params"
+        ],
+        "title": "VisualizationActionDispatchedEvent",
+        "type": "object"
+      }
+    },
+    "vm_credential": {
+      "doc": "A cloud VM's own credential changed state.",
+      "schema": {
+        "$ref": "#/defs/VmCredentialState"
+      }
+    },
+    "window_model_changed": {
+      "doc": "A window's model changed; the window it names applies it.",
+      "schema": {
+        "$ref": "#/defs/WindowChange"
+      }
+    },
+    "workflow_event": {
+      "doc": "One step of a running workflow, keyed by its run id.",
+      "schema": {
+        "$ref": "#/defs/WorkflowEventRecord"
+      }
+    },
+    "workspace_trust_required": {
+      "doc": "A folder's trust status: windows showing the trust dialog for it close it, or open it while ``state`` is ``ask``.",
+      "schema": {
+        "$ref": "#/defs/WorkspaceTrustStatus"
+      }
     }
   },
   "version": 1

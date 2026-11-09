@@ -80,7 +80,7 @@ class SchedulerSignal(Signal):
 class TaskSignals:
     """Translates the task and scheduler traffic."""
 
-    #: The scheduler pushes whose kind is their channel's; ``scheduler_event`` names its own.
+    #: The scheduler pushes, by the kind each one tells.
     SCHEDULER_KINDS: ClassVar[dict[PushChannel, str]] = {
         PushChannel.SCHEDULER_STARTED: "started",
         PushChannel.SCHEDULER_COMPLETED: "completed",
@@ -102,13 +102,12 @@ class TaskSignals:
         return {
             PushChannel.SCHEDULER_STARTED: self.scheduler,
             PushChannel.SCHEDULER_COMPLETED: self.scheduler,
-            PushChannel.SCHEDULER_EVENT: self.scheduler,
             PushChannel.TODOS_UPDATED: self.todos,
         }
 
     def scheduler(self, m: msg.PushNotification) -> None:
         push = SchedulerPush.model_validate(m.payload)
-        kind = self.SCHEDULER_KINDS.get(PushChannel(m.channel), push.event_type)
+        kind = self.SCHEDULER_KINDS[PushChannel(m.channel)]
         self._emitter.send(SchedulerSignal.from_push(kind, push))
 
     def todos(self, m: msg.PushNotification) -> None:
