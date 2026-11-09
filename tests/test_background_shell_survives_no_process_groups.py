@@ -15,7 +15,7 @@ the guards that were there did not help:
   ``ESC`` stopped cancelling the foreground command, ``stop_process``
   stopped stopping, and ``ProcessRegistry.kill_all`` aborted mid-loop at
   BE shutdown with the pid map left uncleared.
-* ``ProcessRegistry._persist_add`` wrapped it in
+* The registry's persist-on-announce step wrapped it in
   ``try/except (ProcessLookupError, OSError)``. Same miss, and this one
   is on the *spawn* path: it is called from ``announce_start``, so
   ``background=True`` — the path the shell tool's docstring says you
@@ -38,6 +38,11 @@ import pytest
 
 from igni_core.core.tools.managed_process import ManagedProcess, process_group_of
 from igni_core.core.tools.process_registry import ProcessRegistry
+from igni_core.core.tools.process_store_schemas import (
+    BackgroundProcessRow,
+    RemoveResult,
+    UpsertResult,
+)
 
 
 @pytest.fixture
@@ -142,17 +147,37 @@ class TestProcessGroupOf:
 class TestBackgroundSpawnPersist:
     def test_announce_start_survives_a_missing_getpgid(self, no_process_groups):
         """The background-spawn hole. ``announce_start`` →
-        ``_persist_add`` → ``os.getpgid`` raised past an
+        persist-on-announce → ``os.getpgid`` raised past an
         ``except (ProcessLookupError, OSError)`` and up through
         ``ProcessSupervisor.run_backgrounded``, so no server, build, or
         watcher could be started at all. The row is persisted with
         ``pgid=None``, which is the honest value where there are no
         process groups."""
-        rows: list[object] = []
+        rows: list[BackgroundProcessRow] = []
 
         class _Store:
-            async def upsert(self, row):
+            """The store seam the registry writes through.
+
+            Implements the whole persistence contract, so the registry
+            has no fallback path that would let a missing method hide
+            a failure.
+            """
+
+            async def upsert(self, row: BackgroundProcessRow) -> UpsertResult:
                 rows.append(row)
+                return UpsertResult(ok=True)
+
+            async def remove(self, pid: int) -> RemoveResult:
+                return RemoveResult(ok=True)
+
+            async def finish(
+                self,
+                pid: int,
+                exit_code: int | None,
+                *,
+                row: BackgroundProcessRow | None = None,
+            ) -> UpsertResult:
+                return UpsertResult(ok=True)
 
         registry = ProcessRegistry(persistence=_Store())
         mp = _managed(_Proc(pid=777))

@@ -393,8 +393,8 @@ class IgniShellTools(Toolkit):
             return "No background processes running."
 
         lines = ["PID    | Elapsed | Command", "-------+---------+--------"]
-        for pid, cmd, elapsed in running:
-            lines.append(f"{pid:<6} | {elapsed:>5.0f}s  | {cmd}")
+        for row in running:
+            lines.append(f"{row.pid:<6} | {row.elapsed_seconds:>5.0f}s  | {row.cmd}")
         return "\n".join(lines)
 
     @staticmethod

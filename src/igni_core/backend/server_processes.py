@@ -67,13 +67,13 @@ class ProcessesController:
         """
         return [
             ProcessRow(
-                pid=pid,
-                cmd=cmd,
-                elapsed_seconds=elapsed,
-                is_running=running,
-                exit_code=exit_code,
+                pid=row.pid,
+                cmd=row.cmd,
+                elapsed_seconds=row.elapsed_seconds,
+                is_running=row.is_running,
+                exit_code=row.exit_code,
             )
-            for pid, cmd, elapsed, running, exit_code in self._supervisor.registry.all_known()
+            for row in self._supervisor.registry.all_known()
         ]
 
     def read_tail(self, pid: int, tail: int = 200) -> ProcessTailResult:
@@ -121,8 +121,10 @@ class ProcessesController:
             self._supervisor.registry.remove(pid)
             return StopProcessResult(pid=pid, killed=True, message=f"pid {pid} killed")
         # Live-process path — await the reader task so the final
-        # tail is flushed before the caller reads back.
-        reader = getattr(mp, "_reader_task", None)
+        # tail is flushed before the caller reads back. The task is
+        # part of the tracked-process contract, so this asks the
+        # process rather than reaching for its private slot.
+        reader = mp.reader_task
         if reader is not None:
             with contextlib.suppress(asyncio.TimeoutError, Exception):
                 await asyncio.wait_for(reader, timeout=2.0)

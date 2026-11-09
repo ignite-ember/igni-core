@@ -32,8 +32,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import signal
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -48,12 +46,10 @@ from igni_core.core.tools.orphan_rehydrator import (
     OrphanRehydrator,
     build_rehydrator,
 )
+from igni_core.core.tools.process_persistence import ProcessPersistenceWriter
 from igni_core.core.tools.process_registry import ProcessRegistry
-from igni_core.core.tools.process_store import (
-    BackgroundProcessRow,
-    BackgroundProcessStore,
-)
-from igni_core.core.tools.process_store_schemas import UpsertResult
+from igni_core.core.tools.process_store import BackgroundProcessStore
+from igni_core.core.tools.process_store_schemas import BackgroundProcessRow, UpsertResult
 from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.core.tools.shell_orphan import (
     rehydrate_orphan_processes,
@@ -180,14 +176,14 @@ class TestOrphanProcess:
             started_epoch=int(time.time()) - 30,
             pgid=None,
         )
-        reg.add(orphan)  # type: ignore[arg-type]
+        reg.add(orphan)
         rows = reg.all_running()
         assert len(rows) == 1
-        pid, cmd, elapsed = rows[0]
-        assert pid == os.getpid()
-        assert cmd == "self"
+        row = rows[0]
+        assert row.pid == os.getpid()
+        assert row.cmd == "self"
         # ~30s ago, allow a few seconds slop.
-        assert 25 <= elapsed <= 60
+        assert 25 <= row.elapsed_seconds <= 60
 
 
 # ── rehydrate_orphan_processes ───────────────────────────────
@@ -448,7 +444,7 @@ class TestStopOrphanProcess:
                 kill_calls.append(self.pid)
 
         fake = _Fake(pid=12345, cmd="fake", started_epoch=int(time.time()), pgid=12345)
-        supervisor.registry.add(fake)  # type: ignore[arg-type]
+        supervisor.registry.add(fake)
 
         result = await ProcessesController().stop(pid=12345)
 
@@ -470,24 +466,16 @@ class TestStopOrphanProcess:
 
 
 class TestPersistGuards:
-    """The persistence hooks in the registry's hot path must NOT
-    raise when no store is wired (test/headless contexts) or
-    when there's no running loop. These guards exist so the
-    shell tool stays usable in the standalone pytest harness."""
+    """The persistence writer must NOT raise when no store is wired
+    (test/headless contexts) or when there's no running loop. These
+    guards exist so the shell tool stays usable in the standalone
+    pytest harness."""
 
-    def test_persist_add_noop_when_store_unset(self) -> None:
-        registry = supervisors.default().registry
-        registry.attach_persistence(None)
+    def test_record_start_noop_when_store_unset(self) -> None:
+        writer = ProcessPersistenceWriter()
         # No exception even though there's no store + no loop.
-        registry._persist_add(12345, "x")
+        writer.record_start(12345, "x")
 
-    def test_persist_remove_noop_when_store_unset(self) -> None:
-        registry = supervisors.default().registry
-        registry.attach_persistence(None)
-        registry._persist_remove(12345)
-
-
-# Silence unused-import warnings — kept so the test runner can
-# resolve module attributes on test discovery.
-_ = signal
-_ = sys
+    def test_forget_noop_when_store_unset(self) -> None:
+        writer = ProcessPersistenceWriter()
+        writer.forget(12345)

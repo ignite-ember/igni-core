@@ -58,7 +58,7 @@ if TYPE_CHECKING:
     import asyncio
 
     from igni_core.core.tools.process_log import ProcessLogStore
-    from igni_core.core.tools.process_store import BackgroundProcessRow
+    from igni_core.core.tools.process_store_schemas import BackgroundProcessRow
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +217,17 @@ class OrphanProcess:
         )
 
     # ── Actions ─────────────────────────────────────────────────
+
+    @property
+    def reader_task(self) -> asyncio.Task[None] | None:
+        """Always ``None`` — an orphan has no stdout to drain.
+
+        The reader that would have drained it died with the backend
+        lifetime that spawned the process. The property exists so
+        the watcher can ask every tracked process the same question
+        without knowing which kind it is holding.
+        """
+        return self._reader_task
 
     def kill(self) -> None:
         """Send SIGTERM to the orphan. Tries the process group

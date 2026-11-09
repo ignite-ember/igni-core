@@ -52,6 +52,26 @@ def collected_completions():
         bus.off("exit", _cb)
 
 
+@pytest.fixture
+def short_ttl():
+    """Set the finished-process eviction TTL, then restore it.
+
+    The TTL is read fresh on every arm, so the registry's public
+    setter is enough to drive the window down — no reach into a
+    private attribute of the registry or of its eviction collaborator.
+    """
+    registry = supervisors.default().registry
+    previous = registry.ttl_seconds
+
+    def _set(seconds: float) -> None:
+        registry.set_ttl_seconds(seconds)
+
+    try:
+        yield _set
+    finally:
+        registry.set_ttl_seconds(previous)
+
+
 async def _wait_for_finish(pid: int, timeout: float = 8.0) -> None:
     """Poll the registry until the process is finished or timeout."""
     registry = supervisors.default().registry
@@ -137,7 +157,7 @@ async def test_read_process_output_is_idempotent_after_finish(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_finished_process_evicted_after_ttl(tmp_path, monkeypatch):
+async def test_finished_process_evicted_after_ttl(tmp_path, short_ttl):
     """First ``read_process_output`` after a process has finished
     arms a TTL task; once it fires, the entry should be gone from
     the registry. Drives TTL down via
@@ -146,12 +166,10 @@ async def test_finished_process_evicted_after_ttl(tmp_path, monkeypatch):
 
     Post-split refactor: the TTL lives on the registry (which
     owns the eviction bookkeeping), not on the supervisor.
-    ``monkeypatch.setattr`` on the registry auto-restores after
-    the test.
     """
     supervisor = supervisors.default()
     registry = supervisor.registry
-    monkeypatch.setattr(registry, "_ttl_seconds", 0.3, raising=True)
+    short_ttl(0.3)
 
     tools = IgniShellTools(base_dir=str(tmp_path))
     out = await tools.run_shell_command(
@@ -176,12 +194,12 @@ async def test_finished_process_evicted_after_ttl(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ttl_resets_on_subsequent_read(tmp_path, monkeypatch):
+async def test_ttl_resets_on_subsequent_read(tmp_path, short_ttl):
     """A second read before the TTL expires should reset it, so an
     actively-engaged agent doesn't lose the buffer mid-iteration."""
     supervisor = supervisors.default()
     registry = supervisor.registry
-    monkeypatch.setattr(registry, "_ttl_seconds", 0.4, raising=True)
+    short_ttl(0.4)
 
     tools = IgniShellTools(base_dir=str(tmp_path))
     out = await tools.run_shell_command(

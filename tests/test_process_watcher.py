@@ -19,14 +19,15 @@ A regression in any layer should fail here, not at the FE.
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from igni_core.backend.schemas_processes import ProcessTailResult, StopProcessResult
 from igni_core.backend.server_processes import ProcessesController
 from igni_core.core.tools.process_events import ProcessLineEvent, ProcessStartEvent
+from igni_core.core.tools.process_registry_schemas import KnownProcess
 from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.protocol.rpc import RpcMethod
+from tests.process_fakes import FakeTrackedProcess
 from tests.rpc_tables import rpc_table_for
 
 # ── Subscriber semantics ─────────────────────────────────────
@@ -109,8 +110,8 @@ class TestStartSubscriber:
         received: list[ProcessStartEvent] = []
         registry.bus.on("start", received.append)
 
-        mp = SimpleNamespace(proc=SimpleNamespace(pid=123), cmd="tail -f x.log")
-        registry.announce_start(mp)  # type: ignore[arg-type]
+        mp = FakeTrackedProcess(pid=123, cmd="tail -f x.log")
+        registry.announce_start(mp)
 
         assert len(received) == 1
         assert received[0].pid == 123
@@ -128,8 +129,8 @@ class TestStartSubscriber:
 
         registry.bus.on("start", bad)
         registry.bus.on("start", survivor.append)
-        mp = SimpleNamespace(proc=SimpleNamespace(pid=1), cmd="x")
-        registry.announce_start(mp)  # type: ignore[arg-type]
+        mp = FakeTrackedProcess(pid=1, cmd="x")
+        registry.announce_start(mp)
 
         assert survivor[0].pid == 1
 
@@ -148,8 +149,20 @@ class TestListBackgroundProcesses:
             supervisors.default().registry,
             "all_known",
             lambda: [
-                (101, "npm run dev", 12.3, True, None),
-                (202, "tail -f log", 4.5, True, None),
+                KnownProcess(
+                    pid=101,
+                    cmd="npm run dev",
+                    elapsed_seconds=12.3,
+                    is_running=True,
+                    exit_code=None,
+                ),
+                KnownProcess(
+                    pid=202,
+                    cmd="tail -f log",
+                    elapsed_seconds=4.5,
+                    is_running=True,
+                    exit_code=None,
+                ),
             ],
             raising=True,
         )
@@ -179,7 +192,15 @@ class TestListBackgroundProcesses:
         monkeypatch.setattr(
             supervisors.default().registry,
             "all_known",
-            lambda: [(303, "pytest -x", 31.0, False, 1)],
+            lambda: [
+                KnownProcess(
+                    pid=303,
+                    cmd="pytest -x",
+                    elapsed_seconds=31.0,
+                    is_running=False,
+                    exit_code=1,
+                )
+            ],
             raising=True,
         )
         processes = ProcessesController()

@@ -18,12 +18,11 @@ Consumers:
   from the ORM row — kept duck-typed to avoid an import cycle
   with :mod:`process_store`), and :meth:`to_upsert_values` (the
   values-dict for the upsert).
-* :class:`UpsertResult` / :class:`RemoveResult` /
-  :class:`ListResult` — typed replacements for the previous
-  ``None`` returns of :meth:`BackgroundProcessStore.upsert` /
-  :meth:`remove` / :meth:`list_all`. DB failure at the store
-  boundary now becomes a typed ``reason`` string instead of an
-  exception the caller has to guess about — mirrors
+* :class:`UpsertResult` / :class:`RemoveResult` — typed replacements
+  for the previous ``None`` returns of
+  :meth:`BackgroundProcessStore.upsert` / :meth:`remove`. DB failure
+  at the store boundary now becomes a typed ``reason`` string instead
+  of an exception the caller has to guess about — mirrors
   :class:`RehydrateResult`'s design in
   :mod:`shell_orphan_schemas`.
 
@@ -35,15 +34,9 @@ The three project stores (this one, ``LoopStore`` and the scheduler's
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel, Field
-
-if TYPE_CHECKING:
-    # Duck-typed at runtime — the mapping only reads .pid / .cmd /
-    # .pgid / .started_at. Importing the ORM class here would
-    # cycle with :mod:`process_store` which imports this module.
-    pass
 
 
 class BackgroundProcessRow(BaseModel):
@@ -145,7 +138,7 @@ class UpsertResult(BaseModel):
     """Typed outcome of :meth:`BackgroundProcessStore.upsert`.
 
     Callers used to swallow SQLAlchemy exceptions at the fire-
-    and-forget boundary (:meth:`ProcessRegistry._persist_add`)
+    and-forget boundary (:meth:`ProcessPersistenceWriter.record_start`)
     without any signal a row failed to land. Wrapping the DB
     call in a typed result lets the scheduler log the reason at
     DEBUG without adding an ``except Exception`` at every caller.
@@ -169,19 +162,4 @@ class RemoveResult(BaseModel):
 
     ok: bool = True
     removed: bool = False
-    reason: str = Field(default="")
-
-
-class ListResult(BaseModel):
-    """Typed outcome of :meth:`BackgroundProcessStore.list_all`.
-
-    Replaces the raw ``list[BackgroundProcessRow]`` return so a DB
-    failure at ``list_all`` becomes an observable ``ok=False`` +
-    ``reason`` payload instead of a raised exception the caller
-    (:meth:`OrphanRehydrator.run`) has to wrap in its own try/
-    except. Mirrors :class:`RehydrateResult`'s design.
-    """
-
-    ok: bool = True
-    rows: list[BackgroundProcessRow] = Field(default_factory=list)
     reason: str = Field(default="")
