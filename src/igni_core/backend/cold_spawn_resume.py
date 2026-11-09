@@ -38,8 +38,8 @@ from pydantic import BaseModel, ConfigDict
 
 from igni_core.backend.schemas_hitl import StreamFactory
 from igni_core.core.approvals.records import SpawnLink
+from igni_core.core.hitl.models import RestoredRun
 from igni_core.core.hooks.untrusted import UntrustedOutputHook
-from igni_core.core.sub_agent_hitl import RestoredRun
 from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.orchestrate_agent_stream import ResumedSubAgentStreamHandler
 from igni_core.core.tools.orchestrate_events import EventAppender, OnProgress, SubAgentRegistry
