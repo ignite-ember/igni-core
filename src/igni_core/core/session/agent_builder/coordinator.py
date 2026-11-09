@@ -108,6 +108,7 @@ class MainAgentBuilder:
             agent_catalog=agent_catalog(s.pool.list_agents()),
             skill_descriptions=s.skill_pool.describe(),
             prompt_loader=self._prompt_loader,
+            contributions=s.prompt_contributions,
         ).render()
 
     def build_instructions(self, prompt: str) -> list[str]:
@@ -121,6 +122,7 @@ class MainAgentBuilder:
             settings=s.settings,
             output_styles=s.output_styles,
             active_output_style_name=s.active_output_style,
+            contributions=s.prompt_contributions,
         ).assemble(prompt)
 
     def build_model(self) -> tuple[Any, int]:

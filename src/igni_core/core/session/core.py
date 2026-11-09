@@ -80,7 +80,7 @@ from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.output_styles import OutputStyle, discover_output_styles
 from igni_core.core.plugins import PluginLoader, load_state
 from igni_core.core.prompts import load_prompt
-from igni_core.core.prompts.contributions import prompt_contributions
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.session.agent_builder import MainAgentBuilder
 from igni_core.core.session.agent_factory import (
     create_guardrails,
@@ -161,8 +161,15 @@ class Session:
         project_dir: Path | None = None,
         resume_session_id: str | None = None,
         additional_dirs: list[Path] | None = None,
+        contributions: PromptContributions | None = None,
     ):
         self.settings = settings
+
+        #: What extensions have done to the prompts. Injected: the
+        #: backend hands the session the process-wide table, so every
+        #: session of a deployment sees the same contributions; a
+        #: session built on its own gets a table of its own, empty.
+        self._contributions = contributions if contributions is not None else PromptContributions()
 
         # Every code path below may read ``settings.models.default``, so
         # the cloud catalog is refreshed first: a brand-new install reaches
@@ -432,7 +439,7 @@ class Session:
             group_dir=self.group_policy.shipped_dir("agents"),
         )
         self.plugin_loader.apply_to_agents(self.pool, disabled=self._disabled_plugins)
-        AgentContributionApplier(prompt_contributions).apply_to(self.pool)
+        AgentContributionApplier(self._contributions).apply_to(self.pool)
         # One sub-agent cap for the session, drawn on by every
         # OrchestrateTools at every depth.
         self.spawn_budget = SpawnBudget(settings.orchestration.max_total_agents)
@@ -663,6 +670,11 @@ class Session:
         ).build()
 
     # ── Public accessors consumed by the agent-builder sub-package ──
+
+    @property
+    def prompt_contributions(self) -> PromptContributions:
+        """What extensions have done to the prompts this session reads."""
+        return self._contributions
 
     @property
     def cloud_access_token(self) -> str | None:

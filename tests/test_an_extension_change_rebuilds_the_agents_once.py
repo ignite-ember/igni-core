@@ -12,7 +12,8 @@ import asyncio
 import pytest
 
 from igni_core.backend.agent_refresh import AgentRefresh
-from igni_core.core.prompts.contributions import EditOp, PromptContributions, PromptEdit
+from igni_core.core.prompts.contribution_models import EditOp, PromptEdit
+from igni_core.core.prompts.contributions import PromptContributions
 
 pytestmark = pytest.mark.asyncio
 

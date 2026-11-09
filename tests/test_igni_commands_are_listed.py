@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.impact import ExtensionImpact, IgniCommands, ImpactResolver
 from igni_core.extensions.manifest import ExtensionManifest
@@ -74,6 +75,7 @@ def test_the_host_applies_it_without_a_decision():
         registry=registry,
         rpc=None,
         igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
+        prompts=PromptContributions(),
     )
     registry.install(ExtensionManifest.model_validate(MANIFEST))
     contributions.resolve()

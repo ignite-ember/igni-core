@@ -24,7 +24,8 @@ import pytest
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.backend.plan_snapshot_builder import PlanSnapshotBuilder
 from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
-from igni_core.core.prompts.contributions import EditOp, PromptEdit, prompt_contributions
+from igni_core.core.prompts.contribution_models import EditOp, PromptEdit
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.session.broadcast import BroadcastBus as _BroadcastBus
 from igni_core.core.session.core import Session
 from igni_core.core.tools.orchestrate import OrchestrateTools
@@ -209,9 +210,14 @@ class TestPlanTool:
 
 
 @pytest.fixture
-def plan_mode_text():
-    """An extension adding to plan mode's prompt for the length of one test."""
-    prompt_contributions.set_owner(
+def plan_mode_text() -> PromptContributions:
+    """An extension adding to plan mode's prompt, in a table of its own.
+
+    The table is the session's: whoever wires the session decides
+    which contributions it reads, so a test says which ones.
+    """
+    contributions = PromptContributions()
+    contributions.set_owner(
         "acme.code",
         "Code",
         edits=[
@@ -223,11 +229,9 @@ def plan_mode_text():
             )
         ],
     )
-    yield
-    prompt_contributions.remove_owner("acme.code")
+    return contributions
 
 
-@pytest.mark.usefixtures("plan_mode_text")
 class TestTheFloorJudgesNoPlan:
     """igni records the plan it is given and the person judges it.
 
@@ -237,8 +241,9 @@ class TestTheFloorJudgesNoPlan:
     an extension changes plan mode is the extension's to say.
     """
 
-    def _session(self):
+    def _session(self, contributions: PromptContributions):
         session = Session.__new__(Session)
+        session._contributions = contributions
         session.plan_store = PlanStore()
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
@@ -248,16 +253,16 @@ class TestTheFloorJudgesNoPlan:
         return session
 
     @pytest.mark.asyncio
-    async def test_a_plan_citing_no_files_is_submitted(self):
-        session = self._session()
+    async def test_a_plan_citing_no_files_is_submitted(self, plan_mode_text):
+        session = self._session(plan_mode_text)
         tool = PlanTool(session)
         result = await tool.exit_plan_mode("Refactor the auth thing. It will be great.")
         assert "Plan submitted" in result
         assert session.plan_store.latest == "Refactor the auth thing. It will be great."
 
     @pytest.mark.asyncio
-    async def test_entering_plan_mode_names_no_extension(self):
-        session = self._session()
+    async def test_entering_plan_mode_names_no_extension(self, plan_mode_text):
+        session = self._session(plan_mode_text)
         tool = PlanTool(session)
         result = await tool.enter_plan_mode("new task")
         assert "codeindex" not in result.lower().replace(" ", "")

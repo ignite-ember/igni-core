@@ -13,122 +13,79 @@ read from.
 keeps the dependency pointing the right way: ``core`` does not import
 the extension system, and knows no extension by name.
 
-## Composing
+## One table per process, injected
 
-An override is the new starting point. Every other extension's edits
-apply on top of it, in the super admin's priority order (:meth:`set_priority`):
-an append always lands; an insert or a replace lands when the override
-has the section it names, and is skipped when it does not. An
-``exclusive`` override takes no edits from anybody else.
-
-**Who may do what is not decided here.** Two extensions replacing one
-section, two overriding one prompt, an exclusive override against
-someone's edits — those are collisions the priority order settles, and
-:mod:`igni_core.extensions.impact` applies it before anything reaches
-this table. Should two claims arrive anyway, the one higher in the
-order keeps it and the other is logged — never a merge.
+There is one table per backend process, because an extension is
+installed into a deployment: a second session must not see a different
+set of contributions. It is **injected**, not global: whoever wires the
+backend (:mod:`igni_core.backend.app`) creates it and hands the same
+instance to the session, the extension system and the pool. A session
+built on its own — the CLI, a test — gets a table of its own, empty.
 
 **Conditions are reported, not polled.** An extension's process says
 ``notifications/igni/conditions`` when one changes; the table records
 it and tells whoever watches, which rebuilds the agent.
+
+What an override and its edits turn into is
+:mod:`igni_core.core.prompts.composition`.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from enum import StrEnum
-from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from igni_core.core.prompts.document import (
-    FRONTMATTER,
-    EditRefused,
-    Position,
-    PromptDocument,
-    PromptKind,
-    PromptTarget,
+from igni_core.core.prompts.composition import PromptComposer
+from igni_core.core.prompts.contribution_models import (
+    Composition,
+    PromptEdit,
+    PromptOverride,
 )
+from igni_core.core.prompts.document import PromptTarget
 
 logger = logging.getLogger(__name__)
 
 
-class EditOp(StrEnum):
-    #: A new section at the end.
-    APPEND = "append"
-    #: A new section before or after a named one.
-    INSERT = "insert"
-    #: A named section's text, replaced.
-    REPLACE = "replace"
-
-
-class PromptOverride(BaseModel):
-    """One extension's whole prompt for one target."""
+class WatchFailure(BaseModel):
+    """A watcher that raised instead of doing what it was asked."""
 
     model_config = ConfigDict(frozen=True)
 
-    #: ``main``, ``plan_mode``, ``agent:<name>``.
-    target: str
-    text: str
-    #: Takes no other extension's edits.
-    exclusive: bool = False
-    #: A condition the extension reports; ``None`` holds whenever it is ready.
-    when: str | None = None
-    #: Where the text was read from, when it is a file: an agent's
-    #: definition is "from" there, which is how igni tells an
-    #: extension's own agents (:mod:`igni_core.core.agents.tool_audience`).
-    path: Path | None = None
+    #: The watcher's name, as it says it.
+    watcher: str
+    #: What it raised, as text.
+    error: str
 
 
-class PromptEdit(BaseModel):
-    """One change one extension makes to one target."""
+class TableChange(BaseModel):
+    """What one change to the table did.
+
+    A watcher that failed is reported here, not swallowed: the caller
+    that changed the table is the one that can say the agents may not
+    have been rebuilt.
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    target: str
-    op: EditOp
-    #: The section replaced, or the one an insert is placed against.
-    section: str | None = None
-    #: Before or after ``section``, for an insert.
-    position: Position | None = None
-    #: The new section's name, for an append or an insert.
-    name: str | None = None
-    text: str
-    when: str | None = None
-
-    def describe(self) -> str:
-        if self.op is EditOp.REPLACE:
-            return f"replacing {self.target}#{self.section}"
-        if self.op is EditOp.INSERT and self.position is not None:
-            return f"inserting {self.name} {self.position.value} {self.target}#{self.section}"
-        return f"appending {self.name} to {self.target}"
+    #: Whether anything actually moved.
+    changed: bool = False
+    #: The watchers that failed, if any.
+    failures: list[WatchFailure] = Field(default_factory=list)
 
 
 class _Owner(BaseModel):
+    """What one extension does to the prompts, right now."""
+
     name: str
     overrides: list[PromptOverride] = Field(default_factory=list)
     edits: list[PromptEdit] = Field(default_factory=list)
     holding: frozenset[str] = frozenset()
 
     def live(self, when: str | None) -> bool:
+        """Whether this owner's contribution applies: unconditional, or its condition holds."""
         return when is None or when in self.holding
-
-
-class Composition(BaseModel):
-    """One prompt as extensions have shaped it, before igni's own substitutions."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    document: PromptDocument
-    #: The extension whose override this is built on, if any.
-    override_owner: str | None = None
-    #: The override's file, when it was one.
-    override_path: Path | None = None
-    #: The extension whose text the agent's frontmatter now is, if any.
-    frontmatter_owner: str | None = None
-    #: Edits that did not land, and why.
-    skipped: list[str] = Field(default_factory=list)
 
 
 class PromptContributions:
@@ -148,7 +105,7 @@ class PromptContributions:
         *,
         overrides: list[PromptOverride] | None = None,
         edits: list[PromptEdit] | None = None,
-    ) -> None:
+    ) -> TableChange:
         """What ``owner`` does now, replacing what it did before.
 
         Conditions already reported are kept: a restart re-registers
@@ -159,20 +116,23 @@ class PromptContributions:
         self._owners[owner] = _Owner(
             name=name, overrides=overrides or [], edits=edits or [], holding=holding
         )
-        self._changed()
+        return self._changed()
 
-    def remove_owner(self, owner: str) -> None:
-        if self._owners.pop(owner, None) is not None:
-            self._changed()
+    def remove_owner(self, owner: str) -> TableChange:
+        """Forget what ``owner`` does."""
+        if self._owners.pop(owner, None) is None:
+            return TableChange()
+        return self._changed()
 
-    def set_priority(self, priority: list[str]) -> None:
+    def set_priority(self, priority: list[str]) -> TableChange:
         """The super admin's priority order of extensions, highest first: edits apply in it."""
-        if priority != self._priority:
-            self._priority = list(priority)
-            self._changed()
+        if priority == self._priority:
+            return TableChange()
+        self._priority = list(priority)
+        return self._changed()
 
-    def hold(self, owner: str, conditions: dict[str, bool]) -> bool:
-        """Record which of ``owner``'s conditions hold. ``True`` if anything moved."""
+    def hold(self, owner: str, conditions: dict[str, bool]) -> TableChange:
+        """Record which of ``owner``'s conditions hold."""
         entry = self._owners.get(owner)
         holding = set(entry.holding) if entry is not None else set()
         for name, holds in conditions.items():
@@ -181,27 +141,37 @@ class PromptContributions:
             # Reported before what it does arrived — a process that
             # starts quickly. Kept for when it does.
             self._owners[owner] = _Owner(name=owner, holding=frozenset(holding))
-            return False
+            return TableChange()
         if frozenset(holding) == entry.holding:
-            return False
+            return TableChange()
         self._owners[owner] = entry.model_copy(update={"holding": frozenset(holding)})
-        self._changed()
-        return True
+        return self._changed()
 
     def watch(self, callback: Callable[[], None]) -> None:
         """Be told whenever what the prompts say may have changed."""
         self._watchers.append(callback)
 
-    def _changed(self) -> None:
-        for watcher in self._watchers:
+    def _changed(self) -> TableChange:
+        """Tell every watcher that something changed.
+
+        A watcher is arbitrary code, so it may fail; one that does must
+        not stop the others, and its failure is reported to whoever
+        changed the table rather than swallowed here.
+        """
+        failures: list[WatchFailure] = []
+        for watcher in list(self._watchers):
             try:
                 watcher()
-            except Exception:  # noqa: BLE001 — one watcher must not stop the record
-                logger.exception("a prompt-contributions watcher failed")
+            except Exception as exc:  # noqa: BLE001 — a watcher is arbitrary code; its failure is reported, not raised
+                failure = WatchFailure(watcher=_watcher_name(watcher), error=str(exc))
+                failures.append(failure)
+                logger.exception("a prompt-contributions watcher failed: %s", failure.watcher)
+        return TableChange(changed=True, failures=failures)
 
     # ── Reading ────────────────────────────────────────────────────
 
     def _ordered(self) -> list[str]:
+        """The owners, in the priority order: the ones named first come first."""
         rank = {owner: index for index, owner in enumerate(self._priority)}
         return sorted(self._owners, key=lambda owner: (rank.get(owner, len(rank)), owner))
 
@@ -255,84 +225,21 @@ class PromptContributions:
         """``target`` as extensions have shaped it.
 
         ``base`` is igni's own text, or ``None`` when igni has none —
-        an agent only an extension defines. ``prepare`` runs on whichever
-        text is the starting point before it is read as sections, for
-        includes like ``{{PERSISTING}}`` whose sections belong to it.
+        an agent only an extension defines. See
+        :class:`igni_core.core.prompts.composition.PromptComposer`.
         """
-        agent = PromptTarget.parse(target).kind is PromptKind.AGENT
-        held = self.override(target)
-        if held is not None:
-            starting = held[1].text
-        elif base is not None:
-            starting = base
-        else:
-            return None
-        if prepare is not None:
-            starting = prepare(starting)
-        composition = Composition(
-            document=PromptDocument(starting, agent=agent),
-            override_owner=held[0] if held else None,
-            override_path=held[1].path if held else None,
-            frontmatter_owner=held[0] if held and agent else None,
-        )
-        anchors = set(composition.document.sections())
-        replaced: dict[str, str] = {}
-        for owner, edit in self.edits(target):
-            if held is not None and held[1].exclusive and owner != held[0]:
-                composition.skipped.append(
-                    f"{owner}: {edit.describe()} — {held[0]} overrides it exclusively"
-                )
-                continue
-            if edit.op is not EditOp.APPEND and edit.section not in anchors:
-                whose = f"{held[0]}'s override" if held else "it"
-                composition.skipped.append(
-                    f"{owner}: {edit.describe()} — {whose} has no section {edit.section!r}"
-                )
-                continue
-            if edit.op is EditOp.REPLACE and edit.section in replaced:
-                logger.warning(
-                    "%s and %s both replace %s#%s; %s keeps it — resolve the collision "
-                    "on igni server's Services page",
-                    replaced[edit.section],
-                    owner,
-                    target,
-                    edit.section,
-                    replaced[edit.section],
-                )
-                continue
-            try:
-                composition.document = self._apply(composition.document, edit)
-            except (EditRefused, ValueError) as exc:
-                composition.skipped.append(f"{owner}: {edit.describe()} — {exc}")
-                continue
-            if edit.op is EditOp.REPLACE and edit.section is not None:
-                replaced[edit.section] = owner
-                if edit.section == FRONTMATTER and agent:
-                    composition.frontmatter_owner = owner
-        for line in composition.skipped:
-            logger.info("prompt %s: %s", target, line)
-        return composition
-
-    @staticmethod
-    def _apply(document: PromptDocument, edit: PromptEdit) -> PromptDocument:
-        if edit.op is EditOp.REPLACE and edit.section is not None:
-            return document.replace(edit.section, edit.text)
-        if edit.op is EditOp.INSERT and edit.section is not None and edit.position is not None:
-            return document.insert(edit.section, edit.position, edit.name or "added", edit.text)
-        return document.append(edit.name or "added", edit.text)
+        return PromptComposer(
+            target=target,
+            base=base,
+            override=self.override(target),
+            edits=self.edits(target),
+            prepare=prepare,
+        ).compose()
 
 
-#: The table the prompt builder, the plan-mode block and the agent
-#: pool read when nobody passes one. Module scope because the thing
-#: that registers and the things that read are wired at different
-#: times, by different layers.
-prompt_contributions = PromptContributions()
+def _watcher_name(watcher: Callable[[], None]) -> str:
+    """A name for a watcher, for the log and for the report to the caller."""
+    return getattr(watcher, "__qualname__", None) or repr(watcher)
 
-__all__ = [
-    "Composition",
-    "EditOp",
-    "PromptContributions",
-    "PromptEdit",
-    "PromptOverride",
-    "prompt_contributions",
-]
+
+__all__ = ["PromptContributions", "TableChange", "WatchFailure"]

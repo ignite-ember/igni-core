@@ -56,6 +56,7 @@ class SessionRuntimeFactory:
             project_dir=self._dirs.dir_for(session_id),
             resume_session_id=session_id,
             additional_dirs=self._dirs.additional_dirs,
+            contributions=self._wiring.contributions,
         )
         await backend.startup()
         queue = backend.message_queue

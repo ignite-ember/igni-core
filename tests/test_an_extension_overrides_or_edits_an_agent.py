@@ -22,12 +22,12 @@ from igni_core.core.agents.loader import AgentDefinitionLoader
 from igni_core.core.agents.pool import AgentPool
 from igni_core.core.agents.schemas import AgentPriority
 from igni_core.core.config.settings import Settings
-from igni_core.core.prompts.contributions import (
+from igni_core.core.prompts.contribution_models import (
     EditOp,
-    PromptContributions,
     PromptEdit,
     PromptOverride,
 )
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.document import Position
 
 PROJECT_S = (

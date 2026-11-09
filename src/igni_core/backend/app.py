@@ -41,7 +41,7 @@ from igni_core.core.db.locator import StorageLocator
 from igni_core.core.layer import BackendHooks, layers
 from igni_core.core.observability import OtelRuntime
 from igni_core.core.plugins.installer import PluginInstaller
-from igni_core.core.prompts.contributions import prompt_contributions
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.faults import ExtensionFaults
 from igni_core.extensions.principal import SignedInPerson
 from igni_core.extensions.store import ExtensionStore
@@ -137,11 +137,16 @@ class BackendApp:
     ) -> BackendParts:
         launch = self._launch
         builder = self._transport_builder
+        # What extensions have done to the prompts. One table for the
+        # process: the extension system registers into it and every
+        # session of this backend reads from it.
+        contributions = PromptContributions()
         backend = BackendServer(
             settings,
             project_dir=launch.project_dir,
             resume_session_id=launch.resume_session_id,
             additional_dirs=launch.additional_dirs,
+            contributions=contributions,
         )
         # Hydrates any persisted ``/loop`` state from the project's ``state.db``.
         await backend.startup()
@@ -154,7 +159,7 @@ class BackendApp:
         login = LoginCoordinator(backend=backend, push_bridge=push_bridge)
         plugins_dir = PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir
         extensions = ExtensionsRuntime.build(
-            mcp=backend.mcp_manager, plugins_dir=plugins_dir, store=store
+            mcp=backend.mcp_manager, plugins_dir=plugins_dir, store=store, prompts=contributions
         )
         # Read per call: signing in can change which server it is.
         access = IgniServerAccess(
@@ -202,6 +207,7 @@ class BackendApp:
                 transport=transport,
                 push_bridge=push_bridge,
                 login=login,
+                contributions=contributions,
                 extensions=extensions.rpc,
                 origins=extensions.origins,
                 extension_store=store,
@@ -214,9 +220,7 @@ class BackendApp:
         )
         # When what extensions do to the prompts changes, every session's
         # agent is rebuilt, once, on the next turn of the loop.
-        prompt_contributions.watch(
-            AgentRefresh(loop=loop, refresh=orchestrator.refresh_agents).request
-        )
+        contributions.watch(AgentRefresh(loop=loop, refresh=orchestrator.refresh_agents).request)
         # The WebSocket's guard mints the tokens igni's window hands a
         # program it lets answer approval requests.
         orchestrator.mount(ApproverTokenRpc(builder.ws_transport))

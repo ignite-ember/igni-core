@@ -21,7 +21,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
-from igni_core.core.prompts.contributions import PromptContributions, prompt_contributions
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.document import PromptKind
 from igni_core.core.prompts.fragments import fragments
 
@@ -53,12 +53,12 @@ class PromptBuilder:
         agent_catalog: str,
         skill_descriptions: str,
         prompt_loader: Callable[[str], str],
-        contributions: PromptContributions | None = None,
+        contributions: PromptContributions,
         user_memory_available: bool = True,
     ) -> None:
         self._project_dir = project_dir
         self._settings = settings
-        self._contributions = contributions if contributions is not None else prompt_contributions
+        self._contributions = contributions
         self._user_memory_available = user_memory_available
         self._agent_catalog = agent_catalog
         self._skill_descriptions = skill_descriptions

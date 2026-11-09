@@ -319,11 +319,13 @@ class TestTheUserMemoryCapabilityIsGateable:
     def _builder(self, *, user_memory: bool):
         from pathlib import Path
 
+        from igni_core.core.prompts.contributions import PromptContributions
         from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
 
         return PromptBuilder(
             project_dir=Path("/nonexistent"),
             settings=SimpleNamespace(storage=SimpleNamespace(data_dir=Path("/nonexistent"))),
+            contributions=PromptContributions(),
             user_memory_available=user_memory,
             agent_catalog="",
             skill_descriptions="",

@@ -37,6 +37,7 @@ from igni_core.backend.pending_requirements_store import PendingRequirementsStor
 from igni_core.core.approvals.journal import ApprovalJournal
 from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.core.db.locator import StorageLocator
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.session.pending_messages import PendingMessageStore
 from igni_core.core.session.queued_messages import DurableMessageQueue, QueuedMessageStore
 from igni_core.core.session.session_preferences import SessionPreferencesStore
@@ -60,6 +61,7 @@ class BackendBootstrap:
         project_dir: Path | None = None,
         resume_session_id: str | None = None,
         additional_dirs: list[Path] | None = None,
+        contributions: PromptContributions | None = None,
     ) -> None:
         resolved_project_dir = project_dir or Path.cwd()
 
@@ -86,6 +88,7 @@ class BackendBootstrap:
             project_dir=project_dir,
             resume_session_id=resume_session_id,
             additional_dirs=additional_dirs,
+            contributions=contributions,
         )
         self.settings = settings
 

@@ -24,6 +24,7 @@ import pytest
 from igni_core.backend.panels.slash_commands_catalog import SlashCommandsCatalog
 from igni_core.core.contributed_commands import ContributedCommands
 from igni_core.core.mcp.client import MCPClientManager
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
@@ -61,7 +62,10 @@ class Wired:
         self.origins = ExtensionOrigins()
         self.commands = ContributedCommands()
         self.contributions = ExtensionContributions(
-            registry=self.registry, rpc=self.rpc, commands=self.commands
+            registry=self.registry,
+            rpc=self.rpc,
+            commands=self.commands,
+            prompts=PromptContributions(),
         )
         self.contributions.attach()
         self.installer = ExtensionInstaller(

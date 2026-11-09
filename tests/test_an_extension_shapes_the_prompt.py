@@ -21,12 +21,12 @@ from pathlib import Path
 import pytest
 
 from igni_core.core.prompts import load_prompt
-from igni_core.core.prompts.contributions import (
+from igni_core.core.prompts.contribution_models import (
     EditOp,
-    PromptContributions,
     PromptEdit,
     PromptOverride,
 )
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.document import (
     EditRefused,
     Position,
@@ -221,10 +221,10 @@ class TestTheTable:
             "a.ext", "Ay", overrides=[PromptOverride(target="main", text="ours", when="ready")]
         )
         assert contributions.override("main") is None
-        assert contributions.hold("a.ext", {"ready": True})
+        assert contributions.hold("a.ext", {"ready": True}).changed
         held = contributions.override("main")
         assert held is not None and held[1].text == "ours"
-        assert not contributions.hold("a.ext", {"ready": True}), "nothing moved"
+        assert not contributions.hold("a.ext", {"ready": True}).changed, "nothing moved"
 
     def test_a_condition_said_before_the_contributions_arrive_is_kept(self):
         """A process that starts quickly says what holds before igni has

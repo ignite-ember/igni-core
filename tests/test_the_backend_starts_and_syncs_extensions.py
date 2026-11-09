@@ -24,6 +24,7 @@ from igni_core.backend.igni_server_access import IgniServerAccess
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.core.config.settings import Settings
 from igni_core.core.plugins.installer import PluginInstaller
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.health import ExtensionHealth
 from igni_core.extensions.origin import ExtensionOrigins
@@ -82,11 +83,13 @@ def mcp() -> StubMcp:
 @pytest.fixture
 def runtime(mcp: StubMcp) -> ExtensionsRuntime:
     rpc = ExtensionRpc(ExtensionRegistry())
+    prompts = PromptContributions()
     return ExtensionsRuntime(
         rpc=rpc,
         origins=ExtensionOrigins(),
         health=ExtensionHealth(registry=rpc.registry, rpc=rpc, mcp=mcp),
-        contributions=ExtensionContributions(registry=rpc.registry, rpc=rpc),
+        contributions=ExtensionContributions(registry=rpc.registry, rpc=rpc, prompts=prompts),
+        prompts=prompts,
     )
 
 

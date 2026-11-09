@@ -13,10 +13,10 @@ it, as it may the main prompt (:mod:`igni_core.core.prompts.contributions`).
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from igni_core.core.prompts import load_prompt
-from igni_core.core.prompts.contributions import PromptContributions, prompt_contributions
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.document import PromptKind
 from igni_core.core.prompts.fragments import fragments
 
@@ -27,7 +27,8 @@ class PlanModeNudge(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    contributions: PromptContributions = Field(default_factory=lambda: prompt_contributions)
+    #: What extensions have done to the plan-mode prompt.
+    contributions: PromptContributions
 
     def render(self) -> str:
         """Return the full plan-mode block as a single string."""

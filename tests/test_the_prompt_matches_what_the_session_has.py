@@ -35,7 +35,8 @@ import pytest
 
 import igni_core
 from igni_core.core.prompts import load_prompt
-from igni_core.core.prompts.contributions import EditOp, PromptContributions, PromptEdit
+from igni_core.core.prompts.contribution_models import EditOp, PromptEdit
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
 
 #: A stand-in for the extension that keeps the documents. igni's prompts

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import (
     ExtensionConditionReceiver,
     ExtensionContributions,
@@ -36,14 +37,23 @@ class ExtensionsRuntime:
         origins: ExtensionOrigins,
         health: ExtensionHealth,
         contributions: ExtensionContributions,
+        prompts: PromptContributions,
     ) -> None:
         self._rpc = rpc
         self._origins = origins
         self._health = health
         self._contributions = contributions
+        self._prompts = prompts
 
     @classmethod
-    def build(cls, *, mcp: Any, plugins_dir: Path, store: ExtensionStore) -> ExtensionsRuntime:
+    def build(
+        cls,
+        *,
+        mcp: Any,
+        plugins_dir: Path,
+        store: ExtensionStore,
+        prompts: PromptContributions,
+    ) -> ExtensionsRuntime:
         rpc = ExtensionRpc(ExtensionRegistry())
         origins = ExtensionOrigins()
         # Keeps each extension's state true after install, and asks at once
@@ -60,9 +70,16 @@ class ExtensionsRuntime:
             plugins_dir=plugins_dir,
             priority=store.priority,
             igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
+            prompts=prompts,
         )
         contributions.attach()
-        return cls(rpc=rpc, origins=origins, health=health, contributions=contributions)
+        return cls(
+            rpc=rpc,
+            origins=origins,
+            health=health,
+            contributions=contributions,
+            prompts=prompts,
+        )
 
     @property
     def rpc(self) -> ExtensionRpc:
@@ -84,6 +101,11 @@ class ExtensionsRuntime:
     def contributions(self) -> ExtensionContributions:
         return self._contributions
 
+    @property
+    def prompts(self) -> PromptContributions:
+        """The table of what extensions have done to the prompts."""
+        return self._prompts
+
     def attach_faults(self, faults: ExtensionFaults, notifications: NotificationCenter) -> None:
         """An extension that keeps timing out or crashing is restarted, and the person told."""
         faults.attach(self.registry)
@@ -93,5 +115,5 @@ class ExtensionsRuntime:
     def condition_receiver(self) -> ExtensionConditionReceiver:
         """What an extension says holds: the ``when`` of its prompt contributions."""
         return ExtensionConditionReceiver(
-            registry=self.registry, refetch=self._contributions.refetch
+            registry=self.registry, prompts=self._prompts, refetch=self._contributions.refetch
         )

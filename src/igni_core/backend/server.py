@@ -26,6 +26,7 @@ from igni_core.backend.controller_registry import ControllerRegistry, Controller
 from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustController, reload_settings
 from igni_core.core.broadcast_schema import BroadcastSink
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.session.event_log_schema import SessionEvent, SessionEventDraft
 from igni_core.core.session.schemas import PersistResult
 from igni_core.protocol import messages as msg
@@ -79,12 +80,14 @@ class BackendServer:
         project_dir: Path | None = None,
         resume_session_id: str | None = None,
         additional_dirs: list[Path] | None = None,
+        contributions: PromptContributions | None = None,
     ):
         bootstrap = BackendBootstrap(
             settings=settings,
             project_dir=project_dir,
             resume_session_id=resume_session_id,
             additional_dirs=additional_dirs,
+            contributions=contributions,
         )
         controllers = ControllerRegistry.build(
             session=bootstrap.session,
