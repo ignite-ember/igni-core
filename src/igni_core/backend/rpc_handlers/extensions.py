@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from igni_core.backend.rpc_handlers.base import RpcHandler, WireArgs, rpc
+from igni_core.backend.rpc_binding import NoArgs, rpc
+from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.schemas_extensions import (
     ExtensionListResult,
     ExtensionSummary,
@@ -23,7 +24,7 @@ from igni_core.backend.schemas_extensions import (
 )
 from igni_core.extensions.store import StoreError
 from igni_core.extensions.web_home import ExtensionWebHome
-from igni_core.protocol.rpc import RpcMethod
+from igni_core.protocol.rpc import RpcMethod, RpcScope
 
 
 @dataclass(frozen=True)
@@ -37,36 +38,28 @@ class SettingsSaved:
 class ExtensionsRpcHandler(RpcHandler):
     """What the client needs to render installed extensions."""
 
-    @rpc(RpcMethod.LIST_EXTENSIONS)
-    async def list_extensions(self, args: WireArgs) -> ExtensionListResult:
-        """Every installed extension, including the broken ones.
+    @rpc(RpcMethod.LIST_EXTENSIONS, args=NoArgs, scope=RpcScope.IGNI)
+    async def list_extensions(self, args: NoArgs) -> ExtensionListResult:
+        """List the installed extensions, including the ones that failed to start.
 
-        A ``FAILED`` extension is returned with its reason rather than
-        filtered out. An administrator looking for "why is Compliance
-        missing" is better served by a row that says why than by an
-        absence they have to interpret.
+        Takes no arguments. Returns each extension's id, name, version and
+        ``state`` — a failed one with its ``reason``, rather than left out —
+        with what it adds to igni's window (pages, menu items, indicators),
+        its settings and their values, and the addresses of its UI, its web
+        home and its service.
         """
         return ExtensionListResult(extensions=self._summaries())
 
-    @rpc(RpcMethod.SET_EXTENSION_SETTINGS, args=SetExtensionSettingsArgs)
+    @rpc(RpcMethod.SET_EXTENSION_SETTINGS, args=SetExtensionSettingsArgs, scope=RpcScope.IGNI)
     async def set_extension_settings(self, args: SetExtensionSettingsArgs) -> ExtensionListResult:
-        """Store settings an administrator changed.
+        """Change an installed extension's settings.
 
-        Returns the whole list rather than the one row: the caller is
-        a settings surface that has just invalidated its own view of
-        everything, and one round trip is simpler than a merge it
-        would have to get right.
-
-        A refusal leaves as an RPC error, not as a reply. Two callers
-        depend on that: the web client's Extensions panel shows the
-        error when the call rejects and otherwise redraws as saved, and
-        the after-RPC write signals tell the extension its settings
-        changed for any answer that is not an error.
-
-        The values reach the extension as launch params on its next
-        mount. Not pushed to a running frame — `params` can carry
-        them, but an extension that reconfigured itself mid-render is
-        a harder promise than this is worth until somebody asks.
+        ``extension_id`` is the extension; ``values`` the settings to
+        change, by key, merged over what is stored. The extension reads them
+        the next time it starts. Returns the whole list, as
+        ``list_extensions`` does. Fails when the extension is not
+        installed, a key is not one of its settings, a value is not one of
+        a setting's options, or igni has no extension support.
         """
         saved = self._save_settings(args)
         if not saved.ok:

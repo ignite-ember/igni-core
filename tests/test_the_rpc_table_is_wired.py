@@ -40,7 +40,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.rpc_binding import RpcBinding
+from igni_core.backend.rpc_router import RPC_HANDLERS, RpcRouter
 from igni_core.protocol.rpc import RpcMethod
 
 
@@ -120,8 +121,12 @@ class TestEveryBindingCanBeCalled:
         containing nothing — worse than an error, because nothing looks
         wrong.
         """
-        table = _router().build_table()
-        coroutines = sorted(str(m) for m, fn in table.items() if inspect.iscoroutinefunction(fn))
+        coroutines = sorted(
+            str(method)
+            for handler in RPC_HANDLERS
+            for method, (name, _binding) in RpcBinding.on(handler).items()
+            if inspect.iscoroutinefunction(getattr(handler, name))
+        )
 
         assert coroutines, (
             "no handler is async any more. If that is deliberate the await below is dead "

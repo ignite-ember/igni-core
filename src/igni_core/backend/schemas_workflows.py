@@ -27,11 +27,10 @@ the boundary, shape drift fails loud at validation time.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, ClassVar, Literal, Self
+from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
-from pydantic_core import ErrorDetails
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 # ── Discovery (LIST_WORKFLOWS) ─────────────────────────────────────
 
@@ -108,57 +107,31 @@ class WorkflowListItem(BaseModel):
 # ── RPC contracts (LIST / RUN / CANCEL_WORKFLOW) ───────────────────
 
 
-class _RpcParams(BaseModel):
-    """The params of one RPC, read from the call's raw ``args`` dict.
+class _WorkflowRpcArgs(BaseModel):
+    """The arguments of a workflow RPC.
 
     Keys the model doesn't name are ignored: the FE and the extension
     host send ``session_id`` too, and routing has already used it by
     the time a handler runs. Numbers are taken as strings, as the
     handlers' ``str(...)`` reads always did.
-
-    Malformed params are a caller bug, so :meth:`from_rpc` raises —
-    a ``ValueError`` worded ``"<rpc>: '<field>' is required"``, the
-    text the FE and extensions have always seen.
     """
 
     model_config = ConfigDict(extra="ignore", coerce_numbers_to_str=True)
 
-    rpc_name: ClassVar[str]
 
-    @classmethod
-    def from_rpc(cls, args: dict[str, Any]) -> Self:
-        try:
-            return cls.model_validate(args)
-        except ValidationError as exc:
-            raise ValueError(cls._refusal(exc.errors()[0], args)) from exc
-
-    @classmethod
-    def _refusal(cls, error: ErrorDetails, args: dict[str, Any]) -> str:
-        field = str(error["loc"][0]) if error["loc"] else ""
-        if error["type"] in ("missing", "string_too_short"):
-            return f"{cls.rpc_name}: '{field}' is required"
-        if error["type"] == "dict_type":
-            got = type(args.get(field)).__name__
-            return f"{cls.rpc_name}: '{field}' must be a dict, got {got}"
-        return f"{cls.rpc_name}: '{field}': {error['msg']}"
-
-
-class WorkflowListRequest(_RpcParams):
+class WorkflowListRequest(_WorkflowRpcArgs):
     """``LIST_WORKFLOWS`` params: none. Whatever the caller sends
     (``session_id`` and the like) is ignored."""
 
-    rpc_name: ClassVar[str] = "list_workflows"
 
-
-class WorkflowRunRequest(_RpcParams):
+class WorkflowRunRequest(_WorkflowRpcArgs):
     """``RUN_WORKFLOW`` params.
 
-    ``args`` is the workflow's own JSON input: it is handed to the
-    script as-is, and each workflow defines and reads its own keys,
-    so the only contract here is that it is a JSON object.
+    ``name`` is the workflow; ``args`` is the workflow's own JSON
+    input: it is handed to the script as-is, and each workflow defines
+    and reads its own keys, so the only contract here is that it is a
+    JSON object.
     """
-
-    rpc_name: ClassVar[str] = "run_workflow"
 
     name: str = Field(min_length=1)
     args: dict[str, JsonValue] = Field(default_factory=dict)
@@ -184,10 +157,8 @@ class WorkflowRunResponse(BaseModel):
     name: str
 
 
-class WorkflowCancelRequest(_RpcParams):
+class WorkflowCancelRequest(_WorkflowRpcArgs):
     """``CANCEL_WORKFLOW`` params."""
-
-    rpc_name: ClassVar[str] = "cancel_workflow"
 
     workflow_run_id: str = Field(min_length=1)
 

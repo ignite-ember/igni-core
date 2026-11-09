@@ -26,8 +26,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from igni_core.protocol.rpc import RpcMethod
+
 _ROOT = Path(__file__).resolve().parent.parent
-_RPC = _ROOT / "src/igni_core/protocol/rpc.py"
 _MATRIX = _ROOT / "docs/APP_TEST_MATRIX.md"
 
 #: Statuses a row may carry. Anything else is a typo that would quietly
@@ -37,7 +38,7 @@ _STATUSES = {"verified", "answers", "todo", "blocked"}
 
 def _protocol_methods() -> set[str]:
     """Every wire method name in the ``RpcMethod`` enum."""
-    return set(re.findall(r'^\s+[A-Z_0-9]+\s*=\s*"([a-z_0-9]+)"', _RPC.read_text(), re.M))
+    return {m.value for m in RpcMethod}
 
 
 def _matrix_rows() -> list[tuple[str, str]]:

@@ -286,6 +286,13 @@ follow_imports_for_stubs = true
 module = ["igni_core.backend.markdown_command_dispatcher"]
 enable_error_code = ["call-arg"]
 
+# Every RPC's result is published from its handler's return annotation
+# (``protocol/rpc_contract.py``), so the annotation has to be what the
+# handler returns: these checks are on where the contract is read from.
+[[tool.mypy.overrides]]
+module = ["igni_core.backend.rpc_handlers.*", "igni_core.backend.pool_rpcs.*"]
+enable_error_code = ["return-value", "arg-type", "attr-defined", "call-arg"]
+
 # The session package's ``MessageTeam`` protocol is a seam: it declares
 # the calls the message pipeline makes on Agno, and it is checked
 # precisely so a call site that drifts from the declaration is caught.

@@ -330,6 +330,41 @@ class RpcMethod(StrEnum):
     REVOKE_APPROVER_TOKENS = "revoke_approver_tokens"  # noqa: S105 — an RPC method's name, not a secret
 
 
+class RpcScope(StrEnum):
+    """What one call acts on.
+
+    ``SESSION``: the session the request is routed to — the envelope's
+    ``session_id``, or the default session when it is empty — or one it
+    names in its arguments. ``IGNI``: igni as a whole (the machine, the
+    account, every session), whichever session the request is routed to.
+    """
+
+    SESSION = "session"
+    IGNI = "igni"
+
+
+class RpcAccess(StrEnum):
+    """Who may make a call, as the backend enforces it
+    (``backend/standing_policy.py``, ``backend/message_admission.py``).
+
+    * ``CLIENT`` — any attached connection: igni's window, an approver,
+      or a program that attached with the lockfile's token.
+    * ``APPROVER`` — igni's window, or a program the window minted an
+      approver token for.
+    * ``WINDOW`` — igni's own window only.
+    * ``PAGE`` — an extension's page, through igni's window, which sets
+      the request's ``caller``.
+    * ``PLATFORM`` — the platform (a cloud gateway); where the layer
+      requires it, only on its control connection.
+    """
+
+    CLIENT = "client"
+    APPROVER = "approver"
+    WINDOW = "window"
+    PAGE = "page"
+    PLATFORM = "platform"
+
+
 def validate_rpc_table(registered_keys: Iterable[str]) -> None:
     """Raise if any :class:`RpcMethod` member is missing from the
     backend's dispatch table.

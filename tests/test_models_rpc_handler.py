@@ -15,8 +15,8 @@ from importlib.metadata import PackageNotFoundError
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic import ValidationError
 
+from igni_core.backend.rpc_binding import RpcArgsError
 from igni_core.backend.rpc_handlers import models as models_module
 from igni_core.backend.rpc_handlers.models import ModelsRpcHandler
 from igni_core.backend.schemas_hitl import ToolCallArgs
@@ -54,7 +54,7 @@ def test_check_permission_gets_typed_tool_args() -> None:
 
 def test_check_permission_without_tool_name_is_refused() -> None:
     handler, _ = _handler()
-    with pytest.raises(ValidationError, match="tool_name"):
+    with pytest.raises(RpcArgsError, match="tool_name"):
         _call(handler, RpcMethod.CHECK_PERMISSION, {"func_name": "f", "tool_args": {}})
 
 
@@ -66,7 +66,7 @@ def test_save_permission_rule_saves_a_known_level() -> None:
 
 def test_save_permission_rule_refuses_an_unknown_level() -> None:
     handler, ctx = _handler()
-    with pytest.raises(ValidationError, match="level"):
+    with pytest.raises(RpcArgsError, match="level"):
         _call(handler, RpcMethod.SAVE_PERMISSION_RULE, {"rule": "Bash(ls)", "level": "sometimes"})
     ctx.backend.controllers.hitl.permissions.save_rule.assert_not_called()
 

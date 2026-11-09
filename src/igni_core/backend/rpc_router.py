@@ -28,6 +28,7 @@ from igni_core.backend.file_completion_service import FileCompletionService
 from igni_core.backend.folder_picker import NativeFolderPicker  # noqa: F401
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.push_bridge import PushNotificationBridge
+from igni_core.backend.rpc_binding import RpcCall
 from igni_core.backend.rpc_handlers import (
     POOL_LEVEL_RPCS,
     AuthRpcHandler,
@@ -50,7 +51,6 @@ from igni_core.backend.rpc_handlers import (
     WorkflowsRpcHandler,
     WorkspaceTrustRpcHandler,
 )
-from igni_core.backend.rpc_handlers.base import RpcCall
 from igni_core.backend.server import BackendServer
 from igni_core.backend.workflow_runner import WorkflowRunner
 from igni_core.extensions.origin import ExtensionOrigins
@@ -64,7 +64,30 @@ logger = logging.getLogger(__name__)
 # Re-exported at module level so the pool's admission and RPC router and any
 # other module that needs the "which RPCs must be intercepted before
 # per-runtime dispatch" invariant reads it from one place.
-__all__ = ["POOL_LEVEL_RPCS", "NativeFolderPicker", "RpcRouter"]
+__all__ = ["POOL_LEVEL_RPCS", "RPC_HANDLERS", "NativeFolderPicker", "RpcRouter"]
+
+#: Every handler class a session's table is built from. Order is
+#: descriptive, not load-bearing: :meth:`RpcRouter.build_table` raises on
+#: a duplicate key, so a mis-registration surfaces immediately.
+RPC_HANDLERS: tuple[type[RpcHandler], ...] = (
+    McpRpcHandler,
+    LoopRpcHandler,
+    AuthRpcHandler,
+    SessionRpcHandler,
+    SessionHistoryRpcHandler,
+    SchedulerRpcHandler,
+    SkillsRpcHandler,
+    ModelsRpcHandler,
+    HooksRpcHandler,
+    ExtensionsRpcHandler,
+    NotificationsRpcHandler,
+    PluginsRpcHandler,
+    PlanRpcHandler,
+    PanelRpcHandler,
+    PoolGuardRpcHandler,
+    WorkflowsRpcHandler,
+    WorkspaceTrustRpcHandler,
+)
 
 
 class RpcRouter:
@@ -120,28 +143,7 @@ class RpcRouter:
             extension_store=extension_store,
             notifications=notifications,
         )
-        # Order is descriptive, not load-bearing — the merge below
-        # raises on duplicate keys so mis-registration surfaces
-        # immediately.
-        self._handlers: list[RpcHandler] = [
-            McpRpcHandler(ctx),
-            LoopRpcHandler(ctx),
-            AuthRpcHandler(ctx),
-            SessionRpcHandler(ctx),
-            SessionHistoryRpcHandler(ctx),
-            SchedulerRpcHandler(ctx),
-            SkillsRpcHandler(ctx),
-            ModelsRpcHandler(ctx),
-            HooksRpcHandler(ctx),
-            ExtensionsRpcHandler(ctx),
-            NotificationsRpcHandler(ctx),
-            PluginsRpcHandler(ctx),
-            PlanRpcHandler(ctx),
-            PanelRpcHandler(ctx),
-            PoolGuardRpcHandler(ctx),
-            WorkflowsRpcHandler(ctx),
-            WorkspaceTrustRpcHandler(ctx),
-        ]
+        self._handlers: list[RpcHandler] = [handler(ctx) for handler in RPC_HANDLERS]
 
     def has_live_workflows(self) -> bool:
         return self._workflows.has_live_runs()

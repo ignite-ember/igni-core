@@ -366,6 +366,10 @@ class PushChannel(StrEnum):
     #: ``ask``. The payload is
     #: :class:`~igni_core.backend.workspace_trust_controller.WorkspaceTrustStatus`.
     WORKSPACE_TRUST_REQUIRED = "workspace_trust_required"
+    #: A cloud VM's own credential changed state (``vm_sign_in``, its
+    #: renewals): the layer's credential keeper pushes it. The payload is
+    #: :class:`~igni_core.backend.schemas_pool.VmCredentialState`.
+    VM_CREDENTIAL = "vm_credential"
     UNKNOWN = "unknown"
 
     @classmethod

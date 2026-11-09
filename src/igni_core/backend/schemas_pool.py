@@ -6,9 +6,9 @@ one of them returns, success or the reason it was not done, and
 :class:`~igni_core.backend.pool_replier.PoolReplier` is the one place
 that turns it into an ``RPCResponse``.
 
-The argument models are lenient on purpose: a window or the platform
-that leaves a value out, or sends ``null``, gets the same answer it got
-when these were read off a dict.
+The argument models are lenient about values on purpose: a window or the
+platform that leaves a value out, or sends ``null``, gets the same answer
+it got when these were read off a dict. A key they do not name is refused.
 """
 
 from __future__ import annotations
@@ -18,13 +18,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, SerializeAsAny, field_validator
 
+from igni_core.backend.rpc_binding import RpcArgs
 from igni_core.extensions.service_events import DeliveryReceipt, NotHandled, ServiceEvent
 
 
-class AttachSessionParams(BaseModel):
+class AttachSessionParams(RpcArgs):
     """``attach_session``: which session, and in which directory; empty for neither."""
 
+    #: The session to bind; empty for the default one, or a new one when
+    #: ``project_dir`` is given.
     session_id: str = ""
+    #: The folder the session works in; empty for the backend's own.
     project_dir: str = ""
 
     @field_validator("session_id", "project_dir", mode="before")
@@ -39,10 +43,12 @@ class AttachRefused(BaseModel):
     reason: str
 
 
-class VmSignInParams(BaseModel):
+class VmSignInParams(RpcArgs):
     """``vm_sign_in``: the person's session, and the organisation it signs in for."""
 
+    #: The person's igni server session, as the gateway holds it.
     session_token: str = ""
+    #: The organisation the VM signs in for; ``None`` for the person's own.
     organisation: str | None = None
 
     @field_validator("session_token", mode="before")
@@ -56,7 +62,7 @@ class VmSignInParams(BaseModel):
         return value if isinstance(value, str) else None
 
 
-class ServiceEventsParams(BaseModel):
+class ServiceEventsParams(RpcArgs):
     """``deliver_service_events``: the platform's batch."""
 
     events: list[ServiceEvent] = Field(default_factory=list)
@@ -80,6 +86,23 @@ class ServiceEventsAck(BaseModel):
             not_handled=receipt.not_handled,
             acknowledge=receipt.acknowledge,
         )
+
+
+class VmCredentialState(BaseModel):
+    """``vm_sign_in``'s answer: the state of the VM's own credential after the sign-in.
+
+    The layer's credential keeper answers with its own model; it is read
+    into this one, so what goes on the wire is what is published.
+    """
+
+    #: ``ready``: the VM holds a credential and a token from it.
+    #: ``needs_sign_in``: the person must sign in through the gateway again.
+    #: ``needs_reissue``: an app VM's credential is gone; an org admin re-issues it.
+    #: ``unreachable``: igni server could not be reached; the last token holds
+    #: until it expires.
+    state: Literal["ready", "needs_sign_in", "needs_reissue", "unreachable"]
+    #: What went wrong, when something did.
+    message: str = ""
 
 
 class ApproverTokenMinted(BaseModel):

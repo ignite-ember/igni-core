@@ -12,7 +12,7 @@ from typing import Any
 
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.push_bridge import PushNotificationBridge
-from igni_core.backend.rpc_handlers.base import RpcCall
+from igni_core.backend.rpc_binding import RpcCall
 from igni_core.backend.rpc_router import RpcRouter
 
 
