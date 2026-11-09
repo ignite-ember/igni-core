@@ -22,9 +22,11 @@ from typing import Any
 import httpx
 import pytest
 
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.extensions.bundle_signature import BundleSignatureError, PublisherKeys
 from igni_core.extensions.distribution import ExtensionDistribution
-from igni_core.extensions.installer import ExtensionInstaller, InstallError
+from igni_core.extensions.install_errors import InstallError
+from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.launcher import ExtensionLauncher
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
@@ -492,8 +494,11 @@ class StubMcp:
     def __init__(self) -> None:
         self.configs: dict[str, Any] = {}
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return type("Ok", (), {"ok": True, "reason": ""})()
+        return MCPConnectResult(ok=True)
 
     async def disconnect_one(self, name: str) -> None:
         self.configs.pop(name, None)

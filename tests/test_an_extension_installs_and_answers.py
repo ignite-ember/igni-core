@@ -28,11 +28,9 @@ from pathlib import Path
 import pytest
 
 from igni_core.core.mcp.client import MCPClientManager
-from igni_core.extensions.installer import (
-    ExtensionInstaller,
-    InstallError,
-    server_name,
-)
+from igni_core.extensions.install_errors import InstallError
+from igni_core.extensions.install_service import server_name
+from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import (
     ExtensionRefused,

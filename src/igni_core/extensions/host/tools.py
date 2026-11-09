@@ -18,7 +18,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from igni_core.core.mcp.naming import tool_name_prefix
-from igni_core.extensions.installer import server_name
+from igni_core.extensions.install_service import server_name
 from igni_core.extensions.registry import ExtensionRegistry
 
 

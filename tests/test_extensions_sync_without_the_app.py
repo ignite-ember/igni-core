@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from click.testing import CliRunner
@@ -17,6 +18,7 @@ from click.testing import CliRunner
 from igni_core.backend.headless_extensions import HeadlessExtensions
 from igni_core.core.auth.credentials import Credentials, CredentialsStore
 from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.distribution import OneShotSync
@@ -171,10 +173,14 @@ def test_a_refused_listing_is_reported_not_a_traceback(world):
 
 
 class Mcp:
-    configs: dict = {}
+    def __init__(self) -> None:
+        self.configs: dict = {}
+
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
 
     async def connect(self, name):
-        return SimpleNamespace(ok=False, reason="not started in this test")
+        return MCPConnectResult.failure("not started in this test")
 
     async def disconnect_one(self, name):
         return False

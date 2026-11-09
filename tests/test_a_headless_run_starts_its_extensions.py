@@ -18,6 +18,7 @@ from igni_core.backend.headless_extensions import HeadlessExtensions
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.hooks.extension_values import PreToolUseValue
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.registry import ExtensionState
@@ -31,8 +32,11 @@ class Mcp:
         self.configs: dict[str, Any] = {}
         self.disconnected = False
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return SimpleNamespace(ok=False, reason="its command was not found")
+        return MCPConnectResult.failure("its command was not found")
 
     async def disconnect_one(self, name: str) -> bool:
         return False

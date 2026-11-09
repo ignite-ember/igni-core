@@ -28,6 +28,7 @@ import logging
 from typing import Any, Protocol, runtime_checkable
 
 from igni_core.core.activity import ActivityRegistry, BusyKind
+from igni_core.extensions.mcp_manager import McpServiceManager
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class McpExtensionService:
     instead of failing against a handle captured at install.
     """
 
-    def __init__(self, *, manager: Any, server_name: str) -> None:
+    def __init__(self, *, manager: McpServiceManager, server_name: str) -> None:
         self._manager = manager
         self._server_name = server_name
 

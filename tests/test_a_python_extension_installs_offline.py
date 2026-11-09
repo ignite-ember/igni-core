@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.python_env import (
@@ -281,8 +282,11 @@ class StubMcp:
     def __init__(self) -> None:
         self.configs: dict[str, Any] = {}
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return type("Ok", (), {"ok": True, "reason": ""})()
+        return MCPConnectResult(ok=True)
 
     async def disconnect_one(self, name: str) -> None:
         self.configs.pop(name, None)

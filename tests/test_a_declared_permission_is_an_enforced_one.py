@@ -27,7 +27,8 @@ import pytest
 
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.naming import bare_tool_name
-from igni_core.extensions.installer import ExtensionInstaller, InstallError
+from igni_core.extensions.install_errors import InstallError
+from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.permissions import PermissionDenied, Permissions

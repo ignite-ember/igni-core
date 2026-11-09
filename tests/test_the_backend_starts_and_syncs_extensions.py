@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -23,6 +22,7 @@ from igni_core.backend.extensions_runtime import ExtensionsRuntime
 from igni_core.backend.igni_server_access import IgniServerAccess
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.core.config.settings import Settings
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
@@ -41,8 +41,11 @@ class StubMcp:
         self.configs: dict[str, Any] = {}
         self.extension_request_meta: Any = None
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return SimpleNamespace(ok=True, reason="")
+        return MCPConnectResult(ok=True)
 
     async def disconnect_one(self, name: str) -> None:
         self.configs.pop(name, None)

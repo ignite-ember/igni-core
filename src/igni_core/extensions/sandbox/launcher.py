@@ -5,9 +5,9 @@ installer built and returns one that runs the same command confined to
 the extension's grants (:class:`~.plan.SandboxPlan`), with an egress
 proxy (:class:`~.proxy.EgressProxy`) running for it in igni. Every
 process igni starts for an extension goes through here
-(:meth:`ExtensionInstaller._service_config`'s result is confined before
-it is started); an ``endpoint`` extension has no process here and is
-left as it is.
+(:meth:`~igni_core.extensions.install_process.ExtensionProcess.confine`
+confines the config the installer built, before it is started); an
+``endpoint`` extension has no process here and is left as it is.
 
 What the process sees changes in four ways, all in its environment:
 

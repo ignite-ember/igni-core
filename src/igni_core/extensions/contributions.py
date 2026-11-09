@@ -89,7 +89,7 @@ from igni_core.extensions.impact import (
     ResolvedImpact,
     SwitchedOff,
 )
-from igni_core.extensions.installer import SERVER_PREFIX
+from igni_core.extensions.install_service import SERVER_PREFIX
 from igni_core.extensions.manifest import ExtensionManifest, FragmentSource
 from igni_core.extensions.registry import (
     ExtensionRegistry,

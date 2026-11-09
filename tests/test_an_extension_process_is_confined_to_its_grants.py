@@ -525,6 +525,9 @@ class _Mcp:
     def __init__(self) -> None:
         self.configs: dict[str, MCPServerConfig] = {}
 
+    def register_server(self, config: MCPServerConfig) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name):  # pragma: no cover — refused before
         raise AssertionError("a refused extension must not be started")
 
