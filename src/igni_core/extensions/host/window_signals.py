@@ -11,10 +11,22 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, ClassVar, Self
 
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.extensions.host.signal_values import Emitter, Windowed
-from igni_core.extensions.host.windows import WindowChange
+from igni_core.extensions.host.window_changes import WindowChange
+from igni_core.extensions.host.window_values import (
+    Composer,
+    Dialog,
+    Page,
+    Panel,
+    Preview,
+    Scroll,
+    Selection,
+    Sidebar,
+    Toast,
+    WindowInfo,
+)
 
 SessionSwitched = Callable[[str, str | None], None]
 ChangeHandler = Callable[[WindowChange], None]
@@ -24,7 +36,7 @@ class Navigated(Windowed):
     WIRE: ClassVar[str] = "ui.navigated"
 
     window: str
-    pages: Any
+    pages: list[Page]
 
 
 class WindowFieldChanged(Windowed):
@@ -44,35 +56,35 @@ class PanelChanged(WindowFieldChanged):
     WIRE: ClassVar[str] = "ui.panel_changed"
     FIELD: ClassVar[str] = "panel"
 
-    panel: Any = None
+    panel: Panel | None = None
 
 
 class SidebarChanged(WindowFieldChanged):
     WIRE: ClassVar[str] = "ui.sidebar_changed"
     FIELD: ClassVar[str] = "sidebar"
 
-    sidebar: Any
+    sidebar: Sidebar
 
 
 class PreviewChanged(WindowFieldChanged):
     WIRE: ClassVar[str] = "ui.preview_changed"
     FIELD: ClassVar[str] = "preview"
 
-    preview: Any = None
+    preview: Preview | None = None
 
 
 class SelectionChanged(WindowFieldChanged):
     WIRE: ClassVar[str] = "ui.selection_changed"
     FIELD: ClassVar[str] = "selection"
 
-    selection: Any
+    selection: Selection
 
 
 class ComposerChanged(WindowFieldChanged):
     WIRE: ClassVar[str] = "ui.composer_changed"
     FIELD: ClassVar[str] = "composer"
 
-    composer: Any
+    composer: Composer
 
 
 class Scrolled(Windowed):
@@ -87,12 +99,17 @@ class Scrolled(Windowed):
     at_bottom: bool
     window: str | None = None
 
+    @classmethod
+    def of_scroll(cls, window: str, scroll: Scroll) -> Scrolled:
+        """The scroll as the window wrote it, and which window it is."""
+        return cls.model_validate({**scroll.model_dump(), "window": window})
+
 
 class ToastChanged(Windowed):
     """A toast shown or dismissed, and in which window."""
 
     window: str
-    toast: dict[str, Any] | None
+    toast: Toast | None
 
 
 class ToastShown(ToastChanged):
@@ -107,7 +124,7 @@ class DialogOpened(Windowed):
     WIRE: ClassVar[str] = "ui.dialog_opened"
 
     window: str
-    dialog: dict[str, Any] | None
+    dialog: Dialog | None
     #: An open dialog has no answer yet: the schema's field, never told.
     answer: Any = Field(default=None, exclude=True)
 
@@ -116,45 +133,64 @@ class DialogClosed(Windowed):
     WIRE: ClassVar[str] = "ui.dialog_closed"
 
     window: str
-    dialog: dict[str, Any] | None
+    dialog: Dialog | None
     #: The person's answer; ``None`` when dismissed — told either way.
     answer: Any = None
 
 
-class WindowSignals:
-    """Routes each window change to the signal its field publishes."""
+class SignalRoutes(BaseModel):
+    """Which signal each change is told as.
 
-    FIELD_SIGNALS: ClassVar[dict[str, type[WindowFieldChanged]]] = {
-        signal.FIELD: signal
-        for signal in (
-            PanelChanged,
-            SidebarChanged,
-            PreviewChanged,
-            SelectionChanged,
-            ComposerChanged,
-        )
-    }
-    TOAST_SIGNALS: ClassVar[dict[str, type[ToastChanged]]] = {
-        "toast_shown": ToastShown,
-        "toast_dismissed": ToastDismissed,
-    }
-    #: ``Windows.on_window``'s ``what``, and the signal it is told as.
-    WINDOW_WIRES: ClassVar[dict[str, str]] = {
-        "opened": "windows.opened",
-        "closed": "windows.closed",
-        "focus_changed": "windows.focus_changed",
-    }
+    The tables live here, so the router keeps one thing: what to send.
+    """
+
+    #: The window-model field, and the signal it publishes.
+    fields: dict[str, type[WindowFieldChanged]] = Field(default_factory=dict)
+    #: The toast event, and the signal it publishes.
+    toasts: dict[str, type[ToastChanged]] = Field(default_factory=dict)
+    #: ``Windows.on_window``'s ``what``, and the wire it is told on.
+    windows: dict[str, str] = Field(default_factory=dict)
+
+
+class WindowSignals:
+    """Routes each window change to the signal its field publishes.
+
+    The routing tables are the instance's own: which signal each field
+    publishes, which signal each toast event is told as, and the wire
+    each window event is told on.
+    """
 
     def __init__(self, emitter: Emitter, session_switched: SessionSwitched) -> None:
         self._emitter = emitter
         self._session_switched = session_switched
+        self._routes = SignalRoutes(
+            fields={
+                signal.FIELD: signal
+                for signal in (
+                    PanelChanged,
+                    SidebarChanged,
+                    PreviewChanged,
+                    SelectionChanged,
+                    ComposerChanged,
+                )
+            },
+            toasts={
+                "toast_shown": ToastShown,
+                "toast_dismissed": ToastDismissed,
+            },
+            windows={
+                "opened": "windows.opened",
+                "closed": "windows.closed",
+                "focus_changed": "windows.focus_changed",
+            },
+        )
         self._table: dict[str, ChangeHandler] = {
             "session": self._session,
             "route": self._route,
             "scroll": self._scroll,
             "toasts": self._toasts,
             "dialog": self._dialog,
-            **dict.fromkeys(self.FIELD_SIGNALS, self._field),
+            **dict.fromkeys(self._routes.fields, self._field),
         }
 
     def fields(self) -> frozenset[str]:
@@ -166,9 +202,9 @@ class WindowSignals:
         if handler is not None:
             handler(change)
 
-    def window_moved(self, what: str, window: dict[str, Any]) -> None:
+    def window_moved(self, what: str, window: WindowInfo) -> None:
         """A window opened, closed or took the focus."""
-        self._emitter.value(self.WINDOW_WIRES[what], window)
+        self._emitter.value(self._routes.windows[what], window)
 
     def _session(self, change: WindowChange) -> None:
         if change.value:
@@ -178,13 +214,13 @@ class WindowSignals:
         self._emitter.send(Navigated(window=change.window, pages=change.value))
 
     def _field(self, change: WindowChange) -> None:
-        self._emitter.send(self.FIELD_SIGNALS[change.field].of_value(change.window, change.value))
+        self._emitter.send(self._routes.fields[change.field].of_value(change.window, change.value))
 
     def _scroll(self, change: WindowChange) -> None:
-        self._emitter.send(Scrolled.model_validate({**change.value, "window": change.window}))
+        self._emitter.send(Scrolled.of_scroll(change.window, change.value))
 
     def _toasts(self, change: WindowChange) -> None:
-        signal = self.TOAST_SIGNALS.get(change.event)
+        signal = self._routes.toasts.get(change.event)
         if signal is not None:
             self._emitter.send(signal(window=change.window, toast=change.item))
 

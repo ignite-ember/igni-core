@@ -426,7 +426,7 @@ class TestWindowsAndUi:
         await rig.window("w-1", connection="ws-a")
         [window] = ok(await rig.ask(ext, "get", "windows.list"))
         assert window["id"] == "w-1" and window["kind"] == "tauri"
-        rig.model.services.windows.detached("ws-a")
+        rig.model.services.windows.registry.detached("ws-a")
         assert ok(await rig.ask(ext, "get", "windows.list")) == []
         assert [v["id"] for v in sink.values("windows.opened")] == ["w-1"]
         assert [v["id"] for v in sink.values("windows.closed")] == ["w-1"]

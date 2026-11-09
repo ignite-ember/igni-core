@@ -58,7 +58,7 @@ from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntim
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
 from igni_core.core.layer import layers
-from igni_core.extensions.host.windows import WindowModelError
+from igni_core.extensions.host.window_errors import WindowModelError
 from igni_core.extensions.service_events import DeliveryReceipt
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
@@ -181,6 +181,10 @@ class _WindowRpc:
 
 
 class _Windows:
+    @property
+    def registry(self) -> _Windows:
+        return self
+
     def by_connection(self, connection_id: str) -> str | None:
         return None
 

@@ -98,7 +98,7 @@ class HostModelWiring:
 
         def closed(event: str, connection_id: str) -> None:
             if event == "detached":
-                model.services.windows.detached(connection_id)
+                model.services.windows.registry.detached(connection_id)
 
         transport.watch_connections(closed)
         return model

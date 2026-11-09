@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from igni_core.extensions.host.windows import references
+from igni_core.extensions.host.window_values import references
 from tests.host_model_helpers import HostRig, Sink
 
 
@@ -367,7 +367,7 @@ class TestFocus:
         await rig.window("w-1", connection="ws-a")
         await rig.window_writes("w-1", "focused", True)
         assert rig.model is not None
-        rig.model.services.windows.detached("ws-a")
+        rig.model.services.windows.registry.detached("ws-a")
         assert ok(await rig.ask(ext, "get", "windows.focused")) is None
 
 

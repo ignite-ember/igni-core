@@ -353,7 +353,7 @@ class PushChannel(StrEnum):
     #: A window's model changed — by the window itself, another
     #: window, or an extension through ``host.ui``. Every window gets
     #: it; the one it is about applies it. The payload is
-    #: :class:`~igni_core.extensions.host.windows.WindowChange`.
+    #: :class:`~igni_core.extensions.host.window_changes.WindowChange`.
     WINDOW_MODEL_CHANGED = "window_model_changed"
     #: An extension asked a window to open a link in the person's
     #: browser (``host.app.open_external``). Every window gets it; the

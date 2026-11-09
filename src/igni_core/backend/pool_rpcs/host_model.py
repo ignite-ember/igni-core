@@ -9,7 +9,8 @@ from pydantic import BaseModel, ValidationError
 
 from igni_core.backend.pool_rpcs.base import PoolRpc, UnavailableRpc
 from igni_core.backend.schemas_pool import PoolAnswer
-from igni_core.extensions.host.windows import WindowModelError, WindowRequest, WindowStateError
+from igni_core.extensions.host.window_errors import WindowModelError, WindowStateError
+from igni_core.extensions.host.window_rpc import WindowRequest
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 
@@ -18,8 +19,13 @@ class WindowRpc(Protocol):
     def handle(self, request: WindowRequest, /) -> BaseModel: ...
 
 
-class FramingWindows(Protocol):
+class FramingRegistry(Protocol):
     def by_connection(self, connection_id: str, /) -> str | None: ...
+
+
+class FramingWindows(Protocol):
+    @property
+    def registry(self) -> FramingRegistry: ...
 
 
 class PageHostServices(Protocol):
@@ -95,7 +101,9 @@ class HostModelRpcs(PoolRpc):
             return PoolAnswer.failed(self.PAGE_ONLY)
         args = dict(request.args)
         windows = self._model.services.windows
-        framing = windows.by_connection(request.from_client) if request.from_client else None
+        framing = (
+            windows.registry.by_connection(request.from_client) if request.from_client else None
+        )
         if framing:
             args["home_window"] = framing
         reply = await self._model.handle_page(request.caller, args)

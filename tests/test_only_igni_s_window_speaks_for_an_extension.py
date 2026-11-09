@@ -271,8 +271,8 @@ async def test_a_window_s_connection_is_the_one_it_spoke_on(tmp_path: Path):
             _from("ws-a", RpcMethod.WINDOW_MODEL, op="hydrate", window="w-1", connection_id="ws-x")
         )
 
-        assert rig.model.services.windows.by_connection("ws-a") == "w-1"
-        assert rig.model.services.windows.by_connection("ws-x") is None
+        assert rig.model.services.windows.registry.by_connection("ws-a") == "w-1"
+        assert rig.model.services.windows.registry.by_connection("ws-x") is None
     finally:
         await rig.stop()
 

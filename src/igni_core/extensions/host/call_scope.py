@@ -15,7 +15,8 @@ from igni_core.extensions.host.spec import (
     PropertySpec,
     SignalSpec,
 )
-from igni_core.extensions.host.windows import Windows, WindowStateError
+from igni_core.extensions.host.window_errors import WindowStateError
+from igni_core.extensions.host.windows import Windows
 from igni_core.extensions.host.wire import Request
 
 logger = logging.getLogger(__name__)
@@ -36,12 +37,12 @@ class CallScope:
                 raise HostModelError(
                     ErrorCode.INVALID, f"'{spec.path}' does not belong to a window"
                 )
-            if not self._windows.known(request.window):
+            if not self._windows.registry.known(request.window):
                 raise HostModelError(ErrorCode.NOT_FOUND, f"no window {request.window!r} is open")
             return request.window
-        if home is not None and self._windows.known(home):
+        if home is not None and self._windows.registry.known(home):
             return home
-        return self._windows.active()
+        return self._windows.registry.active()
 
     async def session(
         self,

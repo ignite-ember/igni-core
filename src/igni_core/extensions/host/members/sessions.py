@@ -10,10 +10,10 @@ from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.members.base import Members
 from igni_core.extensions.host.members.call import Call
 from igni_core.extensions.host.members.tag import call, get, put
-from igni_core.extensions.host.members.window_values import WindowFieldName
 from igni_core.extensions.host.rpc_wire.sessions import SwitchSessionArgs
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.values import SessionInfo
+from igni_core.extensions.host.window_field import WindowFieldName
 from igni_core.protocol.rpc import RpcMethod
 
 
