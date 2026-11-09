@@ -12,6 +12,7 @@ from igni_core.core.utils import context_managed as context_managed_module
 from igni_core.core.utils import context_memory as context_memory_module
 from igni_core.core.utils.context import RulesContextLoader
 from igni_core.core.utils.context_frontmatter import parse_frontmatter
+from igni_core.core.utils.context_loader import ProjectRootTier, RulesReaders
 from igni_core.core.utils.context_memory import (
     ProjectMemoryBank,
     _claude_project_memory_dir,
@@ -212,6 +213,36 @@ class TestLoadProjectContext:
 
         result = _loader(tmp_path, working_dir=src).load_all().render()
         assert "---" in result
+
+
+class TestTiersStandAlone:
+    """A tier owns its dependencies and loads without the loader.
+
+    The tiers used to call back into the loader for their content,
+    which made them unusable on their own and left the loader's
+    per-tier methods as the only place the reading happened. Each
+    tier now holds the readers and the paths it reads, so this
+    class pins that shape.
+    """
+
+    def test_tier_loads_without_a_loader(self, tmp_path):
+        (tmp_path / "igni.md").write_text("igni rules")
+        tier = ProjectRootTier(readers=RulesReaders(), project_dir=tmp_path)
+        assert tier.load() == "igni rules"
+
+    def test_tier_carries_its_section_heading(self, tmp_path):
+        tier = ProjectRootTier(readers=RulesReaders(), project_dir=tmp_path)
+        assert tier.heading == "Project Rules"
+
+    def test_loader_builds_the_flat_tiers_in_prompt_order(self, tmp_path):
+        headings = [tier.heading for tier in _loader(tmp_path).tiers()]
+        assert headings == [
+            "Managed Policy",
+            "Memory Index",
+            "User Rules",
+            "Project Rules",
+            "Project Shared Rules",
+        ]
 
 
 class TestParseFrontmatter:

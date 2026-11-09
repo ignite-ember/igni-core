@@ -29,8 +29,7 @@ readers and the user's global-rules locations — and drives the tiers
 polymorphically. Every tier implements the
 :class:`context_loader.RulesTier` protocol, so there is no dispatch
 table to keep in sync: adding a tier is one class in
-``context_loader``, one loader method here, and one entry in
-``TIERS``.
+``context_loader`` and one entry in the loader's ``tiers()``.
 
 ```python
 loader = RulesContextLoader(project_dir=Path("."), read_claude_md=True)
@@ -57,7 +56,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar
+from typing import TypeVar
 
 from igni_core.core.utils.context_loader import (
     ManagedTier,
@@ -66,18 +65,8 @@ from igni_core.core.utils.context_loader import (
     ProjectRootTier,
     RulesReaders,
     RulesTier,
+    SubdirectoryTier,
     UserTier,
-)
-from igni_core.core.utils.context_managed import load_managed_rules as _load_managed_rules
-from igni_core.core.utils.context_memory import ProjectMemoryBank
-from igni_core.core.utils.context_project import (
-    load_project_rules as _load_project_rules,
-)
-from igni_core.core.utils.context_project import (
-    load_project_rules_dirs as _load_project_rules_dirs,
-)
-from igni_core.core.utils.context_project import (
-    load_subdirectory_rules as _load_subdirectory_rules,
 )
 from igni_core.core.utils.context_schemas import (
     RulesBundle,
@@ -86,22 +75,18 @@ from igni_core.core.utils.context_schemas import (
     UserRulesPaths,
 )
 from igni_core.core.utils.context_user import default_user_rules_paths
-from igni_core.core.utils.context_user import load_user_rules as _load_user_rules
 
 # The module's public surface: the loader plus the typed values it
-# takes and returns. The per-tier helpers are imported under private
-# aliases so the namespace does not advertise names (``load_project_rules``
-# and friends) whose signatures differ from the ones this module used
-# to export — a clean removal beats a same-named function with a
-# different meaning.
+# takes and returns.
 __all__ = [
-    "ProjectMemoryBank",
     "RulesBundle",
     "RulesContextLoader",
     "RulesSection",
     "SubdirectoryRules",
     "UserRulesPaths",
 ]
+
+TierT = TypeVar("TierT", bound=RulesTier)
 
 
 @dataclass
@@ -131,89 +116,101 @@ class RulesContextLoader:
     readers: RulesReaders = field(default_factory=RulesReaders)
     user_rules_paths: UserRulesPaths = field(default_factory=default_user_rules_paths)
 
-    # Ordered tuple of tier objects. The iteration order in
-    # ``load_all`` matches the order the session prompt expects:
-    # managed → memory → user → project root → project shared →
-    # subdirectory chain. Adding a tier is one class in
-    # ``context_loader``, one loader method below, and one line here
-    # — no dispatch dict to keep in sync.
-    TIERS: ClassVar[tuple[RulesTier, ...]] = (
-        ManagedTier(),
-        MemoryTier(),
-        UserTier(),
-        ProjectRootTier(),
-        ProjectDirsTier(),
-    )
+    # ── Tier composition ─────────────────────────────────────
+
+    def tiers(self) -> tuple[RulesTier, ...]:
+        """The flat tiers, in the order the session prompt expects.
+
+        managed → memory → user → project root → project shared.
+        Every tier is built here, from this loader's state, so there
+        is exactly one construction site: adding a tier is one class
+        in ``context_loader`` and one entry in this tuple — no
+        dispatch dict to keep in sync.
+
+        The subdirectory chain is not one of them: it yields one
+        section per walked directory, so it is loaded separately by
+        :meth:`load_subdirectory`.
+        """
+        return (
+            ManagedTier(
+                readers=self.readers,
+                read_claude_md=self.read_claude_md,
+            ),
+            MemoryTier(
+                project_dir=self.project_dir,
+                read_claude_md=self.read_claude_md,
+            ),
+            UserTier(
+                readers=self.readers,
+                paths=self.user_rules_paths,
+                working_dir=self.working_dir,
+                project_dir=self.project_dir,
+                read_claude_md=self.read_claude_md,
+            ),
+            ProjectRootTier(
+                readers=self.readers,
+                project_dir=self.project_dir,
+                read_claude_md=self.read_claude_md,
+            ),
+            ProjectDirsTier(
+                readers=self.readers,
+                project_dir=self.project_dir,
+                working_dir=self.working_dir,
+                read_claude_md=self.read_claude_md,
+            ),
+        )
+
+    def _tier(self, tier_type: type[TierT]) -> TierT:
+        """The loader's tier of the given type, built from its state."""
+        for tier in self.tiers():
+            if isinstance(tier, tier_type):
+                return tier
+        raise LookupError(f"this loader has no {tier_type.__name__} tier")
 
     # ── Per-tier loaders ─────────────────────────────────────
 
     def load_managed(self) -> str:
         """Sysadmin-enforced managed-policy instructions file."""
-        return _load_managed_rules(
-            self.readers.read_rules_dir,
-            self.readers.rules_filenames,
-            read_claude_md=self.read_claude_md,
-        )
+        return self._tier(ManagedTier).load()
 
     def load_memory(self) -> str:
         """Per-project ``MEMORY.md`` index (200-line / 25-KB cap)."""
-        return ProjectMemoryBank(
-            self.project_dir,
-            read_claude_fallback=self.read_claude_md,
-        ).load_index()
+        return self._tier(MemoryTier).load()
 
     def load_user(self) -> str:
         """User-level global rules from the injected locations."""
-        return _load_user_rules(
-            self.readers.read_with_imports,
-            self.readers.read_rules_dir_files,
-            paths=self.user_rules_paths,
-            working_dir=self.working_dir,
-            project_dir=self.project_dir,
-            read_claude_rules=self.read_claude_md,
-        )
+        return self._tier(UserTier).load()
 
     def load_project_root(self) -> str:
         """Project-root ``igni.md`` / ``CLAUDE.md`` (+ ``.local.md`` overrides)."""
-        return _load_project_rules(
-            self.readers.read_rules_dir,
-            self.readers.rules_filenames,
-            project_dir=self.project_dir,
-            read_claude_md=self.read_claude_md,
-        )
+        return self._tier(ProjectRootTier).load()
 
     def load_project_dirs(self) -> str:
         """Committed shared rules at ``<project>/.igni/rules/`` + ``<project>/.claude/rules/``."""
-        return _load_project_rules_dirs(
-            self.readers.read_rules_dir_files,
-            project_dir=self.project_dir,
-            working_dir=self.working_dir,
-            read_claude_md=self.read_claude_md,
-        )
+        return self._tier(ProjectDirsTier).load()
 
     def load_subdirectory(self) -> list[SubdirectoryRules]:
         """Rules files between working-dir and project root, shallowest first."""
-        return _load_subdirectory_rules(
-            self.readers.read_rules_dir,
-            self.readers.rules_filenames,
+        return SubdirectoryTier(
+            readers=self.readers,
             project_dir=self.project_dir,
             working_dir=self.working_dir,
             read_claude_md=self.read_claude_md,
-        )
+        ).load()
 
     # ── Top-level aggregation ────────────────────────────────
 
     def load_all(self) -> RulesBundle:
         """Load every tier and assemble the ordered :class:`RulesBundle`.
 
-        Iterates the six tiers polymorphically — no dispatch dict, no
+        Iterates the tiers polymorphically — no dispatch dict, no
         six-branch if-chain. Subdirectory rules are the one tier that
         can produce multiple sections (one per walked directory),
         handled after the flat-tier loop.
         """
         sections: list[RulesSection] = []
-        for tier in self.TIERS:
-            body = tier.load(self)
+        for tier in self.tiers():
+            body = tier.load()
             if body:
                 sections.append(RulesSection(heading=tier.heading, body=body))
         for subdir in self.load_subdirectory():

@@ -9,10 +9,10 @@ composition (the file-read helpers every tier consumes), the
 ## Why this shape
 
 * One class per tier means adding a tier is one class plus one entry
-  in the loader's ``TIERS`` tuple — no dispatch dict to keep in sync.
-* The tiers hold no state: each one asks the loader for its own
-  content, so the session state (project dir, working dir, cross-tool
-  toggle) lives in exactly one place.
+  in the loader's ``tiers()`` — no dispatch dict to keep in sync.
+* Every tier owns what it reads: the reader helpers and the paths it
+  reads from. A tier does its own loading and never calls back into
+  the loader, so a tier can be built and used on its own.
 * The readers arrive as one typed composition, so the tier signatures
   stay free of ``Callable[..., str]`` parameters.
 """
@@ -20,8 +20,16 @@ composition (the file-read helpers every tier consumes), the
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol
+from pathlib import Path
+from typing import Protocol
 
+from igni_core.core.utils.context_managed import load_managed_rules
+from igni_core.core.utils.context_memory import ProjectMemoryBank
+from igni_core.core.utils.context_project import (
+    load_project_rules,
+    load_project_rules_dirs,
+    load_subdirectory_rules,
+)
 from igni_core.core.utils.context_readers import (
     read_if_exists,
     read_rules_dir,
@@ -35,11 +43,10 @@ from igni_core.core.utils.context_schemas import (
     ReadRulesDirFiles,
     ReadWithImports,
     RulesFilenames,
+    SubdirectoryRules,
+    UserRulesPaths,
 )
-
-if TYPE_CHECKING:
-    from igni_core.core.utils.context import RulesContextLoader
-
+from igni_core.core.utils.context_user import load_user_rules
 
 # ── Reader composition ─────────────────────────────────────────────
 
@@ -66,7 +73,7 @@ class RulesReaders:
     read_rules_dir_files: ReadRulesDirFiles = field(default=read_rules_dir_files)
 
 
-# ── Tier protocol + concrete tiers ─────────────────────────────────
+# ── Tier protocol ──────────────────────────────────────────────────
 
 
 class RulesTier(Protocol):
@@ -80,49 +87,137 @@ class RulesTier(Protocol):
 
     heading: str
 
-    def load(self, loader: RulesContextLoader) -> str: ...
+    def load(self) -> str: ...
 
 
+# ── Concrete tiers ─────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
 class ManagedTier:
-    """Sysadmin-enforced managed policy (loaded first)."""
+    """Sysadmin-enforced managed policy (loaded first).
+
+    The managed directory is a property of the platform, so
+    :func:`context_managed.platform_managed_rules_dir` answers it at
+    call time — the tier holds no path of its own.
+    """
 
     heading = "Managed Policy"
 
-    def load(self, loader: RulesContextLoader) -> str:
-        return loader.load_managed()
+    readers: RulesReaders
+    read_claude_md: bool = True
+
+    def load(self) -> str:
+        """The managed-policy instructions file, or ``""`` when there is none."""
+        return load_managed_rules(
+            self.readers.read_rules_dir,
+            self.readers.rules_filenames,
+            read_claude_md=self.read_claude_md,
+        )
 
 
+@dataclass(frozen=True)
 class MemoryTier:
     """Per-project ``MEMORY.md`` index (loaded after managed, before user)."""
 
     heading = "Memory Index"
 
-    def load(self, loader: RulesContextLoader) -> str:
-        return loader.load_memory()
+    project_dir: Path
+    read_claude_md: bool = True
+
+    def load(self) -> str:
+        """The project's memory index (200-line / 25-KB cap)."""
+        return ProjectMemoryBank(
+            self.project_dir,
+            read_claude_fallback=self.read_claude_md,
+        ).load_index()
 
 
+@dataclass(frozen=True)
 class UserTier:
     """User-level global rules (``~/.igni/rules.md`` / ``~/.igni/rules/`` / ``~/.claude/rules/``)."""
 
     heading = "User Rules"
 
-    def load(self, loader: RulesContextLoader) -> str:
-        return loader.load_user()
+    readers: RulesReaders
+    paths: UserRulesPaths
+    working_dir: Path | None = None
+    project_dir: Path | None = None
+    read_claude_md: bool = True
+
+    def load(self) -> str:
+        """The user's global rules, concatenated over their three locations."""
+        return load_user_rules(
+            self.readers.read_with_imports,
+            self.readers.read_rules_dir_files,
+            paths=self.paths,
+            working_dir=self.working_dir,
+            project_dir=self.project_dir,
+            read_claude_rules=self.read_claude_md,
+        )
 
 
+@dataclass(frozen=True)
 class ProjectRootTier:
     """Project-root ``igni.md`` / ``CLAUDE.md`` (+ ``.local.md`` overrides)."""
 
     heading = "Project Rules"
 
-    def load(self, loader: RulesContextLoader) -> str:
-        return loader.load_project_root()
+    readers: RulesReaders
+    project_dir: Path
+    read_claude_md: bool = True
+
+    def load(self) -> str:
+        """The project root's rules files, base before local override."""
+        return load_project_rules(
+            self.readers.read_rules_dir,
+            self.readers.rules_filenames,
+            project_dir=self.project_dir,
+            read_claude_md=self.read_claude_md,
+        )
 
 
+@dataclass(frozen=True)
 class ProjectDirsTier:
     """Committed shared rules at ``<project>/.igni/rules/`` and ``<project>/.claude/rules/``."""
 
     heading = "Project Shared Rules"
 
-    def load(self, loader: RulesContextLoader) -> str:
-        return loader.load_project_dirs()
+    readers: RulesReaders
+    project_dir: Path
+    working_dir: Path | None = None
+    read_claude_md: bool = True
+
+    def load(self) -> str:
+        """The committed shared rules of the project's rules directories."""
+        return load_project_rules_dirs(
+            self.readers.read_rules_dir_files,
+            project_dir=self.project_dir,
+            working_dir=self.working_dir,
+            read_claude_md=self.read_claude_md,
+        )
+
+
+@dataclass(frozen=True)
+class SubdirectoryTier:
+    """Rules files between the working directory and the project root.
+
+    The one tier that yields several sections — one per walked
+    directory — so it does not fit the flat :class:`RulesTier` shape
+    the loader's tier loop consumes.
+    """
+
+    readers: RulesReaders
+    project_dir: Path
+    working_dir: Path | None = None
+    read_claude_md: bool = True
+
+    def load(self) -> list[SubdirectoryRules]:
+        """The walked directories' rules, shallowest first."""
+        return load_subdirectory_rules(
+            self.readers.read_rules_dir,
+            self.readers.rules_filenames,
+            project_dir=self.project_dir,
+            working_dir=self.working_dir,
+            read_claude_md=self.read_claude_md,
+        )
