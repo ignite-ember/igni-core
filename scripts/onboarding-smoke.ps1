@@ -10,20 +10,20 @@
         1. Download uv-x86_64-pc-windows-msvc.zip from GitHub releases
         2. ``uv python install 3.12``
         3. ``uv venv``
-        4. ``uv pip install ignite-ember`` (or -e <repo> for --local)
-        5. Prefetch sentence-transformer model
+        4. ``uv pip install igni-core[decisions]`` (or -e <repo> for --local)
+        5. Prefetch Laya, igni's decision model
         6. Launch ``python -m igni_core.backend --ws-port 0`` and
            confirm the JSON ready line lands on stdout
 
     Mirrors the bash script's step-by-step output + per-step timings.
 
 .PARAMETER Local
-    Install ignite-ember from the working tree (``uv pip install -e .``)
+    Install igni-core from the working tree (``uv pip install -e .``)
     instead of from PyPI. Use this to smoke-test BEFORE publishing a
     new version.
 
 .PARAMETER Version
-    Specific ignite-ember version to install. Defaults to whatever's
+    Specific igni-core version to install. Defaults to whatever's
     in pyproject.toml.
 
 .PARAMETER Keep
@@ -60,7 +60,18 @@ if (-not $Version) {
         exit 1
     }
 }
-Write-Host "-> Targeting ignite-ember version: $Version (local source: $Local)"
+# The package this script installs is the one the desktop app installs
+# (``clients/tauri/src-tauri/src/runtime/managed.rs`` runs ``uv pip
+# install igni-core[decisions]==X``) and the one this repository builds.
+# It is not ``ignite-ember``: since the split that name is a
+# metadata-only alias that depends on igni-core, and the last
+# ``ignite-ember`` on PyPI still carries the pre-split ``ember_code``
+# package, so installing it left the interpreter with no ``igni_core``
+# to import and the smoke failed on a package nobody ships any more.
+$Package = "igni-core"
+$Extras = "decisions"
+
+Write-Host "-> Targeting $Package version: $Version (local source: $Local)"
 
 # ── Log dir ─────────────────────────────────────────────────────────
 # Same arrangement as the bash script: backend logs live OUTSIDE the
@@ -158,18 +169,31 @@ if (-not (Test-Path $VenvPython)) { throw "venv python not found at $VenvPython"
 $Elapsed = [int]((Get-Date) - $StepStart).TotalSeconds
 Write-Host "  venv ready at $VenvDir (${Elapsed}s)"
 
-# ── Step 4: ignite-ember ────────────────────────────────────────────
+# ── Step 4: igni-core ───────────────────────────────────────────────
 $StepStart = Get-Date
 if ($Local) {
-    Write-Host "-> Step 4: installing ignite-ember from local source ($RepoRoot)"
-    & $UvBin pip install --python $VenvPython -e $RepoRoot
+    Write-Host "-> Step 4: installing $Package from local source ($RepoRoot)"
+    & $UvBin pip install --python $VenvPython -e "$($RepoRoot)[$Extras]"
 } else {
-    Write-Host "-> Step 4: installing ignite-ember==$Version from PyPI"
-    & $UvBin pip install --python $VenvPython "ignite-ember==$Version"
+    # Is the version on PyPI at all? Before this repository's first
+    # release there is nothing to install, and uv's "no matching
+    # distribution" error names neither the package nor the reason.
+    # Exit 77 - the conventional "skipped" code - so CI can tell
+    # "nothing published yet" from "published and broken".
+    try {
+        Invoke-WebRequest -Uri "https://pypi.org/pypi/$Package/$Version/json" -UseBasicParsing -Method Head -TimeoutSec 30 -ErrorAction Stop | Out-Null
+    } catch {
+        Write-Host "-> $Package==$Version is not on PyPI - nothing to smoke." -ForegroundColor Yellow
+        Write-Host "  (exiting 77: skipped, not failed)" -ForegroundColor Yellow
+        $script:Succeeded = $true
+        exit 77
+    }
+    Write-Host "-> Step 4: installing $Package==$Version from PyPI"
+    & $UvBin pip install --python $VenvPython "$($Package)[$Extras]==$Version"
 }
 if ($LASTEXITCODE -ne 0) { throw "uv pip install failed" }
 $Elapsed = [int]((Get-Date) - $StepStart).TotalSeconds
-Write-Host "  ignite-ember installed (${Elapsed}s)"
+Write-Host "  $Package installed (${Elapsed}s)"
 
 # Sanity: import works.
 & $VenvPython -c "import igni_core; print(f'  igni_core v{igni_core.__version__}')"
@@ -177,7 +201,7 @@ if ($LASTEXITCODE -ne 0) { throw "igni_core import failed" }
 
 # ── Step 5: prefetch model ──────────────────────────────────────────
 $StepStart = Get-Date
-Write-Host "-> Step 5: prefetching embedding model"
+Write-Host "-> Step 5: prefetching Laya (igni's decision model)"
 $env:HF_HOME = Join-Path $CacheDir "hf"
 & $VenvPython -m igni_core.prefetch_models
 if ($LASTEXITCODE -ne 0) { throw "prefetch_models failed" }
