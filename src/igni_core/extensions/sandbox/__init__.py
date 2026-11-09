@@ -10,8 +10,11 @@ This package confines the process to the same grants:
 * :mod:`.plan` — what one extension may read, write and reach;
 * :mod:`.proxy` — the egress proxy igni runs per extension, the only
   route out;
-* :mod:`.seatbelt` (macOS) and :mod:`.bubblewrap` (Linux, with
-  :mod:`.bridge` inside its network namespace) — the platform profiles;
+* :mod:`.seatbelt` (macOS), :mod:`.bubblewrap` (Linux, with
+  :mod:`.bridge` inside its network namespace) and :mod:`.appcontainer`
+  (Windows, with :mod:`.winapi` for igni's Win32 calls and
+  :mod:`.winbridge` for the runner and the shim inside) — the platform
+  sandboxes;
 * :mod:`.settings` — ``extensions.sandbox`` and
   ``extensions.require_sandbox``, from the tiers allowed to set them.
 """

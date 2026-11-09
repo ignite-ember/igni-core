@@ -4,7 +4,9 @@ Its ``permissions.egress`` and ``permissions.workspace`` were enforced on
 its pages and on what igni told it; the process itself could open any
 socket and read any file the person can. Now it starts in an OS sandbox
 (:mod:`igni_core.extensions.sandbox`): Seatbelt on macOS, bubblewrap on
-Linux, with an egress proxy igni runs as the only way out.
+Linux, with an egress proxy igni runs as the only way out. Windows'
+AppContainer has its own file,
+``test_an_extension_process_is_confined_on_windows.py``.
 
 The macOS tests run the real sandbox and skip elsewhere; the Linux ones
 run real bubblewrap and skip where ``bwrap`` is missing or cannot make a
@@ -485,8 +487,8 @@ def stdio_config(
 
 
 async def test_require_sandbox_refuses_to_start_where_there_is_none(tmp_path):
-    sandbox = ExtensionSandbox(settings=SandboxSettings(required=True), platform="win32")
-    with pytest.raises(SandboxRefused, match="require_sandbox.*not sandboxed on Windows"):
+    sandbox = ExtensionSandbox(settings=SandboxSettings(required=True), platform="sunos5")
+    with pytest.raises(SandboxRefused, match="require_sandbox.*no sandbox for sunos5"):
         await sandbox.confine(
             manifest(),
             stdio_config(),
@@ -499,7 +501,7 @@ async def test_require_sandbox_refuses_to_start_where_there_is_none(tmp_path):
 
 
 async def test_without_require_it_runs_unsandboxed_and_says_so(tmp_path, caplog):
-    sandbox = ExtensionSandbox(settings=SandboxSettings(), platform="win32")
+    sandbox = ExtensionSandbox(settings=SandboxSettings(), platform="sunos5")
     config = stdio_config()
     out = await sandbox.confine(
         manifest(),
@@ -513,9 +515,7 @@ async def test_without_require_it_runs_unsandboxed_and_says_so(tmp_path, caplog)
     assert out == config
     status = sandbox.status("acme.probe")
     assert status is not None and not status.confined
-    assert (
-        status.describe() == "not sandboxed: extension processes are not sandboxed on Windows yet"
-    )
+    assert status.describe() == "not sandboxed: no sandbox for sunos5"
     assert "runs UNSANDBOXED" in caplog.text
 
 
@@ -542,7 +542,7 @@ async def test_the_installer_records_a_refusal_as_FAILED_with_the_reason(tmp_pat
         rpc=ExtensionRpc(registry),
         mcp=_Mcp(),
         allow_development=True,
-        sandbox=ExtensionSandbox(settings=SandboxSettings(required=True), platform="win32"),
+        sandbox=ExtensionSandbox(settings=SandboxSettings(required=True), platform="sunos5"),
     )
     entry = await installer.install(bundle)
     assert entry.state is ExtensionState.FAILED
@@ -550,7 +550,7 @@ async def test_the_installer_records_a_refusal_as_FAILED_with_the_reason(tmp_pat
 
 
 async def test_an_endpoint_has_no_process_here_and_is_left_alone(tmp_path):
-    sandbox = ExtensionSandbox(settings=SandboxSettings(required=True), platform="win32")
+    sandbox = ExtensionSandbox(settings=SandboxSettings(required=True), platform="sunos5")
     config = MCPServerConfig(
         name="ext:x", type=MCPTransport.sse, url="https://x.test/sse", source="extension"
     )
