@@ -28,6 +28,9 @@ The file has this shape::
           "result": <JSON Schema>,
           "reply": "rpc_response" | "message",
           "streams": ["<message type>" | "push_notification:<channel>", ...],
+          "may_stream": [<the same, for what the agent's tools may push meanwhile>],
+          "correlate": {"by": "<place in a streamed message>",
+                        "from": "<place in the call>" | "equals": "<value>"} | null,
           "duration": "instant" | "io" | "network" | "long" | "person",
           "timeout_seconds": <a timeout leaving a healthy call room> | null
         }
@@ -133,7 +136,9 @@ class MethodSpec:
     scope: RpcScope
     access: RpcAccess
     streams: tuple[str, ...]
+    may_stream: tuple[str, ...]
     duration: RpcDuration
+    correlate: dict[str, str] | None
 
     @property
     def summary(self) -> str:
@@ -187,7 +192,9 @@ def method_specs() -> list[MethodSpec]:
                 scope=binding.scope,
                 access=access_of(method),
                 streams=tuple(sorted({stream_name(s) for s in binding.streams})),
+                may_stream=tuple(sorted({stream_name(s) for s in binding.may_stream})),
                 duration=binding.duration,
+                correlate=_correlation(binding.correlate),
             )
     return [specs[m] for m in sorted(specs, key=lambda m: m.value)]
 
@@ -244,6 +251,8 @@ def build() -> dict[str, Any]:
             "result": schemas[((key, "result"), "serialization")],
             "reply": spec.reply,
             "streams": list(spec.streams),
+            "may_stream": list(spec.may_stream),
+            "correlate": spec.correlate,
             "duration": spec.duration.value,
             "timeout_seconds": spec.duration.timeout_seconds,
         }
@@ -341,6 +350,18 @@ def _without_channel(event: type[BaseModel]) -> type[BaseModel]:
 
 def _pascal(wire: str) -> str:
     return "".join(part.capitalize() for part in wire.split("_"))
+
+
+def _correlation(correlate: Any) -> dict[str, str] | None:
+    """How the contract says a binding's correlation."""
+    if correlate is None:
+        return None
+    out = {"by": correlate.by}
+    if correlate.source:
+        out["from"] = correlate.source
+    if correlate.equals:
+        out["equals"] = correlate.equals
+    return out
 
 
 def _jsonable(value: Any) -> Any:

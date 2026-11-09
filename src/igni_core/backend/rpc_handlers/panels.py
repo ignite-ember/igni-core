@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from igni_core.backend.dir_scanner import DirScanner
 from igni_core.backend.folder_picker import NativeFolderPicker
-from igni_core.backend.rpc_binding import NoArgs, rpc
+from igni_core.backend.rpc_binding import Correlation, NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.rpc_handlers.panel_args import (
     AgentNameArgs,
@@ -101,6 +101,7 @@ class PanelRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.RUN_SHELL,
+        correlate=Correlation(by="payload.pid", source="result.pid"),
         duration=RpcDuration.LONG,
         args=RunShellArgs,
         scope=RpcScope.SESSION,
@@ -221,6 +222,7 @@ class PanelRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.DISPATCH_VISUALIZATION_ACTION,
+        correlate=Correlation(by="payload.action", source="args.action"),
         args=VisualizationActionArgs,
         scope=RpcScope.SESSION,
         streams=(PushChannel.VISUALIZATION_ACTION_DISPATCHED,),
@@ -262,6 +264,7 @@ class PanelRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.STOP_BACKGROUND_PROCESS,
+        correlate=Correlation(by="payload.pid", source="args.pid"),
         duration=RpcDuration.IO,
         args=ProcessArgs,
         scope=RpcScope.IGNI,

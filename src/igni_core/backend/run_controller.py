@@ -289,7 +289,7 @@ class RunController:
                 if self._phase.is_active():
                     self._transition_to(RunPhase.done)
 
-    def cancel_run(self) -> None:
+    def cancel_run(self) -> bool:
         """Cancel the currently running agent and kill any
         foreground process.
 
@@ -316,6 +316,8 @@ class RunController:
             logger.info("Cancelling run task %s", task.get_name())
             self._cancelled_by_person = task
             task.cancel()
+            return True
+        return False
 
     def _cancel_own_foreground(self) -> None:
         """Kill the foreground shell — but only if this session

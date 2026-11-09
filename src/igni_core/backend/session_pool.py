@@ -40,6 +40,8 @@ from igni_core.backend.schemas_sessions import (
 # should import from :mod:`session_stamping_transport` directly.
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.core.activity import BusyKind, background
+from igni_core.protocol import messages as msg
+from igni_core.protocol.messages import Message
 
 if TYPE_CHECKING:
     from igni_core.backend.rpc_router import RpcRouter
@@ -180,7 +182,7 @@ class SessionRuntime:
             return ShutdownReport(ok=False, session_id=sid, error=str(exc))
         return ShutdownReport(ok=True, session_id=sid)
 
-    async def replay_waiting_approvals(self) -> None:
+    async def replay_waiting_approvals(self, request_id: str = "") -> None:
         """Show the session's approvals still waiting, to a window attaching.
 
         After a reload the window has lost its dialog; after a backend
@@ -188,11 +190,23 @@ class SessionRuntime:
         way the person sees the question again, and answering it resumes
         the run. What the previous backend was continuing when it died
         goes on now, where a window can see it.
+
+        With ``request_id`` (the attach that asked), every message sent
+        carries it and a ``stream_end`` of that id ends them, so the
+        client that attached can tell what its attach brought back.
         """
+
+        def tagged(message: Message) -> Message:
+            return message.model_copy(update={"id": request_id}) if request_id else message
+
         for paused in self.backend.controllers.hitl.waiting_messages():
-            await self.transport.send(paused)
+            await self.transport.send(tagged(paused))
         async for proto in self.backend.controllers.hitl.resume_interrupted():
-            await self.transport.send(proto)
+            await self.transport.send(tagged(proto))
+        if request_id:
+            await self.transport.send(
+                msg.StreamEnd(id=request_id, session_id=self.backend.session_id)
+            )
 
     def spawn_auto_name(self, coro: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
         """Fire-and-forget task that survives until it completes.

@@ -12,8 +12,8 @@ from typing import Protocol
 from pydantic import BaseModel
 
 from igni_core.backend.pool_rpcs.base import PoolRefusal, PoolRpc, UnavailableRpc
-from igni_core.backend.rpc_binding import RpcArgsError, rpc
-from igni_core.backend.rpc_streams import RUN_STREAM
+from igni_core.backend.rpc_binding import Correlation, RpcArgsError, rpc
+from igni_core.backend.rpc_streams import RUN_EVENTS, TOOL_PUSHES
 from igni_core.backend.schemas_pool import (
     ServiceEventsAck,
     ServiceEventsParams,
@@ -50,6 +50,7 @@ class VmSignInRpc(PoolRpc):
 
     @rpc(
         RpcMethod.VM_SIGN_IN,
+        correlate=Correlation(by="channel"),
         duration=RpcDuration.NETWORK,
         args=VmSignInParams,
         scope=RpcScope.IGNI,
@@ -96,14 +97,17 @@ class ServiceEventRpc(PoolRpc):
 
     @rpc(
         RpcMethod.DELIVER_SERVICE_EVENTS,
+        correlate=Correlation(by="channel"),
         duration=RpcDuration.IO,
         args=ServiceEventsParams,
         scope=RpcScope.IGNI,
         streams=(
             msg.UserMessageReceived,
             PushChannel.SESSION_NAMED,
-            *RUN_STREAM,
+            PushChannel.ORCHESTRATE_EVENT,
+            *RUN_EVENTS,
         ),
+        may_stream=TOOL_PUSHES,
     )
     async def deliver(self, args: ServiceEventsParams, request: msg.RPCRequest) -> ServiceEventsAck:
         """Hand igni the events extensions' services sent it, to start or resume the agent's work.

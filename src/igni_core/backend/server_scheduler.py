@@ -31,6 +31,7 @@ from igni_core.backend.schemas_scheduler import (
 from igni_core.core.activity import background
 from igni_core.core.config.group_policy.gate import GroupPolicyGate
 from igni_core.core.hooks.events import HookEvent
+from igni_core.core.run_context import CURRENT_RUN_ID
 from igni_core.core.scheduler.models import ScheduledTask
 from igni_core.core.scheduler.prompt import wrap_scheduled_prompt
 from igni_core.core.scheduler.runner import SchedulerRunner
@@ -98,7 +99,7 @@ class SchedulerController:
 
     # ── Per-task RPCs ─────────────────────────────────────────────
 
-    async def execute(self, description: str) -> str:
+    async def execute(self, description: str, run_id: str = "") -> str:
         """Run one scheduled task through the agent. Returns result text.
 
         The description is wrapped before it reaches the model. Passed raw it
@@ -116,7 +117,13 @@ class SchedulerController:
 
         async def work() -> str:
             team = self._session.main_team
-            response = await team.arun(wrap_scheduled_prompt(description), stream=False)
+            token = CURRENT_RUN_ID.set(run_id)
+            try:
+                response = await team.arun(
+                    wrap_scheduled_prompt(description), stream=False, run_id=run_id or None
+                )
+            finally:
+                CURRENT_RUN_ID.reset(token)
             return extract_response_text(response)
 
         return await self._as_run(work)

@@ -6,8 +6,8 @@ import logging
 
 from igni_core.backend.pool_replier import PoolReplier
 from igni_core.backend.pool_rpcs.base import PoolRefusal, PoolRpc
-from igni_core.backend.rpc_binding import rpc
-from igni_core.backend.rpc_streams import RUN_STREAM
+from igni_core.backend.rpc_binding import Correlation, rpc
+from igni_core.backend.rpc_streams import RUN_EVENTS, TOOL_PUSHES
 from igni_core.backend.schemas_pool import AttachRefused, AttachSessionParams
 from igni_core.backend.schemas_rpc import AttachSessionResult
 from igni_core.backend.session_router import SessionRouter
@@ -25,10 +25,12 @@ class AttachSessionRpc(PoolRpc):
 
     @rpc(
         RpcMethod.ATTACH_SESSION,
+        correlate=Correlation(by="id", source="request.id"),
         duration=RpcDuration.IO,
         args=AttachSessionParams,
         scope=RpcScope.SESSION,
-        streams=RUN_STREAM,
+        streams=RUN_EVENTS,
+        may_stream=TOOL_PUSHES,
     )
     async def attach(
         self, args: AttachSessionParams, request: msg.RPCRequest
@@ -47,7 +49,8 @@ class AttachSessionRpc(PoolRpc):
         ``hitl_request`` items), since a client that reloaded lost its
         dialog; a run igni was continuing when it stopped is reported with
         an ``info``, and a sub-agent's interrupted run is continued, which
-        streams as any run does.
+        streams as any run does. Each of those messages carries this
+        request's ``id``, and a ``stream_end`` of that ``id`` ends them.
 
         Fails when ``project_dir`` is not a directory, or the session belongs
         to another project folder — an attach never moves a session.
@@ -65,7 +68,7 @@ class AttachSessionRpc(PoolRpc):
         if isinstance(answer.result, AttachSessionResult):
             try:
                 runtime = await self._sessions.pool.get_or_create(answer.result.session_id)
-                await runtime.replay_waiting_approvals()
+                await runtime.replay_waiting_approvals(request.id)
             except Exception as exc:
                 # The attach was answered; what it shows again afterwards is
                 # extra, and its failure is no reason to tell every window

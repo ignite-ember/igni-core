@@ -45,6 +45,25 @@ _RPC_BINDING_ATTR = "_igni_rpc_binding"
 _F = TypeVar("_F", bound=Callable[..., Any])
 
 
+@dataclass(frozen=True)
+class Correlation:
+    """How a client tells which of the messages igni streams belong to its
+    call: the place in a streamed message (``by``) that holds the value
+    found at a place in the call (``source``) — or, with ``equals``, a
+    fixed value.
+
+    Places are dotted paths: ``request.id`` / ``request.session_id`` (the
+    call's envelope), ``args.<field>``, ``result.<field>``; in a streamed
+    message, ``id``, ``session_id``, ``run_id`` or ``payload.<field>`` (a
+    push's payload). ``by="channel"`` with no source: the call's effects
+    are the channel's, whoever else might send on it.
+    """
+
+    by: str
+    source: str = ""
+    equals: str = ""
+
+
 class RpcArgs(BaseModel):
     """Base for an RPC's arguments: a key the method does not name is refused."""
 
@@ -89,10 +108,16 @@ class RpcBinding:
     method: RpcMethod
     args: type[BaseModel]
     scope: RpcScope
-    #: What the call makes igni send while it works, besides its answer.
+    #: What the call itself makes igni send while it works, besides its answer.
     streams: tuple[Stream, ...] = ()
     #: How long it takes to answer.
     duration: RpcDuration = RpcDuration.INSTANT
+    #: How what it streams is told from what others stream; ``None`` for a
+    #: call that streams nothing.
+    correlate: Correlation | None = None
+    #: What the agent's tools may push while work the call started goes
+    #: on: not the call's own doing, and not sent unless a tool does it.
+    may_stream: tuple[Stream, ...] = ()
 
     def validate(self, wire: WireArgs | None) -> BaseModel:
         """``wire`` as this call's arguments, or :class:`RpcArgsError`."""
@@ -135,6 +160,8 @@ def rpc(
     scope: RpcScope,
     streams: tuple[Stream, ...] = (),
     duration: RpcDuration = RpcDuration.INSTANT,
+    correlate: Correlation | None = None,
+    may_stream: tuple[Stream, ...] = (),
 ) -> Callable[[_F], _F]:
     """Tag a method as the implementation of ``method``.
 
@@ -142,7 +169,7 @@ def rpc(
     the model. The decorator returns the function unchanged; the tag lives
     as an attribute on it."""
 
-    binding = RpcBinding(method, args, scope, streams, duration)
+    binding = RpcBinding(method, args, scope, streams, duration, correlate, may_stream)
 
     def decorator(fn: _F) -> _F:
         setattr(fn, _RPC_BINDING_ATTR, binding)
@@ -152,6 +179,7 @@ def rpc(
 
 
 __all__ = [
+    "Correlation",
     "NoArgs",
     "RpcArgs",
     "RpcArgsError",

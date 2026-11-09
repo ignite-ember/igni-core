@@ -37,6 +37,7 @@ from igni_core.backend.server import BackendServer
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
 from igni_core.core.activity import background
 from igni_core.core.broadcast_schema import BroadcastEvent
+from igni_core.core.run_context import CURRENT_RUN_ID
 from igni_core.core.tools.edit import (
     FileEditNotifier,
     default_file_edit_notifier,
@@ -47,7 +48,7 @@ from igni_core.core.tools.process_events import (
     ProcessStartEvent,
 )
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
-from igni_core.notifications.schemas import NotificationCounts, NotificationsChanged
+from igni_core.notifications.schemas import NotificationsChanged
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.enums import PushChannel
 
@@ -141,12 +142,16 @@ class PushNotificationBridge:
 
     # ── Login channel ────────────────────────────────────────────
 
-    async def on_login_status(self, text: str) -> None:
-        await self._transport.send(msg.push_login_status(LoginStatusPayload(text=text)))
-
-    async def on_login_result(self, success: bool, result: str) -> None:
+    async def on_login_status(self, text: str, flow_id: str = "") -> None:
         await self._transport.send(
-            msg.push_login_result(LoginResultPayload(success=success, result=result))
+            msg.push_login_status(LoginStatusPayload(text=text, flow_id=flow_id))
+        )
+
+    async def on_login_result(self, success: bool, result: str, flow_id: str = "") -> None:
+        await self._transport.send(
+            msg.push_login_result(
+                LoginResultPayload(success=success, result=result, flow_id=flow_id)
+            )
         )
 
     # ── Scheduler channel ────────────────────────────────────────
@@ -342,12 +347,9 @@ class PushNotificationBridge:
         backend.wire_orchestrate_progress(self.on_orchestrate_progress)
         self.bind_to_broadcast_bus(backend)
 
-    def notifications_changed(self, counts: NotificationCounts) -> None:
-        """The floor's unread counts, after either path moved them."""
-        self._schedule_push(
-            PushChannel.NOTIFICATIONS_CHANGED,
-            NotificationsChanged(counts=counts).model_dump(),
-        )
+    def notifications_changed(self, change: NotificationsChanged) -> None:
+        """The floor's unread counts, after either path moved them, and why."""
+        self._schedule_push(PushChannel.NOTIFICATIONS_CHANGED, change.model_dump())
 
     def workspace_trust(self, status: WorkspaceTrustStatus) -> None:
         """The folder's workspace-trust status, after an answer (or when a
@@ -368,12 +370,13 @@ class PushNotificationBridge:
         the reader thread + the file-edit listener thread + the
         orchestrate progress thread all end up here."""
 
+        # Read here, in the caller's context: the hop onto the loop loses it.
+        run_id = CURRENT_RUN_ID.get()
+
         def _send() -> None:
             # A message to the windows: too short to count as busy.
-            background.daemon(
-                self._transport.send(msg.PushNotification(channel=channel, payload=payload)),
-                name=f"push-{channel}",
-            )
+            push = msg.PushNotification(channel=channel, payload=payload, run_id=run_id)
+            background.daemon(self._transport.send(push), name=f"push-{channel}")
 
         # Event loop closed during shutdown — drop the push instead
         # of crashing the callback thread. ``loop`` is optional so

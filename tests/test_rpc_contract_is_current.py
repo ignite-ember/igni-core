@@ -92,7 +92,8 @@ def test_every_stream_is_a_message_or_a_typed_push(contract: dict[str, Any]) -> 
     messages = set(contract["messages"])
     channels = {f"push_notification:{c}" for c in contract["push_channels"]}
     for method, entry in contract["methods"].items():
-        unknown = set(entry["streams"]) - messages - channels
+        unknown = set(entry["streams"]) | set(entry["may_stream"])
+        unknown = unknown - messages - channels
         assert not unknown, f"{method} streams what the contract does not describe: {unknown}"
 
 
@@ -265,3 +266,17 @@ def test_a_method_answers_one_way(contract: dict[str, Any]) -> None:
     assert contract["methods"]["compact_if_needed"]["reply"] == "rpc_response"
     for spec in rpc_contract.method_specs():
         assert spec.reply in {"message", "rpc_response"}  # raises when only sometimes
+
+
+def test_every_method_that_streams_says_how_to_follow_it(contract: dict[str, Any]) -> None:
+    """A client cannot stream a call's events if it cannot tell them from
+    another call's."""
+    for method, entry in contract["methods"].items():
+        streams = entry["streams"] or entry["may_stream"]
+        assert bool(streams) == (entry["correlate"] is not None), method
+        if entry["correlate"]:
+            assert (
+                "from" in entry["correlate"]
+                or "equals" in entry["correlate"]
+                or (entry["correlate"]["by"] == "channel")
+            ), method

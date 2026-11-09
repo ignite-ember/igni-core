@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from igni_core.backend.rpc_binding import NoArgs, RpcArgs, rpc
+from igni_core.backend.rpc_binding import Correlation, NoArgs, RpcArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
 from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
@@ -51,6 +51,7 @@ class WorkspaceTrustRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.SET_WORKSPACE_TRUST,
+        correlate=Correlation(by="payload.path", source="result.path"),
         duration=RpcDuration.IO,
         args=TrustDecisionArgs,
         scope=RpcScope.SESSION,

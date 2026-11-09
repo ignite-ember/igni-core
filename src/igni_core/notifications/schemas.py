@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -208,7 +208,16 @@ class NotificationsReadResult(BaseModel):
     server_error: str = ""
 
 
+#: What moved the counts. ``server``: igni server's list was read again on
+#: its own (a sign-in, the stream saying something changed). ``listed``: a
+#: ``notifications_list`` call read it. ``marked_read``: a
+#: ``notifications_mark_read`` call. ``extension``: an extension on this
+#: machine posted a notice. ``signed_out``: the person signed out.
+NotificationsCause = Literal["server", "listed", "marked_read", "extension", "signed_out"]
+
+
 class NotificationsChanged(BaseModel):
-    """The ``notifications_changed`` push: the counts moved."""
+    """The ``notifications_changed`` push: the counts moved, and why."""
 
     counts: NotificationCounts = Field(default_factory=NotificationCounts)
+    cause: NotificationsCause = "server"

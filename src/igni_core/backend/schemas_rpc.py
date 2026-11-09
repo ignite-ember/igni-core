@@ -47,10 +47,17 @@ class PickDirResult(BaseModel):
 
 
 class RunShellResult(BaseModel):
-    """Wire shape for the ``run_shell`` RPC — ``$``-prefix shell mode."""
+    """What a ``$`` command printed and how it ended — or, when it outlived
+    the wait, that it went on in the background and under which ``pid``,
+    the id its ``process_*`` pushes carry."""
 
     output: str
+    #: The exit code; ``0`` for a command still running in the background.
     exit_code: int
+    #: The process's id, once it started; ``null`` when it could not start.
+    pid: int | None = None
+    #: ``True`` when it is still running, in the background.
+    backgrounded: bool = False
 
 
 class UpdateAvailable(BaseModel):
@@ -87,6 +94,9 @@ class LoginStarted(BaseModel):
     via a ``login_result`` push notification."""
 
     started: bool
+    #: This sign-in's id, which its ``login_status`` and ``login_result``
+    #: pushes carry.
+    flow_id: str = ""
 
 
 class LoginResult(BaseModel):

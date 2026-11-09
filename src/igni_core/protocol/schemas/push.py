@@ -65,6 +65,10 @@ class PushNotification(Message):
     direction: ClassVar[Direction] = Direction.TO_CLIENT
     channel: str = ""
     payload: dict[str, WireJson] = Field(default_factory=dict)
+    #: The run whose work sent this push, when igni chose its id (a
+    #: scheduled task run now: ``execute_scheduled_task``'s ``run_id``);
+    #: empty otherwise.
+    run_id: str = ""
 
 
 def _push(channel: PushChannel, payload: Any) -> PushNotification:

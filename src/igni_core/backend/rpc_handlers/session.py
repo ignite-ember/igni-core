@@ -8,7 +8,7 @@ under the 15-method ceiling.
 
 from __future__ import annotations
 
-from igni_core.backend.rpc_binding import NoArgs, rpc
+from igni_core.backend.rpc_binding import Correlation, NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.rpc_handlers.session_args import (
     AgentRunArgs,
@@ -21,7 +21,7 @@ from igni_core.backend.schemas_context import (
     InterruptedRun,
     PendingMessage,
 )
-from igni_core.backend.schemas_run import CancelAgentRunResult
+from igni_core.backend.schemas_run import CancelAgentRunResult, CancelRunResult
 from igni_core.backend.server_files import UploadAttachmentResult
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
@@ -186,19 +186,21 @@ class SessionRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.CANCEL_RUN,
+        correlate=Correlation(by="session_id", source="request.session_id"),
         args=NoArgs,
         scope=RpcScope.SESSION,
         streams=(msg.Info, msg.StreamEnd),
     )
-    def cancel_run(self, args: NoArgs) -> None:
+    def cancel_run(self, args: NoArgs) -> CancelRunResult:
         """Stop the turn this session is running.
 
-        Takes no arguments and returns nothing; with no turn running it does
-        nothing. The turn's stream ends with an ``info`` saying it was
+        Takes no arguments. Returns ``cancelled``: whether a turn was
+        running. Its stream then ends with an ``info`` saying it was
         cancelled and its ``stream_end``, and the run is recorded as
-        interrupted. A foreground shell command the turn started is killed.
+        interrupted; a foreground shell command the turn started is killed.
+        With no turn running nothing happens and nothing is streamed.
         """
-        self._ctx.backend.cancel_run()
+        return CancelRunResult(cancelled=self._ctx.backend.cancel_run())
 
     @rpc(RpcMethod.CANCEL_AGENT_RUN, args=AgentRunArgs, scope=RpcScope.IGNI)
     def cancel_agent_run(self, args: AgentRunArgs) -> CancelAgentRunResult:

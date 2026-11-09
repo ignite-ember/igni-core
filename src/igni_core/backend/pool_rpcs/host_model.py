@@ -7,8 +7,8 @@ from typing import Any, Literal, Protocol
 from pydantic import Field, JsonValue
 
 from igni_core.backend.pool_rpcs.base import PoolRefusal, PoolRpc, UnavailableRpc
-from igni_core.backend.rpc_binding import RpcArgs, RpcArgsError, RpcBinding, rpc
-from igni_core.backend.rpc_streams import RUN_STREAM
+from igni_core.backend.rpc_binding import Correlation, RpcArgs, RpcArgsError, RpcBinding, rpc
+from igni_core.backend.rpc_streams import RUN_EVENTS, TOOL_PUSHES
 from igni_core.backend.schemas_pool import PoolAnswer
 from igni_core.extensions.host.page_channel import PageRequest
 from igni_core.extensions.host.spec import ErrorCode
@@ -114,6 +114,7 @@ class HostModelRpcs(PoolRpc):
 
     @rpc(
         RpcMethod.WINDOW_MODEL,
+        correlate=Correlation(by="payload.token", source="args.token"),
         args=WindowModelArgs,
         scope=RpcScope.IGNI,
         streams=(PushChannel.WINDOW_MODEL_CHANGED,),
@@ -149,6 +150,7 @@ class HostModelRpcs(PoolRpc):
 
     @rpc(
         RpcMethod.HOST_MODEL,
+        correlate=Correlation(by="payload.extension_id", source="request.caller"),
         duration=RpcDuration.PERSON,
         args=PageRequest,
         scope=RpcScope.IGNI,
@@ -157,8 +159,9 @@ class HostModelRpcs(PoolRpc):
             PushChannel.WINDOW_MODEL_CHANGED,
             PushChannel.OPEN_EXTERNAL,
             msg.UserMessageReceived,
-            *RUN_STREAM,
+            *RUN_EVENTS,
         ),
+        may_stream=TOOL_PUSHES,
     )
     async def page(self, args: PageRequest, request: msg.RPCRequest) -> Reply:
         """Make one host-object-model request on behalf of an extension's page.

@@ -8,7 +8,7 @@ on :class:`RpcHandlerContext`.
 
 from __future__ import annotations
 
-from igni_core.backend.rpc_binding import rpc
+from igni_core.backend.rpc_binding import Correlation, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.schemas_workflows import (
     WorkflowCancelRequest,
@@ -50,6 +50,7 @@ class WorkflowsRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.RUN_WORKFLOW,
+        correlate=Correlation(by="payload.workflow_run_id", source="result.workflow_run_id"),
         duration=RpcDuration.IO,
         args=WorkflowRunRequest,
         scope=RpcScope.SESSION,
@@ -72,6 +73,7 @@ class WorkflowsRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.CANCEL_WORKFLOW,
+        correlate=Correlation(by="payload.workflow_run_id", source="args.workflow_run_id"),
         duration=RpcDuration.IO,
         args=WorkflowCancelRequest,
         scope=RpcScope.SESSION,

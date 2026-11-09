@@ -87,7 +87,7 @@ class Floor:
         self.center = NotificationCenter(
             server=signed_in(),
             local=self.store,
-            announce=self.announced.append,
+            announce=lambda change: self.announced.append(change.counts),
             transport=self.server.transport,
         )
         self.receiver = ExtensionNoticeReceiver(registry=self.registry, sink=self.center)
@@ -346,7 +346,10 @@ async def test_a_real_extension_process_notifies_the_host(tmp_path):
     store = LocalNotificationStore(tmp_path / "notifications.db")
     announced: list[NotificationCounts] = []
     center = NotificationCenter(
-        server=signed_in(), local=store, announce=announced.append, transport=server.transport
+        server=signed_in(),
+        local=store,
+        announce=lambda change: announced.append(change.counts),
+        transport=server.transport,
     )
     mcp.notifications.handle(
         ExtensionNoticeReceiver.METHOD,

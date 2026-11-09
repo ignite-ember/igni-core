@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from igni_core.backend.rpc_binding import NoArgs, rpc
+from igni_core.backend.rpc_binding import Correlation, NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.schemas_auth import (
     DiscoverServerArgs,
@@ -21,6 +21,7 @@ class AuthRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.LOGIN,
+        correlate=Correlation(by="payload.flow_id", source="result.flow_id"),
         args=NoArgs,
         scope=RpcScope.IGNI,
         streams=(
@@ -61,6 +62,7 @@ class AuthRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.CLEAR_CLOUD_CREDENTIALS,
+        correlate=Correlation(by="payload.cause", equals="signed_out"),
         duration=RpcDuration.IO,
         args=NoArgs,
         scope=RpcScope.SESSION,

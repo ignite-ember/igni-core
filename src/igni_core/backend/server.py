@@ -273,8 +273,8 @@ class BackendServer:
         async for proto in self.controllers.runs.run_message(text, media):
             yield proto
 
-    def cancel_run(self) -> None:
-        self.controllers.runs.cancel_run()
+    def cancel_run(self) -> bool:
+        return self.controllers.runs.cancel_run()
 
     def consume_plan_research_flag(self) -> bool:
         return self._session.plan.consume_research_flag()

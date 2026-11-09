@@ -108,6 +108,8 @@ class CapturedShellRunner:
             return RunShellResult(
                 output=f"{note}\n{tail}"[-self._max_output_bytes :],
                 exit_code=0,
+                pid=pid,
+                backgrounded=True,
             )
 
         await asyncio.sleep(_DRAIN_SECONDS)
@@ -123,4 +125,5 @@ class CapturedShellRunner:
         return RunShellResult(
             output=output[-self._max_output_bytes :],
             exit_code=exit_code,
+            pid=pid,
         )

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from igni_core.backend.rpc_binding import NoArgs, RpcArgs, rpc
+import uuid
+
+from pydantic import BaseModel
+
+from igni_core.backend.rpc_binding import Correlation, NoArgs, RpcArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.rpc_streams import TOOL_PUSHES
 from igni_core.core.scheduler.models import ScheduledTask
@@ -12,9 +16,22 @@ from igni_core.protocol.schemas.enums import PushChannel
 
 
 class ExecuteScheduledTaskArgs(RpcArgs):
-    """``execute_scheduled_task``: what the task asks the agent to do."""
+    """``execute_scheduled_task``: what the task asks the agent to do, and
+    the id to give its run."""
 
     description: str
+    #: The run's id, chosen by the caller so it can follow the run's pushes
+    #: (their ``run_id``) as they come; one is made when it is absent.
+    run_id: str = ""
+
+
+class ScheduledTaskRunResult(BaseModel):
+    """What a scheduled task run now answered, and the run it was."""
+
+    #: The run's id: the one asked for, or the one made.
+    run_id: str
+    #: The agent's answer, as text.
+    result: str
 
 
 class ScheduledTaskArgs(RpcArgs):
@@ -37,12 +54,15 @@ class SchedulerRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.EXECUTE_SCHEDULED_TASK,
+        correlate=Correlation(by="run_id", source="result.run_id"),
         duration=RpcDuration.LONG,
         args=ExecuteScheduledTaskArgs,
         scope=RpcScope.SESSION,
-        streams=TOOL_PUSHES,
+        may_stream=TOOL_PUSHES,
     )
-    async def execute_scheduled_task(self, args: ExecuteScheduledTaskArgs) -> str:
+    async def execute_scheduled_task(
+        self, args: ExecuteScheduledTaskArgs
+    ) -> ScheduledTaskRunResult:
         """Run a scheduled task's work now, in this session, and wait for the answer.
 
         ``description`` is what the task asks the agent to do (a scheduled
@@ -52,10 +72,14 @@ class SchedulerRpcHandler(RpcHandler):
         they work still goes out. It is the session's run while it goes:
         it waits for a turn already running, ``get_processing`` reports
         it, and ``cancel_run`` stops it. Returns the agent's answer as
-        text. Fails when the organisation's group policy refuses the run,
-        the run is cancelled, or the run fails.
+        text with the run's ``run_id`` — the one given, or one made — which
+        every push the run's tools make carries too. Fails when the
+        organisation's group policy refuses the run, the run is cancelled,
+        or the run fails.
         """
-        return await self._controllers.loop.scheduler.execute(args.description)
+        run_id = args.run_id or f"sched-{uuid.uuid4().hex[:12]}"
+        result = await self._controllers.loop.scheduler.execute(args.description, run_id=run_id)
+        return ScheduledTaskRunResult(run_id=run_id, result=result)
 
     @rpc(
         RpcMethod.CANCEL_SCHEDULED_TASK,
@@ -94,14 +118,15 @@ class SchedulerRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.START_SCHEDULER,
+        correlate=Correlation(by="channel"),
         duration=RpcDuration.IO,
         args=NoArgs,
         scope=RpcScope.SESSION,
         streams=(
             PushChannel.SCHEDULER_STARTED,
             PushChannel.SCHEDULER_COMPLETED,
-            *TOOL_PUSHES,
         ),
+        may_stream=TOOL_PUSHES,
     )
     def start_scheduler(self, args: NoArgs) -> None:
         """Start running this project's scheduled tasks as they fall due.

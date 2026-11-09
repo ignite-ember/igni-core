@@ -133,6 +133,14 @@ class HttpClientCloseResult(BaseModel):
     reason: str = ""
 
 
+class CancelRunResult(BaseModel):
+    """``cancel_run``'s answer: whether a turn was running to cancel."""
+
+    #: ``True`` when a turn was running and is being stopped: its stream
+    #: ends with an ``info`` and a ``stream_end``. ``False``: nothing ran.
+    cancelled: bool
+
+
 class CancelAgentRunResult(BaseModel):
     """Wire shape for :meth:`RunCoordinator.cancel_agent_run` —
     the FE renders a toast on ``ok=False`` so ``error``

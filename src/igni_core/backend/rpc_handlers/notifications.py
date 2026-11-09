@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from igni_core.backend.rpc_binding import NoArgs, rpc
+from igni_core.backend.rpc_binding import Correlation, NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.notifications.schemas import (
     MarkReadRequest,
@@ -38,6 +38,7 @@ class NotificationsRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.NOTIFICATIONS_LIST,
+        correlate=Correlation(by="payload.cause", equals="listed"),
         duration=RpcDuration.NETWORK,
         args=NoArgs,
         scope=RpcScope.IGNI,
@@ -72,6 +73,7 @@ class NotificationsRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.NOTIFICATIONS_MARK_READ,
+        correlate=Correlation(by="payload.cause", equals="marked_read"),
         duration=RpcDuration.NETWORK,
         args=MarkReadArgs,
         scope=RpcScope.IGNI,

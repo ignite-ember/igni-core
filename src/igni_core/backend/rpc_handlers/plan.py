@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import ConfigDict
 
-from igni_core.backend.rpc_binding import NoArgs, RpcArgs, rpc
+from igni_core.backend.rpc_binding import Correlation, NoArgs, RpcArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.schemas_plan import LatestPlanResult
 from igni_core.core.session.schemas import PlanDecisionResult
@@ -38,6 +38,7 @@ class PlanRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.APPROVE_PLAN,
+        correlate=Correlation(by="payload.run_id", source="args.run_id"),
         args=PlanRunArgs,
         scope=RpcScope.SESSION,
         streams=(PushChannel.PERMISSION_MODE_CHANGED, PushChannel.PLAN_DECIDED),
@@ -57,6 +58,7 @@ class PlanRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.DISMISS_PLAN,
+        correlate=Correlation(by="payload.run_id", source="args.run_id"),
         args=PlanRunArgs,
         scope=RpcScope.SESSION,
         streams=(PushChannel.PLAN_DECIDED,),

@@ -451,10 +451,10 @@ class FakeBackend:
 
 
 class FakePush:
-    async def on_login_status(self, text: str) -> None:
+    async def on_login_status(self, text: str, flow_id: str = "") -> None:
         return None
 
-    async def on_login_result(self, *, success: bool, result: str) -> None:
+    async def on_login_result(self, *, success: bool, result: str, flow_id: str = "") -> None:
         return None
 
 

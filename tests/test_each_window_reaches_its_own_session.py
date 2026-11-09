@@ -362,12 +362,16 @@ async def test_attaching_shows_the_session_s_waiting_approvals_again(tmp_path):
 
     await orchestrator.dispatch(_rpc(RpcMethod.ATTACH_SESSION, "a", session_id="boot"))
 
-    reply, paused, resumed = transport.sent
+    reply, paused, resumed, end = transport.sent
     assert reply.result == {"session_id": "boot", "project_dir": str(tmp_path / "project")}
     assert paused.run_id == "r-1"
     assert resumed.text == "resuming r-1"
     # Through the session's stamped transport: the window knows whose it is.
     assert paused.session_id == "boot"
+    # Each carries the attach's id, and a stream_end of it ends them: the
+    # client that attached can tell what its attach brought back.
+    assert [m.id for m in (paused, resumed, end)] == ["a", "a", "a"]
+    assert isinstance(end, msg.StreamEnd)
 
 
 # ── Routing ───────────────────────────────────────────────────────

@@ -508,6 +508,20 @@
       "title": "CancelLogin",
       "type": "object"
     },
+    "CancelRunResult": {
+      "description": "``cancel_run``'s answer: whether a turn was running to cancel.",
+      "properties": {
+        "cancelled": {
+          "title": "Cancelled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cancelled"
+      ],
+      "title": "CancelRunResult",
+      "type": "object"
+    },
     "ChatAction": {
       "description": "An ``action`` item's operation on its thread's chat.",
       "properties": {
@@ -1227,10 +1241,15 @@
     },
     "ExecuteScheduledTaskArgs": {
       "additionalProperties": false,
-      "description": "``execute_scheduled_task``: what the task asks the agent to do.",
+      "description": "``execute_scheduled_task``: what the task asks the agent to do, and\nthe id to give its run.",
       "properties": {
         "description": {
           "title": "Description",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "title": "Run Id",
           "type": "string"
         }
       },
@@ -2511,6 +2530,11 @@
     "LoginResultPayload": {
       "description": "Channel ``login_result``. Terminal result of a login attempt\n(success + reason string). Pushed after the RPC ack, once the\nAnthropic OAuth flow completes.",
       "properties": {
+        "flow_id": {
+          "default": "",
+          "title": "Flow Id",
+          "type": "string"
+        },
         "result": {
           "title": "Result",
           "type": "string"
@@ -2530,6 +2554,11 @@
     "LoginStarted": {
       "description": "Wire shape for the ``login`` RPC \u2014 one-field ack that a login\ntask is now in flight; the actual result arrives asynchronously\nvia a ``login_result`` push notification.",
       "properties": {
+        "flow_id": {
+          "default": "",
+          "title": "Flow Id",
+          "type": "string"
+        },
         "started": {
           "title": "Started",
           "type": "boolean"
@@ -2544,6 +2573,11 @@
     "LoginStatusPayload": {
       "description": "Channel ``login_status``. Human-readable status text streamed\nwhile a login attempt is in flight.",
       "properties": {
+        "flow_id": {
+          "default": "",
+          "title": "Flow Id",
+          "type": "string"
+        },
         "text": {
           "title": "Text",
           "type": "string"
@@ -3454,8 +3488,20 @@
       "type": "object"
     },
     "NotificationsChanged": {
-      "description": "The ``notifications_changed`` push: the counts moved.",
+      "description": "The ``notifications_changed`` push: the counts moved, and why.",
       "properties": {
+        "cause": {
+          "default": "server",
+          "enum": [
+            "server",
+            "listed",
+            "marked_read",
+            "extension",
+            "signed_out"
+          ],
+          "title": "Cause",
+          "type": "string"
+        },
         "counts": {
           "$ref": "#/defs/NotificationCounts",
           "default": {
@@ -4801,6 +4847,11 @@
           "title": "Payload",
           "type": "object"
         },
+        "run_id": {
+          "default": "",
+          "title": "Run Id",
+          "type": "string"
+        },
         "session_id": {
           "default": "",
           "title": "Session Id",
@@ -5435,8 +5486,13 @@
       "type": "object"
     },
     "RunShellResult": {
-      "description": "Wire shape for the ``run_shell`` RPC \u2014 ``$``-prefix shell mode.",
+      "description": "What a ``$`` command printed and how it ended \u2014 or, when it outlived\nthe wait, that it went on in the background and under which ``pid``,\nthe id its ``process_*`` pushes carry.",
       "properties": {
+        "backgrounded": {
+          "default": false,
+          "title": "Backgrounded",
+          "type": "boolean"
+        },
         "exit_code": {
           "title": "Exit Code",
           "type": "integer"
@@ -5444,6 +5500,18 @@
         "output": {
           "title": "Output",
           "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pid"
         }
       },
       "required": [
@@ -5587,6 +5655,25 @@
         "task_id"
       ],
       "title": "ScheduledTaskArgs",
+      "type": "object"
+    },
+    "ScheduledTaskRunResult": {
+      "description": "What a scheduled task run now answered, and the run it was.",
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "result"
+      ],
+      "title": "ScheduledTaskRunResult",
       "type": "object"
     },
     "ScheduledTasksArgs": {
@@ -8863,8 +8950,10 @@
       "args": {
         "$ref": "#/defs/MarketplaceUrlArgs"
       },
+      "correlate": null,
       "doc": "Add a plugin marketplace and read its catalogue.\n\n``url`` is the marketplace's git URL. Returns an ``info`` message,\nsent in place of an ``rpc_response``, whose text says how many\nplugins it catalogues \u2014 or why it was not added: the\norganisation's policy, a git error, an unreadable catalogue.",
       "duration": "long",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -8880,8 +8969,13 @@
       "args": {
         "$ref": "#/defs/PlanRunArgs"
       },
+      "correlate": {
+        "by": "payload.run_id",
+        "from": "args.run_id"
+      },
       "doc": "Approve the plan the agent submitted, so it leaves plan mode and carries it out.\n\n``run_id`` is the run that submitted the plan (``plan_submitted``\ncarries it). The decision is recorded, the session's permission\nmode returns to the one it started in (``permission_mode_changed``\nwhen it changes), and ``plan_decided`` tells every window. Returns\nthe ``run_id``, the ``decision``, ``mode_status`` describing the\nmode change, and ``ok``; ``ok: false`` with ``error`` when\n``run_id`` is empty or the decision could not be recorded.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/PlanDecisionResult"
@@ -8900,18 +8994,13 @@
       "args": {
         "$ref": "#/defs/AttachSessionParams"
       },
-      "doc": "Bind to a session \u2014 an existing one, or a new one in a project folder.\n\n``session_id`` names the session to resume; ``project_dir`` the folder\nit works in. Neither: the default session. Only ``project_dir``: a new\nsession locked to that folder. Both: that session, which must belong\nto that folder. The session is made live if it is not.\n\nReturns the ``session_id`` and ``project_dir`` actually bound; send\nlater requests for that session with this ``session_id`` on the\nenvelope. Right after the answer, every approval the session is\nwaiting on is shown again (a ``run_paused`` carrying its\n``hitl_request`` items), since a client that reloaded lost its\ndialog; a run igni was continuing when it stopped is reported with\nan ``info``, and a sub-agent's interrupted run is continued, which\nstreams as any run does.\n\nFails when ``project_dir`` is not a directory, or the session belongs\nto another project folder \u2014 an attach never moves a session.",
-      "duration": "io",
-      "reply": "rpc_response",
-      "result": {
-        "$ref": "#/defs/AttachSessionResult"
+      "correlate": {
+        "by": "id",
+        "from": "request.id"
       },
-      "scope": "session",
-      "streams": [
-        "content_delta",
-        "error",
-        "info",
-        "model_completed",
+      "doc": "Bind to a session \u2014 an existing one, or a new one in a project folder.\n\n``session_id`` names the session to resume; ``project_dir`` the folder\nit works in. Neither: the default session. Only ``project_dir``: a new\nsession locked to that folder. Both: that session, which must belong\nto that folder. The session is made live if it is not.\n\nReturns the ``session_id`` and ``project_dir`` actually bound; send\nlater requests for that session with this ``session_id`` on the\nenvelope. Right after the answer, every approval the session is\nwaiting on is shown again (a ``run_paused`` carrying its\n``hitl_request`` items), since a client that reloaded lost its\ndialog; a run igni was continuing when it stopped is reported with\nan ``info``, and a sub-agent's interrupted run is continued, which\nstreams as any run does. Each of those messages carries this\nrequest's ``id``, and a ``stream_end`` of that ``id`` ends them.\n\nFails when ``project_dir`` is not a directory, or the session belongs\nto another project folder \u2014 an attach never moves a session.",
+      "duration": "io",
+      "may_stream": [
         "push_notification:background_process_done",
         "push_notification:file_edited",
         "push_notification:http_retry_attempt",
@@ -8922,7 +9011,18 @@
         "push_notification:process_exited",
         "push_notification:process_line",
         "push_notification:process_started",
-        "push_notification:todos_updated",
+        "push_notification:todos_updated"
+      ],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/AttachSessionResult"
+      },
+      "scope": "session",
+      "streams": [
+        "content_delta",
+        "error",
+        "info",
+        "model_completed",
         "reasoning_started",
         "requirement_details",
         "run_completed",
@@ -8948,8 +9048,10 @@
       "args": {
         "$ref": "#/defs/AgentRunArgs"
       },
+      "correlate": null,
       "doc": "Stop one sub-agent's run, leaving the rest of the turn going.\n\n``run_id`` is the sub-agent run's id, as its events carry it.\nReturns ``ok: true`` when the run was cancelled, or ``ok: false``\nwith ``error`` when ``run_id`` is empty, no such run is running, or\nthe cancellation failed.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/CancelAgentRunResult"
@@ -8965,8 +9067,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "End this session's running ``/loop``.\n\nTakes no arguments. Returns ``true`` when a loop was ended;\n``false`` when there was none or it is paused (a paused loop is\nresumed or left alone, not cancelled).",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "boolean"
@@ -8982,11 +9086,16 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
-      "doc": "Stop the turn this session is running.\n\nTakes no arguments and returns nothing; with no turn running it does\nnothing. The turn's stream ends with an ``info`` saying it was\ncancelled and its ``stream_end``, and the run is recorded as\ninterrupted. A foreground shell command the turn started is killed.",
+      "correlate": {
+        "by": "session_id",
+        "from": "request.session_id"
+      },
+      "doc": "Stop the turn this session is running.\n\nTakes no arguments. Returns ``cancelled``: whether a turn was\nrunning. Its stream then ends with an ``info`` saying it was\ncancelled and its ``stream_end``, and the run is recorded as\ninterrupted; a foreground shell command the turn started is killed.\nWith no turn running nothing happens and nothing is streamed.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
-        "type": "null"
+        "$ref": "#/defs/CancelRunResult"
       },
       "scope": "session",
       "streams": [
@@ -9002,8 +9111,10 @@
       "args": {
         "$ref": "#/defs/ScheduledTaskArgs"
       },
+      "correlate": null,
       "doc": "Cancel a scheduled task of this session's project.\n\n``task_id`` is the task's ``id`` (from ``get_scheduled_tasks``). The\ntask is marked cancelled, so it does not run again; a run already\ngoing is not stopped, but its outcome is not recorded. Returns an\n``info`` message, sent in place of an ``rpc_response``. Fails for\nan id the project has no task for, and for a task that already\ncompleted, failed or was cancelled, whose record is left as it is.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -9019,8 +9130,13 @@
       "args": {
         "$ref": "#/defs/WorkflowCancelRequest"
       },
+      "correlate": {
+        "by": "payload.workflow_run_id",
+        "from": "args.workflow_run_id"
+      },
       "doc": "Stop a running workflow of this session.\n\n``workflow_run_id`` is the run (from ``run_workflow``). The\nworkflow is asked to stop, then terminated after a grace period;\nits last ``workflow_event`` says it was cancelled. Returns\n``cancelled: true`` when a live run was stopped, ``false`` when\nthere was no such run or it had already ended, with the\n``workflow_run_id`` asked about.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/WorkflowCancelResponse"
@@ -9038,8 +9154,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Ask whether a newer igni release is available.\n\nTakes no arguments. Returns the newer release \u2014 its version, the\nversion installed, where to get it \u2014 or ``null`` when there is none\n(or update checks are switched off). Fails when the check could not\nreach an answer (network, HTTP status, an unreadable reply), so a\ncaller can tell that from \"no update\".",
       "duration": "network",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "anyOf": [
@@ -9062,8 +9180,10 @@
       "args": {
         "$ref": "#/defs/CheckPermissionArgs"
       },
+      "correlate": null,
       "doc": "Look up the saved permission level for one tool call.\n\n``tool_name`` and ``func_name`` name the tool and its function;\n``tool_args`` are the call's arguments, which argument rules match\nagainst. The rules are read from this session's project and the\nperson's settings files. Returns ``allow``, ``ask`` or ``deny``:\nthe last matching argument rule, else the tool's own level, else\n``ask``. The session's permission mode is not applied.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "enum": [
@@ -9084,8 +9204,13 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": {
+        "by": "payload.cause",
+        "equals": "signed_out"
+      },
       "doc": "Sign this session out of igni server.\n\nTakes no arguments. The session forgets its cloud credentials, and\nthe signed-in person's notifications stop arriving and leave the\nbadges (``notifications_changed``). Returns the session's status\nafterwards as a ``status_update`` message, sent in place of an\n``rpc_response``.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/StatusUpdate"
@@ -9103,8 +9228,10 @@
       "args": {
         "$ref": "#/defs/CompactIfNeededArgs"
       },
+      "correlate": null,
       "doc": "Compact this session's conversation when its context is nearly full.\n\n``ctx_tokens`` is the context the last turn used and ``max_ctx``\nthe model's window; at 80% or more the conversation is summarised\nand replaced by the summary (the ``PreCompact`` hooks may refuse).\nReturns ``compacted`` and, when it was, the ``summary``.",
       "duration": "long",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/CompactionOutcome"
@@ -9120,8 +9247,10 @@
       "args": {
         "$ref": "#/defs/CompleteFilesArgs"
       },
+      "correlate": null,
       "doc": "Complete a file path typed after ``@``, from this session's project.\n\n``query`` is what was typed so far (empty matches everything);\n``limit`` caps the matches returned (default 50). Returns the\nmatching project-relative paths, best first, and ``total``: how\nmany matched before the cap. The project's file list is read once\nper session.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/FileCompletion"
@@ -9137,8 +9266,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Estimate how many tokens this session's conversation takes up.\n\nTakes no arguments. Returns the estimate (``0`` when it cannot be\nread); a positive estimate also becomes the context size\n``get_status`` reports.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "integer"
@@ -9154,18 +9285,12 @@
       "args": {
         "$ref": "#/defs/ServiceEventsParams"
       },
+      "correlate": {
+        "by": "channel"
+      },
       "doc": "Hand igni the events extensions' services sent it, to start or resume the agent's work.\n\nMade by the platform (the gateway, in the cloud). ``events`` is the\nbatch as the platform hands it out: each names its ``event_id``, the\n``extension_id`` it is for, and what it carries.\n\nReturns what became of each event by id: ``delivered``, ``duplicate``\n(delivered before; nothing happened), ``failed`` (the session could\nnot take it: leave it unacknowledged so it is handed out again),\n``not_handled`` (no handler took it, with the reason), and\n``acknowledge`` \u2014 the ids the platform may forget.\n\nAn event goes to its extension's process. Any other item lands in a\nchat: a new thread opens one (named with ``session_named``), a\nmessage is posted there (``user_message_received``), and, unless it\nis queued or the chat is busy, the agent's run streams as any run\ndoes. An item's ``action`` can also show progress\n(``orchestrate_event``), rename the chat or cancel its run.\n\nFails when the arguments are not a batch of events, or when this\nigni takes no events.",
       "duration": "io",
-      "reply": "rpc_response",
-      "result": {
-        "$ref": "#/defs/ServiceEventsAck"
-      },
-      "scope": "igni",
-      "streams": [
-        "content_delta",
-        "error",
-        "info",
-        "model_completed",
+      "may_stream": [
         "push_notification:background_process_done",
         "push_notification:file_edited",
         "push_notification:http_retry_attempt",
@@ -9176,8 +9301,20 @@
         "push_notification:process_exited",
         "push_notification:process_line",
         "push_notification:process_started",
+        "push_notification:todos_updated"
+      ],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/ServiceEventsAck"
+      },
+      "scope": "igni",
+      "streams": [
+        "content_delta",
+        "error",
+        "info",
+        "model_completed",
+        "push_notification:orchestrate_event",
         "push_notification:session_named",
-        "push_notification:todos_updated",
         "reasoning_started",
         "requirement_details",
         "run_completed",
@@ -9204,8 +9341,10 @@
       "args": {
         "$ref": "#/defs/AgentNameArgs"
       },
+      "correlate": null,
       "doc": "Delete an agent made during this session.\n\n``name`` is the ephemeral agent. Returns ``ok`` with its ``name``;\nor ``ok: false`` with ``reason`` when it is unknown or not\nephemeral.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/DiscardEphemeralResult"
@@ -9221,8 +9360,10 @@
       "args": {
         "$ref": "#/defs/InterruptedRunArgs"
       },
+      "correlate": null,
       "doc": "Forget one interrupted run, so it is not offered again.\n\n``message_id`` names the run (from ``get_interrupted_runs``);\n``session_id`` the session it belongs to; only that session's\ninterrupted run is deleted. Returns ``ok: true`` \u2014 also when no such\nrun exists, so a retry is harmless \u2014 or ``ok: false`` with ``error``\nwhen ``message_id`` is empty or the store could not be written.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/DiscardInterruptedRunResult"
@@ -9238,8 +9379,10 @@
       "args": {
         "$ref": "#/defs/DiscoverServerArgs"
       },
+      "correlate": null,
       "doc": "Find the igni server an email address's organisation runs.\n\n``email`` is the person's work address. igni reads the record the\norganisation publishes on the address's domain (a well-known URL,\nthen DNS) and changes nothing. Returns ``api_url`` and ``portal_url``,\nwith ``source`` saying where they were found; when nothing usable\nwas found both are empty and ``reason`` says why.",
       "duration": "network",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/ServerFound"
@@ -9255,8 +9398,13 @@
       "args": {
         "$ref": "#/defs/PlanRunArgs"
       },
+      "correlate": {
+        "by": "payload.run_id",
+        "from": "args.run_id"
+      },
       "doc": "Send the submitted plan back for refining, staying in plan mode.\n\n``run_id`` is the run that submitted the plan. The decision is\nrecorded and ``plan_decided`` tells every window. Returns the same\nshape as ``approve_plan``, with an empty ``mode_status``; ``ok:\nfalse`` with ``error`` when ``run_id`` is empty.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/PlanDecisionResult"
@@ -9274,8 +9422,13 @@
       "args": {
         "$ref": "#/defs/VisualizationActionArgs"
       },
+      "correlate": {
+        "by": "payload.action",
+        "from": "args.action"
+      },
       "doc": "Tell this session the person used a control in a view the agent drew.\n\n``action`` is the control's action name; ``params`` the values the\nview attached to it (JSON). The action is kept for the agent and\npushed to every window as ``visualization_action_dispatched``.\nReturns the action and params as recorded, with ``ok``.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/VisualizationActionResult"
@@ -9293,8 +9446,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Connect this session's configured MCP servers, once.\n\nTakes no arguments. The first call connects every configured server\nand rebuilds the agent with their tools; later calls do nothing.\nReturns the servers ``connected``, the ones that ``failed`` with\ntheir errors, whether the agent was ``rebuilt``, and, when nothing\nwas done, ``skipped_reason`` (``already_initialized``,\n``no_configured_servers``, ``no_clients_connected``).",
       "duration": "long",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/McpInitResult"
@@ -9310,25 +9465,31 @@
       "args": {
         "$ref": "#/defs/ExecuteScheduledTaskArgs"
       },
-      "doc": "Run a scheduled task's work now, in this session, and wait for the answer.\n\n``description`` is what the task asks the agent to do (a scheduled\ntask's ``description``). The agent runs it as a stored task firing,\nnot as a live message: its run is not streamed to the windows, and\nthe task's own record is not touched. What its tools push while\nthey work still goes out. It is the session's run while it goes:\nit waits for a turn already running, ``get_processing`` reports\nit, and ``cancel_run`` stops it. Returns the agent's answer as\ntext. Fails when the organisation's group policy refuses the run,\nthe run is cancelled, or the run fails.",
-      "duration": "long",
-      "reply": "rpc_response",
-      "result": {
-        "type": "string"
+      "correlate": {
+        "by": "run_id",
+        "from": "result.run_id"
       },
-      "scope": "session",
-      "streams": [
+      "doc": "Run a scheduled task's work now, in this session, and wait for the answer.\n\n``description`` is what the task asks the agent to do (a scheduled\ntask's ``description``). The agent runs it as a stored task firing,\nnot as a live message: its run is not streamed to the windows, and\nthe task's own record is not touched. What its tools push while\nthey work still goes out. It is the session's run while it goes:\nit waits for a turn already running, ``get_processing`` reports\nit, and ``cancel_run`` stops it. Returns the agent's answer as\ntext with the run's ``run_id`` \u2014 the one given, or one made \u2014 which\nevery push the run's tools make carries too. Fails when the\norganisation's group policy refuses the run, the run is cancelled,\nor the run fails.",
+      "duration": "long",
+      "may_stream": [
         "push_notification:background_process_done",
         "push_notification:file_edited",
         "push_notification:http_retry_attempt",
         "push_notification:http_retry_succeeded",
         "push_notification:orchestrate_event",
         "push_notification:permission_mode_changed",
+        "push_notification:plan_submitted",
         "push_notification:process_exited",
         "push_notification:process_line",
         "push_notification:process_started",
         "push_notification:todos_updated"
       ],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/ScheduledTaskRunResult"
+      },
+      "scope": "session",
+      "streams": [],
       "summary": "Run a scheduled task's work now, in this session, and wait for the answer.",
       "timeout_seconds": 600
     },
@@ -9338,8 +9499,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Get an access token for the calling extension's own service.\n\nOnly an extension's page asks, through igni's window, which sets the\nrequest's ``caller`` to the page's extension; the token's audience is\nthe service recorded for that extension, never one the page names.\nTakes no arguments.\n\nReturns ``ok: true`` with ``access_token``, ``expires_in`` (seconds)\nand ``service_url``; or ``ok: false`` with ``error`` when nobody is\nsigned in, the extension has no service, or igni server refused the\nexchange \u2014 states a page shows rather than failures. The answer goes\nonly to the connection that asked. Fails when the request has no\n``caller`` or this igni mounts no token exchange.",
       "duration": "network",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/PageTokenReply"
@@ -9355,8 +9518,10 @@
       "args": {
         "$ref": "#/defs/ExtractLearningsArgs"
       },
+      "correlate": null,
       "doc": "Let igni learn from one finished turn, in the background.\n\n``user_msg`` and ``assistant_msg`` are the turn's message and\nanswer. Returns at once with nothing; what is learnt is kept for\nlater sessions, and a failure is only logged.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "null"
@@ -9372,8 +9537,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Run this session's ``SessionStart`` hooks.\n\nTakes no arguments and returns nothing. The organisation's group\npolicy is checked again first. Every call runs the hooks again;\ntheir failures are logged, not raised.",
       "duration": "long",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "null"
@@ -9389,8 +9556,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List the agents this session can hand work to.\n\nTakes no arguments. Returns each agent's name, description, tools,\nmodel, MCP servers, tags, system prompt, where it was defined, and\nwhether it is ephemeral (made during this session, not yet saved).",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9409,8 +9578,10 @@
       "args": {
         "$ref": "#/defs/SessionIdArgs"
       },
+      "correlate": null,
       "doc": "Read a session's conversation, turn by turn, as a client draws it.\n\n``session_id`` names the session. Returns the conversation in\norder, one entry per item, told apart by ``role``: the person's\nmessage (``user``), the agent's answer (``assistant``), its\nreasoning (``thinking``), a tool call and its result (``tool``), a\nsubmitted plan (``plan``), a run's token counts (``stats``), and a\nview the agent drew (``visualization``). Sub-agents' runs are left\nout.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9463,8 +9634,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read who is signed in to igni server, and their organisation's plan.\n\nTakes no arguments. Asks igni server with this session's sign-in and\nreturns the person's ``email`` and ``full_name``, the organisation's\ndisplay name (``org_name``) and plan ``tier``; any of them may be\nnull when igni server does not say. Returns ``null`` when nobody is\nsigned in or igni server could not be asked.",
       "duration": "network",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "anyOf": [
@@ -9487,8 +9660,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Split this session's context into what compaction can shrink and what it cannot.\n\nTakes no arguments. Returns the ``total`` tokens, the part taken by\nthe conversation's runs (``runs``, which ``/compact`` can shrink),\nand the ``floor`` \u2014 instructions, tools and the rest that stays.\nZeros when it cannot be measured.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/ContextBreakdown"
@@ -9504,8 +9679,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read this session's display settings.\n\nTakes no arguments. Returns how output is shown: markdown rendering,\ntool calls, routing, reasoning, the colour theme, and how many lines\nof a tool result and a message are shown before truncating.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/DisplayConfig"
@@ -9521,8 +9698,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read which organisation group's policy igni follows.\n\nTakes no arguments. Returns the group's id and name, when its\npolicy pack was fetched, how many entries it has and the default\nmodel it sets; nulls and zero when igni follows no group.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/GroupPolicyPackResult"
@@ -9538,8 +9717,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List the hooks this session runs.\n\nTakes no arguments. Returns one row per hook: the ``event`` it runs\non, its ``type`` (a shell ``command`` or an HTTP ``url``), the\n``matcher`` that narrows it, its timeout, whether it runs in the\nbackground, and the HTTP headers it sends.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9558,8 +9739,10 @@
       "args": {
         "$ref": "#/defs/SessionIdArgs"
       },
+      "correlate": null,
       "doc": "List a session's runs that stopped before they finished.\n\n``session_id`` names the session. Returns one row per run that was\ncancelled or failed: the ``message_id`` and text of the message that\nstarted it, when it arrived and when it stopped, why (``cancelled``\nor ``errored``) and the last error. A client offers to retry,\ndiscard or edit each. A storage failure answers an empty list.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9578,8 +9761,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read the plan the agent last submitted in this session, with its task list.\n\nTakes no arguments. Returns the ``latest`` plan's text, every plan\nsubmitted before it (``history``), the to-do list (``tasks``), and\n``state``: ``pending`` while a plan is waiting for a decision, empty\nwhen none was submitted.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/LatestPlanResult"
@@ -9595,8 +9780,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List the plugin marketplaces igni knows, with their catalogues.\n\nTakes no arguments. Returns each marketplace's name, URL, when it\nwas last fetched, and the plugins it offers.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9615,8 +9802,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Describe each of this session's MCP servers in full.\n\nTakes no arguments. Returns one row per server: whether it is\nconnected, its transport, its tools (names, descriptions, the ones\nswitched off), its resources and prompts, the last error connecting\nit, and whether policy blocks it. Each server is asked in turn, so\na slow one slows the answer.",
       "duration": "network",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9635,8 +9824,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List this session's configured MCP servers, in configuration order.\n\nTakes no arguments. Returns one ``{name, connected}`` row per\nserver.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9655,8 +9846,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List this session's MCP servers and whether each is connected.\n\nTakes no arguments. Returns one ``{name, connected}`` row per\nserver, in no particular order.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9675,8 +9868,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List the models this session can run on.\n\nTakes no arguments. Returns the ``default`` model's name, the\nlargest context window configured, and ``registry``: every model by\nname, with its provider and settings.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/ModelRegistryResult"
@@ -9692,8 +9887,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List the output styles this session can answer in, and the active one.\n\nTakes no arguments. Returns the ``active`` style's name (empty for\nnone) and every style's ``name`` and ``description``.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/OutputStylesResult"
@@ -9709,8 +9906,10 @@
       "args": {
         "$ref": "#/defs/SessionIdArgs"
       },
+      "correlate": null,
       "doc": "List a session's messages that were received but never answered.\n\n``session_id`` names the session. Returns the user messages still\npending at least a minute after they arrived \u2014 typically left by a\ncrash \u2014 oldest first, each with its text, when it arrived and its\n``message_id``. A storage failure answers an empty list.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9729,8 +9928,10 @@
       "args": {
         "$ref": "#/defs/PluginNameArgs"
       },
+      "correlate": null,
       "doc": "Show what an installed plugin contains.\n\n``name`` is the installed plugin. Returns its folder and its\nskills, agents, hooks, MCP servers and tools, with its README; or\n``error`` when no such plugin is installed.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/PluginContents"
@@ -9746,8 +9947,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List the installed plugins.\n\nTakes no arguments. Returns each plugin's name, version,\ndescription, where it came from, whether it is enabled (a plugin\nthe organisation manages always is), the commit it is pinned to,\nand what it brings: skills, agents, hooks, MCP servers.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9766,8 +9969,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Say whether this session is running a turn right now.\n\nTakes no arguments. Returns ``true`` while a turn the person (or a\nclient) started is starting, streaming or finishing.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "boolean"
@@ -9783,8 +9988,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read the folder this session is locked to.\n\nTakes no arguments. Returns the absolute path the agent's tools and\nshell commands work in.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "string"
@@ -9800,8 +10007,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read how long, in seconds, a client should wait for one run.\n\nTakes no arguments. Returns the configured maximum run time; igni\ndoes not stop a run at it, the client decides what to do.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "integer"
@@ -9817,8 +10026,10 @@
       "args": {
         "$ref": "#/defs/ScheduledTasksArgs"
       },
+      "correlate": null,
       "doc": "List the scheduled tasks of this session's project.\n\n``include_done`` (default ``true``) lists finished, failed and\ncancelled tasks too. Returns the tasks, latest scheduled first:\neach one's ``id``, ``description``, when it is scheduled and was\ncreated, its ``status``, its ``result`` or ``error``, and its\n``recurrence`` (empty for a one-shot task).",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9837,8 +10048,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read the id of the session this request reached.\n\nTakes no arguments. Returns the session's current id, which can\ndiffer from the one the request was routed by after ``/clear`` or\n``switch_session``.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "string"
@@ -9854,8 +10067,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List this session's skills with what each tells the agent.\n\nTakes no arguments. Returns each skill's ``name``, ``description``\nand ``prompt`` (the skill's body).",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9874,8 +10089,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Describe each of this session's skills in full.\n\nTakes no arguments. Returns each skill's name, description,\nversion, category, argument hint, the context and agent it runs\nin, whether a person can invoke it, its body and its folder.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9894,8 +10111,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List the names of the skills this session has loaded.\n\nTakes no arguments. Returns the names, each usable as ``/<name>``.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9914,8 +10133,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List every slash command this session takes.\n\nTakes no arguments. Returns igni's built-in commands, commands\nwritten as markdown files, skills a person can invoke, and\nextensions' commands, told apart by ``source``; each with its\n``name``, ``description`` and ``argument_hint``.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9956,8 +10177,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read this session's status: model, account, context size and permission mode.\n\nTakes no arguments. Returns a ``status_update`` message, sent in\nplace of an ``rpc_response``: the model and whether it is\nconfigured, the igni server connection and account, the context\nused and its window, the permission mode and the theme.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/StatusUpdate"
@@ -9973,8 +10196,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read the agent's to-do list in this session.\n\nTakes no arguments. Returns each item's ``content``, ``status``\n(``pending``, ``in_progress``, ``completed``) and ``activeForm``\n(how it reads while in progress). ``todos_updated`` pushes the list\nwhenever the agent changes it.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -9993,8 +10218,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read whether this session's project folder is trusted.\n\nTakes no arguments. Returns the folder's trust ``state``\n(``trusted``, ``untrusted``, or ``ask`` when the person has not\ndecided), whether it ``can_trust`` it under the organisation's\npolicy and, if not, the ``reason``, plus where the decision came\nfrom. Until a folder is trusted its own tools, hooks, plugins and\nconfiguration are not loaded.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/WorkspaceTrustStatus"
@@ -10010,8 +10237,25 @@
       "args": {
         "$ref": "#/defs/PageRequest"
       },
+      "correlate": {
+        "by": "payload.extension_id",
+        "from": "request.caller"
+      },
       "doc": "Make one host-object-model request on behalf of an extension's page.\n\nOnly igni's window makes this call, for a page it frames, with the\npage's extension as the request's ``caller``. The arguments are one\nhost-model request (``docs/HOST_OBJECT_MODEL.md``; the members are\npublished in ``docs/host-schema.json``): ``op`` (``get``, ``set``,\n``call``, ``subscribe``, ``unsubscribe``), ``path``, and ``params``,\n``value``, ``signals``, ``window``, ``session`` as the op needs.\n``home_window`` is the window framing the page; the window on the\nrequest's connection wins over it once it has said who it is.\n\nReturns the host model's reply, success or refusal alike: ``ok`` with\n``result``, or ``ok: false`` with ``error`` (``code`` and\n``message``), so the page gets the refusal's code. Signals the page\nsubscribed to come later as ``host_signal`` pushes addressed to its\nextension; a member that changes a window's model or opens a link\npushes ``window_model_changed`` or ``open_external``; one that posts\nto a chat starts a run there, which streams as any run does.\n\nFails only when the request has no ``caller`` or this igni mounts no\nhost model.",
       "duration": "person",
+      "may_stream": [
+        "push_notification:background_process_done",
+        "push_notification:file_edited",
+        "push_notification:http_retry_attempt",
+        "push_notification:http_retry_succeeded",
+        "push_notification:orchestrate_event",
+        "push_notification:permission_mode_changed",
+        "push_notification:plan_submitted",
+        "push_notification:process_exited",
+        "push_notification:process_line",
+        "push_notification:process_started",
+        "push_notification:todos_updated"
+      ],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/Reply"
@@ -10022,19 +10266,8 @@
         "error",
         "info",
         "model_completed",
-        "push_notification:background_process_done",
-        "push_notification:file_edited",
         "push_notification:host_signal",
-        "push_notification:http_retry_attempt",
-        "push_notification:http_retry_succeeded",
         "push_notification:open_external",
-        "push_notification:orchestrate_event",
-        "push_notification:permission_mode_changed",
-        "push_notification:plan_submitted",
-        "push_notification:process_exited",
-        "push_notification:process_line",
-        "push_notification:process_started",
-        "push_notification:todos_updated",
         "push_notification:window_model_changed",
         "reasoning_started",
         "requirement_details",
@@ -10062,8 +10295,10 @@
       "args": {
         "$ref": "#/defs/InstallPluginArgs"
       },
+      "correlate": null,
       "doc": "Install a plugin from a git repository or a marketplace.\n\n``ref`` is a git URL or ``@<marketplace>/<plugin>``; ``install_ref``\nthe branch, tag or commit to check out (the marketplace's, or the\ndefault branch, when absent). The plugin is active in this session\nat once. Returns an ``info`` message, sent in place of an\n``rpc_response``, whose text says what was installed \u2014 or why not:\ngit missing, an unknown marketplace entry, the organisation's\npolicy, a git error.",
       "duration": "long",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10079,8 +10314,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List the background processes igni is tracking, in every session.\n\nTakes no arguments. Returns each process's ``pid``, command, how\nlong it has run, whether it is still running, and its exit code\nonce it has ended.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -10099,8 +10336,10 @@
       "args": {
         "$ref": "#/defs/ListDirsArgs"
       },
+      "correlate": null,
       "doc": "List the folders inside a folder on igni's machine, for picking a project.\n\n``path`` is the folder to list (the home folder when absent or\nempty); ``show_hidden`` includes folders whose names start with a\ndot. Returns the resolved ``path``, its ``parent`` (empty at the\nroot), the folder names in it (``dirs``, sorted), the home folder,\nand ``error`` when it could not be read.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/DirListResult"
@@ -10116,8 +10355,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List the installed extensions, including the ones that failed to start.\n\nTakes no arguments. Returns each extension's id, name, version and\n``state`` \u2014 a failed one with its ``reason``, rather than left out \u2014\nwith what it adds to igni's window (pages, menu items, indicators),\nits settings and their values, and the addresses of its UI, its web\nhome and its service.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/ExtensionListResult"
@@ -10133,8 +10374,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "List the sessions kept in this session's project.\n\nTakes no arguments. Returns a ``session_list_result`` message, sent\nin place of an ``rpc_response``: each session's id, name, when it\nwas created and last updated, how many runs it has, a summary and\nthe agent it runs. A storage failure answers an empty list.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/SessionListResult"
@@ -10150,8 +10393,10 @@
       "args": {
         "$ref": "#/defs/WorkflowListRequest"
       },
+      "correlate": null,
       "doc": "List the workflows this session's project can run.\n\nTakes no arguments (any it is sent are ignored). Returns each workflow in\n``.igni/workflows/*.mjs`` (a project's shadowing the person's own\nof the same name), sorted by name: its ``name``, ``description``,\n``whenToUse``, ``phases`` and ``path``. A file whose metadata cannot\nbe read is left out.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -10170,8 +10415,13 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": {
+        "by": "payload.flow_id",
+        "from": "result.flow_id"
+      },
       "doc": "Start signing in to igni server through the person's browser.\n\nTakes no arguments, and answers at once with ``started: true``; a\nsign-in already in progress is cancelled first. The sign-in itself\ngoes on in the background: ``login_status`` pushes say what it is\ndoing (the local callback server starting, the URL to open, the\naccount being read), and one ``login_result`` push ends it, with\n``success`` and, in ``result``, the signed-in email or the reason it\nfailed. On success the person's notifications are read and\n``notifications_changed`` follows.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/LoginStarted"
@@ -10191,8 +10441,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Pause this session's ``/loop`` after the current iteration.\n\nTakes no arguments. Returns ``true`` when the loop is now paused\n(or already was), ``false`` when there is no loop.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "boolean"
@@ -10208,8 +10460,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Resume this session's paused ``/loop``.\n\nTakes no arguments. Returns the prompt of the iteration to run next,\nfor the client to send as a message \u2014 nothing runs on its own \u2014 or\n``\"\"`` when there is no paused loop.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "string"
@@ -10225,8 +10479,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read the state of this session's ``/loop``.\n\nTakes no arguments. Returns whether a loop is ``active`` and\n``paused``, its prompt, which iteration it is on and how many\nremain, whether its cap was set explicitly, and the total the agent\nannounced, if any.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/LoopStatusSnapshot"
@@ -10242,8 +10498,10 @@
       "args": {
         "$ref": "#/defs/McpServerArgs"
       },
+      "correlate": null,
       "doc": "Connect one configured MCP server to this session.\n\n``server_name`` is the server's name in the MCP configuration.\nReturns an ``info`` message, sent in place of an ``rpc_response``,\nonce it is connected. Fails with the reason when it did not connect\n(not configured, refused by policy, no tools, approval denied); the\nreason is also ``get_mcp_server_details``'s ``error`` for it.",
       "duration": "network",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10259,8 +10517,10 @@
       "args": {
         "$ref": "#/defs/McpServerArgs"
       },
+      "correlate": null,
       "doc": "Disconnect one MCP server from this session.\n\n``server_name`` is the server's name in the MCP configuration.\nReturns an ``info`` message, sent in place of an ``rpc_response``,\nwhether or not the server was connected.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10276,8 +10536,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Make a token that lets a program answer the agent's approval requests.\n\nTakes no arguments. Returns ``token``: a program that connects with it\nstands as an approver \u2014 it may answer approval requests and approve a\nplan, once each time, but saves no rule and changes no permission mode.\nThe token lives in memory until igni exits or the tokens are revoked,\nand is sent only to the connection that asked.\n\nFails when this igni's transport takes no token at all, so every\nconnection may already answer approval requests.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/ApproverTokenMinted"
@@ -10293,8 +10555,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Count the person's unread notifications, in all and per extension.\n\nTakes no arguments. Answers from what was last read, asking nobody;\n``notifications_changed`` pushes the counts whenever they move.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/NotificationCounts"
@@ -10310,8 +10574,13 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": {
+        "by": "payload.cause",
+        "equals": "listed"
+      },
       "doc": "List the signed-in person's notifications, newest first.\n\nTakes no arguments. Reads igni server again and merges in what\nextensions on this machine posted. Returns at most 100\n``notifications`` (each with its source, title, body, target and\nwhether it is read), the unread ``counts`` in all and per\nextension, and ``server_error`` when igni server could not be\nread. The fresh counts are also pushed as ``notifications_changed``.",
       "duration": "network",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/NotificationsListResult"
@@ -10329,8 +10598,13 @@
       "args": {
         "$ref": "#/defs/MarkReadArgs"
       },
+      "correlate": {
+        "by": "payload.cause",
+        "equals": "marked_read"
+      },
       "doc": "Mark notifications read.\n\n``ids`` names the notifications; ``source`` (an extension id) marks\nall of that extension's; neither marks every notification. Returns\nthe unread ``counts`` afterwards, also pushed as\n``notifications_changed``, and ``server_error`` when igni server\ncould not be told.",
       "duration": "network",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/NotificationsReadResult"
@@ -10348,8 +10622,10 @@
       "args": {
         "$ref": "#/defs/PickDirArgs"
       },
+      "correlate": null,
       "doc": "Open the operating system's folder picker on igni's machine and return the choice.\n\n``start`` is the folder the picker opens in (this session's project\nwhen absent or empty). igni runs on the person's machine, so the\ndialog appears on their desktop; it waits as long as they take, so\ngive the call a long timeout. Returns the chosen ``path``, or\n``cancelled``, or ``error`` when no native dialog is available.",
       "duration": "person",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/PickDirResult"
@@ -10365,8 +10641,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Take the next step of this session's ``/loop``, for the client to send.\n\nTakes no arguments. Returns ``null`` when there is no loop or it is\npaused. Otherwise ``kind`` says what happened: ``step`` carries the\n``prompt`` to send as the next message (and ``display_prompt`` to\nshow), the iteration number and how many remain; ``completed``\nsays the loop reached its cap and ended; ``safety_paused`` says it\nreached the hard cap and paused.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "anyOf": [
@@ -10389,8 +10667,10 @@
       "args": {
         "$ref": "#/defs/PreviewPluginArgs"
       },
+      "correlate": null,
       "doc": "Show what a plugin contains without installing it.\n\n``source`` is the plugin's git URL (optionally followed by a\nsubfolder); ``branch`` the branch, tag or commit to read (the\ndefault branch when absent); ``subdir`` the plugin's folder inside\nthe repository, which wins over one in ``source``. The repository\nis cloned to a temporary place. Returns the same shape as\n``get_plugin_contents``, with ``preview_source`` naming what was\nread; or ``error`` when the organisation's policy refuses the\nsource, git is missing, or the clone failed.",
       "duration": "long",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/PluginContents"
@@ -10406,8 +10686,10 @@
       "args": {
         "$ref": "#/defs/PromoteAgentArgs"
       },
+      "correlate": null,
       "doc": "Keep an agent made during this session, as a project or personal agent.\n\n``name`` is the ephemeral agent; ``target`` is ``project`` (the\ndefault: the project's agents) or ``personal`` (the person's own).\nReturns ``ok`` with the agent's ``name`` and where it was saved\n(``dest``); or ``ok: false`` with ``reason`` when the agent is\nunknown, not ephemeral, or the destination exists.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/PromoteEphemeralResult"
@@ -10423,8 +10705,10 @@
       "args": {
         "$ref": "#/defs/ReadFileArgs"
       },
+      "correlate": null,
       "doc": "Read a file for preview: one of this session's project, igni's data, or an attachment.\n\n``path`` is relative to the project, absolute, or an\n``attachment:<id>`` reference. Returns the resolved ``path``, its\n``contents`` and ``size``, and a ``language`` hint for highlighting;\nor ``error`` when the file is missing, a directory, too large to\npreview (256 KiB), unreadable, or outside the folders igni lets a\nclient read.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/ReadFileResult"
@@ -10440,8 +10724,10 @@
       "args": {
         "$ref": "#/defs/ProcessTailArgs"
       },
+      "correlate": null,
       "doc": "Read the last lines a background process printed.\n\n``pid`` is the process; ``tail`` how many lines (default 200).\nReturns its ``output``, whether it ``is_running``, and its\n``exit_code`` once it has ended. An unknown ``pid`` answers empty\noutput, not running.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/ProcessTailResult"
@@ -10457,8 +10743,10 @@
       "args": {
         "$ref": "#/defs/RefreshMarketplacesArgs"
       },
+      "correlate": null,
       "doc": "Fetch marketplaces' catalogues again.\n\n``name`` is one marketplace; absent or empty refreshes every one.\nReturns an ``info`` message, sent in place of an ``rpc_response``,\nwhose text says what was refreshed, or why not.",
       "duration": "long",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10474,8 +10762,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read the saved sign-in again, so this session acts as whoever is signed in now.\n\nTakes no arguments. Use it after a sign-in made elsewhere (another\nsession, another window). Returns the session's status afterwards \u2014\nmodel, cloud connection, account, context size, permission mode \u2014 as\na ``status_update`` message, sent in place of an ``rpc_response``.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/StatusUpdate"
@@ -10491,8 +10781,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Read this session's hook configuration again.\n\nTakes no arguments. Returns an ``info`` message, sent in place of an\n``rpc_response``, saying how many hooks are now active.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10508,8 +10800,10 @@
       "args": {
         "$ref": "#/defs/MarketplaceNameArgs"
       },
+      "correlate": null,
       "doc": "Forget a plugin marketplace.\n\n``name`` is the marketplace. Returns an ``info`` message, sent in\nplace of an ``rpc_response``, whose text says it was removed, or\nthat there is no such marketplace.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10525,8 +10819,10 @@
       "args": {
         "$ref": "#/defs/PluginNameArgs"
       },
+      "correlate": null,
       "doc": "Uninstall a plugin.\n\n``name`` is the installed plugin. Returns an ``info`` message, sent\nin place of an ``rpc_response``, whose text says it was removed, or\nwhy not.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10542,8 +10838,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Forget every approver token, so no program answers approval requests any more.\n\nTakes no arguments. Returns ``revoked``: how many tokens were\nforgotten (``0`` when there were none, or when this igni takes no\ntoken). Connections that attached with a revoked token lose their\napprover standing.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/ApproverTokensRevoked"
@@ -10559,8 +10857,13 @@
       "args": {
         "$ref": "#/defs/RunShellArgs"
       },
+      "correlate": {
+        "by": "payload.pid",
+        "from": "result.pid"
+      },
       "doc": "Run a shell command in this session's project folder and return its output.\n\n``command`` is the command line (what follows ``$`` in the\ncomposer); blank runs nothing. Output is captured, not interactive.\nReturns ``output`` (the tail, at most 100 KB) and ``exit_code``\n(``-1`` when it could not start). A command still running after two\nminutes moves to the background: the answer then comes at once with\n``exit_code`` 0 and a note, and the process goes on as a background\nprocess \u2014 ``process_started``, a ``process_line`` per line,\n``process_exited`` and ``background_process_done``.",
       "duration": "long",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/RunShellResult"
@@ -10581,8 +10884,13 @@
       "args": {
         "$ref": "#/defs/WorkflowRunRequest"
       },
+      "correlate": {
+        "by": "payload.workflow_run_id",
+        "from": "result.workflow_run_id"
+      },
       "doc": "Start a workflow in this session and return its run id at once.\n\n``name`` is the workflow (from ``list_workflows``); ``args`` its\ninput, a JSON object the workflow reads as it defines. Returns the\n``workflow_run_id`` and ``name``. The run goes on in the\nbackground: each step it takes is pushed as ``workflow_event``\ncarrying that id, ending with ``workflow_completed`` or\n``workflow_failed``. Fails when there is no such workflow or the\nworkflow runtime is missing.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/WorkflowRunResponse"
@@ -10600,8 +10908,10 @@
       "args": {
         "$ref": "#/defs/SavePermissionRuleArgs"
       },
+      "correlate": null,
       "doc": "Save a permission rule for this session's project.\n\n``rule`` is a permission rule (``Bash(git status)``, a tool name);\n``level`` is ``allow``, ``ask`` or ``deny``. The rule is written to\nthe project's ``.igni/settings.local.json`` (the person's own when\nthere is no project), and the session follows it from its next tool\ncall. Returns nothing. Fails when the settings file cannot be\nwritten.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "null"
@@ -10617,8 +10927,10 @@
       "args": {
         "$ref": "#/defs/SearchChatArgs"
       },
+      "correlate": null,
       "doc": "Find text in a session's conversation.\n\n``session_id`` names the session; ``query`` is the text to find\n(case-insensitive; blank finds nothing); ``limit`` caps the hits\n(default 50). Returns one hit per match, in conversation order:\nits index in ``get_chat_history``, its role and run, a snippet\naround it, and where the match sits in the snippet.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "items": {
@@ -10637,8 +10949,10 @@
       "args": {
         "$ref": "#/defs/SearchCodeArgs"
       },
+      "correlate": null,
       "doc": "Find where a snippet of code appears in this session's project.\n\n``query`` is the snippet, matched exactly; one shorter than five\ncharacters finds nothing. Returns up to 20 ``matches`` (path, first\nand last line, a preview), ``truncated`` when there may be more or\nthe search timed out, and ``error`` when it failed.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/SearchCodeResult"
@@ -10654,8 +10968,10 @@
       "args": {
         "$ref": "#/defs/SetExtensionSettingsArgs"
       },
+      "correlate": null,
       "doc": "Change an installed extension's settings.\n\n``extension_id`` is the extension; ``values`` the settings to\nchange, by key, merged over what is stored. The extension reads them\nthe next time it starts. Returns the whole list, as\n``list_extensions`` does. Fails when the extension is not\ninstalled, a key is not one of its settings, a value is not one of\na setting's options, or igni has no extension support.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/ExtensionListResult"
@@ -10671,8 +10987,10 @@
       "args": {
         "$ref": "#/defs/McpToolEnabledArgs"
       },
+      "correlate": null,
       "doc": "Switch one MCP server's tool on or off for this project.\n\n``server`` and ``tool`` name the tool; ``enabled`` is its new state.\nThe choice is saved in the project's ``.igni/mcp-tool-state.json``.\nReturns the ``server``, ``tool`` and ``enabled`` as recorded; the\nserver and tool are not checked to exist. Fails when the state file\ncannot be written.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/MCPToolToggleResult"
@@ -10688,8 +11006,10 @@
       "args": {
         "$ref": "#/defs/PluginEnabledArgs"
       },
+      "correlate": null,
       "doc": "Switch an installed plugin on or off.\n\n``name`` is the installed plugin; ``enabled`` its new state. The\nchoice is saved and this session reloads its plugins. Returns an\n``info`` message, sent in place of an ``rpc_response``, whose text\nsays what happened \u2014 including a refusal: no such plugin, or one\nthe organisation manages.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10705,8 +11025,10 @@
       "args": {
         "$ref": "#/defs/SetServerArgs"
       },
+      "correlate": null,
       "doc": "Choose the igni server to sign in to, and remember it for the next launch.\n\n``api_url`` is the server's API address (``https`` only);\n``portal_url`` its portal, empty to derive it from ``api_url``.\nReturns the server as stored, or, when the choice is refused (an\nempty or non-``https`` address), ``error`` saying why and nothing\nstored. Fails when the user configuration file cannot be read or\nwritten.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/ServerChoice"
@@ -10722,8 +11044,13 @@
       "args": {
         "$ref": "#/defs/TrustDecisionArgs"
       },
+      "correlate": {
+        "by": "payload.path",
+        "from": "result.path"
+      },
       "doc": "Answer \"Trust this folder?\" for this session's project folder.\n\n``decision`` is ``trust`` (remembered), ``once`` (until igni exits)\nor ``distrust``. When trust changed, the session is rebuilt so the\nfolder's tools, hooks, plugins, language servers and configuration\ncome in or go. Every window showing the dialog for that folder is\ntold the new status (``workspace_trust_required``). Returns the new\nstatus. Fails when the organisation's policy does not let the folder\nbe trusted.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/WorkspaceTrustStatus"
@@ -10741,8 +11068,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Wind this session down: its hooks, its agents, its MCP servers, its scheduler.\n\nTakes no arguments and returns nothing once done. Runs the session's\n``SessionEnd`` hooks, cleans up its ephemeral agents, disconnects its\nMCP servers and stops its scheduler \u2014 once: a session already wound\ndown is left as it is. Background processes are igni's, not the\nsession's, and are left running; they end when igni does. It does\nnot stop igni or close the connection. Each step's failure is\nlogged, not raised. Only igni's window may call it.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "null"
@@ -10758,26 +11087,32 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": {
+        "by": "channel"
+      },
       "doc": "Start running this project's scheduled tasks as they fall due.\n\nTakes no arguments and returns nothing; a scheduler already running\nis left as it is. From then on each due task runs through the\nagent: ``scheduler_started`` when it starts, ``scheduler_completed``\nwith its result when it ends, and whatever its tools push between.",
       "duration": "io",
-      "reply": "rpc_response",
-      "result": {
-        "type": "null"
-      },
-      "scope": "session",
-      "streams": [
+      "may_stream": [
         "push_notification:background_process_done",
         "push_notification:file_edited",
         "push_notification:http_retry_attempt",
         "push_notification:http_retry_succeeded",
         "push_notification:orchestrate_event",
         "push_notification:permission_mode_changed",
+        "push_notification:plan_submitted",
         "push_notification:process_exited",
         "push_notification:process_line",
         "push_notification:process_started",
-        "push_notification:scheduler_completed",
-        "push_notification:scheduler_started",
         "push_notification:todos_updated"
+      ],
+      "reply": "rpc_response",
+      "result": {
+        "type": "null"
+      },
+      "scope": "session",
+      "streams": [
+        "push_notification:scheduler_completed",
+        "push_notification:scheduler_started"
       ],
       "summary": "Start running this project's scheduled tasks as they fall due.",
       "timeout_seconds": 30
@@ -10788,8 +11123,13 @@
       "args": {
         "$ref": "#/defs/ProcessArgs"
       },
+      "correlate": {
+        "by": "payload.pid",
+        "from": "args.pid"
+      },
       "doc": "Stop a background process.\n\n``pid`` is the process. Returns ``killed: true`` once it was told to\nstop \u2014 its last lines, ``process_exited`` and\n``background_process_done`` follow \u2014 or ``killed: false`` with a\n``message`` when igni is not tracking it or it had already ended.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/StopProcessResult"
@@ -10809,8 +11149,10 @@
       "args": {
         "$ref": "#/defs/SwitchModelArgs"
       },
+      "correlate": null,
       "doc": "Make another model the one this session's agent runs on.\n\n``model_name`` is a name from the model registry\n(``get_model_registry``). The choice is also saved as the default\nfor new sessions. Returns an ``info`` message, sent in place of an\n``rpc_response``, saying the model switched, with a note for any\npart of the choice that could not be saved. Fails when the model is\nnot in the registry.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10826,8 +11168,10 @@
       "args": {
         "$ref": "#/defs/SessionIdArgs"
       },
+      "correlate": null,
       "doc": "Make the session this request is routed to continue another stored session.\n\n``session_id`` is the stored session to continue; the conversation,\nits history and its runs are read from it from now on. Returns an\n``info`` message, sent in place of an ``rpc_response``, naming the\nsession switched to. The id is not checked: an unknown one starts\nan empty session under that id.",
       "duration": "io",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10843,8 +11187,10 @@
       "args": {
         "$ref": "#/defs/NoArgs"
       },
+      "correlate": null,
       "doc": "Turn showing the agent's routing decisions on or off for this session.\n\nTakes no arguments. Returns the new setting: ``true`` when routing is\nnow shown. Not saved; the session's next settings reload resets it.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "type": "boolean"
@@ -10860,8 +11206,10 @@
       "args": {
         "$ref": "#/defs/TruncateHistoryArgs"
       },
+      "correlate": null,
       "doc": "Drop a run from a session's history, with every run after it.\n\n``session_id`` names the session; ``run_id`` the first run to drop\n(a top-level run, as ``get_chat_history`` carries it). Use it to\nedit and resend a message. Returns how many runs were ``removed``,\nor ``error`` when the session or the run is not found or the\nhistory could not be saved.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/TruncateHistoryResult"
@@ -10877,8 +11225,10 @@
       "args": {
         "$ref": "#/defs/UpdatePluginArgs"
       },
+      "correlate": null,
       "doc": "Move an installed plugin to another commit.\n\n``name`` is the installed plugin; ``install_ref`` the branch, tag\nor commit to move to (the remote's default branch when absent).\nReturns an ``info`` message, sent in place of an ``rpc_response``,\nwhose text names the commit now installed, or why not.",
       "duration": "long",
+      "may_stream": [],
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -10894,8 +11244,10 @@
       "args": {
         "$ref": "#/defs/UploadAttachmentArgs"
       },
+      "correlate": null,
       "doc": "Store a file for this session, so a message can refer to it.\n\n``filename`` is the file's name (made safe for the disk; a clash gets\na ``-N`` suffix); ``content_base64`` its bytes, base64-encoded.\nReturns ``path`` \u2014 the stored file's path, or an ``attachment:<id>``\nreference when attachments are kept in shared storage \u2014 and its\n``size`` in bytes; or ``error`` when the content is not valid base64.\nFails when the file cannot be stored.",
       "duration": "io",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/UploadAttachmentResult"
@@ -10911,8 +11263,12 @@
       "args": {
         "$ref": "#/defs/VmSignInParams"
       },
+      "correlate": {
+        "by": "channel"
+      },
       "doc": "Hand a cloud VM the person's session, for igni to exchange for the VM's own credential.\n\nMade by the platform's gateway when the person signs in through it.\n``session_token`` is the person's igni server session; ``organisation``\nthe organisation the VM signs in for (``null``: the person's own).\n\nReturns the credential's ``state`` after the exchange (``ready``,\n``needs_sign_in``, ``needs_reissue`` or ``unreachable``) and a\n``message`` saying what went wrong, if anything. A change of state\nis also pushed as ``vm_credential``, now and whenever the credential\nis renewed later.\n\nFails when ``session_token`` is empty, or when this igni is not a\nproducer's VM (nothing is mounted to take the session).",
       "duration": "network",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/VmCredentialState"
@@ -10930,8 +11286,13 @@
       "args": {
         "$ref": "#/defs/WindowModelArgs"
       },
+      "correlate": {
+        "by": "payload.token",
+        "from": "args.token"
+      },
       "doc": "Read or change the calling window's own model: its fields, toasts and dialog.\n\nA window spans sessions, so this is not tied to one. ``op`` says what\nto do (see the arguments); ``window`` is the window's own stable id.\nThe window is the one on the connection the request came on.\n\nReturns, by ``op``: ``hydrate`` the whole model (``state``), its\nrevision (``rev``) and the fields nobody set (``unset``); ``write``,\n``dismiss_toast`` the new ``rev``; ``toast`` the toast as shown, with\nits id; ``open_dialog`` the dialog as shown; ``answer_dialog``\nwhether that dialog was still the open one (``answered``). Every\nchange is pushed to every window as ``window_model_changed``.\n\nFails when the model refuses the write (an unknown field, a field\nthat is not writable, a value that does not fit its type), or when\nthe window's saved state could not be read or written.",
       "duration": "instant",
+      "may_stream": [],
       "reply": "rpc_response",
       "result": {
         "discriminator": {

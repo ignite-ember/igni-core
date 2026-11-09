@@ -19,6 +19,8 @@ class LoginStatusPayload(BaseModel):
     while a login attempt is in flight."""
 
     text: str
+    #: The sign-in it is about: ``login``'s ``flow_id``.
+    flow_id: str = ""
 
 
 class LoginResultPayload(BaseModel):
@@ -28,6 +30,8 @@ class LoginResultPayload(BaseModel):
 
     success: bool
     result: str
+    #: The sign-in it ends: ``login``'s ``flow_id``.
+    flow_id: str = ""
 
 
 class SchedulerStartedPayload(BaseModel):
