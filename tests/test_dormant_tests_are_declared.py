@@ -71,6 +71,14 @@ DECLARED_GATES: dict[str, str] = {
         "(tests/test_anthropic_live.py), which costs money per run. Not "
         "in CI; the provider's other tests run against a local stub."
     ),
+    "ANTHROPIC_BASE_URL": (
+        "Which endpoint the machine's Anthropic key belongs to. igni always "
+        "calls Anthropic's own API and never reads this, so a machine "
+        "pointed at another provider's gateway holds a key Anthropic would "
+        "refuse, and the live test would fail on the credential rather than "
+        "on igni (tests/test_anthropic_live.py skips when it names another "
+        "endpoint)."
+    ),
     "IGNI_TEST_DATABASE_URL": (
         "A PostgreSQL server the storage tests may create and drop "
         "databases on (tests/test_storage_backends.py). The suite runs "
