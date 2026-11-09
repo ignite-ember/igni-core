@@ -148,7 +148,7 @@ class ToolSpec(BaseModel):
 
     Subclasses override :meth:`build` for anything that isn't a plain
     ``toolkit_cls(**static_kwargs, base_dir=..., requires_confirmation_tools=...)``
-    call — e.g. :class:`VisualizeSpec` needs the session broadcast,
+    call — e.g. :class:`WebFetchSpec` needs the session broadcast,
     :class:`WebSearchSpec` guards on an optional import.
 
     Every attribute is a Pydantic field (not a class attribute), so
@@ -254,7 +254,7 @@ class EditSpec(ToolSpec):
         # one. When ``None``, ``IgniEditTools`` falls back to the
         # module-level :data:`default_file_edit_notifier` — same
         # shared instance the push bridge binds to by default.
-        # Mirrors ``VisualizeSpec.build`` which threads the broadcast
+        # Mirrors ``WebFetchSpec.build`` which threads the broadcast
         # callable from the same context.
         kwargs = self._build_kwargs(context, confirm)
         if context.file_edit_notifier is not None:
@@ -409,10 +409,11 @@ class NotebookSpec(ToolSpec):
 
 
 class VisualizeSpec(ToolSpec):
-    """Visualize tool. Overrides :meth:`build` to inject the
-    registry-owned broadcast callable (proper subclass polymorphism,
-    replacing the ``confirm``-ignored hack in the old
-    ``_make_visualize``).
+    """Visualize tool.
+
+    Nothing to inject and nothing to gate: the card reaches the FE on
+    the tool-call stream, so the toolkit carries no state of its own
+    and the default :meth:`ToolSpec.build` constructs it.
     """
 
     name: str = "Visualize"
@@ -423,13 +424,6 @@ class VisualizeSpec(ToolSpec):
     # Not reachable via ephemeral ``tools:`` frontmatter — matches the
     # historical ``VALID_EPHEMERAL_TOOL_NAMES`` which excluded it.
     ephemeral_visible: bool = False
-
-    def build(self, context: ToolBuildContext, confirm: bool) -> Toolkit:
-        # ``confirm`` unused — Visualize only sends a one-way UI payload
-        # to the FE; nothing to gate. The broadcast is bound at registry
-        # construction so headless / test contexts get a no-op tool
-        # instead of an import-time failure.
-        return VisualizeTools(broadcast=context.broadcast)
 
 
 class ToolSpecCatalog:

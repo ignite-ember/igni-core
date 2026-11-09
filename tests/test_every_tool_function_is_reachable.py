@@ -173,7 +173,10 @@ class TestExecutionToolsAreGated:
             "the underlying kernel action — see ScheduleSpec's docstring"
         ),
         "LS": "read-only directory listing; build() forces confirm=False",
-        "Visualize": "one-way broadcast to the FE, no side effect on the host",
+        "Visualize": (
+            "confirms a card the FE already received on the tool-call "
+            "stream; no side effect on the host"
+        ),
     }
 
     @staticmethod

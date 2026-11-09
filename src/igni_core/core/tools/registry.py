@@ -84,7 +84,8 @@ class ToolRegistry:
         # need it check it rather than building a request against "".
         self._cloud_server_url = cloud_server_url or ""
         # Session broadcast — only needed by tools that push structured
-        # payloads to attached clients (currently only ``Visualize``).
+        # payloads to attached clients (currently the web tools, whose
+        # HTTP retries are announced as ``http_retry_*`` events).
         # ``None`` in headless / test contexts; those tools then no-op
         # on emit instead of raising.
         self._broadcast = broadcast
