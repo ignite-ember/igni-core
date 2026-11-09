@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from igni_core import __version__
 from igni_core.backend.activity import Activity
+from igni_core.core.session.client_state import ClientStateRead
 from igni_core.extensions.host.display import Display, DisplayReader
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.external_link import ExternalLink
@@ -98,12 +99,12 @@ class AppStateMembers(Members):
     under its own client id (:attr:`Call.own_client_id`)."""
 
     @get("app.state.values")
-    async def values(self, c: Call) -> Any:
-        return self.host.backend.client_state.get_for_client(c.own_client_id)
+    async def values(self, c: Call) -> dict[str, str]:
+        return self._state(c).values
 
     @call("app.state.get")
-    async def get_value(self, c: Call) -> Any:
-        return self.host.backend.client_state.get_for_client(c.own_client_id).get(c.params["key"])
+    async def get_value(self, c: Call) -> str | None:
+        return self._state(c).values.get(c.params["key"])
 
     @call("app.state.set")
     async def set_value(self, c: Call) -> None:
@@ -111,14 +112,29 @@ class AppStateMembers(Members):
         if not key:
             raise HostModelError(ErrorCode.INVALID, "a state key cannot be empty")
         value = str(c.params["value"])
-        self.host.backend.client_state.set_value(c.own_client_id, key, value)
+        result = self.host.backend.client_state.set_value(c.own_client_id, key, value)
+        if not result.ok:
+            raise HostModelError(ErrorCode.FAILED, result.error)
         self.signals.send(AppStateChanged(key=key, value=value), only=c.extension_id)
 
     @call("app.state.delete")
     async def delete_value(self, c: Call) -> None:
         key = str(c.params["key"])
-        self.host.backend.client_state.delete_value(c.own_client_id, key)
+        result = self.host.backend.client_state.delete_value(c.own_client_id, key)
+        if not result.ok:
+            raise HostModelError(ErrorCode.FAILED, result.error)
         self.signals.send(AppStateChanged(key=key, value=None), only=c.extension_id)
+
+    def _state(self, c: Call) -> ClientStateRead:
+        """The extension's own state, read from the store.
+
+        A read that failed is a failure: the extension is told, rather
+        than handed an empty state it would read as "nothing stored".
+        """
+        read = self.host.backend.client_state.get_for_client(c.own_client_id)
+        if not read.ok:
+            raise HostModelError(ErrorCode.FAILED, read.error)
+        return read
 
 
 class WindowMembers(Members):

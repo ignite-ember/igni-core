@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from igni_core.extensions.host.backend import HostBackend
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.grants import HostGrants
@@ -13,8 +15,10 @@ from igni_core.extensions.host.spec import (
     PropertySpec,
     SignalSpec,
 )
-from igni_core.extensions.host.windows import Windows
+from igni_core.extensions.host.windows import Windows, WindowStateError
 from igni_core.extensions.host.wire import Request
+
+logger = logging.getLogger(__name__)
 
 
 class CallScope:
@@ -58,10 +62,21 @@ class CallScope:
         )
 
     def _on_screen(self, window: str | None) -> str:
+        """The session the window is looking at.
+
+        A window's state that cannot be read is the window's problem,
+        not a reason to refuse every extension call: the extension's
+        work goes on, in the session the run started with. The state
+        that was asked for is still refused where it was asked for.
+        """
         if window is not None:
-            bound = self._windows.session(window)
-            if bound:
-                return bound
+            try:
+                bound = self._windows.session(window)
+            except WindowStateError:
+                logger.exception("the state of window %r could not be read", window)
+            else:
+                if bound:
+                    return bound
         return self._backend.default_session()
 
 

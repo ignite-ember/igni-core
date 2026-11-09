@@ -158,20 +158,22 @@ async def test_client_state_concurrent_writes_from_many_clients(tmp_path: Path):
 
     async def write_all(client_idx: int) -> None:
         for k in range(KEYS_PER_CLIENT):
-            await asyncio.to_thread(
+            written = await asyncio.to_thread(
                 store.set_value,
                 f"c{client_idx}",
                 f"key{k}",
                 f"value-c{client_idx}-k{k}",
             )
+            assert written.ok, written.error
 
     await asyncio.gather(*(write_all(c) for c in range(N_CLIENTS)))
 
     for c in range(N_CLIENTS):
         snapshot = store.get_for_client(f"c{c}")
-        assert len(snapshot) == KEYS_PER_CLIENT
+        assert snapshot.ok, snapshot.error
+        assert len(snapshot.values) == KEYS_PER_CLIENT
         for k in range(KEYS_PER_CLIENT):
-            assert snapshot[f"key{k}"] == f"value-c{c}-k{k}"
+            assert snapshot.values[f"key{k}"] == f"value-c{c}-k{k}"
 
 
 # ── SQLite stores: WAL + busy_timeout + explicit close contract ──────

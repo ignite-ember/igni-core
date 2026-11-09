@@ -78,6 +78,84 @@ that will become D if untouched). B-tier addressed on-demand.
 
 Free-form record of what happened each iteration. Newest at the top.
 
+### Iteration 277 — `core/session/client_state.py`: the store tells, it does not swallow
+
+**Target:** `src/igni_core/core/session/client_state.py` (audit grade **C** —
+"KV store that swallows every database error at debug level, including on
+writes").
+
+**Audit findings, all still applying before this iteration:**
+- `get_for_client` swallowed any `Exception` and returned `{}`.
+- `set_value` swallowed any `Exception` at DEBUG, so a write was lost
+  silently, with no result to the caller.
+- `delete_value` likewise swallowed every error.
+
+**Changes:**
+- The store answers with a result (Pattern 3): `ClientStateResult` for a
+  write, `ClientStateRead` for a read, and a `ClientStateStoreProtocol` that
+  names what a store must offer. A read that failed comes back as
+  `ok=False`, never as an empty state — an empty state reads as "this client
+  has stored nothing", and the caller would go on to write over what is
+  really there.
+- **What a client is shown is a sentence about the store** — `READ_FAILED`,
+  `WRITE_FAILED`, `DELETE_FAILED` — never the driver's own words. A SQLAlchemy
+  message can carry SQL, a file name and a user, and it went on the wire
+  verbatim; the traceback stays in the log.
+- `extensions/host/windows.py`: a state that could not be read or written
+  raises `WindowStateError`, so the window is told instead of showing a state
+  that was never saved. `extensions/host/members/app.py` turns a failed
+  `app.state.*` into a FAILED refusal, and `extensions/host/members/ui.py`
+  turns a failed read into the same.
+- `backend/pool_rpcs/host_model.py`: the pool carries a state failure as a
+  refusal the window can show, rather than as an exception.
+- **The blast radius was kept narrow.** A window's state that cannot be read
+  is the window's problem, not a reason to refuse every extension call:
+  `extensions/host/call_scope.py` degrades to the default session (and logs
+  the failure) instead of taking the whole extension surface down with it.
+  The state that was *asked for* is still refused where it was asked for.
+- `backend/headless_extensions.py`: `NoWindowState` became `RunState`, a
+  store that keeps what it is given for the length of the run. It answered
+  `ok=True` for writes that never happened, so `ok` meant one thing in the
+  database store and another in this one; the two shared one protocol.
+
+**Review findings closed in this iteration:**
+- The test named for the write failure drove a store whose *read* also failed,
+  so the write branch was never reached: a window writes its state by reading
+  it first. There is now a store that reads and one that does not, and each
+  failure is reached on its own path.
+- The new catch in the pool RPC path had no test: the window's own path over
+  the pool — a write that failed, and a read that failed — is now driven end
+  to end.
+
+**A review finding that was checked and not followed:** the review called the
+`if TYPE_CHECKING:` move in `extensions/host/backend.py` "unrelated churn,
+justified by a cycle that does not exist", and said it removed `ViewShown` as
+a runtime attribute. The cycle is real: `backend.py` → `broadcasts/__init__.py`
+→ `router.py` → `services.py` → `backend.py`, and `import
+igni_core.extensions.host.backend` on its own fails at the committed head with
+`ImportError: cannot import name 'HostBackend' from partially initialized
+module`. The move stays, with its comment corrected to say what is actually
+true, and `tests/test_the_host_backend_can_be_imported_first.py` locks it: the
+module must import on its own. `ViewShown` is only ever a type here — the
+annotation of `views()` — so the checker is the only one who needs it, and
+`from __future__ import annotations` keeps it off the wire at runtime.
+
+**Behaviour:** changed on purpose, which is what the finding asked for. A
+failed state operation is now reported to its caller instead of swallowed; a
+failed one no longer reads as an empty state or a write that happened.
+
+**Tests:** `tests/test_a_failed_state_write_is_told.py` (13 tests): the store
+answers, the window is told on both the read and the write path, the pool
+carries the failure, the extension is told, the headless store keeps what it
+is given, and the driver's words never reach the caller.
+`tests/test_the_host_backend_can_be_imported_first.py` (1 test) keeps the
+backend protocol importable on its own. `ruff check`,
+`ruff format --check` and `mypy src/igni_core/` clean.
+
+**Grade change:** `core/session/client_state.py` **C → B+**. The three
+findings that made it a C are closed, and the store now tells its caller what
+happened.
+
 ### Iteration 276 — `core/queue_hook.py`: delete the backward-compat shim
 
 **Target:** `src/igni_core/core/queue_hook.py` (audit grade **C** — "deprecation

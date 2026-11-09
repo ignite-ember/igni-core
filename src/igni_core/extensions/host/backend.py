@@ -14,15 +14,22 @@ class over a pool of stand-in sessions.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from igni_core.backend.activity import Activity
+from igni_core.core.session.client_state import ClientStateStoreProtocol
 from igni_core.core.session.schemas import PersistResult
-from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.values import SessionAttached
 from igni_core.extensions.service_events import UnattendedPost
 from igni_core.protocol.messages import Message
 from igni_core.protocol.rpc import RpcMethod
+
+if TYPE_CHECKING:
+    # The broadcasts package reads this protocol back — its router needs
+    # the services, which need this — so naming the view here at runtime
+    # closes the circle: importing this module first fails. The name is
+    # a type, and only the checker needs it.
+    from igni_core.extensions.host.broadcasts.views import ViewShown
 
 
 class HostBackend(Protocol):
@@ -31,8 +38,9 @@ class HostBackend(Protocol):
     #: The project this backend was started in.
     project_dir: Path
 
-    #: :class:`~igni_core.core.session.client_state.ClientStateStore`.
-    client_state: Any
+    #: Where a window's lasting state is kept — the store that answers
+    #: with a result, so a failed write is told rather than swallowed.
+    client_state: ClientStateStoreProtocol
 
     def default_session(self) -> str:
         """The boot session — what a view that binds nothing talks to."""

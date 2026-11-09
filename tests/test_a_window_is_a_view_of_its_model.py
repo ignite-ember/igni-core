@@ -377,7 +377,8 @@ class TestTheComposer:
         await rig.window("w-1", session="boot")
         await rig.window_writes("w-1", "composer", {"text": "for boot", "mode": "chat"})
         assert rig.orchestrator is not None
-        rig.orchestrator.client_state.set_value("w-1", "draft:other", "for other")
+        written = rig.orchestrator.client_state.set_value("w-1", "draft:other", "for other")
+        assert written.ok, written.error
         await rig.window_writes("w-1", "session", "other")
         assert ok(await rig.ask(ext, "get", "ui.composer"))["text"] == "for other"
         # The window was told: the composer it shows changed with the session.

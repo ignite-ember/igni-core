@@ -25,14 +25,14 @@ from igni_core.extensions.host.members.window_values import (
     WindowFieldName,
 )
 from igni_core.extensions.host.spec import ErrorCode
-from igni_core.extensions.host.windows import WindowModelError
+from igni_core.extensions.host.windows import WindowModelError, WindowStateError
 
 
 class WindowModelMembers(Members):
     """Base: reading and writing one field of the call's window."""
 
     def read(self, c: Call, field: WindowFieldName) -> Any:
-        return self.host.windows.get(c.require_window(), field.value)
+        return self._read(c.require_window(), field)
 
     def write(self, c: Call, field: WindowFieldName, value: Any) -> Any:
         window = c.require_window()
@@ -40,7 +40,21 @@ class WindowModelMembers(Members):
             self.host.windows.write(window, field.value, value)
         except WindowModelError as exc:
             raise HostModelError(ErrorCode.INVALID, str(exc)) from None
-        return self.host.windows.get(window, field.value)
+        except WindowStateError as exc:
+            raise HostModelError(ErrorCode.FAILED, str(exc)) from None
+        return self._read(window, field)
+
+    def _read(self, window: str, field: WindowFieldName) -> Any:
+        """One field of a window already resolved.
+
+        The window is resolved once per call: a write reads the field
+        back to answer with it, and it is the same window the write
+        went to.
+        """
+        try:
+            return self.host.windows.get(window, field.value)
+        except WindowStateError as exc:
+            raise HostModelError(ErrorCode.FAILED, str(exc)) from None
 
 
 class UiNavigationMembers(WindowModelMembers):

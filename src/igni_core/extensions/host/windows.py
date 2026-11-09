@@ -49,6 +49,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from igni_core.core.session.client_state import ClientStateStoreProtocol
 from igni_core.extensions.host.types import SchemaTypes
 
 logger = logging.getLogger(__name__)
@@ -187,6 +188,15 @@ class WindowModelError(ValueError):
     not fit the field's schema type."""
 
 
+class WindowStateError(RuntimeError):
+    """The state a window keeps across reloads could not be read or
+    written — the store behind it failed.
+
+    Not a refusal: the write was allowed and it went wrong. The window
+    is told, so it does not keep showing a state that was never saved.
+    """
+
+
 ChangeListener = Callable[[WindowChange], None]
 WindowListener = Callable[[str, dict[str, Any]], None]
 Push = Callable[[WindowChange], None]
@@ -205,7 +215,7 @@ def references(text: str) -> list[str]:
 class Windows:
     """Every window this backend has seen, and the model of each."""
 
-    def __init__(self, store: Any, *, types: SchemaTypes, push: Push) -> None:
+    def __init__(self, store: ClientStateStoreProtocol, *, types: SchemaTypes, push: Push) -> None:
         self._store = store
         self._types = types
         self._push = push
@@ -489,14 +499,25 @@ class Windows:
         return found
 
     def _stored(self, window_id: str) -> dict[str, str]:
-        result: dict[str, str] = self._store.get_for_client(window_id)
-        return result
+        """What this window has stored, read from the store.
+
+        A read that failed is a failure, not an empty state: the window
+        would show its defaults and then write over what is really
+        there.
+        """
+        read = self._store.get_for_client(window_id)
+        if not read.ok:
+            raise WindowStateError(f"window {window_id!r} state could not be read")
+        return read.values
 
     def _store_value(self, window_id: str, key: str, value: str) -> None:
-        if value:
+        result = (
             self._store.set_value(window_id, key, value)
-        else:
-            self._store.delete_value(window_id, key)
+            if value
+            else self._store.delete_value(window_id, key)
+        )
+        if not result.ok:
+            raise WindowStateError(f"window {window_id!r} state could not be written")
 
     def _valid(self, name: str, expression: str, value: Any) -> Any:
         try:
@@ -673,6 +694,7 @@ __all__ = [
     "WindowModelError",
     "WindowRecord",
     "WindowRequest",
+    "WindowStateError",
     "Windows",
     "references",
 ]

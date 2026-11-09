@@ -217,9 +217,9 @@ def test_client_state_is_scoped(database_url: DatabaseUrl):
     ClientStateStore(mine).set_value("window", "draft", "one")
     ClientStateStore(mine).set_value("window", "draft", "two")
     ClientStateStore(theirs).set_value("window", "draft", "theirs")
-    assert ClientStateStore(mine).get_for_client("window") == {"draft": "two"}
+    assert ClientStateStore(mine).get_for_client("window").values == {"draft": "two"}
     ClientStateStore(theirs).delete_value("window", "draft")
-    assert ClientStateStore(mine).get_for_client("window") == {"draft": "two"}
+    assert ClientStateStore(mine).get_for_client("window").values == {"draft": "two"}
 
 
 def test_local_notifications_are_scoped_and_once_per_event(database_url: DatabaseUrl):

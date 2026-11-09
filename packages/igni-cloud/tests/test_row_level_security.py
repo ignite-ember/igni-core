@@ -223,11 +223,11 @@ def test_igni_runs_as_a_producer_and_migrations_still_run(
     assert [m.message_id for m in PendingMessageStore(a.db()).list_pending("s1")] == [message_id]
     assert PendingMessageStore(b.db()).list_pending("s1") == []
     ClientStateStore(a.db()).set_value("w", "k", "v")
-    assert ClientStateStore(a.db()).get_for_client("w") == {"k": "v"}
+    assert ClientStateStore(a.db()).get_for_client("w").values == {"k": "v"}
 
     locator = StorageLocator(database_url=admin.url, data_dir="/nonexistent")
     assert "already at" in SchemaMigration.migrate(locator.global_url())
-    assert ClientStateStore(a.db()).get_for_client("w") == {"k": "v"}
+    assert ClientStateStore(a.db()).get_for_client("w").values == {"k": "v"}
 
 
 def test_agno_works_as_a_producer_and_keeps_to_its_rows(producers: tuple[Producer, Producer]):

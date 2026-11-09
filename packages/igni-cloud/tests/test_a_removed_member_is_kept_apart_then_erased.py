@@ -127,7 +127,7 @@ class Incarnation:
             return await self.agno().get_session("s1", SessionType.AGENT)
 
         return {
-            "theme": ClientStateStore(self.db()).get_for_client("window").get("theme"),
+            "theme": ClientStateStore(self.db()).get_for_client("window").values.get("theme"),
             "pending": [m.text for m in PendingMessageStore(self.db()).list_pending("s1")],
             "session": asyncio.run(session()) is not None,
         }

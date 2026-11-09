@@ -29,6 +29,7 @@ from igni_core.backend.activity import Activity
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.plugins.installer import PluginInstaller
+from igni_core.core.session.client_state import ClientStateRead, ClientStateResult
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.distribution import OneShotSync
@@ -62,17 +63,34 @@ from igni_core.protocol.rpc import RpcMethod
 logger = logging.getLogger(__name__)
 
 
-class NoWindowState:
-    """What windows remember, in a run that has none: nothing."""
+class RunState:
+    """What windows remember, in a run that has none: a scratchpad.
 
-    def get_for_client(self, client_id: str) -> dict[str, str]:
-        return {}
+    A headless run has no window, so nothing reads this state back
+    after the run ends — but it is kept for the length of the run, so
+    that a write which worked is a write which worked, exactly as in
+    the database store this one stands in for. The store answers with
+    a result either way, and its ``ok`` means one thing in both.
+    """
 
-    def set_value(self, client_id: str, key: str, value: str) -> None:
-        return None
+    def __init__(self) -> None:
+        self._values: dict[tuple[str, str], str] = {}
 
-    def delete_value(self, client_id: str, key: str) -> None:
-        return None
+    def get_for_client(self, client_id: str) -> ClientStateRead:
+        return ClientStateRead(
+            ok=True,
+            values={
+                key: value for (client, key), value in self._values.items() if client == client_id
+            },
+        )
+
+    def set_value(self, client_id: str, key: str, value: str) -> ClientStateResult:
+        self._values[(client_id, key)] = value
+        return ClientStateResult(ok=True)
+
+    def delete_value(self, client_id: str, key: str) -> ClientStateResult:
+        self._values.pop((client_id, key), None)
+        return ClientStateResult(ok=True)
 
 
 class HeadlessHostBackend:
@@ -80,7 +98,7 @@ class HeadlessHostBackend:
 
     def __init__(self, project_dir: Path, session_id: str) -> None:
         self.project_dir = project_dir
-        self.client_state = NoWindowState()
+        self.client_state = RunState()
         self._session_id = session_id
 
     @staticmethod
@@ -281,4 +299,4 @@ class HeadlessExtensions:
         await self._channel.stop()
 
 
-__all__ = ["HeadlessExtensions", "HeadlessHostBackend", "NoWindowState"]
+__all__ = ["HeadlessExtensions", "HeadlessHostBackend", "RunState"]

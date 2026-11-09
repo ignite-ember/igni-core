@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 from igni_core.backend.pool_rpcs.base import PoolRpc, UnavailableRpc
 from igni_core.backend.schemas_pool import PoolAnswer
-from igni_core.extensions.host.windows import WindowModelError, WindowRequest
+from igni_core.extensions.host.windows import WindowModelError, WindowRequest, WindowStateError
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 
@@ -77,7 +77,7 @@ class HostModelRpcs(PoolRpc):
             args["connection_id"] = request.from_client
         try:
             reply = self._model.services.window_rpc.handle(WindowRequest.model_validate(args))
-        except (ValidationError, WindowModelError) as exc:
+        except (ValidationError, WindowModelError, WindowStateError) as exc:
             return PoolAnswer.failed(f"window_model: {exc}")
         return PoolAnswer.ok(reply)
 

@@ -504,7 +504,8 @@ class HostRig:
         """A window connects and hydrates its model, as ``clientState.ts`` does."""
         assert self.orchestrator is not None
         if session:
-            self.orchestrator.client_state.set_value(window_id, "session-id", session)
+            written = self.orchestrator.client_state.set_value(window_id, "session-id", session)
+            assert written.ok, written.error
         await self.window_model(window_id, "hydrate", connection_id=connection, kind="tauri")
         return window_id
 
