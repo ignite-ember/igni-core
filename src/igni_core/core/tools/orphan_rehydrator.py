@@ -1,10 +1,11 @@
 """OrphanRehydrator — startup-pass coordinator for orphan pids.
 
-Extracted from :mod:`shell_orphan` per the OOP audit: the previous
-``rehydrate_orphan_processes`` was a ~70-LoC procedural coroutine
-that took a project_dir first arg, reached for the module-level
-supervisor + built a store inside three broad ``except Exception``
-blocks that collapsed three failure states into a bare ``int``.
+Split out of the old ``shell_orphan`` module per the OOP audit: the
+previous ``rehydrate_orphan_processes`` was a ~70-LoC procedural
+coroutine that took a project_dir first arg, reached for the
+module-level supervisor + built a store inside three broad
+``except Exception`` blocks that collapsed three failure states into
+a bare ``int``.
 
 Post-refactor:
 
@@ -22,9 +23,8 @@ Post-refactor:
 * :class:`RehydrateBuild` — what building the rehydrator produced:
   the rehydrator, or the typed reason there is none.
 
-The store-init failure branch stays on the caller (or the thin
-backward-compat wrapper in :mod:`shell_orphan`) because it happens
-BEFORE we have a rehydrator.
+The store-init failure branch stays on the caller because it
+happens BEFORE we have a rehydrator.
 """
 
 from __future__ import annotations
@@ -37,9 +37,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.core.tools.finished_process import FinishedProcess
 from igni_core.core.tools.orphan_process import OrphanProcess
+from igni_core.core.tools.orphan_schemas import RehydrateResult
 from igni_core.core.tools.process_store import BackgroundProcessStore
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
-from igni_core.core.tools.shell_orphan_schemas import RehydrateResult
 
 logger = logging.getLogger(__name__)
 

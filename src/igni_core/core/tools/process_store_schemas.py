@@ -1,7 +1,7 @@
 """Pydantic wire/data models for the background-process store.
 
 Extracted from :mod:`process_store` per the sibling schemas
-convention (mirrors :mod:`shell_orphan_schemas`'s
+convention (mirrors :mod:`orphan_schemas`'s
 "promoted to Pydantic (Rule 1)" note verbatim). Every wire /
 result model this subsystem hands across a module boundary lives
 here so Rule 1 stays discoverable at one path.
@@ -24,7 +24,7 @@ Consumers:
   at the store boundary now becomes a typed ``reason`` string instead
   of an exception the caller has to guess about — mirrors
   :class:`RehydrateResult`'s design in
-  :mod:`shell_orphan_schemas`.
+  :mod:`orphan_schemas`.
 
 The three project stores (this one, ``LoopStore`` and the scheduler's
 ``TaskStore``) resolve their database through one

@@ -13,12 +13,11 @@ These tests pin the fix:
 * :class:`BackgroundProcessStore` round-trips rows through real
   SQLite (in-memory file). Same shape as the matching
   ``test_session_data_real_db.py`` for plan decisions.
-* :meth:`OrphanRehydrator.run` (and the thin
-  ``rehydrate_orphan_processes`` back-compat wrapper) injects
-  alive pids into the registry as :class:`OrphanProcess` entries;
-  dead pids get pruned from the DB and the typed
-  :class:`RehydrateResult` populates ``surfaced`` / ``pruned`` /
-  ``reason`` fields so failure modes are observable.
+* :meth:`OrphanRehydrator.run` injects alive pids into the
+  registry as :class:`OrphanProcess` entries; dead pids get pruned
+  from the DB and the typed :class:`RehydrateResult` populates
+  ``surfaced`` / ``pruned`` / ``reason`` fields so failure modes are
+  observable.
 * :class:`OrphanProcess` quacks like ``ManagedProcess``: the
   registry's ``all_running`` reports it, ``read`` returns a
   placeholder, ``kill`` sends SIGTERM via the saved pgid,
@@ -46,15 +45,12 @@ from igni_core.core.tools.orphan_rehydrator import (
     OrphanRehydrator,
     build_rehydrator,
 )
+from igni_core.core.tools.orphan_schemas import RehydrateResult
 from igni_core.core.tools.process_persistence import ProcessPersistenceWriter
 from igni_core.core.tools.process_registry import ProcessRegistry
 from igni_core.core.tools.process_store import BackgroundProcessStore
 from igni_core.core.tools.process_store_schemas import BackgroundProcessRow, UpsertResult
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
-from igni_core.core.tools.shell_orphan import (
-    rehydrate_orphan_processes,
-)
-from igni_core.core.tools.shell_orphan_schemas import RehydrateResult
 
 
 @pytest.fixture
@@ -214,7 +210,20 @@ class TestOrphanProcess:
         assert 25 <= row.elapsed_seconds <= 60
 
 
-# ── rehydrate_orphan_processes ───────────────────────────────
+# ── the rehydrate pass ───────────────────────────────────────
+
+
+async def _rehydrate(supervisor: ProcessSupervisor, project_dir: Path) -> RehydrateResult:
+    """Run the rehydrate pass and return its typed result.
+
+    The typed path is the only path: the old
+    ``rehydrate_orphan_processes`` wrapper collapsed a store-init
+    failure and "no rows" into the same bare ``0`` — exactly the gap
+    these tests exist to close.
+    """
+    build = build_rehydrator(supervisor, project_dir)
+    assert build.rehydrator is not None, build.result.reason
+    return await build.rehydrator.run()
 
 
 class TestRehydrateOrphanProcesses:
@@ -237,11 +246,11 @@ class TestRehydrateOrphanProcesses:
         original_resolver = ps_mod._resolve_database
         ps_mod._resolve_database = lambda *_, **__: Database(tmp_path / "state.db")
         try:
-            count = await rehydrate_orphan_processes(project_dir=tmp_path, supervisor=supervisor)
+            result = await _rehydrate(supervisor, tmp_path)
         finally:
             ps_mod._resolve_database = original_resolver
 
-        assert count == 1
+        assert result.surfaced == 1
         mp = supervisor.registry.get(os.getpid())
         assert isinstance(mp, OrphanProcess)
         assert mp.cmd == "pretend dev server"
@@ -265,11 +274,11 @@ class TestRehydrateOrphanProcesses:
         original_resolver = ps_mod._resolve_database
         ps_mod._resolve_database = lambda *_, **__: Database(tmp_path / "state.db")
         try:
-            count = await rehydrate_orphan_processes(project_dir=tmp_path, supervisor=supervisor)
+            result = await _rehydrate(supervisor, tmp_path)
         finally:
             ps_mod._resolve_database = original_resolver
 
-        assert count == 1, "the finished process was not surfaced"
+        assert result.surfaced == 1, "the finished process was not surfaced"
         entry = supervisor.registry.get(dead_pid)
         assert entry is not None and not entry.is_running()
 
@@ -285,11 +294,13 @@ class TestRehydrateOrphanProcesses:
         original_resolver = ps_mod._resolve_database
         ps_mod._resolve_database = lambda *_, **__: Database(tmp_path / "state.db")
         try:
-            count = await rehydrate_orphan_processes(project_dir=tmp_path, supervisor=supervisor)
+            result = await _rehydrate(supervisor, tmp_path)
         finally:
             ps_mod._resolve_database = original_resolver
 
-        assert count == 0
+        assert result.ok is True
+        assert result.surfaced == 0
+        assert result.reason == ""
 
 
 # ── OrphanRehydrator (typed-result direct entry point) ───────
@@ -298,10 +309,10 @@ class TestRehydrateOrphanProcesses:
 class TestOrphanRehydratorRun:
     """The typed :meth:`OrphanRehydrator.run` entry point returns
     a :class:`RehydrateResult` with populated ``surfaced`` /
-    ``pruned`` / ``reason`` fields. The three failure branches
-    (store init, ``list_all``, per-row ``remove``) each surface a
-    distinct ``reason`` so :class:`RehydrateController` can plumb
-    it through instead of collapsing to a bare ``int``.
+    ``pruned`` / ``reason`` fields. The two failure branches
+    (store init, ``list_all``) each surface a distinct ``reason``
+    so :class:`RehydrateController` can plumb it through instead of
+    collapsing to a bare ``int``.
     """
 
     async def test_run_returns_typed_result_with_surfaced_and_pruned_counts(

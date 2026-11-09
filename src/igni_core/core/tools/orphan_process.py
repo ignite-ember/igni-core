@@ -1,8 +1,8 @@
 """OrphanProcess — a background shell process that outlived its BE.
 
-Extracted from :mod:`shell_orphan` per the OOP audit. This module
-is the single home of the orphan model — the class owns its
-liveness probe, its log-file read, and its private ``_finished``
+Split out of the old ``shell_orphan`` module per the OOP audit.
+This module is the single home of the orphan model — the class owns
+its liveness probe, its log-file read, and its private ``_finished``
 sticky bit, as instance methods rather than scattered branches on
 a coordinator.
 
@@ -47,11 +47,11 @@ from typing import TYPE_CHECKING
 # ``core.tools``, so there is no cycle. Moving the class down into
 # ``core`` is the tidier fix and belongs to whoever owns that file.
 from igni_core.backend.supervisor import ParentProcessProbe
-from igni_core.core.tools.output_tail import OutputTail
-from igni_core.core.tools.shell_orphan_schemas import (
+from igni_core.core.tools.orphan_schemas import (
     OrphanProcStub,
     OrphanReadResult,
 )
+from igni_core.core.tools.output_tail import OutputTail
 
 if TYPE_CHECKING:
     import asyncio

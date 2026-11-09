@@ -1,7 +1,7 @@
 """Pydantic wire/data models for the custom-tool discovery run.
 
 Extracted from :mod:`custom_loader` per the sibling schemas
-convention (mirrors :mod:`shell_orphan_schemas` and
+convention (mirrors :mod:`orphan_schemas` and
 :mod:`process_store_schemas` in this exact directory). Every wire /
 result model this subsystem hands across a module boundary lives
 here so Rule 1 stays discoverable at one path.
