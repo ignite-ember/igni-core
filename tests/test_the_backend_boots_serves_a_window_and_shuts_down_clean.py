@@ -39,7 +39,8 @@ from igni_core.core.config.group_policy import policy_settings
 from igni_core.core.config.group_policy.gate import GroupPolicyGate
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.protocol import messages as msg
-from igni_core.transport.websocket import CompositeTransport, WebSocketServerTransport
+from igni_core.transport.composite import CompositeTransport
+from igni_core.transport.websocket import WebSocketServerTransport
 
 POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="the loop's signal handlers")
 

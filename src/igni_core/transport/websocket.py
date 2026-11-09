@@ -44,17 +44,12 @@ from igni_core.protocol.messages import Message, Welcome
 from igni_core.protocol.registry import MessageRegistry
 from igni_core.transport._ws_client import MirroredClient, SendResult
 from igni_core.transport.base import ListeningTransport
-
-# Re-exported so the historical ``from igni_core.transport.websocket
-# import CompositeTransport`` import path used by tests and callers
-# keeps working after CompositeTransport moved to its own module.
-from igni_core.transport.composite import CompositeTransport
 from igni_core.transport.ws_auth import HandshakeGuard, Standing
 
 if TYPE_CHECKING:
     from websockets.asyncio.server import Server, ServerConnection
 
-__all__ = ["CompositeTransport", "WebSocketServerTransport"]
+__all__ = ["WebSocketServerTransport"]
 
 logger = logging.getLogger(__name__)
 

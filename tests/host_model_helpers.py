@@ -103,6 +103,10 @@ class CapturingTransport(ListeningTransport):
     def client_count(self) -> int:
         return 0
 
+    def owns_client(self, client_id: str) -> bool:
+        """No window ever identifies itself here, so none is owned."""
+        return False
+
     def of(self, kind: type[msg.Message]) -> list[Any]:
         return [m for m in self.sent if isinstance(m, kind)]
 

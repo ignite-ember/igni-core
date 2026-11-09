@@ -36,8 +36,9 @@ from websockets.asyncio.client import connect
 from igni_core.extensions.host.wire import Reply
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
+from igni_core.transport.composite import CompositeTransport
 from igni_core.transport.in_process import InProcessTransport
-from igni_core.transport.websocket import CompositeTransport, WebSocketServerTransport
+from igni_core.transport.websocket import WebSocketServerTransport
 from tests.host_model_helpers import HostRig
 
 # ── The transport ─────────────────────────────────────────────────
