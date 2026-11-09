@@ -134,7 +134,7 @@ class TestFullRestartRoundTrip:
             "run-2": "dismissed",
         }
         # Todos intact, statuses preserved.
-        statuses = {t["content"]: t["status"] for t in restarted.session.todo_store.snapshot()}
+        statuses = {t.content: t.status for t in restarted.session.todo_store.items}
         assert statuses == {"Task A": "in_progress", "Task B": "pending"}
 
     async def test_only_decisions_written_other_pieces_empty(self, tmp_path):
@@ -153,7 +153,7 @@ class TestFullRestartRoundTrip:
         await restarted.startup()
 
         assert restarted.session.plan_store.decisions == {"run-X": "approved"}
-        assert restarted.session.todo_store.snapshot() == []
+        assert restarted.session.todo_store.items == []
 
     async def test_only_todos_written_decisions_empty(self, tmp_path):
         # Mirror corner: live execution started but no plan
@@ -169,8 +169,8 @@ class TestFullRestartRoundTrip:
         await restarted.startup()
 
         assert restarted.session.plan_store.decisions == {}
-        assert restarted.session.todo_store.snapshot() == [
-            {"content": "Task A", "status": "completed", "activeForm": ""}
+        assert restarted.session.todo_store.items == [
+            TodoItemWire(content="Task A", status="completed")
         ]
 
     async def test_independent_sessions_dont_cross_contaminate(self, tmp_path):
@@ -201,7 +201,7 @@ class TestFullRestartRoundTrip:
 
         # A's state intact, NO B leakage.
         assert a_restarted.session.plan_store.decisions == {"run-A1": "approved"}
-        statuses = {t["content"]: t["status"] for t in a_restarted.session.todo_store.snapshot()}
+        statuses = {t.content: t.status for t in a_restarted.session.todo_store.items}
         assert statuses == {"A task": "in_progress"}
         assert "B task" not in statuses
         assert "run-B1" not in a_restarted.session.plan_store.decisions
@@ -238,7 +238,7 @@ class TestFullRestartRoundTrip:
             "run-2": "approved",
         }
         # Todos: latest snapshot has both items, A flipped.
-        statuses = {t["content"]: t["status"] for t in restarted.session.todo_store.snapshot()}
+        statuses = {t.content: t.status for t in restarted.session.todo_store.items}
         assert statuses == {"A": "in_progress", "B": "pending"}
 
     async def test_restart_survives_persistence_layer_corruption(self, tmp_path):
@@ -276,6 +276,6 @@ class TestFullRestartRoundTrip:
         # Only the valid decision survives.
         assert restarted.session.plan_store.decisions == {"run-1": "approved"}
         # Only the valid todo survives.
-        assert restarted.session.todo_store.snapshot() == [
-            {"content": "Good", "status": "in_progress", "activeForm": ""}
+        assert restarted.session.todo_store.items == [
+            TodoItemWire(content="Good", status="in_progress")
         ]

@@ -1,9 +1,9 @@
 """Tests for ``TodoWrite`` — CC's planning tool, ember parity.
 
 Covers:
-- ``TodoStore`` set/snapshot
-- ``_coerce_items`` validation (status enum, required content,
-  camelCase ↔ snake_case ``activeForm`` aliasing)
+- ``TodoStore`` set/items
+- ``TodoItemInput.validate_batch`` validation (status enum, required
+  content, camelCase ↔ snake_case ``activeForm`` aliasing)
 - ``TodoTools.todo_write`` semantics (atomic replace, summary
   string, multi-in_progress warning, validation error surfacing)
 - The ``GET_TODOS`` RPC endpoint
@@ -18,11 +18,10 @@ import pytest
 
 from igni_core.core.session.schemas import PersistResult
 from igni_core.core.tools.todo import (
-    TodoItem,
+    TodoItemInput,
     TodoItemWire,
     TodoStore,
     TodoTools,
-    _coerce_items,
 )
 from igni_core.protocol.rpc import RpcMethod
 from tests.backend_server_factory import make_backend
@@ -34,74 +33,92 @@ from tests.rpc_tables import rpc_table_for
 class TestTodoStore:
     def test_set_replaces_atomically(self):
         store = TodoStore()
-        store.set([TodoItem("a", "pending"), TodoItem("b", "completed")])
-        store.set([TodoItem("c", "in_progress", "Doing c")])
+        store.set(
+            [
+                TodoItemWire(content="a", status="pending"),
+                TodoItemWire(content="b", status="completed"),
+            ]
+        )
+        store.set([TodoItemWire(content="c", status="in_progress", active_form="Doing c")])
         # Old items are gone — no merge.
         assert len(store.items) == 1
         assert store.items[0].content == "c"
 
-    def test_snapshot_uses_camelcase_active_form(self):
+    def test_rows_dump_camelcase_active_form(self):
         store = TodoStore()
-        store.set([TodoItem("Run tests", "in_progress", "Running tests")])
-        snap = store.snapshot()
-        assert snap == [
+        store.set(
+            [TodoItemWire(content="Run tests", status="in_progress", active_form="Running tests")]
+        )
+        assert [row.model_dump() for row in store.items] == [
             {"content": "Run tests", "status": "in_progress", "activeForm": "Running tests"}
         ]
 
-    def test_empty_store_snapshots_to_empty_list(self):
-        assert TodoStore().snapshot() == []
+    def test_empty_store_has_no_rows(self):
+        assert TodoStore().items == []
 
 
 # ── Validation ────────────────────────────────────────────────
 
 
-class TestCoerceItems:
+class TestValidateBatch:
     def test_valid_entries_pass(self):
-        items, errs = _coerce_items(
+        batch = TodoItemInput.validate_batch(
             [
                 {"content": "a", "status": "pending"},
                 {"content": "b", "status": "in_progress", "activeForm": "Doing b"},
                 {"content": "c", "status": "completed"},
             ]
         )
-        assert errs == []
-        assert [i.content for i in items] == ["a", "b", "c"]
-        assert items[1].active_form == "Doing b"
+        assert batch.errors == []
+        assert [i.content for i in batch.items] == ["a", "b", "c"]
+        assert batch.items[1].active_form == "Doing b"
 
     def test_non_list_input(self):
-        items, errs = _coerce_items({"not": "a list"})
-        assert items == []
-        assert any("list" in e for e in errs)
+        batch = TodoItemInput.validate_batch({"not": "a list"})
+        assert batch.items == []
+        assert any("list" in e for e in batch.errors)
 
     def test_empty_content_rejected(self):
-        items, errs = _coerce_items([{"content": "  ", "status": "pending"}])
-        assert items == []
-        assert any("empty content" in e for e in errs)
+        batch = TodoItemInput.validate_batch([{"content": "  ", "status": "pending"}])
+        assert batch.items == []
+        assert any("empty content" in e for e in batch.errors)
 
     def test_unknown_status_rejected(self):
-        items, errs = _coerce_items([{"content": "a", "status": "wat"}])
-        assert items == []
-        assert any("status" in e and "wat" in e for e in errs)
+        batch = TodoItemInput.validate_batch([{"content": "a", "status": "wat"}])
+        assert batch.items == []
+        assert any("status" in e and "wat" in e for e in batch.errors)
 
     def test_non_dict_row_rejected(self):
-        items, errs = _coerce_items(["not a dict", {"content": "a", "status": "pending"}])
+        batch = TodoItemInput.validate_batch(["not a dict", {"content": "a", "status": "pending"}])
         # Bad row dropped, good row kept.
-        assert [i.content for i in items] == ["a"]
-        assert any("not a dict" in e for e in errs)
+        assert [i.content for i in batch.items] == ["a"]
+        assert any("not a dict" in e for e in batch.errors)
 
     def test_snake_case_active_form_accepted(self):
         """The agent might output either ``activeForm`` (CC
         convention) or ``active_form`` (Python-natural). Accept
         both so the model doesn't trip on the casing."""
-        items, _ = _coerce_items(
+        batch = TodoItemInput.validate_batch(
             [{"content": "a", "status": "in_progress", "active_form": "Doing a"}]
         )
-        assert items[0].active_form == "Doing a"
+        assert batch.items[0].active_form == "Doing a"
 
     def test_status_is_normalized_lowercase(self):
-        items, errs = _coerce_items([{"content": "a", "status": "IN_PROGRESS"}])
-        assert errs == []
-        assert items[0].status == "in_progress"
+        batch = TodoItemInput.validate_batch([{"content": "a", "status": "IN_PROGRESS"}])
+        assert batch.errors == []
+        assert batch.items[0].status == "in_progress"
+
+    def test_absent_status_defaults_to_pending(self):
+        batch = TodoItemInput.validate_batch([{"content": "a"}])
+        assert batch.errors == []
+        assert batch.items[0].status == "pending"
+
+    def test_rows_already_validated_are_accepted(self):
+        """The tool boundary hands the validator typed rows — the
+        same rules must not fire twice."""
+        batch = TodoItemInput.validate_batch([TodoItemInput(content="a", status="in_progress")])
+        assert batch.errors == []
+        assert batch.items[0].status == "in_progress"
 
 
 # ── Tool behavior ─────────────────────────────────────────────
@@ -146,7 +163,7 @@ class TestTodoWrite:
     @pytest.mark.asyncio
     async def test_empty_list_clears(self):
         session = _make_session()
-        session.todo_store.set([TodoItem("old", "pending")])
+        session.todo_store.set([TodoItemWire(content="old", status="pending")])
         tool = TodoTools(session)
         result = await tool.todo_write([])
         assert "Cleared" in result
@@ -193,7 +210,9 @@ class TestGetTodosRpc:
     def test_returns_snapshot(self, tmp_path):
         session = MagicMock()
         session.todo_store = TodoStore()
-        session.todo_store.set([TodoItem("Run tests", "in_progress", "Running tests")])
+        session.todo_store.set(
+            [TodoItemWire(content="Run tests", status="in_progress", active_form="Running tests")]
+        )
         backend = make_backend(session)
         out = backend.get_todos()
         assert out == [
@@ -217,7 +236,7 @@ class TestGetTodosRpc:
     async def test_dispatch_table_routes_get_todos(self):
         session = MagicMock()
         session.todo_store = TodoStore()
-        session.todo_store.set([TodoItem("planned", "pending")])
+        session.todo_store.set([TodoItemWire(content="planned", status="pending")])
         backend = make_backend(session)
 
         table = rpc_table_for(backend, transport=MagicMock())

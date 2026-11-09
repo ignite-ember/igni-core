@@ -236,9 +236,7 @@ class TestStartupRehydratesPlanDecisions:
 
         await _lifecycle(session).startup()
 
-        assert todo_store.snapshot() == [
-            {"content": "Task A", "status": "in_progress", "activeForm": ""}
-        ]
+        assert todo_store.items == [TodoItemWire(content="Task A", status="in_progress")]
 
     async def test_startup_survives_persistence_failure(self):
         # If ``load_plan_decisions`` raises (DB corruption,

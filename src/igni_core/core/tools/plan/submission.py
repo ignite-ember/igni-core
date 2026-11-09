@@ -205,8 +205,8 @@ class PlanTransactionCoordinator:
         if not batch.tasks:
             return []
         todo_store = self._session.todo_store
-        todo_store.set_wires([task.to_wire() for task in batch.tasks])
-        return todo_store.wires()
+        todo_store.set([task.to_wire() for task in batch.tasks])
+        return todo_store.items
 
     def _rejected(self, reason: str) -> PlanExitResult:
         """The gate refused: count the rejection and tell the agent

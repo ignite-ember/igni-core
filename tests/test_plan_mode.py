@@ -17,6 +17,7 @@ Three layers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -28,10 +29,10 @@ from igni_core.core.prompts.contribution_models import EditOp, PromptEdit
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.session.broadcast import BroadcastBus as _BroadcastBus
 from igni_core.core.session.core import Session
-from igni_core.core.session.schemas import PermissionModeSwitch
+from igni_core.core.session.schemas import PermissionModeSwitch, PersistResult
 from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.plan import PlanStore, PlanTool
-from igni_core.core.tools.todo import TodoItem, TodoStore, TodoTools
+from igni_core.core.tools.todo import TodoItemWire, TodoStore, TodoTools
 from igni_core.protocol.rpc import RpcMethod
 from tests.backend_server_factory import make_backend
 from tests.rpc_tables import rpc_table_for
@@ -161,7 +162,7 @@ class TestPlanTool:
         """Tasks are optional — submitting a prose-only plan
         must not blast the TodoStore."""
         session = plan_session()
-        session.todo_store.set([TodoItem("Pre-existing", "in_progress", "")])
+        session.todo_store.set([TodoItemWire(content="Pre-existing", status="in_progress")])
         tool = PlanTool(session)
         await tool.exit_plan_mode("just prose, no enumerable steps")
         # Original todos untouched.
@@ -350,6 +351,10 @@ class TestTodoWriteBroadcastsState:
         session = Session.__new__(Session)
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
+        # ``todo_write`` flushes the rows to the persistence layer.
+        session.persistence = SimpleNamespace(
+            save_todos=AsyncMock(return_value=PersistResult(ok=True))
+        )
         wire_coordinators(session)
         captured: list[tuple[str, dict]] = []
         session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
@@ -373,6 +378,10 @@ class TestTodoWriteBroadcastsState:
         session = Session.__new__(Session)
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
+        # ``todo_write`` flushes the rows to the persistence layer.
+        session.persistence = SimpleNamespace(
+            save_todos=AsyncMock(return_value=PersistResult(ok=True))
+        )
         wire_coordinators(session)
         captured: list[tuple[str, dict]] = []
         session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))

@@ -19,9 +19,9 @@ Design notes:
   ``igni_core`` schemas would defeat the point.
 * :class:`PlanArgs` is a small local Pydantic schema. ``tasks``
   stays ``list[dict] | None`` because downstream code
-  (:func:`igni_core.core.tools.todo._coerce_items`) does the
-  per-item validation — re-declaring the todo shape here would
-  duplicate that contract.
+  (:meth:`igni_core.core.tools.todo.TodoItemInput.validate_batch`)
+  does the per-item validation — re-declaring the todo shape here
+  would duplicate that contract.
 """
 
 from __future__ import annotations

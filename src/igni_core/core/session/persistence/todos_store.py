@@ -1,9 +1,9 @@
 """Todos-snapshot store — persists the live ``TodoStore`` state.
 
-Composes :class:`SessionDataService`; coercion runs via
-:meth:`TodoItemWire.coerce_snapshot` so the wire-shape rule
+Composes :class:`SessionDataService`; the rows are parsed via
+:meth:`TodoItemWire.parse_snapshot` so the row rules
 (non-empty ``content``, valid ``status``, ``active_form``
-defaults) lives on the model that defines the shape rather than
+defaults) live on the models that define the shape rather than
 in a module-level free helper.
 
 The store dumps ``by_alias=True`` at the SQL boundary so the
@@ -29,12 +29,12 @@ class TodoSnapshotStore:
     async def load(self) -> LoadResult[list[TodoItemWire]]:
         """Read the persisted todo snapshot.
 
-        Coercion runs via :meth:`TodoItemWire.coerce_snapshot` so
-        malformed rows drop silently — callers fall back to the
+        The rows are parsed via :meth:`TodoItemWire.parse_snapshot`
+        so malformed rows drop silently — callers fall back to the
         plan's original task list, which is at least consistent
         with the user's last hand-approved state.
         """
-        return await self._data.read_key(self.KEY, TodoItemWire.coerce_snapshot)
+        return await self._data.read_key(self.KEY, TodoItemWire.parse_snapshot)
 
     async def save(self, todos: list[TodoItemWire]) -> PersistResult:
         """Atomic-replace the persisted todo snapshot.

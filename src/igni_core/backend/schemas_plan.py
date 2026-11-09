@@ -32,7 +32,7 @@ class LatestPlanResult(BaseModel):
 
     ``state`` is ``"pending"`` when a plan exists (user hasn't
     approved/dismissed yet) or ``""`` when no plan submitted.
-    ``tasks`` mirrors :meth:`TodoStore.wires` (each row dumps
+    ``tasks`` mirrors :attr:`TodoStore.items` (each row dumps
     ``activeForm`` camelCase on its own, see :class:`TodoItemWire`) so the FE renders the plan and task list from a
     single payload."""
 

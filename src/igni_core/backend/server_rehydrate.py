@@ -34,7 +34,7 @@ from igni_core.backend.schemas_lifecycle import RehydrateOutcome
 from igni_core.core.session.queued_messages import DurableMessageQueue
 from igni_core.core.tools.orphan_rehydrator import build_rehydrator
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
-from igni_core.core.tools.todo import _coerce_items
+from igni_core.core.tools.todo import TodoItemInput
 
 if TYPE_CHECKING:
     from igni_core.core.session import Session
@@ -157,7 +157,7 @@ class RehydrateController:
         # The rows come back typed — the store's coercion already
         # dropped a malformed row, so the snapshot replaces the
         # store's list wholesale.
-        todo.set_wires(snapshot)
+        todo.set(snapshot)
         return RehydrateOutcome(ok=True, step="todos")
 
     async def plan_store(self) -> RehydrateOutcome:
@@ -189,13 +189,12 @@ class RehydrateController:
         plan_args, run_id = found
         store.set_plan(plan_args.plan)
         if plan_args.tasks is not None:
-            try:
-                items, _errs = _coerce_items(plan_args.tasks)
-            except Exception as exc:
-                logger.debug("plan rehydrate: todo coerce failed: %s", exc)
-            else:
-                if items:
-                    self._session.todo_store.set(items)
+            # The plan's rows go through the same validation the
+            # todo tool uses — a row that cannot be used is
+            # dropped, the rest seed the checklist.
+            batch = TodoItemInput.validate_batch(plan_args.tasks)
+            if batch.items:
+                self._session.todo_store.set(batch.items)
         logger.info(
             "Rehydrated plan_store from history (run_id=%s, plan=%d chars)",
             run_id,
