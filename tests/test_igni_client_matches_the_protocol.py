@@ -114,10 +114,10 @@ async def test_every_frame_the_client_sends_is_one_igni_accepts() -> None:
             await igni.sessions.open(session.id)
             await igni.sessions.list()
             await igni.sessions.default()
-            await igni.models.list()
-            await session.use_model("igni-1")
+            await session.models.list()
+            await session.models.switch("igni-1")
             await session.status()
-            await session.history()
+            await session.history.get()
             await session.ask("hello")
             async for event in session.send("deploy", files={"a.py": "x"}):
                 if isinstance(event, ApprovalRequested):
@@ -135,8 +135,9 @@ async def test_every_frame_the_client_sends_is_one_igni_accepts() -> None:
         "user_message",
         "hitl_response_batch",
         "queue_message",
-        "cancel",
     } <= kinds
+    # Cancelling a turn is the ``cancel_run`` method, not a ``cancel`` frame.
+    assert "cancel_run" in {frame.method for frame in sent if frame.type == "rpc_request"}
     for frame in sent:
         cls = IGNI.get(frame.type)
         assert cls is not None, f"igni does not accept {frame.type!r}"
