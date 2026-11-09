@@ -98,8 +98,9 @@ class ModelsRpcHandler(RpcHandler):
         ``rule`` is a permission rule (``Bash(git status)``, a tool name);
         ``level`` is ``allow``, ``ask`` or ``deny``. The rule is written to
         the project's ``.igni/settings.local.json`` (the person's own when
-        there is no project). Returns nothing. Fails when the settings file
-        cannot be written.
+        there is no project), and the session follows it from its next tool
+        call. Returns nothing. Fails when the settings file cannot be
+        written.
         """
         self._controllers.hitl.permissions.save_rule(args.rule, args.level)
 

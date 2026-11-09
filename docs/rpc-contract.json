@@ -10784,7 +10784,7 @@
       "args": {
         "$ref": "#/defs/SavePermissionRuleArgs"
       },
-      "doc": "Save a permission rule for this session's project.\n\n``rule`` is a permission rule (``Bash(git status)``, a tool name);\n``level`` is ``allow``, ``ask`` or ``deny``. The rule is written to\nthe project's ``.igni/settings.local.json`` (the person's own when\nthere is no project). Returns nothing. Fails when the settings file\ncannot be written.",
+      "doc": "Save a permission rule for this session's project.\n\n``rule`` is a permission rule (``Bash(git status)``, a tool name);\n``level`` is ``allow``, ``ask`` or ``deny``. The rule is written to\nthe project's ``.igni/settings.local.json`` (the person's own when\nthere is no project), and the session follows it from its next tool\ncall. Returns nothing. Fails when the settings file cannot be\nwritten.",
       "reply": "rpc_response",
       "result": {
         "type": "null"

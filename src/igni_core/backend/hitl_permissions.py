@@ -51,8 +51,10 @@ class HitlPermissions:
         return self._store().check(registry_name, func_name, tool_args.as_dict())
 
     def save_rule(self, rule: str, level: PermissionLevel) -> None:
-        """Persist a permission rule."""
+        """Persist a permission rule, and hold the running session to it at
+        once rather than at its next settings reload."""
         self._store().save_rule(rule, level)
+        self._remember_live(rule, level)
 
     def persist_choice(
         self, decision: msg.HITLDecision, req: RunRequirement
@@ -102,7 +104,7 @@ class HitlPermissions:
         parsed = PermissionRule.parse(rule)
         if parsed is None:
             return
-        evaluator.remember(parsed, deny=level == "deny")
+        evaluator.remember_at(parsed, level)
 
 
 __all__ = ["HitlPermissions"]

@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from igni_core.core.config.permission_eval.catalog import BashCommand, ToolCategoryCatalog
 from igni_core.core.config.permission_eval.pipe_filters import is_pipe_filter
@@ -215,7 +215,13 @@ class PermissionEvaluator:
         rule already present is not added again. Takes effect on the
         very next tool call, without waiting for a settings reload.
         """
-        target = self.deny if deny else self.allow
+        self.remember_at(rule, "deny" if deny else "allow")
+
+    def remember_at(self, rule: PermissionRule, level: Literal["allow", "ask", "deny"]) -> None:
+        """Add a rule saved at ``level`` — an approval dialog's choice, or a
+        rule saved through ``save_permission_rule``. Appended in place, once;
+        takes effect on the very next tool call."""
+        target = {"allow": self.allow, "ask": self.ask, "deny": self.deny}[level]
         if rule not in target:
             target.append(rule)
 
