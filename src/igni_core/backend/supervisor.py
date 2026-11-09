@@ -341,6 +341,15 @@ class BackendSupervisor:
             with contextlib.suppress(Exception):
                 await self._backend.shutdown()
 
+        # Background processes are igni's, not one session's: every
+        # session's window lists and stops them. They end with igni, once
+        # every session is down — never when one session is.
+        if self._backend is not None:
+            with contextlib.suppress(Exception):
+                killed = self._backend.supervisor.registry.kill_all()
+                if killed:
+                    logger.info("Shutdown: killed %d background process(es)", killed)
+
         with contextlib.suppress(Exception):
             await self._transport.close()
 

@@ -25,27 +25,22 @@ from igni_core.backend.schemas_run import CancelAgentRunResult
 from igni_core.backend.server_files import UploadAttachmentResult
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod, RpcScope
-from igni_core.protocol.schemas.enums import PushChannel
 
 
 class SessionRpcHandler(RpcHandler):
     """Session lifecycle + status + agent-run control + hook fires."""
 
-    @rpc(
-        RpcMethod.SHUTDOWN,
-        args=NoArgs,
-        scope=RpcScope.SESSION,
-        streams=(PushChannel.PROCESS_EXITED, PushChannel.BACKGROUND_PROCESS_DONE),
-    )
+    @rpc(RpcMethod.SHUTDOWN, args=NoArgs, scope=RpcScope.SESSION)
     async def shutdown(self, args: NoArgs) -> None:
-        """Wind this session down: end its hooks, MCP servers, scheduler and background processes.
+        """Wind this session down: its hooks, its agents, its MCP servers, its scheduler.
 
         Takes no arguments and returns nothing once done. Runs the session's
-        ``SessionEnd`` hooks, disconnects its MCP servers, stops its
-        scheduler, and kills every background process igni is tracking —
-        which ends them with ``process_exited`` and
-        ``background_process_done``. It does not stop igni or close the
-        connection. Each step's failure is logged, not raised.
+        ``SessionEnd`` hooks, cleans up its ephemeral agents, disconnects its
+        MCP servers and stops its scheduler — once: a session already wound
+        down is left as it is. Background processes are igni's, not the
+        session's, and are left running; they end when igni does. It does
+        not stop igni or close the connection. Each step's failure is
+        logged, not raised. Only igni's window may call it.
         """
         await self._ctx.backend.shutdown()
 
