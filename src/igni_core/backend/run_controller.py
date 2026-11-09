@@ -36,7 +36,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import TYPE_CHECKING
 
 from agno.agent import Agent
@@ -226,6 +226,33 @@ class RunController:
                 # re-raised cancel on the ``yield``) lands the same way.
                 if self._phase.is_active():
                     self._transition_to(RunPhase.done)
+
+    async def continue_run(
+        self, stream: AsyncIterator[msg.Message]
+    ) -> AsyncGenerator[msg.Message, None]:
+        """A paused run, resumed once its approvals are answered, as this
+        session's run: ``cancel_run`` reaches it and ``get_processing``
+        reports it, as for the run that paused.
+
+        Not under the run lock: a sub-agent's approval is answered while
+        its parent run still holds it. Then the parent is the session's
+        run already, and the stream passes through untouched.
+        """
+        if self._current_run_task is not None:
+            async for proto in stream:
+                yield proto
+            return
+        self._current_run_task = asyncio.current_task()
+        self._transition_to(RunPhase.streaming)
+        try:
+            async for proto in stream:
+                yield proto
+        except asyncio.CancelledError:
+            yield msg.Info(text="Run cancelled by user.")
+        finally:
+            self._current_run_task = None
+            if self._phase.is_active():
+                self._transition_to(RunPhase.done)
 
     def cancel_run(self) -> None:
         """Cancel the currently running agent and kill any

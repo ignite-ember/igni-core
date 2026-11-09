@@ -117,10 +117,10 @@ class HITLStreamMultiplexer:
 
         # Hold the team-drain reference so the task isn't GC'd
         # mid-run (asyncio only weakly references background
-        # tasks). We deliberately don't cancel it in ``finally`` —
-        # the team's stream may still have a paused tool we want to
-        # drive to completion via ``resolve_hitl``; it naturally
-        # exits when the team's stream ends or errors.
+        # tasks). It is not cancelled in ``finally`` — the team's stream
+        # may still have a paused tool we want to drive to completion
+        # via ``resolve_hitl``; it naturally exits when the team's
+        # stream ends or errors. A cancelled run cancels it (below).
         # Counted before either task exists. The team task starts first,
         # and a tool call that asks for approval at once would otherwise
         # look for a relay that has not been scheduled yet, find none, and
@@ -163,9 +163,13 @@ class HITLStreamMultiplexer:
                 if self._team_stream_should_stop(event.event):
                     return
         except asyncio.CancelledError:
+            # The run was cancelled (``cancel_run``): the team's own run
+            # stops too. Left draining, it went on running tools — and
+            # pushing what they did — after the person had stopped it.
             # Never swallow cancellation — the ``run_message`` outer
             # ``except asyncio.CancelledError`` (in server.py)
             # needs to fire so the user sees "Run cancelled".
+            team_task.cancel()
             raise
         except asyncio.TimeoutError:
             yield msg.Error(text="Request timed out — the model took too long to respond.")
