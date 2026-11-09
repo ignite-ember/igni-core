@@ -35,6 +35,7 @@ from igni_core.core.tools.plan.schemas import (
     PlanExitResult,
     PlanModeEnteredEvent,
     PlanSubmittedEvent,
+    PlanTaskBatch,
     PlanTaskInput,
 )
 from igni_core.core.tools.plan.store import (
@@ -61,6 +62,7 @@ __all__ = [
     "PlanSnapshot",
     "PlanStore",
     "PlanSubmittedEvent",
+    "PlanTaskBatch",
     "PlanTaskInput",
     "PlanTool",
     "PlanTransactionCoordinator",

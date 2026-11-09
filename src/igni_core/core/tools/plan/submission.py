@@ -45,9 +45,10 @@ from igni_core.core.tools.plan.schemas import (
     PlanModeEnteredEvent,
     PlanSubmitHookPayload,
     PlanSubmittedEvent,
+    PlanTaskBatch,
     PlanTaskInput,
 )
-from igni_core.core.tools.todo import _coerce_items
+from igni_core.core.tools.todo import TodoItemWire
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session
@@ -297,29 +298,21 @@ class PlanTransactionCoordinator:
             msg = "Error: plan store not initialised on this session."
             raise PlanSessionShapeError(missing="plan_store", reply_text=msg)
 
-        # Construct the strict input envelope for the todo
-        # pipeline. Agent-supplied dicts round-trip through
-        # PlanTaskInput.coerce_batch first so malformed rows
-        # get named at the ``_coerce_items`` layer.
-        exit_input = PlanExitInput(
-            plan=plan_text,
-            tasks=self._build_task_input_models(raw_tasks),
-        )
+        # Agent-supplied rows → validated task models → the strict
+        # envelope. Rows that could not be validated come back as
+        # named errors instead of disappearing.
+        batch: PlanTaskBatch = PlanTaskInput.validate_batch(raw_tasks)
+        exit_input = PlanExitInput(plan=plan_text, tasks=batch.tasks)
 
         store.set_plan(exit_input.plan)
 
         # Structured tasks → TodoStore so the PlanCard can
         # render a live checklist alongside the prose plan.
-        task_snapshot: list[dict[str, Any]] = []
-        validation_errors: list[str] = []
-        if raw_tasks:
-            coerced_input = PlanTaskInput.coerce_batch(raw_tasks)
-            items, errs = _coerce_items(coerced_input)
-            validation_errors = errs
-            todo_store = getattr(self._session, "todo_store", None)
-            if items and todo_store is not None:
-                todo_store.set(items)
-                task_snapshot = todo_store.snapshot()
+        task_snapshot: list[TodoItemWire] = []
+        todo_store = getattr(self._session, "todo_store", None)
+        if exit_input.tasks and todo_store is not None:
+            todo_store.set_wires([task.to_wire() for task in exit_input.tasks])
+            task_snapshot = todo_store.wires()
 
         # Broadcast so the FE can render the plan card inline +
         # show the approve/reject buttons. Deferred to AFTER the
@@ -327,25 +320,24 @@ class PlanTransactionCoordinator:
         # so it should land below the agent's closing reply in
         # the chat list, not mid-stream above it.
         self._session.broadcast_bus.queue_post_run(
-            PlanSubmittedEvent(plan=plan_text, tasks=list(task_snapshot))
+            PlanSubmittedEvent(plan=exit_input.plan, tasks=list(task_snapshot))
         )
 
         reply_text = self._render_submit_reply(
             task_snapshot=task_snapshot,
-            validation_errors=validation_errors,
+            validation_errors=batch.errors,
         )
         return PlanExitResult(
             ok=True,
             task_snapshot=task_snapshot,
-            validation_errors=validation_errors,
-            task_count=len(task_snapshot),
+            validation_errors=batch.errors,
             reply_text=reply_text,
         )
 
     def _render_submit_reply(
         self,
         *,
-        task_snapshot: list[dict[str, Any]],
+        task_snapshot: list[TodoItemWire],
         validation_errors: list[str],
     ) -> str:
         """Single render site for the ``exit_plan_mode`` reply
@@ -364,30 +356,6 @@ class PlanTransactionCoordinator:
         if validation_errors:
             reply += f" Tasks validation errors (ignored): {'; '.join(validation_errors)}"
         return reply
-
-    # ── Internal helpers ────────────────────────────────────────
-
-    @staticmethod
-    def _build_task_input_models(raw_tasks: list | None) -> list[PlanTaskInput]:
-        """Best-effort coerce agent-supplied task dicts into
-        :class:`PlanTaskInput` models for the strict
-        :class:`PlanExitInput` boundary. Malformed rows are
-        skipped here (the wire-shape errors surface later in
-        :func:`_coerce_items` where they can name the specific
-        problem). The wire-boundary payload for the todo
-        pipeline still round-trips through
-        :meth:`PlanTaskInput.coerce_batch` — this method exists
-        purely so :class:`PlanExitInput` has a valid ``tasks``
-        list at the coordinator hop."""
-        models: list[PlanTaskInput] = []
-        for entry in raw_tasks or []:
-            if not isinstance(entry, dict):
-                continue
-            try:
-                models.append(PlanTaskInput.model_validate(entry))
-            except Exception:  # noqa: S112 — an invalid task is skipped; the rest are kept
-                continue
-        return models
 
 
 __all__ = [
