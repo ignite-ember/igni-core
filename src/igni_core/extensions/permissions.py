@@ -59,12 +59,18 @@ Linux       bubblewrap (``bwrap``), with a network namespace of its
             two loopback endpoints bridged in through unix sockets.
             Files: root read-only; ``/home``, ``/root``, ``$HOME``,
             ``/run`` and ``/tmp`` empty; the grants bound in.
-Windows     Not sandboxed yet. The process runs with the person's
-            access, as before.
+Windows     An AppContainer of the run's own, in a job object that
+            kills the tree with the run. Network: no capability, so
+            nothing — not the internet, not this machine's other
+            ports, igni's included; the proxy and igni's two loopback
+            endpoints come in through named pipes only that container
+            may open. Files: what every AppContainer reads (the system
+            directories), and access-list entries for the container on
+            exactly the grants, taken off when the run ends.
 ==========  ==========================================================
 
-Where there is no sandbox (Windows; Linux without a usable ``bwrap``;
-igni itself already inside one) the process runs unconfined, with a
+Where there is no sandbox (Windows older than 10; Linux without a
+usable ``bwrap``; igni itself already inside one) the process runs unconfined, with a
 warning in the log and on the extension's entry —
 unless ``extensions.require_sandbox`` (managed settings, the verified
 group policy, or ``IGNI_EXTENSIONS_REQUIRE_SANDBOX``) is set, which refuses to start it.
