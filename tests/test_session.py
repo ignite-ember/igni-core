@@ -1,6 +1,5 @@
 """Tests for session/core.py — Session construction and message handling."""
 
-from types import SimpleNamespace
 from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -16,7 +15,6 @@ from igni_core.core.learn import LearnBootResult
 from igni_core.core.session.agent_builder.main_tools import MainToolSet
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
-from igni_core.core.session.mcp_resolver import MCPToolResolver
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.tools.plan import PlanSubmittedEvent
 from igni_core.core.utils import context as ctx_mod
@@ -673,83 +671,6 @@ class TestSessionQueueRewake:
         session.reminders.queue("second")
         session.reminders.queue("third")
         assert session.reminders.pending == ["first", "second", "third"]
-
-
-# ── MCPToolResolver (mcp_tool hook target) ────────────────────
-#
-# Resolver passed to ``HookExecutor`` so ``mcp_tool``-type hooks
-# can invoke MCP tools without the executor knowing about the
-# manager. Resolved at fire-time (not at construction) because
-# ``__init__`` builds the executor BEFORE ``mcp_manager`` is
-# wired. Returns ``None`` for every missing link so a broken MCP
-# setup degrades gracefully rather than crashing hook execution.
-
-
-class TestSessionMcpResolver:
-    """The hooks' resolver walks
-    ``mcp_manager._clients[server].functions[tool]`` and
-    returns ``None`` at the first missing hop."""
-
-    def _bare_session(self):
-        session = SimpleNamespace(mcp_manager=None)
-        session.resolve = MCPToolResolver(lambda: session.mcp_manager).resolve
-        return session
-
-    def test_returns_none_when_manager_absent(self):
-        # MCP compiled out, or the session built before MCP init
-        # completes.
-        assert MCPToolResolver(lambda: None).resolve("slack", "send") is None
-
-    def test_returns_none_when_manager_is_none(self):
-        session = self._bare_session()
-        session.mcp_manager = None
-        assert session.resolve("slack", "send") is None
-
-    def test_returns_none_when_server_not_in_clients(self):
-        # Manager present + has _clients, but the named server
-        # isn't connected. ``None`` keeps hook execution from
-        # crashing on a misconfigured settings.json.
-        session = self._bare_session()
-        manager = MagicMock()
-        manager._clients = {}
-        session.mcp_manager = manager
-        assert session.resolve("missing", "any") is None
-
-    def test_returns_none_when_tool_not_in_functions(self):
-        # Server connected, but doesn't expose the named tool
-        # (typo in settings.json, or tool removed upstream).
-        session = self._bare_session()
-        client = MagicMock()
-        client.functions = {"other_tool": object()}
-        manager = MagicMock()
-        manager._clients = {"slack": client}
-        session.mcp_manager = manager
-        assert session.resolve("slack", "send_message") is None
-
-    def test_returns_function_when_fully_resolved(self):
-        # Happy path — function found, returned for the executor
-        # to invoke. Identity equality matters: the executor
-        # awaits the SAME callable, no proxy/wrap.
-        session = self._bare_session()
-        target = MagicMock(name="send_message_fn")
-        client = MagicMock()
-        client.functions = {"send_message": target}
-        manager = MagicMock()
-        manager._clients = {"slack": client}
-        session.mcp_manager = manager
-        assert session.resolve("slack", "send_message") is target
-
-    def test_returns_none_when_client_has_no_functions_attr(self):
-        # Older client classes didn't expose ``functions``.
-        # ``getattr(..., None) or {}`` in the source covers it
-        # so the chain still returns None instead of raising
-        # AttributeError into the hook executor.
-        session = self._bare_session()
-        client = MagicMock(spec=[])  # spec=[] strips functions
-        manager = MagicMock()
-        manager._clients = {"slack": client}
-        session.mcp_manager = manager
-        assert session.resolve("slack", "send") is None
 
 
 # ── Session.broadcast + register_broadcast_callback ──────────

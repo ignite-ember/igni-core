@@ -3,23 +3,40 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from agno.tools.function import Function
+from agno.tools.mcp import MCPTools
 
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.config import MCPPolicy
 
 
+def _make_manager(configs=None):
+    """A manager that reads no config and asks nobody for approval."""
+    with (
+        patch("igni_core.core.mcp.client.MCPConfigLoader") as MockLoader,
+        patch("igni_core.core.mcp.client.MCPApprovalManager") as MockApproval,
+        patch("igni_core.core.mcp.config.MCPPolicy.from_managed_settings") as mock_from,
+    ):
+        MockLoader.return_value.load.return_value = configs or {}
+        # Auto-approve everything in existing tests
+        MockApproval.return_value.check_approval.return_value = True
+        mock_from.return_value = MCPPolicy()
+        return MCPClientManager(project_dir="/tmp/test")
+
+
+def _tool(name: str) -> Function:
+    """An MCP tool as the client holds it: the entrypoint is the callable
+    that talks to the server."""
+
+    async def entrypoint(**kwargs: object) -> str:
+        return name
+
+    return Function(name=name, entrypoint=entrypoint)
+
+
 class TestMCPClientManager:
     def _make_manager(self, configs=None):
-        with (
-            patch("igni_core.core.mcp.client.MCPConfigLoader") as MockLoader,
-            patch("igni_core.core.mcp.client.MCPApprovalManager") as MockApproval,
-            patch("igni_core.core.mcp.config.MCPPolicy.from_managed_settings") as mock_from,
-        ):
-            MockLoader.return_value.load.return_value = configs or {}
-            # Auto-approve everything in existing tests
-            MockApproval.return_value.check_approval.return_value = True
-            mock_from.return_value = MCPPolicy()
-            return MCPClientManager(project_dir="/tmp/test")
+        return _make_manager(configs)
 
     def test_list_servers_empty(self):
         mgr = self._make_manager()
@@ -163,6 +180,57 @@ class TestMCPClientManager:
         await mgr.disconnect_all()
         assert mgr._clients == {}
         mock_client.__aexit__.assert_not_called()
+
+
+class TestGetTool:
+    """The manager answers for one tool of one connected server.
+
+    Agno holds every MCP tool as a ``Function`` model whose ``entrypoint``
+    is the callable that talks to the server; the model itself is not
+    callable, so what the manager hands back is the entrypoint.
+    """
+
+    def _manager_with(self, client: MCPTools, server: str = "slack"):
+        mgr = _make_manager()
+        mgr._clients = {server: client}
+        return mgr
+
+    def test_it_returns_the_entrypoint_of_a_registered_tool(self):
+        client = MCPTools()
+        tool = _tool("mcp_slack_send_message")
+        client.functions[tool.name] = tool
+        mgr = self._manager_with(client)
+
+        assert mgr.get_tool("slack", "mcp_slack_send_message") is tool.entrypoint
+
+    def test_a_server_that_is_not_connected_yields_nothing(self):
+        mgr = _make_manager()
+
+        assert mgr.get_tool("slack", "mcp_slack_send_message") is None
+
+    def test_a_tool_that_is_not_registered_yields_nothing(self):
+        client = MCPTools()
+        client.functions["mcp_slack_other"] = _tool("mcp_slack_other")
+        mgr = self._manager_with(client)
+
+        assert mgr.get_tool("slack", "mcp_slack_send_message") is None
+
+    def test_a_tool_without_a_callable_entrypoint_yields_nothing(self):
+        client = MCPTools()
+        client.functions["mcp_slack_send_message"] = Function(name="mcp_slack_send_message")
+        mgr = self._manager_with(client)
+
+        assert mgr.get_tool("slack", "mcp_slack_send_message") is None
+
+    def test_a_tool_removed_from_the_live_table_is_not_offered(self):
+        """A disabled tool is taken out of the live table, and the live
+        table is what the manager reads."""
+        client = MCPTools()
+        client.functions["mcp_slack_send_message"] = _tool("mcp_slack_send_message")
+        mgr = self._manager_with(client)
+        del client.functions["mcp_slack_send_message"]
+
+        assert mgr.get_tool("slack", "mcp_slack_send_message") is None
 
 
 class TestBothTransportsNamespaceTheirTools:

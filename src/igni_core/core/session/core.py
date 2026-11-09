@@ -236,7 +236,11 @@ class Session:
             settings=settings,
             group_hooks_dir=self.group_policy.dir_for("hooks"),
             reminders=self.reminders,
-            resolver=MCPToolResolver(mcp_manager_ref=lambda: self.mcp_manager),
+            resolver=MCPToolResolver(
+                # The manager is built further down, after the hooks:
+                # read it lazily, and read it as "absent" until it exists.
+                mcp_manager_ref=lambda: getattr(self, "mcp_manager", None)
+            ),
             ask=self.approval.ask,
         )
 

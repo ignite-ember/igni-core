@@ -46,4 +46,19 @@ def bare_tool_name(server: str, registered: str) -> str:
     return registered[len(prefix) :] if registered.startswith(prefix) else registered
 
 
-__all__ = ["bare_tool_name", "tool_name_prefix"]
+def registered_tool_name(server: str, tool: str) -> str:
+    """The name ``tool`` of ``server`` is registered under.
+
+    The inverse of :func:`bare_tool_name`: a server's own name for a
+    tool becomes the name the tool is registered under, which is what
+    a client's tool table is keyed by.
+
+    A name that already carries the prefix comes back unchanged: a
+    caller may hold either name, and neither should be silently
+    prefixed twice.
+    """
+    prefix = f"{tool_name_prefix(server)}_"
+    return tool if tool.startswith(prefix) else f"{prefix}{tool}"
+
+
+__all__ = ["bare_tool_name", "registered_tool_name", "tool_name_prefix"]
