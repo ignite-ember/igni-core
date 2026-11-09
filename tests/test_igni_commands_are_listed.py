@@ -27,10 +27,11 @@ from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.impact import ExtensionImpact, IgniCommands, ImpactResolver
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry
+from tests.siblings import IGNI_SERVER
 
 REPO = Path(__file__).resolve().parents[1]
 LISTED = REPO / "docs" / "igni-commands.json"
-SERVER_COPY = REPO.parent / "igni__server" / "app" / "services" / "identity" / "igni_commands.json"
+SERVER_COPY = IGNI_SERVER / "app" / "services" / "identity" / "igni_commands.json"
 
 MANIFEST = {
     "id": "acme.tidy",
@@ -51,7 +52,7 @@ def test_the_list_is_what_the_dispatcher_answers():
     assert IgniCommands.load(LISTED) == IgniCommands.of(CommandHandler.builtin_names())
 
 
-@pytest.mark.skipif(not SERVER_COPY.is_file(), reason="no igni__server checkout beside this one")
+@pytest.mark.skipif(not SERVER_COPY.is_file(), reason=f"no igni-server checkout at {IGNI_SERVER}")
 def test_igni_servers_copy_is_the_same():
     assert IgniCommands.load(SERVER_COPY) == IgniCommands.load(LISTED)
 

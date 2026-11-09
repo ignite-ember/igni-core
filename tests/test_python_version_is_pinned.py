@@ -1,7 +1,7 @@
 """One Python version, declared in one story across four files.
 
 The desktop app installs 3.12 and only 3.12
-(``clients/tauri/src-tauri/src/runtime.rs``), so that is the only
+(``clients/tauri/src-tauri/src/runtime/mod.rs``), so that is the only
 interpreter the product ever runs on. Everything else that names a
 version is describing the same fact and can drift away from it
 silently: ``requires-python`` let a contributor's ``uv sync`` pick 3.14,
@@ -47,10 +47,10 @@ def test_mypy_checks_the_version_that_ships():
 @needs_app
 def test_the_tauri_runtime_installs_the_same_version():
     """The one that actually reaches a user."""
-    runtime = (IGNI_APP / "clients/tauri/src-tauri/src/runtime.rs").read_text()
+    runtime = (IGNI_APP / "clients/tauri/src-tauri/src/runtime/mod.rs").read_text()
     match = re.search(r'const PYTHON_VERSION: &str = "([^"]+)"', runtime)
 
-    assert match, "PYTHON_VERSION is gone from runtime.rs"
+    assert match, "PYTHON_VERSION is gone from the runtime module"
     assert match.group(1) == _VERSION
 
 

@@ -17,6 +17,10 @@ fallback list — used while the RPC is in flight and against a backend
 too old to answer — and a fallback that lies is still a lie. This
 checks it, the same way ``wire-contract`` checks the message schema:
 by reading the TypeScript and comparing it to the Python.
+
+The list itself now lives in ``chat/slashCommands.ts`` rather than in
+the composer component: the composer filters it, and the Help page
+lists it.
 """
 
 from __future__ import annotations
@@ -27,12 +31,14 @@ from tests.siblings import IGNI_APP, needs_app
 
 pytestmark = needs_app
 
-COMPOSER = IGNI_APP / "clients" / "web" / "src" / "components" / "Composer.tsx"
+COMMANDS = IGNI_APP / "clients" / "web" / "src" / "chat" / "slashCommands.ts"
+#: Where the composer asks the backend for the list it runs on.
+COMMANDS_HOOK = IGNI_APP / "clients" / "web" / "src" / "chat" / "useCommands.ts"
 
 
 def _fallback_commands() -> set[str]:
     """Names from the composer's ``BUILTIN_COMMANDS`` array."""
-    source = COMPOSER.read_text(encoding="utf-8")
+    source = COMMANDS.read_text(encoding="utf-8")
     start = source.index("export const BUILTIN_COMMANDS")
     end = source.index("];", start)
     return set(re.findall(r'name:\s*"(/[a-z-]+)"', source[start:end]))
@@ -40,7 +46,7 @@ def _fallback_commands() -> set[str]:
 
 def _client_only() -> set[str]:
     """Names the frontend declares it handles itself."""
-    source = COMPOSER.read_text(encoding="utf-8")
+    source = COMMANDS.read_text(encoding="utf-8")
     start = source.index("export const CLIENT_ONLY_COMMANDS")
     end = source.index("];", start)
     return set(re.findall(r'"(/[a-z-]+)"', source[start:end]))
@@ -95,7 +101,15 @@ def test_the_frontend_prefers_the_backends_list():
     """The structural half of the fix. Without the RPC wired, the
     fallback is not a fallback — it is the list again, and this file
     would be guarding a copy nobody reads."""
-    app = (COMPOSER.parent.parent / "App.tsx").read_text(encoding="utf-8")
+    hook = COMMANDS_HOOK.read_text(encoding="utf-8")
+    catalog = COMMANDS.read_text(encoding="utf-8")
 
-    assert "get_slash_commands" in app
-    assert "mergeCommands" in COMPOSER.read_text(encoding="utf-8")
+    assert "get_slash_commands" in hook, (
+        "the frontend no longer asks the backend for its list, so the "
+        "hand-written fallback is the list again"
+    )
+    merge = catalog[catalog.index("static merge(") :]
+    assert re.search(r"if\s*\(\s*!backend\s*\|\|\s*backend\.length\s*===\s*0\s*\)", merge), (
+        "the fallback is no longer conditional on the backend having said "
+        "nothing, so the hand-written list would win over the backend's"
+    )

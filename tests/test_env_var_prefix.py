@@ -162,7 +162,7 @@ class TestTheCrossProcessContractAgrees:
     def test_parent_pid_is_spelled_the_same_on_both_sides(self):
         root = _repo_root()
         reader = (root / "src/igni_core/backend/supervisor.py").read_text()
-        setter = (IGNI_APP / "clients/tauri/src-tauri/src/lib.rs").read_text()
+        setter = (IGNI_APP / "clients/tauri/src-tauri/src/backend/process.rs").read_text()
 
         assert "IGNI_PARENT_PID" in reader, "the backend no longer reads it"
         assert "IGNI_PARENT_PID" in setter, "the Tauri client no longer sets it"
@@ -172,7 +172,7 @@ class TestTheCrossProcessContractAgrees:
     def test_every_client_that_sets_parent_pid_uses_the_new_name(self):
         """The desktop shell and the web e2e harness both set it."""
         setters = [
-            "clients/tauri/src-tauri/src/lib.rs",
+            "clients/tauri/src-tauri/src/backend/process.rs",
             "clients/web/e2e/fixtures/live-be.ts",
             "clients/web/e2e/real-be-thinking.mjs",
         ]
