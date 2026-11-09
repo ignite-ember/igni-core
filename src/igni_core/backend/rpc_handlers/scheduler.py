@@ -61,8 +61,9 @@ class SchedulerRpcHandler(RpcHandler):
         ``task_id`` is the task's ``id`` (from ``get_scheduled_tasks``). The
         task is marked cancelled, so it does not run again; a run already
         going is not stopped, but its outcome is not recorded. Returns an
-        ``info`` message, sent in place of an ``rpc_response``. An unknown
-        id is not detected.
+        ``info`` message, sent in place of an ``rpc_response``. Fails for
+        an id the project has no task for, and for a task that already
+        completed, failed or was cancelled, whose record is left as it is.
         """
         return await self._controllers.loop.scheduler.cancel(args.task_id)
 

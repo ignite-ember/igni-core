@@ -141,8 +141,9 @@ class InterruptedRun(BaseModel):
 
 class DiscardInterruptedRunResult(BaseModel):
     """Wire shape for :meth:`ContextController.discard_interrupted_run`.
-    ``ok`` is ``False`` when the row didn't exist (idempotent — the
-    FE can treat the row as gone regardless)."""
+    ``ok`` is ``True`` once no such interrupted run is left — also when
+    there was none, so a retry is harmless — and ``False`` with
+    ``error`` when the id was empty or the store could not be written."""
 
     ok: bool
     error: str = ""

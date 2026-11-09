@@ -290,9 +290,8 @@ async def test_a_paused_loop_is_not_cancelled_by_a_new_message_and_resumes(backe
 
 async def test_the_scheduler_starts_with_no_tasks(backend):
     assert await backend.get_scheduled_tasks() == []
-    reply = await backend.controllers.loop.scheduler.cancel("no-such-task")
-
-    assert isinstance(reply, msg.Info)
+    with pytest.raises(ValueError, match="no scheduled task 'no-such-task'"):
+        await backend.controllers.loop.scheduler.cancel("no-such-task")
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────

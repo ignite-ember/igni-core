@@ -31,7 +31,7 @@ from igni_core.backend.schemas_scheduler import (
 from igni_core.core.activity import background
 from igni_core.core.config.group_policy.gate import GroupPolicyGate
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
+from igni_core.core.scheduler.models import ScheduledTask
 from igni_core.core.scheduler.prompt import wrap_scheduled_prompt
 from igni_core.core.scheduler.runner import SchedulerRunner
 from igni_core.core.scheduler.store import TaskStore
@@ -110,9 +110,19 @@ class SchedulerController:
         return extract_response_text(response)
 
     async def cancel(self, task_id: str) -> msg.Info:
-        """Mark a scheduled task as cancelled in the store."""
+        """Mark a scheduled task as cancelled in the store.
+
+        Refused for a task the store does not have, and for one that has
+        already finished — its result stays as it was.
+        """
         store = TaskStore(project_dir=self._session.project_dir)
-        await store.update_status(task_id, TaskStatus.cancelled)
+        before = await store.cancel(task_id)
+        if before is None:
+            raise ValueError(f"no scheduled task {task_id!r}")
+        if not before.is_active:
+            raise ValueError(
+                f"task {task_id} has already {before.value}; there is nothing to cancel"
+            )
         return msg.Info(text=f"Cancelled task {task_id}")
 
     async def list_all(self, include_done: bool = True) -> list[ScheduledTask]:

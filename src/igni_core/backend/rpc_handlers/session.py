@@ -88,9 +88,10 @@ class SessionRpcHandler(RpcHandler):
         """Forget one interrupted run, so it is not offered again.
 
         ``message_id`` names the run (from ``get_interrupted_runs``);
-        ``session_id`` the session it belongs to. Returns ``ok: true`` —
-        also when no such run exists, so a retry is harmless — or ``ok:
-        false`` with ``error`` when ``message_id`` is empty.
+        ``session_id`` the session it belongs to; only that session's
+        interrupted run is deleted. Returns ``ok: true`` — also when no such
+        run exists, so a retry is harmless — or ``ok: false`` with ``error``
+        when ``message_id`` is empty or the store could not be written.
         """
         return await self._controllers.context.discard_interrupted_run(
             args.session_id, args.message_id
@@ -179,9 +180,9 @@ class SessionRpcHandler(RpcHandler):
         """Stop one sub-agent's run, leaving the rest of the turn going.
 
         ``run_id`` is the sub-agent run's id, as its events carry it.
-        Returns ``ok: true`` once the cancellation is asked for — an unknown
-        id is not detected — or ``ok: false`` with ``error`` when
-        ``run_id`` is empty or the cancellation failed.
+        Returns ``ok: true`` when the run was cancelled, or ``ok: false``
+        with ``error`` when ``run_id`` is empty, no such run is running, or
+        the cancellation failed.
         """
         return self._controllers.runs.cancel_agent_run(args.run_id)
 

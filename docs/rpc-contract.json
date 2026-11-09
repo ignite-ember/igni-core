@@ -1096,7 +1096,7 @@
       "type": "object"
     },
     "DiscardInterruptedRunResult": {
-      "description": "Wire shape for :meth:`ContextController.discard_interrupted_run`.\n``ok`` is ``False`` when the row didn't exist (idempotent \u2014 the\nFE can treat the row as gone regardless).",
+      "description": "Wire shape for :meth:`ContextController.discard_interrupted_run`.\n``ok`` is ``True`` once no such interrupted run is left \u2014 also when\nthere was none, so a retry is harmless \u2014 and ``False`` with\n``error`` when the id was empty or the store could not be written.",
       "properties": {
         "error": {
           "default": "",
@@ -9312,7 +9312,7 @@
       "args": {
         "$ref": "#/defs/AgentRunArgs"
       },
-      "doc": "Stop one sub-agent's run, leaving the rest of the turn going.\n\n``run_id`` is the sub-agent run's id, as its events carry it.\nReturns ``ok: true`` once the cancellation is asked for \u2014 an unknown\nid is not detected \u2014 or ``ok: false`` with ``error`` when\n``run_id`` is empty or the cancellation failed.",
+      "doc": "Stop one sub-agent's run, leaving the rest of the turn going.\n\n``run_id`` is the sub-agent run's id, as its events carry it.\nReturns ``ok: true`` when the run was cancelled, or ``ok: false``\nwith ``error`` when ``run_id`` is empty, no such run is running, or\nthe cancellation failed.",
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/CancelAgentRunResult"
@@ -9360,7 +9360,7 @@
       "args": {
         "$ref": "#/defs/ScheduledTaskArgs"
       },
-      "doc": "Cancel a scheduled task of this session's project.\n\n``task_id`` is the task's ``id`` (from ``get_scheduled_tasks``). The\ntask is marked cancelled, so it does not run again; a run already\ngoing is not stopped, but its outcome is not recorded. Returns an\n``info`` message, sent in place of an ``rpc_response``. An unknown\nid is not detected.",
+      "doc": "Cancel a scheduled task of this session's project.\n\n``task_id`` is the task's ``id`` (from ``get_scheduled_tasks``). The\ntask is marked cancelled, so it does not run again; a run already\ngoing is not stopped, but its outcome is not recorded. Returns an\n``info`` message, sent in place of an ``rpc_response``. Fails for\nan id the project has no task for, and for a task that already\ncompleted, failed or was cancelled, whose record is left as it is.",
       "reply": "message",
       "result": {
         "$ref": "#/defs/Info"
@@ -9566,7 +9566,7 @@
       "args": {
         "$ref": "#/defs/InterruptedRunArgs"
       },
-      "doc": "Forget one interrupted run, so it is not offered again.\n\n``message_id`` names the run (from ``get_interrupted_runs``);\n``session_id`` the session it belongs to. Returns ``ok: true`` \u2014\nalso when no such run exists, so a retry is harmless \u2014 or ``ok:\nfalse`` with ``error`` when ``message_id`` is empty.",
+      "doc": "Forget one interrupted run, so it is not offered again.\n\n``message_id`` names the run (from ``get_interrupted_runs``);\n``session_id`` the session it belongs to; only that session's\ninterrupted run is deleted. Returns ``ok: true`` \u2014 also when no such\nrun exists, so a retry is harmless \u2014 or ``ok: false`` with ``error``\nwhen ``message_id`` is empty or the store could not be written.",
       "reply": "rpc_response",
       "result": {
         "$ref": "#/defs/DiscardInterruptedRunResult"

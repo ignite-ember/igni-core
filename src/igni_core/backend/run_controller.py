@@ -349,12 +349,14 @@ class RunController:
         if not run_id:
             return CancelAgentRunResult(ok=False, error="missing run_id")
         try:
-            Agent.cancel_run(run_id)
-            logger.info("Cancelled sub-agent run %s", run_id)
-            return CancelAgentRunResult(ok=True)
+            running = Agent.cancel_run(run_id)
         except Exception as exc:
             logger.warning("cancel_agent_run failed: %s", exc)
             return CancelAgentRunResult(ok=False, error=str(exc))
+        if not running:
+            return CancelAgentRunResult(ok=False, error=f"no run {run_id!r} is running")
+        logger.info("Cancelled sub-agent run %s", run_id)
+        return CancelAgentRunResult(ok=True)
 
     # ── Checkpointing (moved from BackendServer) ────────────────────
 

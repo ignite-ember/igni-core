@@ -300,6 +300,26 @@ class PendingMessageStore:
             for r in rows
         ]
 
+    def discard_interrupted(self, session_id: str, message_id: str) -> int:
+        """Hard-delete one interrupted run of ``session_id``; how many rows went.
+
+        Only a row that is the session's, still pending and marked
+        interrupted: what ``list_interrupted`` offers. A storage failure
+        raises — the caller tells whoever asked, rather than answering
+        "done" for a run still there.
+        """
+        with self._db.sync_session() as session, session.begin():
+            result = session.execute(
+                delete(ReceivedMessageModel).where(
+                    self._mine(),
+                    ReceivedMessageModel.session_id == session_id,
+                    ReceivedMessageModel.message_id == message_id,
+                    ReceivedMessageModel.status == "pending",
+                    ReceivedMessageModel.interrupted_at.is_not(None),
+                )
+            )
+            return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
     def discard_all_for_session(self, session_id: str) -> int:
         """Hard-delete every pending + interrupted row for the session.
 
@@ -349,6 +369,9 @@ class PendingMessageStore:
 
     async def alist_interrupted(self, session_id: str) -> list[InterruptedMessage]:
         return await asyncio.to_thread(self.list_interrupted, session_id)
+
+    async def adiscard_interrupted(self, session_id: str, message_id: str) -> int:
+        return await asyncio.to_thread(self.discard_interrupted, session_id, message_id)
 
     async def adiscard_all_for_session(self, session_id: str) -> int:
         return await asyncio.to_thread(self.discard_all_for_session, session_id)
