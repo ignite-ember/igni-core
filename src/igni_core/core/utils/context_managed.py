@@ -30,13 +30,13 @@ managed directory itself — a managed policy can't reach into
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 from igni_core.core.paths import managed_policy_dir
+from igni_core.core.utils.context_schemas import ReadRulesDir, RulesFilenames
 
 
-def _platform_managed_rules_dir() -> Path | None:
+def platform_managed_rules_dir() -> Path | None:
     """OS-specific directory that may host a sysadmin-enforced
     instructions file (``igni.md`` and/or ``CLAUDE.md``).
 
@@ -47,13 +47,11 @@ def _platform_managed_rules_dir() -> Path | None:
     as "no managed instructions tier."
     """
     return managed_policy_dir()
-    return None
 
 
 def load_managed_rules(
-    read_rules_dir: Callable[..., str],
-    rules_filenames: Callable[[bool], tuple[str, ...]],
-    platform_dir_fn: Callable[[], Path | None] = _platform_managed_rules_dir,
+    read_rules_dir: ReadRulesDir,
+    rules_filenames: RulesFilenames,
     read_claude_md: bool = True,
 ) -> str:
     """Load the sysadmin-enforced managed-policy instructions file.
@@ -73,14 +71,14 @@ def load_managed_rules(
     Policy" header so the model sees the org-pinned guidance
     before any user/project rules.
 
-    All three helpers are injected — ``read_rules_dir`` and
-    ``rules_filenames`` live in ``context.py``; ``platform_dir_fn``
-    defaults to the local platform lookup but tests substitute it
-    via the ``context`` module-level name so monkeypatching there
-    still works. Keeps this module a leaf in the import graph per
-    CODE_STANDARDS Rule 2.
+    The two helpers are injected — they live in
+    :mod:`context_readers` and are shared across all rule sources,
+    which keeps this module a leaf in the import graph per
+    CODE_STANDARDS Rule 2. The managed directory itself is a
+    property of the platform, so
+    :func:`platform_managed_rules_dir` answers it here.
     """
-    managed_dir = platform_dir_fn()
+    managed_dir = platform_managed_rules_dir()
     if managed_dir is None:
         return ""
     try:

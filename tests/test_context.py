@@ -8,30 +8,26 @@ import pytest
 
 from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.paths import CONFIG_DIR
-from igni_core.core.utils import context as context_module
-from igni_core.core.utils.context import (
+from igni_core.core.utils import context_managed as context_managed_module
+from igni_core.core.utils import context_memory as context_memory_module
+from igni_core.core.utils.context import RulesContextLoader
+from igni_core.core.utils.context_frontmatter import parse_frontmatter
+from igni_core.core.utils.context_memory import (
+    ProjectMemoryBank,
     _claude_project_memory_dir,
     _igni_project_memory_dir,
-    _parse_frontmatter,
     _project_memory_slug,
-    ensure_memory_dir,
-    load_managed_rules,
-    load_memory_index,
-    load_project_context,
-    load_project_rules,
-    load_project_rules_dirs,
-    load_subdirectory_rules,
-    load_user_rules,
-    memory_writeback_instructions,
 )
-from igni_core.core.utils.context import (
-    _platform_managed_rules_dir as _REAL_MANAGED_RULES_DIR,
-)
+from igni_core.core.utils.context_schemas import UserRulesPaths
 
 # Alias for the deleted ``settings._platform_managed_settings_path``
 # shim — kept as a local name so the assertion sites below still read
 # naturally.
 _real_settings_path = ManagedPolicySource.platform_path
+
+# The real managed-rules lookup, captured before the autouse fixture
+# neutralises it — the platform-mapping tests need the real answer.
+_REAL_MANAGED_RULES_DIR = context_managed_module.platform_managed_rules_dir
 
 
 @pytest.fixture(autouse=True)
@@ -39,43 +35,80 @@ def _isolate_managed_rules(monkeypatch):
     """Default every context test to "no managed policy deployed."
 
     Keeps the existing user/project tests hermetic — a stray
-    ``/Library/Application Support/Ember/ember.md`` on the dev
+    ``/Library/Application Support/igni/igni.md`` on the dev
     machine won't bleed into their assertions. Managed-rules
     tests opt in by monkeypatching the lookup themselves; the
     captured-at-import reference ``_REAL_MANAGED_RULES_DIR`` lets
     the platform-mapping tests still reach the real function."""
     monkeypatch.setattr(
-        context_module,
-        "_platform_managed_rules_dir",
+        context_managed_module,
+        "platform_managed_rules_dir",
         lambda: None,
     )
 
 
+def _user_rules_paths(root: Path, *, with_claude: bool = False) -> UserRulesPaths:
+    """User-rule locations under ``root`` — a hermetic sandbox."""
+    return UserRulesPaths(
+        legacy_file=root / "rules.md",
+        rules_dir=root / "rules",
+        claude_rules_dir=root / "claude-rules" if with_claude else root / "nonexistent",
+    )
+
+
+def _loader(
+    project_dir: Path,
+    *,
+    working_dir: Path | None = None,
+    read_claude_md: bool = True,
+    user_rules: UserRulesPaths | None = None,
+) -> RulesContextLoader:
+    """A rules loader whose user-rule locations point at an empty sandbox.
+
+    The sandbox keeps the developer's real ``~/.igni/rules`` out of
+    every assertion in this file.
+    """
+    return RulesContextLoader(
+        project_dir=project_dir,
+        working_dir=working_dir,
+        read_claude_md=read_claude_md,
+        user_rules_paths=(
+            user_rules
+            if user_rules is not None
+            else UserRulesPaths(
+                legacy_file=project_dir / "_no_user_rules.md",
+                rules_dir=project_dir / "_no_user_rules_dir",
+                claude_rules_dir=project_dir / "_no_claude_user_rules_dir",
+            )
+        ),
+    )
+
+
 class TestLoadProjectRules:
-    def test_loads_ember_md(self, tmp_path):
-        (tmp_path / "ember.md").write_text("ember rules")
-        assert load_project_rules(tmp_path) == "ember rules"
+    def test_loads_igni_md(self, tmp_path):
+        (tmp_path / "igni.md").write_text("igni rules")
+        assert _loader(tmp_path).load_project_root() == "igni rules"
 
     def test_loads_claude_md(self, tmp_path):
         (tmp_path / "CLAUDE.md").write_text("claude rules")
-        assert load_project_rules(tmp_path) == "claude rules"
+        assert _loader(tmp_path).load_project_root() == "claude rules"
 
     def test_merges_both_files(self, tmp_path):
-        (tmp_path / "ember.md").write_text("ember rules")
+        (tmp_path / "ember.md").write_text("igni rules")
         (tmp_path / "CLAUDE.md").write_text("claude rules")
-        result = load_project_rules(tmp_path)
-        assert "ember rules" in result
+        result = _loader(tmp_path).load_project_root()
+        assert "igni rules" in result
         assert "claude rules" in result
 
     def test_skips_claude_md_when_disabled(self, tmp_path):
-        (tmp_path / "ember.md").write_text("ember rules")
+        (tmp_path / "ember.md").write_text("igni rules")
         (tmp_path / "CLAUDE.md").write_text("claude rules")
-        result = load_project_rules(tmp_path, read_claude_md=False)
-        assert "ember rules" in result
+        result = _loader(tmp_path, read_claude_md=False).load_project_root()
+        assert "igni rules" in result
         assert "claude rules" not in result
 
     def test_returns_empty_for_missing(self, tmp_path):
-        assert load_project_rules(tmp_path) == ""
+        assert _loader(tmp_path).load_project_root() == ""
 
 
 class TestLoadSubdirectoryRules:
@@ -87,7 +120,7 @@ class TestLoadSubdirectoryRules:
         (src / "ember.md").write_text("src rules")
         (auth / "ember.md").write_text("auth rules")
 
-        results = load_subdirectory_rules(tmp_path, working)
+        results = _loader(tmp_path, working_dir=working).load_subdirectory()
         assert len(results) == 2
         assert (results[0].rel_path, results[0].content) == ("src", "src rules")
         assert (results[1].rel_path, results[1].content) == ("src/auth", "auth rules")
@@ -98,7 +131,7 @@ class TestLoadSubdirectoryRules:
         working.mkdir(parents=True)
         (src / "CLAUDE.md").write_text("claude src rules")
 
-        results = load_subdirectory_rules(tmp_path, working)
+        results = _loader(tmp_path, working_dir=working).load_subdirectory()
         assert len(results) == 1
         assert (results[0].rel_path, results[0].content) == ("src", "claude src rules")
 
@@ -106,40 +139,39 @@ class TestLoadSubdirectoryRules:
         src = tmp_path / "src"
         working = src / "api"
         working.mkdir(parents=True)
-        (src / "ember.md").write_text("ember src")
+        (src / "ember.md").write_text("claude src")
         (src / "CLAUDE.md").write_text("claude src")
 
-        results = load_subdirectory_rules(tmp_path, working)
+        results = _loader(tmp_path, working_dir=working).load_subdirectory()
         assert len(results) == 1
-        assert "ember src" in results[0].content
         assert "claude src" in results[0].content
 
     def test_returns_empty_when_no_rules(self, tmp_path):
         working = tmp_path / "src"
         working.mkdir()
-        assert load_subdirectory_rules(tmp_path, working) == []
+        assert _loader(tmp_path, working_dir=working).load_subdirectory() == []
 
     def test_returns_empty_when_working_dir_is_root(self, tmp_path):
-        assert load_subdirectory_rules(tmp_path, tmp_path) == []
+        assert _loader(tmp_path, working_dir=tmp_path).load_subdirectory() == []
 
     def test_returns_empty_when_working_dir_is_none(self, tmp_path):
-        assert load_subdirectory_rules(tmp_path, None) == []
+        assert _loader(tmp_path, working_dir=None).load_subdirectory() == []
 
     def test_returns_empty_when_outside_project(self, tmp_path):
         other = tmp_path / "other"
         other.mkdir()
-        assert load_subdirectory_rules(tmp_path / "project", other) == []
+        assert _loader(tmp_path / "project", working_dir=other).load_subdirectory() == []
 
 
 class TestLoadProjectContext:
     def test_merges_root_rules(self, tmp_path):
         (tmp_path / "ember.md").write_text("root rules")
-        result = load_project_context(tmp_path)
+        result = _loader(tmp_path).load_all().render()
         assert "root rules" in result
         assert "Project Rules" in result
 
     def test_returns_empty_when_no_rules(self, tmp_path):
-        assert load_project_context(tmp_path) == ""
+        assert _loader(tmp_path).load_all().render() == ""
 
     def test_merges_root_and_subdirectory(self, tmp_path):
         (tmp_path / "ember.md").write_text("root rules")
@@ -147,7 +179,7 @@ class TestLoadProjectContext:
         src.mkdir()
         (src / "ember.md").write_text("src rules")
 
-        result = load_project_context(tmp_path, working_dir=src)
+        result = _loader(tmp_path, working_dir=src).load_all().render()
         assert "root rules" in result
         assert "src rules" in result
         assert "Project Rules" in result
@@ -155,21 +187,21 @@ class TestLoadProjectContext:
 
     def test_claude_md_at_root(self, tmp_path):
         (tmp_path / "CLAUDE.md").write_text("claude project rules")
-        result = load_project_context(tmp_path)
+        result = _loader(tmp_path).load_all().render()
         assert "claude project rules" in result
 
     def test_both_files_at_root(self, tmp_path):
-        (tmp_path / "ember.md").write_text("ember root")
+        (tmp_path / "ember.md").write_text("igni root")
         (tmp_path / "CLAUDE.md").write_text("claude root")
-        result = load_project_context(tmp_path)
-        assert "ember root" in result
+        result = _loader(tmp_path).load_all().render()
+        assert "igni root" in result
         assert "claude root" in result
 
     def test_skips_claude_md_when_disabled(self, tmp_path):
-        (tmp_path / "ember.md").write_text("ember root")
+        (tmp_path / "ember.md").write_text("igni root")
         (tmp_path / "CLAUDE.md").write_text("claude root")
-        result = load_project_context(tmp_path, read_claude_md=False)
-        assert "ember root" in result
+        result = _loader(tmp_path, read_claude_md=False).load_all().render()
+        assert "igni root" in result
         assert "claude root" not in result
 
     def test_sections_separated_by_divider(self, tmp_path):
@@ -178,121 +210,115 @@ class TestLoadProjectContext:
         src.mkdir()
         (src / "ember.md").write_text("src")
 
-        result = load_project_context(tmp_path, working_dir=src)
+        result = _loader(tmp_path, working_dir=src).load_all().render()
         assert "---" in result
 
 
 class TestParseFrontmatter:
     def test_no_frontmatter(self):
-        paths, body = _parse_frontmatter("hello world\n")
+        paths, body = parse_frontmatter("hello world\n")
         assert paths == []
         assert body == "hello world\n"
 
     def test_frontmatter_without_paths(self):
         content = "---\nname: test\n---\nbody text\n"
-        paths, body = _parse_frontmatter(content)
+        paths, body = parse_frontmatter(content)
         assert paths == []
         assert body == "body text\n"
 
     def test_paths_block(self):
         content = '---\npaths:\n  - "**/*.test.ts"\n  - src/api/**\n---\nscoped rule body'
-        paths, body = _parse_frontmatter(content)
+        paths, body = parse_frontmatter(content)
         assert paths == ["**/*.test.ts", "src/api/**"]
         assert body == "scoped rule body"
 
     def test_paths_inline_list(self):
         content = "---\npaths: [\"a/*\", 'b/*']\n---\nbody"
-        paths, body = _parse_frontmatter(content)
+        paths, body = parse_frontmatter(content)
         assert paths == ["a/*", "b/*"]
         assert body == "body"
 
 
-def _redirect_user_rules(monkeypatch, tmp_path, *, with_claude=False):
-    """Point the user-rules constants at a sandbox under ``tmp_path``."""
-    monkeypatch.setattr(context_module, "USER_RULES_PATH", tmp_path / "rules.md")
-    monkeypatch.setattr(context_module, "USER_RULES_DIR", tmp_path / "rules")
-    claude_dir = tmp_path / "claude-rules" if with_claude else tmp_path / "nonexistent"
-    monkeypatch.setattr(context_module, "CLAUDE_USER_RULES_DIR", claude_dir)
-
-
 class TestLoadUserRules:
-    def test_loads_legacy_single_file(self, tmp_path, monkeypatch):
-        _redirect_user_rules(monkeypatch, tmp_path)
+    def test_loads_legacy_single_file(self, tmp_path):
         (tmp_path / "rules.md").write_text("legacy rules")
-        result = load_user_rules()
+        result = _loader(tmp_path, user_rules=_user_rules_paths(tmp_path)).load_user()
         assert result == "legacy rules"
 
-    def test_loads_ember_rules_directory(self, tmp_path, monkeypatch):
-        _redirect_user_rules(monkeypatch, tmp_path)
+    def test_loads_igni_rules_directory(self, tmp_path):
         rules_dir = tmp_path / "rules"
         rules_dir.mkdir()
         (rules_dir / "a.md").write_text("rule A")
         (rules_dir / "b.md").write_text("rule B")
-        result = load_user_rules()
+        result = _loader(tmp_path, user_rules=_user_rules_paths(tmp_path)).load_user()
         assert "rule A" in result
         assert "rule B" in result
 
-    def test_merges_legacy_and_directory(self, tmp_path, monkeypatch):
-        _redirect_user_rules(monkeypatch, tmp_path)
+    def test_merges_legacy_and_directory(self, tmp_path):
         (tmp_path / "rules.md").write_text("legacy")
         rules_dir = tmp_path / "rules"
         rules_dir.mkdir()
         (rules_dir / "one.md").write_text("dir rule")
-        result = load_user_rules()
+        result = _loader(tmp_path, user_rules=_user_rules_paths(tmp_path)).load_user()
         assert "legacy" in result
         assert "dir rule" in result
 
-    def test_reads_claude_rules_when_enabled(self, tmp_path, monkeypatch):
-        _redirect_user_rules(monkeypatch, tmp_path, with_claude=True)
+    def test_reads_claude_rules_when_enabled(self, tmp_path):
         claude_dir = tmp_path / "claude-rules"
         claude_dir.mkdir()
         (claude_dir / "git.md").write_text("git habits")
-        result = load_user_rules(read_claude_rules=True)
+        paths = _user_rules_paths(tmp_path, with_claude=True)
+        result = _loader(tmp_path, read_claude_md=True, user_rules=paths).load_user()
         assert "git habits" in result
 
-    def test_skips_claude_rules_when_disabled(self, tmp_path, monkeypatch):
-        _redirect_user_rules(monkeypatch, tmp_path, with_claude=True)
+    def test_skips_claude_rules_when_disabled(self, tmp_path):
         claude_dir = tmp_path / "claude-rules"
         claude_dir.mkdir()
         (claude_dir / "git.md").write_text("git habits")
-        result = load_user_rules(read_claude_rules=False)
+        paths = _user_rules_paths(tmp_path, with_claude=True)
+        result = _loader(tmp_path, read_claude_md=False, user_rules=paths).load_user()
         assert "git habits" not in result
 
-    def test_paths_frontmatter_filters_out_when_no_match(self, tmp_path, monkeypatch):
-        _redirect_user_rules(monkeypatch, tmp_path)
+    def test_paths_frontmatter_filters_out_when_no_match(self, tmp_path):
         rules_dir = tmp_path / "rules"
         rules_dir.mkdir()
         (rules_dir / "tui.md").write_text("---\npaths:\n  - tui/**\n---\ntui-only rule")
         project_dir = tmp_path / "project"
         working_dir = project_dir / "backend"
         working_dir.mkdir(parents=True)
-        result = load_user_rules(working_dir=working_dir, project_dir=project_dir)
+        result = _loader(
+            project_dir,
+            working_dir=working_dir,
+            user_rules=_user_rules_paths(tmp_path),
+        ).load_user()
         assert "tui-only rule" not in result
 
-    def test_paths_frontmatter_includes_when_match(self, tmp_path, monkeypatch):
-        _redirect_user_rules(monkeypatch, tmp_path)
+    def test_paths_frontmatter_includes_when_match(self, tmp_path):
         rules_dir = tmp_path / "rules"
         rules_dir.mkdir()
         (rules_dir / "tui.md").write_text("---\npaths:\n  - tui/**\n---\ntui-only rule")
         project_dir = tmp_path / "project"
         working_dir = project_dir / "tui" / "panels"
         working_dir.mkdir(parents=True)
-        result = load_user_rules(working_dir=working_dir, project_dir=project_dir)
+        result = _loader(
+            project_dir,
+            working_dir=working_dir,
+            user_rules=_user_rules_paths(tmp_path),
+        ).load_user()
         assert "tui-only rule" in result
 
-    def test_paths_frontmatter_excluded_without_working_dir(self, tmp_path, monkeypatch):
-        _redirect_user_rules(monkeypatch, tmp_path)
+    def test_paths_frontmatter_excluded_without_working_dir(self, tmp_path):
         rules_dir = tmp_path / "rules"
         rules_dir.mkdir()
         (rules_dir / "scoped.md").write_text("---\npaths:\n  - any/**\n---\nscoped")
         (rules_dir / "always.md").write_text("always-on rule")
-        result = load_user_rules()
+        result = _loader(tmp_path, user_rules=_user_rules_paths(tmp_path)).load_user()
         assert "always-on rule" in result
         assert "scoped" not in result
 
-    def test_empty_when_nothing_configured(self, tmp_path, monkeypatch):
-        _redirect_user_rules(monkeypatch, tmp_path)
-        assert load_user_rules() == ""
+    def test_empty_when_nothing_configured(self, tmp_path):
+        result = _loader(tmp_path, user_rules=_user_rules_paths(tmp_path)).load_user()
+        assert result == ""
 
 
 class TestProjectRulesDirs:
@@ -300,14 +326,16 @@ class TestProjectRulesDirs:
     — committed shared rules, symmetric to the user-level pattern."""
 
     def _load(self, project_dir, working_dir=None, read_claude_md=True):
-        return load_project_rules_dirs(
-            project_dir, working_dir=working_dir, read_claude_md=read_claude_md
-        )
+        return _loader(
+            project_dir,
+            working_dir=working_dir,
+            read_claude_md=read_claude_md,
+        ).load_project_dirs()
 
-    def test_ember_rules_dir_loaded(self, tmp_path):
+    def test_igni_rules_dir_loaded(self, tmp_path):
         (tmp_path / CONFIG_DIR / "rules").mkdir(parents=True)
-        (tmp_path / CONFIG_DIR / "rules" / "style.md").write_text("PROJECT-EMBER-STYLE")
-        assert "PROJECT-EMBER-STYLE" in self._load(tmp_path)
+        (tmp_path / CONFIG_DIR / "rules" / "style.md").write_text("PROJECT-IGNI-STYLE")
+        assert "PROJECT-IGNI-STYLE" in self._load(tmp_path)
 
     def test_claude_rules_dir_loaded(self, tmp_path):
         (tmp_path / ".claude" / "rules").mkdir(parents=True)
@@ -316,11 +344,11 @@ class TestProjectRulesDirs:
 
     def test_claude_rules_dir_skipped_when_cross_tool_disabled(self, tmp_path):
         (tmp_path / CONFIG_DIR / "rules").mkdir(parents=True)
-        (tmp_path / CONFIG_DIR / "rules" / "ok.md").write_text("EMBER-OK")
+        (tmp_path / CONFIG_DIR / "rules" / "ok.md").write_text("IGNI-OK")
         (tmp_path / ".claude" / "rules").mkdir(parents=True)
         (tmp_path / ".claude" / "rules" / "skip.md").write_text("CLAUDE-SHOULD-SKIP")
         result = self._load(tmp_path, read_claude_md=False)
-        assert "EMBER-OK" in result
+        assert "IGNI-OK" in result
         assert "CLAUDE-SHOULD-SKIP" not in result
 
     def test_paths_frontmatter_filters_scoped_rules(self, tmp_path):
@@ -363,7 +391,7 @@ class TestProjectRulesDirs:
         (tmp_path / "ember.md").write_text("ROOT")
         (tmp_path / CONFIG_DIR / "rules").mkdir(parents=True)
         (tmp_path / CONFIG_DIR / "rules" / "shared.md").write_text("SHARED")
-        result = load_project_context(tmp_path)
+        result = _loader(tmp_path).load_all().render()
         # Ordering: root rules before shared rules.
         assert result.index("ROOT") < result.index("SHARED")
         assert "# Project Shared Rules" in result
@@ -377,13 +405,13 @@ class TestLocalOverrides:
     def test_project_root_local_loads_after_base(self, tmp_path):
         (tmp_path / "ember.md").write_text("BASE")
         (tmp_path / "ember.local.md").write_text("LOCAL")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert result.index("BASE") < result.index("LOCAL")
 
     def test_project_root_claude_local_loads(self, tmp_path):
         (tmp_path / "CLAUDE.md").write_text("CLAUDE-BASE")
         (tmp_path / "CLAUDE.local.md").write_text("CLAUDE-LOCAL")
-        result = load_project_rules(tmp_path, read_claude_md=True)
+        result = _loader(tmp_path, read_claude_md=True).load_project_root()
         assert "CLAUDE-BASE" in result
         assert "CLAUDE-LOCAL" in result
         assert result.index("CLAUDE-BASE") < result.index("CLAUDE-LOCAL")
@@ -391,20 +419,20 @@ class TestLocalOverrides:
     def test_claude_local_skipped_when_cross_tool_disabled(self, tmp_path):
         (tmp_path / "ember.md").write_text("EMBER")
         (tmp_path / "CLAUDE.local.md").write_text("SHOULD-NOT-LOAD")
-        result = load_project_rules(tmp_path, read_claude_md=False)
+        result = _loader(tmp_path, read_claude_md=False).load_project_root()
         assert "EMBER" in result
         assert "SHOULD-NOT-LOAD" not in result
 
     def test_local_alone_still_loads_at_root(self, tmp_path):
         (tmp_path / "ember.local.md").write_text("ONLY-LOCAL")
-        assert "ONLY-LOCAL" in load_project_rules(tmp_path)
+        assert "ONLY-LOCAL" in _loader(tmp_path).load_project_root()
 
     def test_subdirectory_local_override(self, tmp_path):
         sub = tmp_path / "svc"
         sub.mkdir()
         (sub / "ember.md").write_text("SUB-BASE")
         (sub / "ember.local.md").write_text("SUB-LOCAL")
-        results = load_subdirectory_rules(tmp_path, working_dir=sub)
+        results = _loader(tmp_path, working_dir=sub).load_subdirectory()
         # Each subdir's contributions concatenate base + local.
         assert len(results) == 1
         content = results[0].content
@@ -417,7 +445,7 @@ class TestAtImports:
     def test_relative_import_inlines_content(self, tmp_path):
         (tmp_path / "ember.md").write_text("Project rules.\n\n@./conventions.md")
         (tmp_path / "conventions.md").write_text("Always run make fmt.")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "Project rules." in result
         assert "Always run make fmt." in result
         assert "@./conventions.md" not in result  # token replaced
@@ -425,21 +453,21 @@ class TestAtImports:
     def test_import_without_dot_slash_prefix(self, tmp_path):
         (tmp_path / "ember.md").write_text("@conventions.md")
         (tmp_path / "conventions.md").write_text("naked path works too")
-        assert "naked path works too" in load_project_rules(tmp_path)
+        assert "naked path works too" in _loader(tmp_path).load_project_root()
 
     def test_absolute_path_under_project_inlines(self, tmp_path):
         sub = tmp_path / "sub"
         sub.mkdir()
         (sub / "ref.md").write_text("absolute target")
         (tmp_path / "ember.md").write_text(f"@{sub / 'ref.md'}")
-        assert "absolute target" in load_project_rules(tmp_path)
+        assert "absolute target" in _loader(tmp_path).load_project_root()
 
     def test_path_outside_project_left_as_literal(self, tmp_path):
         outside = tmp_path.parent / "outside-rules.md"
         outside.write_text("SECRET STUFF")
         try:
             (tmp_path / "ember.md").write_text(f"@{outside}")
-            result = load_project_rules(tmp_path)
+            result = _loader(tmp_path).load_project_root()
             assert "SECRET STUFF" not in result
             # The literal token survives so the agent can see the
             # unresolved reference instead of silent dropping.
@@ -449,14 +477,14 @@ class TestAtImports:
 
     def test_missing_file_left_as_literal(self, tmp_path):
         (tmp_path / "ember.md").write_text("Hello @./does-not-exist.md.")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "@./does-not-exist.md" in result
 
     def test_nested_imports_resolve(self, tmp_path):
         (tmp_path / "ember.md").write_text("top @./a.md")
         (tmp_path / "a.md").write_text("mid @./b.md")
         (tmp_path / "b.md").write_text("leaf")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "top" in result and "mid" in result and "leaf" in result
 
     def test_cycle_breaks_at_repeat(self, tmp_path):
@@ -465,7 +493,7 @@ class TestAtImports:
         (tmp_path / "ember.md").write_text("root @./a.md done")
         (tmp_path / "a.md").write_text("A @./b.md")
         (tmp_path / "b.md").write_text("B @./a.md")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "root" in result
         assert "A" in result
         assert "B" in result
@@ -482,7 +510,7 @@ class TestAtImports:
         (tmp_path / "c.md").write_text("C @./d.md")
         (tmp_path / "d.md").write_text("D @./e.md")
         (tmp_path / "e.md").write_text("E")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         # First four layers resolve.
         assert "A" in result and "B" in result and "C" in result and "D" in result
         # Fifth layer hits the depth cap — token left as literal.
@@ -497,7 +525,7 @@ class TestAtImports:
         (tmp_path / "ember.md").write_text("Real: @./real.md but `@./fake.md` should stay as text.")
         (tmp_path / "real.md").write_text("REAL CONTENT")
         (tmp_path / "fake.md").write_text("FAKE CONTENT — must NOT appear")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "REAL CONTENT" in result
         assert "FAKE CONTENT" not in result
         # The literal token is preserved (inside its backticks).
@@ -510,7 +538,7 @@ class TestAtImports:
         )
         (tmp_path / "real.md").write_text("REAL")
         (tmp_path / "fake.md").write_text("MUST NOT INLINE")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "REAL" in result
         assert "MUST NOT INLINE" not in result
         assert "@./fake.md" in result  # preserved inside the fence
@@ -522,7 +550,7 @@ class TestAtImports:
         )
         (tmp_path / "real.md").write_text("REAL")
         (tmp_path / "fake.md").write_text("MUST NOT INLINE")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "REAL" in result
         assert "MUST NOT INLINE" not in result
         assert "@./fake.md" in result
@@ -535,7 +563,7 @@ class TestAtImports:
         )
         (tmp_path / "real.md").write_text("REAL")
         (tmp_path / "fake.md").write_text("MUST NOT INLINE")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "REAL" in result
         assert "MUST NOT INLINE" not in result
 
@@ -547,7 +575,7 @@ class TestAtImports:
         )
         (tmp_path / "real.md").write_text("REAL")
         (tmp_path / "fake.md").write_text("MUST NOT INLINE")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "REAL" in result
         assert "MUST NOT INLINE" not in result
 
@@ -564,7 +592,7 @@ class TestAtImports:
         (tmp_path / "real2.md").write_text("REAL2")
         (tmp_path / "skipme.md").write_text("SKIP-INLINE")
         (tmp_path / "alsoskip.md").write_text("SKIP-BLOCK")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "REAL1" in result
         assert "REAL2" in result
         assert "SKIP-INLINE" not in result
@@ -579,7 +607,7 @@ class TestAtImports:
         (tmp_path / "ember.md").write_text("Top: @./outer.md")
         (tmp_path / "outer.md").write_text("OUTER\n\n```\ninner: @./inner.md\n```\n")
         (tmp_path / "inner.md").write_text("INNER MUST NOT APPEAR")
-        result = load_project_rules(tmp_path)
+        result = _loader(tmp_path).load_project_root()
         assert "OUTER" in result
         assert "INNER MUST NOT APPEAR" not in result
         assert "@./inner.md" in result
@@ -691,61 +719,61 @@ class TestPlatformManagedRulesDir:
 
 
 class TestLoadManagedRules:
-    """The managed-rules tier reads ``ember.md`` / ``CLAUDE.md`` from
+    """The managed-rules tier reads ``igni.md`` / ``CLAUDE.md`` from
     the platform-specific write-protected dir. Tests override the
     platform lookup via the autouse fixture's monkeypatch."""
 
-    def test_reads_managed_ember_md(self, tmp_path, monkeypatch):
+    def test_reads_managed_igni_md(self, tmp_path, monkeypatch):
         managed_dir = tmp_path / "managed"
         managed_dir.mkdir()
-        (managed_dir / "ember.md").write_text("ORG: never commit secrets.")
+        (managed_dir / "igni.md").write_text("ORG: never commit secrets.")
         monkeypatch.setattr(
-            context_module,
-            "_platform_managed_rules_dir",
+            context_managed_module,
+            "platform_managed_rules_dir",
             lambda: managed_dir,
         )
-        assert "ORG: never commit secrets." in load_managed_rules()
+        assert "ORG: never commit secrets." in _loader(tmp_path).load_managed()
 
     def test_reads_managed_claude_md_when_enabled(self, tmp_path, monkeypatch):
         managed_dir = tmp_path / "managed"
         managed_dir.mkdir()
         (managed_dir / "CLAUDE.md").write_text("ORG-CC: be safe.")
         monkeypatch.setattr(
-            context_module,
-            "_platform_managed_rules_dir",
+            context_managed_module,
+            "platform_managed_rules_dir",
             lambda: managed_dir,
         )
-        assert "ORG-CC: be safe." in load_managed_rules(read_claude_md=True)
+        assert "ORG-CC: be safe." in _loader(tmp_path, read_claude_md=True).load_managed()
 
     def test_skips_claude_md_when_disabled(self, tmp_path, monkeypatch):
         managed_dir = tmp_path / "managed"
         managed_dir.mkdir()
-        (managed_dir / "ember.md").write_text("ORG-EMBER")
+        (managed_dir / "igni.md").write_text("ORG-IGNI")
         (managed_dir / "CLAUDE.md").write_text("ORG-CC")
         monkeypatch.setattr(
-            context_module,
-            "_platform_managed_rules_dir",
+            context_managed_module,
+            "platform_managed_rules_dir",
             lambda: managed_dir,
         )
-        out = load_managed_rules(read_claude_md=False)
-        assert "ORG-EMBER" in out
+        out = _loader(tmp_path, read_claude_md=False).load_managed()
+        assert "ORG-IGNI" in out
         assert "ORG-CC" not in out
 
     def test_missing_dir_is_no_op(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            context_module,
-            "_platform_managed_rules_dir",
+            context_managed_module,
+            "platform_managed_rules_dir",
             lambda: tmp_path / "does-not-exist",
         )
-        assert load_managed_rules() == ""
+        assert _loader(tmp_path).load_managed() == ""
 
     def test_unknown_platform_returns_empty(self, monkeypatch):
         monkeypatch.setattr(
-            context_module,
-            "_platform_managed_rules_dir",
+            context_managed_module,
+            "platform_managed_rules_dir",
             lambda: None,
         )
-        assert load_managed_rules() == ""
+        assert _loader(Path.cwd()).load_managed() == ""
 
     def test_at_imports_scoped_to_managed_dir(self, tmp_path, monkeypatch):
         """A managed policy can't reach into the user's project
@@ -753,31 +781,31 @@ class TestLoadManagedRules:
         dir only. An escape attempt is left as a literal token."""
         managed_dir = tmp_path / "managed"
         managed_dir.mkdir()
-        (managed_dir / "ember.md").write_text("policy @./detail.md plus @/etc/passwd")
+        (managed_dir / "igni.md").write_text("policy @./detail.md plus @/etc/passwd")
         (managed_dir / "detail.md").write_text("ALLOWED IMPORT")
         monkeypatch.setattr(
-            context_module,
-            "_platform_managed_rules_dir",
+            context_managed_module,
+            "platform_managed_rules_dir",
             lambda: managed_dir,
         )
-        out = load_managed_rules()
+        out = _loader(tmp_path).load_managed()
         assert "ALLOWED IMPORT" in out
         # The escape attempt is preserved literally — not inlined.
         assert "@/etc/passwd" in out
 
 
 class TestManagedPolicyInContextOutput:
-    """The managed policy section appears FIRST in
-    ``load_project_context`` output and is labelled
-    ``# Managed Policy`` so the model can identify it."""
+    """The managed policy section appears FIRST in the merged rules
+    block and is labelled ``# Managed Policy`` so the model can
+    identify it."""
 
     def test_managed_section_appears_first(self, tmp_path, monkeypatch):
         managed_dir = tmp_path / "managed"
         managed_dir.mkdir()
         (managed_dir / "ember.md").write_text("MANAGED LINE")
         monkeypatch.setattr(
-            context_module,
-            "_platform_managed_rules_dir",
+            context_managed_module,
+            "platform_managed_rules_dir",
             lambda: managed_dir,
         )
         # Project also has its own rules — managed should still
@@ -785,7 +813,7 @@ class TestManagedPolicyInContextOutput:
         project = tmp_path / "project"
         project.mkdir()
         (project / "ember.md").write_text("PROJECT LINE")
-        out = load_project_context(project)
+        out = _loader(project).load_all().render()
         assert "# Managed Policy" in out
         assert "MANAGED LINE" in out
         assert "PROJECT LINE" in out
@@ -799,7 +827,7 @@ class TestManagedPolicyInContextOutput:
         project = tmp_path / "project"
         project.mkdir()
         (project / "ember.md").write_text("PROJECT LINE")
-        out = load_project_context(project)
+        out = _loader(project).load_all().render()
         assert "# Managed Policy" not in out
         assert "PROJECT LINE" in out
 
@@ -807,28 +835,24 @@ class TestManagedPolicyInContextOutput:
 def _redirect_memory_dirs(monkeypatch, tmp_path, *, with_claude=False):
     """Point both per-project memory dir lookups at sandbox paths
     under ``tmp_path``. Default ``with_claude=False`` so a test
-    that only writes an ember-native MEMORY.md doesn't
-    accidentally pick up whatever's in the user's real
+    that only writes an igni-native MEMORY.md doesn't accidentally
+    pick up whatever's in the user's real
     ``~/.claude/projects/.../memory/`` (which the slug derivation
     won't normally produce a hit for, but be safe).
 
-    Patches BOTH ``context`` and ``context_memory`` — the actual
-    implementations moved to ``context_memory`` in the refactor,
-    but ``context`` re-exports the names for legacy callers. Tests
-    load the re-exports; ``load_memory_index`` looks up the source
-    module's names. Patching only one leaves the other in place
-    and the redirect silently doesn't apply."""
-    from igni_core.core.utils import context_memory as context_memory_module
-
-    igni_dir = tmp_path / "ember_memory"
+    Patches the module that owns the lookups —
+    :class:`context_memory.ProjectMemoryBank` resolves them on the
+    module namespace at call time, so patching them here is what
+    the bank reads.
+    """
+    igni_dir = tmp_path / "igni_memory"
     claude_dir = tmp_path / "claude_memory" if with_claude else tmp_path / "no_claude_memory"
 
     ember_fn = lambda _pd, _d=igni_dir: _d  # noqa: E731
     claude_fn = lambda _pd, _d=claude_dir: _d  # noqa: E731
 
-    for mod in (context_module, context_memory_module):
-        monkeypatch.setattr(mod, "_igni_project_memory_dir", ember_fn)
-        monkeypatch.setattr(mod, "_claude_project_memory_dir", claude_fn)
+    monkeypatch.setattr(context_memory_module, "_igni_project_memory_dir", ember_fn)
+    monkeypatch.setattr(context_memory_module, "_claude_project_memory_dir", claude_fn)
     return igni_dir, claude_dir
 
 
@@ -855,26 +879,26 @@ class TestProjectMemorySlug:
         assert slug_abs == slug_rel
 
     def test_dir_paths_match_published_convention(self):
-        """The ember and claude memory dirs are siblings under
+        """The igni and claude memory dirs are siblings under
         their respective home-dir bases."""
-        ember = _igni_project_memory_dir(Path("/Users/x/proj"))
+        igni = _igni_project_memory_dir(Path("/Users/x/proj"))
         claude = _claude_project_memory_dir(Path("/Users/x/proj"))
-        assert ember.parts[-3:] == ("projects", "-Users-x-proj", "memory")
+        assert igni.parts[-3:] == ("projects", "-Users-x-proj", "memory")
         assert claude.parts[-3:] == ("projects", "-Users-x-proj", "memory")
-        assert CONFIG_DIR in ember.parts
+        assert CONFIG_DIR in igni.parts
         assert ".claude" in claude.parts
 
 
 class TestLoadMemoryIndex:
-    def test_reads_ember_memory_md(self, tmp_path, monkeypatch):
+    def test_reads_igni_memory_md(self, tmp_path, monkeypatch):
         igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
         igni_dir.mkdir()
         (igni_dir / "MEMORY.md").write_text("ONE\nTWO\nTHREE\n")
-        assert load_memory_index(tmp_path) == "ONE\nTWO\nTHREE\n"
+        assert ProjectMemoryBank(tmp_path).load_index() == "ONE\nTWO\nTHREE\n"
 
     def test_returns_empty_when_no_index(self, tmp_path, monkeypatch):
         _redirect_memory_dirs(monkeypatch, tmp_path)
-        assert load_memory_index(tmp_path) == ""
+        assert ProjectMemoryBank(tmp_path).load_index() == ""
 
     def test_line_cap_at_200(self, tmp_path, monkeypatch):
         igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
@@ -882,7 +906,7 @@ class TestLoadMemoryIndex:
         # 250 short lines — only the first 200 should load.
         body = "".join(f"line{i}\n" for i in range(250))
         (igni_dir / "MEMORY.md").write_text(body)
-        out = load_memory_index(tmp_path)
+        out = ProjectMemoryBank(tmp_path).load_index()
         assert "line0" in out
         assert "line199" in out  # 200th line (zero-indexed)
         assert "line200" not in out
@@ -894,7 +918,7 @@ class TestLoadMemoryIndex:
         # 30 KB on a single line (well under the 200-line cap).
         big = "x" * 30_000 + "\n"
         (igni_dir / "MEMORY.md").write_text(big)
-        out = load_memory_index(tmp_path)
+        out = ProjectMemoryBank(tmp_path).load_index()
         assert len(out.encode("utf-8")) <= 25_000
         # Truncation drops the trailing newline; payload starts with x's.
         assert out.startswith("x")
@@ -908,39 +932,41 @@ class TestLoadMemoryIndex:
         # Pad to just under 25_000 bytes, then add a 4-byte emoji
         # that straddles the cap boundary.
         padding = "a" * 24_998
-        (igni_dir / "MEMORY.md").write_text(padding + "🔥\n")
-        out = load_memory_index(tmp_path)
+        (igni_dir / "MEMORY.md").write_text(padding + "\U0001f525\n")
+        out = ProjectMemoryBank(tmp_path).load_index()
         # Result is valid UTF-8 (re-decoding doesn't raise).
         out.encode("utf-8").decode("utf-8")
         # The fire emoji is the last 4 bytes — at byte cap 25_000
         # with 24_998 padding, only 2 of the 4 bytes fit and get
         # discarded. So the emoji shouldn't appear.
-        assert "🔥" not in out
+        assert "\U0001f525" not in out
 
     def test_claude_fallback_when_cross_tool_enabled(self, tmp_path, monkeypatch):
         _, claude_dir = _redirect_memory_dirs(monkeypatch, tmp_path, with_claude=True)
         claude_dir.mkdir()
         (claude_dir / "MEMORY.md").write_text("CC-NATIVE")
-        # No ember-native file present → falls back to CC's.
-        assert load_memory_index(tmp_path, read_claude_memory=True) == "CC-NATIVE"
+        # No igni-native file present → falls back to CC's.
+        bank = ProjectMemoryBank(tmp_path, read_claude_fallback=True)
+        assert bank.load_index() == "CC-NATIVE"
 
     def test_claude_fallback_skipped_when_disabled(self, tmp_path, monkeypatch):
         _, claude_dir = _redirect_memory_dirs(monkeypatch, tmp_path, with_claude=True)
         claude_dir.mkdir()
         (claude_dir / "MEMORY.md").write_text("CC-NATIVE")
-        assert load_memory_index(tmp_path, read_claude_memory=False) == ""
+        bank = ProjectMemoryBank(tmp_path, read_claude_fallback=False)
+        assert bank.load_index() == ""
 
-    def test_ember_wins_over_claude_when_both_exist(self, tmp_path, monkeypatch):
-        """Ember-native is the preferred source. If both files
-        exist, only the ember version loads — concatenation would
+    def test_igni_wins_over_claude_when_both_exist(self, tmp_path, monkeypatch):
+        """The igni-native location is the preferred source. If both
+        files exist, only the igni version loads — concatenation would
         duplicate near-identical memories during a mid-migration."""
         igni_dir, claude_dir = _redirect_memory_dirs(monkeypatch, tmp_path, with_claude=True)
         igni_dir.mkdir()
         claude_dir.mkdir()
-        (igni_dir / "MEMORY.md").write_text("EMBER")
+        (igni_dir / "MEMORY.md").write_text("IGNI")
         (claude_dir / "MEMORY.md").write_text("CLAUDE")
-        out = load_memory_index(tmp_path)
-        assert "EMBER" in out
+        out = ProjectMemoryBank(tmp_path).load_index()
+        assert "IGNI" in out
         assert "CLAUDE" not in out
 
 
@@ -958,8 +984,8 @@ class TestMemoryIndexInContextOutput:
         managed_dir.mkdir()
         (managed_dir / "ember.md").write_text("MANAGED")
         monkeypatch.setattr(
-            context_module,
-            "_platform_managed_rules_dir",
+            context_managed_module,
+            "platform_managed_rules_dir",
             lambda: managed_dir,
         )
 
@@ -971,12 +997,12 @@ class TestMemoryIndexInContextOutput:
         # ``project`` path produces a different slug than
         # ``tmp_path``.
         monkeypatch.setattr(
-            context_module,
+            context_memory_module,
             "_igni_project_memory_dir",
             lambda _pd, _d=igni_dir: _d,
         )
 
-        out = load_project_context(project)
+        out = _loader(project).load_all().render()
         assert "# Managed Policy" in out
         assert "# Memory Index" in out
         assert "REMEMBERED FACT" in out
@@ -988,7 +1014,7 @@ class TestMemoryIndexInContextOutput:
         project = tmp_path / "project"
         project.mkdir()
         (project / "ember.md").write_text("PROJECT")
-        out = load_project_context(project)
+        out = _loader(project).load_all().render()
         assert "# Memory Index" not in out
         assert "PROJECT" in out
 
@@ -997,19 +1023,19 @@ class TestEnsureMemoryDir:
     def test_creates_when_missing(self, tmp_path, monkeypatch):
         home = tmp_path / "home"
         monkeypatch.setattr(Path, "home", lambda: home)
-        target = ensure_memory_dir(tmp_path / "project")
+        target = ProjectMemoryBank(tmp_path / "project").ensure()
         assert target.is_dir()
         assert f"{CONFIG_DIR}/projects/" in str(target)
 
     def test_idempotent_when_existing(self, tmp_path, monkeypatch):
         home = tmp_path / "home"
         monkeypatch.setattr(Path, "home", lambda: home)
-        first = ensure_memory_dir(tmp_path / "project")
+        first = ProjectMemoryBank(tmp_path / "project").ensure()
         # Drop a marker file inside the dir.
         marker = first / "marker.txt"
         marker.write_text("kept")
         # Second call must not wipe the existing dir.
-        second = ensure_memory_dir(tmp_path / "project")
+        second = ProjectMemoryBank(tmp_path / "project").ensure()
         assert second == first
         assert marker.read_text() == "kept"
 
@@ -1025,8 +1051,8 @@ class TestEnsureMemoryDir:
             raise OSError("read-only")
 
         monkeypatch.setattr(Path, "mkdir", _exploding_mkdir)
-        with caplog.at_level(logging.DEBUG, logger="igni_core.core.utils.context"):
-            target = ensure_memory_dir(tmp_path / "project")
+        with caplog.at_level(logging.DEBUG, logger="igni_core.core.utils.context_memory"):
+            target = ProjectMemoryBank(tmp_path / "project").ensure()
         # Returns a path even on failure.
         assert isinstance(target, Path)
 
@@ -1036,13 +1062,13 @@ class TestMemoryWritebackInstructions:
     persist memories during a conversation (row 61)."""
 
     def test_includes_memory_dir_path(self, tmp_path):
-        block = memory_writeback_instructions(tmp_path)
+        block = ProjectMemoryBank(tmp_path).writeback_instructions()
         # Path appears verbatim so the agent knows WHERE to save.
         assert f"{CONFIG_DIR}/projects/" in block
         assert "memory" in block
 
     def test_names_all_four_types(self, tmp_path):
-        block = memory_writeback_instructions(tmp_path)
+        block = ProjectMemoryBank(tmp_path).writeback_instructions()
         for memory_type in ("user", "feedback", "project", "reference"):
             assert memory_type in block
 
@@ -1050,7 +1076,7 @@ class TestMemoryWritebackInstructions:
         """The block must explicitly tell the agent NOT to
         save derivable things — otherwise the memory bank
         fills with noise."""
-        block = memory_writeback_instructions(tmp_path)
+        block = ProjectMemoryBank(tmp_path).writeback_instructions()
         assert "NOT to save" in block or "not save" in block.lower()
         assert "git" in block.lower()
         # Specifically calls out code-patterns / paths as derivable.
@@ -1060,7 +1086,7 @@ class TestMemoryWritebackInstructions:
         """Concrete file format with frontmatter so the agent
         produces consistent memories — otherwise the index
         update step is brittle."""
-        block = memory_writeback_instructions(tmp_path)
+        block = ProjectMemoryBank(tmp_path).writeback_instructions()
         assert "name:" in block
         assert "description:" in block
         # Metadata.type lists the four valid types.
@@ -1069,5 +1095,5 @@ class TestMemoryWritebackInstructions:
     def test_mentions_memory_index_file(self, tmp_path):
         """Agent must know about MEMORY.md as the index so
         the read-side prefix budget (row 18) keeps working."""
-        block = memory_writeback_instructions(tmp_path)
+        block = ProjectMemoryBank(tmp_path).writeback_instructions()
         assert "MEMORY.md" in block

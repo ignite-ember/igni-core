@@ -17,7 +17,7 @@ from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.tools.plan import PlanSubmittedEvent
-from igni_core.core.utils import context as ctx_mod
+from igni_core.core.utils import context_user as ctx_user_mod
 
 
 def _runs_db() -> MagicMock:
@@ -43,7 +43,7 @@ def _session_patches(**overrides):
     """Return a list of patch objects for all Session dependencies.
 
     *overrides* lets callers change specific return_values, e.g.
-    ``_session_patches(load_project_context="ctx")``.
+    ``_session_patches(Agent=None)``.
     """
     defaults = {
         "ProjectInitializer": None,
@@ -51,7 +51,7 @@ def _session_patches(**overrides):
         "AuditLogger": None,
         "HookLoader": None,
         "HookExecutor": None,
-        "load_project_context": "",
+        "RulesContextLoader": "",
         "AgentPool": None,
         "SkillPool": None,
         "ModelRegistry": None,
@@ -92,6 +92,11 @@ def _patches_for(defaults: dict) -> list:
     patches = []
     for name, rv in defaults.items():
         shared = MagicMock() if name[0].isupper() else MagicMock(return_value=rv)
+        if name == "RulesContextLoader":
+            # The session builds ``RulesContextLoader(...).load_all().render()``
+            # — the mock has to answer that whole chain with a string, or
+            # ``project_instructions`` ends up a MagicMock.
+            shared.return_value.load_all.return_value.render.return_value = rv
         if name == "AgentPool":
             # A mocked pool has no agents: an empty catalog, nothing unresolved.
             shared.return_value.list_agents.return_value = []
@@ -402,7 +407,7 @@ class TestSessionLearning:
 
 def _patches_with_real_context_loader():
     """Same set of mocks as ``_session_patches`` but leaves
-    ``load_project_context`` un-mocked so the real loader fires and we can
+    ``RulesContextLoader`` un-mocked so the real loader fires and we can
     verify that rule files on disk actually reach the agent."""
     overrides = {
         "ProjectInitializer": None,
@@ -454,10 +459,10 @@ class TestRulesReachAgent:
     def _isolate_user_rules(self, monkeypatch, tmp_path, *, claude_dir=None):
         """Redirect user-rule lookups into ``tmp_path`` so the test host's
         real ``~/.igni/`` and ``~/.claude/`` never leak in."""
-        monkeypatch.setattr(ctx_mod, "USER_RULES_PATH", tmp_path / "_no_legacy.md")
-        monkeypatch.setattr(ctx_mod, "USER_RULES_DIR", tmp_path / "_no_user_dir")
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_PATH", tmp_path / "_no_legacy.md")
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_DIR", tmp_path / "_no_user_dir")
         monkeypatch.setattr(
-            ctx_mod,
+            ctx_user_mod,
             "CLAUDE_USER_RULES_DIR",
             claude_dir if claude_dir is not None else tmp_path / "_no_claude_dir",
         )
@@ -489,9 +494,9 @@ class TestRulesReachAgent:
     def test_user_legacy_rules_md_reaches_agent_instructions(self, tmp_path, monkeypatch):
         legacy = tmp_path / "rules.md"
         legacy.write_text("SENTINEL_USER_LEGACY_ABC")
-        monkeypatch.setattr(ctx_mod, "USER_RULES_PATH", legacy)
-        monkeypatch.setattr(ctx_mod, "USER_RULES_DIR", tmp_path / "_no_user_dir")
-        monkeypatch.setattr(ctx_mod, "CLAUDE_USER_RULES_DIR", tmp_path / "_no_claude_dir")
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_PATH", legacy)
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_DIR", tmp_path / "_no_user_dir")
+        monkeypatch.setattr(ctx_user_mod, "CLAUDE_USER_RULES_DIR", tmp_path / "_no_claude_dir")
 
         project = tmp_path / "proj"
         project.mkdir()
@@ -516,9 +521,9 @@ class TestRulesReachAgent:
         (user_dir / "commit-style.md").write_text("SENTINEL_USER_DIR_RULE_111")
         (user_dir / "lint.md").write_text("SENTINEL_USER_DIR_RULE_222")
 
-        monkeypatch.setattr(ctx_mod, "USER_RULES_PATH", tmp_path / "_no_legacy.md")
-        monkeypatch.setattr(ctx_mod, "USER_RULES_DIR", user_dir)
-        monkeypatch.setattr(ctx_mod, "CLAUDE_USER_RULES_DIR", tmp_path / "_no_claude_dir")
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_PATH", tmp_path / "_no_legacy.md")
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_DIR", user_dir)
+        monkeypatch.setattr(ctx_user_mod, "CLAUDE_USER_RULES_DIR", tmp_path / "_no_claude_dir")
 
         project = tmp_path / "proj"
         project.mkdir()
@@ -604,9 +609,9 @@ class TestRulesReachAgent:
         claude_dir.mkdir()
         (claude_dir / "two.md").write_text("SENTINEL_TRIPLE_CLAUDE")
 
-        monkeypatch.setattr(ctx_mod, "USER_RULES_PATH", legacy)
-        monkeypatch.setattr(ctx_mod, "USER_RULES_DIR", igni_dir)
-        monkeypatch.setattr(ctx_mod, "CLAUDE_USER_RULES_DIR", claude_dir)
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_PATH", legacy)
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_DIR", igni_dir)
+        monkeypatch.setattr(ctx_user_mod, "CLAUDE_USER_RULES_DIR", claude_dir)
 
         project = tmp_path / "proj"
         project.mkdir()
