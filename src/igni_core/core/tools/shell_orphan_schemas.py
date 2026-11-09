@@ -74,15 +74,17 @@ class RehydrateResult(BaseModel):
     ``rehydrate_orphan_processes``. Callers plumb ``reason``
     straight through to
     :class:`~igni_core.backend.schemas_lifecycle.RehydrateOutcome`
-    so the three failure branches (store init, list_all, per-row
-    remove) become observable at INFO level in the boot summary.
+    so the failure branches (store init, list_all) become
+    observable at INFO level in the boot summary.
 
     * ``ok`` — ``True`` iff the pass completed without an
       unhandled exception. A zero-surfaced no-op is still
       ``ok=True``.
-    * ``surfaced`` — number of alive orphans injected into the
-      registry.
-    * ``pruned`` — number of dead rows removed from the store.
+    * ``surfaced`` — number of rows surfaced: alive orphans
+      injected into the registry plus finished ones shown as
+      history.
+    * ``pruned`` — number of history rows dropped for being past
+      the retention window.
     * ``reason`` — short label + exception message on failure, or
       an empty string on success.
     """

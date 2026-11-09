@@ -86,7 +86,7 @@ class RehydrateController:
         previous BE lifetime.
 
         Builds an :class:`OrphanRehydrator` (typed store-init
-        failure surfaces via ``build_failure.reason``) then
+        failure surfaces via ``build.result.reason``) then
         plumbs the :class:`RehydrateResult.reason` straight into
         :class:`RehydrateOutcome` so failure modes stay
         observable at INFO instead of collapsing to a silent
@@ -97,16 +97,16 @@ class RehydrateController:
         supervisor.configure_log_store(project_dir)
         if project_dir is None:
             return RehydrateOutcome(ok=True, step="orphan_processes", reason="no project_dir")
-        rehydrator, build_failure = build_rehydrator(supervisor, project_dir)
-        if rehydrator is None:
-            # ``build_failure`` is populated when the store
+        build = build_rehydrator(supervisor, project_dir)
+        if build.rehydrator is None:
+            # ``build.result`` carries the reason when the store
             # constructor raised — surface the typed reason
             # instead of the silent "return 0" the legacy wrapper
             # kept.
-            reason = build_failure.reason if build_failure is not None else "unknown"
+            reason = build.result.reason or "unknown"
             return RehydrateOutcome(ok=False, step="orphan_processes", reason=reason)
         try:
-            result = await rehydrator.run()
+            result = await build.rehydrator.run()
         except Exception as exc:
             return RehydrateOutcome(ok=False, step="orphan_processes", reason=str(exc))
         return RehydrateOutcome(

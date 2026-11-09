@@ -53,6 +53,7 @@ from igni_core.core.tools.process_store import (
     BackgroundProcessRow,
     BackgroundProcessStore,
 )
+from igni_core.core.tools.process_store_schemas import UpsertResult
 from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.core.tools.shell_orphan import (
     rehydrate_orphan_processes,
@@ -326,8 +327,13 @@ class TestOrphanRehydratorRun:
             async def list_all(self) -> list[BackgroundProcessRow]:
                 raise RuntimeError("db locked")
 
-            async def remove(self, pid: int) -> None:  # pragma: no cover
-                return None
+            async def finish(  # pragma: no cover
+                self, pid: int, exit_code: int | None
+            ) -> UpsertResult:
+                return UpsertResult(ok=True)
+
+            async def prune_history(self, *, older_than_seconds: float) -> int:  # pragma: no cover
+                return 0
 
             async def upsert(self, row: BackgroundProcessRow) -> None:  # pragma: no cover
                 return None
@@ -360,25 +366,27 @@ class TestOrphanRehydratorRun:
             BackgroundProcessRow(pid=dead_pid, cmd="ghost", pgid=dead_pid, started_at=0)
         )
 
-        class _FailingRemoveStore:
+        class _FailingFinishStore:
             def __init__(self, inner: BackgroundProcessStore) -> None:
                 self._inner = inner
 
             async def list_all(self) -> list[BackgroundProcessRow]:
                 return await self._inner.list_all()
 
-            async def remove(self, pid: int) -> None:  # pragma: no cover
-                return None
+            async def prune_history(self, *, older_than_seconds: float) -> int:
+                return await self._inner.prune_history(older_than_seconds=older_than_seconds)
 
-            async def finish(self, pid: int, exit_code: int | None) -> None:
-                raise RuntimeError("cannot stamp")
+            async def finish(self, pid: int, exit_code: int | None) -> UpsertResult:
+                # The store's own contract: a failed write is a typed
+                # result, not an exception.
+                return UpsertResult(ok=False, reason="cannot stamp")
 
             async def upsert(self, row: BackgroundProcessRow) -> None:  # pragma: no cover
                 return None
 
         rehydrator = OrphanRehydrator(
             supervisors.default(),
-            _FailingRemoveStore(real_store),  # type: ignore[arg-type]
+            _FailingFinishStore(real_store),  # type: ignore[arg-type]
         )
         result = await rehydrator.run()
 
@@ -392,7 +400,7 @@ class TestOrphanRehydratorRun:
         self, tmp_path: Path
     ) -> None:
         # If the store constructor itself raises, ``build_rehydrator``
-        # returns ``(None, RehydrateResult(ok=False, reason=...))`` so
+        # returns a build with no rehydrator and a failed result, so
         # the caller can surface the store-init failure instead of
         # silently falling back to "return 0".
         original_resolver = ps_mod._resolve_database
@@ -402,14 +410,13 @@ class TestOrphanRehydratorRun:
 
         ps_mod._resolve_database = _broken_resolver  # type: ignore[assignment]
         try:
-            rehydrator, failure = build_rehydrator(supervisors.default(), tmp_path)
+            build = build_rehydrator(supervisors.default(), tmp_path)
         finally:
             ps_mod._resolve_database = original_resolver
 
-        assert rehydrator is None
-        assert failure is not None
-        assert failure.ok is False
-        assert "store_init" in failure.reason
+        assert build.rehydrator is None
+        assert build.result.ok is False
+        assert "store_init" in build.result.reason
 
 
 # ── ProcessesController.stop for orphans ────────

@@ -77,12 +77,12 @@ async def rehydrate_orphan_processes(project_dir: str | Path | None) -> int:
     the direct path.
     """
     supervisor = supervisors.default()
-    rehydrator, build_failure = build_rehydrator(supervisor, project_dir)
-    if rehydrator is None:
-        # ``build_failure`` is populated when store construction
+    build = build_rehydrator(supervisor, project_dir)
+    if build.rehydrator is None:
+        # ``build.result`` carries the reason when store construction
         # raised — legacy contract returns ``0`` in that case.
         return 0
-    result = await rehydrator.run()
+    result = await build.rehydrator.run()
     return result.surfaced
 
 
