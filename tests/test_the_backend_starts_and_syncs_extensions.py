@@ -29,6 +29,7 @@ from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.health import ExtensionHealth
 from igni_core.extensions.host.hooks import ExtensionHooks
+from igni_core.extensions.host.processes import ExtensionProcesses
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
@@ -87,10 +88,11 @@ def runtime(mcp: StubMcp) -> ExtensionsRuntime:
     rpc = ExtensionRpc(ExtensionRegistry())
     prompts = PromptContributions()
     hooks = ExtensionHooks(registry=rpc.registry)
+    processes = ExtensionProcesses()
     return ExtensionsRuntime(
         rpc=rpc,
         origins=ExtensionOrigins(),
-        health=ExtensionHealth(registry=rpc.registry, rpc=rpc, mcp=mcp),
+        health=ExtensionHealth(registry=rpc.registry, rpc=rpc, mcp=mcp, processes=processes),
         contributions=ExtensionContributions(
             registry=rpc.registry,
             rpc=rpc,
@@ -100,6 +102,7 @@ def runtime(mcp: StubMcp) -> ExtensionsRuntime:
         ),
         prompts=prompts,
         hooks=hooks,
+        processes=processes,
     )
 
 

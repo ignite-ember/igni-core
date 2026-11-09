@@ -17,7 +17,6 @@ from igni_core.core.db.urls import DatabaseUrl, Dialect
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.layer import Layers, layers
 from igni_core.core.paths import CONFIG_DIR
-from igni_core.extensions.host.processes import ExtensionProcesses
 from tests.egress_guard import EgressGuard, InternalNetwork
 from tests.root_guard import RootGuard
 from tests.storage_backends import ThrowawayPostgres
@@ -221,7 +220,6 @@ def _no_extension_hooks_left_behind():
     """
     yield
     extension_hook_gate.install(None)
-    ExtensionProcesses.reset_shared()
 
 
 @pytest.fixture

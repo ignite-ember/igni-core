@@ -41,6 +41,7 @@ from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.host.model_config import HostModelConfig
+from igni_core.extensions.host.processes import ExtensionProcesses
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.values import SessionAttached
 from igni_core.extensions.impact import IgniCommands
@@ -218,7 +219,7 @@ class HeadlessExtensions:
                 store=store,
             )
         )
-        self._channel = HostChannel(model, hooks=hooks)
+        self._channel = HostChannel(model, hooks=hooks, processes=ExtensionProcesses())
         extension_hook_gate.install(hooks)
         person = SignedInPerson(settings.auth.credentials_file, store)
         session.mcp_manager.extension_request_meta = person.meta

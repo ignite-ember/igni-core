@@ -72,10 +72,10 @@ class ExtensionHealth:
         rpc: ExtensionRpc,
         mcp: Any,
         interval_s: float = DEFAULT_INTERVAL_S,
-        processes: ExtensionProcesses | None = None,
+        processes: ExtensionProcesses,
     ) -> None:
         self._registry = registry
-        self._processes = processes if processes is not None else ExtensionProcesses.shared()
+        self._processes = processes
         self._rpc = rpc
         self._mcp = mcp
         self._interval = interval_s

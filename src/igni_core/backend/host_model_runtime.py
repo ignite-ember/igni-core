@@ -61,7 +61,11 @@ class HostModelRuntime:
             notices=notices,
             workspace_signals=signals,
         )
-        return cls(model=model, channel=HostChannel(model, hooks=runtime.hooks), signals=signals)
+        return cls(
+            model=model,
+            channel=HostChannel(model, hooks=runtime.hooks, processes=runtime.processes),
+            signals=signals,
+        )
 
     @property
     def model(self) -> HostModel:

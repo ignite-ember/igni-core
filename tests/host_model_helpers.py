@@ -58,6 +58,7 @@ from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
+from igni_core.extensions.host.processes import ExtensionProcesses
 from igni_core.extensions.host.wire import Op, Request
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
@@ -463,7 +464,7 @@ class HostRig:
             store=self.store,
             strict=strict,
         )
-        self.channel = HostChannel(self.model, hooks=self.hooks)
+        self.channel = HostChannel(self.model, hooks=self.hooks, processes=ExtensionProcesses())
         return self
 
     async def stop(self) -> None:

@@ -14,6 +14,7 @@ from igni_core.extensions.contributions import (
 )
 from igni_core.extensions.health import ExtensionHealth
 from igni_core.extensions.host.hooks import ExtensionHooks
+from igni_core.extensions.host.processes import ExtensionProcesses
 from igni_core.extensions.impact import IgniCommands
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry
@@ -40,6 +41,7 @@ class ExtensionsRuntime:
         contributions: ExtensionContributions,
         prompts: PromptContributions,
         hooks: ExtensionHooks,
+        processes: ExtensionProcesses,
     ) -> None:
         self._rpc = rpc
         self._origins = origins
@@ -47,6 +49,7 @@ class ExtensionsRuntime:
         self._contributions = contributions
         self._prompts = prompts
         self._hooks = hooks
+        self._processes = processes
 
     @classmethod
     def build(
@@ -60,9 +63,13 @@ class ExtensionsRuntime:
     ) -> ExtensionsRuntime:
         rpc = ExtensionRpc(ExtensionRegistry())
         origins = ExtensionOrigins()
+        # Which process group each extension's is, so a hung one can be
+        # ended: the channel hears the claim and the health monitor acts
+        # on it, and they are two ends of one set of groups.
+        processes = ExtensionProcesses()
         # Keeps each extension's state true after install, and asks at once
         # when a call fails rather than waiting out its interval.
-        health = ExtensionHealth(registry=rpc.registry, rpc=rpc, mcp=mcp)
+        health = ExtensionHealth(registry=rpc.registry, rpc=rpc, mcp=mcp, processes=processes)
         rpc.watch(health.on_call_failed)
         # The extensions' hooks: one set for the deployment, read from the
         # registry the rest of the extensions answer out of.
@@ -89,6 +96,7 @@ class ExtensionsRuntime:
             contributions=contributions,
             prompts=prompts,
             hooks=hooks,
+            processes=processes,
         )
 
     @property
@@ -99,6 +107,11 @@ class ExtensionsRuntime:
     def hooks(self) -> ExtensionHooks:
         """The extensions' hooks — the one set the deployment answers on."""
         return self._hooks
+
+    @property
+    def processes(self) -> ExtensionProcesses:
+        """The extensions' process groups — the ones the channel claims."""
+        return self._processes
 
     @property
     def registry(self) -> ExtensionRegistry:
