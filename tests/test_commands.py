@@ -7,6 +7,7 @@ import pytest
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.backend.command_result import UnknownCommandResult
 from igni_core.core.session.commands import InteractiveCommandDispatcher
+from igni_core.core.session.memory_ops import MemoryReadResult
 from igni_core.core.session.schemas import SessionListRow
 
 
@@ -47,7 +48,7 @@ def _make_session():
     session.settings.guardrails.moderation = False
     session.settings.orchestration.max_total_agents = 20
     session.settings.orchestration.max_nesting_depth = 3
-    session.memory_mgr.get_memories = AsyncMock(return_value=[])
+    session.memory_mgr.get_memories = AsyncMock(return_value=MemoryReadResult.ok([]))
     session.mcp_manager.list_servers.return_value = []
     session.mcp_manager.list_connected.return_value = []
     session.code_index_sync.sync_now = AsyncMock()
