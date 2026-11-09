@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from igni_core.backend.pool_replier import PoolReplier
 from igni_core.backend.pool_rpcs.base import PoolRefusal, PoolRpc
 from igni_core.backend.rpc_binding import rpc
@@ -11,6 +13,8 @@ from igni_core.backend.schemas_rpc import AttachSessionResult
 from igni_core.backend.session_router import SessionRouter
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod, RpcScope
+
+logger = logging.getLogger(__name__)
 
 
 class AttachSessionRpc(PoolRpc):
@@ -58,5 +62,11 @@ class AttachSessionRpc(PoolRpc):
         answer = await self.answer(request)
         await replier.reply(request, answer)
         if isinstance(answer.result, AttachSessionResult):
-            runtime = await self._sessions.pool.get_or_create(answer.result.session_id)
-            await runtime.replay_waiting_approvals()
+            try:
+                runtime = await self._sessions.pool.get_or_create(answer.result.session_id)
+                await runtime.replay_waiting_approvals()
+            except Exception as exc:
+                # The attach was answered; what it shows again afterwards is
+                # extra, and its failure is no reason to tell every window
+                # routing broke.
+                logger.error("replaying approvals after attach failed: %s", exc, exc_info=True)

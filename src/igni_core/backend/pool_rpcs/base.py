@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from abc import ABC
 from typing import Any, ClassVar
 
@@ -13,6 +14,8 @@ from igni_core.backend.rpc_binding import RpcArgsError, RpcBinding
 from igni_core.backend.schemas_pool import PoolAnswer
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
+
+logger = logging.getLogger(__name__)
 
 
 class PoolRefusal(Exception):
@@ -58,6 +61,12 @@ class PoolRpc(ABC):
                 result = await result
         except PoolRefusal as exc:
             return PoolAnswer.failed(str(exc))
+        except Exception as exc:
+            # A call that broke is still answered: unanswered, the caller
+            # would wait out its timeout while every window was told
+            # "session routing failed".
+            logger.error("%s failed: %s", method.value, exc, exc_info=True)
+            return PoolAnswer.failed(f"{method.value}: {exc}")
         if not isinstance(result, BaseModel):
             raise TypeError(f"{method.value} answered {type(result).__name__}, not a model")
         return PoolAnswer.ok(result, dump_mode="json" if method in self.JSON_DUMPED else "python")

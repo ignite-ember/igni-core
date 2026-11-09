@@ -632,3 +632,21 @@ async def test_serve_stops_once_shutdown_is_set(tmp_path):
     await orchestrator.serve(stop)
 
     assert backend.handled == []
+
+
+async def test_a_pool_level_call_that_breaks_is_answered_with_its_error(tmp_path):
+    """A pool-level call that raised used to reach the crash boundary: no
+    answer for the caller, who waited out its timeout, and "session routing
+    failed" for every window. It is answered, to the caller, with the error."""
+    orchestrator, _, transport = _orchestrator(tmp_path)
+
+    async def sign_in(token: str, organisation: str | None) -> _Credential:
+        raise OSError("disk full")
+
+    orchestrator.mount(VmSignInRpc(sign_in))
+    await orchestrator.dispatch(_rpc(RpcMethod.VM_SIGN_IN, "b1", session_token="tok"))
+
+    (answer,) = transport.sent
+    assert isinstance(answer, msg.RPCResponse)
+    assert answer.id == "b1"
+    assert answer.error == "vm_sign_in: disk full"
