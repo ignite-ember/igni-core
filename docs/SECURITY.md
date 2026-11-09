@@ -475,7 +475,7 @@ does not take it on trust (`MessageAdmission.refusal`,
 On the desktop the boundary against other software is the OS user: a process
 that can read the lockfile can read `~/.igni/credentials.json` too, and
 sandboxed extension processes are denied igni's ports (Seatbelt,
-bubblewrap) whatever they can read. The window's own secret is not for
+bubblewrap, AppContainer) whatever they can read. The window's own secret is not for
 that boundary. It is for the agent: the agent runs as the person, so it can
 read anything the lockfile holds, and the person's approvals mean nothing if
 the agent can give them. The secret stays out of every file the agent's
