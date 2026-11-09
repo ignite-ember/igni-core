@@ -11,7 +11,7 @@ Asserting on return values alone would pass even if the call had been
 attempted and failed, which on an air-gapped network it would.
 
 The desktop updater's and runtime's halves live in Rust and are tested
-there (``clients/tauri/src-tauri/src/update_policy.rs``, ``runtime.rs``).
+there (``clients/tauri/src-tauri/src/update_policy.rs``, ``runtime/mod.rs``).
 """
 
 from __future__ import annotations
