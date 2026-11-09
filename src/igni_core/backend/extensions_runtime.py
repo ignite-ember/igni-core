@@ -12,7 +12,6 @@ from igni_core.extensions.contributions import (
     ExtensionConditionReceiver,
     ExtensionContributions,
 )
-from igni_core.extensions.faults import ExtensionFaults
 from igni_core.extensions.health import ExtensionHealth
 from igni_core.extensions.impact import IgniCommands
 from igni_core.extensions.origin import ExtensionOrigins
@@ -109,9 +108,14 @@ class ExtensionsRuntime:
         """The table of what extensions have done to the prompts."""
         return self._prompts
 
-    def attach_faults(self, faults: ExtensionFaults, notifications: NotificationCenter) -> None:
-        """An extension that keeps timing out or crashing is restarted, and the person told."""
-        faults.attach(self.registry)
+    def attach_faults(self, notifications: NotificationCenter) -> None:
+        """An extension that keeps timing out or crashing is restarted, and the person told.
+
+        The counter is the installed set's own
+        (:attr:`~igni_core.extensions.registry.ExtensionRegistry.faults`),
+        so the hooks and the extension RPC fail against the same one.
+        """
+        faults = self.registry.faults
         faults.on_faulty(self._health.restart_faulty)
         faults.on_faulty(FaultNotices(self.registry, notifications).told)
 

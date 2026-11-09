@@ -73,13 +73,13 @@ def registry() -> ExtensionRegistry:
 
 @pytest.fixture
 def faults(registry: ExtensionRegistry) -> ExtensionFaults:
-    found = ExtensionFaults(registry)
-    return found
+    """The count of the installed set: the hooks and the RPC both keep it."""
+    return registry.faults
 
 
 @pytest.fixture
-def hooks(registry: ExtensionRegistry, faults: ExtensionFaults) -> ExtensionHooks:
-    found = ExtensionHooks(timeout=0.2, faults=faults)
+def hooks(registry: ExtensionRegistry) -> ExtensionHooks:
+    found = ExtensionHooks(timeout=0.2)
     found.attach(registry)
     return found
 
@@ -248,8 +248,8 @@ class _Reporting:
 
 
 async def test_a_page_call_that_times_out_counts(registry: ExtensionRegistry) -> None:
-    faults = ExtensionFaults(registry)
-    rpc = ExtensionRpc(registry, faults=faults)
+    faults = registry.faults
+    rpc = ExtensionRpc(registry)
     registry.install(
         manifest("acme.guard", hooks=["PreToolUse"], rpc=["ext.acme.guard.*"]),
         state=ExtensionState.READY,

@@ -31,6 +31,7 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from igni_core.extensions.faults import ExtensionFaults
 from igni_core.extensions.impact import SwitchedOff
 from igni_core.extensions.manifest import ExtensionManifest
 
@@ -128,11 +129,28 @@ class InstalledExtension:
 
 
 class ExtensionRegistry:
-    """The installed set, and the authorisation decision for a call."""
+    """The installed set, and the authorisation decision for a call.
+
+    What is known about each extension lives here — whether it is
+    ready, why not, and how many times in a row it has failed to
+    answer (:attr:`faults`).
+    """
 
     def __init__(self) -> None:
         self._installed: dict[str, InstalledExtension] = {}
         self._watchers: list[Callable[[InstalledExtension | None, str], None]] = []
+        self._faults = ExtensionFaults(self)
+
+    @property
+    def faults(self) -> ExtensionFaults:
+        """How many times in a row each extension has failed to answer.
+
+        One counter for the installed set, so that a hook that times
+        out and a tool call that times out count against the same
+        extension — and so that two registries never share one
+        extension's failures.
+        """
+        return self._faults
 
     def watch(self, callback: Callable[[InstalledExtension | None, str], None]) -> None:
         """Be told whenever an extension appears, changes state or goes.

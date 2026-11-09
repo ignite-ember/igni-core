@@ -83,11 +83,8 @@ class ExtensionHooks:
 
     _shared: ClassVar[ExtensionHooks | None] = None
 
-    def __init__(
-        self, *, timeout: float | None = None, faults: ExtensionFaults | None = None
-    ) -> None:
+    def __init__(self, *, timeout: float | None = None) -> None:
         self._timeout = self.TIMEOUT_S if timeout is None else timeout
-        self._faults = faults if faults is not None else ExtensionFaults.shared()
         self._registry: ExtensionRegistry | None = None
         self._priority: list[str] = []
         self._senders: dict[str, Callable[[str], None]] = {}
@@ -120,7 +117,19 @@ class ExtensionHooks:
     def attach(self, registry: ExtensionRegistry) -> None:
         """Read who hooks what from the installed extensions."""
         self._registry = registry
-        self._faults.attach(registry)
+
+    @property
+    def _faults(self) -> ExtensionFaults:
+        """The counter of the extensions these hooks answer for.
+
+        The hooks are asked about the extensions in their registry, so
+        how often one of them failed to answer is that registry's
+        count — the same count the extension RPC keeps.
+        """
+        registry = self._registry
+        if registry is None:
+            raise RuntimeError("the extension hooks are not attached to a registry")
+        return registry.faults
 
     def set_priority(self, priority: list[str]) -> None:
         """The super admin's priority order of extensions, highest first: hooks run in it."""

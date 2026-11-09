@@ -44,7 +44,6 @@ from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
-from igni_core.extensions.faults import ExtensionFaults
 from igni_core.extensions.principal import SignedInPerson
 from igni_core.extensions.store import ExtensionStore
 
@@ -185,7 +184,7 @@ class BackendApp:
             mcp=backend.mcp_manager,
             login=login,
         )
-        extensions.attach_faults(ExtensionFaults.shared(), notifications.center)
+        extensions.attach_faults(notifications.center)
         router = RpcRouter(
             backend=backend,
             login=login,
