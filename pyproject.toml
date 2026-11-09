@@ -290,7 +290,17 @@ enable_error_code = ["call-arg"]
 # (``protocol/rpc_contract.py``), so the annotation has to be what the
 # handler returns: these checks are on where the contract is read from.
 [[tool.mypy.overrides]]
-module = ["igni_core.backend.rpc_handlers.*", "igni_core.backend.pool_rpcs.*"]
+module = [
+    "igni_core.backend.rpc_handlers.*",
+    "igni_core.backend.pool_rpcs.*",
+    "igni_core.backend.workflow_agent_bridge",
+    "igni_core.backend.workflow_discovery",
+    "igni_core.backend.workflow_layers",
+    "igni_core.backend.workflow_run",
+    "igni_core.backend.workflow_run_registry",
+    "igni_core.backend.workflow_runner",
+    "igni_core.backend.workflow_runtime_process",
+]
 enable_error_code = ["return-value", "arg-type", "attr-defined", "call-arg"]
 
 # The session package's ``MessageTeam`` protocol is a seam: it declares

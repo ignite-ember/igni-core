@@ -85,7 +85,7 @@ class WorkflowRunner:
 
         identity = WorkflowRunIdentity.new(request.name)
         process = await self._runtime.start(
-            identity, envelope, session_id=session.id, args=request.args
+            identity, envelope, session_id=session.session_id, args=request.args
         )
         self._registry.admit(
             WorkflowRun.for_session(

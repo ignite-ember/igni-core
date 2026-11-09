@@ -745,3 +745,34 @@ async def test_runner_passes_args_to_subprocess_as_json_string(
     assert len(captured_args) == 1
     parsed = json.loads(captured_args[0])
     assert parsed == {"file": "src/example.py", "tag": "demo"}
+
+
+async def test_a_run_is_started_for_the_session_s_own_id(tmp_path: Path) -> None:
+    """``Session`` names its id ``session_id``; a run read ``session.id``,
+    which a real session does not have, so every real run failed with
+    ``AttributeError`` while mocked sessions passed."""
+    from types import SimpleNamespace
+
+    from igni_core.backend.workflow_run_registry import WorkflowRunRegistry
+    from igni_core.core.activity.background import BackgroundTasks
+
+    envelope = MagicMock()
+    discovery = MagicMock()
+    discovery.resolve = AsyncMock(return_value=envelope)
+    runtime = MagicMock()
+    runtime.preflight = MagicMock(return_value=None)
+    runtime.start = AsyncMock(return_value=MagicMock())
+    runner = WorkflowRunner(
+        discovery=discovery,
+        runtime=runtime,
+        push=MagicMock(),
+        registry=WorkflowRunRegistry(tasks=BackgroundTasks.shared()),
+    )
+    session = SimpleNamespace(session_id="s-real")  # no ``id``, as a real Session has none
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(WorkflowRun, "for_session", MagicMock())
+        patch.setattr(runner._registry, "admit", MagicMock())
+        await runner.run(request=WorkflowRunRequest(name="smoke"), session=session)  # type: ignore[arg-type]
+
+    assert runtime.start.await_args.kwargs["session_id"] == "s-real"
