@@ -48,6 +48,7 @@ from igni_core.core.plugins.models import (
     PluginManifest,
     PluginSource,
 )
+from igni_core.core.tools.custom_loader_schemas import PluginToolDir
 
 if TYPE_CHECKING:
     from igni_core.core.agents import AgentPool
@@ -301,17 +302,18 @@ class PluginLoader:
         self,
         *,
         disabled: set[str] | None = None,
-    ) -> list[tuple[str, Path]]:
-        """Return ``(plugin_name, tools_dir)`` for every enabled plugin
-        that bundles a ``tools/`` directory.
+    ) -> list[PluginToolDir]:
+        """Return every enabled plugin that bundles a ``tools/``
+        directory, with the name that namespaces it.
 
-        Used by ``load_custom_tools(plugin_tool_dirs=...)``. The
-        returned list preserves plugin discovery order so toolkit
-        registration is deterministic across sessions.
+        The custom-tool loader loads these under
+        ``custom_<plugin>_<file>``. The returned list preserves
+        plugin discovery order so toolkit registration is
+        deterministic across sessions.
         """
         disabled = disabled or set()
         return [
-            (p.name, p.root_path / "tools")
+            PluginToolDir(plugin_name=p.name, tools_dir=p.root_path / "tools")
             for p in self._plugins.values()
             if p.name not in disabled and p.has_tools
         ]

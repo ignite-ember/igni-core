@@ -290,11 +290,12 @@ class TestTheLoadersFindThem:
 
     def test_a_tool_is_scanned(self, cache: GroupPolicyCache, tmp_path: Path):
         from igni_core.core.tools.custom_loader import CustomToolLoader
+        from igni_core.core.workspace_trust import WorkspaceTrust
 
         cache.materialize(
             _pack(_entry("tools", "noop", "# nothing to register\n", content_type="python"))
         )
-        result = CustomToolLoader().discover(
+        result = CustomToolLoader(trust=WorkspaceTrust.shared()).discover(
             tmp_path / "proj",
             group_tools_dir=cache.layout.dir_for("tools"),
         )
@@ -302,6 +303,10 @@ class TestTheLoadersFindThem:
         # It defines no toolkit, so what matters is that the file was
         # read rather than skipped as a missing directory.
         assert not result.failed
+        group_dir = cache.layout.dir_for("tools")
+        assert group_dir not in [
+            skip.path for skip in result.skipped if skip.reason == "not_a_directory"
+        ]
 
     def test_a_hook_loads(self, cache: GroupPolicyCache, tmp_path: Path):
         from igni_core.core.hooks.loader import HookLoader
