@@ -104,7 +104,7 @@ def test_untrusted_project_tool_is_never_imported(repo, tmp_path):
     marker = tmp_path / "tool-ran"
     _tool_that_writes(repo, marker)
 
-    result = CustomToolLoader().discover(repo)
+    result = CustomToolLoader(trust=_trust()).discover(repo)
 
     assert not marker.exists()
     assert not result.toolkits
@@ -115,13 +115,13 @@ def test_trusting_imports_project_tools_and_revoking_stops_it(repo, tmp_path):
     _tool_that_writes(repo, marker)
 
     _trust().trust(repo)
-    result = CustomToolLoader().discover(repo)
+    result = CustomToolLoader(trust=_trust()).discover(repo)
     assert marker.exists()
     assert [t.name for t in result.toolkits] == ["custom_x"]
 
     marker.unlink()
     _trust().revoke(repo)
-    assert not CustomToolLoader().discover(repo).toolkits
+    assert not CustomToolLoader(trust=_trust()).discover(repo).toolkits
     assert not marker.exists()
 
 
@@ -399,7 +399,7 @@ def test_never_keeps_every_folder_untrusted(repo, tmp_path):
     with pytest.raises(TrustRefused):
         _trust().trust(repo)
     assert not _trust().grant_for_run(repo).trusted
-    CustomToolLoader().discover(repo)
+    CustomToolLoader(trust=_trust()).discover(repo)
     assert not marker.exists()
 
 
