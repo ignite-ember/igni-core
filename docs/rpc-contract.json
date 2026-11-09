@@ -9645,7 +9645,7 @@
       "args": {
         "$ref": "#/defs/ExecuteScheduledTaskArgs"
       },
-      "doc": "Run a scheduled task's work now, in this session, and wait for the answer.\n\n``description`` is what the task asks the agent to do (a scheduled\ntask's ``description``). The agent runs it as a stored task firing,\nnot as a live message: its run is not streamed to the windows, and\nthe task's own record is not touched. What its tools push while\nthey work still goes out. Returns the agent's answer as text.\nFails when the organisation's group policy refuses the run, or the\nrun fails.",
+      "doc": "Run a scheduled task's work now, in this session, and wait for the answer.\n\n``description`` is what the task asks the agent to do (a scheduled\ntask's ``description``). The agent runs it as a stored task firing,\nnot as a live message: its run is not streamed to the windows, and\nthe task's own record is not touched. What its tools push while\nthey work still goes out. It is the session's run while it goes:\nit waits for a turn already running, ``get_processing`` reports\nit, and ``cancel_run`` stops it. Returns the agent's answer as\ntext. Fails when the organisation's group policy refuses the run,\nthe run is cancelled, or the run fails.",
       "reply": "rpc_response",
       "result": {
         "type": "string"

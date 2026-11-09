@@ -113,3 +113,48 @@ async def test_a_sub_agent_s_resume_inside_a_running_turn_passes_through() -> No
 
     assert len(got) == 1
     assert controller._current_run_task is parent
+
+
+async def test_a_scheduled_task_run_now_is_the_session_s_run() -> None:
+    """``execute_scheduled_task`` ran the team beside the person's turn,
+    on the same session, unseen by ``get_processing`` and out of
+    ``cancel_run``'s reach."""
+    import pytest
+
+    from igni_core.backend.run_controller import RunCancelledError
+
+    controller = _controller()
+    controller._run_lock = asyncio.Lock()
+    started = asyncio.Event()
+
+    async def work() -> str:
+        started.set()
+        await asyncio.sleep(3600)
+        return "never"
+
+    running = asyncio.create_task(controller.run_unstreamed(work))
+    await started.wait()
+    assert controller._phase.is_active()
+
+    controller.cancel_run()
+    with pytest.raises(RunCancelledError, match="cancelled by user"):
+        await asyncio.wait_for(running, 2)
+    assert not controller._phase.is_active()
+
+
+async def test_a_scheduled_task_waits_for_the_turn_already_running() -> None:
+    controller = _controller()
+    controller._run_lock = asyncio.Lock()
+    order: list[str] = []
+
+    async def work() -> str:
+        order.append("task")
+        return "done"
+
+    async with controller._run_lock:
+        waiting = asyncio.create_task(controller.run_unstreamed(work))
+        await asyncio.sleep(0.05)
+        order.append("turn ends")
+
+    assert await waiting == "done"
+    assert order == ["turn ends", "task"]

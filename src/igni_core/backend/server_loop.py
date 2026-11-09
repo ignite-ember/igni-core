@@ -19,7 +19,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from igni_core.backend.schemas_loop import LoopStatusSnapshot
-from igni_core.backend.server_scheduler import SchedulerController
+from igni_core.backend.server_scheduler import AsRun, SchedulerController
 
 if TYPE_CHECKING:
     from igni_core.core.config.settings import Settings
@@ -49,6 +49,7 @@ class LoopController:
         self,
         session: Session,
         settings: Settings | None,
+        as_run: AsRun | None = None,
     ) -> None:
         self._session = session
         self._settings = settings
@@ -56,7 +57,7 @@ class LoopController:
         # its methods never touch ``settings`` until :meth:`start`
         # is called, so pump-only fixtures that pass ``settings=None``
         # keep working (see ``tests/test_loop.py::_FakeBackend``).
-        self._scheduler = SchedulerController(session=session, settings=settings)
+        self._scheduler = SchedulerController(session=session, settings=settings, as_run=as_run)
 
     @property
     def scheduler(self) -> SchedulerController:

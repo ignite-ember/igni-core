@@ -48,9 +48,11 @@ class SchedulerRpcHandler(RpcHandler):
         task's ``description``). The agent runs it as a stored task firing,
         not as a live message: its run is not streamed to the windows, and
         the task's own record is not touched. What its tools push while
-        they work still goes out. Returns the agent's answer as text.
-        Fails when the organisation's group policy refuses the run, or the
-        run fails.
+        they work still goes out. It is the session's run while it goes:
+        it waits for a turn already running, ``get_processing`` reports
+        it, and ``cancel_run`` stops it. Returns the agent's answer as
+        text. Fails when the organisation's group policy refuses the run,
+        the run is cancelled, or the run fails.
         """
         return await self._controllers.loop.scheduler.execute(args.description)
 

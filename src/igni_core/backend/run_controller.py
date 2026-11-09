@@ -36,8 +36,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator
-from typing import TYPE_CHECKING
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from typing import TYPE_CHECKING, TypeVar
 
 from agno.agent import Agent
 from agno.team import Team
@@ -64,6 +64,13 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+_T = TypeVar("_T")
+
+
+class RunCancelledError(RuntimeError):
+    """The person cancelled the run this work was."""
 
 
 class RunController:
@@ -104,6 +111,9 @@ class RunController:
         # Serialisation + cancellation state — single owner (Pattern 1).
         self._run_lock = asyncio.Lock()
         self._current_run_task: asyncio.Task | None = None
+        # The task ``cancel_run`` cancelled, so the work it was running can
+        # tell the person's cancel from any other.
+        self._cancelled_by_person: asyncio.Task | None = None
         # The pending-message id stamped by :meth:`_run_locked`
         # before streaming starts. Held on the instance so the
         # sync :meth:`cancel_run` can mark the row as interrupted
@@ -254,6 +264,31 @@ class RunController:
             if self._phase.is_active():
                 self._transition_to(RunPhase.done)
 
+    async def run_unstreamed(self, work: Callable[[], Awaitable[_T]]) -> _T:
+        """Work on the session's team outside a streamed turn — a scheduled
+        task run now — as the session's run.
+
+        One at a time with the turns (the run lock), reported by
+        ``get_processing``, stopped by ``cancel_run``: a cancel ends it
+        with :class:`RunCancelledError` for whoever asked for the work.
+        """
+        async with self._run_lock:
+            task = asyncio.current_task()
+            self._current_run_task = task
+            self._transition_to(RunPhase.streaming)
+            try:
+                return await work()
+            except asyncio.CancelledError:
+                if task is None or self._cancelled_by_person is not task:
+                    raise
+                task.uncancel()
+                raise RunCancelledError("Run cancelled by user.") from None
+            finally:
+                self._current_run_task = None
+                self._cancelled_by_person = None
+                if self._phase.is_active():
+                    self._transition_to(RunPhase.done)
+
     def cancel_run(self) -> None:
         """Cancel the currently running agent and kill any
         foreground process.
@@ -279,6 +314,7 @@ class RunController:
         task = self._current_run_task
         if task and not task.done():
             logger.info("Cancelling run task %s", task.get_name())
+            self._cancelled_by_person = task
             task.cancel()
 
     def _cancel_own_foreground(self) -> None:
