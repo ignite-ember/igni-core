@@ -35,6 +35,7 @@ from igni_core.backend.schemas_push import SessionNamedPayload
 from igni_core.backend.schemas_sessions import DispatchedBackend, TransportLike
 from igni_core.core.activity import BusyKind, background
 from igni_core.core.utils.media_schemas import MediaAttachments
+from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.registry import ExtensionRefused
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.protocol import messages as msg
@@ -150,7 +151,7 @@ class MessageDispatcher:
     # ── An extension's messages ──────────────────────────────────
 
     async def post_from_extension(
-        self, extension_id: str, text: str, media: dict[str, str], from_service: str = ""
+        self, extension_id: str, text: str, media: ChatAttachments, from_service: str = ""
     ) -> None:
         """``host.chat.post``: a message from an extension, for the agent.
 
@@ -168,7 +169,7 @@ class MessageDispatcher:
                 service_client_id=from_service,
             )
         )
-        await self._run_turn(ExtensionMessage.wrap(extension_id, text), media, "")
+        await self._run_turn(ExtensionMessage.wrap(extension_id, text), media.files, "")
 
     async def queue_from_extension(
         self, extension_id: str, text: str, from_service: str = ""

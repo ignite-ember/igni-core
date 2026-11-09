@@ -6,7 +6,7 @@ import json
 import uuid
 from typing import Any
 
-from igni_core.core.tools.orchestrate_events import VisualizationDeltaEvent
+from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
 from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.members.base import Members
@@ -15,14 +15,6 @@ from igni_core.extensions.host.members.tag import call, get
 from igni_core.extensions.host.rpc_wire.chat import DispatchViewArgs
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.protocol.rpc import RpcMethod
-
-
-class ExtensionViewEvent(VisualizationDeltaEvent):
-    """A json-render block an extension puts in the chat: igni's own
-    ``visualization_delta``, final, labelled with its title and source."""
-
-    title: str
-    source: str
 
 
 class ChatViewMembers(Members):
@@ -54,7 +46,9 @@ class ChatViewMembers(Members):
                 ErrorCode.INVALID,
                 "a view is a json-render spec: {root: <id>, elements: {<id>: {type, props, children}}}",
             )
-        event = ExtensionViewEvent(
+        # The card as the session's log keeps it: igni's own
+        # ``visualization_delta``, final, labelled with its title and source.
+        card = VisualizationDeltaPayload(
             agent_path=c.own_client_id,
             spec_id=view_id,
             spec_json=json.dumps(spec),
@@ -64,7 +58,7 @@ class ChatViewMembers(Members):
         )
         await self.host.backend.show_view(
             session_id=c.session_id,
-            payload=event.model_dump(by_alias=True),
+            payload=card,
             run_id=self.host.state.runs.last_run_of(c.session_id),
         )
 
@@ -82,4 +76,4 @@ class ChatViewMembers(Members):
         return await self.rpc(RpcMethod.DISPATCH_VISUALIZATION_ACTION, args, c=c)
 
 
-__all__ = ["ChatViewMembers", "ExtensionViewEvent"]
+__all__ = ["ChatViewMembers"]

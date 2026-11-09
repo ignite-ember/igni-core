@@ -30,9 +30,11 @@ from igni_core.backend.command_handler import CommandHandler
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.session.client_state import ClientStateRead, ClientStateResult
+from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.distribution import OneShotSync
+from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.errors import HostModelError
@@ -129,7 +131,7 @@ class HeadlessHostBackend:
         session_id: str,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments,
         queued: bool,
     ) -> None:
         raise self._refused("chat.post")
@@ -140,14 +142,16 @@ class HeadlessHostBackend:
         session_id: str,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments,
     ) -> UnattendedPost:
         raise self._refused("chat.post")
 
     async def title(self, *, session_id: str, title: str) -> PersistResult:
         raise self._refused("sessions.create")
 
-    async def show_view(self, *, session_id: str, payload: dict[str, Any], run_id: str) -> None:
+    async def show_view(
+        self, *, session_id: str, payload: VisualizationDeltaPayload, run_id: str
+    ) -> None:
         raise self._refused("chat.show")
 
     def views(self, session_id: str) -> list[ViewShown]:

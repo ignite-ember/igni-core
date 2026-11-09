@@ -196,7 +196,7 @@ async def test_a_chat_of_the_pool_is_busy_unless_idle_and_a_post_waits_for_its_r
             "session_id": "s-claim",
             "extension_id": "acme.indexer",
             "text": "hi",
-            "media": {},
+            "media": {"files": {}},
             "queued": True,
             "from_service": "svc",
         }
