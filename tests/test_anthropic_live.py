@@ -37,6 +37,7 @@ def _a_key_for_anthropic() -> bool:
     base = os.environ.get("ANTHROPIC_BASE_URL", ANTHROPIC_API).rstrip("/")
     return base.startswith(ANTHROPIC_API)
 
+
 pytestmark = [
     pytest.mark.skipif(
         not _a_key_for_anthropic(),
