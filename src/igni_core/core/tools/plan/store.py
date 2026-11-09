@@ -34,10 +34,12 @@ class PlanDecision(StrEnum):
 class PlanDecisionsBlob(BaseModel):
     """Typed shape for the persisted ``{run_id: decision}`` map.
 
-    Consumed by :class:`SessionPersistence.load_plan_decisions` /
-    :class:`SessionPersistence.save_plan_decisions` — the raw
-    ``dict[str, str]`` shape is preserved via
-    :meth:`model_dump` at the persistence boundary."""
+    The shape that crosses the persistence boundary in both
+    directions — :class:`SessionPersistence.load_plan_decisions`
+    returns one and :meth:`SessionPersistence.save_plan_decisions`
+    takes one. The plain ``dict[str, str]`` that lands in Agno's
+    ``session_data`` column is produced by the store, not by the
+    callers."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -139,18 +141,16 @@ class PlanStore:
         value = self.decisions.get(run_id)
         return value.value if value is not None else None
 
-    def load_decisions(self, data: PlanDecisionsBlob | dict | None) -> None:
-        """Bulk-load decisions from the persisted blob. Tolerates
-        ``None`` / wrong-shaped values — anything that doesn't
-        look like a ``str -> valid-decision`` mapping is
-        dropped silently. Called on session rehydrate.
+    def load_decisions(self, blob: PlanDecisionsBlob | None) -> None:
+        """Bulk-load decisions from a persisted blob.
 
-        Accepts either the raw dict shape (for back-compat) or a
-        pre-validated :class:`PlanDecisionsBlob`.
+        Tolerates ``None`` — nothing recorded is nothing to load.
+        The blob's own constructor already dropped every entry that
+        isn't a valid :class:`PlanDecision`, so what lands in the
+        map is always typed (Rule 1).
         """
-        if data is None:
+        if blob is None:
             return
-        blob = data if isinstance(data, PlanDecisionsBlob) else PlanDecisionsBlob.from_raw(data)
         self.decisions.update(blob.decisions)
 
     def decisions_snapshot(self) -> PlanDecisionsBlob:

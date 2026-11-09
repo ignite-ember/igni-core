@@ -33,8 +33,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 from igni_core.backend.server_lifecycle import LifecycleController
 from igni_core.backend.server_rehydrate import RehydrateController
-from igni_core.core.tools.plan import PlanStore
-from igni_core.core.tools.todo import TodoStore
+from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore
+from igni_core.core.tools.todo import TodoItemWire, TodoStore
 from igni_core.protocol.rpc import RpcMethod
 from tests.rpc_tables import rpc_table_for
 
@@ -201,9 +201,11 @@ class TestStartupRehydratesPlanDecisions:
         session = SimpleNamespace(
             load_persisted_loop_state=AsyncMock(),
             plan_store=PlanStore(),
-            todo_store=SimpleNamespace(set=lambda items: None),
+            todo_store=TodoStore(),
             persistence=SimpleNamespace(
-                load_plan_decisions=AsyncMock(return_value={"r1": "approved"}),
+                load_plan_decisions=AsyncMock(
+                    return_value=PlanDecisionsBlob(decisions={"r1": "approved"})
+                ),
                 load_todos=AsyncMock(return_value=[]),
             ),
         )
@@ -224,15 +226,9 @@ class TestStartupRehydratesPlanDecisions:
             plan_store=PlanStore(),
             todo_store=todo_store,
             persistence=SimpleNamespace(
-                load_plan_decisions=AsyncMock(return_value={}),
+                load_plan_decisions=AsyncMock(return_value=PlanDecisionsBlob()),
                 load_todos=AsyncMock(
-                    return_value=[
-                        {
-                            "content": "Task A",
-                            "status": "in_progress",
-                            "activeForm": "",
-                        }
-                    ]
+                    return_value=[TodoItemWire(content="Task A", status="in_progress")]
                 ),
             ),
         )

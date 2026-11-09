@@ -26,25 +26,31 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from igni_core.backend.server_rehydrate import RehydrateController
-from igni_core.core.tools.todo import TodoStore, TodoTools, _coerce_items
+from igni_core.core.session.schemas import PersistResult
+from igni_core.core.tools.todo import TodoItemWire, TodoStore, TodoTools, _coerce_items
 
 
 class _CapturingPersistence:
-    """Captures save_todos / load_todos without touching disk."""
+    """Captures save_todos / load_todos without touching disk.
 
-    def __init__(self, prefill: list[dict] | None = None) -> None:
-        self.saved: list[list[dict]] = []
+    Takes and returns the typed :class:`TodoItemWire` rows the real
+    persistence layer crosses the boundary with; a failed save comes
+    back as a :class:`PersistResult` with ``ok=False``."""
+
+    def __init__(self, prefill: list[TodoItemWire] | None = None) -> None:
+        self.saved: list[list[TodoItemWire]] = []
         self._prefill = list(prefill or [])
         self.fail_save = False
         self.fail_load = False
 
-    async def save_todos(self, todos: list[dict]) -> None:
+    async def save_todos(self, todos: list[TodoItemWire]) -> PersistResult:
         if self.fail_save:
-            raise RuntimeError("simulated DB outage")
+            return PersistResult(ok=False, error="simulated DB outage")
         # Snapshot each call so the test can see history.
-        self.saved.append([dict(t) for t in todos])
+        self.saved.append(list(todos))
+        return PersistResult(ok=True)
 
-    async def load_todos(self) -> list[dict]:
+    async def load_todos(self) -> list[TodoItemWire]:
         if self.fail_load:
             raise RuntimeError("simulated DB outage")
         return list(self._prefill)
@@ -77,8 +83,8 @@ class TestTodoWritePersists:
         )
         assert persistence.saved == [
             [
-                {"content": "Task A", "status": "pending", "activeForm": ""},
-                {"content": "Task B", "status": "in_progress", "activeForm": ""},
+                TodoItemWire(content="Task A", status="pending"),
+                TodoItemWire(content="Task B", status="in_progress"),
             ]
         ]
 
@@ -120,8 +126,8 @@ class TestTodoWritePersists:
         )
         # Last persisted call has both items, A flipped.
         assert persistence.saved[-1] == [
-            {"content": "A", "status": "in_progress", "activeForm": ""},
-            {"content": "B", "status": "pending", "activeForm": ""},
+            TodoItemWire(content="A", status="in_progress"),
+            TodoItemWire(content="B", status="pending"),
         ]
 
 
@@ -149,8 +155,8 @@ class TestRehydrateTodos:
             todo_store=store,
             persistence=_CapturingPersistence(
                 prefill=[
-                    {"content": "Task A", "status": "in_progress", "activeForm": ""},
-                    {"content": "Task B", "status": "pending", "activeForm": ""},
+                    TodoItemWire(content="Task A", status="in_progress"),
+                    TodoItemWire(content="Task B", status="pending"),
                 ]
             ),
         )
@@ -192,9 +198,7 @@ class TestRehydrateTodos:
         seed_items, _ = _coerce_items([{"content": "Task A", "status": "pending"}])
         store.set(seed_items)
 
-        persistence = _CapturingPersistence(
-            prefill=[{"content": "X", "status": "completed", "activeForm": ""}]
-        )
+        persistence = _CapturingPersistence(prefill=[TodoItemWire(content="X", status="completed")])
         persistence.fail_load = True
         session = SimpleNamespace(todo_store=store, persistence=persistence)
 

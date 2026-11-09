@@ -33,7 +33,6 @@ from igni_core.backend.agno_history_plan_scanner import AgnoHistoryPlanScanner
 from igni_core.backend.schemas_lifecycle import RehydrateOutcome
 from igni_core.core.session.queued_messages import DurableMessageQueue
 from igni_core.core.tools.orphan_rehydrator import build_rehydrator
-from igni_core.core.tools.plan import PlanDecisionsBlob
 from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.core.tools.todo import _coerce_items
 
@@ -123,13 +122,12 @@ class RehydrateController:
         if persistence is None:
             return RehydrateOutcome(ok=True, step="plan_decisions", reason="no persistence")
         try:
-            data = await persistence.load_plan_decisions()
+            blob = await persistence.load_plan_decisions()
         except Exception as exc:
             return RehydrateOutcome(ok=False, step="plan_decisions", reason=str(exc))
-        # Validate the persisted blob shape before handing it to
-        # the store — a corrupt row on disk would otherwise leak
-        # untyped strings into the decisions map.
-        blob = PlanDecisionsBlob.from_raw(data)
+        # The blob comes back typed — the store's tolerant parser
+        # already dropped a corrupt row on disk, so nothing untyped
+        # reaches the decisions map.
         store.load_decisions(blob)
         return RehydrateOutcome(ok=True, step="plan_decisions")
 
@@ -153,12 +151,10 @@ class RehydrateController:
         if not snapshot:
             # no live execution state yet; keep the plan-args seed
             return RehydrateOutcome(ok=True, step="todos", reason="no snapshot")
-        try:
-            items, _errs = _coerce_items(snapshot)
-        except Exception as exc:
-            return RehydrateOutcome(ok=False, step="todos", reason=str(exc))
-        if items:
-            todo.set(items)
+        # The rows come back typed — the store's coercion already
+        # dropped a malformed row, so the snapshot replaces the
+        # store's list wholesale.
+        todo.set_wires(snapshot)
         return RehydrateOutcome(ok=True, step="todos")
 
     async def plan_store(self) -> RehydrateOutcome:

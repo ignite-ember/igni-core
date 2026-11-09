@@ -31,10 +31,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from agno.tools import Toolkit
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from igni_core.core.broadcast_schema import BroadcastEvent
 
@@ -59,7 +59,7 @@ class TodoItemWire(BaseModel):
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     content: str
-    status: str
+    status: TodoStatus
     active_form: str = Field("", alias="activeForm")
 
     @classmethod
@@ -72,6 +72,11 @@ class TodoItemWire(BaseModel):
         three allowed values, ``active_form`` defaults to empty)
         lives on the model that defines the shape, not in a free
         function on a persistence-module boundary.
+
+        The allowed statuses are the :data:`TodoStatus` literal
+        itself — a row whose status is outside it fails validation
+        and drops, so there is no second list of valid values to
+        keep in step.
 
         Use this for the persistence load/save round-trip where a
         stale/corrupt on-disk row must NOT sink the whole read —
@@ -89,10 +94,21 @@ class TodoItemWire(BaseModel):
             if not content:
                 continue
             status = str(entry.get("status", "pending"))
-            if status not in _VALID_STATUSES:
-                continue
             active_form = str(entry.get("activeForm", entry.get("active_form", "")) or "")
-            out.append(cls(content=content, status=status, active_form=active_form))
+            try:
+                out.append(
+                    cls.model_validate(
+                        {
+                            "content": content,
+                            "status": status,
+                            "activeForm": active_form,
+                        }
+                    )
+                )
+            except ValidationError:
+                # A status outside the three allowed values is a
+                # stale row — drop it rather than sink the snapshot.
+                continue
         return out
 
 
@@ -132,6 +148,23 @@ class TodoStore:
         # Replace atomically — the contract is "the list IS now
         # this". No partial merge, no delta detection.
         self.items = list(items)
+
+    def set_wires(self, wires: list[TodoItemWire]) -> None:
+        """Replace the list from typed wire rows.
+
+        The inverse of :meth:`wires` — used when the snapshot comes
+        back off disk, where the persisted rows are already
+        :class:`TodoItemWire` rows. Keeps the domain shape
+        (:class:`TodoItem`) the only thing the store holds.
+        """
+        self.items = [
+            TodoItem(
+                content=wire.content,
+                status=wire.status,
+                active_form=wire.active_form,
+            )
+            for wire in wires
+        ]
 
     def wires(self) -> list[TodoItemWire]:
         """The list as typed :class:`TodoItemWire` rows — the shape
@@ -177,7 +210,13 @@ def _coerce_items(raw: list) -> tuple[list[TodoItem], list[str]]:
             continue
         # Accept both camelCase (CC parity) and snake_case keys.
         active_form = str(entry.get("activeForm", entry.get("active_form", "")) or "").strip()
-        items.append(TodoItem(content=content, status=status, active_form=active_form))
+        items.append(
+            TodoItem(
+                content=content,
+                status=cast(TodoStatus, status),
+                active_form=active_form,
+            )
+        )
     return items, errors
 
 
@@ -218,10 +257,9 @@ class TodoTools(Toolkit):
         store = getattr(self._session, "todo_store", None)
         if persistence is None or store is None:
             return
-        try:
-            await persistence.save_todos(store.snapshot())
-        except Exception as exc:
-            logger.debug("todo persist failed: %s", exc)
+        result = await persistence.save_todos(store.wires())
+        if not result.ok:
+            logger.debug("todo persist failed: %s", result.error)
 
     async def todo_write(self, todos: list) -> str:
         """Replace the session's todo list with ``todos``.

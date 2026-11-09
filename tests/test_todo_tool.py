@@ -11,10 +11,12 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.core.session.schemas import PersistResult
 from igni_core.core.tools.todo import (
     TodoItem,
     TodoItemWire,
@@ -108,6 +110,10 @@ class TestCoerceItems:
 def _make_session():
     session = MagicMock()
     session.todo_store = TodoStore()
+    # ``todo_write`` flushes the snapshot to the persistence layer;
+    # the stub answers with the Pattern-3 envelope the real layer
+    # returns.
+    session.persistence = SimpleNamespace(save_todos=AsyncMock(return_value=PersistResult(ok=True)))
     return session
 
 
@@ -233,6 +239,9 @@ class TestEndToEnd:
         RPC at each step reflects exactly what was last written."""
         session = MagicMock()
         session.todo_store = TodoStore()
+        session.persistence = SimpleNamespace(
+            save_todos=AsyncMock(return_value=PersistResult(ok=True))
+        )
         tool = TodoTools(session)
         backend = make_backend(session)
 

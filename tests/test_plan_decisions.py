@@ -32,6 +32,7 @@ from igni_core.backend.server_history import ChatHistoryRebuilder
 from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
+from igni_core.core.session.schemas import PersistResult
 from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore, PlanSubmittedEvent
 from tests.session_coordinators import wire_coordinators
 
@@ -93,22 +94,26 @@ class TestPlanStoreDecisions:
 
     def test_load_decisions_accepts_valid_blob(self) -> None:
         store = PlanStore()
-        store.load_decisions({"r1": "approved", "r2": "dismissed"})
+        store.load_decisions(PlanDecisionsBlob(decisions={"r1": "approved", "r2": "dismissed"}))
         assert store.get_decision("r1") == "approved"
         assert store.get_decision("r2") == "dismissed"
 
-    def test_load_decisions_filters_invalid_entries(self) -> None:
+    def test_blob_constructor_filters_invalid_entries(self) -> None:
         # Persistence-layer corruption (e.g. someone hand-edited
         # session_data) should be silently filtered, not raise.
-        store = PlanStore()
-        store.load_decisions(
+        # The filtering lives on the blob's tolerant constructor —
+        # the store only ever sees typed decisions.
+        blob = PlanDecisionsBlob.from_raw(
             {
                 "good": "approved",
                 "bad-value": "maybe",
-                42: "approved",  # type: ignore[dict-item]
+                42: "approved",
                 "empty-key": "",
             }
         )
+        assert blob.decisions == {"good": "approved"}
+        store = PlanStore()
+        store.load_decisions(blob)
         assert store.decisions == {"good": "approved"}
 
     def test_load_decisions_none_is_noop(self) -> None:
@@ -117,11 +122,9 @@ class TestPlanStoreDecisions:
         store.load_decisions(None)
         assert store.decisions == {"r1": "approved"}
 
-    def test_load_decisions_non_dict_is_noop(self) -> None:
-        store = PlanStore()
-        store.load_decisions("not a dict")  # type: ignore[arg-type]
-        store.load_decisions([("r1", "approved")])  # type: ignore[arg-type]
-        assert store.decisions == {}
+    def test_blob_constructor_drops_non_mapping_input(self) -> None:
+        assert PlanDecisionsBlob.from_raw("not a dict").decisions == {}
+        assert PlanDecisionsBlob.from_raw([("r1", "approved")]).decisions == {}
 
     def test_snapshot_returns_independent_copy(self) -> None:
         # Returning the live dict would let the persistence layer
@@ -149,29 +152,26 @@ class _StubPermissionEvaluator:
 class _StubPersistence:
     """Captures save_plan_decisions calls without touching disk.
 
-    Accepts the post-refactor typed :class:`PlanDecisionsBlob`
-    (the shape :class:`PlanCoordinator` now passes) and dumps it
-    to the historic ``dict[str, str]`` shape so the assertion
-    style ``saved[-1] == {"run-1": "approved"}`` keeps reading
-    naturally."""
+    Takes the typed :class:`PlanDecisionsBlob` the real
+    persistence layer takes and dumps it to the historic
+    ``dict[str, str]`` shape so the assertion style
+    ``saved[-1] == {"run-1": "approved"}`` keeps reading
+    naturally. A failure comes back as a :class:`PersistResult`
+    with ``ok=False`` — the Pattern-3 contract the coordinator
+    keys on."""
 
     def __init__(self) -> None:
         self.saved: list[dict[str, str]] = []
         self.fail = False
 
-    async def save_plan_decisions(self, decisions: PlanDecisionsBlob | dict[str, str]) -> None:
+    async def save_plan_decisions(self, decisions: PlanDecisionsBlob) -> PersistResult:
         if self.fail:
-            raise RuntimeError("simulated DB outage")
-        if isinstance(decisions, PlanDecisionsBlob):
-            self.saved.append(decisions.model_dump(mode="json")["decisions"])
-        else:
-            # ``model_dump(mode="json")`` on the raw dict path
-            # would explode; mirror the real persistence layer's
-            # dict-branch fallback.
-            self.saved.append(dict(decisions))
+            return PersistResult(ok=False, error="simulated DB outage")
+        self.saved.append(decisions.model_dump(mode="json")["decisions"])
+        return PersistResult(ok=True)
 
-    async def load_plan_decisions(self) -> dict[str, str]:
-        return {}
+    async def load_plan_decisions(self) -> PlanDecisionsBlob:
+        return PlanDecisionsBlob()
 
 
 def _build_session() -> object:

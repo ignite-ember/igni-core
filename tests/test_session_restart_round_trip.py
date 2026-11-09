@@ -33,8 +33,8 @@ from agno.session.agent import AgentSession
 from igni_core.backend.server_lifecycle import LifecycleController
 from igni_core.backend.server_rehydrate import RehydrateController
 from igni_core.core.session.persistence import SessionPersistence
-from igni_core.core.tools.plan import PlanStore
-from igni_core.core.tools.todo import TodoStore
+from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore
+from igni_core.core.tools.todo import TodoItemWire, TodoStore
 
 
 def _make_db(tmp_path: Path):
@@ -112,13 +112,13 @@ class TestFullRestartRoundTrip:
         # Approve a plan — uses the real ``approve_plan`` /
         # persistence flow.
         await live.session.persistence.save_plan_decisions(
-            {"run-1": "approved", "run-2": "dismissed"}
+            PlanDecisionsBlob(decisions={"run-1": "approved", "run-2": "dismissed"})
         )
         # Tick a todo to in_progress.
         await live.session.persistence.save_todos(
             [
-                {"content": "Task A", "status": "in_progress"},
-                {"content": "Task B", "status": "pending"},
+                TodoItemWire(content="Task A", status="in_progress"),
+                TodoItemWire(content="Task B", status="pending"),
             ]
         )
 
@@ -144,7 +144,9 @@ class TestFullRestartRoundTrip:
         # test harness).
         db = _make_db(tmp_path)
         live = _make_server_against_db(db, "sess-decisions-only")
-        await live.session.persistence.save_plan_decisions({"run-X": "approved"})
+        await live.session.persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-X": "approved"})
+        )
 
         restarted = _make_server_against_db(db, "sess-decisions-only")
         await restarted.startup()
@@ -158,7 +160,9 @@ class TestFullRestartRoundTrip:
         # stay empty (NOT a stale leftover — fresh start).
         db = _make_db(tmp_path)
         live = _make_server_against_db(db, "sess-todos-only")
-        await live.session.persistence.save_todos([{"content": "Task A", "status": "completed"}])
+        await live.session.persistence.save_todos(
+            [TodoItemWire(content="Task A", status="completed")]
+        )
 
         restarted = _make_server_against_db(db, "sess-todos-only")
         await restarted.startup()
@@ -177,12 +181,18 @@ class TestFullRestartRoundTrip:
         a_live = _make_server_against_db(db, "sess-A")
         b_live = _make_server_against_db(db, "sess-B")
 
-        await a_live.session.persistence.save_plan_decisions({"run-A1": "approved"})
-        await b_live.session.persistence.save_plan_decisions({"run-B1": "dismissed"})
-        await a_live.session.persistence.save_todos(
-            [{"content": "A task", "status": "in_progress"}]
+        await a_live.session.persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-A1": "approved"})
         )
-        await b_live.session.persistence.save_todos([{"content": "B task", "status": "completed"}])
+        await b_live.session.persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-B1": "dismissed"})
+        )
+        await a_live.session.persistence.save_todos(
+            [TodoItemWire(content="A task", status="in_progress")]
+        )
+        await b_live.session.persistence.save_todos(
+            [TodoItemWire(content="B task", status="completed")]
+        )
 
         # Restart only session A.
         a_restarted = _make_server_against_db(db, "sess-A")
@@ -204,16 +214,18 @@ class TestFullRestartRoundTrip:
         live = _make_server_against_db(db, "sess-multi-write")
 
         # Write twice. Second write wins.
-        await live.session.persistence.save_todos([{"content": "A", "status": "pending"}])
+        await live.session.persistence.save_todos([TodoItemWire(content="A", status="pending")])
         await live.session.persistence.save_todos(
             [
-                {"content": "A", "status": "in_progress"},
-                {"content": "B", "status": "pending"},
+                TodoItemWire(content="A", status="in_progress"),
+                TodoItemWire(content="B", status="pending"),
             ]
         )
-        await live.session.persistence.save_plan_decisions({"run-1": "approved"})
         await live.session.persistence.save_plan_decisions(
-            {"run-1": "approved", "run-2": "approved"}
+            PlanDecisionsBlob(decisions={"run-1": "approved"})
+        )
+        await live.session.persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-1": "approved", "run-2": "approved"})
         )
 
         restarted = _make_server_against_db(db, "sess-multi-write")
