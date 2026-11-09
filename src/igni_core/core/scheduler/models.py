@@ -1,4 +1,13 @@
-"""Scheduler data models."""
+"""Scheduler data models.
+
+Domain types for the deferred-task queue: :class:`TaskStatus` (the
+task lifecycle) and :class:`ScheduledTask` (one queued task).
+
+These types are view-free. The chat renderings live in
+:mod:`igni_core.backend.schemas_scheduler`, and a frontend that wants
+a status glyph maps from the enum on its own side — the same split
+the sibling ``schemas_loop.py`` views make.
+"""
 
 import uuid
 from datetime import datetime
@@ -10,6 +19,8 @@ from igni_core.core.scheduler.recurrence import Recurrence
 
 
 class TaskStatus(str, Enum):
+    """Lifecycle of one scheduled task."""
+
     pending = "pending"
     running = "running"
     completed = "completed"
@@ -20,37 +31,11 @@ class TaskStatus(str, Enum):
     def is_active(self) -> bool:
         """Domain fact: ``pending`` and ``running`` are the not-done states.
 
-        Kept as a pure enum concern (no view coupling) so backend code
-        can call ``task.status.is_active`` alongside the TUI widgets.
+        Kept as a pure enum concern (no view coupling) so dispatch
+        sites ask ``task.status.is_active`` rather than repeating the
+        pair of literals.
         """
         return self in (TaskStatus.pending, TaskStatus.running)
-
-    @property
-    def terminal_icon(self) -> str:
-        """Rich-markup icon for TUI rendering.
-
-        Named ``terminal_icon`` (not ``icon``) because the value is
-        Rich markup that is TUI-specific — GUI frontends must map
-        from the enum on their own side.  Adding a new
-        :class:`TaskStatus` member without extending this property
-        will raise :class:`KeyError` at render time, which is the
-        desired fail-loud behaviour (versus the old ``.get(..., "?")``
-        dict lookup that silently rendered ``?``).
-        """
-        return _TERMINAL_ICONS[self]
-
-
-# Presentation lookup lives beside the enum so ``TaskStatus.terminal_icon``
-# is the single source of truth for TUI status icons — replaces the
-# duplicated ``_STATUS_ICONS`` dicts previously scattered across the
-# widget layer.
-_TERMINAL_ICONS: dict["TaskStatus", str] = {
-    TaskStatus.pending: "[dim]⏳[/dim]",
-    TaskStatus.running: "[bold yellow]⚡[/bold yellow]",
-    TaskStatus.completed: "[green]✓[/green]",
-    TaskStatus.failed: "[red]✗[/red]",
-    TaskStatus.cancelled: "[dim]—[/dim]",
-}
 
 
 class ScheduledTask(BaseModel):
@@ -84,14 +69,14 @@ class ScheduledTask(BaseModel):
         """Construct a fresh task with a generated 8-hex-char id.
 
         Owns the id-generation invariant so callers stop duplicating
-        ``uuid.uuid4().hex[:8]`` across five sites (the backend
-        ``/schedule`` coordinator, the agent-facing
-        :class:`~igni_core.core.tools.schedule.ScheduleTools`
-        toolkit, and the recurring-task rescheduler in
-        :class:`~igni_core.core.scheduler.runner.SchedulerRunner`).
+        ``uuid.uuid4().hex[:8]`` across the four call sites that
+        schedule a task — the backend ``/schedule`` coordinator, the
+        two paths of the agent-facing
+        :class:`~igni_core.core.tools.schedule.ScheduleTools` toolkit,
+        and the recurring-task rescheduler in
+        :class:`~igni_core.core.scheduler.runner.SchedulerRunner`.
         Same "behaviour on the model" pattern as the
-        :meth:`TaskStatus.terminal_icon` / :meth:`TaskStatus.is_active`
-        properties above.
+        :meth:`TaskStatus.is_active` property above.
         """
         return cls(
             id=uuid.uuid4().hex[:8],
