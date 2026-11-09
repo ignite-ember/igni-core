@@ -32,6 +32,7 @@ from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.tool_permissions import ToolPermissions
 from igni_core.core.tools.custom_loader import load_custom_tools as _load_custom_tools
 from igni_core.core.tools.edit import FileEditNotifier
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.tool_spec import (
     NormalizeResult,
     ToolBuildContext,
@@ -72,6 +73,7 @@ class ToolRegistry:
         cloud_server_url: str | None = None,
         broadcast: BroadcastSink | None = None,
         file_edit_notifier: FileEditNotifier | None = None,
+        supervisor: ProcessSupervisor | None = None,
     ):
         self.base_dir = Path(base_dir) if base_dir else Path.cwd()
         self.permissions = permissions or ToolPermissions(project_dir=self.base_dir)
@@ -82,7 +84,8 @@ class ToolRegistry:
         # need it check it rather than building a request against "".
         self._cloud_server_url = cloud_server_url or ""
         # Session broadcast — only needed by tools that push structured
-        # payloads to attached clients (currently only ``Visualize``).
+        # payloads to attached clients (currently the web tools, whose
+        # HTTP retries are announced as ``http_retry_*`` events).
         # ``None`` in headless / test contexts; those tools then no-op
         # on emit instead of raising.
         self._broadcast = broadcast
@@ -92,6 +95,11 @@ class ToolRegistry:
         # the push bridge binds to by default, so the shared-listener
         # invariant holds without explicit wiring at every call site.
         self._file_edit_notifier = file_edit_notifier
+        # The supervisor the shell toolkit registers its processes on.
+        # The backend hands the registry the supervisor the process
+        # shares, so the watcher panel sees every background command.
+        # A registry built on its own gets a supervisor of its own.
+        self._supervisor = supervisor if supervisor is not None else ProcessSupervisor()
         # Custom factories registered at runtime via :meth:`register`.
         # These don't fit the spec-catalog shape (they're raw callables
         # returning ``Toolkit`` instances) so they live on the instance
@@ -110,9 +118,15 @@ class ToolRegistry:
         directly in that case."""
         return self._file_edit_notifier
 
+    @property
+    def supervisor(self) -> ProcessSupervisor:
+        """The supervisor this registry's shell toolkit runs on."""
+        return self._supervisor
+
     def _build_context(self) -> ToolBuildContext:
         return ToolBuildContext(
             base_dir=self.base_dir,
+            supervisor=self._supervisor,
             broadcast=self._broadcast,
             cloud_token=self._cloud_token,
             cloud_server_url=self._cloud_server_url,

@@ -55,7 +55,7 @@ from igni_core.core.activity import background
 from igni_core.core.config.group_policy.gate import GroupPolicyGate
 from igni_core.core.session.pending_messages import InterruptedReason
 from igni_core.core.session.queued_messages import DurableMessageQueue
-from igni_core.core.tools.process_supervisor_locator import supervisors
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
@@ -77,7 +77,8 @@ class RunController:
     ``stream_factory`` wraps the team stream with sub-agent HITL
     multiplexing (:meth:`HitlController.stream_with_subagent` in
     production). ``message_queue`` is the durable queue settled
-    after each run.
+    after each run. ``supervisor`` is the supervisor the backend
+    process shares — its foreground slot is what a cancel kills.
     """
 
     def __init__(
@@ -86,11 +87,13 @@ class RunController:
         pending_store: PendingMessageStore,
         message_queue: DurableMessageQueue | None,
         stream_factory: StreamFactory,
+        supervisor: ProcessSupervisor,
         http_client_manager: ModelHttpClientManager | None = None,
     ) -> None:
         self._session = session
         self._message_queue = message_queue
         self._stream_factory = stream_factory
+        self._supervisor = supervisor
         self._pending_journal = PendingMessageJournal(pending_store, session.session_id)
         self._http_client_manager = http_client_manager or ModelHttpClientManager()
         self._prompt_builder = PromptBuilder(session)
@@ -255,7 +258,7 @@ class RunController:
         """Kill the foreground shell — but only if this session
         could plausibly own it.
 
-        ``supervisors.default()`` is process-wide and one BE process
+        The supervisor is process-wide and one BE process
         hosts N sessions (see :mod:`session_pool`), so the foreground
         slot is shared by every window. Cancelling an *idle* session
         used to reach into that shared slot and kill whatever another
@@ -277,7 +280,7 @@ class RunController:
                 self._phase,
             )
             return
-        if supervisors.default().cancel_foreground():
+        if self._supervisor.cancel_foreground():
             logger.info("Killed foreground process on cancel")
 
     def _stamp_interrupted(

@@ -24,10 +24,8 @@ from igni_core.core.tools.orphan_rehydrator import (
     HISTORY_RETENTION_SECONDS,
     OrphanRehydrator,
 )
-from igni_core.core.tools.process_store import (
-    BackgroundProcessRow,
-    BackgroundProcessStore,
-)
+from igni_core.core.tools.process_store import BackgroundProcessStore
+from igni_core.core.tools.process_store_schemas import BackgroundProcessRow
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 DEAD_PID = 0x7FFFFFFE

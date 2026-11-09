@@ -2,8 +2,9 @@
 
 ``test_anthropic_provider.py`` covers the provider against a stub; this
 checks the stub has not drifted from the real thing: a turn with a tool
-call, streamed, through the builder igni uses. Skips unless the machine
-holds a key Anthropic's own API takes, since every run costs money.
+call, streamed, through the builder igni uses. Skips unless
+``ANTHROPIC_API_KEY`` holds a key of Anthropic's own, since every run
+costs money.
 """
 
 from __future__ import annotations
@@ -18,32 +19,27 @@ from igni_core.core.config.llm_call_logger import LlmCallLogger
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.provider_builders import AnthropicBuilder
 
-#: Where Anthropic's own API lives.
-ANTHROPIC_API = "https://api.anthropic.com"
 
+def _anthropic_key() -> str | None:
+    """The key for Anthropic's own API, or ``None`` when there is none.
 
-def _a_key_for_anthropic() -> bool:
-    """Whether this machine holds a key Anthropic's own API would take.
-
-    ``ANTHROPIC_BASE_URL`` names the endpoint the machine's key belongs to.
-    igni always calls Anthropic's API — it never reads that variable, so a
-    request cannot be sent anywhere else — which means a machine pointed at
-    another provider's gateway holds a key that API will refuse, and this
-    test would fail on the credential rather than on igni. A machine with
-    no base URL set holds a key for Anthropic, or none at all.
+    ``ANTHROPIC_API_KEY`` is also the variable Claude Code exports, and the
+    key it exports is for its own gateway rather than for
+    ``api.anthropic.com``: Anthropic refuses it with a 401. A live call
+    against such a key would fail for a reason that has nothing to do
+    with the code under test, and it would spend the run to find that
+    out. Anthropic's own keys all start with ``sk-ant-``.
     """
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return False
-    base = os.environ.get("ANTHROPIC_BASE_URL", ANTHROPIC_API).rstrip("/")
-    return base.startswith(ANTHROPIC_API)
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    return key if key.startswith("sk-ant-") else None
 
 
 pytestmark = [
     pytest.mark.skipif(
-        not _a_key_for_anthropic(),
+        not _anthropic_key(),
         reason=(
-            "no key for Anthropic's own API (export ANTHROPIC_API_KEY, and leave "
-            "ANTHROPIC_BASE_URL pointing at Anthropic, to run the live test)"
+            "no key for Anthropic's own API (export ANTHROPIC_API_KEY, an sk-ant- "
+            "key, to run the live Anthropic test)"
         ),
     ),
     pytest.mark.reaches_the_internet,

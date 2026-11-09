@@ -2,7 +2,7 @@
 render tool.
 
 Note on architecture: the tool's ``visualize`` method itself is a
-near-no-op. The visualization payload has ALREADY been streamed to
+confirmation. The visualization payload has ALREADY been streamed to
 the FE by the time this method runs — see
 ``_LoggingModel.process_response_stream`` +
 ``orchestrate.py``'s ``CustomEvent`` handler for the pipeline that
@@ -17,7 +17,13 @@ Covers:
 - Tool is discoverable via ``ToolRegistry`` under the ``Visualize`` name.
 - ``visualize()`` returns a friendly confirmation string for any spec
   shape; no exceptions on unusual input.
-- Registry wiring is idempotent (no per-broadcast state to leak).
+- The spec parameter is typed (the contract is a model, not a dict).
+- The malformed-input cases run through the *entrypoint Agno
+  installs*, not the bare method: Agno validates the tool call's
+  arguments before the body runs, so that boundary is where a spec
+  the FE would have drawn could still fail the call.
+- The toolkit owns no card id — the FE's dedup id rides the orchestrate
+  stream, not the tool.
 """
 
 from __future__ import annotations
@@ -27,6 +33,31 @@ import pytest
 from igni_core.core.config.tool_permissions import ToolPermissions
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.visualize import VisualizeTools
+from igni_core.core.tools.visualize_schemas import JsonRenderSpec
+
+#: A spec as the visualizer sub-agent writes it — the mapping the
+#: model produced, which is what Agno hands the tool at runtime.
+RAW_SPEC = {
+    "root": "r",
+    "elements": {
+        "r": {"type": "Text", "props": {"text": "hello"}, "children": []},
+    },
+}
+
+
+async def call_as_agno_does(**arguments: object) -> str:
+    """Call the tool the way Agno calls it.
+
+    Agno builds the tool call's arguments from the model's JSON and
+    runs them through the entrypoint it derives from the method's
+    annotations — a pydantic-validated wrapper that runs *before* the
+    body. Calling the bare method would skip that boundary and hide
+    exactly the failures that reach the user in production.
+    """
+    tool = VisualizeTools()
+    function = tool.async_functions["visualize"]
+    function.process_entrypoint(strict=False)
+    return await function.entrypoint(**arguments)
 
 
 class TestVisualizeTool:
@@ -36,22 +67,15 @@ class TestVisualizeTool:
         # recap; the wire-side rendering is already done by the
         # ``CustomEvent`` interceptor.
         tool = VisualizeTools()
-        spec = {
-            "root": "r",
-            "elements": {
-                "r": {"type": "Text", "props": {"text": "hello"}, "children": []},
-            },
-        }
-        result = await tool.visualize(spec, title="Hi")
+        result = await tool.visualize(RAW_SPEC, title="Hi")
         assert "Emitted visualization" in result
 
     @pytest.mark.asyncio
     async def test_handles_empty_title(self):
         tool = VisualizeTools()
-        spec = {"root": "r", "elements": {"r": {"type": "Text", "props": {}}}}
         # Empty title should not raise; the FE renders without a
         # heading in that case.
-        result = await tool.visualize(spec, title="")
+        result = await tool.visualize(RAW_SPEC, title="")
         assert "Emitted visualization" in result
 
     @pytest.mark.asyncio
@@ -66,16 +90,67 @@ class TestVisualizeTool:
         assert "Emitted visualization" in result
 
     @pytest.mark.asyncio
-    async def test_no_broadcast_is_no_op(self):
-        # The legacy broadcast wire is now unused (the streaming
-        # interceptor does the delivery). Constructing with
-        # ``broadcast=None`` must still succeed and be silent —
-        # older callers might still pass one.
-        tool = VisualizeTools(broadcast=None)
-        result = await tool.visualize(
-            {"root": "r", "elements": {"r": {"type": "Text", "props": {}}}}
+    async def test_accepts_a_spec_model(self):
+        # The typed contract: the same call made with a model works.
+        tool = VisualizeTools()
+        result = await tool.visualize(JsonRenderSpec.model_validate(RAW_SPEC))
+        assert "Emitted visualization" in result
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_spec_does_not_fail_the_call(self):
+        # The FE has already drawn (or placeholdered) the card by the
+        # time the tool runs, so a payload the BE cannot model must
+        # still confirm rather than raise — through the boundary Agno
+        # actually calls the tool across.
+        result = await call_as_agno_does(spec="not a spec at all")
+        assert "Emitted visualization" in result
+
+    @pytest.mark.asyncio
+    async def test_a_boolean_visibility_does_not_fail_the_call(self):
+        # ``visible`` is a boolean in the FE's own contract — the
+        # visualizer's prompt says ``true``/``false`` mean always
+        # visible/hidden. A payload the FE would have drawn must not
+        # be rejected here.
+        result = await call_as_agno_does(
+            spec={"root": "r", "elements": {"r": {"type": "Text", "visible": True}}}
         )
         assert "Emitted visualization" in result
+
+    @pytest.mark.asyncio
+    async def test_a_missing_title_does_not_fail_the_call(self):
+        # The title is optional, and a model that leaves it out often
+        # writes ``null``.
+        result = await call_as_agno_does(spec=RAW_SPEC, title=None)
+        assert "Emitted visualization" in result
+
+    @pytest.mark.asyncio
+    async def test_a_spec_without_its_envelope_does_not_fail_the_call(self):
+        # A spec missing the root id is one the FE renders as an
+        # empty card, not one that may fail the call.
+        result = await call_as_agno_does(spec={"elements": {}})
+        assert "Emitted visualization" in result
+
+    def test_the_spec_parameter_is_typed(self):
+        # The contract is a model, not a bare dict: Agno derives the
+        # tool schema the model sees from this annotation.
+        tool = VisualizeTools()
+        (function,) = tool.async_functions.values()
+        function.process_entrypoint(strict=False)
+        spec_schema = function.to_dict()["parameters"]["properties"]["spec"]
+        assert spec_schema["properties"]["elements"]["type"] == "object"
+        assert spec_schema["properties"]["root"]["type"] == "string"
+        # The envelope the visualizer's prompt asks for: a root id and
+        # an element map, with the state bag optional.
+        assert sorted(spec_schema["required"]) == ["elements", "root"]
+
+    def test_the_toolkit_owns_no_card_id(self):
+        # The FE dedupes cards on the ``spec_id`` the orchestrate
+        # stream assigns (``SubAgentStreamState.vis_spec_id``). The
+        # toolkit used to mint a second, never-read one — dead state
+        # that claimed an ownership it did not have.
+        tool = VisualizeTools()
+        assert not hasattr(tool, "_spec_id")
+        assert not hasattr(tool, "wire")
 
 
 class TestRegistryWiring:
@@ -97,13 +172,12 @@ class TestRegistryWiring:
 
     @pytest.mark.asyncio
     async def test_registry_wired_tool_still_executes(self):
-        # Broadcast-wired vs unwired: both must run to completion.
-        # This is a smoke test for the registry integration path,
-        # not the delivery mechanism (which is elsewhere).
+        # A registry with a broadcast still builds the tool and the
+        # tool still runs: the broadcast is not the visualize path.
         reg = ToolRegistry(
             base_dir="/tmp",
             permissions=ToolPermissions(project_dir=None),
-            broadcast=lambda _c, _p: None,
+            broadcast=lambda _event: None,
         )
         (tool,) = reg.resolve(["Visualize"])
         result = await tool.visualize(

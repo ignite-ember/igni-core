@@ -187,6 +187,7 @@ class AgentBuilder:
                 base_dir=ctx.base_dir,
                 permissions=permissions,
                 broadcast=ctx.broadcast,
+                supervisor=ctx.supervisor,
             )
             tools = registry.resolve(definition.tools)
 

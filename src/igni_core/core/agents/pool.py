@@ -39,6 +39,7 @@ from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 if TYPE_CHECKING:
     from agno.agent import Agent
@@ -66,6 +67,7 @@ class AgentPool:
         db: DbHandle | None = None,
         broadcast: BroadcastSink | None = None,
         prompt_loader: PromptLoader | None = None,
+        supervisor: ProcessSupervisor | None = None,
     ) -> None:
         self._entries: dict[str, AgentEntry] = {}
         self._agents: dict[str, Agent] = {}
@@ -77,6 +79,12 @@ class AgentPool:
         self._prompt_loader = (
             prompt_loader if prompt_loader is not None else PromptLoader(PromptFragments())
         )
+        # The supervisor the agents' shell toolkits run on. The session
+        # hands the pool the supervisor the process shares, so a
+        # sub-agent's background commands land in the same watcher
+        # panel as the main agent's. A pool built on its own gets a
+        # supervisor of its own.
+        self._supervisor = supervisor if supervisor is not None else ProcessSupervisor()
         # ``settings`` may be ``None`` until :meth:`load_definitions`;
         # :meth:`_settings` falls back to defaults for the
         # single-directory loads that can run before it.
@@ -85,6 +93,7 @@ class AgentPool:
             base_dir=str(project_dir) if project_dir is not None else None,
             db=db,
             broadcast=broadcast,
+            supervisor=self._supervisor,
         )
 
     # ── Entries ──────────────────────────────────────────────────

@@ -30,8 +30,10 @@ from agno.run.agent import (
 )
 from pydantic import BaseModel
 
-from igni_core.core.sub_agent_hitl import PendingEntry, SubAgentHITLCoordinator
+from igni_core.core.hitl.models import PendingEntry
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.core.tools.orchestrate import _run_agent_streaming
+from igni_core.protocol import messages as msg
 
 
 class _FakeRequirement:
@@ -181,15 +183,15 @@ class TestSubAgentHITLPlumbing:
         )
 
         # Coordinator should receive the requirement within a tick or two
-        arrived = await _wait_until(lambda: bool(coordinator._pending))
+        arrived = await _wait_until(lambda: bool(coordinator.pending.ids()))
         assert arrived, "coordinator never received the sub-agent requirement"
 
         # spawn_task is blocked waiting for resolution
         assert not spawn_task.done(), "spawn_task completed before resolve"
 
         # Clean up: resolve so the task can finish
-        req_id = next(iter(coordinator._pending))
-        coordinator.resolve(req_id, "confirm")
+        req_id = coordinator.pending.ids()[0]
+        coordinator.resolve(req_id, msg.HITLAction.CONFIRM)
         await asyncio.wait_for(spawn_task, timeout=2)
 
     @pytest.mark.asyncio
@@ -202,11 +204,11 @@ class TestSubAgentHITLPlumbing:
             _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
         )
 
-        await _wait_until(lambda: bool(coordinator._pending))
-        req_id = next(iter(coordinator._pending))
+        await _wait_until(lambda: bool(coordinator.pending.ids()))
+        req_id = coordinator.pending.ids()[0]
 
         # Simulate user clicking "allow"
-        handled = coordinator.resolve(req_id, "confirm")
+        handled = coordinator.resolve(req_id, msg.HITLAction.CONFIRM)
         assert handled, "coordinator.resolve should report it owned the req"
 
         result, activity = await asyncio.wait_for(spawn_task, timeout=2)
@@ -240,10 +242,10 @@ class TestSubAgentHITLPlumbing:
             _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
         )
 
-        await _wait_until(lambda: bool(coordinator._pending))
-        req_id = next(iter(coordinator._pending))
+        await _wait_until(lambda: bool(coordinator.pending.ids()))
+        req_id = coordinator.pending.ids()[0]
 
-        coordinator.resolve(req_id, "reject")
+        coordinator.resolve(req_id, msg.HITLAction.REJECT)
         await asyncio.wait_for(spawn_task, timeout=2)
 
         assert agent._requirement.rejected
@@ -277,12 +279,12 @@ class TestSubAgentHITLPlumbing:
             _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
         )
 
-        await _wait_until(lambda: bool(coordinator._pending))
-        req_id = next(iter(coordinator._pending))
-        coordinator.resolve(req_id, "confirm")
+        await _wait_until(lambda: bool(coordinator.pending.ids()))
+        req_id = coordinator.pending.ids()[0]
+        coordinator.resolve(req_id, msg.HITLAction.CONFIRM)
         await asyncio.wait_for(spawn_task, timeout=2)
 
-        assert coordinator._pending == {}, "coordinator should be empty after resolve"
+        assert coordinator.pending.ids() == [], "coordinator should be empty after resolve"
         assert not coordinator.has_unresolved()
 
     @pytest.mark.asyncio
@@ -298,10 +300,22 @@ class TestSubAgentHITLPlumbing:
         id_b = await coordinator.push_requirement(req_b, run_id="run-b")
 
         first = coordinator.list_new_pending()
-        assert sorted(rid for rid, _ in first) == sorted([id_a, id_b])
+        assert sorted(handle.requirement_id for handle in first) == sorted([id_a, id_b])
 
         # Second call returns nothing — both already surfaced.
         assert coordinator.list_new_pending() == []
+
+    @pytest.mark.asyncio
+    async def test_a_wire_action_string_is_read_as_the_action_it_names(self):
+        """The wire carries the action as a plain string; the coordinator
+        reads it as the domain action it names."""
+        coordinator = SubAgentHITLCoordinator()
+        req = _FakeRequirement()
+        req_id = await coordinator.push_requirement(req, run_id="run-wire")
+
+        assert coordinator.resolve(req_id, "confirm") is True
+        assert req.confirmed is True
+        assert req.rejected is False
 
     @pytest.mark.asyncio
     async def test_post_resume_content_in_completed_event(self):
@@ -317,9 +331,9 @@ class TestSubAgentHITLPlumbing:
             _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
         )
 
-        await _wait_until(lambda: bool(coordinator._pending))
-        req_id = next(iter(coordinator._pending))
-        coordinator.resolve(req_id, "confirm")
+        await _wait_until(lambda: bool(coordinator.pending.ids()))
+        req_id = coordinator.pending.ids()[0]
+        coordinator.resolve(req_id, msg.HITLAction.CONFIRM)
 
         result, activity = await asyncio.wait_for(spawn_task, timeout=2)
         assert "Final answer delivered in completion" in result, (
@@ -339,8 +353,9 @@ class TestSubAgentHITLPlumbing:
 
         entries = coordinator.list_new_pending()
         assert len(entries) == 1
-        rid, entry = entries[0]
-        assert rid == req_id
+        handle = entries[0]
+        assert handle.requirement_id == req_id
+        entry = handle.entry
         assert entry.agent_path == path
         # Mutating the original list must not bleed into the entry.
         path.append("editor")
@@ -380,14 +395,14 @@ class TestPendingEntryModel:
         # Newly-pushed entry surfaces exactly once.
         new_1 = coord.list_new_pending()
         assert len(new_1) == 1
-        assert new_1[0][0] == req_id
-        assert new_1[0][1].run_id == "run-x"
-        assert new_1[0][1].agent_path == ["arch"]
+        assert new_1[0].requirement_id == req_id
+        assert new_1[0].entry.run_id == "run-x"
+        assert new_1[0].entry.agent_path == ["arch"]
         # Second call returns nothing (already surfaced).
         assert coord.list_new_pending() == []
         assert coord.has_unresolved() is True
         # Resolve → future wait resolves.
-        assert coord.resolve(req_id, "confirm") is True
+        assert coord.resolve(req_id, msg.HITLAction.CONFIRM) is True
         resolved = await coord.wait_resolved(req_id)
         assert resolved is req
         # Confirm side effect on the fake requirement.

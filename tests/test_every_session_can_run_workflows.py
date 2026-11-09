@@ -17,11 +17,16 @@ import pytest
 
 from igni_core.backend.rpc_router import RpcRouter
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.protocol.rpc import RpcMethod
 
 
 def _table(project_dir: Path) -> dict:
-    backend = SimpleNamespace(project_dir=project_dir, session=MagicMock())
+    backend = SimpleNamespace(
+        project_dir=project_dir,
+        session=MagicMock(),
+        supervisor=ProcessSupervisor(),
+    )
     router = RpcRouter(backend=backend, login=MagicMock(), push=MagicMock())
     return router.build_table()
 

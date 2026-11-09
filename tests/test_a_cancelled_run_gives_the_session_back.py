@@ -26,9 +26,6 @@ import asyncio
 import contextlib
 from types import SimpleNamespace
 
-import pytest
-
-from igni_core.backend import run_controller as run_controller_mod
 from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.backend.run_controller import RunController
 from igni_core.backend.schemas_run import (
@@ -83,11 +80,6 @@ class _FakeSupervisor:
         return False
 
 
-class _FakeRegistry:
-    def default(self) -> _FakeSupervisor:
-        return _FakeSupervisor()
-
-
 async def _no_prefix(text: str) -> str:
     return ""
 
@@ -134,18 +126,14 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
     controller._message_queue = None
     controller.periodic_checkpoint = _forever  # type: ignore[method-assign]
     controller._http_client_manager = SimpleNamespace(close_and_replace=_noop_async)
+    # The supervisor the controller cancels the foreground slot of.
+    # A fake one keeps the test off the real registry.
+    controller._supervisor = _FakeSupervisor()
     return controller
 
 
 async def _drain(controller: RunController) -> list[msg.Message]:
     return [proto async for proto in controller.run_message("hello", None)]
-
-
-@pytest.fixture(autouse=True)
-def _no_real_supervisor(monkeypatch):
-    """``cancel_run`` reaches for the process-wide foreground slot; keep the
-    test off the real one."""
-    monkeypatch.setattr(run_controller_mod, "supervisors", _FakeRegistry())
 
 
 # ── Cancel must end the run ──────────────────────────────────────────

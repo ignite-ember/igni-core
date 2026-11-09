@@ -35,7 +35,8 @@ from igni_core.backend.schemas_pause import (
     TeamStreamEvent,
 )
 from igni_core.core.activity import background
-from igni_core.core.sub_agent_hitl import PendingEntry, SubAgentHITLCoordinator
+from igni_core.core.hitl.models import PendingHandle
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
 from igni_core.protocol.agno_taxonomy import (
     RUN_COMPLETED_EVENTS,
@@ -151,8 +152,10 @@ class HITLStreamMultiplexer:
                     yield event.run_paused()
                     continue
                 if isinstance(event, SubagentDetails):
-                    for requirement_id, details in event.updates:
-                        yield msg.RequirementDetails(requirement_id=requirement_id, details=details)
+                    for update in event.updates:
+                        yield msg.RequirementDetails(
+                            requirement_id=update.requirement_id, details=update.details
+                        )
                     continue
                 # ``TeamStreamEvent`` — the common path.
                 async for m in self._forward_team_event(event.event):
@@ -214,7 +217,9 @@ class HITLStreamMultiplexer:
                 self._tracer.trace(f"_stream_mux: drain woke, {len(entries)} entries")
                 if entries:
                     await queue.put(SubagentPause(entries=entries))
-                    self._tracer.trace(f"_stream_mux: drain enqueued {[rid for rid, _ in entries]}")
+                    self._tracer.trace(
+                        f"_stream_mux: drain enqueued {[h.requirement_id for h in entries]}"
+                    )
                 updates = sub_hitl.take_detail_updates()
                 if updates:
                     await queue.put(SubagentDetails(updates=updates))
@@ -280,7 +285,7 @@ class HITLStreamMultiplexer:
         if queue is None:
             return
         handed_back = False
-        unshown: list[tuple[str, PendingEntry]] = []
+        unshown: list[PendingHandle] = []
         kept: list[MuxEvent] = []
         while not queue.empty():
             event = queue.get_nowait()
@@ -288,8 +293,8 @@ class HITLStreamMultiplexer:
                 unshown.extend(event.entries)
                 handed_back = True
             elif isinstance(event, SubagentDetails):
-                for req_id, details in event.updates:
-                    coordinator.update_details(req_id, details)
+                for update in event.updates:
+                    coordinator.update_details(update.requirement_id, update.details)
                 handed_back = True
             else:
                 kept.append(event)

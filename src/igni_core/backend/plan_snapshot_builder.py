@@ -40,7 +40,7 @@ class PlanSnapshotBuilder:
         return LatestPlanResult(
             latest=latest,
             history=list(snap.history),
-            tasks=self._session.todo_store.wires(),
+            tasks=self._session.todo_store.items,
             state="pending" if latest else "",
         )
 
@@ -48,4 +48,4 @@ class PlanSnapshotBuilder:
         """The session's todo list for the todos panel — whatever
         the last ``todo_write`` tool call published. Empty when it
         was never written."""
-        return self._session.todo_store.wires()
+        return self._session.todo_store.items

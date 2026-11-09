@@ -66,6 +66,7 @@ from igni_core.core.session.agent_builder.tools_builder_deps import (
 from igni_core.core.session.core import Session
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.registry import ToolRegistry
 
 #: The toolkits the stub registry hands back, so the assembled list can be
@@ -202,6 +203,7 @@ def _deps(
             registry_cls=_stub_registry_class(stubs),
             cloud=cloud if cloud is not None else CloudCredentials(),
             broadcast=_broadcast,
+            supervisor=ProcessSupervisor(),
         ),
         sources=ToolSourceDeps(
             plugin_loader=_StubPluginLoader(stubs),
@@ -248,6 +250,8 @@ class _FakeSession:
         self.cloud_access_token = "tok-42"
         self.cloud_server_url = "https://cloud.example"
         self.broadcast = _broadcast
+        # The supervisor the session's shell toolkit runs on.
+        self.supervisor = ProcessSupervisor()
         self.plugin_loader = _StubPluginLoader()
         self.disabled_plugins = {"off"}
         self.group_policy = _FakeGroupPolicy(project_dir / "group-tools")

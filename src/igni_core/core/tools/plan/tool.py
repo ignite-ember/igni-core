@@ -26,7 +26,9 @@ from typing import TYPE_CHECKING
 
 from agno.tools import Toolkit
 
+from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.tools.plan.submission import PlanTransactionCoordinator
+from igni_core.core.tools.plan.submit_gate import PlanSubmitGate
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session
@@ -59,7 +61,10 @@ class PlanTool(Toolkit):
     def __init__(self, session: Session) -> None:
         super().__init__(name="ember_plan")
         self._session = session
-        self._coordinator = PlanTransactionCoordinator(session)
+        self._coordinator = PlanTransactionCoordinator(
+            session,
+            gate=PlanSubmitGate(extension_hook_gate),
+        )
         self.register(self.enter_plan_mode)
         self.register(self.exit_plan_mode)
 

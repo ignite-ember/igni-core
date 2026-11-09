@@ -1,10 +1,14 @@
-"""Pydantic wire/data models for the shell-orphan subsystem.
+"""Pydantic wire/data models for the orphan-process subsystem.
 
-Extracted from :mod:`shell_orphan` per the sibling schemas
-convention (mirrors :mod:`schemas_processes` / :mod:`schemas_lifecycle`
-in the backend package). Every wire / result model this subsystem
-hands across a module boundary lives here so Rule 1 stays
-discoverable at one path.
+Extracted from the old ``shell_orphan`` module per the sibling
+schemas convention (mirrors :mod:`schemas_processes` /
+:mod:`schemas_lifecycle` in the backend package). Every wire / result
+model the orphan subsystem hands across a module boundary lives here
+so Rule 1 stays discoverable at one path.
+
+The module is named after the subsystem it serves
+(:mod:`orphan_process` / :mod:`orphan_rehydrator`), not after the
+shell tool the orphan rows originally came from.
 
 Consumers:
 
@@ -23,11 +27,10 @@ Consumers:
   :meth:`ProcessesController.read_tail` stays uniform with
   :class:`ManagedProcess.read`.
 * :class:`RehydrateResult` — typed replacement for the bare
-  ``int`` returned by the old procedural
-  ``rehydrate_orphan_processes``. Populates ``reason`` on any of
-  the three failure branches (store-init / list_all / per-row
-  remove) so :class:`RehydrateController.orphan_processes` can
-  plumb the reason through to
+  ``int`` returned by the old procedural rehydrate pass. Populates
+  ``reason`` on the failure branches (store-init / list_all) so
+  :class:`RehydrateController.orphan_processes` can plumb the reason
+  through to
   :class:`~igni_core.backend.schemas_lifecycle.RehydrateOutcome`
   instead of swallowing at DEBUG.
 """
@@ -71,18 +74,19 @@ class RehydrateResult(BaseModel):
     """Typed outcome of :meth:`OrphanRehydrator.run`.
 
     Replaces the bare ``int`` returned by the previous procedural
-    ``rehydrate_orphan_processes``. Callers plumb ``reason``
-    straight through to
+    rehydrate pass. Callers plumb ``reason`` straight through to
     :class:`~igni_core.backend.schemas_lifecycle.RehydrateOutcome`
-    so the three failure branches (store init, list_all, per-row
-    remove) become observable at INFO level in the boot summary.
+    so the failure branches (store init, list_all) become
+    observable at INFO level in the boot summary.
 
     * ``ok`` — ``True`` iff the pass completed without an
       unhandled exception. A zero-surfaced no-op is still
       ``ok=True``.
-    * ``surfaced`` — number of alive orphans injected into the
-      registry.
-    * ``pruned`` — number of dead rows removed from the store.
+    * ``surfaced`` — number of rows surfaced: alive orphans
+      injected into the registry plus finished ones shown as
+      history.
+    * ``pruned`` — number of history rows dropped for being past
+      the retention window.
     * ``reason`` — short label + exception message on failure, or
       an empty string on success.
     """
