@@ -25,7 +25,7 @@ The actual tool list registered on the main team at session boot:
 | `Edit` | `IgniEditTools` (custom) | Targeted string-replacement editing. Kept dedicated because `sed` is fragile. |
 | `Schedule` | `ScheduleTools` (custom) | Schedule tasks for later or recurring execution. |
 | `NotebookEdit` | `NotebookTools` (custom) | Read and edit Jupyter notebook cells. |
-| `WebSearch` | `DuckDuckGoTools` | Web search (when `permissions.web_search != "deny"` and the `web` extra — `pip install igni-core[web]` — is installed). |
+| `WebSearch` | `DuckDuckGoTools` | Web search (when `permissions.web_search != "deny"` and the `web` extra — `pip install -e ".[web]"` — is installed). |
 | `WebFetch` | `WebTools` (custom) | Fetch and extract URL content (when `permissions.web_fetch != "deny"`). |
 | `Orchestrate` | `OrchestrateTools` (custom) | Spawn sub-teams from the agent pool. |
 
@@ -329,7 +329,7 @@ scheduler:
   max_concurrent: 1       # bounded concurrency (sequential by default)
 ```
 
-Scheduled tasks run in the background via `SchedulerRunner` with bounded concurrency (`asyncio.Semaphore`) and per-task timeout (`asyncio.wait_for`). Toast notifications appear in the TUI when tasks complete or fail.
+Scheduled tasks run in the background via `SchedulerRunner` with bounded concurrency (`asyncio.Semaphore`) and per-task timeout (`asyncio.wait_for`). A `SchedulerEvent` reaches the client when a task completes or fails.
 
 ---
 
@@ -445,7 +445,7 @@ my-plugin/
 └── tools/<name>.py               # → CustomToolkit, named custom_<plugin>_<name>
 ```
 
-Discovery roots: `~/.claude/plugins/`, `~/.igni/plugins/`, `<project>/.claude/plugins/`, `<project>/.igni/plugins/`. Install via `/plugin install <git-url>` or `/plugin install @<marketplace>/<plugin>`. The `/plugins` slash command opens the Textual panel for browsing, toggling, updating, and installing from registered marketplaces.
+Discovery roots: `~/.claude/plugins/`, `~/.igni/plugins/`, `<project>/.claude/plugins/`, `<project>/.igni/plugins/`. Install via `/plugin install <git-url>` or `/plugin install @<marketplace>/<plugin>`. The `/plugins` slash command opens the client's panel for browsing, toggling, updating, and installing from registered marketplaces.
 
 See [Plugins](PLUGINS.md) for the full guide.
 

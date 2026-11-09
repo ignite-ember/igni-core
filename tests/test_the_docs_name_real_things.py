@@ -92,7 +92,13 @@ _EMBER = re.compile(r"\bEmber\b|\bember\b")
 _HISTORICAL = {
     "NEO4J_MIGRATION_DONE.md",
     "REFACTOR_PROGRESS.md",
-    "MIGRATION.md",
+    # `MIGRATION.md` was on this list and came off it: it is a guide
+    # for people arriving from another tool, not a record of a change
+    # igni made, and every "ember" in it was the product's old name
+    # rather than a path or a package. Those were rewritten to igni, so
+    # the exemption protected nothing. `test_the_exemption_is_still_
+    # earning_its_keep` is what found that — an exemption protecting
+    # nothing is a hole waiting to hide the next document.
     # `CONFIG_LAYOUT_PLAN.md` was on this list and came off it: every
     # "ember" in it turned out to be `.ember`, the previous config
     # directory, which a document about renaming it has to be able to

@@ -4,7 +4,18 @@ Get up and running with igni in under 5 minutes.
 
 ## Install
 
-**Homebrew (recommended):**
+**From source** (Python 3.12 — `pyproject.toml` pins `>=3.12,<3.13`; `uv`
+fetches it if you do not have it). This is the igni in this repository:
+
+```bash
+git clone https://github.com/ignite-ember/igni-core.git
+cd igni-core
+uv venv                         # .venv on Python 3.12
+uv pip install -e ".[dev]"      # `uv pip` needs the venv: without it, "No virtual environment found"
+source .venv/bin/activate       # puts `igni` on your PATH
+```
+
+**Homebrew:**
 
 ```bash
 brew install ignite-ember/tap/ignite-ember
@@ -13,19 +24,17 @@ brew install ignite-ember/tap/ignite-ember
 **pip:**
 
 ```bash
-pip install igni-core
+pip install ignite-ember
 ```
 
-**From source** (Python 3.12 — `pyproject.toml` pins `>=3.12,<3.13`; `uv`
-fetches it if you do not have it):
-
-```bash
-git clone https://github.com/ignite-ember/igni-core.git
-cd igni
-uv venv                         # .venv on Python 3.12
-uv pip install -e ".[dev]"      # `uv pip` needs the venv: without it, "No virtual environment found"
-source .venv/bin/activate       # puts `igni` on your PATH
-```
+Those two install **v1.0.3, the last pre-split release** — the monolith,
+packaged as the `ember_code` module. `igni-core` has never been published
+to PyPI, so `pip install igni-core` finds nothing today; the
+`ignite-ember` alias that would forward to it
+(`packages/ignite-ember/` — metadata, and a dependency on `igni-core` at
+the same version) cannot be published before `igni-core` is. The command
+is `ignite-ember` under Homebrew, which symlinks one binary, and `igni`
+under pip, which installs both names.
 
 ## What `igni` is on the command line
 
@@ -408,7 +417,7 @@ Web search and URL fetching ask before each request by default — each is a
 request out of your network. To install them and let them run without asking:
 
 ```bash
-pip install "igni-core[web]"
+pip install -e ".[web]"        # adds the extra to the checkout you installed
 ```
 
 ```yaml

@@ -6,19 +6,19 @@ igni is a terminal-based AI coding assistant built on [Agno](https://docs.agno.c
 
 ```
 ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┐
-  FRONTEND PROCESS (Textual TUI)
+  FRONTEND PROCESS (a client — the React apps)
 │                                                     │
   ┌─────────────────────────────────────────────────┐
-│ │               EmberApp (Textual)                │ │
-  │  ConversationView │ InputHandler │ StatusTracker│
-│ │  SessionManager │ HITLHandler │ RunController   │ │
+│ │            Client (the React web UI)            │ │
+  │     the messages │ the approvals │ the session  │
+│ │   the resume │ the run settings │ extensions    │ │
   └──────────────────────┬──────────────────────────┘
 │                        │                            │
-                         │ BackendClient
+                         │ NDJsonStreamTransport
 │                        │                            │
 └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘
                          │
-              Unix socket + NDJSON protocol
+              Unix socket or WebSocket, NDJSON protocol
               (newline-delimited JSON messages)
                          │
 ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┐
@@ -51,8 +51,8 @@ igni is a terminal-based AI coding assistant built on [Agno](https://docs.agno.c
   │   Shell │ File │ Edit │ Search │ Git │ Web      │
 │ └─────────────────────────────────────────────────┘ │
   ┌─────────────────────────────────────────────────┐
-│ │              Knowledge Layer                     │ │
-  │   ChromaDB vector store │ EmberEmbedder (384d)  │
+│ │                   Memory Layer                   │ │
+  │     Agno's memory db │ SQLite or PostgreSQL     │
 │ └─────────────────────────────────────────────────┘ │
   ┌─────────────────────────────────────────────────┐
 │ │              MCP Layer                           │ │
@@ -66,6 +66,11 @@ igni is a terminal-based AI coding assistant built on [Agno](https://docs.agno.c
 │                                                     │
 └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘
 ```
+
+The `igni` command itself does not go through this split: a headless run
+(`igni -m`, `igni -p`) builds its session in-process
+(`core/session/single_message_run.py`). The split is how the clients reach
+the backend.
 
 ## Core Design Principles
 
@@ -235,17 +240,20 @@ Each igni session:
 3. **Persists** — updated memory, session state to SQLite
 4. **Cleans up** — MCP connections, temp files, background processes
 
-By default, sessions are stored locally in `~/.igni/sessions.db` using Agno's `SqliteDb` backend. User memory lives in `~/.igni/memory.db`.
+By default, everything is stored locally in SQLite: the project's own
+database at `~/.igni/projects/<id>/state.db` (sessions, scheduler, loop,
+processes — and user memory, through Agno's `AsyncSqliteDb` over the same
+file), and the one global database at `~/.igni/igni.db` (which folder a
+session is in, window state, local notifications).
 
-**Cross-device sync:** Claude Code stores sessions locally only — they don't sync across devices. igni defaults to the same (SQLite, local), but Agno's storage layer supports 15+ backends. Configure `storage.backend: "postgres"` (or MongoDB, Redis, DynamoDB, etc.) to sync sessions and memory across devices. See [Configuration](CONFIGURATION.md) for details.
+**Cross-device sync:** Claude Code stores sessions locally only — they don't sync across devices. igni defaults to the same (SQLite, local). To move the state somewhere shared, set `storage.database_url` to a SQLAlchemy URL — PostgreSQL in the cloud (`docs/CLOUD.md` §9); `IGNI_DATABASE_URL` overrides the config file. See [Configuration](CONFIGURATION.md) for details.
 
-## Knowledge System
+## Documents and Knowledge
 
-igni includes a built-in vector knowledge base powered by ChromaDB and a custom embedder.
-
-### EmberEmbedder
-
-A custom Agno `Embedder` that calls the igni server's `/v1/embeddings` endpoint, proxying to a text2vec-transformers model (384 dimensions). This keeps embedding generation server-side — no local GPU required.
+The core keeps no vector store and embeds no text: the code index left igni
+for the CodeIndex extension, and the tables it used here were dropped in
+v0.10. What a session knows about documents comes from the extension that
+owns them.
 
 ### Documents
 
@@ -258,145 +266,205 @@ document sections are switched on by what it declares while it runs
 
 ### Learning
 
-Agno's `LearningMachine` builds user profiles, entity memory, and session context across conversations. Configured via:
+Agno's `LearningMachine` carries what a session learns about the user
+across conversations. Configured via:
 
 ```yaml
 learning:
   enabled: true
-  user_profiles: true
-  entity_memory: true
+  user_memory: true
+  user_profile: false
+  entity_memory: false
+  session_context: false
+  learned_knowledge: false
 ```
+
+Only `user_memory` is on by default, and it is agent-driven: the agent
+calls `update_user_memory` itself when it decides a turn was memorable
+(`core/learn.py`). Agno's auto-extraction — a separate model call after
+every run — is off, because it added 5–10 s to the tail between
+`streaming_done` and `run_completed`: the answer was already on screen
+while the session still looked busy.
 
 ### Reasoning
 
-Agents can use `think` and `analyze` tools for step-by-step reasoning during complex tasks. Enable per-agent in `.md` frontmatter with `reasoning: true`, or globally:
+Agents can use `think` and `analyze` tools for step-by-step reasoning during complex tasks. Enable per-agent in `.md` frontmatter with `reasoning: true` (with `reasoning_min_steps` / `reasoning_max_steps`), or globally:
 
 ```yaml
 reasoning:
   enabled: true
-  tools: ["think", "analyze"]
+  add_instructions: true
+  add_few_shot: false
 ```
+
+The global switch builds Agno's `ReasoningTools` toolkit
+(`core/session/agent_factory.py`); the frontmatter sets Agno's own
+reasoning step budget.
 
 ## Guardrails
 
 Built-in safety guardrails run as Agno pre-hooks before each agent turn:
 
-| Guardrail | What It Does |
-|---|---|
-| **PII Detection** | Flags personally identifiable information in prompts |
-| **Prompt Injection** | Detects injection attempts in user input and tool output |
-| **Moderation** | Content moderation via OpenAI's moderation API |
+| Guardrail | What It Does | Default |
+|---|---|---|
+| **PII Detection** | Flags personally identifiable information in prompts | on |
+| **Prompt Injection** | Detects injection attempts in user input and tool output | off |
+| **Moderation** | Content moderation via OpenAI's moderation API | off |
 
 ```yaml
 guardrails:
   pii_detection: true
-  prompt_injection: true
-  moderation: true
+  prompt_injection: false
+  moderation: false
 ```
 
-Guardrails are applied via `AgnoFeatures.apply_to_agent()` — they attach as pre-hooks that run before the model is called. If a guardrail triggers, the agent is informed and can adjust.
+`create_guardrails()` (`core/session/agent_factory.py`) turns the flags into
+pre-hooks that run before the model is called; if a guardrail triggers, the
+agent is informed and can adjust. Moderation is the one with an external
+dependency (the OpenAI SDK), and it imports that SDK inside the check, so a
+machine without it builds a session fine and fails the first moderated turn
+instead.
+
+The core keeps its own guardrails too, under `core/guardrails/`.
+`GuardrailRunner` checks the message that came in and prefixes a warning
+when something trips (`core/session/message_handler.py`); its membership is
+data-driven — a guardrail joins the list by being a `Guardrail` subclass
+whose flag is truthy on the config.
 
 ## Human-in-the-Loop (HITL)
 
-Agents can pause execution to request confirmation or user input before proceeding with sensitive operations. HITL is implemented via Agno's callback system and surfaces as interactive dialogs in the TUI.
+Agents can pause execution to request confirmation or user input before proceeding with sensitive operations. HITL is implemented via Agno's callback system: the agent raises the question, the backend turns it into a `HITLRequest` on the wire, and the connected client answers with a `HITLResponse`.
 
 Two HITL modes:
 - **Confirmation** — agent asks "Should I proceed with X?" (yes/no)
 - **User input** — agent asks an open-ended question and waits for a response
 
+A headless CLI run has no client to answer, and the code that resolves a
+pause lives in the backend behind a client RPC — so a confirmation raised
+there waits until it times out. The permission flags decide this before
+the run starts: `--auto-approve` runs in `bypassPermissions`,
+`--accept-edits` in `acceptEdits`, `--read-only` in `plan`, and
+`--strict` in `dontAsk` (never prompt, deny what has no allow rule).
+
 ## Run Cancellation
 
-Users can cancel a running agent or team mid-execution. In the TUI, press `Escape` to cancel. The `RunController` handles cleanup of spinners, partial output, and agent state.
+A running agent or team can be cancelled mid-execution: the client sends a `Cancel` message, and the backend's `RunController.cancel_run()` (`backend/run_controller.py`) cancels the running task, kills the foreground shell that session owns, and stamps the pending message as an interrupted run (`reason='cancelled'`) so the record survives the restart.
 
-## TUI Architecture
+## CLI Architecture
 
-The TUI is built with [Textual](https://textual.textualize.io/) and follows a clean separation of concerns:
+The Textual TUI was removed in v0.9.7: interactive chat lives in the React
+clients (igni-app's `clients/web` and `clients/tauri`), which talk to the
+backend. What the `igni` command does is run work and exit.
 
-| Class | File | Responsibility |
-|---|---|---|
-| `EmberApp` | `app.py` | Textual shell: compose, mount, keybindings, event routing, scheduler |
-| `ConversationView` | `conversation_view.py` | Widget append/clear operations |
-| `RunController` | `run_controller.py` | Execution pipeline, streaming, cancellation, task visualization |
-| `StatusTracker` | `status_tracker.py` | Token/context tracking, status bar |
-| `HITLHandler` | `hitl_handler.py` | Confirmation dialogs, user input |
-| `SessionManager` | `session_manager.py` | Session picker, switching, clearing |
-| `InputHandler` | `input_handler.py` | History, autocomplete |
+The command surface is in `src/igni_core/cli/`:
 
-`CommandHandler` has moved to the backend process — slash commands are now dispatched server-side via protocol messages. See [Process Split Architecture](#process-split-architecture) below.
+| Module | Responsibility |
+|---|---|
+| `__init__.py` | the Click group: every global flag lands here |
+| `options.py` | `CliOptions` — the flags as one typed model |
+| `run_settings.py` | `CliSettingsLoader` — flags and settings file into one `Settings` |
+| `invocation.py` | `CliInvocation` — the mode dispatch: message, pipe, or help pointer |
+| `headless_run.py` | `HeadlessRun` — runs one session, then cleans up after it |
+| `resume.py` | resolving `--continue` / `--session-id` to a session id |
+| `context.py` | `CliContext` — what the CLI stashes on `click.Context.obj` |
+| `trust.py` | the `trust` command — what this folder is trusted for |
+| `login.py` | the `login` command |
+| `migrate.py` | the `migrate` command — moving older data forward |
+| `ext.py`, `ext_*.py` | the `ext` command — extensions: `doctor`, `install`, `sync`, `list`, `remove`, `init` |
 
-`EmberApp` is a thin shell that delegates to focused manager classes. Textual requires `action_*` methods and `@on` decorators on the App, but the logic lives in the managers. Each manager takes an `EmberApp` reference (via `TYPE_CHECKING` to avoid circular imports) and uses `query_one()` to interact with widgets.
+Three modes:
+
+- `igni -m "<message>"` — one message, then exit.
+- `igni -p` — pipe mode: read stdin, run one message, write stdout.
+- `igni` — no message and no subcommand: prints the pointer to the React clients.
+
+The interactive REPL is still in the core (`core/session/interactive_loop.py`:
+`InteractiveSessionLoop` and its `PromptHandler` chain — quit, slash command,
+then message), but the CLI does not run it; the clients render their own
+chat over the backend protocol.
 
 ### Task Visualization
 
-When teams run in **tasks mode**, the TUI displays a live `TaskProgressWidget` showing:
-- Task list with status icons (○ pending, ◉ in-progress, ● completed, ✗ failed, ◌ blocked)
-- Assignees, dependencies, and iteration progress
-- Summary line with done/running/failed counts
-
-The widget updates in real-time as `TaskCreatedEvent`, `TaskUpdatedEvent`, and `TaskStateUpdatedEvent` stream in from Agno.
+When teams run in **tasks mode**, the team's task list travels as protocol
+messages rather than as a widget: `TaskCreated`, `TaskUpdated`,
+`TaskIteration` and `TaskStateUpdated`
+(`protocol/schemas/be_events.py`), which the client renders as a live task
+list with assignees and status. On the CLI's side the same events are
+written out as they arrive, with the status icons from `TASK_STATUS_ICONS`
+(`core/tools/orchestrate_events.py`).
 
 ### Background Task Scheduling
 
-`EmberApp` runs a `SchedulerRunner` in the background that polls for due tasks. Configuration:
+The backend runs a `SchedulerRunner` (`core/scheduler/runner.py`) that polls
+for due tasks. Configuration:
 - `poll_interval`: how often to check (default 30s)
 - `task_timeout`: max duration per task (default 300s)
 - `max_concurrent`: bounded concurrency via `asyncio.Semaphore` (default 1, sequential)
 
-When scheduled tasks complete, toast notifications appear via Textual's `notify()` system.
+Completions reach the client as `SchedulerEvent` messages.
 
 ## Process Split Architecture
 
-igni runs as two OS processes connected by a Unix domain socket. This isolates the TUI rendering from heavy AI/tool execution, preventing long-running agent work from blocking the UI event loop.
+igni runs as two OS processes connected by a Unix domain socket or a loopback WebSocket port. This isolates the client from heavy AI/tool execution, so a long-running agent never blocks the client's rendering.
 
 ```
-┌──────────────┐   Unix socket   ┌──────────────┐
+┌──────────────┐   socket / ws   ┌──────────────┐
 │   Frontend   │◄───────────────►│   Backend    │
-│  (Textual)   │  NDJSON framing │  (Session +  │
+│  (a client)  │  NDJSON framing │  (Session +  │
 │              │                 │   Agents)    │
 └──────────────┘                 └──────────────┘
    PID A                            PID B
 ```
 
+The frontend is not in this repository: both shipped clients — igni-app's
+desktop shell and its web UI — speak the protocol from the outside.
+
 ### Key Components
 
 | Component | Location | Role |
 |---|---|---|
-| `BackendServer` | `backend/server.py` | Wraps Session; dispatches FE messages to Session/CommandHandler; streams Agno events back as protocol messages |
-| `BackendClient` | `frontend/tui/backend_client.py` | FE-side proxy with the same public interface as BackendServer; serializes calls to protocol messages over the socket |
-| `BackendProcess` | `frontend/tui/process_manager.py` | Spawns the BE subprocess (`python -m igni_core.backend`), manages its lifecycle, waits for READY, and returns a connected `BackendClient` |
-| `CommandHandler` | `backend/command_handler.py` | Slash command dispatch (moved from TUI to backend so commands execute with direct Session access) |
+| `BackendApp` | `backend/app.py` | Starts the backend: binds the socket (or the WebSocket port), then serves until shutdown |
+| `BackendServer` | `backend/server.py` | Wraps Session; dispatches client messages to Session/CommandHandler; streams Agno events back as protocol messages |
+| `RunController` | `backend/run_controller.py` | The execution pipeline: streaming, cancellation, task visualisation |
+| `CommandHandler` | `backend/command_handler.py` | Slash command dispatch, in the backend so commands execute with direct Session access |
 | `UnixSocketClientTransport` / `UnixSocketServerTransport` | `transport/unix_socket.py` | Async Unix socket transport with NDJSON framing (one JSON object per `\n`) |
+| `NDJsonStreamTransport` | `transport/ndjson_stream.py` | The framing the socket and WebSocket transports share |
 
 ### Protocol Messages
 
-All messages are Pydantic models defined in `protocol/messages.py` with plain types only (no Agno imports). This keeps the FE/BE contract serialization-safe.
+All messages are Pydantic models with plain types only (no Agno imports), so
+the contract stays serialization-safe. They live in `protocol/schemas/` —
+`fe_actions.py` for what the client sends, `be_events.py` for what the
+backend streams back — and `protocol/messages.py` re-exports them, because
+the deserializer's registry scans that module's namespace for `Message`
+subclasses.
 
-**FE to BE (requests):**
-- `RunRequest` — send user message for agent execution
-- `CancelRequest` — cancel a running agent/team
-- `CommandRequest` — execute a slash command
-- `HITLResponse` — user's answer to a confirmation/input prompt
+**Client to backend (actions):**
+- `UserMessage` — send a message for agent execution
+- `Cancel` — cancel a running agent/team
+- `Command` — execute a slash command
+- `HITLResponse` / `HITLResponseBatch` — the user's answer to a confirmation/input prompt
 
-**BE to FE (events, streamed):**
+**Backend to client (events, streamed):**
 - `ContentDelta` — streamed text chunk from the model
 - `ToolStarted` / `ToolCompleted` / `ToolError` — tool lifecycle events
-- `HITLRequest` / `RunPaused` — HITL prompts (permission dialog + run-level pause wrapper)
-- `RunCompleted` / `RunError` — run lifecycle bookends
+- `HITLRequest` / `RunPaused` — HITL prompts (the question + run-level pause wrapper)
+- `RunStarted` / `RunCompleted` / `RunError` / `StreamingDone` — run lifecycle bookends
+- `TaskCreated` / `TaskUpdated` / `TaskIteration` / `TaskStateUpdated` — team task progress
 - `StatusUpdate` — token counts, context usage, model info
+- `SchedulerEvent` — a scheduled task fired
 
 ### Startup Sequence
 
-1. `EmberApp` creates a `BackendProcess` with project dir and settings
-2. `BackendProcess.start()` spawns `python -m igni_core.backend --socket /tmp/ember-code/<id>.sock`
-3. The BE process creates `BackendServer`, binds to the socket, sends a `Ready` message
-4. `BackendProcess` connects a `BackendClient` to the socket and returns it
-5. The FE uses `BackendClient` as if it were a local `BackendServer` — all calls are transparent proxies
+1. The client spawns `python -m igni_core.backend --ws-port 0 --project-dir <dir>` (the desktop shell does; the web client can attach to a backend that is already running)
+2. The backend binds the port and prints a ready line naming it
+3. The client opens the WebSocket to that port and starts talking
 
 ### Design Rationale
 
-- **Non-blocking UI** — Textual's event loop stays responsive while agents run. Token streaming, tool progress, and HITL dialogs all arrive as async messages.
-- **Crash isolation** — a backend crash (OOM from large context, tool segfault) does not kill the TUI. The FE can detect the lost connection and offer to restart.
-- **Future flexibility** — the socket protocol is transport-agnostic (the `Transport` base class abstracts over Unix socket, TCP, or in-process). Remote backends and multi-session servers become possible without changing the FE.
+- **Non-blocking client** — the client's event loop stays responsive while agents run. Token streaming, tool progress, and HITL prompts all arrive as async messages.
+- **Crash isolation** — a backend crash (OOM from large context, tool segfault) does not kill the client. The client can detect the lost connection and offer to restart.
+- **Future flexibility** — the socket protocol is transport-agnostic (the `Transport` base class abstracts over Unix socket, TCP, or in-process). Remote backends and multi-session servers become possible without changing the client.
 
 ## Error Handling
 

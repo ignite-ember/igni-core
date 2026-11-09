@@ -1,6 +1,6 @@
 """Backend process entry point.
 
-Usage: python -m igni_core.backend --socket /tmp/ember-code/<uuid>.sock
+Usage: python -m igni_core.backend --socket <path>
 
 Starts a :class:`BackendApp`, listens on the given Unix socket
 and/or WebSocket port, and processes FE messages until shutdown.
