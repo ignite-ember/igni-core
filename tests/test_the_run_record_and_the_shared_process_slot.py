@@ -9,8 +9,8 @@
   path. Both end the run as a failure; both fell through to ``mark_completed``.
 
 * Cancel reached into a process-wide foreground slot. One BE process hosts N
-  sessions, ``supervisors.default()`` is shared by all of them, so Escape in
-  an idle window killed whatever another window was running in the foreground.
+  sessions and they share one supervisor, so Escape in an idle window killed
+  whatever another window was running in the foreground.
 
 * Background-process completions are narrated into a conversation. The bus is
   process-wide and only the boot bridge subscribes, so a build finishing in
@@ -29,13 +29,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from igni_core.backend import run_controller as run_controller_mod
 from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.run_controller import RunController
 from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
 from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.session.reminders import PendingReminderQueue
+from igni_core.core.tools.process_events import ProcessExitEvent
 from igni_core.protocol import messages as msg
 
 # ── Fakes ────────────────────────────────────────────────────────────
@@ -187,27 +187,23 @@ class _FakeSupervisor:
         return True
 
 
-class _FakeRegistry:
-    def __init__(self, supervisor: _FakeSupervisor) -> None:
-        self._supervisor = supervisor
-
-    def default(self) -> _FakeSupervisor:
-        return self._supervisor
-
-
 @pytest.fixture
-def fake_supervisor(monkeypatch) -> _FakeSupervisor:
-    supervisor = _FakeSupervisor()
-    monkeypatch.setattr(run_controller_mod, "supervisors", _FakeRegistry(supervisor))
-    return supervisor
+def fake_supervisor() -> _FakeSupervisor:
+    """The supervisor the controller under test is handed.
+
+    The controller no longer reaches into a global: it cancels the
+    foreground slot of the supervisor it was built with.
+    """
+    return _FakeSupervisor()
 
 
-def _cancellable(phase: RunPhase) -> RunController:
+def _cancellable(phase: RunPhase, supervisor: _FakeSupervisor) -> RunController:
     controller = RunController.__new__(RunController)
     controller._phase = phase
     controller._pending_id_for_cancel = None
     controller._current_run_task = None
     controller._session = SimpleNamespace(main_team=SimpleNamespace(run_id=None))
+    controller._supervisor = supervisor
     return controller
 
 
@@ -215,23 +211,23 @@ class TestCancelAndTheSharedForegroundSlot:
     def test_an_idle_session_leaves_the_slot_alone(self, fake_supervisor):
         """Escape in a window with no run must not kill another window's build.
 
-        ``supervisors.default()`` is one object for the whole BE process, and
+        The supervisor is one object for the whole BE process, and
         a foreground shell only exists while the run that spawned it is
         blocked on it — so a session that is not streaming cannot be its
         owner. Killing it anyway is how an ``alembic upgrade`` in another
         repository died mid-migration with no indication why.
         """
-        _cancellable(RunPhase.idle).cancel_run()
+        _cancellable(RunPhase.idle, fake_supervisor).cancel_run()
 
         assert fake_supervisor.cancelled == 0
 
     def test_a_finished_session_leaves_the_slot_alone(self, fake_supervisor):
-        _cancellable(RunPhase.done).cancel_run()
+        _cancellable(RunPhase.done, fake_supervisor).cancel_run()
 
         assert fake_supervisor.cancelled == 0
 
     def test_a_streaming_session_still_kills_its_own_shell(self, fake_supervisor):
-        _cancellable(RunPhase.streaming).cancel_run()
+        _cancellable(RunPhase.streaming, fake_supervisor).cancel_run()
 
         assert fake_supervisor.cancelled == 1
 
@@ -250,20 +246,20 @@ def _bridge(queue: list[str], live_sessions: int) -> PushNotificationBridge:
     return bridge
 
 
-_EXIT_EVENT = {
-    "pid": 8080,
-    "cmd": "npm run build",
-    "exit_code": 0,
-    "duration_seconds": 12.0,
-    "output_tail": "done",
-}
+_EXIT_EVENT = ProcessExitEvent(
+    pid=8080,
+    cmd="npm run build",
+    exit_code=0,
+    duration_seconds=12.0,
+    output_tail="done",
+)
 
 
 class TestBackgroundCompletionInjection:
     def test_a_single_session_still_hears_about_its_own_process(self):
         queue: list[str] = []
 
-        _bridge(queue, live_sessions=1)._on_process_done(dict(_EXIT_EVENT))
+        _bridge(queue, live_sessions=1)._on_process_done(_EXIT_EVENT)
 
         assert len(queue) == 1
         assert "npm run build" in queue[0]
@@ -278,7 +274,7 @@ class TestBackgroundCompletionInjection:
         """
         queue: list[str] = []
 
-        _bridge(queue, live_sessions=2)._on_process_done(dict(_EXIT_EVENT))
+        _bridge(queue, live_sessions=2)._on_process_done(_EXIT_EVENT)
 
         assert queue == [], (
             "a background process finished somewhere in this BE and its output "
@@ -296,7 +292,7 @@ class TestBackgroundCompletionInjection:
         boot = PushNotificationBridge(transport=_NullTransport(), loop=None, queue=boot_queue)
 
         sub = boot.for_transport(_NullTransport(), queue=runtime_queue)
-        sub._on_process_done(dict(_EXIT_EVENT))
+        sub._on_process_done(_EXIT_EVENT)
 
         assert boot_queue == []
         assert len(runtime_queue) == 1

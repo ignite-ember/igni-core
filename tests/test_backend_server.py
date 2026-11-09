@@ -123,7 +123,7 @@ class TestFromParts:
     """``from_parts`` is the one alternate constructor; it must leave the
     instance in the same shape ``__init__`` does."""
 
-    def test_sets_exactly_the_five_fields(self):
+    def test_sets_exactly_the_six_fields(self):
         session = MagicMock()
         server = make_backend(session, settings=MagicMock())
 
@@ -133,6 +133,10 @@ class TestFromParts:
             "controllers",
             "message_queue",
             "_runtime",
+            # The handle on the supervisor this backend process
+            # shares — the watcher panel's registry and the
+            # foreground slot the cancel path kills.
+            "_supervisors",
         }
         assert server.runtime is None
         assert (

@@ -18,27 +18,49 @@ would be the opposite of the flag.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import MagicMock
+from dataclasses import dataclass, field
+from unittest.mock import patch
 
+from igni_core.core.config.settings import Settings
 from igni_core.core.session.single_message_run import SingleMessageRun
 from igni_core.core.tools.plan.store import PlanStore
 
 
+@dataclass
+class _Display:
+    """The prints of one run, in order."""
+
+    printed: list[str] = field(default_factory=list)
+
+    def print_info(self, text: str) -> None:
+        self.printed.append(text)
+
+
+@dataclass
+class _Session:
+    """The parts of a session the plan reporting reads.
+
+    A real :class:`~igni_core.core.session.core.Session` always carries a
+    :class:`PlanStore` — the store is what ``exit_plan_mode`` writes to — so
+    the double carries one too.
+    """
+
+    plan_store: PlanStore
+    display: _Display
+
+
 def _run_with(plan: str) -> list[str]:
     """Drive ``_emit_pending_plan`` against a session holding ``plan``."""
-    printed: list[str] = []
-    display = MagicMock()
-    display.print_info.side_effect = printed.append
-
-    run = SingleMessageRun.__new__(SingleMessageRun)
     store = PlanStore()
     if plan:
         store.set_plan(plan)
-    run._session = SimpleNamespace(plan_store=store, display=display)
+    session = _Session(plan_store=store, display=_Display())
+
+    with patch("igni_core.core.session.session_run.Session", return_value=session):
+        run = SingleMessageRun(Settings())
 
     run._emit_pending_plan()
-    return printed
+    return session.display.printed
 
 
 class TestThePlanReachesTheUser:
@@ -65,11 +87,7 @@ class TestItStaysQuietOtherwise:
     def test_no_plan_prints_nothing(self):
         assert _run_with("") == []
 
-    def test_a_session_without_a_plan_store_does_not_raise(self):
-        """Bare-session test doubles exist throughout this suite; a run that
-        crashes on a missing attribute would turn a reporting nicety into an
-        outage."""
-        run = SingleMessageRun.__new__(SingleMessageRun)
-        run._session = SimpleNamespace(display=MagicMock())
-
-        run._emit_pending_plan()
+    def test_a_blank_plan_prints_nothing(self):
+        """Whitespace is not a plan: printing it would report an outcome
+        nobody produced."""
+        assert _run_with("   \n  ") == []

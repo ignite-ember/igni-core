@@ -33,9 +33,8 @@ from igni_core.backend.agno_history_plan_scanner import AgnoHistoryPlanScanner
 from igni_core.backend.schemas_lifecycle import RehydrateOutcome
 from igni_core.core.session.queued_messages import DurableMessageQueue
 from igni_core.core.tools.orphan_rehydrator import build_rehydrator
-from igni_core.core.tools.plan import PlanDecisionsBlob
-from igni_core.core.tools.process_supervisor_locator import supervisors
-from igni_core.core.tools.todo import _coerce_items
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.todo import TodoItemInput
 
 if TYPE_CHECKING:
     from igni_core.core.session import Session
@@ -51,8 +50,11 @@ class RehydrateController:
     accumulates the five outcomes for a single summary log line.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, supervisor: ProcessSupervisor) -> None:
         self._session = session
+        # The supervisor the backend process shares — the registry the
+        # orphaned processes are re-adopted onto.
+        self._supervisor = supervisor
 
     async def event_log(self) -> RehydrateOutcome:
         """Load the persisted append-only event log onto the session."""
@@ -87,27 +89,27 @@ class RehydrateController:
         previous BE lifetime.
 
         Builds an :class:`OrphanRehydrator` (typed store-init
-        failure surfaces via ``build_failure.reason``) then
+        failure surfaces via ``build.result.reason``) then
         plumbs the :class:`RehydrateResult.reason` straight into
         :class:`RehydrateOutcome` so failure modes stay
         observable at INFO instead of collapsing to a silent
         ``ok=True``.
         """
-        supervisor = supervisors.default()
+        supervisor = self._supervisor
         project_dir = self._session.project_dir
         supervisor.configure_log_store(project_dir)
         if project_dir is None:
             return RehydrateOutcome(ok=True, step="orphan_processes", reason="no project_dir")
-        rehydrator, build_failure = build_rehydrator(supervisor, project_dir)
-        if rehydrator is None:
-            # ``build_failure`` is populated when the store
+        build = build_rehydrator(supervisor, project_dir)
+        if build.rehydrator is None:
+            # ``build.result`` carries the reason when the store
             # constructor raised — surface the typed reason
             # instead of the silent "return 0" the legacy wrapper
             # kept.
-            reason = build_failure.reason if build_failure is not None else "unknown"
+            reason = build.result.reason or "unknown"
             return RehydrateOutcome(ok=False, step="orphan_processes", reason=reason)
         try:
-            result = await rehydrator.run()
+            result = await build.rehydrator.run()
         except Exception as exc:
             return RehydrateOutcome(ok=False, step="orphan_processes", reason=str(exc))
         return RehydrateOutcome(
@@ -123,13 +125,12 @@ class RehydrateController:
         if persistence is None:
             return RehydrateOutcome(ok=True, step="plan_decisions", reason="no persistence")
         try:
-            data = await persistence.load_plan_decisions()
+            blob = await persistence.load_plan_decisions()
         except Exception as exc:
             return RehydrateOutcome(ok=False, step="plan_decisions", reason=str(exc))
-        # Validate the persisted blob shape before handing it to
-        # the store — a corrupt row on disk would otherwise leak
-        # untyped strings into the decisions map.
-        blob = PlanDecisionsBlob.from_raw(data)
+        # The blob comes back typed — the store's tolerant parser
+        # already dropped a corrupt row on disk, so nothing untyped
+        # reaches the decisions map.
         store.load_decisions(blob)
         return RehydrateOutcome(ok=True, step="plan_decisions")
 
@@ -153,12 +154,10 @@ class RehydrateController:
         if not snapshot:
             # no live execution state yet; keep the plan-args seed
             return RehydrateOutcome(ok=True, step="todos", reason="no snapshot")
-        try:
-            items, _errs = _coerce_items(snapshot)
-        except Exception as exc:
-            return RehydrateOutcome(ok=False, step="todos", reason=str(exc))
-        if items:
-            todo.set(items)
+        # The rows come back typed — the store's coercion already
+        # dropped a malformed row, so the snapshot replaces the
+        # store's list wholesale.
+        todo.set(snapshot)
         return RehydrateOutcome(ok=True, step="todos")
 
     async def plan_store(self) -> RehydrateOutcome:
@@ -190,13 +189,12 @@ class RehydrateController:
         plan_args, run_id = found
         store.set_plan(plan_args.plan)
         if plan_args.tasks is not None:
-            try:
-                items, _errs = _coerce_items(plan_args.tasks)
-            except Exception as exc:
-                logger.debug("plan rehydrate: todo coerce failed: %s", exc)
-            else:
-                if items:
-                    self._session.todo_store.set(items)
+            # The plan's rows go through the same validation the
+            # todo tool uses — a row that cannot be used is
+            # dropped, the rest seed the checklist.
+            batch = TodoItemInput.validate_batch(plan_args.tasks)
+            if batch.items:
+                self._session.todo_store.set(batch.items)
         logger.info(
             "Rehydrated plan_store from history (run_id=%s, plan=%d chars)",
             run_id,

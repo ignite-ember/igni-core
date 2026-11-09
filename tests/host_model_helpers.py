@@ -54,6 +54,8 @@ from igni_core.core.session.event_log_schema import (
     SessionEventKind,
 )
 from igni_core.core.session.schemas import ContextBreakdown, PersistResult
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.model import HostModel
@@ -132,6 +134,10 @@ class FakeSession:
         self.project_dir = project_dir
         self.processing = False
         self.run_timeout = 600
+        # The supervisor this backend process shares. The real
+        # ``BackendServer`` carries one; the fake needs one too,
+        # because the RPC router reads it to build the shell runner.
+        self.supervisor = ProcessSupervisor()
         self.settings = SimpleNamespace(display=DisplayConfig(), models=fake_models())
         self.runtime: Any = None
         self.ran: list[tuple[str, dict[str, str]]] = []
@@ -439,6 +445,7 @@ class HostRig:
                 transport=self.transport,
                 push_bridge=push,
                 login=login,
+                supervisors=SupervisorLocator(self.session.supervisor),
                 extensions=extensions,
                 extension_store=self.store,
             ),

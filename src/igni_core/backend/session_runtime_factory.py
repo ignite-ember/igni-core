@@ -58,6 +58,10 @@ class SessionRuntimeFactory:
             additional_dirs=self._dirs.additional_dirs,
             contributions=self._wiring.contributions,
             prompt_loader=self._wiring.prompt_loader,
+            # The supervisor the whole backend process shares — the
+            # resumed session's processes land on the same registry
+            # the watcher panel reads.
+            supervisors=self._wiring.supervisors,
         )
         await backend.startup()
         queue = backend.message_queue

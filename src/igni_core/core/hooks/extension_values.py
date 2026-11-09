@@ -72,7 +72,9 @@ class PlanSubmitValue(HookValue):
 
     #: The plan, in markdown. A change is what the person sees.
     plan: str
-    #: The tasks the agent suggested with it, as it sent them.
+    #: The tasks the agent suggested with it, as they will be
+    #: committed — the rows the plan tool validated. The extension
+    #: sees them; the ``PlanSubmit`` spec does not let it change them.
     tasks: list[JsonValue] = Field(default_factory=list)
     #: Plans rejected since the agent entered plan mode: 0 for the first.
     attempt: int = 0

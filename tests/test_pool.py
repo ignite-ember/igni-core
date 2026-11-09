@@ -24,6 +24,7 @@ from igni_core.core.agents import (
 )
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.prompts import PromptFragments, PromptLoader
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 
 def _prompt_loader() -> PromptLoader:
@@ -325,6 +326,7 @@ class TestBuildAgentMCPFiltering:
             settings=settings,
             base_dir=base_dir,
             mcp_clients=mcp_clients,
+            supervisor=ProcessSupervisor(),
         )
         AgentBuilder(context).build(defn)
 

@@ -28,8 +28,11 @@ from typing import TYPE_CHECKING
 from igni_core.core.tools.output_tail import OutputTail
 
 if TYPE_CHECKING:
+    import asyncio
+    from typing import Any
+
     from igni_core.core.tools.process_log import ProcessLogStore
-    from igni_core.core.tools.process_store import BackgroundProcessRow
+    from igni_core.core.tools.process_store_schemas import BackgroundProcessRow
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,13 @@ class FinishedProcStub:
 
 class FinishedProcess:
     """A completed process, reconstructed from its persisted row."""
+
+    #: Paired with :attr:`ManagedProcess.is_orphan` (``False``) and
+    #: :attr:`OrphanProcess.is_orphan` (``True``): this process came
+    #: from a previous BE lifetime like an orphan did. The registry
+    #: branches on the flag rather than on the class, so the third
+    #: kind of tracked process has to declare it too.
+    is_orphan: bool = True
 
     __slots__ = ("_pid", "_cmd", "_started_epoch", "_finished_epoch", "_exit_code", "_log_store")
 
@@ -88,6 +98,17 @@ class FinishedProcess:
     @property
     def proc(self) -> FinishedProcStub:
         return FinishedProcStub(pid=self._pid, returncode=self._exit_code)
+
+    @property
+    def started_epoch(self) -> int:
+        """When the process started, in epoch seconds."""
+        return self._started_epoch
+
+    @property
+    def reader_task(self) -> asyncio.Task[Any] | None:
+        """Always ``None`` — the reader died with the BE lifetime
+        that ran the process."""
+        return None
 
     def is_running(self) -> bool:
         return False

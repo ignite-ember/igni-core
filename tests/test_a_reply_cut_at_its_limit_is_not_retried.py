@@ -36,6 +36,7 @@ from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.reply_ending import ModelReplyCut, ReplyCutRetries
 from igni_core.core.config.settings import Settings
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 
 class Server:
@@ -184,9 +185,9 @@ def test_the_registry_gives_the_model_its_retries(serve):
 def test_igni_builds_agents_without_run_level_retries():
     """Agno's run-level retry re-runs the whole run on any exception, with
     no test of whether it could help; the model's is the one that asks."""
-    agent = AgentBuilder(AgentBuildContext(settings=Settings(), base_dir=".")).build(
-        AgentDefinition(name="explorer", description="looks around")
-    )
+    agent = AgentBuilder(
+        AgentBuildContext(settings=Settings(), base_dir=".", supervisor=ProcessSupervisor())
+    ).build(AgentDefinition(name="explorer", description="looks around"))
     assert agent.retries == 0
 
 

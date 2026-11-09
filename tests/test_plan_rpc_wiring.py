@@ -33,8 +33,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 from igni_core.backend.server_lifecycle import LifecycleController
 from igni_core.backend.server_rehydrate import RehydrateController
-from igni_core.core.tools.plan import PlanStore
-from igni_core.core.tools.todo import TodoStore
+from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.todo import TodoItemWire, TodoStore
 from igni_core.protocol.rpc import RpcMethod
 from tests.rpc_tables import rpc_table_for
 
@@ -175,7 +176,7 @@ def _lifecycle(session: SimpleNamespace) -> LifecycleController:
     """A :class:`LifecycleController` whose plan-decision and todo
     rehydrate steps are real; every other startup step is stubbed so
     the session only needs what those two read."""
-    rehydrate = RehydrateController(session)  # type: ignore[arg-type]
+    rehydrate = RehydrateController(session, ProcessSupervisor())  # type: ignore[arg-type]
     rehydrate.plan_store = AsyncMock()  # type: ignore[method-assign]
     rehydrate.event_log = AsyncMock()  # type: ignore[method-assign]
     rehydrate.orphan_processes = AsyncMock()  # type: ignore[method-assign]
@@ -201,9 +202,11 @@ class TestStartupRehydratesPlanDecisions:
         session = SimpleNamespace(
             load_persisted_loop_state=AsyncMock(),
             plan_store=PlanStore(),
-            todo_store=SimpleNamespace(set=lambda items: None),
+            todo_store=TodoStore(),
             persistence=SimpleNamespace(
-                load_plan_decisions=AsyncMock(return_value={"r1": "approved"}),
+                load_plan_decisions=AsyncMock(
+                    return_value=PlanDecisionsBlob(decisions={"r1": "approved"})
+                ),
                 load_todos=AsyncMock(return_value=[]),
             ),
         )
@@ -224,24 +227,16 @@ class TestStartupRehydratesPlanDecisions:
             plan_store=PlanStore(),
             todo_store=todo_store,
             persistence=SimpleNamespace(
-                load_plan_decisions=AsyncMock(return_value={}),
+                load_plan_decisions=AsyncMock(return_value=PlanDecisionsBlob()),
                 load_todos=AsyncMock(
-                    return_value=[
-                        {
-                            "content": "Task A",
-                            "status": "in_progress",
-                            "activeForm": "",
-                        }
-                    ]
+                    return_value=[TodoItemWire(content="Task A", status="in_progress")]
                 ),
             ),
         )
 
         await _lifecycle(session).startup()
 
-        assert todo_store.snapshot() == [
-            {"content": "Task A", "status": "in_progress", "activeForm": ""}
-        ]
+        assert todo_store.items == [TodoItemWire(content="Task A", status="in_progress")]
 
     async def test_startup_survives_persistence_failure(self):
         # If ``load_plan_decisions`` raises (DB corruption,

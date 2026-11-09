@@ -42,6 +42,7 @@ from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.session.pending_messages import PendingMessageStore
 from igni_core.core.session.queued_messages import DurableMessageQueue, QueuedMessageStore
 from igni_core.core.session.session_preferences import SessionPreferencesStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 if TYPE_CHECKING:
     from igni_core.core.config.settings import Settings
@@ -64,6 +65,7 @@ class BackendBootstrap:
         additional_dirs: list[Path] | None = None,
         contributions: PromptContributions | None = None,
         prompt_loader: PromptLoader | None = None,
+        supervisor: ProcessSupervisor | None = None,
     ) -> None:
         resolved_project_dir = project_dir or Path.cwd()
 
@@ -92,6 +94,7 @@ class BackendBootstrap:
             additional_dirs=additional_dirs,
             contributions=contributions,
             prompt_loader=prompt_loader,
+            supervisor=supervisor,
         )
         self.settings = settings
 

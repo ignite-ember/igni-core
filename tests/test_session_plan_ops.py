@@ -24,7 +24,7 @@ import pytest
 from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.plan_ops import PlanCoordinator, PlanDeps
-from igni_core.core.session.schemas import PermissionModeSwitch
+from igni_core.core.session.schemas import PermissionModeSwitch, PersistResult
 from igni_core.core.tools.plan import PlanDecision, PlanDecisionsBlob
 
 
@@ -40,7 +40,7 @@ def _bare_session(*, has_persistence: bool = True, has_plan_store: bool = True):
     )
     if has_persistence:
         session.persistence = SimpleNamespace()
-        session.persistence.save_plan_decisions = AsyncMock()
+        session.persistence.save_plan_decisions = AsyncMock(return_value=PersistResult(ok=True))
     session.set_permission_mode = MagicMock(
         return_value=PermissionModeSwitch(changed=True, text="mode → default")
     )
@@ -93,7 +93,9 @@ class TestApprovePlan:
         # class-of-bug that motivated persisting decisions at all.
         s = _bare_session()
         order = []
-        s.persistence.save_plan_decisions = AsyncMock(side_effect=lambda _: order.append("save"))
+        s.persistence.save_plan_decisions = AsyncMock(
+            side_effect=lambda _: (order.append("save"), PersistResult(ok=True))[1]
+        )
         s.set_permission_mode = MagicMock(
             side_effect=lambda _: order.append("flip") or PermissionModeSwitch(text="ok")
         )
@@ -164,7 +166,9 @@ class TestRecordPlanDecision:
         # module exists to prevent. Post-refactor the coordinator
         # returns ``ok=False`` and refuses to flip.
         s = _bare_session()
-        s.persistence.save_plan_decisions = AsyncMock(side_effect=RuntimeError("db down"))
+        s.persistence.save_plan_decisions = AsyncMock(
+            return_value=PersistResult(ok=False, error="db down")
+        )
         out = await s.plan._record("run-1", PlanDecision.APPROVED, flip_mode=True)
         s.set_permission_mode.assert_not_called()
         assert out.ok is False
@@ -177,7 +181,9 @@ class TestRecordPlanDecision:
         # reflects the decision, the FE gets the live broadcast,
         # and the next decision rewrites the blob anyway.
         s = _bare_session()
-        s.persistence.save_plan_decisions = AsyncMock(side_effect=RuntimeError("db down"))
+        s.persistence.save_plan_decisions = AsyncMock(
+            return_value=PersistResult(ok=False, error="db down")
+        )
         out = await s.plan._record("run-1", PlanDecision.DISMISSED, flip_mode=False)
         assert out.ok is True
         assert out.decision == PlanDecision.DISMISSED

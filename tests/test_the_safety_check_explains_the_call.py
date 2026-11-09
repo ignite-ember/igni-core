@@ -267,7 +267,9 @@ class TestTheCoordinator:
         coordinator.update_details(req_id, "better")
         assert req.details == "better"
         assert coordinator.new_arrival.is_set()
-        assert coordinator.take_detail_updates() == [(req_id, "better")]
+        assert [(u.requirement_id, u.details) for u in coordinator.take_detail_updates()] == [
+            (req_id, "better")
+        ]
         assert coordinator.take_detail_updates() == []
 
     def test_one_not_yet_shown_goes_out_with_the_new_text(self):
@@ -280,7 +282,7 @@ class TestTheCoordinator:
     def test_an_answered_question_is_left_alone(self):
         coordinator = SubAgentHITLCoordinator()
         req_id, req = self._pending(coordinator, surfaced=True)
-        coordinator.resolve(req_id, "confirm")
+        coordinator.resolve(req_id, msg.HITLAction.CONFIRM)
         coordinator.update_details(req_id, "better")
         assert req.details == "stock" and coordinator.take_detail_updates() == []
 
@@ -381,9 +383,10 @@ def test_answering_first_stops_the_explainer(tmp_path):
 
         task = asyncio.create_task(ask("bash", {"command": "x"}, "stock", [], follow_up=follow_up))
         await coordinator.new_arrival.wait()
-        [(req_id, _)] = coordinator.list_new_pending()
+        [handle] = coordinator.list_new_pending()
+        req_id = handle.requirement_id
         await started.wait()
-        coordinator.resolve(req_id, "reject")
+        coordinator.resolve(req_id, msg.HITLAction.REJECT)
         return await asyncio.wait_for(task, timeout=2)
 
     assert asyncio.run(scenario()) is False

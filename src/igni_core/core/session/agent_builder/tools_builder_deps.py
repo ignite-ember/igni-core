@@ -56,6 +56,7 @@ from igni_core.core.tools.loop import LoopTools
 from igni_core.core.tools.loop_progress import LoopProgressTool
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
 from igni_core.core.tools.plan import PlanTool
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.slash import SlashCommandTool
 from igni_core.core.tools.todo import TodoTools
@@ -93,6 +94,9 @@ class ToolRegistryDeps:
     registry_cls: type[ToolRegistry]
     cloud: CloudCredentials
     broadcast: BroadcastSink
+    #: The supervisor the shell toolkit registers its processes on —
+    #: the one the backend process shares.
+    supervisor: ProcessSupervisor
 
 
 @dataclass(frozen=True)

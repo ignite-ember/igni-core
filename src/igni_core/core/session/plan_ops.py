@@ -139,30 +139,30 @@ class PlanCoordinator:
                 error="persistence not initialised on this session",
             )
         blob = store.decisions_snapshot()
-        try:
-            await persistence.save_plan_decisions(blob)
-        except Exception as exc:
+        result = await persistence.save_plan_decisions(blob)
+        if not result.ok:
             # On the approve path, the persist-before-flip invariant
             # is load-bearing: if we flipped the mode without a
             # recorded approval, a restart would surface the original
             # "mode=default with pending plan" bug. Abort the flip
             # and surface the error via the Pattern-3 envelope.
+            reason = result.error or "persist failed"
             if flip_mode:
                 logger.warning(
                     "plan decision persist failed on approve path — "
                     "mode flip aborted to preserve invariant: %s",
-                    exc,
+                    reason,
                 )
                 return PlanDecisionResult(
                     run_id=run_id,
                     decision=decision,
                     ok=False,
-                    error=f"persist failed, mode flip aborted: {exc}",
+                    error=f"persist failed, mode flip aborted: {reason}",
                 )
             # Dismiss path — no mode flip to guard, best-effort
             # persistence loss is acceptable (the next decision
             # rewrites the blob anyway).
-            logger.debug("plan decision persist failed: %s", exc)
+            logger.debug("plan decision persist failed: %s", reason)
         mode_status = ""
         if flip_mode:
             # Out of plan mode to the mode the session started in, or

@@ -38,7 +38,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from igni_core.core.sub_agent_hitl import PendingEntry
+from igni_core.core.hitl.models import DetailUpdate, PendingHandle
 from igni_core.protocol import messages as msg
 
 
@@ -142,7 +142,7 @@ class SubagentPause(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     kind: Literal["subagent_pause"] = "subagent_pause"
-    entries: list[tuple[str, PendingEntry]] = Field(default_factory=list)
+    entries: list[PendingHandle] = Field(default_factory=list)
 
     def run_paused(self) -> msg.RunPaused:
         """The batch as the ``RunPaused`` the FE opens its dialog for.
@@ -154,20 +154,20 @@ class SubagentPause(BaseModel):
         ``run_id`` is the sub-agent's — forwarded for logs only.
         """
         return msg.RunPaused(
-            run_id=self.entries[0][1].run_id if self.entries else "",
-            requirements=[entry.request(req_id) for req_id, entry in self.entries],
+            run_id=self.entries[0].entry.run_id if self.entries else "",
+            requirements=[handle.entry.request(handle.requirement_id) for handle in self.entries],
         )
 
 
 class SubagentDetails(BaseModel):
     """Better explanations for questions already on screen.
 
-    ``(requirement_id, details)`` pairs from the coordinator, sent to
-    the views as ``RequirementDetails``.
+    The coordinator's :class:`DetailUpdate` values, sent to the views
+    as ``RequirementDetails``.
     """
 
     kind: Literal["subagent_details"] = "subagent_details"
-    updates: list[tuple[str, str]] = Field(default_factory=list)
+    updates: list[DetailUpdate] = Field(default_factory=list)
 
 
 class MuxDone(BaseModel):

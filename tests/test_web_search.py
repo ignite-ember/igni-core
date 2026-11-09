@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.tool_spec import ToolBuildContext, WebSearchSpec
 
 
@@ -24,7 +25,7 @@ from igni_core.core.tools.tool_spec import ToolBuildContext, WebSearchSpec
 def ctx(tmp_path: Path) -> ToolBuildContext:
     """Minimal ``ToolBuildContext`` for ``WebSearchSpec.build`` —
     only ``base_dir`` is read by the WebSearch build path."""
-    return ToolBuildContext(base_dir=tmp_path)
+    return ToolBuildContext(base_dir=tmp_path, supervisor=ProcessSupervisor())
 
 
 @pytest.mark.parametrize("confirm", [True, False])

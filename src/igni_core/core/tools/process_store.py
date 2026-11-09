@@ -16,11 +16,9 @@ and there's no kill button anymore. That's the
 "why-is-port-3000-occupied" gap that motivated this module.
 
 Wire / result models (``BackgroundProcessRow``, ``UpsertResult``,
-``RemoveResult``, ``ListResult``) live in the sibling
-:mod:`process_store_schemas` module per the sibling schemas
-convention. They are re-exported here so the historical import
-path ``from igni_core.core.tools.process_store import
-BackgroundProcessRow`` keeps working for downstream callers.
+``RemoveResult``) live in the sibling :mod:`process_store_schemas`
+module per the sibling schemas convention. Import them from there —
+this module owns the store, not the shapes.
 """
 
 from __future__ import annotations
@@ -39,7 +37,6 @@ from igni_core.core.db.scope import ScopedColumns
 from igni_core.core.db.upsert import ConflictInsert
 from igni_core.core.tools.process_store_schemas import (
     BackgroundProcessRow,
-    ListResult,
     RemoveResult,
     UpsertResult,
 )
@@ -47,15 +44,9 @@ from igni_core.core.tools.process_store_schemas import (
 logger = logging.getLogger(__name__)
 
 
-# Re-export the schemas so ``from igni_core.core.tools.process_store
-# import BackgroundProcessRow`` keeps working after the schema move.
 __all__ = [
     "BackgroundProcessModel",
-    "BackgroundProcessRow",
     "BackgroundProcessStore",
-    "ListResult",
-    "RemoveResult",
-    "UpsertResult",
 ]
 
 
@@ -107,9 +98,9 @@ class BackgroundProcessStore:
 
     Public methods return typed
     :class:`~igni_core.core.tools.process_store_schemas.UpsertResult`
-    / :class:`RemoveResult` / :class:`ListResult` payloads so DB
-    failures at the store boundary become observable ``reason``
-    strings instead of exceptions the caller has to guess about.
+    / :class:`RemoveResult` payloads so DB failures at the store
+    boundary become observable ``reason`` strings instead of
+    exceptions the caller has to guess about.
     """
 
     def __init__(
@@ -138,7 +129,7 @@ class BackgroundProcessStore:
 
         Returns a typed :class:`UpsertResult`; DB failures are
         translated to ``ok=False`` + ``reason`` at the store
-        boundary so :meth:`ProcessRegistry._persist_add`
+        boundary so :meth:`ProcessPersistenceWriter.record_start`
         (fire-and-forget) can log the reason at DEBUG without an
         ``except Exception`` at the callsite.
         """
@@ -185,7 +176,7 @@ class BackgroundProcessStore:
 
         The counterpart to :meth:`remove`, and the reason the table can
         answer "what ran here" and not only "what is running". Called
-        where ``_persist_remove`` used to be, on completion.
+        by :meth:`ProcessPersistenceWriter.record_end`, on completion.
 
         A pid with no row is the common case rather than an error: only
         processes that were *announced* get written on spawn, and a

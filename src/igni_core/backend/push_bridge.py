@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Callable, Mapping, MutableSequence
+from collections.abc import Callable, MutableSequence
 from typing import Any
 
 from igni_core.backend.schemas_push import (
@@ -46,7 +46,7 @@ from igni_core.core.tools.process_events import (
     ProcessLineEvent,
     ProcessStartEvent,
 )
-from igni_core.core.tools.process_supervisor_locator import supervisors
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.notifications.schemas import NotificationCounts, NotificationsChanged
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.enums import PushChannel
@@ -186,10 +186,11 @@ class PushNotificationBridge:
 
     # ── Background-process channel ──────────────────────────────
 
-    def bind_to_process_supervisor(self) -> None:
+    def bind_to_process_supervisor(self, supervisor: ProcessSupervisor) -> None:
         """Subscribe our per-line / start / exit handlers on the
-        default process registry bus. Idempotent-safe: the bus
-        uses an append-only subscriber list.
+        process registry bus of ``supervisor`` — the one the backend
+        process shares. Idempotent-safe: the bus uses an append-only
+        subscriber list.
 
         Post-split (see ``process_supervisor.py`` module docstring)
         the bus lives on
@@ -197,29 +198,26 @@ class PushNotificationBridge:
         rather than on the supervisor — event emission co-locates
         with the state that emits it.
 
-        The bus hands every subscriber the event's dumped mapping; each
-        handler validates it straight back into its
-        :mod:`~igni_core.core.tools.process_events` model, so nothing
-        past the first line of a handler reads a raw mapping.
+        The bus hands every subscriber the typed event model for the
+        event it registered against, so a handler reads
+        ``event.pid`` / ``event.line`` directly and no mapping is
+        built anywhere on the way.
         """
-        bus = supervisors.default().registry.bus
+        bus = supervisor.registry.bus
         bus.on("start", self._on_process_started)
         bus.on("line", self._on_process_line)
         bus.on("exit", self._on_process_exited)
         bus.on("exit", self._on_process_done)
 
-    def _on_process_started(self, info: Mapping[str, Any]) -> None:
-        event = ProcessStartEvent.model_validate(info)
+    def _on_process_started(self, event: ProcessStartEvent) -> None:
         payload = ProcessStartedPayload(pid=event.pid, cmd=event.cmd, started_at=event.started_at)
         self._schedule_push(PushChannel.PROCESS_STARTED, payload.model_dump())
 
-    def _on_process_line(self, info: Mapping[str, Any]) -> None:
-        event = ProcessLineEvent.model_validate(info)
+    def _on_process_line(self, event: ProcessLineEvent) -> None:
         payload = ProcessLinePayload(pid=event.pid, line=event.line)
         self._schedule_push(PushChannel.PROCESS_LINE, payload.model_dump())
 
-    def _on_process_exited(self, info: Mapping[str, Any]) -> None:
-        event = ProcessExitEvent.model_validate(info)
+    def _on_process_exited(self, event: ProcessExitEvent) -> None:
         payload = ProcessExitedPayload(
             pid=event.pid,
             cmd=event.cmd,
@@ -228,12 +226,11 @@ class PushNotificationBridge:
         )
         self._schedule_push(PushChannel.PROCESS_EXITED, payload.model_dump())
 
-    def _on_process_done(self, info: Mapping[str, Any]) -> None:
+    def _on_process_done(self, event: ProcessExitEvent) -> None:
         """Long-form background-process completion notice + queue
         injection. The queue-injected text lands as a synthetic
         user message on the next tool result so the agent reacts to
         the completion naturally."""
-        event = ProcessExitEvent.model_validate(info)
         status = "succeeded" if event.exit_code == 0 else f"failed (exit {event.exit_code})"
         # Include a one-line hint pointing at ``read_process_output``
         # so the agent knows it can pull more than the 40-line tail.
@@ -254,8 +251,8 @@ class PushNotificationBridge:
         # The FE push below is addressed to a pid, so it is always
         # safe. The queue append is not: it becomes a synthetic user
         # message in THIS bridge's conversation, and the process bus
-        # is process-wide (one ``supervisors.default()`` for every
-        # session in the BE — see ``bind_to_process_supervisor``).
+        # is process-wide (one supervisor for every session in the BE
+        # — see ``bind_to_process_supervisor``).
         # Only the boot bridge subscribes, so with a pool live, a
         # build finishing in one window was narrated into the boot
         # session's conversation — a different window, potentially a
@@ -340,7 +337,7 @@ class PushNotificationBridge:
         Called by :meth:`wired` after backend + session are
         up. Individual ``bind_*`` methods stay public so tests can
         wire selectively."""
-        self.bind_to_process_supervisor()
+        self.bind_to_process_supervisor(backend.supervisor)
         self.bind_to_file_edit_listener()
         backend.wire_orchestrate_progress(self.on_orchestrate_progress)
         self.bind_to_broadcast_bus(backend)
