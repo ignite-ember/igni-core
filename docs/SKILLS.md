@@ -489,6 +489,10 @@ Use `${IGNI_SKILL_DIR}/templates/endpoint.py` as a starting template.
 
 skills:
   cross_tool_support: true         # also scans .claude/skills/ (set false to disable)
-  auto_trigger: true               # Allow Orchestrator to auto-trigger skills
-  max_metadata_tokens: 5000        # Token budget for skill metadata in context
+  auto_trigger: true               # let the main agent trigger a skill on its own
+  default_agent: editor            # the agent a skill runs under when it names none
 ```
+
+There is no token budget for skill metadata: `max_metadata_tokens` was
+documented here and did nothing — the `skills` block has no such field,
+and an unknown key is dropped without a word.

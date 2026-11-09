@@ -220,7 +220,7 @@ class ToolPermissions:
         ``bypassPermissions`` short-circuits, because that is what the mode
         means and because a pause has nowhere to go in a headless run: the only
         code that resolves one lives in ``backend/`` behind a client RPC, so a
-        confirmation raised by ``ember-code -p`` waits until a timeout. The
+        confirmation raised in a headless run waits until a timeout. The
         argument-level guards that survive a bypass are enforced separately by
         ``PermissionEvaluator`` — this flag only decides whether Agno stops and
         asks.

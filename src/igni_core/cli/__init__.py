@@ -137,8 +137,9 @@ from igni_core.core.paths import DEFAULT_DATA_DIR
 def cli(ctx: click.Context, **_params: object) -> None:
     """igni — an AI coding assistant that works on your code where it lives.
 
-    Run with no arguments for an interactive session, or use -m to ask a
-    single question and exit.
+    Run one message with -m, or pipe work in with -p. The chat itself is in
+    the desktop app or the web client; running igni with no arguments says
+    where to get them.
     """
     # Click prints the docstring above verbatim as ``--help`` output, so
     # implementation notes do not belong in it. This one used to explain
@@ -148,8 +149,9 @@ def cli(ctx: click.Context, **_params: object) -> None:
     # The note itself is worth keeping: Click forces a
     # decorator-per-option surface here, so all the logic lives on the
     # invocation object and this callback stays small.
-    # A subcommand handles itself. Falling through would start an
-    # interactive session *and* run it.
+    # A subcommand handles itself. Falling through would run the CLI's own
+    # setup as well — and, with no message, print the help pointer on top
+    # of it.
     if ctx.invoked_subcommand is not None:
         return
 
