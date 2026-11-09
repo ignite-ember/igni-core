@@ -19,16 +19,19 @@ grouped by concern:
 * :mod:`.internal` — intermediate value objects the BE serializer
   builds and then unpacks into wire messages (:class:`ToolResultData`);
   NOT itself on the wire.
+* :mod:`.wire` — the wire contract itself: the list of message
+  classes that can arrive, and the ``type``-discriminated union they
+  form.
 
 The public export surface lives on this package's ``__all__`` so
 :mod:`igni_core.protocol.messages` can re-export the entire wire
-contract via ``from igni_core.protocol.schemas import *``. That
-star-import is what :class:`igni_core.protocol.registry.MessageRegistry`
-reflection-scans for :class:`Message` subclasses at construction
-time — every class listed in ``__all__`` here MUST be importable
-under the ``messages`` module namespace or registry discovery
-drops it and the wire deserializer starts logging
-``Unknown message type`` warnings.
+contract via ``from igni_core.protocol.schemas import *``.
+
+The contract the transports accept is stated separately, in
+:mod:`.wire` — :class:`igni_core.protocol.registry.MessageRegistry`
+reads that list instead of scanning an import namespace, so a message
+that reaches a schema module but not that list is a visible omission
+rather than a silent one.
 """
 
 from igni_core.protocol.schemas.be_events import (

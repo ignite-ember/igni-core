@@ -256,7 +256,7 @@ class TestProtocolSerialization:
         # Round-trip through JSON string
         original = msg.UserMessage(text="hello")
         json_line = original.model_dump_json()
-        restored = MessageRegistry.default().deserialize(json_line)
+        restored = MessageRegistry().deserialize(json_line)
         assert isinstance(restored, msg.UserMessage)
         assert restored.text == "hello"
 

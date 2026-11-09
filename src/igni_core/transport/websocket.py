@@ -132,7 +132,7 @@ class WebSocketServerTransport(ListeningTransport):
         self._guard = HandshakeGuard(token)
         self._port = port
         self._broadcast_send_timeout = broadcast_send_timeout
-        self._registry = registry or MessageRegistry.default()
+        self._registry = registry if registry is not None else MessageRegistry()
         # Set by ``start()`` to the awaited ``serve(...)`` result.
         self._server: Server | None = None
         # client_id → live client wrapper. Insertion order preserved so
