@@ -78,6 +78,52 @@ that will become D if untouched). B-tier addressed on-demand.
 
 Free-form record of what happened each iteration. Newest at the top.
 
+### Iteration 276 — `core/queue_hook.py`: delete the backward-compat shim
+
+**Target:** `src/igni_core/core/queue_hook.py` (audit grade **C** — "deprecation
+shim module with a legacy factory function").
+
+**Audit findings, all still applying before this iteration:**
+- The whole module existed only as a backward-compat re-export "for one
+  release", with no concrete removal ticket.
+- It emitted a :class:`DeprecationWarning` as an *import* side effect.
+- `create_queue_hook` was a deprecated free-function wrapper over
+  :class:`~igni_core.core.hooks.queue.bridge.QueueBridge`.
+
+**Changes:**
+- **Deleted** `src/igni_core/core/queue_hook.py` (74 lines). The behaviour it
+  re-exported already lives in the `core/hooks/queue/` package
+  (`bridge.py`, `injector.py`, `persister.py`, `buffer.py`, `schemas.py`,
+  `agno_adapter.py`); that package exports every name the shim did, plus
+  `AgnoCallableAdapter`, `TakenMessage` and `TakesMessages`.
+- No caller had to move: production code already imported
+  `igni_core.core.hooks.queue` (`backend/team_wiring.py`,
+  `core/hooks/untrusted.py`), and the shim had no importer anywhere in
+  `src/`, `packages/` or `tests/`.
+- `core/hooks/queue/bridge.py` / `schemas.py`: their docstrings pointed at the
+  deleted `queue_hook.py` as "what it used to be"; they now state what the
+  classes own.
+- **Tests:** `tests/test_queue_hook.py` no longer carries its own copy of the
+  retired free function (a local `create_queue_hook` helper) or the
+  `QueueInjectorHook = _make_injector` alias that shadowed the real class.
+  Every test now builds a :class:`QueueBridge` and uses `bridge.injector` /
+  `bridge.persister`; the buffer is filled through the public
+  `bridge.buffer` instead of reaching into `injector._buffer`.
+
+**Behaviour:** unchanged. The injector still drains the queue after each tool
+call and the persister still writes the drained items as user-role history —
+those classes were never touched. What changed is only the *import path*: the
+module that carried the deprecation warning and the deprecated factory is
+gone, so importing the queue hooks no longer warns and no longer offers a
+second, legacy way to build them.
+
+**Tests:** 23 queue-hook tests pass (1 skipped — the live-LLM test needs
+`IGNI_TEST_LLM_API_KEY`), plus the queued-message restart suite (10 pass, 10
+skipped). `ruff check`, `ruff format --check` and `mypy src/igni_core/` clean.
+
+**Grade change:** `core/queue_hook.py` **C → deleted**. Its behaviour now lives
+on `core/hooks/queue/`, which the audit grades separately.
+
 ### Iteration 275 — `core/plugins/marketplaces.py`: delete the backward-compat façade
 
 **Target:** `src/igni_core/core/plugins/marketplaces.py` (audit grade **C** —
