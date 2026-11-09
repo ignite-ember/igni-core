@@ -24,6 +24,7 @@ from igni_core.extensions.manifest import (
     Setting,
 )
 from igni_core.extensions.registry import InstalledExtension
+from igni_core.protocol.json_value import WireJson
 
 
 class ExtensionPage(BaseModel):
@@ -60,7 +61,7 @@ class ExtensionSetting(BaseModel):
     key: str
     type: str
     label: str
-    default: Any = None
+    default: WireJson = None
     options: list[str] = Field(default_factory=list)
 
 
@@ -104,7 +105,7 @@ class ExtensionSummary(BaseModel):
     settings: list[ExtensionSetting] = Field(default_factory=list)
     #: The configured values, which reach the frame as launch params.
     #: Defaults filled in, undeclared keys dropped.
-    values: dict[str, Any] = Field(default_factory=dict)
+    values: dict[str, WireJson] = Field(default_factory=dict)
     #: The host-model objects it was granted (``permissions.host``).
     #: The backend checks every request; this copy is for display.
     host: list[str] = Field(default_factory=list)
@@ -217,7 +218,7 @@ class SetExtensionSettingsArgs(BaseModel):
     extension_id: str
     #: Setting key to value. Merged over what is stored; a key the
     #: extension does not declare is refused.
-    values: dict[str, Any]
+    values: dict[str, WireJson]
 
 
 def _setting(setting: Setting) -> ExtensionSetting:

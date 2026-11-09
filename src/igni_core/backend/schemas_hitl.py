@@ -51,6 +51,7 @@ from pydantic import BaseModel, ConfigDict
 
 from igni_core.core.config.tool_permissions import PermissionLevel
 from igni_core.protocol import messages as msg
+from igni_core.protocol.json_value import JSON_OBJECT_EXTRA
 
 
 class RunRequirement(Protocol):
@@ -173,7 +174,7 @@ class ToolCallArgs(BaseModel):
     forcing the schema to know every tool.
     """
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", json_schema_extra=JSON_OBJECT_EXTRA)
 
     command: str = ""
     file_path: str = ""

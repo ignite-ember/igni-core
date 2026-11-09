@@ -20,6 +20,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.extensions.host.spec import ErrorCode
+from igni_core.protocol.json_value import WireJson
 
 #: Bumped only for a change to these messages that an SDK cannot
 #: ignore. The *model's* version is the schema's, sent in ``hello``.
@@ -54,9 +55,9 @@ class Request(BaseModel):
     #: than the one on screen (``host.sessions.chat(id)``).
     session: str | None = None
     #: A method's parameters, by name.
-    params: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, WireJson] = Field(default_factory=dict)
     #: The value of a ``set``.
-    value: Any = None
+    value: WireJson = None
     #: Signal wire names, for subscribe and unsubscribe.
     signals: list[str] = Field(default_factory=list)
 
@@ -72,7 +73,7 @@ class Reply(BaseModel):
     op: Literal["reply"] = "reply"
     id: int | str
     ok: bool
-    result: Any = None
+    result: WireJson = None
     error: ErrorBody | None = None
 
     @classmethod

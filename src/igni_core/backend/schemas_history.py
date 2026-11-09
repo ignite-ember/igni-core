@@ -36,6 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # schemas from one place. Kept as an explicit re-export in ``__all__``
 # so ``from schemas_history import SessionListEntry`` keeps working.
 from igni_core.backend.schemas_plan import PlanState
+from igni_core.protocol.json_value import WireJson
 from igni_core.protocol.messages import SessionListEntry
 
 
@@ -108,7 +109,7 @@ class PlanTurn(_TimedTurn):
 
     role: Literal["plan"] = "plan"
     plan: str = ""
-    tasks: list[Any] = Field(default_factory=list)
+    tasks: list[WireJson] = Field(default_factory=list)
     state: PlanState = ""
 
 
@@ -136,7 +137,7 @@ class VisualizationTurn(_RunOwned):
 
     role: Literal["visualization"] = "visualization"
     spec_id: str = ""
-    spec: dict[str, Any] = Field(default_factory=dict)
+    spec: dict[str, WireJson] = Field(default_factory=dict)
     source_agent: str = "visualizer"
     #: The card's title — an extension's ``chat.append(view, title)``.
     title: str = ""

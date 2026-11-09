@@ -13,9 +13,11 @@ the service sent it, and no extension code is involved.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+from igni_core.protocol.json_value import WireJson
 
 
 class ItemKind(StrEnum):
@@ -46,7 +48,7 @@ class ChatAction(BaseModel):
 
     op: Literal["show", "rename", "cancel"]
     #: ``show``: a json-render spec — shown in the chat, never sent to the model.
-    view: dict[str, Any] | None = None
+    view: dict[str, WireJson] | None = None
     #: ``rename``: the chat's new title; ``show``: the view's title.
     title: str | None = None
 

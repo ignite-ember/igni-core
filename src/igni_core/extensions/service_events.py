@@ -39,7 +39,6 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, Field
 from sqlalchemy import BigInteger, PrimaryKeyConstraint, String, select
@@ -50,6 +49,7 @@ from igni_core.core.db.database import Database
 from igni_core.core.db.scope import ScopedColumns
 from igni_core.extensions.service_items import ChatAction, ItemAttachment, ItemKind
 from igni_core.extensions.service_landing import Lander
+from igni_core.protocol.json_value import WireJson
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class ServiceEvent(BaseModel):
     #: An event's type, the extension's own word: ``index.ready``. For any
     #: other kind, the kind.
     type: str = ""
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, WireJson] = Field(default_factory=dict)
     #: The service's key for the chat it goes to; none: the extension's own chat.
     thread: str | None = None
     #: A message's text, or a new chat's first message.

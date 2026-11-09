@@ -23,7 +23,7 @@ callers that want the value object.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, PrivateAttr
 
@@ -50,8 +50,22 @@ class Standing(StrEnum):
     PROGRAM = "program"
 
 
+class Direction(StrEnum):
+    """Which way a message travels."""
+
+    #: igni to its clients.
+    TO_CLIENT = "to_client"
+    #: A client to igni.
+    TO_IGNI = "to_igni"
+    #: Both: a client sends it and igni relays it to every client.
+    BOTH = "both"
+
+
 class Message(BaseModel):
     """Base envelope for all protocol messages."""
+
+    #: Which way this message travels; every concrete message says.
+    direction: ClassVar[Direction]
 
     type: str
     id: str = ""  # optional correlation ID
@@ -168,4 +182,4 @@ class RunScopedMessage(Message):
         return RunHeader(run_id=self.run_id, parent_run_id=self.parent_run_id)
 
 
-__all__ = ["Message", "RunHeader", "RunScopedMessage"]
+__all__ = ["Direction", "Message", "RunHeader", "RunScopedMessage"]

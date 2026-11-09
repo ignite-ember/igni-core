@@ -10,11 +10,11 @@ string.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import Field
 
-from igni_core.protocol.schemas.envelope import Message
+from igni_core.protocol.schemas.envelope import Direction, Message
 
 # HITLAction / HITLChoice are referenced by docstrings only —
 # the wire uses raw ``str`` for forward-compat. Producers import
@@ -40,6 +40,7 @@ class UserMessage(Message):
     """
 
     type: Literal["user_message"] = "user_message"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
     text: str = ""
     file_contents: dict[str, str] = Field(default_factory=dict)  # path → content
     client_id: str = ""
@@ -50,6 +51,7 @@ class QueueMessage(Message):
     """User types while agent is running."""
 
     type: Literal["queue_message"] = "queue_message"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
     text: str = ""
     client_id: str = ""
 
@@ -64,6 +66,7 @@ class HITLResponse(Message):
     """
 
     type: Literal["hitl_response"] = "hitl_response"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
     requirement_id: str = ""
     action: str = ""  # "confirm" | "reject" — see :class:`HITLAction`
     choice: str = ""  # "once" | "always" | "similar" — see :class:`HITLChoice`
@@ -85,6 +88,7 @@ class HITLDecision(Message):
     """
 
     type: Literal["hitl_decision"] = "hitl_decision"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
     requirement_id: str = ""
     action: str = ""  # "confirm" | "reject" — see :class:`HITLAction`
     choice: str = ""  # "once" | "always" | "similar" — see :class:`HITLChoice`
@@ -104,6 +108,7 @@ class HITLResponseBatch(Message):
     """
 
     type: Literal["hitl_response_batch"] = "hitl_response_batch"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
     decisions: list[HITLDecision] = []
 
 
@@ -111,6 +116,7 @@ class Command(Message):
     """Slash command from user."""
 
     type: Literal["command"] = "command"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
     text: str = ""
 
 
@@ -118,18 +124,21 @@ class Cancel(Message):
     """Cancel current run."""
 
     type: Literal["cancel"] = "cancel"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
 
 
 class CancelLogin(Message):
     """Cancel an in-progress login flow."""
 
     type: Literal["cancel_login"] = "cancel_login"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
 
 
 class SessionSwitch(Message):
     """Switch to a different session."""
 
     type: Literal["session_switch"] = "session_switch"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
     session_id: str = ""
 
 
@@ -137,12 +146,14 @@ class SessionList(Message):
     """Request session list."""
 
     type: Literal["session_list"] = "session_list"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
 
 
 class ModelSwitch(Message):
     """Switch model."""
 
     type: Literal["model_switch"] = "model_switch"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
     model_name: str = ""
 
 
@@ -150,6 +161,7 @@ class MCPToggle(Message):
     """Toggle MCP server connection."""
 
     type: Literal["mcp_toggle"] = "mcp_toggle"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
     server_name: str = ""
     connect: bool = True
 
@@ -158,12 +170,14 @@ class Shutdown(Message):
     """Graceful shutdown."""
 
     type: Literal["shutdown"] = "shutdown"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
 
 
 class StreamEnd(Message):
     """Marks end of a streaming response (run_message, resolve_hitl)."""
 
     type: Literal["stream_end"] = "stream_end"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
 
 
 __all__ = [

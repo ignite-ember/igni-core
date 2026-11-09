@@ -9,9 +9,9 @@ per-run BE→FE events in :mod:`.be_events`.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
-from igni_core.protocol.schemas.envelope import Message
+from igni_core.protocol.schemas.envelope import Direction, Message
 
 
 class Welcome(Message):
@@ -22,6 +22,7 @@ class Welcome(Message):
     """
 
     type: Literal["welcome"] = "welcome"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     client_id: str = ""
 
 
@@ -34,6 +35,7 @@ class Typing(Message):
     """
 
     type: Literal["typing"] = "typing"
+    direction: ClassVar[Direction] = Direction.BOTH
     text: str = ""
     client_id: str = ""
 
@@ -46,6 +48,7 @@ class UserMessageReceived(Message):
     """
 
     type: Literal["user_message_received"] = "user_message_received"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     text: str = ""
     client_id: str = ""
     queued: bool = False
@@ -63,6 +66,7 @@ class RequirementResolved(Message):
     the other views dismiss their (now stale) permission dialogs."""
 
     type: Literal["requirement_resolved"] = "requirement_resolved"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     requirement_id: str = ""
 
 
@@ -75,6 +79,7 @@ class RequirementDetails(Message):
     spinner for ``details`` in place."""
 
     type: Literal["requirement_details"] = "requirement_details"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     requirement_id: str = ""
     details: str = ""
 

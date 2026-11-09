@@ -8,17 +8,17 @@ so a window's change and an extension's are one change. One method per
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
 from pydantic import BaseModel
 
 from igni_core.extensions.host.windows import WindowRequest, Windows
+from igni_core.protocol.json_value import WireJson
 
 
 class Hydrated(BaseModel):
     """The whole model, its revision, and the fields nobody set."""
 
-    state: dict[str, Any]
+    state: dict[str, WireJson]
     rev: int
     unset: list[str]
 
@@ -28,7 +28,7 @@ class Written(BaseModel):
 
 
 class ToastAdded(BaseModel):
-    toast: dict[str, Any]
+    toast: dict[str, WireJson]
     rev: int
 
 
@@ -39,7 +39,7 @@ class Revised(BaseModel):
 
 
 class DialogShown(BaseModel):
-    dialog: dict[str, Any]
+    dialog: dict[str, WireJson]
     rev: int
 
 

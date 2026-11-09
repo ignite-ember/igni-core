@@ -28,12 +28,13 @@ What this module DOES give:
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import Field
 
+from igni_core.protocol.json_value import WireJson
 from igni_core.protocol.schemas.enums import PushChannel
-from igni_core.protocol.schemas.envelope import Message
+from igni_core.protocol.schemas.envelope import Direction, Message
 
 
 class PushNotification(Message):
@@ -61,8 +62,9 @@ class PushNotification(Message):
     # :func:`push_*` factory helpers (which pass a :class:`PushChannel`
     # member); the raw-string path is the compatibility bridge.
     type: Literal["push_notification"] = "push_notification"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     channel: str = ""
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, WireJson] = Field(default_factory=dict)
 
 
 def _push(channel: PushChannel, payload: Any) -> PushNotification:

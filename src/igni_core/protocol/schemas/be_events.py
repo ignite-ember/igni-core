@@ -17,16 +17,17 @@ deferred until Agno's tool-arg schema stabilises.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from igni_core.protocol.json_value import JSON_OBJECT_EXTRA, WireJson
 from igni_core.protocol.schemas.enums import (
     CommandAction,
     CommandResultKind,
     OrchestrationTaskStatus,
 )
-from igni_core.protocol.schemas.envelope import Message, RunScopedMessage
+from igni_core.protocol.schemas.envelope import Direction, Message, RunScopedMessage
 
 # Note: :class:`PermissionModeName` (for ``StatusUpdate.permission_mode``)
 # and :class:`SchedulerEventType` (for ``SchedulerEvent.event_type``)
@@ -39,6 +40,7 @@ class ContentDelta(Message):
     """Streamed text chunk from the model."""
 
     type: Literal["content_delta"] = "content_delta"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     text: str = ""
     is_thinking: bool = False
 
@@ -47,6 +49,7 @@ class ToolStarted(RunScopedMessage):
     """A tool call has begun."""
 
     type: Literal["tool_started"] = "tool_started"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     tool_name: str = ""
     friendly_name: str = ""
     args_summary: str = ""
@@ -56,6 +59,7 @@ class ToolCompleted(RunScopedMessage):
     """A tool call has finished."""
 
     type: Literal["tool_completed"] = "tool_completed"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     summary: str = ""
     full_result: str = ""
     has_markup: bool = False
@@ -78,6 +82,7 @@ class ToolError(RunScopedMessage):
     """A tool call failed."""
 
     type: Literal["tool_error"] = "tool_error"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     error: str = ""
 
 
@@ -85,6 +90,7 @@ class ModelCompleted(RunScopedMessage):
     """Model finished — token counts available."""
 
     type: Literal["model_completed"] = "model_completed"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     input_tokens: int = 0
     output_tokens: int = 0
 
@@ -93,6 +99,7 @@ class RunStarted(RunScopedMessage):
     """An agent/team run has begun."""
 
     type: Literal["run_started"] = "run_started"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     agent_name: str = ""
     model: str = ""
 
@@ -101,6 +108,7 @@ class RunCompleted(RunScopedMessage):
     """An agent/team run has finished."""
 
     type: Literal["run_completed"] = "run_completed"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     input_tokens: int = 0
     output_tokens: int = 0
     reasoning_tokens: int = 0
@@ -130,12 +138,14 @@ class StreamingDone(RunScopedMessage):
     """
 
     type: Literal["streaming_done"] = "streaming_done"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
 
 
 class RunError(Message):
     """Run-level error."""
 
     type: Literal["run_error"] = "run_error"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     error: str = ""
 
 
@@ -143,12 +153,14 @@ class ReasoningStarted(RunScopedMessage):
     """Model entered reasoning/thinking phase."""
 
     type: Literal["reasoning_started"] = "reasoning_started"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
 
 
 class HITLRequest(Message):
     """Permission dialog needed — BE pauses until FE responds."""
 
     type: Literal["hitl_request"] = "hitl_request"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     requirement_id: str = ""
     tool_name: str = ""
     friendly_name: str = ""
@@ -158,7 +170,7 @@ class HITLRequest(Message):
     # to a shared ``ToolInvocationArgs`` model is a follow-up (would
     # need to be shared with ``ToolStarted`` / ``ToolCompleted``
     # and depends on a closed Agno tool-arg surface — deferred).
-    tool_args: dict[str, Any] = Field(default_factory=dict)
+    tool_args: dict[str, WireJson] = Field(default_factory=dict)
     details: str = ""
     # ``details`` is still being written — the Bypass safety check asks
     # the model to describe the call — and arrives as a
@@ -207,6 +219,7 @@ class TaskCreated(Message):
     """
 
     type: Literal["task_created"] = "task_created"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     task_id: str = ""
     title: str = ""
     assignee: str = ""
@@ -221,6 +234,7 @@ class TaskUpdated(Message):
     """
 
     type: Literal["task_updated"] = "task_updated"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     task_id: str = ""
     status: str = ""
     assignee: str = ""
@@ -230,6 +244,7 @@ class TaskIteration(Message):
     """Task iteration progress."""
 
     type: Literal["task_iteration"] = "task_iteration"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     iteration: int = 0
     max_iterations: int = 0
 
@@ -276,6 +291,7 @@ class TaskStateUpdated(Message):
     """Batch task state update."""
 
     type: Literal["task_state_updated"] = "task_state_updated"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     tasks: list[TaskSnapshot] = Field(default_factory=list)
 
 
@@ -309,6 +325,7 @@ class CommandResult(Message):
     """
 
     type: Literal["command_result"] = "command_result"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     kind: CommandResultKind = CommandResultKind.INFO
     content: str = ""
     action: CommandAction = CommandAction.NONE
@@ -319,6 +336,7 @@ class StatusUpdate(Message):
     """Status bar data pushed from BE."""
 
     type: Literal["status_update"] = "status_update"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     input_tokens: int = 0
     output_tokens: int = 0
     context_tokens: int = 0
@@ -361,7 +379,7 @@ class StatusUpdate(Message):
     # the FE validates every one of them against its own allowlist
     # before any of it reaches a stylesheet. Typing it here would add a
     # second place to update per token without adding a check.
-    theme: dict | None = None
+    theme: dict[str, WireJson] | None = None
 
 
 class SessionListEntry(BaseModel):
@@ -385,7 +403,7 @@ class SessionListEntry(BaseModel):
     this schema at the wire boundary.
     """
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", json_schema_extra=JSON_OBJECT_EXTRA)
 
     session_id: str = ""
     name: str = ""
@@ -400,6 +418,7 @@ class SessionListResult(Message):
     """Response to session_list request."""
 
     type: Literal["session_list_result"] = "session_list_result"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     sessions: list[SessionListEntry] = Field(default_factory=list)
 
 
@@ -407,6 +426,7 @@ class SessionCleared(Message):
     """Session was compacted or cleared."""
 
     type: Literal["session_cleared"] = "session_cleared"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     new_session_id: str = ""
     summary: str = ""
 
@@ -415,6 +435,7 @@ class Info(Message):
     """Informational message."""
 
     type: Literal["info"] = "info"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     text: str = ""
 
 
@@ -422,6 +443,7 @@ class Error(Message):
     """Error message."""
 
     type: Literal["error"] = "error"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     text: str = ""
 
 
@@ -436,6 +458,7 @@ class SchedulerEvent(Message):
     """
 
     type: Literal["scheduler_event"] = "scheduler_event"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     task_id: str = ""
     description: str = ""
     event_type: str = ""  # see :class:`SchedulerEventType`
@@ -446,6 +469,7 @@ class RunPaused(RunScopedMessage):
     """Run paused for HITL — wraps hitl_request with run context."""
 
     type: Literal["run_paused"] = "run_paused"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
     requirements: list[HITLRequest] = Field(default_factory=list)
 
 

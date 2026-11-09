@@ -28,19 +28,21 @@ until the method surface is closed.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import Field
 
-from igni_core.protocol.schemas.envelope import Message
+from igni_core.protocol.json_value import WireJson
+from igni_core.protocol.schemas.envelope import Direction, Message
 
 
 class RPCRequest(Message):
     """Generic RPC call for accessor/utility methods."""
 
     type: Literal["rpc_request"] = "rpc_request"
+    direction: ClassVar[Direction] = Direction.TO_IGNI
     method: str = ""
-    args: dict[str, Any] = Field(default_factory=dict)
+    args: dict[str, WireJson] = Field(default_factory=dict)
     #: Which extension's frame this came from, if any.
     #:
     #: ``None`` is igni's own UI, and igni's own UI may not call the
@@ -62,7 +64,8 @@ class RPCResponse(Message):
     """
 
     type: Literal["rpc_response"] = "rpc_response"
-    result: Any = None
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    result: WireJson = None
     error: str | None = None
 
     @classmethod
