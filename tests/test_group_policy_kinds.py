@@ -290,12 +290,12 @@ class TestTheLoadersFindThem:
 
     def test_a_tool_is_scanned(self, cache: GroupPolicyCache, tmp_path: Path):
         from igni_core.core.tools.custom_loader import CustomToolLoader
-        from igni_core.core.workspace_trust import WorkspaceTrust
+        from igni_core.core.workspace_trust import process_trust
 
         cache.materialize(
             _pack(_entry("tools", "noop", "# nothing to register\n", content_type="python"))
         )
-        result = CustomToolLoader(trust=WorkspaceTrust.shared()).discover(
+        result = CustomToolLoader(trust=process_trust()).discover(
             tmp_path / "proj",
             group_tools_dir=cache.layout.dir_for("tools"),
         )

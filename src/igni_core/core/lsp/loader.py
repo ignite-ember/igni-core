@@ -48,6 +48,7 @@ from igni_core.core.lsp.schemas import (
     LspServerConfig,
 )
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.workspace_trust import TrustGate, WorkspaceTrust
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +73,14 @@ class LspConfigLoader:
         self,
         project_dir: Path,
         plugin_roots: list[tuple[Path, str]] | None = None,
+        *,
+        trust: WorkspaceTrust | None = None,
     ) -> None:
         self._project_dir = project_dir
         self._plugin_roots: list[tuple[Path, str]] = list(plugin_roots or [])
+        #: The trust service that says whether the folder's own language
+        #: servers may start. The process's own, unless a caller says otherwise.
+        self._trust = TrustGate(trust)
 
     # ── Public API ───────────────────────────────────────────────
 
@@ -106,11 +112,7 @@ class LspConfigLoader:
             return
         # Each entry is a command igni starts; a folder's own only once the
         # folder is trusted (``core/workspace_trust``).
-        from igni_core.core.workspace_trust import WorkspaceTrust
-
-        if WorkspaceTrust.shared().is_trusted(
-            self._project_dir, what="language servers (.lsp.json)"
-        ):
+        if self._trust.is_trusted(self._project_dir, what="language servers (.lsp.json)"):
             self._load_file(result, project_path, namespace="")
 
     def _load_plugin_tier(
@@ -229,6 +231,8 @@ class LspConfigLoader:
 def load_lsp_config(
     project_dir: Path,
     plugin_roots: list[tuple[Path, str]] | None = None,
+    *,
+    trust: WorkspaceTrust | None = None,
 ) -> dict[str, LspServerConfig]:
     """Back-compat wrapper around :class:`LspConfigLoader`.
 
@@ -237,7 +241,7 @@ def load_lsp_config(
     :class:`LspConfigLoadResult` but dropped here — call
     :class:`LspConfigLoader` directly to surface them to the panel.
     """
-    return LspConfigLoader(project_dir, plugin_roots).load().servers
+    return LspConfigLoader(project_dir, plugin_roots, trust=trust).load().servers
 
 
 __all__ = [

@@ -46,7 +46,7 @@ from igni_core.core.tools.tool_spec import (
     ToolSpec,
     ToolSpecCatalog,
 )
-from igni_core.core.workspace_trust import WorkspaceTrust
+from igni_core.core.workspace_trust import WorkspaceTrust, process_trust
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ class ToolRegistry:
         # that means a different one (a test, a run with its own
         # policy) says so here rather than the loader reaching for
         # one itself.
-        self._trust = trust if trust is not None else WorkspaceTrust.shared()
+        self._trust = trust if trust is not None else process_trust()
         # Custom factories registered at runtime via :meth:`register`.
         # These don't fit the spec-catalog shape (they're raw callables
         # returning ``Toolkit`` instances) so they live on the instance

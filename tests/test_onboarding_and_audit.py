@@ -12,7 +12,7 @@ from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.utils.audit import AuditEntry, AuditLogger
 from igni_core.core.utils.context import load_project_context
 from igni_core.core.utils.update_checker import UpdateInfo
-from igni_core.core.workspace_trust import WorkspaceTrust
+from igni_core.core.workspace_trust import process_trust
 
 
 def _initialize(project_dir: Path, config: InitConfig | None = None) -> bool:
@@ -20,7 +20,7 @@ def _initialize(project_dir: Path, config: InitConfig | None = None) -> bool:
     return (
         ProjectInitializer(
             project_dir=project_dir,
-            trust=WorkspaceTrust.shared(),
+            trust=process_trust(),
             config=config or InitConfig(),
         )
         .run()

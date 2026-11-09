@@ -27,7 +27,7 @@ from igni_core.core.monitors import (
 )
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.tools.monitors import MonitorTools
-from igni_core.core.workspace_trust import WorkspaceTrust
+from tests.workspace_trust_doubles import TrustEverything
 
 
 def _configs(raw: object, namespace: str = "") -> dict[str, MonitorConfig]:
@@ -35,9 +35,7 @@ def _configs(raw: object, namespace: str = "") -> dict[str, MonitorConfig]:
 
 
 def _load(project_dir: Path, **kwargs) -> dict[str, MonitorConfig]:
-    return MonitorConfigLoader(
-        project_dir, trust=WorkspaceTrust(trust_everything=True), **kwargs
-    ).load()
+    return MonitorConfigLoader(project_dir, trust=TrustEverything(), **kwargs).load()
 
 
 # ── Config parsing ────────────────────────────────────────────
