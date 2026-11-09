@@ -19,7 +19,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from agno.tools import Toolkit
+
 from igni_core.core.agents.catalog import agent_catalog
+from igni_core.core.config.settings import Settings
 from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.prompts.loader import PromptLoader
 
@@ -28,6 +31,14 @@ from .instructions_builder import InstructionsBuilder
 from .main_tools import MainToolSet
 from .prompt_builder import PromptBuilder
 from .tools_builder import ToolsBuilder
+from .tools_builder_deps import (
+    CloudCredentials,
+    OrchestrationDeps,
+    SessionToolkits,
+    ToolBuildDeps,
+    ToolRegistryDeps,
+    ToolSourceDeps,
+)
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session
@@ -51,7 +62,7 @@ class MainAgentBuilder:
         permissions_cls: Any,
         compression_cls: Any,
         model_registry_cls: Any,
-        reasoning_factory: Callable[[Any], Any],
+        reasoning_factory: Callable[[Settings], Toolkit | None],
         guardrails_factory: Callable[[Any], Any],
         prompt_loader: PromptLoader,
     ) -> None:
@@ -65,32 +76,54 @@ class MainAgentBuilder:
         self._guardrails_factory = guardrails_factory
         self._prompt_loader = prompt_loader
 
-    def build_tools(self) -> list[Any]:
+    def build_tools(self) -> list[Toolkit]:
         """Assemble the ``tools=[...]`` list via :class:`ToolsBuilder`."""
+        return ToolsBuilder(self.tool_deps()).assemble()
+
+    def tool_deps(self) -> ToolBuildDeps:
+        """The tools builder's dependency bag, read off the session.
+
+        The session-facing toolkits are built here and not in the
+        builder: they need the session itself, and the builder is
+        session-free. Everything else is handed over as a
+        collaborator, so no attribute is copied off the session twice.
+
+        Public because the bag is the contract between the two
+        halves: what the builder gets is exactly what this mapping
+        says it gets.
+        """
         s = self._session
-        return ToolsBuilder(
-            project_dir=s.project_dir,
-            settings=s.settings,
-            permissions_cls=self._permissions_cls,
-            registry_cls=self._registry_cls,
-            cloud_token=s.cloud_access_token,
-            cloud_server_url=s.cloud_server_url,
-            broadcast=s.broadcast,
-            plugin_loader=s.plugin_loader,
-            disabled_plugins=s.disabled_plugins,
+        return ToolBuildDeps(
+            registry=ToolRegistryDeps(
+                project_dir=s.project_dir,
+                settings=s.settings,
+                permissions_cls=self._permissions_cls,
+                registry_cls=self._registry_cls,
+                cloud=CloudCredentials(
+                    token=s.cloud_access_token,
+                    server_url=s.cloud_server_url,
+                ),
+                broadcast=s.broadcast,
+            ),
+            sources=ToolSourceDeps(
+                plugin_loader=s.plugin_loader,
+                disabled_plugins=s.disabled_plugins,
+                group_tools_dir=s.group_policy.dir_for("tools"),
+            ),
+            orchestration=OrchestrationDeps(
+                pool=s.pool,
+                hook_executor=s.hook_executor,
+                session_id=s.session_id,
+                spawn_budget=s.spawn_budget,
+                sub_agent_hitl=s.sub_agent_hitl,
+            ),
             mcp_manager=s.mcp_manager,
             lsp_manager=s.lsp_manager,
             monitor_manager=s.monitor_manager,
-            skill_pool=s.skill_pool,
-            pool=s.pool,
-            hook_executor=s.hook_executor,
-            session_id=s.session_id,
-            spawn_budget=s.spawn_budget,
-            sub_agent_hitl=s.sub_agent_hitl,
             reasoning_factory=self._reasoning_factory,
             resolve_tool_names=MainToolSet(s.settings.permissions).names,
-            session=s,
-        ).assemble()
+            session_toolkits=SessionToolkits.for_session(s),
+        )
 
     def build_prompt(self) -> str:
         """Render the base system prompt via :class:`PromptBuilder`."""

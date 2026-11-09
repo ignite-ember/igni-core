@@ -5,45 +5,24 @@ to ``Agent(...)``. One method per toolkit family so each family is
 testable in isolation and the assembly order is a single readable
 sequence in :meth:`ToolsBuilder.assemble`.
 
-Constructor takes named typed collaborators — the coordinator
-harvests everything from the session's public accessors before
-handing them here. The one exception is the ``session`` param,
-which is passed through to :class:`LoopTools` / :class:`TodoTools` /
-:class:`PlanTool` / :class:`SlashCommandTool` because those
-toolkits reach back into the session's stores and broadcast paths;
-their Session-shaped API is upstream of this builder.
+The builder is session-free. Everything it needs arrives in one
+:class:`ToolBuildDeps` bag, and the toolkits that answer back into a
+live session — loop, todo, plan, slash — arrive already built, in
+:class:`SessionToolkits`. The coordinator, which owns the session,
+builds those and hands them over; this module never sees a
+:class:`Session`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from agno.tools import Toolkit
 
-from igni_core.core.agents import AgentPool
-from igni_core.core.broadcast_schema import BroadcastSink
-from igni_core.core.config.settings import Settings
-from igni_core.core.config.tool_permissions import ToolPermissions
-from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.lsp import LspServerManager
-from igni_core.core.mcp.client import MCPClientManager
-from igni_core.core.monitors import MonitorManager
-from igni_core.core.plugins import PluginLoader
-from igni_core.core.skills.loader import SkillPool
-from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
-from igni_core.core.tools.loop import LoopTools
-from igni_core.core.tools.loop_progress import LoopProgressTool
 from igni_core.core.tools.lsp import LspTools
 from igni_core.core.tools.monitors import MonitorTools
 from igni_core.core.tools.orchestrate import OrchestrateTools
-from igni_core.core.tools.orchestrate_budget import SpawnBudget
-from igni_core.core.tools.plan import PlanTool
 from igni_core.core.tools.registry import ToolRegistry
-from igni_core.core.tools.slash import SlashCommandTool
-from igni_core.core.tools.todo import TodoTools
 
-if TYPE_CHECKING:
-    from igni_core.core.session.core import Session
+from .tools_builder_deps import ToolBuildDeps
 
 
 class ToolsBuilder:
@@ -58,56 +37,8 @@ class ToolsBuilder:
     with same-named built-ins).
     """
 
-    def __init__(
-        self,
-        *,
-        project_dir: Path,
-        settings: Settings,
-        permissions_cls: type[ToolPermissions],
-        registry_cls: type[ToolRegistry],
-        cloud_token: str | None,
-        cloud_server_url: str | None,
-        broadcast: BroadcastSink,
-        plugin_loader: PluginLoader,
-        disabled_plugins: set[str],
-        mcp_manager: MCPClientManager,
-        lsp_manager: LspServerManager | None,
-        monitor_manager: MonitorManager | None,
-        skill_pool: SkillPool,
-        pool: AgentPool,
-        hook_executor: HookExecutor,
-        session_id: str,
-        spawn_budget: SpawnBudget,
-        sub_agent_hitl: SubAgentHITLCoordinator,
-        reasoning_factory: Callable[[Settings], Any],
-        resolve_tool_names: Callable[[ToolRegistry], list[str]],
-        session: Session,
-    ) -> None:
-        self._project_dir = project_dir
-        self._settings = settings
-        self._permissions_cls = permissions_cls
-        self._registry_cls = registry_cls
-        self._cloud_token = cloud_token
-        self._cloud_server_url = cloud_server_url
-        self._broadcast = broadcast
-        self._plugin_loader = plugin_loader
-        self._disabled_plugins = disabled_plugins
-        self._mcp_manager = mcp_manager
-        self._lsp_manager = lsp_manager
-        self._monitor_manager = monitor_manager
-        self._skill_pool = skill_pool
-        self._pool = pool
-        self._hook_executor = hook_executor
-        self._session_id = session_id
-        self._spawn_budget = spawn_budget
-        self._sub_agent_hitl = sub_agent_hitl
-        self._reasoning_factory = reasoning_factory
-        self._resolve_tool_names = resolve_tool_names
-        # LoopTools / TodoTools / PlanTool / SlashCommandTool need a
-        # Session-shaped object because they call back into the
-        # session's stores / broadcast paths. Threaded here so the
-        # rest of the builder stays session-free.
-        self._session = session
+    def __init__(self, deps: ToolBuildDeps) -> None:
+        self._deps = deps
         self._registry: ToolRegistry | None = None
 
     def _build_registry(self) -> ToolRegistry:
@@ -118,76 +49,79 @@ class ToolsBuilder:
         loading), so we build it lazily on first access.
         """
         if self._registry is None:
-            self._registry = self._registry_cls(
-                base_dir=str(self._project_dir),
-                permissions=self._permissions_cls(
-                    project_dir=self._project_dir,
-                    settings_permissions=self._settings.permissions,
+            deps = self._deps.registry
+            self._registry = deps.registry_cls(
+                base_dir=str(deps.project_dir),
+                permissions=deps.permissions_cls(
+                    project_dir=deps.project_dir,
+                    settings_permissions=deps.settings.permissions,
                 ),
-                cloud_token=self._cloud_token,
-                cloud_server_url=self._cloud_server_url,
-                broadcast=self._broadcast,
+                cloud_token=deps.cloud.token,
+                cloud_server_url=deps.cloud.server_url,
+                broadcast=deps.broadcast,
             )
         return self._registry
 
-    def core_tools(self) -> list[Any]:
+    def core_tools(self) -> list[Toolkit]:
         """Registry-resolved built-ins (Write / Edit / Bash / etc.)."""
         registry = self._build_registry()
-        tool_names = self._resolve_tool_names(registry)
-        return registry.resolve(tool_names)
+        tool_names = self._deps.resolve_tool_names(registry)
+        return list(registry.resolve(tool_names))
 
-    def orchestrate(self) -> list[Any]:
+    def orchestrate(self) -> list[Toolkit]:
         """Delegation surface — spawn_agent / spawn_team."""
+        orchestration = self._deps.orchestration
+        registry = self._deps.registry
         return [
             OrchestrateTools(
-                pool=self._pool,
-                settings=self._settings,
+                pool=orchestration.pool,
+                settings=registry.settings,
                 current_depth=0,
-                hook_executor=self._hook_executor,
-                session_id=self._session_id,
-                hitl_coordinator=self._sub_agent_hitl,
-                project_dir=self._project_dir,
-                budget=self._spawn_budget,
+                hook_executor=orchestration.hook_executor,
+                session_id=orchestration.session_id,
+                hitl_coordinator=orchestration.sub_agent_hitl,
+                project_dir=registry.project_dir,
+                budget=orchestration.spawn_budget,
             )
         ]
 
-    def reasoning(self) -> list[Any]:
+    def reasoning(self) -> list[Toolkit]:
         """Optional Agno ReasoningTools — enabled by settings."""
-        rt = self._reasoning_factory(self._settings)
-        return [rt] if rt else []
+        tools = self._deps.reasoning_factory(self._deps.registry.settings)
+        return [tools] if tools else []
 
-    def loop(self) -> list[Any]:
+    def loop(self) -> list[Toolkit]:
         """/loop-driven iteration control + per-iter scratchpad."""
-        return [
-            LoopTools(self._session),
-            LoopProgressTool(self._session),
-        ]
+        toolkits = self._deps.session_toolkits
+        return [toolkits.loop, toolkits.loop_progress]
 
-    def todo(self) -> list[Any]:
+    def todo(self) -> list[Toolkit]:
         """Agent-facing TodoWrite (CC parity)."""
-        return [TodoTools(self._session)]
+        return [self._deps.session_toolkits.todo]
 
-    def plan(self) -> list[Any]:
+    def plan(self) -> list[Toolkit]:
         """Agent-facing exit_plan_mode (row 50)."""
-        return [PlanTool(self._session)]
+        return [self._deps.session_toolkits.plan]
 
-    def slash(self) -> list[Any]:
+    def slash(self) -> list[Toolkit]:
         """Agent-facing re-entrant slash-command dispatch."""
-        return [SlashCommandTool(self._session)]
+        return [self._deps.session_toolkits.slash]
 
-    def lsp(self) -> list[Any]:
+    def lsp(self) -> list[Toolkit]:
         """LSP query toolkit — only when at least one server exists."""
-        if self._lsp_manager is None or not self._lsp_manager.list_servers():
+        manager = self._deps.lsp_manager
+        if manager is None or not manager.list_servers():
             return []
-        return [LspTools(self._lsp_manager)]
+        return [LspTools(manager)]
 
-    def monitors(self) -> list[Any]:
+    def monitors(self) -> list[Toolkit]:
         """Monitor inspection toolkit — only when configured."""
-        if self._monitor_manager is None or not self._monitor_manager.list_names():
+        manager = self._deps.monitor_manager
+        if manager is None or not manager.list_names():
             return []
-        return [MonitorTools(self._monitor_manager)]
+        return [MonitorTools(manager)]
 
-    def mcp(self, tools_so_far: list[Any]) -> list[Any]:
+    def mcp(self, tools_so_far: list[Toolkit]) -> list[Toolkit]:
         """Connected MCP-server clients, deduped against ``tools_so_far``.
 
         The original code appended each client only if not already
@@ -195,34 +129,36 @@ class ToolsBuilder:
         also implements ``AgnoToolkit`` semantics and got pulled
         in earlier isn't attached twice.
         """
-        extras: list[Any] = []
-        for name in self._mcp_manager.list_connected():
-            client = self._mcp_manager.get_client(name)
+        manager = self._deps.mcp_manager
+        extras: list[Toolkit] = []
+        for name in manager.list_connected():
+            client = manager.get_client(name)
             if client and client not in tools_so_far and client not in extras:
                 extras.append(client)
         return extras
 
-    def custom(self) -> list[Any]:
+    def custom(self) -> list[Toolkit]:
         """Custom toolkits from ``.igni/tools/``, plugins, and the group."""
         registry = self._build_registry()
-        plugin_tool_dirs = self._plugin_loader.collect_tool_dirs(
-            disabled=self._disabled_plugins,
+        sources = self._deps.sources
+        plugin_tool_dirs = sources.plugin_loader.collect_tool_dirs(
+            disabled=sources.disabled_plugins,
         )
         loaded = registry.load_custom_tools(
-            self._project_dir,
+            self._deps.registry.project_dir,
             plugin_tool_dirs=plugin_tool_dirs,
-            group_tools_dir=self._session.group_policy.dir_for("tools"),
+            group_tools_dir=sources.group_tools_dir,
         )
-        return list(loaded) if loaded else []
+        return list(loaded)
 
-    def assemble(self) -> list[Any]:
+    def assemble(self) -> list[Toolkit]:
         """Compose all toolkit families in the canonical order.
 
         Order preserved from the pre-refactor procedural version:
         core → orchestrate → reasoning → knowledge → loop → todo
         → plan → slash → lsp → monitors → mcp (dedup) → custom.
         """
-        tools: list[Any] = []
+        tools: list[Toolkit] = []
         tools.extend(self.core_tools())
         tools.extend(self.orchestrate())
         tools.extend(self.reasoning())
@@ -235,3 +171,6 @@ class ToolsBuilder:
         tools.extend(self.mcp(tools))
         tools.extend(self.custom())
         return tools
+
+
+__all__ = ["ToolsBuilder"]

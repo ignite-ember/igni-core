@@ -28,8 +28,6 @@ attached.
 
 from __future__ import annotations
 
-from typing import Any
-
 from agno.guardrails.openai import OpenAIModerationGuardrail
 from agno.guardrails.pii import PIIDetectionGuardrail
 from agno.guardrails.prompt_injection import PromptInjectionGuardrail
@@ -38,7 +36,7 @@ from agno.tools.reasoning import ReasoningTools
 from igni_core.core.config.settings import Settings
 
 
-def create_reasoning_tools(settings: Settings) -> Any | None:
+def create_reasoning_tools(settings: Settings) -> ReasoningTools | None:
     """Return an Agno ``ReasoningTools`` instance, or ``None`` when
     reasoning is disabled."""
     if not settings.reasoning.enabled:
