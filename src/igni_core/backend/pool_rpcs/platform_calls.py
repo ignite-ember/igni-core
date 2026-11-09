@@ -22,7 +22,7 @@ from igni_core.backend.schemas_pool import (
 )
 from igni_core.extensions.service_events import ServiceEventInbox
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 from igni_core.protocol.schemas.rpc import RpcErrorCode
 
@@ -50,6 +50,7 @@ class VmSignInRpc(PoolRpc):
 
     @rpc(
         RpcMethod.VM_SIGN_IN,
+        duration=RpcDuration.NETWORK,
         args=VmSignInParams,
         scope=RpcScope.IGNI,
         streams=(PushChannel.VM_CREDENTIAL,),
@@ -95,6 +96,7 @@ class ServiceEventRpc(PoolRpc):
 
     @rpc(
         RpcMethod.DELIVER_SERVICE_EVENTS,
+        duration=RpcDuration.IO,
         args=ServiceEventsParams,
         scope=RpcScope.IGNI,
         streams=(

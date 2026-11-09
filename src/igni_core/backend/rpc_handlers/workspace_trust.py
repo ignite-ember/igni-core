@@ -19,7 +19,7 @@ from typing import Any, Literal
 from igni_core.backend.rpc_binding import NoArgs, RpcArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 
 
@@ -34,7 +34,9 @@ class TrustDecisionArgs(RpcArgs):
 class WorkspaceTrustRpcHandler(RpcHandler):
     """Read and answer the folder's workspace-trust decision."""
 
-    @rpc(RpcMethod.GET_WORKSPACE_TRUST, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.GET_WORKSPACE_TRUST, duration=RpcDuration.IO, args=NoArgs, scope=RpcScope.SESSION
+    )
     def get_workspace_trust(self, args: NoArgs) -> WorkspaceTrustStatus:
         """Read whether this session's project folder is trusted.
 
@@ -49,6 +51,7 @@ class WorkspaceTrustRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.SET_WORKSPACE_TRUST,
+        duration=RpcDuration.IO,
         args=TrustDecisionArgs,
         scope=RpcScope.SESSION,
         streams=(PushChannel.WORKSPACE_TRUST_REQUIRED,),

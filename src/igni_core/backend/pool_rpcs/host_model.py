@@ -16,7 +16,7 @@ from igni_core.extensions.host.window_rpc import WindowReply
 from igni_core.extensions.host.windows import WindowModelError, WindowRequest, WindowStateError
 from igni_core.extensions.host.wire import ErrorBody, Reply
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 from igni_core.protocol.schemas.rpc import RpcErrorCode
 
@@ -149,6 +149,7 @@ class HostModelRpcs(PoolRpc):
 
     @rpc(
         RpcMethod.HOST_MODEL,
+        duration=RpcDuration.PERSON,
         args=PageRequest,
         scope=RpcScope.IGNI,
         streams=(

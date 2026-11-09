@@ -12,7 +12,7 @@ from igni_core.backend.schemas_auth import (
 )
 from igni_core.backend.schemas_rpc import CloudPlan, LoginStarted
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 
 
@@ -43,7 +43,12 @@ class AuthRpcHandler(RpcHandler):
         """
         return await self._ctx.login.start()
 
-    @rpc(RpcMethod.RELOAD_CLOUD_CREDENTIALS, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.RELOAD_CLOUD_CREDENTIALS,
+        duration=RpcDuration.IO,
+        args=NoArgs,
+        scope=RpcScope.SESSION,
+    )
     def reload_creds(self, args: NoArgs) -> msg.StatusUpdate:
         """Read the saved sign-in again, so this session acts as whoever is signed in now.
 
@@ -56,6 +61,7 @@ class AuthRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.CLEAR_CLOUD_CREDENTIALS,
+        duration=RpcDuration.IO,
         args=NoArgs,
         scope=RpcScope.SESSION,
         streams=(PushChannel.NOTIFICATIONS_CHANGED,),
@@ -76,7 +82,9 @@ class AuthRpcHandler(RpcHandler):
             await self._ctx.notifications.signed_out()
         return status
 
-    @rpc(RpcMethod.GET_CLOUD_PLAN, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.GET_CLOUD_PLAN, duration=RpcDuration.NETWORK, args=NoArgs, scope=RpcScope.SESSION
+    )
     async def get_cloud_plan(self, args: NoArgs) -> CloudPlan | None:
         """Read who is signed in to igni server, and their organisation's plan.
 
@@ -88,7 +96,12 @@ class AuthRpcHandler(RpcHandler):
         """
         return await self._controllers.auth.get_cloud_plan()
 
-    @rpc(RpcMethod.DISCOVER_SERVER, args=DiscoverServerArgs, scope=RpcScope.IGNI)
+    @rpc(
+        RpcMethod.DISCOVER_SERVER,
+        duration=RpcDuration.NETWORK,
+        args=DiscoverServerArgs,
+        scope=RpcScope.IGNI,
+    )
     async def discover_server(self, args: DiscoverServerArgs) -> ServerFound:
         """Find the igni server an email address's organisation runs.
 
@@ -100,7 +113,7 @@ class AuthRpcHandler(RpcHandler):
         """
         return await self._controllers.auth.discover_server(args.email)
 
-    @rpc(RpcMethod.SET_SERVER, args=SetServerArgs, scope=RpcScope.IGNI)
+    @rpc(RpcMethod.SET_SERVER, duration=RpcDuration.IO, args=SetServerArgs, scope=RpcScope.IGNI)
     def set_server(self, args: SetServerArgs) -> ServerChoice:
         """Choose the igni server to sign in to, and remember it for the next launch.
 

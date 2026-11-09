@@ -61,6 +61,7 @@ def test_every_method_is_described(contract: dict[str, Any], method: str) -> Non
     assert entry["scope"] in {s.value for s in RpcScope}
     assert entry["access"] in {a.value for a in RpcAccess}
     assert entry["reply"] in {"rpc_response", "message"}
+    assert entry["duration"] in contract["durations"]
     assert entry["area"]
 
 

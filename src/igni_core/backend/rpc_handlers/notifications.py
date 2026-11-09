@@ -20,7 +20,7 @@ from igni_core.notifications.schemas import (
     NotificationsListResult,
     NotificationsReadResult,
 )
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 
 
@@ -38,6 +38,7 @@ class NotificationsRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.NOTIFICATIONS_LIST,
+        duration=RpcDuration.NETWORK,
         args=NoArgs,
         scope=RpcScope.IGNI,
         streams=(PushChannel.NOTIFICATIONS_CHANGED,),
@@ -71,6 +72,7 @@ class NotificationsRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.NOTIFICATIONS_MARK_READ,
+        duration=RpcDuration.NETWORK,
         args=MarkReadArgs,
         scope=RpcScope.IGNI,
         streams=(PushChannel.NOTIFICATIONS_CHANGED,),

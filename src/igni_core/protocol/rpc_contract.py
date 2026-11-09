@@ -15,6 +15,7 @@ The file has this shape::
       "version": 1,
       "access": "<who reaches each access level, and how a client gets one>",
       "errors": {"<rpc_response.code>": "<what it means>", ...},
+      "durations": {"<duration>": {"doc": "...", "timeout_seconds": <int> | null}},
       "defs": {"<name>": <JSON Schema>, ...},
       "methods": {
         "<wire name>": {
@@ -26,7 +27,9 @@ The file has this shape::
           "args": <JSON Schema>,
           "result": <JSON Schema>,
           "reply": "rpc_response" | "message",
-          "streams": ["<message type>" | "push_notification:<channel>", ...]
+          "streams": ["<message type>" | "push_notification:<channel>", ...],
+          "duration": "instant" | "io" | "network" | "long" | "person",
+          "timeout_seconds": <a timeout leaving a healthy call room> | null
         }
       },
       "messages": {
@@ -66,7 +69,7 @@ from pydantic_core import core_schema
 
 from igni_core.protocol import messages as msg
 from igni_core.protocol.json_value import JSON_VALUE_SCHEMA
-from igni_core.protocol.rpc import RpcAccess, RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcAccess, RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 from igni_core.protocol.schemas.envelope import Direction
 from igni_core.protocol.schemas.rpc import RpcErrorCode
@@ -130,6 +133,7 @@ class MethodSpec:
     scope: RpcScope
     access: RpcAccess
     streams: tuple[str, ...]
+    duration: RpcDuration
 
     @property
     def summary(self) -> str:
@@ -183,6 +187,7 @@ def method_specs() -> list[MethodSpec]:
                 scope=binding.scope,
                 access=access_of(method),
                 streams=tuple(sorted({stream_name(s) for s in binding.streams})),
+                duration=binding.duration,
             )
     return [specs[m] for m in sorted(specs, key=lambda m: m.value)]
 
@@ -239,6 +244,8 @@ def build() -> dict[str, Any]:
             "result": schemas[((key, "result"), "serialization")],
             "reply": spec.reply,
             "streams": list(spec.streams),
+            "duration": spec.duration.value,
+            "timeout_seconds": spec.duration.timeout_seconds,
         }
 
     wire_messages: dict[str, Any] = {}
@@ -270,6 +277,9 @@ def build() -> dict[str, Any]:
         "version": VERSION,
         "access": inspect.getdoc(RpcAccess) or "",
         "errors": {code.value: code.doc for code in RpcErrorCode},
+        "durations": {
+            d.value: {"doc": d.doc, "timeout_seconds": d.timeout_seconds} for d in RpcDuration
+        },
         "defs": defs,
         "methods": methods,
         "messages": wire_messages,

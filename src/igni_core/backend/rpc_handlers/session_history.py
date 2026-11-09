@@ -17,13 +17,18 @@ from igni_core.backend.rpc_handlers.session_args import (
 from igni_core.backend.schemas_context import TruncateHistoryResult
 from igni_core.backend.schemas_history import ChatSearchHit, ChatTurn
 from igni_core.core.session.schemas import ContextBreakdown
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class SessionHistoryRpcHandler(RpcHandler):
     """Chat log query + search + truncate + context-token count."""
 
-    @rpc(RpcMethod.GET_CHAT_HISTORY, args=SessionIdArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.GET_CHAT_HISTORY,
+        duration=RpcDuration.IO,
+        args=SessionIdArgs,
+        scope=RpcScope.SESSION,
+    )
     async def get_chat_history(self, args: SessionIdArgs) -> list[ChatTurn]:
         """Read a session's conversation, turn by turn, as a client draws it.
 
@@ -37,7 +42,9 @@ class SessionHistoryRpcHandler(RpcHandler):
         """
         return await self._ctx.backend.get_chat_history(args.session_id)
 
-    @rpc(RpcMethod.SEARCH_CHAT, args=SearchChatArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.SEARCH_CHAT, duration=RpcDuration.IO, args=SearchChatArgs, scope=RpcScope.SESSION
+    )
     async def search_chat(self, args: SearchChatArgs) -> list[ChatSearchHit]:
         """Find text in a session's conversation.
 
@@ -49,7 +56,12 @@ class SessionHistoryRpcHandler(RpcHandler):
         """
         return await self._ctx.backend.search_chat(args.session_id, args.query, args.limit)
 
-    @rpc(RpcMethod.TRUNCATE_HISTORY, args=TruncateHistoryArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.TRUNCATE_HISTORY,
+        duration=RpcDuration.IO,
+        args=TruncateHistoryArgs,
+        scope=RpcScope.SESSION,
+    )
     async def truncate_history(self, args: TruncateHistoryArgs) -> TruncateHistoryResult:
         """Drop a run from a session's history, with every run after it.
 
@@ -61,7 +73,9 @@ class SessionHistoryRpcHandler(RpcHandler):
         """
         return await self._ctx.backend.truncate_history(args.session_id, args.run_id)
 
-    @rpc(RpcMethod.COUNT_CONTEXT_TOKENS, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.COUNT_CONTEXT_TOKENS, duration=RpcDuration.IO, args=NoArgs, scope=RpcScope.SESSION
+    )
     async def count_context_tokens(self, args: NoArgs) -> int:
         """Estimate how many tokens this session's conversation takes up.
 
@@ -71,7 +85,12 @@ class SessionHistoryRpcHandler(RpcHandler):
         """
         return await self._ctx.backend.count_context_tokens()
 
-    @rpc(RpcMethod.GET_CONTEXT_BREAKDOWN, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.GET_CONTEXT_BREAKDOWN,
+        duration=RpcDuration.IO,
+        args=NoArgs,
+        scope=RpcScope.SESSION,
+    )
     async def get_context_breakdown(self, args: NoArgs) -> ContextBreakdown:
         """Split this session's context into what compaction can shrink and what it cannot.
 

@@ -49,14 +49,19 @@ from igni_core.backend.schemas_visualization import (
 from igni_core.backend.server_files import ReadFileResult
 from igni_core.core.agents import AgentInfo
 from igni_core.core.tools.todo import TodoItemWire
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 
 
 class PanelRpcHandler(RpcHandler):
     """GUI panel + watcher RPC surface."""
 
-    @rpc(RpcMethod.COMPLETE_FILES, args=CompleteFilesArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.COMPLETE_FILES,
+        duration=RpcDuration.IO,
+        args=CompleteFilesArgs,
+        scope=RpcScope.SESSION,
+    )
     async def complete_files(self, args: CompleteFilesArgs) -> FileCompletion:
         """Complete a file path typed after ``@``, from this session's project.
 
@@ -68,7 +73,7 @@ class PanelRpcHandler(RpcHandler):
         """
         return await self._ctx.file_completion.complete(args.query, args.limit)
 
-    @rpc(RpcMethod.READ_FILE, args=ReadFileArgs, scope=RpcScope.SESSION)
+    @rpc(RpcMethod.READ_FILE, duration=RpcDuration.IO, args=ReadFileArgs, scope=RpcScope.SESSION)
     def read_file(self, args: ReadFileArgs) -> ReadFileResult:
         """Read a file for preview: one of this session's project, igni's data, or an attachment.
 
@@ -81,7 +86,9 @@ class PanelRpcHandler(RpcHandler):
         """
         return self._ctx.backend.read_file(args.path)
 
-    @rpc(RpcMethod.SEARCH_CODE, args=SearchCodeArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.SEARCH_CODE, duration=RpcDuration.IO, args=SearchCodeArgs, scope=RpcScope.SESSION
+    )
     async def search_code(self, args: SearchCodeArgs) -> SearchCodeResult:
         """Find where a snippet of code appears in this session's project.
 
@@ -94,6 +101,7 @@ class PanelRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.RUN_SHELL,
+        duration=RpcDuration.LONG,
         args=RunShellArgs,
         scope=RpcScope.SESSION,
         streams=(
@@ -117,7 +125,7 @@ class PanelRpcHandler(RpcHandler):
         """
         return await self._ctx.shell_runner.run(args.command)
 
-    @rpc(RpcMethod.LIST_DIRS, args=ListDirsArgs, scope=RpcScope.IGNI)
+    @rpc(RpcMethod.LIST_DIRS, duration=RpcDuration.IO, args=ListDirsArgs, scope=RpcScope.IGNI)
     async def list_dirs(self, args: ListDirsArgs) -> DirListResult:
         """List the folders inside a folder on igni's machine, for picking a project.
 
@@ -129,7 +137,12 @@ class PanelRpcHandler(RpcHandler):
         """
         return await DirScanner(args.root, args.show_hidden).scan_async()
 
-    @rpc(RpcMethod.PICK_DIR_NATIVE, args=PickDirArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.PICK_DIR_NATIVE,
+        duration=RpcDuration.PERSON,
+        args=PickDirArgs,
+        scope=RpcScope.SESSION,
+    )
     async def pick_dir_native(self, args: PickDirArgs) -> PickDirResult:
         """Open the operating system's folder picker on igni's machine and return the choice.
 
@@ -152,7 +165,12 @@ class PanelRpcHandler(RpcHandler):
         """
         return self._ctx.backend.get_agent_details()
 
-    @rpc(RpcMethod.PROMOTE_EPHEMERAL_AGENT, args=PromoteAgentArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.PROMOTE_EPHEMERAL_AGENT,
+        duration=RpcDuration.IO,
+        args=PromoteAgentArgs,
+        scope=RpcScope.SESSION,
+    )
     def promote_ephemeral_agent(self, args: PromoteAgentArgs) -> PromoteEphemeralResult:
         """Keep an agent made during this session, as a project or personal agent.
 
@@ -164,7 +182,12 @@ class PanelRpcHandler(RpcHandler):
         """
         return self._ctx.backend.promote_ephemeral_agent(args.name, args.destination)
 
-    @rpc(RpcMethod.DISCARD_EPHEMERAL_AGENT, args=AgentNameArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.DISCARD_EPHEMERAL_AGENT,
+        duration=RpcDuration.IO,
+        args=AgentNameArgs,
+        scope=RpcScope.SESSION,
+    )
     def discard_ephemeral_agent(self, args: AgentNameArgs) -> DiscardEphemeralResult:
         """Delete an agent made during this session.
 
@@ -239,6 +262,7 @@ class PanelRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.STOP_BACKGROUND_PROCESS,
+        duration=RpcDuration.IO,
         args=ProcessArgs,
         scope=RpcScope.IGNI,
         streams=(
@@ -266,7 +290,7 @@ class PanelRpcHandler(RpcHandler):
         """
         return self._ctx.backend.get_output_styles()
 
-    @rpc(RpcMethod.GET_GROUP_POLICY, args=NoArgs, scope=RpcScope.IGNI)
+    @rpc(RpcMethod.GET_GROUP_POLICY, duration=RpcDuration.IO, args=NoArgs, scope=RpcScope.IGNI)
     def get_group_policy(self, args: NoArgs) -> GroupPolicyPackResult:
         """Read which organisation group's policy igni follows.
 

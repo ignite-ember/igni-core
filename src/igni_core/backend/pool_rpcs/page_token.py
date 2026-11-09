@@ -6,7 +6,7 @@ from igni_core.backend.pool_rpcs.base import PoolRefusal, PoolRpc, UnavailableRp
 from igni_core.backend.rpc_binding import NoArgs, rpc
 from igni_core.extensions.service_token import PageServiceTokens, PageTokenReply
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 
@@ -25,7 +25,12 @@ class PageTokenRpc(PoolRpc):
     def unmounted(cls) -> list[UnavailableRpc]:
         return [UnavailableRpc(RpcMethod.EXTENSION_SERVICE_TOKEN, cls.PAGE_ONLY)]
 
-    @rpc(RpcMethod.EXTENSION_SERVICE_TOKEN, args=NoArgs, scope=RpcScope.IGNI)
+    @rpc(
+        RpcMethod.EXTENSION_SERVICE_TOKEN,
+        duration=RpcDuration.NETWORK,
+        args=NoArgs,
+        scope=RpcScope.IGNI,
+    )
     async def token(self, args: NoArgs, request: msg.RPCRequest) -> PageTokenReply:
         """Get an access token for the calling extension's own service.
 

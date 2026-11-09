@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_core import ErrorDetails
 
 from igni_core.protocol.messages import Message
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 
 #: The JSON object an RPC call carries on the wire, before its binding
@@ -91,6 +91,8 @@ class RpcBinding:
     scope: RpcScope
     #: What the call makes igni send while it works, besides its answer.
     streams: tuple[Stream, ...] = ()
+    #: How long it takes to answer.
+    duration: RpcDuration = RpcDuration.INSTANT
 
     def validate(self, wire: WireArgs | None) -> BaseModel:
         """``wire`` as this call's arguments, or :class:`RpcArgsError`."""
@@ -132,6 +134,7 @@ def rpc(
     args: type[BaseModel],
     scope: RpcScope,
     streams: tuple[Stream, ...] = (),
+    duration: RpcDuration = RpcDuration.INSTANT,
 ) -> Callable[[_F], _F]:
     """Tag a method as the implementation of ``method``.
 
@@ -139,7 +142,7 @@ def rpc(
     the model. The decorator returns the function unchanged; the tag lives
     as an attribute on it."""
 
-    binding = RpcBinding(method, args, scope, streams)
+    binding = RpcBinding(method, args, scope, streams, duration)
 
     def decorator(fn: _F) -> _F:
         setattr(fn, _RPC_BINDING_ATTR, binding)

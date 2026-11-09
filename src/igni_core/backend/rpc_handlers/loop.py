@@ -9,7 +9,7 @@ from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.schemas_context import CompactionOutcome
 from igni_core.backend.schemas_loop import LoopStatusSnapshot
 from igni_core.core.session.schemas import LoopAdvance
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class CompactIfNeededArgs(BaseModel):
@@ -35,7 +35,12 @@ class LoopRpcHandler(RpcHandler):
     the compaction + learning extraction RPCs that ride on the same
     turn boundary."""
 
-    @rpc(RpcMethod.POP_PENDING_LOOP_ITERATION, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.POP_PENDING_LOOP_ITERATION,
+        duration=RpcDuration.IO,
+        args=NoArgs,
+        scope=RpcScope.SESSION,
+    )
     async def loop_pop(self, args: NoArgs) -> LoopAdvance | None:
         """Take the next step of this session's ``/loop``, for the client to send.
 
@@ -48,7 +53,9 @@ class LoopRpcHandler(RpcHandler):
         """
         return await self._controllers.loop.pop_pending_iteration()
 
-    @rpc(RpcMethod.CANCEL_PENDING_LOOP, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.CANCEL_PENDING_LOOP, duration=RpcDuration.IO, args=NoArgs, scope=RpcScope.SESSION
+    )
     async def loop_cancel(self, args: NoArgs) -> bool:
         """End this session's running ``/loop``.
 
@@ -88,7 +95,12 @@ class LoopRpcHandler(RpcHandler):
         """
         return await self._ctx.backend.loop_pause()
 
-    @rpc(RpcMethod.COMPACT_IF_NEEDED, args=CompactIfNeededArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.COMPACT_IF_NEEDED,
+        duration=RpcDuration.LONG,
+        args=CompactIfNeededArgs,
+        scope=RpcScope.SESSION,
+    )
     async def compact_if_needed(self, args: CompactIfNeededArgs) -> CompactionOutcome:
         """Compact this session's conversation when its context is nearly full.
 

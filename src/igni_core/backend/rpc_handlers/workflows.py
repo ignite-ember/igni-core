@@ -18,7 +18,7 @@ from igni_core.backend.schemas_workflows import (
     WorkflowRunRequest,
     WorkflowRunResponse,
 )
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 
 
@@ -31,7 +31,12 @@ class WorkflowsRpcHandler(RpcHandler):
     the run belongs to ``ctx.backend.session``.
     """
 
-    @rpc(RpcMethod.LIST_WORKFLOWS, args=WorkflowListRequest, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.LIST_WORKFLOWS,
+        duration=RpcDuration.IO,
+        args=WorkflowListRequest,
+        scope=RpcScope.SESSION,
+    )
     async def list_workflows(self, args: WorkflowListRequest) -> list[WorkflowListItem]:
         """List the workflows this session's project can run.
 
@@ -45,6 +50,7 @@ class WorkflowsRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.RUN_WORKFLOW,
+        duration=RpcDuration.IO,
         args=WorkflowRunRequest,
         scope=RpcScope.SESSION,
         streams=(PushChannel.WORKFLOW_EVENT,),
@@ -66,6 +72,7 @@ class WorkflowsRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.CANCEL_WORKFLOW,
+        duration=RpcDuration.IO,
         args=WorkflowCancelRequest,
         scope=RpcScope.SESSION,
         streams=(PushChannel.WORKFLOW_EVENT,),

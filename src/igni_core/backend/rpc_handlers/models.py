@@ -14,7 +14,7 @@ from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.config.tool_permissions import PermissionLevel
 from igni_core.core.utils.update_checker import PackageMetadata, check_for_update
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class SwitchModelArgs(BaseModel):
@@ -49,7 +49,12 @@ class ModelsRpcHandler(RpcHandler):
     display-config + model-registry readers, and the update-check
     probe that surfaces "new version available" to the FE."""
 
-    @rpc(RpcMethod.SWITCH_MODEL, args=SwitchModelArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.SWITCH_MODEL,
+        duration=RpcDuration.IO,
+        args=SwitchModelArgs,
+        scope=RpcScope.SESSION,
+    )
     def switch_model(self, args: SwitchModelArgs) -> msg.Info:
         """Make another model the one this session's agent runs on.
 
@@ -76,7 +81,12 @@ class ModelsRpcHandler(RpcHandler):
         """
         return self._ctx.backend.toggle_verbose()
 
-    @rpc(RpcMethod.CHECK_PERMISSION, args=CheckPermissionArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.CHECK_PERMISSION,
+        duration=RpcDuration.IO,
+        args=CheckPermissionArgs,
+        scope=RpcScope.SESSION,
+    )
     def check_permission(self, args: CheckPermissionArgs) -> PermissionLevel:
         """Look up the saved permission level for one tool call.
 
@@ -91,7 +101,12 @@ class ModelsRpcHandler(RpcHandler):
             args.tool_name, args.func_name, args.tool_args
         )
 
-    @rpc(RpcMethod.SAVE_PERMISSION_RULE, args=SavePermissionRuleArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.SAVE_PERMISSION_RULE,
+        duration=RpcDuration.IO,
+        args=SavePermissionRuleArgs,
+        scope=RpcScope.SESSION,
+    )
     def save_permission_rule(self, args: SavePermissionRuleArgs) -> None:
         """Save a permission rule for this session's project.
 
@@ -124,7 +139,7 @@ class ModelsRpcHandler(RpcHandler):
         """
         return ModelRegistryResult.from_settings(self._ctx.backend.settings.models)
 
-    @rpc(RpcMethod.CHECK_FOR_UPDATE, args=NoArgs, scope=RpcScope.IGNI)
+    @rpc(RpcMethod.CHECK_FOR_UPDATE, duration=RpcDuration.NETWORK, args=NoArgs, scope=RpcScope.IGNI)
     async def check_for_update(self, args: NoArgs) -> UpdateAvailable | None:
         """Ask whether a newer igni release is available.
 

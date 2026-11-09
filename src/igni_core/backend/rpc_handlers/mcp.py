@@ -13,7 +13,7 @@ from igni_core.backend.schemas_mcp import (
 )
 from igni_core.core.session.schemas import McpInitResult, McpServerStatus
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class McpServerArgs(BaseModel):
@@ -38,7 +38,7 @@ class McpRpcHandler(RpcHandler):
     """Ensure/connect/disconnect/status/details for MCP servers +
     per-tool enable toggling."""
 
-    @rpc(RpcMethod.ENSURE_MCP, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(RpcMethod.ENSURE_MCP, duration=RpcDuration.LONG, args=NoArgs, scope=RpcScope.SESSION)
     async def ensure_mcp(self, args: NoArgs) -> McpInitResult:
         """Connect this session's configured MCP servers, once.
 
@@ -51,7 +51,12 @@ class McpRpcHandler(RpcHandler):
         """
         return await self._controllers.mcp.ensure()
 
-    @rpc(RpcMethod.MCP_CONNECT, args=McpServerArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.MCP_CONNECT,
+        duration=RpcDuration.NETWORK,
+        args=McpServerArgs,
+        scope=RpcScope.SESSION,
+    )
     async def mcp_connect(self, args: McpServerArgs) -> msg.Info:
         """Connect one configured MCP server to this session.
 
@@ -63,7 +68,12 @@ class McpRpcHandler(RpcHandler):
         """
         return await self._ctx.backend.mcp_connect(args.server_name)
 
-    @rpc(RpcMethod.MCP_DISCONNECT, args=McpServerArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.MCP_DISCONNECT,
+        duration=RpcDuration.IO,
+        args=McpServerArgs,
+        scope=RpcScope.SESSION,
+    )
     async def mcp_disconnect(self, args: McpServerArgs) -> msg.Info:
         """Disconnect one MCP server from this session.
 
@@ -82,7 +92,12 @@ class McpRpcHandler(RpcHandler):
         """
         return self._ctx.backend.get_mcp_status()
 
-    @rpc(RpcMethod.GET_MCP_SERVER_DETAILS, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.GET_MCP_SERVER_DETAILS,
+        duration=RpcDuration.NETWORK,
+        args=NoArgs,
+        scope=RpcScope.SESSION,
+    )
     async def mcp_server_details(self, args: NoArgs) -> list[MCPServerSnapshot]:
         """Describe each of this session's MCP servers in full.
 
@@ -103,7 +118,12 @@ class McpRpcHandler(RpcHandler):
         """
         return self._ctx.backend.get_mcp_servers()
 
-    @rpc(RpcMethod.SET_MCP_TOOL_ENABLED, args=McpToolEnabledArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.SET_MCP_TOOL_ENABLED,
+        duration=RpcDuration.IO,
+        args=McpToolEnabledArgs,
+        scope=RpcScope.SESSION,
+    )
     def mcp_set_tool_enabled(self, args: McpToolEnabledArgs) -> MCPToolToggleResult:
         """Switch one MCP server's tool on or off for this project.
 

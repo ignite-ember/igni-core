@@ -24,13 +24,13 @@ from igni_core.backend.schemas_context import (
 from igni_core.backend.schemas_run import CancelAgentRunResult
 from igni_core.backend.server_files import UploadAttachmentResult
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class SessionRpcHandler(RpcHandler):
     """Session lifecycle + status + agent-run control + hook fires."""
 
-    @rpc(RpcMethod.SHUTDOWN, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(RpcMethod.SHUTDOWN, duration=RpcDuration.IO, args=NoArgs, scope=RpcScope.SESSION)
     async def shutdown(self, args: NoArgs) -> None:
         """Wind this session down: its hooks, its agents, its MCP servers, its scheduler.
 
@@ -44,7 +44,12 @@ class SessionRpcHandler(RpcHandler):
         """
         await self._ctx.backend.shutdown()
 
-    @rpc(RpcMethod.UPLOAD_ATTACHMENT, args=UploadAttachmentArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.UPLOAD_ATTACHMENT,
+        duration=RpcDuration.IO,
+        args=UploadAttachmentArgs,
+        scope=RpcScope.SESSION,
+    )
     async def upload_attachment(self, args: UploadAttachmentArgs) -> UploadAttachmentResult:
         """Store a file for this session, so a message can refer to it.
 
@@ -57,7 +62,12 @@ class SessionRpcHandler(RpcHandler):
         """
         return await self._controllers.files.upload_attachment(args.filename, args.content_base64)
 
-    @rpc(RpcMethod.GET_PENDING_MESSAGES, args=SessionIdArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.GET_PENDING_MESSAGES,
+        duration=RpcDuration.IO,
+        args=SessionIdArgs,
+        scope=RpcScope.SESSION,
+    )
     async def get_pending_messages(self, args: SessionIdArgs) -> list[PendingMessage]:
         """List a session's messages that were received but never answered.
 
@@ -68,7 +78,12 @@ class SessionRpcHandler(RpcHandler):
         """
         return await self._ctx.backend.get_pending_messages(args.session_id)
 
-    @rpc(RpcMethod.GET_INTERRUPTED_RUNS, args=SessionIdArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.GET_INTERRUPTED_RUNS,
+        duration=RpcDuration.IO,
+        args=SessionIdArgs,
+        scope=RpcScope.SESSION,
+    )
     async def get_interrupted_runs(self, args: SessionIdArgs) -> list[InterruptedRun]:
         """List a session's runs that stopped before they finished.
 
@@ -81,7 +96,12 @@ class SessionRpcHandler(RpcHandler):
         # Distinct from ``get_pending_messages`` — see the controller docs.
         return await self._ctx.backend.get_interrupted_runs(args.session_id)
 
-    @rpc(RpcMethod.DISCARD_INTERRUPTED_RUN, args=InterruptedRunArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.DISCARD_INTERRUPTED_RUN,
+        duration=RpcDuration.IO,
+        args=InterruptedRunArgs,
+        scope=RpcScope.SESSION,
+    )
     async def discard_interrupted_run(
         self, args: InterruptedRunArgs
     ) -> DiscardInterruptedRunResult:
@@ -97,7 +117,7 @@ class SessionRpcHandler(RpcHandler):
             args.session_id, args.message_id
         )
 
-    @rpc(RpcMethod.LIST_SESSIONS, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(RpcMethod.LIST_SESSIONS, duration=RpcDuration.IO, args=NoArgs, scope=RpcScope.SESSION)
     async def list_sessions(self, args: NoArgs) -> msg.SessionListResult:
         """List the sessions kept in this session's project.
 
@@ -108,7 +128,12 @@ class SessionRpcHandler(RpcHandler):
         """
         return await self._ctx.backend.list_sessions()
 
-    @rpc(RpcMethod.SWITCH_SESSION, args=SessionIdArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.SWITCH_SESSION,
+        duration=RpcDuration.IO,
+        args=SessionIdArgs,
+        scope=RpcScope.SESSION,
+    )
     async def switch_session(self, args: SessionIdArgs) -> msg.Info:
         """Make the session this request is routed to continue another stored session.
 
@@ -186,7 +211,12 @@ class SessionRpcHandler(RpcHandler):
         """
         return self._controllers.runs.cancel_agent_run(args.run_id)
 
-    @rpc(RpcMethod.FIRE_SESSION_START_HOOK, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.FIRE_SESSION_START_HOOK,
+        duration=RpcDuration.LONG,
+        args=NoArgs,
+        scope=RpcScope.SESSION,
+    )
     async def fire_session_start_hook(self, args: NoArgs) -> None:
         """Run this session's ``SessionStart`` hooks.
 

@@ -6,7 +6,7 @@ from igni_core.backend.rpc_binding import NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.schemas_panels import HookEntryView
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class HooksRpcHandler(RpcHandler):
@@ -23,7 +23,7 @@ class HooksRpcHandler(RpcHandler):
         """
         return self._ctx.backend.get_hooks_details()
 
-    @rpc(RpcMethod.RELOAD_HOOKS, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(RpcMethod.RELOAD_HOOKS, duration=RpcDuration.IO, args=NoArgs, scope=RpcScope.SESSION)
     def reload_hooks(self, args: NoArgs) -> msg.Info:
         """Read this session's hook configuration again.
 

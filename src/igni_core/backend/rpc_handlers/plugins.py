@@ -9,7 +9,7 @@ from igni_core.backend.rpc_binding import NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.core.plugins.models import MarketplaceInfo, PluginInfo
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class PluginArgs(BaseModel):
@@ -80,7 +80,7 @@ class PluginsRpcHandler(RpcHandler):
     """Plugin details / contents / preview / enable-toggle + install
     / update / remove, plus marketplace CRUD + refresh."""
 
-    @rpc(RpcMethod.GET_PLUGIN_DETAILS, args=NoArgs, scope=RpcScope.SESSION)
+    @rpc(RpcMethod.GET_PLUGIN_DETAILS, duration=RpcDuration.IO, args=NoArgs, scope=RpcScope.SESSION)
     def get_plugin_details(self, args: NoArgs) -> list[PluginInfo]:
         """List the installed plugins.
 
@@ -91,7 +91,12 @@ class PluginsRpcHandler(RpcHandler):
         """
         return self._ctx.backend.get_plugin_details()
 
-    @rpc(RpcMethod.GET_PLUGIN_CONTENTS, args=PluginNameArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.GET_PLUGIN_CONTENTS,
+        duration=RpcDuration.IO,
+        args=PluginNameArgs,
+        scope=RpcScope.SESSION,
+    )
     def get_plugin_contents(self, args: PluginNameArgs) -> PluginContents:
         """Show what an installed plugin contains.
 
@@ -101,7 +106,12 @@ class PluginsRpcHandler(RpcHandler):
         """
         return self._controllers.plugins.contents(args.name)
 
-    @rpc(RpcMethod.PREVIEW_PLUGIN, args=PreviewPluginArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.PREVIEW_PLUGIN,
+        duration=RpcDuration.LONG,
+        args=PreviewPluginArgs,
+        scope=RpcScope.SESSION,
+    )
     async def preview_plugin(self, args: PreviewPluginArgs) -> PluginContents:
         """Show what a plugin contains without installing it.
 
@@ -120,7 +130,12 @@ class PluginsRpcHandler(RpcHandler):
             subdir=args.subdir,
         )
 
-    @rpc(RpcMethod.SET_PLUGIN_ENABLED, args=PluginEnabledArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.SET_PLUGIN_ENABLED,
+        duration=RpcDuration.IO,
+        args=PluginEnabledArgs,
+        scope=RpcScope.SESSION,
+    )
     def set_plugin_enabled(self, args: PluginEnabledArgs) -> msg.Info:
         """Switch an installed plugin on or off.
 
@@ -132,7 +147,12 @@ class PluginsRpcHandler(RpcHandler):
         """
         return self._controllers.plugins.set_enabled(args.name, args.enabled)
 
-    @rpc(RpcMethod.INSTALL_PLUGIN, args=InstallPluginArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.INSTALL_PLUGIN,
+        duration=RpcDuration.LONG,
+        args=InstallPluginArgs,
+        scope=RpcScope.SESSION,
+    )
     async def install_plugin(self, args: InstallPluginArgs) -> msg.Info:
         """Install a plugin from a git repository or a marketplace.
 
@@ -146,7 +166,12 @@ class PluginsRpcHandler(RpcHandler):
         """
         return await self._controllers.plugins.install(args.ref, args.install_ref)
 
-    @rpc(RpcMethod.UPDATE_PLUGIN, args=UpdatePluginArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.UPDATE_PLUGIN,
+        duration=RpcDuration.LONG,
+        args=UpdatePluginArgs,
+        scope=RpcScope.SESSION,
+    )
     async def update_plugin(self, args: UpdatePluginArgs) -> msg.Info:
         """Move an installed plugin to another commit.
 
@@ -157,7 +182,12 @@ class PluginsRpcHandler(RpcHandler):
         """
         return await self._controllers.plugins.update(args.name, args.install_ref)
 
-    @rpc(RpcMethod.REMOVE_PLUGIN, args=PluginNameArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.REMOVE_PLUGIN,
+        duration=RpcDuration.IO,
+        args=PluginNameArgs,
+        scope=RpcScope.SESSION,
+    )
     async def remove_plugin(self, args: PluginNameArgs) -> msg.Info:
         """Uninstall a plugin.
 
@@ -167,7 +197,7 @@ class PluginsRpcHandler(RpcHandler):
         """
         return await self._controllers.plugins.remove(args.name)
 
-    @rpc(RpcMethod.GET_MARKETPLACES, args=NoArgs, scope=RpcScope.IGNI)
+    @rpc(RpcMethod.GET_MARKETPLACES, duration=RpcDuration.IO, args=NoArgs, scope=RpcScope.IGNI)
     def get_marketplaces(self, args: NoArgs) -> list[MarketplaceInfo]:
         """List the plugin marketplaces igni knows, with their catalogues.
 
@@ -176,7 +206,12 @@ class PluginsRpcHandler(RpcHandler):
         """
         return self._ctx.backend.get_marketplaces()
 
-    @rpc(RpcMethod.ADD_MARKETPLACE, args=MarketplaceUrlArgs, scope=RpcScope.IGNI)
+    @rpc(
+        RpcMethod.ADD_MARKETPLACE,
+        duration=RpcDuration.LONG,
+        args=MarketplaceUrlArgs,
+        scope=RpcScope.IGNI,
+    )
     async def add_marketplace(self, args: MarketplaceUrlArgs) -> msg.Info:
         """Add a plugin marketplace and read its catalogue.
 
@@ -187,7 +222,12 @@ class PluginsRpcHandler(RpcHandler):
         """
         return await self._controllers.marketplaces.add(args.url)
 
-    @rpc(RpcMethod.REMOVE_MARKETPLACE, args=MarketplaceNameArgs, scope=RpcScope.IGNI)
+    @rpc(
+        RpcMethod.REMOVE_MARKETPLACE,
+        duration=RpcDuration.IO,
+        args=MarketplaceNameArgs,
+        scope=RpcScope.IGNI,
+    )
     async def remove_marketplace(self, args: MarketplaceNameArgs) -> msg.Info:
         """Forget a plugin marketplace.
 
@@ -197,7 +237,12 @@ class PluginsRpcHandler(RpcHandler):
         """
         return await self._controllers.marketplaces.remove(args.name)
 
-    @rpc(RpcMethod.REFRESH_MARKETPLACES, args=RefreshMarketplacesArgs, scope=RpcScope.IGNI)
+    @rpc(
+        RpcMethod.REFRESH_MARKETPLACES,
+        duration=RpcDuration.LONG,
+        args=RefreshMarketplacesArgs,
+        scope=RpcScope.IGNI,
+    )
     async def refresh_marketplaces(self, args: RefreshMarketplacesArgs) -> msg.Info:
         """Fetch marketplaces' catalogues again.
 

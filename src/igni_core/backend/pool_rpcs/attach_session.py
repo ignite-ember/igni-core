@@ -12,7 +12,7 @@ from igni_core.backend.schemas_pool import AttachRefused, AttachSessionParams
 from igni_core.backend.schemas_rpc import AttachSessionResult
 from igni_core.backend.session_router import SessionRouter
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class AttachSessionRpc(PoolRpc):
 
     @rpc(
         RpcMethod.ATTACH_SESSION,
+        duration=RpcDuration.IO,
         args=AttachSessionParams,
         scope=RpcScope.SESSION,
         streams=RUN_STREAM,

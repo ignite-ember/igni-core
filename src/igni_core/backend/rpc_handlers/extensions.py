@@ -24,7 +24,7 @@ from igni_core.backend.schemas_extensions import (
 )
 from igni_core.extensions.store import StoreError
 from igni_core.extensions.web_home import ExtensionWebHome
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,12 @@ class ExtensionsRpcHandler(RpcHandler):
         """
         return ExtensionListResult(extensions=self._summaries())
 
-    @rpc(RpcMethod.SET_EXTENSION_SETTINGS, args=SetExtensionSettingsArgs, scope=RpcScope.IGNI)
+    @rpc(
+        RpcMethod.SET_EXTENSION_SETTINGS,
+        duration=RpcDuration.IO,
+        args=SetExtensionSettingsArgs,
+        scope=RpcScope.IGNI,
+    )
     async def set_extension_settings(self, args: SetExtensionSettingsArgs) -> ExtensionListResult:
         """Change an installed extension's settings.
 

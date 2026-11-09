@@ -346,6 +346,45 @@ class RpcScope(StrEnum):
     IGNI = "igni"
 
 
+class RpcDuration(StrEnum):
+    """How long a call takes to answer, as a class a client sets its
+    timeout by (:attr:`timeout_seconds`)."""
+
+    INSTANT = "instant"
+    IO = "io"
+    NETWORK = "network"
+    LONG = "long"
+    PERSON = "person"
+
+    @property
+    def doc(self) -> str:
+        return _DURATION_DOCS[self][0]
+
+    @property
+    def timeout_seconds(self) -> int | None:
+        """A timeout that leaves a healthy call room; ``None``: none."""
+        return _DURATION_DOCS[self][1]
+
+
+_DURATION_DOCS: dict[RpcDuration, tuple[str, int | None]] = {
+    RpcDuration.INSTANT: ("Answered from what igni holds in memory, at once.", 10),
+    RpcDuration.IO: (
+        "Reads or writes the project, the session's database or the disk; a few seconds at most.",
+        30,
+    ),
+    RpcDuration.NETWORK: (
+        "Asks a server — igni server, an MCP server, PyPI — and waits for its answer.",
+        60,
+    ),
+    RpcDuration.LONG: (
+        "Runs something that takes as long as it takes: a git clone, the agent, a shell "
+        "command, a model summarising.",
+        600,
+    ),
+    RpcDuration.PERSON: ("Waits for the person, who may take their time.", None),
+}
+
+
 class RpcAccess(StrEnum):
     """Who may make a call, as the backend enforces it
     (``backend/standing_policy.py``, ``backend/message_admission.py``).

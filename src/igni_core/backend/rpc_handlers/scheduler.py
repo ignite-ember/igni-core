@@ -7,7 +7,7 @@ from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.rpc_streams import TOOL_PUSHES
 from igni_core.core.scheduler.models import ScheduledTask
 from igni_core.protocol import messages as msg
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 
 
@@ -37,6 +37,7 @@ class SchedulerRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.EXECUTE_SCHEDULED_TASK,
+        duration=RpcDuration.LONG,
         args=ExecuteScheduledTaskArgs,
         scope=RpcScope.SESSION,
         streams=TOOL_PUSHES,
@@ -56,7 +57,12 @@ class SchedulerRpcHandler(RpcHandler):
         """
         return await self._controllers.loop.scheduler.execute(args.description)
 
-    @rpc(RpcMethod.CANCEL_SCHEDULED_TASK, args=ScheduledTaskArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.CANCEL_SCHEDULED_TASK,
+        duration=RpcDuration.IO,
+        args=ScheduledTaskArgs,
+        scope=RpcScope.SESSION,
+    )
     async def cancel_scheduled_task(self, args: ScheduledTaskArgs) -> msg.Info:
         """Cancel a scheduled task of this session's project.
 
@@ -69,7 +75,12 @@ class SchedulerRpcHandler(RpcHandler):
         """
         return await self._controllers.loop.scheduler.cancel(args.task_id)
 
-    @rpc(RpcMethod.GET_SCHEDULED_TASKS, args=ScheduledTasksArgs, scope=RpcScope.SESSION)
+    @rpc(
+        RpcMethod.GET_SCHEDULED_TASKS,
+        duration=RpcDuration.IO,
+        args=ScheduledTasksArgs,
+        scope=RpcScope.SESSION,
+    )
     async def get_scheduled_tasks(self, args: ScheduledTasksArgs) -> list[ScheduledTask]:
         """List the scheduled tasks of this session's project.
 
@@ -83,6 +94,7 @@ class SchedulerRpcHandler(RpcHandler):
 
     @rpc(
         RpcMethod.START_SCHEDULER,
+        duration=RpcDuration.IO,
         args=NoArgs,
         scope=RpcScope.SESSION,
         streams=(
