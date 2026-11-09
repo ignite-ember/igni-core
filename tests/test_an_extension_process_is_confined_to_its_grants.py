@@ -402,6 +402,23 @@ def test_require_sandbox_comes_from_managed_or_the_env_and_never_the_user(tmp_pa
     ).required
 
 
+def test_a_switch_is_the_value_the_settings_schema_says_however_it_is_written(tmp_path):
+    """``sandbox: "false"`` is ``false``: the block is read as the schema, not as raw text."""
+    managed = write_yaml(tmp_path / "managed.yaml", 'extensions:\n  sandbox: "false"\n')
+    settings = SandboxSettings.load(managed_path=lambda: managed, environ={})
+    assert not settings.enabled and settings.disabled_by == "managed"
+    required = write_yaml(tmp_path / "required.yaml", 'extensions:\n  require_sandbox: "true"\n')
+    assert SandboxSettings.load(managed_path=lambda: required, environ={}).required
+
+
+def test_a_block_that_does_not_validate_applies_nothing_at_all(tmp_path):
+    managed = write_yaml(
+        tmp_path / "managed.yaml", "extensions:\n  sandbox: false\n  require_sandbox: maybe\n"
+    )
+    settings = SandboxSettings.load(managed_path=lambda: managed, environ={})
+    assert settings.enabled and not settings.required
+
+
 def group_pack(extensions: dict):
     from datetime import UTC, datetime
 
