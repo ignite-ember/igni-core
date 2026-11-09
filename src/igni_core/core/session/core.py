@@ -97,7 +97,11 @@ from igni_core.core.session.compaction import (
 )
 from igni_core.core.session.compression import MeasuredCompression
 from igni_core.core.session.event_log import SessionEventLog
-from igni_core.core.session.event_log_schema import SessionEvent, SessionEventDraft
+from igni_core.core.session.event_log_schema import (
+    SessionEvent,
+    SessionEventAppendResult,
+    SessionEventDraft,
+)
 from igni_core.core.session.hooks import SessionHooks
 from igni_core.core.session.identity import SessionIdentity
 from igni_core.core.session.learning_ops import SessionLearningManager
@@ -812,15 +816,21 @@ class Session:
     def register_broadcast_callback(self, subscriber: BroadcastSink) -> None:
         self.broadcast_bus.register(subscriber)
 
-    async def append_event(self, draft: SessionEventDraft) -> None:
-        await self.event_log_store.append(draft)
+    async def append_event(self, draft: SessionEventDraft) -> SessionEventAppendResult:
+        """Record an event on the session's log and persist it.
+
+        Returns what the append did: the event is in the in-memory
+        log either way, but a failed write is reported so the caller
+        can decide what a lost event means.
+        """
+        return await self.event_log_store.append(draft)
 
     def restore_event_log(self, events: list[SessionEvent]) -> None:
         self.event_log_store.restore(events)
 
     @property
     def event_log(self) -> list[SessionEvent]:
-        """Live reference to the in-memory event log."""
+        """The in-memory event log, oldest first."""
         return self.event_log_store.events
 
     def broadcast(self, event: BroadcastEvent) -> None:

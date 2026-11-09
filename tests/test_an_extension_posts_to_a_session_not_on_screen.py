@@ -152,7 +152,7 @@ class TestPostingWhereNobodyIsLooking:
         await rig.settle()
 
         assert other.runtime.queue[-1].endswith("later\n</extension-message>")
-        kept = [e.payload["spec_id"] for e in other.session_events("visualization_delta")]
+        kept = [e.payload.spec_id for e in other.session_events("visualization_delta")]
         assert kept == [view_id, view_id]
         assert rig.session.session_events("visualization_delta") == []
         assert [v["view_id"] for v in ok(await rig.ask(ext, "get", "chat.views.list"))] == []

@@ -16,10 +16,13 @@ back to the historic dict / list / None-return shapes at the
 public boundary. That gives us the Rule 1 / Pattern 3 win
 INTERNALLY without a mass caller migration in the same PR — a
 follow-up can flip the public API once the internal shape has
-stabilised. The one exception is :meth:`save_plan_decisions`,
+stabilised. The exceptions are :meth:`save_plan_decisions`,
 which re-raises on write failure so :class:`PlanCoordinator`'s
 persist-then-flip invariant path can honour the ``ok=False`` →
-"abort mode flip" contract.
+"abort mode flip" contract, and the event-log pair, which crosses
+the boundary as typed :class:`SessionEvent` entries and hands the
+store's :class:`PersistResult` back to the caller — a failed event
+write is something the caller must be able to see.
 
 That follow-up has now landed for :meth:`list_sessions`, which
 returns typed :class:`SessionListRow` models rather than dicts —
@@ -256,36 +259,28 @@ class SessionPersistence:
 
     # ── Event log ────────────────────────────────────────────
 
-    async def load_event_log(self) -> list[dict]:
+    async def load_event_log(self) -> list[SessionEvent]:
         """Read the persisted append-only event log.
 
-        Returns the historic ``list[dict]`` shape by dumping each
-        :class:`SessionEvent`. Every persisted entry has been
-        round-tripped through :meth:`SessionEvent.from_wire` — stale
-        rows drop silently at the store's coercion step, so the
-        output dicts come from one Pydantic definition (Rule 1).
+        Returns typed :class:`SessionEvent` entries — the same
+        union the in-memory log holds, so a caller reads named
+        attributes instead of dict keys. Every persisted entry has
+        been round-tripped through the store's adapter — stale rows
+        drop there, so the output comes from one Pydantic definition
+        (Rule 1).
         """
         result = await self._event_log_store.load()
-        events = result.value or []
-        return [e.model_dump() for e in events]
+        return result.value or []
 
-    async def save_event_log(self, event_log: list[dict] | list[Any]) -> None:
+    async def save_event_log(self, events: list[SessionEvent]) -> PersistResult:
         """Atomic-replace the session's event log.
 
-        Accepts either the historic ``list[dict]`` (from
-        :meth:`SessionEventLog.append` before this refactor
-        pass) OR a ``list[SessionEvent]`` (typed callers). The
-        facade coerces the mixed input to a homogenous
-        ``list[SessionEvent]`` before delegating to the store —
-        so the store's typed contract holds regardless of caller
-        shape.
+        Callers pass typed :class:`SessionEvent` entries; the store
+        dumps them to wire dicts at its own SQL boundary, so the
+        domain stays typed to the boundary (Rule 1).
+
+        The store's :class:`PersistResult` is returned as-is: a
+        failed write is reported, not raised, so the caller can
+        decide what a lost event means.
         """
-        events: list[SessionEvent] = []
-        for entry in event_log:
-            if isinstance(entry, SessionEvent):
-                events.append(entry)
-            elif isinstance(entry, dict):
-                evt = SessionEvent.from_wire(entry)
-                if evt is not None:
-                    events.append(evt)
-        await self._event_log_store.save(events)
+        return await self._event_log_store.save(events)

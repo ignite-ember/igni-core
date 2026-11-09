@@ -15,16 +15,16 @@ from types import SimpleNamespace
 
 from igni_core.backend.schemas_history import ChatTurn, VisualizationTurn
 from igni_core.backend.server_history import ChatHistoryRebuilder
-from igni_core.backend.service_item_desk import ServiceView
-from igni_core.core.session.event_log_schema import SessionEvent
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaEntry,
+    VisualizationDeltaPayload,
+)
 
 SPEC = {"root": "t", "elements": {"t": {"type": "Text", "props": {"text": "3 open"}}}}
 
 
-def _restored(payload: dict[str, object]) -> VisualizationTurn:
-    session = SimpleNamespace(
-        event_log=[SessionEvent(seq=1, type="visualization_delta", payload=payload)]
-    )
+def _restored(payload: VisualizationDeltaPayload) -> VisualizationTurn:
+    session = SimpleNamespace(event_log=[VisualizationDeltaEntry(seq=1, payload=payload)])
     out: list[ChatTurn] = []
     ChatHistoryRebuilder(session)._splice_visualizations(out)  # type: ignore[arg-type]
     [turn] = out
@@ -33,13 +33,13 @@ def _restored(payload: dict[str, object]) -> VisualizationTurn:
 
 
 def test_an_appended_card_keeps_its_title_and_extension() -> None:
-    appended = ServiceView(
+    appended = VisualizationDeltaPayload(
         agent_path="ext:acme.claims",
         spec_id="ext-0123456789ab",
         spec_json=json.dumps(SPEC),
         title="Open claims",
         source="acme.claims",
-    ).model_dump(by_alias=True)
+    )
 
     turn = _restored(appended)
 
@@ -50,7 +50,11 @@ def test_an_appended_card_keeps_its_title_and_extension() -> None:
 
 
 def test_a_visualizer_card_is_still_the_visualizers() -> None:
-    drawn = {"agent_path": "main/visualizer", "spec_id": "viz-1", "json": json.dumps(SPEC)}
+    drawn = VisualizationDeltaPayload(
+        agent_path="main/visualizer",
+        spec_id="viz-1",
+        spec_json=json.dumps(SPEC),
+    )
 
     turn = _restored(drawn)
 

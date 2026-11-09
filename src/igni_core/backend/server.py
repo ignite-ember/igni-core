@@ -28,7 +28,12 @@ from igni_core.backend.workspace_trust_controller import WorkspaceTrustControlle
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.loader import PromptLoader
-from igni_core.core.session.event_log_schema import SessionEvent, SessionEventDraft
+from igni_core.core.session.event_log_schema import (
+    SessionEvent,
+    SessionEventAppendResult,
+    SessionEventDraft,
+    SessionEventKind,
+)
 from igni_core.core.session.schemas import PersistResult
 from igni_core.protocol import messages as msg
 
@@ -284,14 +289,16 @@ class BackendServer:
     async def get_chat_history(self, session_id: str) -> list[ChatTurn]:
         return await self.controllers.chat_history.rebuild(session_id)
 
-    async def record_event(self, event_type: str, payload: dict, run_id: str = "") -> None:
-        """Keep an event in the session's log, which a reload replays."""
-        await self._session.append_event(
-            SessionEventDraft(type=event_type, payload=payload, run_id=run_id)
-        )
+    async def record_event(self, event: SessionEventDraft) -> SessionEventAppendResult:
+        """Keep an event in the session's log, which a reload replays.
 
-    def session_events(self, event_type: str) -> list[SessionEvent]:
-        """The session's logged events of one type, oldest first."""
+        Returns what the append did — a failed write is reported,
+        not swallowed.
+        """
+        return await self._session.append_event(event)
+
+    def session_events(self, event_type: SessionEventKind) -> list[SessionEvent]:
+        """The session's logged events of one kind, oldest first."""
         return [e for e in self._session.event_log if e.type == event_type]
 
     # ── Context ───────────────────────────────────────────────────

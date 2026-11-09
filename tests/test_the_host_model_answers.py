@@ -222,7 +222,7 @@ class TestViews:
         assert push.payload["final"] is True
         assert json.loads(push.payload["json"]) == self.SPEC
         # Kept in the session's log, so a reload shows it again.
-        assert [e.payload["spec_id"] for e in rig.session.events] == [view_id]
+        assert [e.payload.spec_id for e in rig.session.events] == [view_id]
         # Never a turn: the model was not asked anything.
         assert rig.session.ran == []
         [listed] = ok(await rig.ask(ext, "get", "chat.views.list"))

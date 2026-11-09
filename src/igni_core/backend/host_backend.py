@@ -25,6 +25,10 @@ from igni_core.backend.service_event_delivery import PoolSession
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.core.activity import ActivityRegistry, background
 from igni_core.core.session.client_state import ClientStateStore
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaDraft,
+    VisualizationDeltaPayload,
+)
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.values import SessionAttached
@@ -133,7 +137,12 @@ class OrchestratorHostBackend:
         await runtime.transport.send(
             msg.PushNotification(channel="orchestrate_event", payload=payload)
         )
-        await runtime.backend.record_event("visualization_delta", payload, run_id)
+        await runtime.backend.record_event(
+            VisualizationDeltaDraft(
+                payload=VisualizationDeltaPayload.model_validate(payload),
+                run_id=run_id,
+            )
+        )
 
     def views(self, session_id: str) -> list[ViewShown]:
         runtime = self._orchestrator.pool.find(session_id)
@@ -141,10 +150,14 @@ class OrchestratorHostBackend:
             return []
         latest: dict[str, ViewShown] = {}
         for event in runtime.backend.session_events("visualization_delta"):
-            payload = dict(event.payload or {})
-            if not payload.get("final", True) or not payload.get("spec_id"):
+            payload = event.payload
+            if not isinstance(payload, VisualizationDeltaPayload):
                 continue
-            latest[str(payload["spec_id"])] = ViewShown.from_payload(session_id, payload)
+            if not payload.final or not payload.spec_id:
+                continue
+            latest[payload.spec_id] = ViewShown.from_payload(
+                session_id, payload.model_dump(by_alias=True)
+            )
         return list(latest.values())
 
     def activity(self) -> Activity:

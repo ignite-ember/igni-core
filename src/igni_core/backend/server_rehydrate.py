@@ -31,7 +31,6 @@ from typing import TYPE_CHECKING
 
 from igni_core.backend.agno_history_plan_scanner import AgnoHistoryPlanScanner
 from igni_core.backend.schemas_lifecycle import RehydrateOutcome
-from igni_core.core.session.event_log_schema import SessionEvent
 from igni_core.core.session.queued_messages import DurableMessageQueue
 from igni_core.core.tools.orphan_rehydrator import build_rehydrator
 from igni_core.core.tools.plan import PlanDecisionsBlob
@@ -64,14 +63,9 @@ class RehydrateController:
             entries = await persistence.load_event_log()
         except Exception as exc:
             return RehydrateOutcome(ok=False, step="event_log", reason=str(exc))
-        if not isinstance(entries, list):
+        if not entries:
             return RehydrateOutcome(ok=True, step="event_log", reason="empty on disk")
-        parsed = [
-            evt
-            for e in entries
-            if isinstance(e, dict) and (evt := SessionEvent.from_wire(e)) is not None
-        ]
-        self._session.restore_event_log(parsed)
+        self._session.restore_event_log(entries)
         return RehydrateOutcome(ok=True, step="event_log")
 
     async def queued_messages(self, queue: DurableMessageQueue | None) -> RehydrateOutcome:

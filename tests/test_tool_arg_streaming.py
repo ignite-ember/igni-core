@@ -762,10 +762,10 @@ class TestOrchestrateVisualizerIntegration:
             ),
         ]
 
-        captured_calls: list[tuple[str, dict, str]] = []
+        captured_calls: list[tuple[VisualizationDeltaEvent, str]] = []
 
-        async def _fake_append(event_type: str, payload: dict, run_id: str):
-            captured_calls.append((event_type, payload, run_id))
+        async def _fake_append(delta: VisualizationDeltaEvent, run_id: str):
+            captured_calls.append((delta, run_id))
 
         # Inject the appender as a proper constructor collaborator
         # (no more classvar patching — the OOP refactor made this
@@ -779,8 +779,8 @@ class TestOrchestrateVisualizerIntegration:
         )
 
         assert len(captured_calls) == 1
-        event_type, _payload, appended_run_id = captured_calls[0]
-        assert event_type == "visualization_delta"
+        delta, appended_run_id = captured_calls[0]
+        assert delta.type == "visualization_delta"
         # The KEY assertion — the appended entry uses the TOP-LEVEL
         # run_id (which lines up with the spawn_agent tool turn in
         # the main history), NOT the sub-agent's own run_id.

@@ -28,8 +28,7 @@ from igni_core.backend.schemas_workflows import (
 from igni_core.backend.workflow_agent_bridge import WorkflowAgentBridge
 from igni_core.backend.workflow_runtime_process import WorkflowRuntimeProcess
 from igni_core.core.activity import background
-from igni_core.core.session.event_log_schema import SessionEventDraft
-from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.core.session.event_log_schema import WorkflowEventDraft
 
 if TYPE_CHECKING:
     from igni_core.backend.push_bridge import PushNotificationBridge
@@ -50,12 +49,13 @@ class WorkflowEventSink:
         self._push = push
 
     async def publish(self, record: WorkflowEventRecord) -> None:
-        try:
-            await self._session.append_event(
-                SessionEventDraft.of(PushChannel.WORKFLOW_EVENT.value, record)
+        result = await self._session.append_event(WorkflowEventDraft(payload=record))
+        if result.error:
+            # A failed persist must not stop the push — the windows
+            # are watching live. The log gap is reported, not raised.
+            logger.warning(
+                "workflow event %s not persisted: %s", record.workflow_run_id, result.error
             )
-        except Exception:  # a failed persist must not stop the push
-            logger.exception("workflow event persist failed for %s", record.workflow_run_id)
         self._push.workflow_event(record)
 
 

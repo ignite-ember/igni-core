@@ -13,7 +13,6 @@ also makes it easy to add a new event type without hunting a giant
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import time
@@ -41,6 +40,7 @@ from igni_core.core.tools.orchestrate_stream_handler import BaseStreamHandler
 from igni_core.core.tools.subagent_stream import SubAgentStreamState
 
 _stream_log = logging.getLogger("igni_core.llm_calls")
+_logger = logging.getLogger(__name__)
 
 
 class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
@@ -249,17 +249,18 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         self._emit(final_payload)
         if self._event_appender is None:
             return
-        with contextlib.suppress(Exception):
+        try:
             # Use the PARENT (top-level) run_id, not the visualizer
             # sub-agent's own run_id — see
             # ``parent_top_run_id`` docstring on
             # :class:`SubAgentStreamState` and the ``get_chat_history``
             # splicing block in ``backend/server.py``.
             await self._event_appender(
-                "visualization_delta",
-                final_payload,
+                final_event,
                 state.parent_top_run_id or state.current_run_id or "",
             )
+        except Exception as exc:  # noqa: BLE001 — a logging callback must not break the stream
+            _logger.warning("visualization event log append failed: %s", exc)
 
     def _on_tool_completed(self, event: Any) -> None:
         state = self.state

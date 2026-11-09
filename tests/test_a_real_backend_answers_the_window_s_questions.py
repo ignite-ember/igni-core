@@ -29,6 +29,10 @@ from igni_core.backend.server import BackendServer
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.tool_permissions import PermissionLevel
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaDraft,
+    VisualizationDeltaPayload,
+)
 from igni_core.protocol import messages as msg
 
 
@@ -160,12 +164,19 @@ def test_a_visualization_action_is_recorded_and_echoed(backend):
 
 
 async def test_an_event_recorded_is_an_event_the_session_replays(backend):
-    await backend.record_event("extension_card", {"title": "Deploys"}, run_id="r1")
+    await backend.record_event(
+        VisualizationDeltaDraft(
+            payload=VisualizationDeltaPayload(spec_id="s1", spec_json="{}", title="Deploys"),
+            run_id="r1",
+        )
+    )
 
-    (event,) = backend.session_events("extension_card")
+    (event,) = backend.session_events("visualization_delta")
 
-    assert event.payload == {"title": "Deploys"}
-    assert backend.session_events("something_else") == []
+    assert event.payload.spec_id == "s1"
+    assert event.payload.title == "Deploys"
+    assert event.run_id == "r1"
+    assert backend.session_events("workflow_event") == []
 
 
 def test_an_attachment_uploaded_can_be_read_back(backend):

@@ -22,13 +22,6 @@ Consumers:
   ``extra='ignore'`` (not ``allow``) so unknown Agno fields drop
   silently without ballooning the model — a schema rename upstream
   is caught by the per-field defaults kicking in.
-* :class:`VisualizationDeltaPayload` — cast at the splicer's read
-  boundary so ``payload.spec_id`` / ``payload.spec_json`` are real
-  attribute reads instead of ``payload.get("json")``. Lives here
-  rather than next to :class:`SessionEvent` because the producer
-  side is in ``core/tools/orchestrate_streaming.py`` and moving
-  the type would be a cross-package change out of scope for this
-  refactor.
 """
 
 from __future__ import annotations
@@ -300,31 +293,6 @@ class AgnoRunView(BaseModel):
         return AgnoRunMetricsView.model_validate(v, from_attributes=True)
 
 
-class VisualizationDeltaPayload(BaseModel):
-    """Payload cast for ``visualization_delta`` events.
-
-    Persisted wire keys are ``spec_id`` and ``json`` (the raw JSON
-    string of the visualizer's spec). ``json`` collides with
-    ``BaseModel.json`` (deprecated but still bound on v2), so we
-    name the field ``spec_json`` and bind it to the wire key via
-    :class:`~pydantic.Field` alias. ``model_validate`` reads the
-    ``json`` key from the persisted payload; a hypothetical
-    ``model_dump(by_alias=True)`` would emit it back.
-
-    ``extra='ignore'`` — future producers may add fields we don't
-    care about at read time.
-    """
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
-
-    spec_id: str = ""
-    spec_json: str = Field(default="", alias="json")
-    #: Set by an extension's ``chat.append``: the card's title, and the
-    #: extension's id as ``source``. The visualizer sends neither.
-    title: str = ""
-    source: str = ""
-
-
 class ChatHistoryEntry(BaseModel):
     """Wire-shape entry for one chat-history turn.
 
@@ -397,7 +365,6 @@ __all__ = [
     "AgnoRunMessageView",
     "AgnoRunView",
     "AgnoRunMetricsView",
-    "VisualizationDeltaPayload",
     "ChatHistoryEntry",
     "ChatSearchHit",
     "SessionListEntry",

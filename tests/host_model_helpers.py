@@ -47,7 +47,12 @@ from igni_core.core.approvals.events import approval_events
 from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.hooks.extension_gate import extension_hook_gate
-from igni_core.core.session.event_log_schema import SessionEvent
+from igni_core.core.session.event_log_schema import (
+    SessionEvent,
+    SessionEventAppendResult,
+    SessionEventDraft,
+    SessionEventKind,
+)
 from igni_core.core.session.schemas import ContextBreakdown, PersistResult
 from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.channel import HostChannel
@@ -345,12 +350,12 @@ class FakeSession:
 
     # ── The event log ─────────────────────────────────────────────
 
-    async def record_event(self, event_type: str, payload: dict, run_id: str = "") -> None:
-        self.events.append(
-            SessionEvent(seq=len(self.events) + 1, type=event_type, payload=payload, run_id=run_id)
-        )
+    async def record_event(self, event: SessionEventDraft) -> SessionEventAppendResult:
+        entry = event.to_event(len(self.events) + 1)
+        self.events.append(entry)
+        return SessionEventAppendResult(persisted=False)
 
-    def session_events(self, event_type: str) -> list[SessionEvent]:
+    def session_events(self, event_type: SessionEventKind) -> list[SessionEvent]:
         return [e for e in self.events if e.type == event_type]
 
 

@@ -227,13 +227,15 @@ converts a :class:`_EventBase` to a plain dict via
 downstream code stays dict-oriented for wire encoding."""
 
 
-EventAppender = Callable[[str, dict[str, Any], str], Awaitable[None]]
+EventAppender = Callable[[VisualizationDeltaEvent, str], Awaitable[None]]
 """Structural type for the session event-log appender.
 
-Signature: ``async (event_type, payload, run_id) -> None`` — matches
-:meth:`Session.append_event`. Wired at session bootstrap; ``None``
-in unit-test contexts where the session broadcast plumbing isn't
-wired up.
+Signature: ``async (delta, run_id) -> None`` — the viz card to log
+and the run that emitted it. The delta travels as the typed wire
+event, not as a free-form ``(type, payload)`` pair, so the log
+receives a shape it can validate. Wired at session bootstrap;
+``None`` in unit-test contexts where the session broadcast plumbing
+isn't wired up.
 """
 
 

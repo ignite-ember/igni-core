@@ -23,6 +23,7 @@ import pytest
 
 from igni_core.backend.schemas_workflows import WorkflowRunRequest
 from igni_core.backend.workflow_runner import WorkflowRunner
+from igni_core.core.session.event_log_schema import SessionEventAppendResult
 
 pytestmark = pytest.mark.skipif(
     shutil.which("node") is None,
@@ -50,7 +51,7 @@ return { ok: true }
     push = MagicMock()
     session = MagicMock()
     session.id = "sess_smoke"
-    session.append_event = AsyncMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
     # main_team is unused here (no agent() calls in the workflow).
     session.main_team = MagicMock()
 
@@ -74,7 +75,7 @@ return { ok: true }
     # workflow_completed. We assert >=4 because the log event is
     # a "capture for diagnostics" path that the reducer ignores.
     assert session.append_event.await_count >= 4
-    types = [c.args[0].payload["type"] for c in session.append_event.await_args_list]
+    types = [c.args[0].payload.type for c in session.append_event.await_args_list]
     assert "workflow_started" in types
     assert "phase_started" in types
     assert "phase_completed" in types

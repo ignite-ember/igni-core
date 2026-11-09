@@ -29,7 +29,30 @@ from pathlib import Path
 from agno.db.base import SessionType
 from agno.session.agent import AgentSession
 
+from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaEntry,
+    VisualizationDeltaPayload,
+    WorkflowEventEntry,
+)
 from igni_core.core.session.persistence import SessionPersistence
+
+
+def _card(spec_id: str) -> VisualizationDeltaPayload:
+    """A viz card, as a producer hands it to the log."""
+    return VisualizationDeltaPayload(spec_id=spec_id, spec_json="{}")
+
+
+def _workflow() -> WorkflowEventRecord:
+    """A workflow runtime record, as the workflow sink hands it."""
+    return WorkflowEventRecord(
+        workflow_run_id="w1",
+        name="run",
+        ts=1,
+        seq=1,
+        type="workflow_started",
+        payload={},
+    )
 
 
 def _make_db(tmp_path: Path):
@@ -231,13 +254,12 @@ class TestRealDbEventLog:
     async def test_appends_and_reads_back(self, tmp_path):
         db = _make_db(tmp_path)
         persistence = SessionPersistence(db=db, session_id="sess-evlog")
-        entry = {
-            "seq": 1,
-            "run_id": "run-a",
-            "timestamp_ms": 1000,
-            "type": "visualization_delta",
-            "payload": {"spec_id": "s1", "json": "{}", "final": True},
-        }
+        entry = VisualizationDeltaEntry(
+            seq=1,
+            run_id="run-a",
+            timestamp_ms=1000,
+            payload=VisualizationDeltaPayload(spec_id="s1", spec_json="{}"),
+        )
         await persistence.save_event_log([entry])
         loaded = await persistence.load_event_log()
         assert loaded == [entry]
@@ -250,20 +272,18 @@ class TestRealDbEventLog:
         db = _make_db(tmp_path)
         writer = SessionPersistence(db=db, session_id="sess-evlog-restart")
         entries = [
-            {
-                "seq": 1,
-                "run_id": "run-1",
-                "timestamp_ms": 1000,
-                "type": "visualization_delta",
-                "payload": {"spec_id": "s1", "json": '{"root":"r"}', "final": True},
-            },
-            {
-                "seq": 2,
-                "run_id": "run-1",
-                "timestamp_ms": 1100,
-                "type": "visualization_delta",
-                "payload": {"spec_id": "s2", "json": '{"root":"q"}', "final": True},
-            },
+            VisualizationDeltaEntry(
+                seq=1,
+                run_id="run-1",
+                timestamp_ms=1000,
+                payload=VisualizationDeltaPayload(spec_id="s1", spec_json='{"root":"r"}'),
+            ),
+            VisualizationDeltaEntry(
+                seq=2,
+                run_id="run-1",
+                timestamp_ms=1100,
+                payload=VisualizationDeltaPayload(spec_id="s2", spec_json='{"root":"q"}'),
+            ),
         ]
         await writer.save_event_log(entries)
 
@@ -279,17 +299,17 @@ class TestRealDbEventLog:
         persistence = SessionPersistence(db=db, session_id="sess-evlog-order")
 
         await persistence.save_event_log(
-            [{"seq": 1, "run_id": "r1", "timestamp_ms": 1, "type": "x", "payload": {}}]
+            [VisualizationDeltaEntry(seq=1, run_id="r1", timestamp_ms=1, payload=_card("s1"))]
         )
         await persistence.save_event_log(
             [
-                {"seq": 1, "run_id": "r1", "timestamp_ms": 1, "type": "x", "payload": {}},
-                {"seq": 2, "run_id": "r1", "timestamp_ms": 2, "type": "y", "payload": {}},
+                VisualizationDeltaEntry(seq=1, run_id="r1", timestamp_ms=1, payload=_card("s1")),
+                WorkflowEventEntry(seq=2, run_id="r1", timestamp_ms=2, payload=_workflow()),
             ]
         )
 
         loaded = await persistence.load_event_log()
-        seqs = [e["seq"] for e in loaded]
+        seqs = [e.seq for e in loaded]
         assert seqs == [1, 2]
 
     async def test_coexists_with_todos_and_plan_decisions(self, tmp_path):
@@ -302,7 +322,7 @@ class TestRealDbEventLog:
         await persistence.save_todos([{"content": "A", "status": "pending"}])
         await persistence.save_plan_decisions({"run-x": "approved"})
         await persistence.save_event_log(
-            [{"seq": 1, "run_id": "run-x", "timestamp_ms": 1, "type": "t", "payload": {}}]
+            [VisualizationDeltaEntry(seq=1, run_id="run-x", timestamp_ms=1, payload=_card("s1"))]
         )
 
         assert (await persistence.load_todos()) == [
@@ -326,7 +346,7 @@ class TestRealDbEventLog:
             persistence.save_todos([{"content": "A", "status": "pending"}]),
             persistence.save_plan_decisions({"r1": "approved"}),
             persistence.save_event_log(
-                [{"seq": 1, "run_id": "r1", "timestamp_ms": 1, "type": "t", "payload": {}}]
+                [VisualizationDeltaEntry(seq=1, run_id="r1", timestamp_ms=1, payload=_card("s1"))]
             ),
         )
 

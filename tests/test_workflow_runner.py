@@ -51,6 +51,7 @@ from igni_core.backend.workflow_runtime_process import (
     WorkflowRuntimeProcess,
 )
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.event_log_schema import SessionEventAppendResult
 
 
 def _meta_line(name: str = "smoke", phases: int = 2) -> str:
@@ -293,7 +294,7 @@ async def test_event_drain_persists_and_pushes(tmp_path: Path) -> None:
 
     push = MagicMock()
     session = MagicMock()
-    session.append_event = AsyncMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
 
     run = _run(proc, session, push)
 
@@ -303,8 +304,8 @@ async def test_event_drain_persists_and_pushes(tmp_path: Path) -> None:
     assert push.workflow_event.call_count == 3
     # Persisted envelope has the workflow_run_id + event type.
     first_payload = session.append_event.await_args_list[0].args[0].payload
-    assert first_payload["workflow_run_id"] == "wf_abc"
-    assert first_payload["type"] == "workflow_started"
+    assert first_payload.workflow_run_id == "wf_abc"
+    assert first_payload.type == "workflow_started"
     # The terminal event moved the phase, so finish() adds nothing.
     assert run.phase is WorkflowRunPhase.COMPLETED
 
@@ -317,7 +318,7 @@ async def test_synthetic_workflow_failed_on_non_zero_exit(tmp_path: Path) -> Non
 
     push = MagicMock()
     session = MagicMock()
-    session.append_event = AsyncMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
 
     run = _run(proc, session, push, run_id="wf_boom")
 
@@ -330,8 +331,8 @@ async def test_synthetic_workflow_failed_on_non_zero_exit(tmp_path: Path) -> Non
     types = [c.args[0].type for c in session.append_event.await_args_list]
     payloads = [c.args[0].payload for c in session.append_event.await_args_list]
     assert types == ["workflow_event", "workflow_event"]
-    assert payloads[1]["type"] == "workflow_failed"
-    assert payloads[1]["payload"]["exit_code"] == 2
+    assert payloads[1].type == "workflow_failed"
+    assert payloads[1].payload["exit_code"] == 2
     # Pushed too.
     pushed: list[WorkflowEventRecord] = [c.args[0] for c in push.workflow_event.call_args_list]
     assert [r.type for r in pushed] == ["workflow_started", "workflow_failed"]
@@ -346,7 +347,7 @@ async def test_a_cancelled_run_without_a_terminal_event_ends_cancelled(tmp_path:
     proc.returncode = None
     push = MagicMock()
     session = MagicMock()
-    session.append_event = AsyncMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
     run = _run(proc, session, push, run_id="wf_stop")
 
     assert await run.cancel() is WorkflowCancelOutcome.CANCELLED
@@ -365,7 +366,7 @@ async def test_agent_request_bridges_to_team(tmp_path: Path) -> None:
 
     push = MagicMock()
     session = MagicMock()
-    session.append_event = AsyncMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
     team = MagicMock()
     team.arun = AsyncMock(return_value="agent result text")
     session.main_team = team

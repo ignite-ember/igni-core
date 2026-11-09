@@ -22,6 +22,7 @@ from igni_core.backend.workflow_run import WorkflowRun
 from igni_core.backend.workflow_run_registry import WorkflowRunRegistry
 from igni_core.backend.workflow_runtime_process import WorkflowRuntime, WorkflowRuntimeProcess
 from igni_core.core.activity import ActivityRegistry, BackgroundTasks
+from igni_core.core.session.event_log_schema import SessionEventAppendResult
 
 
 class _Stdout:
@@ -75,7 +76,7 @@ class _Process:
 
 def _session() -> MagicMock:
     session = MagicMock()
-    session.append_event = AsyncMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
     return session
 
 
@@ -163,7 +164,7 @@ async def test_cancel_all_ends_every_run_even_when_one_stop_fails() -> None:
     assert all(run.phase is WorkflowRunPhase.CANCELLED for run in runs)
     for session in sessions:
         record = session.append_event.await_args.args[0].payload
-        assert record["payload"]["status"] == "cancelled"
+        assert record.payload["status"] == "cancelled"
 
 
 async def test_cancel_all_with_nothing_live_returns_at_once() -> None:
