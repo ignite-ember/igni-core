@@ -13,6 +13,7 @@ a :class:`Session`.
 
 from __future__ import annotations
 
+import asyncio
 import binascii
 from os.path import expanduser
 from pathlib import Path
@@ -232,12 +233,15 @@ class FilesController:
             language=self._guess_language(requested.suffix),
         )
 
-    def upload_attachment(self, filename: str, content_base64: str) -> UploadAttachmentResult:
+    async def upload_attachment(self, filename: str, content_base64: str) -> UploadAttachmentResult:
         """Persist a FE-uploaded file for this session, decoding and
-        writing it a slice at a time."""
+        writing it a slice at a time — in a worker thread: a large file
+        held up every session while it was decoded and written."""
         store = self._attachments()
         try:
-            stored = store.save(self._session.session_id, filename, Base64Chunks(content_base64))
+            stored = await asyncio.to_thread(
+                store.save, self._session.session_id, filename, Base64Chunks(content_base64)
+            )
         except (binascii.Error, ValueError) as exc:
             return UploadAttachmentResult(path="", size=0, error=f"invalid base64: {exc}")
         return UploadAttachmentResult(path=stored.ref, size=stored.size)

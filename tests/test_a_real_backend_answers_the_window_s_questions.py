@@ -177,8 +177,8 @@ async def test_an_event_recorded_is_an_event_the_session_replays(backend):
     assert backend.session_events("workflow_event") == []
 
 
-def test_an_attachment_uploaded_can_be_read_back(backend):
-    upload = backend.controllers.files.upload_attachment(
+async def test_an_attachment_uploaded_can_be_read_back(backend):
+    upload = await backend.controllers.files.upload_attachment(
         "note.txt", base64.b64encode(b"hello").decode()
     )
 
@@ -189,8 +189,8 @@ def test_an_attachment_uploaded_can_be_read_back(backend):
     assert read.contents == "hello"
 
 
-def test_code_search_on_an_empty_project_finds_nothing(backend):
-    result = backend.controllers.search.search_code("def nowhere():")
+async def test_code_search_on_an_empty_project_finds_nothing(backend):
+    result = await backend.controllers.search.search_code("def nowhere():")
 
     assert result.matches == []
 

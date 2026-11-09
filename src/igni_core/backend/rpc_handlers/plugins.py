@@ -133,7 +133,7 @@ class PluginsRpcHandler(RpcHandler):
         return self._controllers.plugins.set_enabled(args.name, args.enabled)
 
     @rpc(RpcMethod.INSTALL_PLUGIN, args=InstallPluginArgs, scope=RpcScope.SESSION)
-    def install_plugin(self, args: InstallPluginArgs) -> msg.Info:
+    async def install_plugin(self, args: InstallPluginArgs) -> msg.Info:
         """Install a plugin from a git repository or a marketplace.
 
         ``ref`` is a git URL or ``@<marketplace>/<plugin>``; ``install_ref``
@@ -144,10 +144,10 @@ class PluginsRpcHandler(RpcHandler):
         git missing, an unknown marketplace entry, the organisation's
         policy, a git error.
         """
-        return self._controllers.plugins.install(args.ref, args.install_ref)
+        return await self._controllers.plugins.install(args.ref, args.install_ref)
 
     @rpc(RpcMethod.UPDATE_PLUGIN, args=UpdatePluginArgs, scope=RpcScope.SESSION)
-    def update_plugin(self, args: UpdatePluginArgs) -> msg.Info:
+    async def update_plugin(self, args: UpdatePluginArgs) -> msg.Info:
         """Move an installed plugin to another commit.
 
         ``name`` is the installed plugin; ``install_ref`` the branch, tag
@@ -155,17 +155,17 @@ class PluginsRpcHandler(RpcHandler):
         Returns an ``info`` message, sent in place of an ``rpc_response``,
         whose text names the commit now installed, or why not.
         """
-        return self._controllers.plugins.update(args.name, args.install_ref)
+        return await self._controllers.plugins.update(args.name, args.install_ref)
 
     @rpc(RpcMethod.REMOVE_PLUGIN, args=PluginNameArgs, scope=RpcScope.SESSION)
-    def remove_plugin(self, args: PluginNameArgs) -> msg.Info:
+    async def remove_plugin(self, args: PluginNameArgs) -> msg.Info:
         """Uninstall a plugin.
 
         ``name`` is the installed plugin. Returns an ``info`` message, sent
         in place of an ``rpc_response``, whose text says it was removed, or
         why not.
         """
-        return self._controllers.plugins.remove(args.name)
+        return await self._controllers.plugins.remove(args.name)
 
     @rpc(RpcMethod.GET_MARKETPLACES, args=NoArgs, scope=RpcScope.IGNI)
     def get_marketplaces(self, args: NoArgs) -> list[MarketplaceInfo]:
@@ -177,7 +177,7 @@ class PluginsRpcHandler(RpcHandler):
         return self._ctx.backend.get_marketplaces()
 
     @rpc(RpcMethod.ADD_MARKETPLACE, args=MarketplaceUrlArgs, scope=RpcScope.IGNI)
-    def add_marketplace(self, args: MarketplaceUrlArgs) -> msg.Info:
+    async def add_marketplace(self, args: MarketplaceUrlArgs) -> msg.Info:
         """Add a plugin marketplace and read its catalogue.
 
         ``url`` is the marketplace's git URL. Returns an ``info`` message,
@@ -185,24 +185,24 @@ class PluginsRpcHandler(RpcHandler):
         plugins it catalogues — or why it was not added: the
         organisation's policy, a git error, an unreadable catalogue.
         """
-        return self._controllers.marketplaces.add(args.url)
+        return await self._controllers.marketplaces.add(args.url)
 
     @rpc(RpcMethod.REMOVE_MARKETPLACE, args=MarketplaceNameArgs, scope=RpcScope.IGNI)
-    def remove_marketplace(self, args: MarketplaceNameArgs) -> msg.Info:
+    async def remove_marketplace(self, args: MarketplaceNameArgs) -> msg.Info:
         """Forget a plugin marketplace.
 
         ``name`` is the marketplace. Returns an ``info`` message, sent in
         place of an ``rpc_response``, whose text says it was removed, or
         that there is no such marketplace.
         """
-        return self._controllers.marketplaces.remove(args.name)
+        return await self._controllers.marketplaces.remove(args.name)
 
     @rpc(RpcMethod.REFRESH_MARKETPLACES, args=RefreshMarketplacesArgs, scope=RpcScope.IGNI)
-    def refresh_marketplaces(self, args: RefreshMarketplacesArgs) -> msg.Info:
+    async def refresh_marketplaces(self, args: RefreshMarketplacesArgs) -> msg.Info:
         """Fetch marketplaces' catalogues again.
 
         ``name`` is one marketplace; absent or empty refreshes every one.
         Returns an ``info`` message, sent in place of an ``rpc_response``,
         whose text says what was refreshed, or why not.
         """
-        return self._controllers.marketplaces.refresh(args.name)
+        return await self._controllers.marketplaces.refresh(args.name)

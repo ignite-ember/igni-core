@@ -18,6 +18,7 @@ on the next call.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from igni_core.core.plugins.models import MarketplaceInfo
@@ -54,29 +55,34 @@ class MarketplaceController:
         registry = self._gateway().list_marketplaces()
         return [MarketplaceInfo.from_entry(m) for m in registry.marketplaces]
 
-    def add(self, url: str) -> msg.Info:
-        """Register a new marketplace by URL and cache its catalog."""
-        result = self._gateway().add_marketplace(url)
+    async def add(self, url: str) -> msg.Info:
+        """Register a new marketplace by URL and cache its catalog.
+
+        The clone and the catalog read run in a worker thread, as do the
+        other writes here: on the event loop they held up every session.
+        """
+        result = await asyncio.to_thread(self._gateway().add_marketplace, url)
         if not result.ok:
             return msg.Info(text=result.error)
         return msg.Info(text=f"Added '{result.name}' ({result.plugin_count} plugin(s) catalogued).")
 
-    def remove(self, name: str) -> msg.Info:
+    async def remove(self, name: str) -> msg.Info:
         """Unregister a marketplace. Installed plugins from it remain."""
-        if not self._gateway().remove_marketplace(name):
+        if not await asyncio.to_thread(self._gateway().remove_marketplace, name):
             return msg.Info(text=f"No marketplace named '{name}'.")
         return msg.Info(text=f"Unregistered '{name}'. Installed plugins from it remain.")
 
-    def refresh(self, name: str | None = None) -> msg.Info:
+    async def refresh(self, name: str | None = None) -> msg.Info:
         """Re-fetch one marketplace by name, or every one when ``name``
         is empty."""
         gateway = self._gateway()
         if not name:
             from igni_core.backend.cmd_plugin.bulk_refresh import BulkRefreshRunner
 
-            summary = BulkRefreshRunner(gateway).run(gateway.list_marketplaces())
+            runner = BulkRefreshRunner(gateway)
+            summary = await asyncio.to_thread(runner.run, gateway.list_marketplaces())
             return msg.Info(text=summary.summary_line())
-        result = gateway.refresh_marketplace(name)
+        result = await asyncio.to_thread(gateway.refresh_marketplace, name)
         if result.not_found:
             return msg.Info(text=f"No marketplace named '{name}'.")
         if not result.ok:

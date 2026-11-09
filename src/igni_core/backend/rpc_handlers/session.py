@@ -45,7 +45,7 @@ class SessionRpcHandler(RpcHandler):
         await self._ctx.backend.shutdown()
 
     @rpc(RpcMethod.UPLOAD_ATTACHMENT, args=UploadAttachmentArgs, scope=RpcScope.SESSION)
-    def upload_attachment(self, args: UploadAttachmentArgs) -> UploadAttachmentResult:
+    async def upload_attachment(self, args: UploadAttachmentArgs) -> UploadAttachmentResult:
         """Store a file for this session, so a message can refer to it.
 
         ``filename`` is the file's name (made safe for the disk; a clash gets
@@ -55,7 +55,7 @@ class SessionRpcHandler(RpcHandler):
         ``size`` in bytes; or ``error`` when the content is not valid base64.
         Fails when the file cannot be stored.
         """
-        return self._controllers.files.upload_attachment(args.filename, args.content_base64)
+        return await self._controllers.files.upload_attachment(args.filename, args.content_base64)
 
     @rpc(RpcMethod.GET_PENDING_MESSAGES, args=SessionIdArgs, scope=RpcScope.SESSION)
     async def get_pending_messages(self, args: SessionIdArgs) -> list[PendingMessage]:

@@ -118,9 +118,9 @@ class Workspace:
     async def _nothing_learned() -> None:
         return None
 
-    def upload(self, filename: str, content: bytes) -> str:
+    async def upload(self, filename: str, content: bytes) -> str:
         """What the composer does: ``upload_attachment``, then ``@<path>`` in the text."""
-        kept = FilesController(self.session).upload_attachment(  # type: ignore[arg-type]
+        kept = await FilesController(self.session).upload_attachment(  # type: ignore[arg-type]
             filename, base64.b64encode(content).decode()
         )
         assert not kept.error
@@ -145,7 +145,7 @@ def _png_data_urls(parts: list[dict[str, Any]]) -> list[str]:
 
 async def test_an_uploaded_image_reaches_the_model_as_an_image(tmp_path: Path):
     space = Workspace(tmp_path, vision=True)
-    ref = space.upload("screen shot.png", PNG)
+    ref = await space.upload("screen shot.png", PNG)
 
     built = await space.turn(f"What does this show? @{ref} ")
 
@@ -157,7 +157,7 @@ async def test_an_uploaded_image_reaches_the_model_as_an_image(tmp_path: Path):
 
 async def test_an_uploaded_pdf_reaches_the_model_as_a_file(tmp_path: Path):
     space = Workspace(tmp_path, vision=True)
-    ref = space.upload("claim.pdf", PDF)
+    ref = await space.upload("claim.pdf", PDF)
 
     built = await space.turn(f"Summarise @{ref} ")
 
@@ -168,8 +168,8 @@ async def test_an_uploaded_pdf_reaches_the_model_as_a_file(tmp_path: Path):
 
 async def test_two_uploads_side_by_side_both_reach_the_model(tmp_path: Path):
     space = Workspace(tmp_path, vision=True)
-    first = space.upload("before.png", PNG)
-    second = space.upload("after.png", PNG)
+    first = await space.upload("before.png", PNG)
+    second = await space.upload("after.png", PNG)
 
     await space.turn(f"Compare @{first} @{second} ")
 
@@ -178,7 +178,7 @@ async def test_two_uploads_side_by_side_both_reach_the_model(tmp_path: Path):
 
 async def test_a_model_without_vision_is_given_the_path_and_no_media(tmp_path: Path):
     space = Workspace(tmp_path, vision=False)
-    ref = space.upload("screen.png", PNG)
+    ref = await space.upload("screen.png", PNG)
 
     built = await space.turn(f"What does this show? @{ref} ")
 
@@ -192,7 +192,7 @@ async def test_a_model_without_vision_is_given_the_path_and_no_media(tmp_path: P
 
 async def test_an_upload_of_a_kind_with_no_media_form_stays_text(tmp_path: Path):
     space = Workspace(tmp_path, vision=True)
-    ref = space.upload("notes.txt", b"plain words")
+    ref = await space.upload("notes.txt", b"plain words")
 
     built = await space.turn(f"Read @{ref} ")
 
@@ -288,7 +288,7 @@ async def test_a_symlink_in_the_workspace_to_a_file_outside_is_not_attached(tmp_
 async def test_a_dot_dot_path_out_of_the_uploads_is_not_attached(tmp_path: Path):
     space = Workspace(tmp_path, vision=True)
     (tmp_path / "secret.png").write_bytes(PNG)
-    ref = Path(space.upload("decoy.png", PNG))
+    ref = Path(await space.upload("decoy.png", PNG))
     escape = ref.parent / ".." / ".." / ".." / ".." / "secret.png"
 
     built = await space.turn(f"Look at @{escape} ")

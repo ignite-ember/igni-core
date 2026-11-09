@@ -82,7 +82,7 @@ class PanelRpcHandler(RpcHandler):
         return self._ctx.backend.read_file(args.path)
 
     @rpc(RpcMethod.SEARCH_CODE, args=SearchCodeArgs, scope=RpcScope.SESSION)
-    def search_code(self, args: SearchCodeArgs) -> SearchCodeResult:
+    async def search_code(self, args: SearchCodeArgs) -> SearchCodeResult:
         """Find where a snippet of code appears in this session's project.
 
         ``query`` is the snippet, matched exactly; one shorter than five
@@ -90,7 +90,7 @@ class PanelRpcHandler(RpcHandler):
         and last line, a preview), ``truncated`` when there may be more or
         the search timed out, and ``error`` when it failed.
         """
-        return self._controllers.search.search_code(args.query)
+        return await self._controllers.search.search_code(args.query)
 
     @rpc(
         RpcMethod.RUN_SHELL,

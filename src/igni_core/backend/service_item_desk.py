@@ -86,7 +86,7 @@ class PoolChatDesk:
 
     async def keep_file(self, *, session_id: str, filename: str, content: bytes) -> str:
         runtime = await self._runtime(session_id)
-        kept = runtime.backend.controllers.files.upload_attachment(
+        kept = await runtime.backend.controllers.files.upload_attachment(
             filename, base64.b64encode(content).decode()
         )
         if kept.error or not kept.path:
