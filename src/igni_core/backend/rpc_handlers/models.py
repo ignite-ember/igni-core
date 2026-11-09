@@ -11,7 +11,7 @@ from igni_core.backend.schemas_hitl import ToolCallArgs
 from igni_core.backend.schemas_rpc import ModelRegistryResult, UpdateAvailable
 from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.config.tool_permissions import PermissionLevel
-from igni_core.core.utils.update_checker import PackageMetadata, check_for_update
+from igni_core.core.utils.update_checker import PackageMetadata, UpdateChecker
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 
@@ -89,7 +89,7 @@ class ModelsRpcHandler(RpcHandler):
         The FE's update check treats a refused call as nothing to show;
         a host extension gets a ``refused`` error.
         """
-        info = await check_for_update()
+        info = await UpdateChecker().check()
         if info.error is not None:
             raise ValueError(f"update check failed ({info.error.value}): {info.error_detail}")
         if not info.available:
