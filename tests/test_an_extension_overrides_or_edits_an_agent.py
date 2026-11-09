@@ -22,6 +22,7 @@ from igni_core.core.agents.loader import AgentDefinitionLoader
 from igni_core.core.agents.pool import AgentPool
 from igni_core.core.agents.schemas import AgentPriority
 from igni_core.core.config.settings import Settings
+from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contribution_models import (
     EditOp,
     PromptEdit,
@@ -46,7 +47,9 @@ def _agent(path: Path, text: str) -> Path:
 def _pool(project: Path, contributions: PromptContributions) -> AgentPool:
     pool = AgentPool()
     pool.load_definitions(Settings(), project)
-    AgentContributionApplier(contributions).apply_to(pool)
+    AgentContributionApplier(contributions, prompt_loader=PromptLoader(PromptFragments())).apply_to(
+        pool
+    )
     return pool
 
 

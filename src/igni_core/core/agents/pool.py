@@ -37,6 +37,8 @@ from igni_core.core.agents.schemas import (
 )
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
+from igni_core.core.prompts.fragments import PromptFragments
+from igni_core.core.prompts.loader import PromptLoader
 
 if TYPE_CHECKING:
     from agno.agent import Agent
@@ -63,11 +65,18 @@ class AgentPool:
         project_dir: Path | None = None,
         db: DbHandle | None = None,
         broadcast: BroadcastSink | None = None,
+        prompt_loader: PromptLoader | None = None,
     ) -> None:
         self._entries: dict[str, AgentEntry] = {}
         self._agents: dict[str, Agent] = {}
         self._builder: AgentBuilder | None = None
         self._ephemeral: EphemeralAgentStore | None = None
+        # An agent's body may carry an anchor an extension fills; the
+        # table is the process's, so a pool built on its own gets one
+        # of its own, empty.
+        self._prompt_loader = (
+            prompt_loader if prompt_loader is not None else PromptLoader(PromptFragments())
+        )
         # ``settings`` may be ``None`` until :meth:`load_definitions`;
         # :meth:`_settings` falls back to defaults for the
         # single-directory loads that can run before it.
@@ -133,6 +142,7 @@ class AgentPool:
             settings=settings,
             project_dir=project_dir,
             group_dir=group_dir,
+            prompt_loader=self._prompt_loader,
         )
         report = loader.load()
         self._merge(report)
@@ -158,6 +168,7 @@ class AgentPool:
             settings=self._settings(),
             project_dir=Path(base_dir) if base_dir else Path.cwd(),
             restriction_policy=restriction_policy,
+            prompt_loader=self._prompt_loader,
         )
         report = loader.load_directory(path, priority, namespace=namespace)
         self._merge(report)
@@ -222,6 +233,11 @@ class AgentPool:
         :class:`SpawnRunner` when it builds sub-teams so paused runs
         land in the same store as the parent."""
         return self._context.db
+
+    @property
+    def prompt_loader(self) -> PromptLoader:
+        """Where the anchors an extension fills come from."""
+        return self._prompt_loader
 
     # ── Ephemeral store ──────────────────────────────────────────
 

@@ -28,6 +28,7 @@ import pytest
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
+from igni_core.core.prompts.loader import PromptLoader
 from igni_core.extensions.contributions import (
     ExtensionConditionReceiver,
     ExtensionContributions,
@@ -62,12 +63,13 @@ class Wired:
         # Local tables rather than the process-wide ones, so these
         # tests cannot leak into each other or into anything else.
         self.fragments = PromptFragments()
+        self.prompt_loader = PromptLoader(self.fragments)
         self.prompts = PromptContributions()
         self.priority: list[str] = []
         self.contributions = ExtensionContributions(
             registry=self.registry,
             rpc=self.rpc,
-            fragments=self.fragments,
+            prompt_loader=self.prompt_loader,
             prompts=self.prompts,
             priority=lambda: self.priority,
         )
@@ -361,7 +363,11 @@ async def test_an_agent_override_is_read_from_the_installed_plugin(tmp_path):
     (bundle / "plugin" / "overrides").mkdir(parents=True)
     shutil.copy(installed, bundle / "plugin" / "overrides" / "explorer.md")
     contributions = ExtensionContributions(
-        registry=registry, rpc=None, prompts=prompts, plugins_dir=plugins
+        registry=registry,
+        rpc=None,
+        prompt_loader=PromptLoader(PromptFragments()),
+        prompts=prompts,
+        plugins_dir=plugins,
     )
     contributions.note_bundle("acme.scanner", bundle)
     manifest = ExtensionManifest.model_validate(

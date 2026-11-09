@@ -7,11 +7,10 @@ capability that may not be installed — so the substitution became a
 table of named anchors with an owner each.
 
 The rule that matters is the one about anchors this table does *not*
-own. ``load_prompt`` is not the last pass over a prompt:
+own. Filling anchors is not the last pass over a prompt:
 ``{{PERSISTING}}``, ``{{AGENT_CATALOG}}`` and ``{{CODEINDEX_TOOLS}}``
-are filled by the prompt builder afterwards. The first version of
-``expand`` dropped every anchor it had no supplier for and deleted
-three sections of the system prompt. Hence the second class below.
+are filled by the prompt builder afterwards. Hence the second class
+below.
 """
 
 from __future__ import annotations
@@ -49,8 +48,8 @@ class TestFillingWhatItOwns:
 
 class TestLeavingWhatItDoesNot:
     def test_an_anchor_with_no_supplier_survives_untouched(self, fragments):
-        # The bug this is here for: ``load_prompt`` is one pass of
-        # several, and the next one fills these.
+        # Filling anchors is one pass of several, and the next one
+        # fills these.
         text = "a {{PERSISTING}} b {{AGENT_CATALOG}} c"
         assert fragments.expand(text) == text
 
@@ -94,30 +93,30 @@ class TestWhenASupplierFails:
 
 class TestWhoMayClaimAnAnchor:
     def test_two_extensions_cannot_supply_the_same_anchor(self, fragments):
-        assert fragments.register("THING", "first.ext", lambda: "a") is None
+        assert fragments.register("THING", "first.ext", lambda: "a").ok
 
         refused = fragments.register("THING", "second.ext", lambda: "b")
 
-        assert refused is not None
-        assert "first.ext" in refused
+        assert not refused.ok
+        assert "first.ext" in refused.reason
         assert fragments.expand("{{THING}}") == "a"
 
     def test_the_same_owner_may_replace_its_own_supplier(self, fragments):
         fragments.register("THING", "acme.ext", lambda: "old")
 
         # What an upgrade does.
-        assert fragments.register("THING", "acme.ext", lambda: "new") is None
+        assert fragments.register("THING", "acme.ext", lambda: "new").ok
         assert fragments.expand("{{THING}}") == "new"
 
     def test_a_name_that_is_not_an_anchor_is_refused(self, fragments):
         for bad in ("lower", "1LEADING", "has space", "", "HAS-DASH"):
-            assert fragments.register(bad, "acme.ext", lambda: "x") is not None
+            assert not fragments.register(bad, "acme.ext", lambda: "x").ok
 
     def test_leaving_frees_the_name(self, fragments):
         fragments.register("THING", "first.ext", lambda: "a")
         fragments.remove_owner("first.ext")
 
-        assert fragments.register("THING", "second.ext", lambda: "b") is None
+        assert fragments.register("THING", "second.ext", lambda: "b").ok
         assert fragments.expand("{{THING}}") == "b"
 
 

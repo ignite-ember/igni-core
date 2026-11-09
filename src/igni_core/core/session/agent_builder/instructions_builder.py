@@ -20,6 +20,7 @@ from typing import Any
 
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.prompts.contributions import PromptContributions
+from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.utils.context import (
     ProjectMemoryBank,
     load_project_context,
@@ -47,6 +48,7 @@ class InstructionsBuilder:
         output_styles: dict,
         active_output_style_name: str,
         contributions: PromptContributions,
+        prompt_loader: PromptLoader,
     ) -> None:
         self._project_dir = project_dir
         self._project_instructions = project_instructions
@@ -55,6 +57,7 @@ class InstructionsBuilder:
         self._output_styles = output_styles
         self._active_output_style_name = active_output_style_name
         self._contributions = contributions
+        self._prompt_loader = prompt_loader
 
     def append_project_instructions(self, out: list[str]) -> None:
         """Append the igni.md / CLAUDE.md project instructions."""
@@ -96,7 +99,7 @@ class InstructionsBuilder:
 
         As extensions have shaped it; see :class:`PlanModeNudge`.
         """
-        nudge = PlanModeNudge(contributions=self._contributions)
+        nudge = PlanModeNudge(contributions=self._contributions, prompt_loader=self._prompt_loader)
         out.append(nudge.render())
 
     def append_output_style(self, out: list[str]) -> None:

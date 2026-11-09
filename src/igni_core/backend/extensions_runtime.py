@@ -7,6 +7,7 @@ from typing import Any
 
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.core.prompts.contributions import PromptContributions
+from igni_core.core.prompts.loader import PromptLoader
 from igni_core.extensions.contributions import (
     ExtensionConditionReceiver,
     ExtensionContributions,
@@ -53,6 +54,7 @@ class ExtensionsRuntime:
         plugins_dir: Path,
         store: ExtensionStore,
         prompts: PromptContributions,
+        prompt_loader: PromptLoader,
     ) -> ExtensionsRuntime:
         rpc = ExtensionRpc(ExtensionRegistry())
         origins = ExtensionOrigins()
@@ -70,6 +72,7 @@ class ExtensionsRuntime:
             plugins_dir=plugins_dir,
             priority=store.priority,
             igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
+            prompt_loader=prompt_loader,
             prompts=prompts,
         )
         contributions.attach()

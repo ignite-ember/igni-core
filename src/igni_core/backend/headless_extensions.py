@@ -183,6 +183,7 @@ class HeadlessExtensions:
             plugins_dir=plugins_dir,
             priority=store.priority,
             igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
+            prompt_loader=session.prompt_loader,
             prompts=session.prompt_contributions,
         )
         contributions.attach()

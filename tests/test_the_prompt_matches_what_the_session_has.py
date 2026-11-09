@@ -34,7 +34,7 @@ from pathlib import Path
 import pytest
 
 import igni_core
-from igni_core.core.prompts import load_prompt
+from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contribution_models import EditOp, PromptEdit
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
@@ -82,9 +82,9 @@ def _with_documents(live: bool, *, code_intelligence: bool = False) -> PromptCon
     return contributions
 
 
-def _loader(name: str) -> str:
+def _loader() -> PromptLoader:
     """The prompt as a session loads it: anchors filled by their suppliers."""
-    return load_prompt(name)
+    return PromptLoader(PromptFragments())
 
 
 def _render(*, codeindex: bool, artifacts: bool) -> str:
@@ -94,7 +94,7 @@ def _render(*, codeindex: bool, artifacts: bool) -> str:
         contributions=_with_documents(artifacts, code_intelligence=codeindex),
         agent_catalog="(catalog)",
         skill_descriptions="",
-        prompt_loader=_loader,
+        prompt_loader=_loader(),
     )
     return builder.render()
 
@@ -218,7 +218,7 @@ class TestTheSwitchIsTheOneTheExtensionDeclares:
             contributions=_with_documents(True),
             agent_catalog="x",
             skill_descriptions="",
-            prompt_loader=lambda name: (_ for _ in ()).throw(FileNotFoundError(name)),
+            prompt_loader=PromptLoader(PromptFragments(), directory=Path("/nonexistent")),
         )
 
         assert builder._load_section("persisting") == ""
@@ -237,7 +237,7 @@ class TestUnbalancedMarkersRaise:
             contributions=_with_documents(artifacts),
             agent_catalog="x",
             skill_descriptions="",
-            prompt_loader=_loader,
+            prompt_loader=_loader(),
         )
 
         with pytest.raises(ValueError, match="unbalanced"):
@@ -250,7 +250,7 @@ class TestUnbalancedMarkersRaise:
             contributions=_with_documents(True),
             agent_catalog="x",
             skill_descriptions="",
-            prompt_loader=_loader,
+            prompt_loader=_loader(),
         )
         text = (
             "a <!-- user-memory:only -->b<!-- /user-memory:only -->"
@@ -266,7 +266,7 @@ class TestUnbalancedMarkersRaise:
             contributions=_with_documents(False),
             agent_catalog="x",
             skill_descriptions="",
-            prompt_loader=_loader,
+            prompt_loader=_loader(),
             user_memory_available=False,
         )
         text = (
@@ -286,7 +286,7 @@ class TestUnbalancedMarkersRaise:
             contributions=_with_documents(True),
             agent_catalog="x",
             skill_descriptions="",
-            prompt_loader=_loader,
+            prompt_loader=_loader(),
         )
 
         assert set(PromptBuilder._CONDITIONALS) <= set(builder._capabilities())

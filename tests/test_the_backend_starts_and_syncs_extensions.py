@@ -24,6 +24,7 @@ from igni_core.backend.igni_server_access import IgniServerAccess
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.core.config.settings import Settings
 from igni_core.core.plugins.installer import PluginInstaller
+from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.health import ExtensionHealth
@@ -88,7 +89,12 @@ def runtime(mcp: StubMcp) -> ExtensionsRuntime:
         rpc=rpc,
         origins=ExtensionOrigins(),
         health=ExtensionHealth(registry=rpc.registry, rpc=rpc, mcp=mcp),
-        contributions=ExtensionContributions(registry=rpc.registry, rpc=rpc, prompts=prompts),
+        contributions=ExtensionContributions(
+            registry=rpc.registry,
+            rpc=rpc,
+            prompt_loader=PromptLoader(PromptFragments()),
+            prompts=prompts,
+        ),
         prompts=prompts,
     )
 

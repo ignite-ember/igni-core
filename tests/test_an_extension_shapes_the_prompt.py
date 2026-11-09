@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from igni_core.core.prompts import load_prompt
+from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contribution_models import (
     EditOp,
     PromptEdit,
@@ -40,6 +40,11 @@ from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
 class _Settings:
     class storage:  # noqa: N801
         data_dir = Path("/nonexistent")
+
+
+def _prompt_loader() -> PromptLoader:
+    """igni's own prompt files, with no extension-supplied anchors."""
+    return PromptLoader(PromptFragments())
 
 
 def _replace(target: str, section: str, text: str, when: str | None = None) -> PromptEdit:
@@ -64,7 +69,7 @@ def _render(contributions: PromptContributions, *, user_memory: bool = True) -> 
         user_memory_available=user_memory,
         agent_catalog="- researcher: reads things",
         skill_descriptions="",
-        prompt_loader=load_prompt,
+        prompt_loader=PromptLoader(PromptFragments()),
     ).render()
 
 
@@ -340,7 +345,9 @@ class TestTheMainPrompt:
 
 class TestPlanMode:
     def test_with_nothing_installed_it_is_igni_s(self):
-        rendered = PlanModeNudge(contributions=PromptContributions()).render()
+        rendered = PlanModeNudge(
+            contributions=PromptContributions(), prompt_loader=_prompt_loader()
+        ).render()
         assert rendered.startswith("PLAN MODE")
         assert "<!--" not in rendered
 
@@ -354,7 +361,9 @@ class TestPlanMode:
                 _replace("plan_mode", "skip", "Never skip plan mode."),
             ],
         )
-        rendered = PlanModeNudge(contributions=contributions).render()
+        rendered = PlanModeNudge(
+            contributions=contributions, prompt_loader=_prompt_loader()
+        ).render()
         assert rendered.endswith("Ask the index.")
         assert "Never skip plan mode." in rendered
         assert "Skip plan mode for simple" not in rendered
@@ -362,4 +371,9 @@ class TestPlanMode:
     def test_the_main_prompt_s_edits_do_not_reach_it(self):
         contributions = PromptContributions()
         contributions.set_owner("a.ext", "Ay", edits=[_append("main", "x", "main only")])
-        assert "main only" not in PlanModeNudge(contributions=contributions).render()
+        assert (
+            "main only"
+            not in PlanModeNudge(
+                contributions=contributions, prompt_loader=_prompt_loader()
+            ).render()
+        )

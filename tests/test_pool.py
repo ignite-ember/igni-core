@@ -23,6 +23,12 @@ from igni_core.core.agents import (
     AgentPriority,
 )
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.prompts import PromptFragments, PromptLoader
+
+
+def _prompt_loader() -> PromptLoader:
+    """igni's own prompt files, with no extension-supplied anchors."""
+    return PromptLoader(PromptFragments())
 
 
 def parse_agent_file(path):
@@ -30,7 +36,7 @@ def parse_agent_file(path):
     replacement. Kept as a thin wrapper so the parser tests read
     naturally; the canonical entry-point is
     :meth:`AgentMarkdownFile.parse`."""
-    return AgentMarkdownFile(path).parse()
+    return AgentMarkdownFile(path, prompt_loader=_prompt_loader()).parse()
 
 
 class TestAgentParser:

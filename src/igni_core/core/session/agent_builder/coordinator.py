@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from igni_core.core.agents.catalog import agent_catalog
 from igni_core.core.paths import MAIN_AGENT_NAME
+from igni_core.core.prompts.loader import PromptLoader
 
 from .agent_build_spec import AgentBuildSpec
 from .instructions_builder import InstructionsBuilder
@@ -52,7 +53,7 @@ class MainAgentBuilder:
         model_registry_cls: Any,
         reasoning_factory: Callable[[Any], Any],
         guardrails_factory: Callable[[Any], Any],
-        prompt_loader: Callable[[str], str],
+        prompt_loader: PromptLoader,
     ) -> None:
         self._session = session
         self._agent_cls = agent_cls
@@ -123,6 +124,7 @@ class MainAgentBuilder:
             output_styles=s.output_styles,
             active_output_style_name=s.active_output_style,
             contributions=s.prompt_contributions,
+            prompt_loader=self._prompt_loader,
         ).assemble(prompt)
 
     def build_model(self) -> tuple[Any, int]:

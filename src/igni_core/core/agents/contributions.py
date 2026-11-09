@@ -10,6 +10,7 @@ from igni_core.core.agents.markdown import AgentMarkdownFile
 from igni_core.core.agents.plugin_policy import PluginRestrictionPolicy
 from igni_core.core.agents.schemas import AgentDefinition, AgentEntry, AgentPriority
 from igni_core.core.prompts.contributions import PromptContributions
+from igni_core.core.prompts.loader import PromptLoader
 
 if TYPE_CHECKING:
     from igni_core.core.agents.pool import AgentPool
@@ -33,8 +34,9 @@ class AgentContributionApplier:
     security envelope a plugin's own agents get.
     """
 
-    def __init__(self, contributions: PromptContributions) -> None:
+    def __init__(self, contributions: PromptContributions, *, prompt_loader: PromptLoader) -> None:
         self._contributions = contributions
+        self._prompt_loader = prompt_loader
 
     def apply_to(self, pool: AgentPool) -> None:
         for name in self._contributions.agents():
@@ -54,7 +56,9 @@ class AgentContributionApplier:
             logger.info("agent %s: edited by an extension, and nobody defines it", name)
             return None
         path = composition.override_path or source or Path(f"{name}.md")
-        md = AgentMarkdownFile(path, content=composition.document.render())
+        md = AgentMarkdownFile(
+            path, content=composition.document.render(), prompt_loader=self._prompt_loader
+        )
         try:
             definition: AgentDefinition = md.parse().model_copy(update={"name": name})
         except ValueError as exc:

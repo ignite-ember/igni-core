@@ -18,6 +18,7 @@ from igni_core.backend.headless_extensions import HeadlessExtensions
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.hooks.extension_values import PreToolUseValue
+from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.registry import ExtensionState
 from igni_core.extensions.store import ExtensionStore
@@ -55,6 +56,7 @@ class Session:
         self.session_id = "s-1"
         self.mcp_manager = Mcp()
         self.prompt_contributions = PromptContributions()
+        self.prompt_loader = PromptLoader(PromptFragments())
         self.rebuilt = 0
 
     def reload_group_agents(self) -> bool:

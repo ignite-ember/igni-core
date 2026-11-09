@@ -51,6 +51,7 @@ class _PooledBackend:
         resume_session_id: str,
         additional_dirs: Any = None,
         contributions: Any = None,
+        prompt_loader: Any = None,
     ) -> None:
         self.session_id = resume_session_id
         self.project_dir = project_dir

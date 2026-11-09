@@ -319,6 +319,7 @@ class TestTheUserMemoryCapabilityIsGateable:
     def _builder(self, *, user_memory: bool):
         from pathlib import Path
 
+        from igni_core.core.prompts import PromptFragments, PromptLoader
         from igni_core.core.prompts.contributions import PromptContributions
         from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
 
@@ -329,7 +330,7 @@ class TestTheUserMemoryCapabilityIsGateable:
             user_memory_available=user_memory,
             agent_catalog="",
             skill_descriptions="",
-            prompt_loader=lambda name: "",
+            prompt_loader=PromptLoader(PromptFragments()),
         )
 
     def test_the_span_is_cut_when_the_tool_is_not_attached(self):

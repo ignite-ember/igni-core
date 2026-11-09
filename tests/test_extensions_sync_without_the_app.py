@@ -17,6 +17,7 @@ from click.testing import CliRunner
 from igni_core.backend.headless_extensions import HeadlessExtensions
 from igni_core.core.auth.credentials import Credentials, CredentialsStore
 from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
+from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.distribution import OneShotSync
 from igni_core.extensions.store import ExtensionStore
@@ -197,6 +198,7 @@ async def test_a_headless_run_syncs_before_it_starts_extensions(world, monkeypat
         session_id="s-1",
         mcp_manager=Mcp(),
         prompt_contributions=PromptContributions(),
+        prompt_loader=PromptLoader(PromptFragments()),
         reload_group_agents=lambda: True,
     )
     extensions = HeadlessExtensions(session)
@@ -218,6 +220,7 @@ async def test_a_headless_run_that_cannot_sync_still_runs(world, monkeypatch):
         session_id="s-1",
         mcp_manager=Mcp(),
         prompt_contributions=PromptContributions(),
+        prompt_loader=PromptLoader(PromptFragments()),
         reload_group_agents=lambda: True,
     )
     extensions = HeadlessExtensions(session)

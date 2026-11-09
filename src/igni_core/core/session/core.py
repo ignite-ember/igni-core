@@ -79,8 +79,9 @@ from igni_core.core.monitors import MonitorConfigLoader, MonitorManager
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.output_styles import OutputStyle, discover_output_styles
 from igni_core.core.plugins import PluginLoader, load_state
-from igni_core.core.prompts import load_prompt
 from igni_core.core.prompts.contributions import PromptContributions
+from igni_core.core.prompts.fragments import PromptFragments
+from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.session.agent_builder import MainAgentBuilder
 from igni_core.core.session.agent_factory import (
     create_guardrails,
@@ -162,6 +163,7 @@ class Session:
         resume_session_id: str | None = None,
         additional_dirs: list[Path] | None = None,
         contributions: PromptContributions | None = None,
+        prompt_loader: PromptLoader | None = None,
     ):
         self.settings = settings
 
@@ -170,6 +172,15 @@ class Session:
         #: session of a deployment sees the same contributions; a
         #: session built on its own gets a table of its own, empty.
         self._contributions = contributions if contributions is not None else PromptContributions()
+
+        #: igni's prompt files, and the anchors extensions fill into
+        #: them. Injected for the same reason as the contributions: an
+        #: anchor an extension supplies has to reach every session of
+        #: the deployment, and a session built on its own gets a table
+        #: of its own, empty.
+        self._prompt_loader = (
+            prompt_loader if prompt_loader is not None else PromptLoader(PromptFragments())
+        )
 
         # Every code path below may read ``settings.models.default``, so
         # the cloud catalog is refreshed first: a brand-new install reaches
@@ -432,14 +443,18 @@ class Session:
 
     def _init_agent_and_skill_pools(self, settings: Settings) -> None:
         """The agent and skill pools from the current plugin set."""
-        self.pool = AgentPool(db=self.db, broadcast=self.broadcast)
+        self.pool = AgentPool(
+            db=self.db, broadcast=self.broadcast, prompt_loader=self._prompt_loader
+        )
         self.pool.load_definitions(
             settings,
             self.project_dir,
             group_dir=self.group_policy.shipped_dir("agents"),
         )
         self.plugin_loader.apply_to_agents(self.pool, disabled=self._disabled_plugins)
-        AgentContributionApplier(self._contributions).apply_to(self.pool)
+        AgentContributionApplier(self._contributions, prompt_loader=self._prompt_loader).apply_to(
+            self.pool
+        )
         # One sub-agent cap for the session, drawn on by every
         # OrchestrateTools at every depth.
         self.spawn_budget = SpawnBudget(settings.orchestration.max_total_agents)
@@ -666,7 +681,7 @@ class Session:
             model_registry_cls=ModelRegistry,
             reasoning_factory=create_reasoning_tools,
             guardrails_factory=create_guardrails,
-            prompt_loader=load_prompt,
+            prompt_loader=self._prompt_loader,
         ).build()
 
     # ── Public accessors consumed by the agent-builder sub-package ──
@@ -675,6 +690,11 @@ class Session:
     def prompt_contributions(self) -> PromptContributions:
         """What extensions have done to the prompts this session reads."""
         return self._contributions
+
+    @property
+    def prompt_loader(self) -> PromptLoader:
+        """igni's prompt files, and the anchors extensions fill into them."""
+        return self._prompt_loader
 
     @property
     def cloud_access_token(self) -> str | None:

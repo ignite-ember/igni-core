@@ -13,6 +13,8 @@ from igni_core.backend.schemas_sessions import BackendLike
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.core.prompts.contributions import PromptContributions
+from igni_core.core.prompts.fragments import PromptFragments
+from igni_core.core.prompts.loader import PromptLoader
 from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.store import ExtensionStore
@@ -30,15 +32,17 @@ class PoolWiring:
     :class:`~igni_core.backend.rpc_handlers.base.RpcHandlerContext` is
     one: the fields are runtime objects. There is one login flow per
     backend process, one extension namespace (a second session must not
-    see a different set of extensions), one notification center and one
-    table of what extensions have done to the prompts; the root
-    ``transport`` is stamped with each session's id on the way out.
+    see a different set of extensions), one notification center, one
+    table of what extensions have done to the prompts and one table of
+    the anchors they fill; the root ``transport`` is stamped with each
+    session's id on the way out.
     """
 
     transport: Any
     push_bridge: PushNotificationBridge
     login: LoginCoordinator
     contributions: PromptContributions = field(default_factory=PromptContributions)
+    prompt_loader: PromptLoader = field(default_factory=lambda: PromptLoader(PromptFragments()))
     extensions: ExtensionRpc = field(default_factory=_no_extensions)
     origins: Any = None
     extension_store: ExtensionStore | None = None

@@ -42,6 +42,8 @@ from igni_core.core.layer import BackendHooks, layers
 from igni_core.core.observability import OtelRuntime
 from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.prompts.contributions import PromptContributions
+from igni_core.core.prompts.fragments import PromptFragments
+from igni_core.core.prompts.loader import PromptLoader
 from igni_core.extensions.faults import ExtensionFaults
 from igni_core.extensions.principal import SignedInPerson
 from igni_core.extensions.store import ExtensionStore
@@ -141,12 +143,17 @@ class BackendApp:
         # process: the extension system registers into it and every
         # session of this backend reads from it.
         contributions = PromptContributions()
+        # The anchors extensions fill into the prompts. One table for the
+        # process: the extension system registers into it and every
+        # session of this backend reads from it.
+        prompt_loader = PromptLoader(PromptFragments())
         backend = BackendServer(
             settings,
             project_dir=launch.project_dir,
             resume_session_id=launch.resume_session_id,
             additional_dirs=launch.additional_dirs,
             contributions=contributions,
+            prompt_loader=prompt_loader,
         )
         # Hydrates any persisted ``/loop`` state from the project's ``state.db``.
         await backend.startup()
@@ -159,7 +166,11 @@ class BackendApp:
         login = LoginCoordinator(backend=backend, push_bridge=push_bridge)
         plugins_dir = PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir
         extensions = ExtensionsRuntime.build(
-            mcp=backend.mcp_manager, plugins_dir=plugins_dir, store=store, prompts=contributions
+            mcp=backend.mcp_manager,
+            plugins_dir=plugins_dir,
+            store=store,
+            prompts=contributions,
+            prompt_loader=prompt_loader,
         )
         # Read per call: signing in can change which server it is.
         access = IgniServerAccess(
@@ -208,6 +219,7 @@ class BackendApp:
                 push_bridge=push_bridge,
                 login=login,
                 contributions=contributions,
+                prompt_loader=prompt_loader,
                 extensions=extensions.rpc,
                 origins=extensions.origins,
                 extension_store=store,

@@ -17,13 +17,12 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.document import PromptKind
-from igni_core.core.prompts.fragments import fragments
+from igni_core.core.prompts.loader import PromptLoader
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ class PromptBuilder:
         settings: Any,
         agent_catalog: str,
         skill_descriptions: str,
-        prompt_loader: Callable[[str], str],
+        prompt_loader: PromptLoader,
         contributions: PromptContributions,
         user_memory_available: bool = True,
     ) -> None:
@@ -72,11 +71,11 @@ class PromptBuilder:
         """
         composition = self._contributions.compose(
             PromptKind.MAIN.value,
-            self._prompt_loader("main_agent"),
+            self._prompt_loader.load("main_agent"),
             prepare=self.include_sections,
         )
         assert composition is not None  # igni always has a main prompt
-        return fragments.expand(composition.document.render())
+        return self._prompt_loader.expand(composition.document.render())
 
     def include_sections(self, prompt: str) -> str:
         """``{{PERSISTING}}``: a block kept in its own file, part of this prompt."""
@@ -96,7 +95,7 @@ class PromptBuilder:
         mechanism.
         """
         try:
-            return self._prompt_loader(stem).strip()
+            return self._prompt_loader.load(stem).strip()
         except (FileNotFoundError, OSError):
             logger.warning("prompt section %r missing; omitting", stem)
             return ""

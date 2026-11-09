@@ -144,6 +144,7 @@ class _Pooled(_Backend):
         resume_session_id: str,
         additional_dirs: Any,
         contributions: Any = None,
+        prompt_loader: Any = None,
     ) -> None:
         super().__init__(resume_session_id, project_dir)
         _Pooled.made.append(self)

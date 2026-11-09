@@ -57,6 +57,7 @@ class SessionRuntimeFactory:
             resume_session_id=session_id,
             additional_dirs=self._dirs.additional_dirs,
             contributions=self._wiring.contributions,
+            prompt_loader=self._wiring.prompt_loader,
         )
         await backend.startup()
         queue = backend.message_queue

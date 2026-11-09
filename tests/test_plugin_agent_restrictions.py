@@ -29,7 +29,13 @@ from igni_core.core.agents import (
     AgentPool,
     PluginRestrictionPolicy,
 )
+from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.tools.orchestrate import OrchestrateTools
+
+
+def _prompt_loader() -> PromptLoader:
+    """igni's own prompt files, with no extension-supplied anchors."""
+    return PromptLoader(PromptFragments())
 
 
 def _apply_plugin_restrictions(
@@ -47,7 +53,7 @@ def _raw_frontmatter_keys(path: Path) -> set:
     """Local test helper — replaces the deleted free function on
     ``core/pool.py``. Delegates to
     :meth:`AgentMarkdownFile.raw_frontmatter_keys`."""
-    return AgentMarkdownFile(path).raw_frontmatter_keys()
+    return AgentMarkdownFile(path, prompt_loader=_prompt_loader()).raw_frontmatter_keys()
 
 
 @pytest.fixture

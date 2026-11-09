@@ -15,10 +15,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from igni_core.core.prompts import load_prompt
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.document import PromptKind
-from igni_core.core.prompts.fragments import fragments
+from igni_core.core.prompts.loader import PromptLoader
 
 
 class PlanModeNudge(BaseModel):
@@ -29,11 +28,13 @@ class PlanModeNudge(BaseModel):
 
     #: What extensions have done to the plan-mode prompt.
     contributions: PromptContributions
+    #: igni's prompt files, and the anchors extensions fill into them.
+    prompt_loader: PromptLoader
 
     def render(self) -> str:
         """Return the full plan-mode block as a single string."""
         composition = self.contributions.compose(
-            PromptKind.PLAN_MODE.value, load_prompt("plan_mode.base")
+            PromptKind.PLAN_MODE.value, self.prompt_loader.load("plan_mode.base")
         )
         assert composition is not None  # igni always has a plan-mode prompt
-        return fragments.expand(composition.document.render()).strip()
+        return self.prompt_loader.expand(composition.document.render()).strip()

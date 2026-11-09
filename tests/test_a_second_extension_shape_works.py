@@ -29,6 +29,7 @@ import pytest
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
+from igni_core.core.prompts.loader import PromptLoader
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
@@ -58,11 +59,12 @@ class Wired:
         self.mcp = MCPClientManager(project_dir=tmp_path)
         self.origins = ExtensionOrigins()
         self.fragments = PromptFragments()
+        self.prompt_loader = PromptLoader(self.fragments)
         self.prompts = PromptContributions()
         self.contributions = ExtensionContributions(
             registry=self.registry,
             rpc=self.rpc,
-            fragments=self.fragments,
+            prompt_loader=self.prompt_loader,
             prompts=self.prompts,
         )
         self.contributions.attach()

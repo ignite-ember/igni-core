@@ -72,15 +72,13 @@ from igni_core.core.contributed_commands import ContributedCommands
 from igni_core.core.contributed_commands import (
     contributed_commands as default_commands,
 )
-from igni_core.core.prompts import load_prompt
 from igni_core.core.prompts.contribution_models import (
     PromptEdit,
     PromptOverride,
 )
 from igni_core.core.prompts.contributions import PromptContributions, TableChange
 from igni_core.core.prompts.document import FRONTMATTER, PromptDocument, PromptTarget
-from igni_core.core.prompts.fragments import PromptFragments
-from igni_core.core.prompts.fragments import fragments as default_fragments
+from igni_core.core.prompts.loader import PromptLoader
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.impact import (
     Claim,
@@ -118,7 +116,7 @@ class ExtensionContributions:
         plugins_dir: Path | None = None,
         priority: Callable[[], list[str]] | None = None,
         igni_commands: IgniCommands | None = None,
-        fragments: PromptFragments | None = None,
+        prompt_loader: PromptLoader,
         prompts: PromptContributions,
         commands: ContributedCommands | None = None,
         hooks: ExtensionHooks | None = None,
@@ -138,6 +136,9 @@ class ExtensionContributions:
                 collisions, and edits apply and extensions' hooks run in it.
             igni_commands: igni's own slash commands. An extension
                 declaring one has it switched off, and is told why.
+            prompt_loader: igni's prompt files, and the table of
+                anchors an extension fills. The same instance every
+                session of the deployment reads.
         """
         self._registry = registry
         self._rpc = rpc
@@ -145,7 +146,10 @@ class ExtensionContributions:
         self._plugins_dir = plugins_dir
         self._priority = priority or (lambda: [])
         self._igni_commands = igni_commands or IgniCommands()
-        self._fragments = fragments if fragments is not None else default_fragments
+        self._prompt_loader = prompt_loader
+        # The table of anchors an extension fills: the loader's, so the
+        # text it supplies reaches the prompts the loader reads.
+        self._fragments = prompt_loader.fragments
         self._prompts = prompts
         self._commands = commands if commands is not None else default_commands
         self._hooks = hooks if hooks is not None else ExtensionHooks.shared()
@@ -307,8 +311,8 @@ class ExtensionContributions:
             if text is None:
                 continue
             refusal = self._fragments.register(fragment.anchor, manifest.id, _supplier(text))
-            if refusal is not None:
-                logger.warning("extension %s: %s", manifest.id, refusal)
+            if not refusal.ok:
+                logger.warning("extension %s: %s", manifest.id, refusal.reason)
 
     async def _apply_prompt(self, manifest: ExtensionManifest) -> None:
         prompt = manifest.contributes.prompt
@@ -368,8 +372,7 @@ class ExtensionContributions:
             )
         )
 
-    @staticmethod
-    def _sections_mismatch(target: str, text: str, declared: list[str]) -> str | None:
+    def _sections_mismatch(self, target: str, text: str, declared: list[str]) -> str | None:
         """Why an override's text is not the sections it declares, or ``None`` when it is.
 
         Other extensions' edits — and a super admin's view of which
@@ -377,7 +380,7 @@ class ExtensionContributions:
         """
         agent = PromptTarget.parse(target).agent is not None
         if target == "main":
-            text = text.replace("{{PERSISTING}}", load_prompt("persisting"))
+            text = text.replace("{{PERSISTING}}", self._prompt_loader.load("persisting"))
         try:
             found = PromptDocument(text, agent=agent).sections()
         except ValueError as exc:

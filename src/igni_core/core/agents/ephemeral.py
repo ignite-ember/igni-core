@@ -150,7 +150,7 @@ class EphemeralAgentStore:
         md_path = self._dir / f"{name}.md"
         md_path.write_text(md_content)
 
-        definition = AgentMarkdownFile(md_path).parse()
+        definition = AgentMarkdownFile(md_path, prompt_loader=self._pool.prompt_loader).parse()
         self._pool.upsert_entry(AgentEntry(definition=definition, priority=AgentPriority.EPHEMERAL))
         agent = self._pool.get(name)
         assert agent is not None, "an entry upserted a line ago is in the pool"

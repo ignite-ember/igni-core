@@ -69,7 +69,6 @@ def _session_patches(**overrides):
         "create_guardrails": None,
         "MeasuredCompression": None,
         "Agent": None,
-        "load_prompt": "You are an assistant.",
     }
     defaults.update(overrides)
     return _patches_for(defaults)
@@ -428,7 +427,6 @@ def _patches_with_real_context_loader():
         "create_guardrails": None,
         "MeasuredCompression": None,
         "Agent": None,
-        "load_prompt": "You are an assistant.",
     }
     return _patches_for(overrides)
 
