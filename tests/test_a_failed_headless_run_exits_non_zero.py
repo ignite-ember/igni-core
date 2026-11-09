@@ -18,13 +18,16 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 from agno.agent import Agent
+from agno.models.response import ToolExecution
+from agno.run.agent import RunOutput
+from agno.run.base import RunStatus
 
 from igni_core.core.config.null_model import NoModelConfigured
 from igni_core.core.config.settings import Settings
 from igni_core.core.guardrails.runner import GuardrailRunner
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.session.compaction.context_budget import ContextBudget
-from igni_core.core.session.message_handler import SessionMessageHandler
+from igni_core.core.session.message_handler import MessageHandlerDeps, SessionMessageHandler
 from igni_core.core.session.runner import run_single_message
 from igni_core.core.session.single_message_run import SingleMessageRun
 
@@ -42,16 +45,18 @@ class _Team:
 def _session(team: Any) -> MagicMock:
     display = MagicMock()
     handler = SessionMessageHandler(
-        hooks=SimpleNamespace(executor=HookExecutor({})),
-        audit=MagicMock(),
-        display=display,
-        guardrail_runner=GuardrailRunner(Settings()),
-        team_ref=lambda: team,
-        pending_reminders_drain=lambda: [],
-        compact_hook=AsyncMock(return_value=False),
-        ensure_mcp=AsyncMock(),
-        session_id_ref=lambda: "s1",
-        budget=ContextBudget(window=100_000),
+        MessageHandlerDeps(
+            hooks=SimpleNamespace(executor=HookExecutor({})),
+            audit=MagicMock(),
+            display=display,
+            guardrail_runner=GuardrailRunner(Settings()),
+            team_ref=lambda: team,
+            pending_reminders_drain=lambda: [],
+            compact_hook=AsyncMock(return_value=False),
+            ensure_mcp=AsyncMock(),
+            session_id_ref=lambda: "s1",
+            budget=ContextBudget(window=100_000),
+        )
     )
     session = MagicMock()
     session.session_id = "s1"
@@ -84,9 +89,9 @@ async def test_a_run_that_found_no_model_exits_non_zero():
 
 
 async def test_a_run_stopped_at_a_confirmation_exits_non_zero():
-    paused = SimpleNamespace(
-        status="paused",
-        tools=[SimpleNamespace(tool_name="run_shell_command", is_paused=True)],
+    paused = RunOutput(
+        status=RunStatus.paused,
+        tools=[ToolExecution(tool_name="run_shell_command", requires_confirmation=True)],
         content="I have tools to execute, but I need confirmation.",
     )
 
@@ -98,7 +103,10 @@ async def test_a_run_stopped_at_a_confirmation_exits_non_zero():
 
 
 async def test_a_failed_run_is_an_error_not_a_reply():
-    failed = SimpleNamespace(status="error", content="The model provider refused the request.")
+    failed = RunOutput(
+        status=RunStatus.error,
+        content="The model provider refused the request.",
+    )
 
     code, display = await _run(_Team(failed))
 
@@ -108,7 +116,7 @@ async def test_a_failed_run_is_an_error_not_a_reply():
 
 
 async def test_a_run_that_answered_exits_zero():
-    done = SimpleNamespace(status="completed", content="config.toml now has debug = true.")
+    done = RunOutput(status=RunStatus.completed, content="config.toml now has debug = true.")
 
     code, display = await _run(_Team(done))
 

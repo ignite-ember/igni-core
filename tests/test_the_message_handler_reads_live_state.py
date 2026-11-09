@@ -33,10 +33,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from agno.metrics import RunMetrics
+from agno.run.agent import RunOutput
+from agno.run.base import RunStatus
 from pydantic import BaseModel
 
 from igni_core.core.session.compaction.context_budget import ContextBudget
-from igni_core.core.session.message_handler import SessionMessageHandler
+from igni_core.core.session.message_handler import MessageHandlerDeps, SessionMessageHandler
 
 
 class _Hooks:
@@ -71,7 +74,7 @@ class _Guardrails:
 
 
 class _Team:
-    """Records every ``arun`` and hands back a RunOutput-shaped value.
+    """Records every ``arun`` and hands back a real Agno run output.
 
     Deliberately has **no** ``run_response`` attribute — matching the
     installed agno — so a handler that goes looking for one finds
@@ -85,10 +88,10 @@ class _Team:
     async def arun(self, message: str, **kwargs):
         self.calls.append(message)
         tokens = self._input_tokens.pop(0) if self._input_tokens else 0
-        return SimpleNamespace(
-            status="completed",
+        return RunOutput(
+            status=RunStatus.completed,
             content="answer",
-            metrics=SimpleNamespace(input_tokens=tokens),
+            metrics=RunMetrics(input_tokens=tokens),
         )
 
 
@@ -103,17 +106,19 @@ def _build(
 ) -> SessionMessageHandler:
     source = hooks if isinstance(hooks, SimpleNamespace) else SimpleNamespace(executor=hooks)
     return SessionMessageHandler(
-        hooks=source,
-        audit=audit,
-        display=SimpleNamespace(print_error=lambda msg: None),
-        guardrail_runner=_Guardrails(),
-        team_ref=lambda: team,
-        pending_reminders_drain=list,
-        compact_hook=_recorder(compact_calls),
-        ensure_mcp=_noop,
-        session_id_ref=session_id_ref,
-        budget=budget,
-        extract_response_text=lambda resp: resp.content,
+        MessageHandlerDeps(
+            hooks=source,
+            audit=audit,
+            display=SimpleNamespace(print_error=lambda msg: None),
+            guardrail_runner=_Guardrails(),
+            team_ref=lambda: team,
+            pending_reminders_drain=list,
+            compact_hook=_recorder(compact_calls),
+            ensure_mcp=_noop,
+            session_id_ref=session_id_ref,
+            budget=budget,
+            extract_response_text=lambda resp: resp.content,
+        )
     )
 
 

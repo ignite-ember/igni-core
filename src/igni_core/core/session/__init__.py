@@ -16,7 +16,13 @@ from igni_core.core.session.loop_ops import LoopController
 from igni_core.core.session.mcp_ops import McpLifecycleCoordinator, McpLifecycleDeps
 from igni_core.core.session.mcp_resolver import MCPToolResolver
 from igni_core.core.session.memory_ops import SessionMemoryManager
-from igni_core.core.session.message_handler import SessionMessageHandler
+from igni_core.core.session.message_handler import MessageHandlerDeps, SessionMessageHandler
+from igni_core.core.session.message_outcome import (
+    OutcomeKind,
+    TurnFailure,
+    TurnOutcome,
+    TurnResult,
+)
 from igni_core.core.session.persistence import SessionPersistence
 from igni_core.core.session.plan_ops import PlanCoordinator
 from igni_core.core.session.plugin_reload import PluginReloadOrchestrator
@@ -71,9 +77,11 @@ __all__ = [
     "McpLifecycleCoordinator",
     "McpLifecycleDeps",
     "McpServerStatus",
+    "MessageHandlerDeps",
     "MessageMedia",
     "OutputStyleChangedEvent",
     "OutputStyleInstructionsPatcher",
+    "OutcomeKind",
     "PendingReminderQueue",
     "PermissionModeChangedEvent",
     "PlanCoordinator",
@@ -100,6 +108,9 @@ __all__ = [
     "StopFailureHookPayload",
     "StopHookPayload",
     "ToolEventHookFactory",
+    "TurnFailure",
+    "TurnOutcome",
+    "TurnResult",
     "UserPromptSubmitHookPayload",
     "run_session_interactive",
     "run_single_message",

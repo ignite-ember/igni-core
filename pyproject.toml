@@ -285,3 +285,15 @@ follow_imports_for_stubs = true
 [[tool.mypy.overrides]]
 module = ["igni_core.backend.markdown_command_dispatcher"]
 enable_error_code = ["call-arg"]
+
+# The session package's ``MessageTeam`` protocol is a seam: it declares
+# the calls the message pipeline makes on Agno, and it is checked
+# precisely so a call site that drifts from the declaration is caught.
+# ``MessageTeam.acontinue_run`` declared ``run_response`` positional-only
+# while its one call site passed it by keyword — legal for Agno, whose
+# own ``acontinue_run`` takes it positionally-or-by-keyword, and a
+# ``TypeError`` for anything written to the protocol as declared. The
+# global ``call-arg`` switch is why ``make typecheck`` never said so.
+[[tool.mypy.overrides]]
+module = ["igni_core.core.session", "igni_core.core.session.*"]
+enable_error_code = ["call-arg"]

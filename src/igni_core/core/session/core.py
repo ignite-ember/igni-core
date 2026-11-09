@@ -113,7 +113,7 @@ from igni_core.core.session.mcp_ops import (
 )
 from igni_core.core.session.mcp_resolver import MCPToolResolver
 from igni_core.core.session.memory_ops import SessionMemoryManager
-from igni_core.core.session.message_handler import SessionMessageHandler
+from igni_core.core.session.message_handler import MessageHandlerDeps, SessionMessageHandler
 from igni_core.core.session.output_style_selection import OutputStyleSelection
 from igni_core.core.session.persistence import SessionPersistence
 from igni_core.core.session.plan_ops import PlanCoordinator, PlanDeps
@@ -315,18 +315,20 @@ class Session:
         # Built once and never rebuilt, so everything the session can change
         # under it is handed over as a stable owner or a callable.
         self._message_handler = SessionMessageHandler(
-            hooks=self.hooks,
-            audit=self.audit,
-            display=self.display,
-            guardrail_runner=self.guardrail_runner,
-            team_ref=lambda: self.main_team,
-            pending_reminders_drain=self.reminders.drain,
-            compact_hook=self.compact_if_needed,
-            ensure_mcp=self.ensure_mcp,
-            session_id_ref=lambda: self.session_id,
-            budget=self.context_budget,
-            # Replaced with the tool-hook factory on every plugin reload.
-            permission_evaluator_ref=lambda: self.permission_evaluator,
+            MessageHandlerDeps(
+                hooks=self.hooks,
+                audit=self.audit,
+                display=self.display,
+                guardrail_runner=self.guardrail_runner,
+                team_ref=lambda: self.main_team,
+                pending_reminders_drain=self.reminders.drain,
+                compact_hook=self.compact_if_needed,
+                ensure_mcp=self.ensure_mcp,
+                session_id_ref=lambda: self.session_id,
+                budget=self.context_budget,
+                # Replaced with the tool-hook factory on every plugin reload.
+                permission_evaluator_ref=lambda: self.permission_evaluator,
+            )
         )
 
     # ── __init__ helpers ────────────────────────────────────────
