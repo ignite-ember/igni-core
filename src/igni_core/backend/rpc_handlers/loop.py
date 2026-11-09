@@ -6,9 +6,9 @@ from pydantic import BaseModel, ConfigDict
 
 from igni_core.backend.rpc_binding import NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
+from igni_core.backend.schemas_context import CompactionOutcome
 from igni_core.backend.schemas_loop import LoopStatusSnapshot
 from igni_core.core.session.schemas import LoopAdvance
-from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod, RpcScope
 
 
@@ -89,17 +89,20 @@ class LoopRpcHandler(RpcHandler):
         return await self._ctx.backend.loop_pause()
 
     @rpc(RpcMethod.COMPACT_IF_NEEDED, args=CompactIfNeededArgs, scope=RpcScope.SESSION)
-    async def compact_if_needed(self, args: CompactIfNeededArgs) -> msg.SessionCleared | None:
+    async def compact_if_needed(self, args: CompactIfNeededArgs) -> CompactionOutcome:
         """Compact this session's conversation when its context is nearly full.
 
         ``ctx_tokens`` is the context the last turn used and ``max_ctx``
         the model's window; at 80% or more the conversation is summarised
         and replaced by the summary (the ``PreCompact`` hooks may refuse).
-        Returns a ``session_cleared`` message, sent in place of an
-        ``rpc_response``, carrying the ``summary``; or ``null`` (in an
-        ``rpc_response``) when nothing was compacted.
+        Returns ``compacted`` and, when it was, the ``summary``.
         """
-        return await self._controllers.context.compact_if_needed(args.ctx_tokens, args.max_ctx)
+        cleared = await self._controllers.context.compact_if_needed(args.ctx_tokens, args.max_ctx)
+        if cleared is None:
+            return CompactionOutcome(compacted=False)
+        return CompactionOutcome(
+            compacted=True, new_session_id=cleared.new_session_id, summary=cleared.summary
+        )
 
     @rpc(RpcMethod.EXTRACT_LEARNINGS, args=ExtractLearningsArgs, scope=RpcScope.SESSION)
     async def extract_learnings(self, args: ExtractLearningsArgs) -> None:

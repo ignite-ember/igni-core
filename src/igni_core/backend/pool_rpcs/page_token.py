@@ -7,6 +7,7 @@ from igni_core.backend.rpc_binding import NoArgs, rpc
 from igni_core.extensions.service_token import PageServiceTokens, PageTokenReply
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 
 class PageTokenRpc(PoolRpc):
@@ -41,5 +42,5 @@ class PageTokenRpc(PoolRpc):
         ``caller`` or this igni mounts no token exchange.
         """
         if not request.caller:
-            raise PoolRefusal(self.PAGE_ONLY)
+            raise PoolRefusal(self.PAGE_ONLY, RpcErrorCode.FORBIDDEN)
         return await self._tokens.reply_for(request.caller)

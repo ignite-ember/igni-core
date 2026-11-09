@@ -50,6 +50,8 @@ class PlanModeEnteredEvent(BroadcastEvent):
     a small banner."""
 
     channel: Literal["permission_mode_changed"] = "permission_mode_changed"
+    #: What this push says: the agent entered plan mode, and why.
+    kind: Literal["plan_mode_entered"] = "plan_mode_entered"
     mode: Literal["default", "plan", "acceptEdits", "bypassPermissions"]
     source: Literal["agent", "user"]
     reason: str = ""

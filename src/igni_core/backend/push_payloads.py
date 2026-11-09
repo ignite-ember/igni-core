@@ -113,7 +113,7 @@ PUSH_PAYLOADS: Mapping[PushChannel, PushPayload] = {
     ),
     PushChannel.SESSION_NAMED: PushPayload(SessionNamedPayload, "A session was given a name."),
     PushChannel.PERMISSION_MODE_CHANGED: PushPayload(
-        PermissionModeChangedEvent | PlanModeEnteredEvent,
+        Annotated[PermissionModeChangedEvent | PlanModeEnteredEvent, Field(discriminator="kind")],
         "The session's permission mode changed: the switch itself (``mode`` and "
         "``previous``), or the plan tool's note that the agent entered plan mode "
         "(``mode``, ``source``, ``reason``).",

@@ -18,6 +18,7 @@ from igni_core.extensions.host.wire import ErrorBody, Reply
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 
 class WindowRpc(Protocol):
@@ -96,7 +97,7 @@ class HostModelRpcs(PoolRpc):
         hands the page the refusal's ``invalid`` code, which an error string
         would lose."""
         if request.method == RpcMethod.HOST_MODEL and not request.caller:
-            return PoolAnswer.failed(self.PAGE_ONLY)
+            return PoolAnswer.failed(self.PAGE_ONLY, RpcErrorCode.FORBIDDEN)
         if request.method == RpcMethod.HOST_MODEL:
             binding = RpcBinding.on(type(self))[RpcMethod.HOST_MODEL][1]
             try:
@@ -141,8 +142,10 @@ class HostModelRpcs(PoolRpc):
         window_request = WindowRequest(**wire)
         try:
             return self._model.services.window_rpc.handle(window_request)
-        except (WindowModelError, WindowStateError) as exc:
+        except WindowModelError as exc:
             raise PoolRefusal(f"window_model: {exc}") from exc
+        except WindowStateError as exc:
+            raise PoolRefusal(f"window_model: {exc}", RpcErrorCode.FAILED) from exc
 
     @rpc(
         RpcMethod.HOST_MODEL,
@@ -180,7 +183,7 @@ class HostModelRpcs(PoolRpc):
         host model.
         """
         if not request.caller:
-            raise PoolRefusal(self.PAGE_ONLY)
+            raise PoolRefusal(self.PAGE_ONLY, RpcErrorCode.FORBIDDEN)
         wire = args.model_dump(mode="json", exclude_unset=True)
         windows = self._model.services.windows
         framing = windows.by_connection(request.from_client) if request.from_client else None

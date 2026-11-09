@@ -76,6 +76,7 @@
           "type": "boolean"
         },
         "mcp_servers": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -102,6 +103,7 @@
           "type": "string"
         },
         "tags": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -109,6 +111,7 @@
           "type": "array"
         },
         "tools": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -116,6 +119,7 @@
           "type": "array"
         },
         "unknown_tools": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -124,18 +128,7 @@
         }
       },
       "required": [
-        "name",
-        "description",
-        "tools",
-        "model",
-        "color",
-        "can_orchestrate",
-        "mcp_servers",
-        "tags",
-        "system_prompt",
-        "source_path",
-        "is_ephemeral",
-        "unknown_tools"
+        "name"
       ],
       "title": "AgentInfo",
       "type": "object"
@@ -327,12 +320,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "run_id",
-        "created_at",
-        "role",
-        "content"
-      ],
       "title": "AssistantTurn",
       "type": "object"
     },
@@ -441,10 +428,7 @@
         }
       },
       "required": [
-        "source",
-        "name",
-        "description",
-        "argument_hint"
+        "name"
       ],
       "title": "BuiltinSlashCommand",
       "type": "object"
@@ -491,8 +475,7 @@
         }
       },
       "required": [
-        "ok",
-        "error"
+        "ok"
       ],
       "title": "CancelAgentRunResult",
       "type": "object"
@@ -619,15 +602,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "history_index",
-        "role",
-        "run_id",
-        "snippet",
-        "match_start",
-        "match_end",
-        "created_at"
-      ],
       "title": "ChatSearchHit",
       "type": "object"
     },
@@ -706,9 +680,7 @@
       },
       "required": [
         "tier",
-        "org_name",
-        "email",
-        "full_name"
+        "org_name"
       ],
       "title": "CloudPlan",
       "type": "object"
@@ -819,16 +791,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "kind",
-        "content",
-        "action",
-        "display_content"
-      ],
       "title": "CommandResult",
       "type": "object"
     },
@@ -860,6 +822,30 @@
         "max_ctx"
       ],
       "title": "CompactIfNeededArgs",
+      "type": "object"
+    },
+    "CompactionOutcome": {
+      "description": "``compact_if_needed``'s answer: whether the conversation was\ncompacted, and if so the summary it was replaced by.",
+      "properties": {
+        "compacted": {
+          "title": "Compacted",
+          "type": "boolean"
+        },
+        "new_session_id": {
+          "default": "",
+          "title": "New Session Id",
+          "type": "string"
+        },
+        "summary": {
+          "default": "",
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "compacted"
+      ],
+      "title": "CompactionOutcome",
       "type": "object"
     },
     "CompleteFilesArgs": {
@@ -914,14 +900,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "text",
-        "is_thinking"
-      ],
       "title": "ContentDelta",
       "type": "object"
     },
@@ -986,10 +964,17 @@
       "type": "object"
     },
     "DialogAnswered": {
+      "description": "Whether the dialog answered was still the open one, and the window's revision.",
       "properties": {
         "answered": {
           "title": "Answered",
           "type": "boolean"
+        },
+        "op": {
+          "const": "answer_dialog",
+          "default": "answer_dialog",
+          "title": "Op",
+          "type": "string"
         },
         "rev": {
           "title": "Rev",
@@ -1004,6 +989,7 @@
       "type": "object"
     },
     "DialogShown": {
+      "description": "The dialog as shown, with its id, and the window's revision.",
       "properties": {
         "dialog": {
           "additionalProperties": {
@@ -1020,6 +1006,12 @@
           },
           "title": "Dialog",
           "type": "object"
+        },
+        "op": {
+          "const": "open_dialog",
+          "default": "open_dialog",
+          "title": "Op",
+          "type": "string"
         },
         "rev": {
           "title": "Rev",
@@ -1089,8 +1081,7 @@
       },
       "required": [
         "ok",
-        "name",
-        "reason"
+        "name"
       ],
       "title": "DiscardEphemeralResult",
       "type": "object"
@@ -1109,8 +1100,7 @@
         }
       },
       "required": [
-        "ok",
-        "error"
+        "ok"
       ],
       "title": "DiscardInterruptedRunResult",
       "type": "object"
@@ -1167,15 +1157,6 @@
           "type": "integer"
         }
       },
-      "required": [
-        "markdown",
-        "show_tool_calls",
-        "show_routing",
-        "show_reasoning",
-        "color_theme",
-        "tool_result_preview_lines",
-        "message_truncate_lines"
-      ],
       "title": "DisplayConfig",
       "type": "object"
     },
@@ -1209,13 +1190,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "text"
-      ],
       "title": "Error",
       "type": "object"
     },
@@ -1295,9 +1269,7 @@
       "required": [
         "id",
         "label",
-        "source",
-        "opens",
-        "intervalSeconds"
+        "source"
       ],
       "title": "ExtensionIndicator",
       "type": "object"
@@ -1306,6 +1278,7 @@
       "description": "Every installed extension, in a stable order.",
       "properties": {
         "extensions": {
+          "default": [],
           "items": {
             "$ref": "#/defs/ExtensionSummary"
           },
@@ -1313,9 +1286,6 @@
           "type": "array"
         }
       },
-      "required": [
-        "extensions"
-      ],
       "title": "ExtensionListResult",
       "type": "object"
     },
@@ -1366,9 +1336,7 @@
       },
       "required": [
         "kind",
-        "label",
-        "sidebar",
-        "entry"
+        "label"
       ],
       "title": "ExtensionPage",
       "type": "object"
@@ -1399,6 +1367,7 @@
           "type": "string"
         },
         "options": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -1413,9 +1382,7 @@
       "required": [
         "key",
         "type",
-        "label",
-        "default",
-        "options"
+        "label"
       ],
       "title": "ExtensionSetting",
       "type": "object"
@@ -1450,11 +1417,7 @@
         }
       },
       "required": [
-        "source",
-        "name",
-        "description",
-        "argument_hint",
-        "owner"
+        "name"
       ],
       "title": "ExtensionSlashCommand",
       "type": "object"
@@ -1463,6 +1426,7 @@
       "description": "One installed extension, as the frontend sees it.",
       "properties": {
         "allow": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -1470,6 +1434,7 @@
           "type": "array"
         },
         "dropped": {
+          "default": [],
           "items": {
             "$ref": "#/defs/ExtensionSwitchedOff"
           },
@@ -1482,6 +1447,7 @@
           "type": "string"
         },
         "host": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -1493,6 +1459,7 @@
           "type": "string"
         },
         "indicators": {
+          "default": [],
           "items": {
             "$ref": "#/defs/ExtensionIndicator"
           },
@@ -1500,6 +1467,7 @@
           "type": "array"
         },
         "menu": {
+          "default": [],
           "items": {
             "$ref": "#/defs/ExtensionMenuEntry"
           },
@@ -1516,6 +1484,7 @@
           "type": "string"
         },
         "pages": {
+          "default": [],
           "items": {
             "$ref": "#/defs/ExtensionPage"
           },
@@ -1523,6 +1492,7 @@
           "type": "array"
         },
         "problems": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -1552,6 +1522,7 @@
           "title": "Service Url"
         },
         "settings": {
+          "default": [],
           "items": {
             "$ref": "#/defs/ExtensionSetting"
           },
@@ -1563,6 +1534,7 @@
           "type": "string"
         },
         "switched_off": {
+          "default": [],
           "items": {
             "$ref": "#/defs/ExtensionSwitchedOff"
           },
@@ -1570,6 +1542,7 @@
           "type": "array"
         },
         "tools": {
+          "default": [],
           "items": {
             "$ref": "#/defs/ExtensionTool"
           },
@@ -1589,6 +1562,7 @@
               "null"
             ]
           },
+          "default": {},
           "title": "Values",
           "type": "object"
         },
@@ -1613,24 +1587,7 @@
         "id",
         "name",
         "version",
-        "state",
-        "reason",
-        "origin",
-        "allow",
-        "pages",
-        "menu",
-        "indicators",
-        "settings",
-        "values",
-        "host",
-        "web_url",
-        "service_url",
-        "switched_off",
-        "dropped",
-        "problems",
-        "faulty",
-        "sandbox",
-        "tools"
+        "state"
       ],
       "title": "ExtensionSummary",
       "type": "object"
@@ -1829,16 +1786,7 @@
       "required": [
         "id",
         "origin",
-        "source",
-        "kind",
-        "title",
-        "body",
-        "actor",
-        "target",
-        "created_at",
-        "read",
-        "org_id",
-        "org_name"
+        "source"
       ],
       "title": "FloorNotification",
       "type": "object"
@@ -1900,13 +1848,6 @@
           "title": "Group Name"
         }
       },
-      "required": [
-        "group_id",
-        "group_name",
-        "fetched_at",
-        "entry_count",
-        "default_model"
-      ],
       "title": "GroupPolicyPackResult",
       "type": "object"
     },
@@ -1980,6 +1921,7 @@
       "description": "Permission dialog needed \u2014 BE pauses until FE responds.",
       "properties": {
         "agent_path": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -2034,6 +1976,7 @@
               "null"
             ]
           },
+          "default": {},
           "title": "Tool Args",
           "type": "object"
         },
@@ -2049,19 +1992,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "requirement_id",
-        "tool_name",
-        "friendly_name",
-        "tool_args",
-        "details",
-        "details_pending",
-        "agent_path"
-      ],
       "title": "HITLRequest",
       "type": "object"
     },
@@ -2173,6 +2103,7 @@
           "type": "string"
         },
         "header_names": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -2201,14 +2132,7 @@
         }
       },
       "required": [
-        "event",
-        "type",
-        "command",
-        "url",
-        "matcher",
-        "timeout_ms",
-        "background",
-        "header_names"
+        "event"
       ],
       "title": "HookEntryView",
       "type": "object"
@@ -2241,13 +2165,12 @@
       },
       "required": [
         "extension_id",
-        "signal",
-        "value"
+        "signal"
       ],
       "title": "HostSignalPush",
       "type": "object"
     },
-    "HttpRetryAttemptEvent": {
+    "HttpRetryAttemptEventPayload": {
       "additionalProperties": false,
       "description": "The ``http_retry_attempt`` broadcast, sent before each retry.",
       "properties": {
@@ -2255,38 +2178,25 @@
           "title": "Attempt",
           "type": "integer"
         },
-        "channel": {
-          "const": "http_retry_attempt",
-          "default": "http_retry_attempt",
-          "title": "Channel",
-          "type": "string"
-        },
         "delay_seconds": {
           "title": "Delay Seconds",
           "type": "number"
         }
       },
       "required": [
-        "channel",
         "attempt",
         "delay_seconds"
       ],
-      "title": "HttpRetryAttemptEvent",
+      "title": "HttpRetryAttemptEventPayload",
       "type": "object"
     },
-    "HttpRetrySucceededEvent": {
+    "HttpRetrySucceededEventPayload": {
       "additionalProperties": false,
       "description": "The ``http_retry_succeeded`` broadcast, sent when a fetch\nsucceeds after at least one retry.",
       "properties": {
         "attempt_count": {
           "title": "Attempt Count",
           "type": "integer"
-        },
-        "channel": {
-          "const": "http_retry_succeeded",
-          "default": "http_retry_succeeded",
-          "title": "Channel",
-          "type": "string"
         },
         "delay_seconds": {
           "title": "Delay Seconds",
@@ -2298,17 +2208,22 @@
         }
       },
       "required": [
-        "channel",
         "url",
         "attempt_count",
         "delay_seconds"
       ],
-      "title": "HttpRetrySucceededEvent",
+      "title": "HttpRetrySucceededEventPayload",
       "type": "object"
     },
     "Hydrated": {
       "description": "The whole model, its revision, and the fields nobody set.",
       "properties": {
+        "op": {
+          "const": "hydrate",
+          "default": "hydrate",
+          "title": "Op",
+          "type": "string"
+        },
         "rev": {
           "title": "Rev",
           "type": "integer"
@@ -2375,13 +2290,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "text"
-      ],
       "title": "Info",
       "type": "object"
     },
@@ -2457,8 +2365,7 @@
         "content",
         "received_at",
         "interrupted_at",
-        "reason",
-        "last_error"
+        "reason"
       ],
       "title": "InterruptedRun",
       "type": "object"
@@ -2542,6 +2449,7 @@
       "description": "Wire shape for :meth:`PlanSnapshotBuilder.latest` \u2014 the\nplan-mode panel reads this on open + after each ``exit_plan_mode``.\n\n``state`` is ``\"pending\"`` when a plan exists (user hasn't\napproved/dismissed yet) or ``\"\"`` when no plan submitted.\n``tasks`` mirrors :attr:`TodoStore.items` (each row dumps\n``activeForm`` camelCase on its own, see :class:`TodoItemWire`) so the FE renders the plan and task list from a\nsingle payload.",
       "properties": {
         "history": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -2565,6 +2473,7 @@
           "type": "string"
         },
         "tasks": {
+          "default": [],
           "items": {
             "$ref": "#/defs/TodoItemWire"
           },
@@ -2572,12 +2481,6 @@
           "type": "array"
         }
       },
-      "required": [
-        "latest",
-        "history",
-        "tasks",
-        "state"
-      ],
       "title": "LatestPlanResult",
       "type": "object"
     },
@@ -2711,18 +2614,6 @@
           "type": "integer"
         }
       },
-      "required": [
-        "kind",
-        "completed",
-        "total_iterations",
-        "safety_cap_paused",
-        "prompt",
-        "display_prompt",
-        "iteration",
-        "remaining",
-        "cap_explicit",
-        "auto_extended"
-      ],
       "title": "LoopAdvance",
       "type": "object"
     },
@@ -2781,6 +2672,7 @@
       "description": "Wire shape for one MCP prompt entry.\n\n``arguments`` is a flat ``list[str]`` of argument names \u2014\nthe panel only needs the identity list, not the full\nargument metadata. If a future consumer needs the type /\nrequired-flag columns, add fields here and update\n:meth:`from_sdk` to project them.",
       "properties": {
         "arguments": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -2798,9 +2690,7 @@
         }
       },
       "required": [
-        "name",
-        "description",
-        "arguments"
+        "name"
       ],
       "title": "MCPPrompt",
       "type": "object"
@@ -2829,10 +2719,7 @@
         }
       },
       "required": [
-        "uri",
-        "name",
-        "description",
-        "mime_type"
+        "uri"
       ],
       "title": "MCPResource",
       "type": "object"
@@ -2859,6 +2746,7 @@
           "type": "boolean"
         },
         "prompts": {
+          "default": [],
           "items": {
             "$ref": "#/defs/MCPPrompt"
           },
@@ -2866,6 +2754,7 @@
           "type": "array"
         },
         "resources": {
+          "default": [],
           "items": {
             "$ref": "#/defs/MCPResource"
           },
@@ -2876,10 +2765,12 @@
           "additionalProperties": {
             "type": "string"
           },
+          "default": {},
           "title": "Tool Descriptions",
           "type": "object"
         },
         "tool_names": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -2887,6 +2778,7 @@
           "type": "array"
         },
         "tools_disabled": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -2901,14 +2793,7 @@
       "required": [
         "name",
         "connected",
-        "transport",
-        "tool_names",
-        "tool_descriptions",
-        "tools_disabled",
-        "resources",
-        "prompts",
-        "error",
-        "policy_blocked"
+        "transport"
       ],
       "title": "MCPServerSnapshot",
       "type": "object"
@@ -3053,10 +2938,7 @@
         }
       },
       "required": [
-        "source",
-        "name",
-        "description",
-        "argument_hint"
+        "name"
       ],
       "title": "MarkdownSlashCommand",
       "type": "object"
@@ -3088,9 +2970,7 @@
       },
       "required": [
         "name",
-        "url",
-        "last_fetched",
-        "plugins"
+        "url"
       ],
       "title": "MarketplaceInfo",
       "type": "object"
@@ -3138,10 +3018,7 @@
       },
       "required": [
         "name",
-        "source",
-        "description",
-        "version",
-        "branch"
+        "source"
       ],
       "title": "MarketplacePluginInfo",
       "type": "object"
@@ -3164,6 +3041,7 @@
       "description": "Pattern-3 envelope returned by :meth:`McpInitPhase.ensure`\n(forwarded by :meth:`SessionStartupCoordinator.ensure_mcp`).\n\nCallers used to grep the log stream to know how many servers\nconnected on first-message init. The envelope surfaces the\nsame information at the return-value boundary so RPC clients\n(``BackendServer.ensure_mcp`` / ``McpController.ensure``) can\nproject it back to the FE without side-channel scraping.\n\nFields:\n\n* ``connected`` \u2014 sorted names of servers that came online.\n* ``failed`` \u2014 mapping ``name \u2192 error string`` for each server\n  whose ``connect`` returned ``None``.\n* ``rebuilt`` \u2014 ``True`` iff the agent pool + main team were\n  rebuilt with at least one live client (matches the pre-\n  refactor log line \"agents + main team rebuilt\").\n* ``skipped_reason`` \u2014 set when :meth:`ensure` short-circuited\n  before reaching the connect loop. ``None`` when a connect\n  pass was actually executed.",
       "properties": {
         "connected": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -3174,6 +3052,7 @@
           "additionalProperties": {
             "type": "string"
           },
+          "default": {},
           "title": "Failed",
           "type": "object"
         },
@@ -3200,12 +3079,6 @@
           "title": "Skipped Reason"
         }
       },
-      "required": [
-        "connected",
-        "failed",
-        "rebuilt",
-        "skipped_reason"
-      ],
       "title": "McpInitResult",
       "type": "object"
     },
@@ -3311,16 +3184,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "run_id",
-        "parent_run_id",
-        "input_tokens",
-        "output_tokens"
-      ],
       "title": "ModelCompleted",
       "type": "object"
     },
@@ -3444,17 +3307,10 @@
       "required": [
         "model_id",
         "provider",
-        "url",
         "has_api_key",
-        "temperature",
-        "max_tokens",
         "timeout",
         "vision",
-        "context_window",
-        "thinking",
-        "effort",
-        "prompt_caching",
-        "source"
+        "prompt_caching"
       ],
       "title": "ModelRegistryEntryView",
       "type": "object"
@@ -3552,6 +3408,7 @@
           "additionalProperties": {
             "type": "integer"
           },
+          "default": {},
           "title": "By Source",
           "type": "object"
         },
@@ -3561,10 +3418,6 @@
           "type": "integer"
         }
       },
-      "required": [
-        "unread",
-        "by_source"
-      ],
       "title": "NotificationCounts",
       "type": "object"
     },
@@ -3589,13 +3442,13 @@
           "additionalProperties": {
             "type": "string"
           },
+          "default": {},
           "title": "Params",
           "type": "object"
         }
       },
       "required": [
-        "page",
-        "params"
+        "page"
       ],
       "title": "NotificationTarget",
       "type": "object"
@@ -3604,12 +3457,13 @@
       "description": "The ``notifications_changed`` push: the counts moved.",
       "properties": {
         "counts": {
-          "$ref": "#/defs/NotificationCounts"
+          "$ref": "#/defs/NotificationCounts",
+          "default": {
+            "by_source": {},
+            "unread": 0
+          }
         }
       },
-      "required": [
-        "counts"
-      ],
       "title": "NotificationsChanged",
       "type": "object"
     },
@@ -3617,9 +3471,14 @@
       "description": "``notifications_list``: both paths, newest first, and the counts.",
       "properties": {
         "counts": {
-          "$ref": "#/defs/NotificationCounts"
+          "$ref": "#/defs/NotificationCounts",
+          "default": {
+            "by_source": {},
+            "unread": 0
+          }
         },
         "notifications": {
+          "default": [],
           "items": {
             "$ref": "#/defs/FloorNotification"
           },
@@ -3632,11 +3491,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "notifications",
-        "counts",
-        "server_error"
-      ],
       "title": "NotificationsListResult",
       "type": "object"
     },
@@ -3644,7 +3498,11 @@
       "description": "``notifications_mark_read``: the counts after marking.",
       "properties": {
         "counts": {
-          "$ref": "#/defs/NotificationCounts"
+          "$ref": "#/defs/NotificationCounts",
+          "default": {
+            "by_source": {},
+            "unread": 0
+          }
         },
         "server_error": {
           "default": "",
@@ -3652,10 +3510,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "counts",
-        "server_error"
-      ],
       "title": "NotificationsReadResult",
       "type": "object"
     },
@@ -3671,16 +3525,61 @@
       "title": "Op",
       "type": "string"
     },
-    "OutputStyleChangedEvent": {
+    "OrchestrateEventPayload": {
+      "description": "A sub-agent's progress (a tool call, its start, pause, end or error, a task) or a view the agent or an extension drew, told apart by ``type``.",
+      "discriminator": {
+        "mapping": {
+          "agent_completed": "#/defs/AgentCompletedEvent",
+          "agent_paused": "#/defs/AgentPausedEvent",
+          "agent_started": "#/defs/AgentStartedEvent",
+          "content_preview": "#/defs/ContentPreviewEvent",
+          "run_error": "#/defs/RunErrorEvent",
+          "task_created": "#/defs/TaskCreatedEvent",
+          "task_updated": "#/defs/TaskUpdatedEvent",
+          "tool_completed": "#/defs/ToolCompletedEvent",
+          "tool_started": "#/defs/ToolStartedEvent",
+          "visualization_delta": "#/defs/VisualizationDeltaPayload"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/defs/ToolStartedEvent"
+        },
+        {
+          "$ref": "#/defs/ToolCompletedEvent"
+        },
+        {
+          "$ref": "#/defs/AgentStartedEvent"
+        },
+        {
+          "$ref": "#/defs/AgentPausedEvent"
+        },
+        {
+          "$ref": "#/defs/AgentCompletedEvent"
+        },
+        {
+          "$ref": "#/defs/RunErrorEvent"
+        },
+        {
+          "$ref": "#/defs/ContentPreviewEvent"
+        },
+        {
+          "$ref": "#/defs/TaskCreatedEvent"
+        },
+        {
+          "$ref": "#/defs/TaskUpdatedEvent"
+        },
+        {
+          "$ref": "#/defs/VisualizationDeltaPayload"
+        }
+      ],
+      "title": "OrchestrateEventPayload"
+    },
+    "OutputStyleChangedEventPayload": {
       "additionalProperties": false,
       "description": "The ``output_style_changed`` broadcast, emitted by\n:meth:`RuntimeModeCoordinator.set_output_style` after the\nactive style has been swapped. The FE refreshes the status\nchip that shows the active style without polling.",
       "properties": {
-        "channel": {
-          "const": "output_style_changed",
-          "default": "output_style_changed",
-          "title": "Channel",
-          "type": "string"
-        },
         "previous": {
           "title": "Previous",
           "type": "string"
@@ -3691,11 +3590,10 @@
         }
       },
       "required": [
-        "channel",
         "style",
         "previous"
       ],
-      "title": "OutputStyleChangedEvent",
+      "title": "OutputStyleChangedEventPayload",
       "type": "object"
     },
     "OutputStyleInfo": {
@@ -3783,6 +3681,7 @@
               "null"
             ]
           },
+          "default": {},
           "title": "Params",
           "type": "object"
         },
@@ -3804,6 +3703,7 @@
           "title": "Session"
         },
         "signals": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -3872,11 +3772,7 @@
         }
       },
       "required": [
-        "ok",
-        "access_token",
-        "expires_in",
-        "service_url",
-        "error"
+        "ok"
       ],
       "title": "PageTokenReply",
       "type": "object"
@@ -3904,7 +3800,6 @@
         }
       },
       "required": [
-        "role",
         "content",
         "received_at",
         "message_id"
@@ -3924,14 +3819,14 @@
       "title": "PermissionMode",
       "type": "string"
     },
-    "PermissionModeChangedEvent": {
+    "PermissionModeChangedEventPayload": {
       "additionalProperties": false,
       "description": "The ``permission_mode_changed`` broadcast, emitted by\n:meth:`RuntimeModeCoordinator.set_permission_mode` after the\nlive :class:`PermissionEvaluator` mode flip.",
       "properties": {
-        "channel": {
-          "const": "permission_mode_changed",
-          "default": "permission_mode_changed",
-          "title": "Channel",
+        "kind": {
+          "const": "switched",
+          "default": "switched",
+          "title": "Kind",
           "type": "string"
         },
         "mode": {
@@ -3942,12 +3837,30 @@
         }
       },
       "required": [
-        "channel",
         "mode",
         "previous"
       ],
-      "title": "PermissionModeChangedEvent",
+      "title": "PermissionModeChangedEventPayload",
       "type": "object"
+    },
+    "PermissionModeChangedPayload": {
+      "description": "The session's permission mode changed: the switch itself (``mode`` and ``previous``), or the plan tool's note that the agent entered plan mode (``mode``, ``source``, ``reason``).",
+      "discriminator": {
+        "mapping": {
+          "plan_mode_entered": "#/defs/PlanModeEnteredEventPayload",
+          "switched": "#/defs/PermissionModeChangedEventPayload"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/defs/PermissionModeChangedEventPayload"
+        },
+        {
+          "$ref": "#/defs/PlanModeEnteredEventPayload"
+        }
+      ],
+      "title": "PermissionModeChangedPayload"
     },
     "PickDirArgs": {
       "description": "``pick_dir_native``: where the OS picker opens (the project folder\nwhen absent or empty).",
@@ -3992,16 +3905,10 @@
       "title": "PickDirResult",
       "type": "object"
     },
-    "PlanDecidedEvent": {
+    "PlanDecidedEventPayload": {
       "additionalProperties": false,
       "description": "The ``plan_decided`` broadcast. The FE listens on this\nchannel to flip the plan card from pending to\napproved/dismissed.",
       "properties": {
-        "channel": {
-          "const": "plan_decided",
-          "default": "plan_decided",
-          "title": "Channel",
-          "type": "string"
-        },
         "decision": {
           "$ref": "#/defs/PlanDecision"
         },
@@ -4011,11 +3918,10 @@
         }
       },
       "required": [
-        "channel",
         "run_id",
         "decision"
       ],
-      "title": "PlanDecidedEvent",
+      "title": "PlanDecidedEventPayload",
       "type": "object"
     },
     "PlanDecision": {
@@ -4062,22 +3968,19 @@
       },
       "required": [
         "run_id",
-        "decision",
-        "mode_status",
-        "ok",
-        "error"
+        "decision"
       ],
       "title": "PlanDecisionResult",
       "type": "object"
     },
-    "PlanModeEnteredEvent": {
+    "PlanModeEnteredEventPayload": {
       "additionalProperties": false,
       "description": "The ``permission_mode_changed`` broadcast the plan tool fires\nafter switching into plan mode. The base flip is already\nbroadcast by :class:`RuntimeModeCoordinator`; this follow-up\ncarries the agent-attribution + reason string the FE renders as\na small banner.",
       "properties": {
-        "channel": {
-          "const": "permission_mode_changed",
-          "default": "permission_mode_changed",
-          "title": "Channel",
+        "kind": {
+          "const": "plan_mode_entered",
+          "default": "plan_mode_entered",
+          "title": "Kind",
           "type": "string"
         },
         "mode": {
@@ -4105,12 +4008,10 @@
         }
       },
       "required": [
-        "channel",
         "mode",
-        "source",
-        "reason"
+        "source"
       ],
-      "title": "PlanModeEnteredEvent",
+      "title": "PlanModeEnteredEventPayload",
       "type": "object"
     },
     "PlanRunArgs": {
@@ -4126,16 +4027,10 @@
       "title": "PlanRunArgs",
       "type": "object"
     },
-    "PlanSubmittedEvent": {
+    "PlanSubmittedEventPayload": {
       "additionalProperties": false,
       "description": "The ``plan_submitted`` broadcast queued by\n:meth:`PlanTool.exit_plan_mode`. ``tasks`` rides along so\nthe FE seeds the PlanCard checklist on first render \u2014 later\n``todos_updated`` pushes refresh statuses live.\n\nThe rows are :class:`TodoItemWire` checklist rows \u2014 the same\nshape the ``todos_updated`` broadcast carries, so the FE reads\none row type for both channels.",
       "properties": {
-        "channel": {
-          "const": "plan_submitted",
-          "default": "plan_submitted",
-          "title": "Channel",
-          "type": "string"
-        },
         "plan": {
           "title": "Plan",
           "type": "string"
@@ -4153,6 +4048,7 @@
           "title": "Run Id"
         },
         "tasks": {
+          "default": [],
           "items": {
             "$ref": "#/defs/TodoItemWire"
           },
@@ -4161,11 +4057,9 @@
         }
       },
       "required": [
-        "channel",
-        "plan",
-        "tasks"
+        "plan"
       ],
-      "title": "PlanSubmittedEvent",
+      "title": "PlanSubmittedEventPayload",
       "type": "object"
     },
     "PlanTurn": {
@@ -4204,6 +4098,7 @@
           "type": "string"
         },
         "tasks": {
+          "default": [],
           "items": {
             "description": "Any JSON value.",
             "type": [
@@ -4220,14 +4115,6 @@
           "type": "array"
         }
       },
-      "required": [
-        "run_id",
-        "created_at",
-        "role",
-        "plan",
-        "tasks",
-        "state"
-      ],
       "title": "PlanTurn",
       "type": "object"
     },
@@ -4245,8 +4132,7 @@
         }
       },
       "required": [
-        "name",
-        "description"
+        "name"
       ],
       "title": "PluginAgentInfo",
       "type": "object"
@@ -4326,18 +4212,6 @@
           "type": "array"
         }
       },
-      "required": [
-        "name",
-        "root_path",
-        "skills",
-        "agents",
-        "hooks",
-        "mcp_servers",
-        "tools",
-        "readme",
-        "error",
-        "preview_source"
-      ],
       "title": "PluginContents",
       "type": "object"
     },
@@ -4458,21 +4332,7 @@
         }
       },
       "required": [
-        "name",
-        "version",
-        "description",
-        "source_root",
-        "path",
-        "enabled",
-        "has_skills",
-        "has_agents",
-        "has_hooks",
-        "has_mcp",
-        "has_tools",
-        "has_lsp",
-        "has_monitors",
-        "managed",
-        "pin"
+        "name"
       ],
       "title": "PluginInfo",
       "type": "object"
@@ -4529,8 +4389,7 @@
         }
       },
       "required": [
-        "url",
-        "subdir"
+        "url"
       ],
       "title": "PluginPreviewSource",
       "type": "object"
@@ -4549,8 +4408,7 @@
         }
       },
       "required": [
-        "name",
-        "description"
+        "name"
       ],
       "title": "PluginSkillInfo",
       "type": "object"
@@ -4747,9 +4605,7 @@
       "required": [
         "pid",
         "cmd",
-        "elapsed_seconds",
-        "is_running",
-        "exit_code"
+        "elapsed_seconds"
       ],
       "title": "ProcessRow",
       "type": "object"
@@ -4905,9 +4761,7 @@
       },
       "required": [
         "ok",
-        "name",
-        "dest",
-        "reason"
+        "name"
       ],
       "title": "PromoteEphemeralResult",
       "type": "object"
@@ -4943,6 +4797,7 @@
               "null"
             ]
           },
+          "default": {},
           "title": "Payload",
           "type": "object"
         },
@@ -4958,14 +4813,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "channel",
-        "payload"
-      ],
       "title": "PushNotification",
       "type": "object"
     },
@@ -5023,6 +4870,7 @@
               "null"
             ]
           },
+          "default": {},
           "title": "Args",
           "type": "object"
         },
@@ -5071,6 +4919,17 @@
     "RPCResponse": {
       "description": "Response to an RPCRequest.\n\nCarries either ``result`` (success) or ``error`` (failure) \u2014\nnever both, but the invariant is by convention. Use the\n:classmethod:`ok` / :classmethod:`fail` factories to construct\nresponses safely; they enforce the shape at the callsite.",
       "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "$ref": "#/defs/RpcErrorCode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "error": {
           "anyOf": [
             {
@@ -5119,14 +4978,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "result",
-        "error"
-      ],
       "title": "RPCResponse",
       "type": "object"
     },
@@ -5173,9 +5024,7 @@
       "required": [
         "path",
         "contents",
-        "size",
-        "error",
-        "language"
+        "size"
       ],
       "title": "ReadFileResult",
       "type": "object"
@@ -5215,14 +5064,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "run_id",
-        "parent_run_id"
-      ],
       "title": "ReasoningStarted",
       "type": "object"
     },
@@ -5296,11 +5137,8 @@
         }
       },
       "required": [
-        "op",
         "id",
-        "ok",
-        "result",
-        "error"
+        "ok"
       ],
       "title": "Reply",
       "type": "object"
@@ -5340,14 +5178,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "requirement_id",
-        "details"
-      ],
       "title": "RequirementDetails",
       "type": "object"
     },
@@ -5381,19 +5211,18 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "requirement_id"
-      ],
       "title": "RequirementResolved",
       "type": "object"
     },
     "Revised": {
-      "description": "A change that answers nothing but the window's new revision.",
+      "description": "A toast dismissed: the window's new revision.",
       "properties": {
+        "op": {
+          "const": "dismiss_toast",
+          "default": "dismiss_toast",
+          "title": "Op",
+          "type": "string"
+        },
         "rev": {
           "title": "Rev",
           "type": "integer"
@@ -5404,6 +5233,21 @@
       ],
       "title": "Revised",
       "type": "object"
+    },
+    "RpcErrorCode": {
+      "description": "Why a call failed, as a word a client can branch on; ``error`` beside\nit is the sentence for a person.",
+      "enum": [
+        "unknown_method",
+        "invalid",
+        "forbidden",
+        "not_found",
+        "refused",
+        "unavailable",
+        "cancelled",
+        "failed"
+      ],
+      "title": "RpcErrorCode",
+      "type": "string"
     },
     "RunCompleted": {
       "description": "An agent/team run has finished.",
@@ -5460,18 +5304,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "run_id",
-        "parent_run_id",
-        "input_tokens",
-        "output_tokens",
-        "reasoning_tokens",
-        "duration"
-      ],
       "title": "RunCompleted",
       "type": "object"
     },
@@ -5505,13 +5337,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "error"
-      ],
       "title": "RunError",
       "type": "object"
     },
@@ -5570,6 +5395,7 @@
           "type": "string"
         },
         "requirements": {
+          "default": [],
           "items": {
             "$ref": "#/defs/HITLRequest"
           },
@@ -5593,15 +5419,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "run_id",
-        "parent_run_id",
-        "requirements"
-      ],
       "title": "RunPaused",
       "type": "object"
     },
@@ -5681,16 +5498,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "run_id",
-        "parent_run_id",
-        "agent_name",
-        "model"
-      ],
       "title": "RunStarted",
       "type": "object"
     },
@@ -5762,12 +5569,7 @@
       "required": [
         "id",
         "description",
-        "scheduled_at",
-        "created_at",
-        "status",
-        "result",
-        "error",
-        "recurrence"
+        "scheduled_at"
       ],
       "title": "ScheduledTask",
       "type": "object"
@@ -5869,16 +5671,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "task_id",
-        "description",
-        "event_type",
-        "result"
-      ],
       "title": "SchedulerEvent",
       "type": "object"
     },
@@ -5991,11 +5783,6 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "matches",
-        "truncated",
-        "error"
-      ],
       "title": "SearchCodeResult",
       "type": "object"
     },
@@ -6018,11 +5805,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "api_url",
-        "portal_url",
-        "error"
-      ],
       "title": "ServerChoice",
       "type": "object"
     },
@@ -6050,12 +5832,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "api_url",
-        "portal_url",
-        "source",
-        "reason"
-      ],
       "title": "ServerFound",
       "type": "object"
     },
@@ -6074,6 +5850,7 @@
           "default": null
         },
         "attachments": {
+          "default": [],
           "items": {
             "$ref": "#/defs/ItemAttachment"
           },
@@ -6148,6 +5925,7 @@
               "null"
             ]
           },
+          "default": {},
           "title": "Payload",
           "type": "object"
         },
@@ -6259,6 +6037,7 @@
       "description": "``deliver_service_events``: the platform's batch.",
       "properties": {
         "events": {
+          "default": [],
           "items": {
             "$ref": "#/defs/ServiceEvent"
           },
@@ -6304,14 +6083,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "new_session_id",
-        "summary"
-      ],
       "title": "SessionCleared",
       "type": "object"
     },
@@ -6408,15 +6179,6 @@
           "type": "integer"
         }
       },
-      "required": [
-        "session_id",
-        "name",
-        "created_at",
-        "updated_at",
-        "run_count",
-        "summary",
-        "agent_name"
-      ],
       "title": "SessionListEntry",
       "type": "object"
     },
@@ -6439,6 +6201,7 @@
           "type": "string"
         },
         "sessions": {
+          "default": [],
           "items": {
             "$ref": "#/defs/SessionListEntry"
           },
@@ -6452,13 +6215,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "sessions"
-      ],
       "title": "SessionListResult",
       "type": "object"
     },
@@ -6665,16 +6421,7 @@
         }
       },
       "required": [
-        "name",
-        "description",
-        "version",
-        "category",
-        "argument_hint",
-        "context",
-        "agent",
-        "user_invocable",
-        "body",
-        "source_dir"
+        "name"
       ],
       "title": "SkillInfo",
       "type": "object"
@@ -6704,10 +6451,7 @@
         }
       },
       "required": [
-        "source",
-        "name",
-        "description",
-        "argument_hint"
+        "name"
       ],
       "title": "SkillSlashCommand",
       "type": "object"
@@ -6747,14 +6491,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "run_id",
-        "role",
-        "input_tokens",
-        "output_tokens",
-        "reasoning_tokens",
-        "duration"
-      ],
       "title": "StatsTurn",
       "type": "object"
     },
@@ -6862,24 +6598,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "input_tokens",
-        "output_tokens",
-        "context_tokens",
-        "max_context",
-        "model",
-        "model_configured",
-        "cloud_connected",
-        "cloud_org",
-        "cloud_email",
-        "cloud_name",
-        "permission_mode",
-        "theme"
-      ],
       "title": "StatusUpdate",
       "type": "object"
     },
@@ -6932,12 +6650,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq"
-      ],
       "title": "StreamEnd",
       "type": "object"
     },
@@ -6976,14 +6688,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "run_id",
-        "parent_run_id"
-      ],
       "title": "StreamingDone",
       "type": "object"
     },
@@ -7046,16 +6750,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "task_id",
-        "title",
-        "assignee",
-        "status"
-      ],
       "title": "TaskCreated",
       "type": "object"
     },
@@ -7135,14 +6829,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "iteration",
-        "max_iterations"
-      ],
       "title": "TaskIteration",
       "type": "object"
     },
@@ -7170,12 +6856,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "task_id",
-        "title",
-        "status",
-        "assignee"
-      ],
       "title": "TaskSnapshot",
       "type": "object"
     },
@@ -7198,6 +6878,7 @@
           "type": "string"
         },
         "tasks": {
+          "default": [],
           "items": {
             "$ref": "#/defs/TaskSnapshot"
           },
@@ -7211,13 +6892,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "tasks"
-      ],
       "title": "TaskStateUpdated",
       "type": "object"
     },
@@ -7273,15 +6947,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "task_id",
-        "status",
-        "assignee"
-      ],
       "title": "TaskUpdated",
       "type": "object"
     },
@@ -7346,17 +7011,18 @@
           "type": "string"
         }
       },
-      "required": [
-        "run_id",
-        "created_at",
-        "role",
-        "content"
-      ],
       "title": "ThinkingTurn",
       "type": "object"
     },
     "ToastAdded": {
+      "description": "The toast as shown, with its id, and the window's revision.",
       "properties": {
+        "op": {
+          "const": "toast",
+          "default": "toast",
+          "title": "Op",
+          "type": "string"
+        },
         "rev": {
           "title": "Rev",
           "type": "integer"
@@ -7409,22 +7075,15 @@
       },
       "required": [
         "content",
-        "status",
-        "activeForm"
+        "status"
       ],
       "title": "TodoItemWire",
       "type": "object"
     },
-    "TodosUpdatedEvent": {
+    "TodosUpdatedEventPayload": {
       "additionalProperties": false,
       "description": "The ``todos_updated`` broadcast: the full todo snapshot in\nits :class:`TodoItemWire` camelCase shape.",
       "properties": {
-        "channel": {
-          "const": "todos_updated",
-          "default": "todos_updated",
-          "title": "Channel",
-          "type": "string"
-        },
         "todos": {
           "items": {
             "$ref": "#/defs/TodoItemWire"
@@ -7434,10 +7093,9 @@
         }
       },
       "required": [
-        "channel",
         "todos"
       ],
-      "title": "TodosUpdatedEvent",
+      "title": "TodosUpdatedEventPayload",
       "type": "object"
     },
     "ToolCallArgs": {
@@ -7564,20 +7222,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "run_id",
-        "parent_run_id",
-        "summary",
-        "full_result",
-        "has_markup",
-        "diff_rows",
-        "is_error",
-        "is_rejected"
-      ],
       "title": "ToolCompleted",
       "type": "object"
     },
@@ -7679,15 +7323,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "run_id",
-        "parent_run_id",
-        "error"
-      ],
       "title": "ToolError",
       "type": "object"
     },
@@ -7741,17 +7376,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "run_id",
-        "parent_run_id",
-        "tool_name",
-        "friendly_name",
-        "args_summary"
-      ],
       "title": "ToolStarted",
       "type": "object"
     },
@@ -7858,17 +7482,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "run_id",
-        "created_at",
-        "role",
-        "tool_name",
-        "friendly_name",
-        "args",
-        "content",
-        "is_error",
-        "is_rejected"
-      ],
       "title": "ToolTurn",
       "type": "object"
     },
@@ -7905,8 +7518,7 @@
         }
       },
       "required": [
-        "removed",
-        "error"
+        "removed"
       ],
       "title": "TruncateHistoryResult",
       "type": "object"
@@ -7966,14 +7578,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "text",
-        "client_id"
-      ],
       "title": "Typing",
       "type": "object"
     },
@@ -8075,8 +7679,7 @@
       },
       "required": [
         "path",
-        "size",
-        "error"
+        "size"
       ],
       "title": "UploadAttachmentResult",
       "type": "object"
@@ -8098,6 +7701,7 @@
           "additionalProperties": {
             "type": "string"
           },
+          "default": {},
           "title": "File Contents",
           "type": "object"
         },
@@ -8181,17 +7785,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "text",
-        "client_id",
-        "queued",
-        "extension_id",
-        "service_client_id"
-      ],
       "title": "UserMessageReceived",
       "type": "object"
     },
@@ -8220,12 +7813,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "run_id",
-        "created_at",
-        "role",
-        "content"
-      ],
       "title": "UserTurn",
       "type": "object"
     },
@@ -8256,18 +7843,12 @@
       "title": "VisualizationActionArgs",
       "type": "object"
     },
-    "VisualizationActionDispatchedEvent": {
+    "VisualizationActionDispatchedEventPayload": {
       "additionalProperties": false,
       "description": "The ``visualization_action_dispatched`` broadcast, so log panels\nand dev tools can observe component interactions.",
       "properties": {
         "action": {
           "title": "Action",
-          "type": "string"
-        },
-        "channel": {
-          "const": "visualization_action_dispatched",
-          "default": "visualization_action_dispatched",
-          "title": "Channel",
           "type": "string"
         },
         "params": {
@@ -8279,11 +7860,10 @@
         }
       },
       "required": [
-        "channel",
         "action",
         "params"
       ],
-      "title": "VisualizationActionDispatchedEvent",
+      "title": "VisualizationActionDispatchedEventPayload",
       "type": "object"
     },
     "VisualizationActionResult": {
@@ -8301,14 +7881,14 @@
           "additionalProperties": {
             "$ref": "#/defs/JsonValue"
           },
+          "default": {},
           "title": "Params",
           "type": "object"
         }
       },
       "required": [
         "ok",
-        "action",
-        "params"
+        "action"
       ],
       "title": "VisualizationActionResult",
       "type": "object"
@@ -8398,6 +7978,7 @@
               "null"
             ]
           },
+          "default": {},
           "title": "Spec",
           "type": "object"
         },
@@ -8412,16 +7993,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "run_id",
-        "role",
-        "spec_id",
-        "spec",
-        "source_agent",
-        "title",
-        "extension_id",
-        "seq"
-      ],
       "title": "VisualizationTurn",
       "type": "object"
     },
@@ -8445,8 +8016,7 @@
         }
       },
       "required": [
-        "state",
-        "message"
+        "state"
       ],
       "title": "VmCredentialState",
       "type": "object"
@@ -8506,13 +8076,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "type",
-        "id",
-        "session_id",
-        "event_seq",
-        "client_id"
-      ],
       "title": "Welcome",
       "type": "object"
     },
@@ -8597,12 +8160,7 @@
       "required": [
         "window",
         "field",
-        "value",
-        "rev",
-        "token",
-        "event",
-        "item",
-        "answer"
+        "rev"
       ],
       "title": "WindowChange",
       "type": "object"
@@ -8784,8 +8342,6 @@
       },
       "required": [
         "name",
-        "description",
-        "whenToUse",
         "phases",
         "path"
       ],
@@ -8813,8 +8369,7 @@
         }
       },
       "required": [
-        "title",
-        "detail"
+        "title"
       ],
       "title": "WorkflowPhase",
       "type": "object"
@@ -8826,6 +8381,7 @@
           "additionalProperties": {
             "$ref": "#/defs/JsonValue"
           },
+          "default": {},
           "title": "Args",
           "type": "object"
         },
@@ -8917,16 +8473,25 @@
         "can_trust",
         "reason",
         "path",
-        "remote",
-        "policy_mode",
-        "gated",
-        "source"
+        "policy_mode"
       ],
       "title": "WorkspaceTrustStatus",
       "type": "object"
     },
     "Written": {
+      "description": "A field written: the window's revision after it, and whether the\nvalue changed \u2014 a write of the value already there changes nothing,\nand pushes nothing.",
       "properties": {
+        "changed": {
+          "default": true,
+          "title": "Changed",
+          "type": "boolean"
+        },
+        "op": {
+          "const": "write",
+          "default": "write",
+          "title": "Op",
+          "type": "string"
+        },
         "rev": {
           "title": "Rev",
           "type": "integer"
@@ -8938,6 +8503,16 @@
       "title": "Written",
       "type": "object"
     }
+  },
+  "errors": {
+    "cancelled": "The work the call started was cancelled before it finished.",
+    "failed": "It was allowed and it went wrong. The sentence says what happened.",
+    "forbidden": "This connection may not make the call: its standing, or the extension it speaks for, does not reach it.",
+    "invalid": "The arguments do not fit the method: one is missing, unknown, or of the wrong type.",
+    "not_found": "What the call names does not exist: a file, a task, a run.",
+    "refused": "The call was understood and not done: a rule, a policy or the state of things said no. Nothing changed.",
+    "unavailable": "Nothing in this igni answers the call: the feature is not set up here (no extension support, not a cloud VM, no token).",
+    "unknown_method": "No method of that name: a typo, or a newer method than this igni."
   },
   "messages": {
     "cancel": {
@@ -9228,6 +8803,9 @@
       }
     },
     "typing": {
+      "accepts": {
+        "$ref": "#/defs/Typing"
+      },
       "direction": "both",
       "doc": "Live draft of a client's composer, broadcast to every view.\n\nCarries the FULL draft text (not per-character deltas) so views\ncan't drift on a dropped frame; senders throttle. Empty ``text``\nclears the remote draft (sent on submit/clear).",
       "schema": {
@@ -9481,17 +9059,10 @@
       "args": {
         "$ref": "#/defs/CompactIfNeededArgs"
       },
-      "doc": "Compact this session's conversation when its context is nearly full.\n\n``ctx_tokens`` is the context the last turn used and ``max_ctx``\nthe model's window; at 80% or more the conversation is summarised\nand replaced by the summary (the ``PreCompact`` hooks may refuse).\nReturns a ``session_cleared`` message, sent in place of an\n``rpc_response``, carrying the ``summary``; or ``null`` (in an\n``rpc_response``) when nothing was compacted.",
+      "doc": "Compact this session's conversation when its context is nearly full.\n\n``ctx_tokens`` is the context the last turn used and ``max_ctx``\nthe model's window; at 80% or more the conversation is summarised\nand replaced by the summary (the ``PreCompact`` hooks may refuse).\nReturns ``compacted`` and, when it was, the ``summary``.",
       "reply": "rpc_response",
       "result": {
-        "anyOf": [
-          {
-            "$ref": "#/defs/SessionCleared"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "$ref": "#/defs/CompactionOutcome"
       },
       "scope": "session",
       "streams": [],
@@ -9768,7 +9339,19 @@
       "reply": "rpc_response",
       "result": {
         "items": {
-          "anyOf": [
+          "discriminator": {
+            "mapping": {
+              "assistant": "#/defs/AssistantTurn",
+              "plan": "#/defs/PlanTurn",
+              "stats": "#/defs/StatsTurn",
+              "thinking": "#/defs/ThinkingTurn",
+              "tool": "#/defs/ToolTurn",
+              "user": "#/defs/UserTurn",
+              "visualization": "#/defs/VisualizationTurn"
+            },
+            "propertyName": "role"
+          },
+          "oneOf": [
             {
               "$ref": "#/defs/UserTurn"
             },
@@ -10211,7 +9794,16 @@
       "reply": "rpc_response",
       "result": {
         "items": {
-          "anyOf": [
+          "discriminator": {
+            "mapping": {
+              "builtin": "#/defs/BuiltinSlashCommand",
+              "extension": "#/defs/ExtensionSlashCommand",
+              "markdown": "#/defs/MarkdownSlashCommand",
+              "skill": "#/defs/SkillSlashCommand"
+            },
+            "propertyName": "source"
+          },
+          "oneOf": [
             {
               "$ref": "#/defs/BuiltinSlashCommand"
             },
@@ -11111,7 +10703,18 @@
       "doc": "Read or change the calling window's own model: its fields, toasts and dialog.\n\nA window spans sessions, so this is not tied to one. ``op`` says what\nto do (see the arguments); ``window`` is the window's own stable id.\nThe window is the one on the connection the request came on.\n\nReturns, by ``op``: ``hydrate`` the whole model (``state``), its\nrevision (``rev``) and the fields nobody set (``unset``); ``write``,\n``dismiss_toast`` the new ``rev``; ``toast`` the toast as shown, with\nits id; ``open_dialog`` the dialog as shown; ``answer_dialog``\nwhether that dialog was still the open one (``answered``). Every\nchange is pushed to every window as ``window_model_changed``.\n\nFails when the model refuses the write (an unknown field, a field\nthat is not writable, a value that does not fit its type), or when\nthe window's saved state could not be read or written.",
       "reply": "rpc_response",
       "result": {
-        "anyOf": [
+        "discriminator": {
+          "mapping": {
+            "answer_dialog": "#/defs/DialogAnswered",
+            "dismiss_toast": "#/defs/Revised",
+            "hydrate": "#/defs/Hydrated",
+            "open_dialog": "#/defs/DialogShown",
+            "toast": "#/defs/ToastAdded",
+            "write": "#/defs/Written"
+          },
+          "propertyName": "op"
+        },
+        "oneOf": [
           {
             "$ref": "#/defs/Hydrated"
           },
@@ -11161,52 +10764,13 @@
     "http_retry_attempt": {
       "doc": "A web fetch is about to be retried.",
       "schema": {
-        "additionalProperties": false,
-        "description": "The ``http_retry_attempt`` broadcast, sent before each retry.",
-        "properties": {
-          "attempt": {
-            "title": "Attempt",
-            "type": "integer"
-          },
-          "delay_seconds": {
-            "title": "Delay Seconds",
-            "type": "number"
-          }
-        },
-        "required": [
-          "attempt",
-          "delay_seconds"
-        ],
-        "title": "HttpRetryAttemptEvent",
-        "type": "object"
+        "$ref": "#/defs/HttpRetryAttemptEventPayload"
       }
     },
     "http_retry_succeeded": {
       "doc": "A web fetch succeeded after retrying.",
       "schema": {
-        "additionalProperties": false,
-        "description": "The ``http_retry_succeeded`` broadcast, sent when a fetch\nsucceeds after at least one retry.",
-        "properties": {
-          "attempt_count": {
-            "title": "Attempt Count",
-            "type": "integer"
-          },
-          "delay_seconds": {
-            "title": "Delay Seconds",
-            "type": "number"
-          },
-          "url": {
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "url",
-          "attempt_count",
-          "delay_seconds"
-        ],
-        "title": "HttpRetrySucceededEvent",
-        "type": "object"
+        "$ref": "#/defs/HttpRetrySucceededEventPayload"
       }
     },
     "login_result": {
@@ -11236,197 +10800,31 @@
     "orchestrate_event": {
       "doc": "A sub-agent's progress (a tool call, its start, pause, end or error, a task) or a view the agent or an extension drew, told apart by ``type``.",
       "schema": {
-        "discriminator": {
-          "mapping": {
-            "agent_completed": "#/defs/AgentCompletedEvent",
-            "agent_paused": "#/defs/AgentPausedEvent",
-            "agent_started": "#/defs/AgentStartedEvent",
-            "content_preview": "#/defs/ContentPreviewEvent",
-            "run_error": "#/defs/RunErrorEvent",
-            "task_created": "#/defs/TaskCreatedEvent",
-            "task_updated": "#/defs/TaskUpdatedEvent",
-            "tool_completed": "#/defs/ToolCompletedEvent",
-            "tool_started": "#/defs/ToolStartedEvent",
-            "visualization_delta": "#/defs/VisualizationDeltaPayload"
-          },
-          "propertyName": "type"
-        },
-        "oneOf": [
-          {
-            "$ref": "#/defs/ToolStartedEvent"
-          },
-          {
-            "$ref": "#/defs/ToolCompletedEvent"
-          },
-          {
-            "$ref": "#/defs/AgentStartedEvent"
-          },
-          {
-            "$ref": "#/defs/AgentPausedEvent"
-          },
-          {
-            "$ref": "#/defs/AgentCompletedEvent"
-          },
-          {
-            "$ref": "#/defs/RunErrorEvent"
-          },
-          {
-            "$ref": "#/defs/ContentPreviewEvent"
-          },
-          {
-            "$ref": "#/defs/TaskCreatedEvent"
-          },
-          {
-            "$ref": "#/defs/TaskUpdatedEvent"
-          },
-          {
-            "$ref": "#/defs/VisualizationDeltaPayload"
-          }
-        ]
+        "$ref": "#/defs/OrchestrateEventPayload"
       }
     },
     "output_style_changed": {
       "doc": "The session's output style changed.",
       "schema": {
-        "additionalProperties": false,
-        "description": "The ``output_style_changed`` broadcast, emitted by\n:meth:`RuntimeModeCoordinator.set_output_style` after the\nactive style has been swapped. The FE refreshes the status\nchip that shows the active style without polling.",
-        "properties": {
-          "previous": {
-            "title": "Previous",
-            "type": "string"
-          },
-          "style": {
-            "title": "Style",
-            "type": "string"
-          }
-        },
-        "required": [
-          "style",
-          "previous"
-        ],
-        "title": "OutputStyleChangedEvent",
-        "type": "object"
+        "$ref": "#/defs/OutputStyleChangedEventPayload"
       }
     },
     "permission_mode_changed": {
       "doc": "The session's permission mode changed: the switch itself (``mode`` and ``previous``), or the plan tool's note that the agent entered plan mode (``mode``, ``source``, ``reason``).",
       "schema": {
-        "anyOf": [
-          {
-            "additionalProperties": false,
-            "description": "The ``permission_mode_changed`` broadcast, emitted by\n:meth:`RuntimeModeCoordinator.set_permission_mode` after the\nlive :class:`PermissionEvaluator` mode flip.",
-            "properties": {
-              "mode": {
-                "$ref": "#/defs/PermissionMode"
-              },
-              "previous": {
-                "$ref": "#/defs/PermissionMode"
-              }
-            },
-            "required": [
-              "mode",
-              "previous"
-            ],
-            "title": "PermissionModeChangedEvent",
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "description": "The ``permission_mode_changed`` broadcast the plan tool fires\nafter switching into plan mode. The base flip is already\nbroadcast by :class:`RuntimeModeCoordinator`; this follow-up\ncarries the agent-attribution + reason string the FE renders as\na small banner.",
-            "properties": {
-              "mode": {
-                "enum": [
-                  "default",
-                  "plan",
-                  "acceptEdits",
-                  "bypassPermissions"
-                ],
-                "title": "Mode",
-                "type": "string"
-              },
-              "reason": {
-                "default": "",
-                "title": "Reason",
-                "type": "string"
-              },
-              "source": {
-                "enum": [
-                  "agent",
-                  "user"
-                ],
-                "title": "Source",
-                "type": "string"
-              }
-            },
-            "required": [
-              "mode",
-              "source",
-              "reason"
-            ],
-            "title": "PlanModeEnteredEvent",
-            "type": "object"
-          }
-        ]
+        "$ref": "#/defs/PermissionModeChangedPayload"
       }
     },
     "plan_decided": {
       "doc": "A submitted plan was approved or dismissed.",
       "schema": {
-        "additionalProperties": false,
-        "description": "The ``plan_decided`` broadcast. The FE listens on this\nchannel to flip the plan card from pending to\napproved/dismissed.",
-        "properties": {
-          "decision": {
-            "$ref": "#/defs/PlanDecision"
-          },
-          "run_id": {
-            "title": "Run Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "run_id",
-          "decision"
-        ],
-        "title": "PlanDecidedEvent",
-        "type": "object"
+        "$ref": "#/defs/PlanDecidedEventPayload"
       }
     },
     "plan_submitted": {
       "doc": "The agent submitted a plan for the person to decide on.",
       "schema": {
-        "additionalProperties": false,
-        "description": "The ``plan_submitted`` broadcast queued by\n:meth:`PlanTool.exit_plan_mode`. ``tasks`` rides along so\nthe FE seeds the PlanCard checklist on first render \u2014 later\n``todos_updated`` pushes refresh statuses live.\n\nThe rows are :class:`TodoItemWire` checklist rows \u2014 the same\nshape the ``todos_updated`` broadcast carries, so the FE reads\none row type for both channels.",
-        "properties": {
-          "plan": {
-            "title": "Plan",
-            "type": "string"
-          },
-          "run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Run Id"
-          },
-          "tasks": {
-            "items": {
-              "$ref": "#/defs/TodoItemWire"
-            },
-            "title": "Tasks",
-            "type": "array"
-          }
-        },
-        "required": [
-          "plan",
-          "tasks"
-        ],
-        "title": "PlanSubmittedEvent",
-        "type": "object"
+        "$ref": "#/defs/PlanSubmittedEventPayload"
       }
     },
     "process_exited": {
@@ -11468,48 +10866,13 @@
     "todos_updated": {
       "doc": "The agent's to-do list, whole, after it changed.",
       "schema": {
-        "additionalProperties": false,
-        "description": "The ``todos_updated`` broadcast: the full todo snapshot in\nits :class:`TodoItemWire` camelCase shape.",
-        "properties": {
-          "todos": {
-            "items": {
-              "$ref": "#/defs/TodoItemWire"
-            },
-            "title": "Todos",
-            "type": "array"
-          }
-        },
-        "required": [
-          "todos"
-        ],
-        "title": "TodosUpdatedEvent",
-        "type": "object"
+        "$ref": "#/defs/TodosUpdatedEventPayload"
       }
     },
     "visualization_action_dispatched": {
       "doc": "The person used a control in a view.",
       "schema": {
-        "additionalProperties": false,
-        "description": "The ``visualization_action_dispatched`` broadcast, so log panels\nand dev tools can observe component interactions.",
-        "properties": {
-          "action": {
-            "title": "Action",
-            "type": "string"
-          },
-          "params": {
-            "additionalProperties": {
-              "$ref": "#/defs/JsonValue"
-            },
-            "title": "Params",
-            "type": "object"
-          }
-        },
-        "required": [
-          "action",
-          "params"
-        ],
-        "title": "VisualizationActionDispatchedEvent",
-        "type": "object"
+        "$ref": "#/defs/VisualizationActionDispatchedEventPayload"
       }
     },
     "vm_credential": {

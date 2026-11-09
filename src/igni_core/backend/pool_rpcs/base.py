@@ -11,18 +11,25 @@ from pydantic import BaseModel
 
 from igni_core.backend.pool_replier import PoolReplier
 from igni_core.backend.rpc_binding import RpcArgsError, RpcBinding
+from igni_core.backend.rpc_errors import code_of
 from igni_core.backend.schemas_pool import PoolAnswer
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 logger = logging.getLogger(__name__)
 
 
 class PoolRefusal(Exception):
-    """A pool-level call that is not done, and the sentence that says why.
+    """A pool-level call that is not done, the sentence that says why, and
+    its code (``refused`` unless said otherwise).
 
     Raised by a tagged method; :meth:`PoolRpc.answer` turns it into the
     call's error."""
+
+    def __init__(self, reason: str, code: RpcErrorCode = RpcErrorCode.REFUSED) -> None:
+        super().__init__(reason)
+        self.code = code
 
 
 class PoolRpc(ABC):
@@ -54,19 +61,19 @@ class PoolRpc(ABC):
         try:
             args = binding.validate(request.args)
         except RpcArgsError as exc:
-            return PoolAnswer.failed(self.refused_args(exc))
+            return PoolAnswer.failed(self.refused_args(exc), RpcErrorCode.INVALID)
         try:
             result = getattr(self, name)(args, request)
             if inspect.isawaitable(result):
                 result = await result
         except PoolRefusal as exc:
-            return PoolAnswer.failed(str(exc))
+            return PoolAnswer.failed(str(exc), exc.code)
         except Exception as exc:
             # A call that broke is still answered: unanswered, the caller
             # would wait out its timeout while every window was told
             # "session routing failed".
             logger.error("%s failed: %s", method.value, exc, exc_info=True)
-            return PoolAnswer.failed(f"{method.value}: {exc}")
+            return PoolAnswer.failed(f"{method.value}: {exc}", code_of(exc))
         if not isinstance(result, BaseModel):
             raise TypeError(f"{method.value} answered {type(result).__name__}, not a model")
         return PoolAnswer.ok(result, dump_mode="json" if method in self.JSON_DUMPED else "python")
@@ -88,4 +95,4 @@ class UnavailableRpc(PoolRpc):
         self._reason = reason
 
     async def answer(self, request: msg.RPCRequest) -> PoolAnswer:
-        return PoolAnswer.failed(self._reason)
+        return PoolAnswer.failed(self._reason, RpcErrorCode.UNAVAILABLE)

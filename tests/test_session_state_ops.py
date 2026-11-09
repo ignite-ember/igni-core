@@ -162,7 +162,7 @@ class TestSetPermissionMode:
         assert len(captured) == 1
         channel, payload = captured[0]
         assert channel == "permission_mode_changed"
-        assert payload == {"mode": "plan", "previous": "default"}
+        assert payload == {"kind": "switched", "mode": "plan", "previous": "default"}
 
 
 # Ensure the assertion above about ``pytest`` isn't accidentally unused.

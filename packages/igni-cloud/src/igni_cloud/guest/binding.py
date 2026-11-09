@@ -180,7 +180,12 @@ class UnboundRefusal:
     @classmethod
     def answer(cls, message: msg.Message) -> msg.Message:
         if isinstance(message, msg.RPCRequest):
-            return msg.RPCResponse(id=message.id, session_id=message.session_id, error=cls.REASON)
+            return msg.RPCResponse(
+                id=message.id,
+                session_id=message.session_id,
+                error=cls.REASON,
+                code=msg.RpcErrorCode.UNAVAILABLE,
+            )
         return msg.Error(id=message.id, session_id=message.session_id, text=cls.REASON)
 
 

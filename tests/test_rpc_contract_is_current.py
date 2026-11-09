@@ -130,6 +130,8 @@ def test_every_broadcast_event_is_its_channel_s_payload() -> None:
         channel = PushChannel(event.model_fields["channel"].default)
         assert channel is not PushChannel.UNKNOWN, f"{event.__name__} names no known channel"
         model = PUSH_PAYLOADS[channel].model
+        if typing.get_origin(model) is typing.Annotated:
+            model = typing.get_args(model)[0]
         assert event in (typing.get_args(model) or (model,)), (
             f"{event.__name__} is sent on {channel.value} but is not its payload model"
         )
@@ -189,3 +191,76 @@ def _unconstrained(schema: Any, defs: dict[str, Any], where: str) -> Iterator[st
 def test_the_contract_says_who_reaches_each_access_level(contract: dict[str, Any]) -> None:
     for level in RpcAccess:
         assert f"``{level.value}``" in contract["access"], f"{level.value} is not explained"
+
+
+def _unions_without_discriminator(schema: Any, defs: dict[str, Any]) -> list[str]:
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def walk(node: Any, at: str) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item, at)
+            return
+        if not isinstance(node, dict):
+            return
+        ref = node.get("$ref")
+        if isinstance(ref, str):
+            name = ref.rsplit("/", 1)[-1]
+            if name not in seen:
+                seen.add(name)
+                walk(defs[name], name)
+            return
+        for key in ("anyOf", "oneOf"):
+            objects = [m for m in node.get(key, []) if "$ref" in m or m.get("type") == "object"]
+            if len(objects) > 1 and "discriminator" not in node:
+                found.append(at)
+        for value in node.values():
+            walk(value, at)
+
+    walk(schema, "")
+    return found
+
+
+def test_every_union_says_how_to_tell_its_members_apart(contract: dict[str, Any]) -> None:
+    """A union a client must try member by member — ``Written`` and
+    ``Revised`` were both ``{rev}`` — is one it cannot type."""
+    loose = {}
+    for part, key in (("methods", "result"), ("methods", "args"), ("push_channels", "schema")):
+        for name, entry in contract[part].items():
+            if found := _unions_without_discriminator(entry[key], contract["defs"]):
+                loose[f"{part}.{name}"] = found
+    assert not loose, loose
+
+
+def test_every_push_payload_is_a_named_def(contract: dict[str, Any]) -> None:
+    for channel, entry in contract["push_channels"].items():
+        ref = entry["schema"].get("$ref", "")
+        name = ref.rsplit("/", 1)[-1]
+        assert ref and name in contract["defs"], f"{channel}'s payload is inline"
+        assert contract["defs"][name].get("title", name) == name
+
+
+def test_no_two_defs_share_a_title(contract: dict[str, Any]) -> None:
+    titles: dict[str, str] = {}
+    for name, schema in contract["defs"].items():
+        title = schema.get("title")
+        if title is None:
+            continue
+        assert title not in titles, f"{name} and {titles[title]} are both titled {title}"
+        titles[title] = name
+
+
+def test_every_error_code_is_explained(contract: dict[str, Any]) -> None:
+    from igni_core.protocol.schemas.rpc import RpcErrorCode
+
+    assert set(contract["errors"]) == {c.value for c in RpcErrorCode}
+    assert all(doc.strip() for doc in contract["errors"].values())
+
+
+def test_a_method_answers_one_way(contract: dict[str, Any]) -> None:
+    """``compact_if_needed`` answered with a ``session_cleared`` message
+    when it compacted and an ``rpc_response`` when it did not."""
+    assert contract["methods"]["compact_if_needed"]["reply"] == "rpc_response"
+    for spec in rpc_contract.method_specs():
+        assert spec.reply in {"message", "rpc_response"}  # raises when only sometimes

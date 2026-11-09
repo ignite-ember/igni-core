@@ -178,6 +178,7 @@
       "type"
     ],
     "rpc_response": [
+      "code",
       "error",
       "event_seq",
       "id",

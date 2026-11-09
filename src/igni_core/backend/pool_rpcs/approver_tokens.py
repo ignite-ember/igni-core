@@ -12,6 +12,7 @@ from igni_core.backend.schemas_pool import ApproverTokenMinted, ApproverTokensRe
 from igni_core.backend.standing_policy import ApproverTokens
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 
 class ApproverTokenRpc(PoolRpc):
@@ -41,7 +42,8 @@ class ApproverTokenRpc(PoolRpc):
         if token is None:
             raise PoolRefusal(
                 f"{request.method}: this igni takes no token, so every "
-                "connection may already answer approval requests"
+                "connection may already answer approval requests",
+                RpcErrorCode.UNAVAILABLE,
             )
         return ApproverTokenMinted(token=token)
 

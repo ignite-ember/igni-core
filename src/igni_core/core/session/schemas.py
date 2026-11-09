@@ -727,6 +727,9 @@ class PermissionModeChangedEvent(BroadcastEvent):
     live :class:`PermissionEvaluator` mode flip."""
 
     channel: Literal["permission_mode_changed"] = "permission_mode_changed"
+    #: What this push says: the mode switched (``switched``), as opposed to
+    #: the plan tool's note that the agent entered plan mode.
+    kind: Literal["switched"] = "switched"
     mode: PermissionMode
     previous: PermissionMode
 

@@ -14,6 +14,7 @@ The file has this shape::
     {
       "version": 1,
       "access": "<who reaches each access level, and how a client gets one>",
+      "errors": {"<rpc_response.code>": "<what it means>", ...},
       "defs": {"<name>": <JSON Schema>, ...},
       "methods": {
         "<wire name>": {
@@ -30,7 +31,8 @@ The file has this shape::
       },
       "messages": {
         "<message type>": {"direction": "to_client" | "to_igni" | "both",
-                           "doc": "...", "schema": <JSON Schema>}
+                           "doc": "...", "schema": <JSON Schema>,
+                           "accepts": <JSON Schema, for "both": what igni takes>}
       },
       "push_channels": {
         "<channel>": {"doc": "...", "schema": <JSON Schema of the payload>}
@@ -47,16 +49,19 @@ when the committed copy differs; ``make rpc-contract`` writes it.
 
 from __future__ import annotations
 
+import functools
 import inspect
 import json
+import operator
+import types
 import typing
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic import TypeAdapter
-from pydantic.json_schema import GenerateJsonSchema, JsonSchemaMode, JsonSchemaValue
+from pydantic import BaseModel, ConfigDict, TypeAdapter, create_model
+from pydantic.json_schema import GenerateJsonSchema, JsonSchemaMode, JsonSchemaValue, NoDefault
 from pydantic_core import core_schema
 
 from igni_core.protocol import messages as msg
@@ -64,6 +69,7 @@ from igni_core.protocol.json_value import JSON_VALUE_SCHEMA
 from igni_core.protocol.rpc import RpcAccess, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
 from igni_core.protocol.schemas.envelope import Direction
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 #: Where igni-core publishes it. igni-sdk keeps a copy and generates from it.
 SNAPSHOT_PATH = Path(__file__).resolve().parents[3] / "docs" / "rpc-contract.json"
@@ -81,8 +87,8 @@ class WireJsonSchema(GenerateJsonSchema):
       uses the alias only for a model whose config sets
       ``serialize_by_alias``; arguments are validated, which takes the
       alias whenever there is one.
-    * In serialization mode a field with a default is still always sent,
-      so it is required unless it can be left out.
+    * A field with a default — a ``default_factory``'s included — says
+      so and is not required, in either direction.
     """
 
     def model_schema(self, schema: core_schema.ModelSchema) -> JsonSchemaValue:
@@ -97,14 +103,19 @@ class WireJsonSchema(GenerateJsonSchema):
         finally:
             self.by_alias = by_alias
 
-    def field_is_required(
-        self,
-        field: core_schema.ModelField | core_schema.DataclassField | core_schema.TypedDictField,
-        total: bool,
-    ) -> bool:
-        if self.mode == "serialization":
-            return not (field.get("serialization_exclude") or field.get("serialization_exclude_if"))
-        return super().field_is_required(field, total)
+    def get_default_value(self, schema: core_schema.WithDefaultSchema) -> Any:
+        """A field's default, its ``default_factory``'s included: an empty
+        list or object is a default a client can rely on, and a schema
+        without it reads as required."""
+        factory = schema.get("default_factory")
+        if factory is not None and not schema.get("default_factory_takes_data"):
+            try:
+                value = factory()  # type: ignore[call-arg]
+            except Exception:
+                return NoDefault
+            dumped = _jsonable(value)
+            return dumped if dumped is not NoDefault else NoDefault
+        return super().get_default_value(schema)
 
 
 @dataclass(frozen=True)
@@ -127,9 +138,16 @@ class MethodSpec:
     @property
     def reply(self) -> str:
         """``message`` when igni answers with the result itself, a message."""
-        result = self.result
-        is_message = isinstance(result, type) and issubclass(result, msg.Message)
-        return "message" if is_message else "rpc_response"
+        members = [
+            m for m in (typing.get_args(self.result) or (self.result,)) if m is not type(None)
+        ]
+        messages = [m for m in members if isinstance(m, type) and issubclass(m, msg.Message)]
+        if messages and len(messages) != len(members):
+            raise TypeError(
+                f"{self.method.value} answers a message only sometimes: the reply's shape "
+                "would depend on the result"
+            )
+        return "message" if messages else "rpc_response"
 
 
 def stream_name(stream: type[msg.Message] | PushChannel) -> str:
@@ -160,7 +178,7 @@ def method_specs() -> list[MethodSpec]:
                 method=method,
                 area=owner.__module__.rsplit(".", 1)[-1],
                 args=binding.args,
-                result=typing.get_type_hints(fn)["return"],
+                result=typing.get_type_hints(fn, include_extras=True)["return"],
                 doc=inspect.getdoc(fn) or "",
                 scope=binding.scope,
                 access=access_of(method),
@@ -193,9 +211,12 @@ def build() -> dict[str, Any]:
             "validation" if _direction(cls) is Direction.TO_IGNI else "serialization"
         )
         inputs.append(((_wire_type(cls), "message"), mode, TypeAdapter(cls)))
+        if _direction(cls) is Direction.BOTH:
+            inputs.append(((_wire_type(cls), "message"), "validation", TypeAdapter(cls)))
     pushes = push_payloads()
     for channel, payload in pushes.items():
-        inputs.append(((channel.value, "push"), payload.mode, TypeAdapter(payload.model)))
+        model = _payload_model(payload.model)
+        inputs.append(((channel.value, "push"), payload.mode, TypeAdapter(model)))
 
     schemas, top = TypeAdapter.json_schemas(
         inputs, ref_template=_REF_TEMPLATE, schema_generator=WireJsonSchema
@@ -224,22 +245,31 @@ def build() -> dict[str, Any]:
     for cls in messages:
         direction = _direction(cls)
         mode = "validation" if direction is Direction.TO_IGNI else "serialization"
-        wire_messages[_wire_type(cls)] = {
+        entry = {
             "direction": direction.value,
             "doc": inspect.getdoc(cls) or "",
             "schema": schemas[((_wire_type(cls), "message"), mode)],
         }
+        if direction is Direction.BOTH:
+            # What igni sends is ``schema``; what it accepts from a client
+            # can leave out what it fills in itself.
+            entry["accepts"] = schemas[((_wire_type(cls), "message"), "validation")]
+        wire_messages[_wire_type(cls)] = entry
 
     push_channels: dict[str, Any] = {}
     for channel, payload in pushes.items():
         schema = schemas[((channel.value, "push"), payload.mode)]
-        if _broadcast_events(payload.model):
-            schema = _without_channel(schema, defs)
+        if "$ref" not in schema:
+            # A union: named for its channel, like every other payload.
+            name = _pascal(channel.value) + "Payload"
+            defs[name] = {**schema, "title": name, "description": payload.doc}
+            schema = {"$ref": f"#/defs/{name}"}
         push_channels[channel.value] = {"doc": payload.doc, "schema": schema}
 
     return {
         "version": VERSION,
         "access": inspect.getdoc(RpcAccess) or "",
+        "errors": {code.value: code.doc for code in RpcErrorCode},
         "defs": defs,
         "methods": methods,
         "messages": wire_messages,
@@ -254,32 +284,6 @@ def push_payloads() -> Mapping[PushChannel, Any]:
     return dict(sorted(PUSH_PAYLOADS.items(), key=lambda item: item[0].value))
 
 
-def _broadcast_events(model: Any) -> bool:
-    """Whether ``model`` is a broadcast-bus event (or a union of them), whose
-    payload is its fields less ``channel``."""
-    from igni_core.core.broadcast_schema import BroadcastEvent
-
-    members = typing.get_args(model) or (model,)
-    return all(isinstance(m, type) and issubclass(m, BroadcastEvent) for m in members)
-
-
-def _without_channel(schema: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
-    """``schema`` with each event it names inlined, its ``channel`` dropped:
-    the payload carries every field but the one the push names."""
-    if "$ref" in schema:
-        event = dict(defs[schema["$ref"].rsplit("/", 1)[-1]])
-        event["properties"] = {
-            k: v for k, v in event.get("properties", {}).items() if k != "channel"
-        }
-        if "required" in event:
-            event["required"] = [k for k in event["required"] if k != "channel"]
-        return event
-    return {
-        **schema,
-        "anyOf": [_without_channel(member, defs) for member in schema.get("anyOf", [])],
-    }
-
-
 def render(contract: dict[str, Any] | None = None) -> str:
     """The exact bytes of the published file, for writing or comparing."""
     return json.dumps(contract or build(), indent=2, sort_keys=True) + "\n"
@@ -290,6 +294,51 @@ def write(path: Path | None = None) -> tuple[Path, dict[str, Any]]:
     target = path or SNAPSHOT_PATH
     target.write_text(render(contract))
     return target, contract
+
+
+def _payload_model(model: Any) -> Any:
+    """The payload a push carries, as a type: a broadcast-bus event is
+    sent without its ``channel`` (``BroadcastEvent.to_payload``), so it is
+    published as a model of its own, ``<Event>Payload``, without it."""
+    from igni_core.core.broadcast_schema import BroadcastEvent
+
+    if isinstance(model, type) and issubclass(model, BroadcastEvent):
+        return _without_channel(model)
+    origin = typing.get_origin(model)
+    if origin is typing.Annotated:
+        inner, *extras = typing.get_args(model)
+        return typing.Annotated[(_payload_model(inner), *extras)]  # type: ignore[valid-type]
+    members = typing.get_args(model)
+    if members and origin in (typing.Union, types.UnionType):
+        return functools.reduce(operator.or_, (_payload_model(m) for m in members))
+    return model
+
+
+@functools.cache
+def _without_channel(event: type[BaseModel]) -> type[BaseModel]:
+    fields: dict[str, Any] = {
+        name: (field.annotation, field)
+        for name, field in event.model_fields.items()
+        if name != "channel"
+    }
+    return create_model(  # type: ignore[call-overload, no-any-return]
+        f"{event.__name__}Payload",
+        __doc__=event.__doc__,
+        __config__=ConfigDict(**event.model_config),
+        **fields,
+    )
+
+
+def _pascal(wire: str) -> str:
+    return "".join(part.capitalize() for part in wire.split("_"))
+
+
+def _jsonable(value: Any) -> Any:
+    """``value`` as JSON, or ``NoDefault`` when it is not."""
+    try:
+        return json.loads(json.dumps(value, default=lambda v: v.model_dump(mode="json")))
+    except (TypeError, ValueError, AttributeError):
+        return NoDefault
 
 
 def _wire_type_or_none(cls: type[msg.Message]) -> object:

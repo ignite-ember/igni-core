@@ -139,6 +139,19 @@ class InterruptedRun(BaseModel):
         )
 
 
+class CompactionOutcome(BaseModel):
+    """``compact_if_needed``'s answer: whether the conversation was
+    compacted, and if so the summary it was replaced by."""
+
+    #: ``False`` when the context was below the threshold, the
+    #: ``PreCompact`` hooks refused, or there was nothing to compact.
+    compacted: bool
+    #: The session the conversation continues in (the same id today).
+    new_session_id: str = ""
+    #: What the compacted conversation was replaced by.
+    summary: str = ""
+
+
 class DiscardInterruptedRunResult(BaseModel):
     """Wire shape for :meth:`ContextController.discard_interrupted_run`.
     ``ok`` is ``True`` once no such interrupted run is left — also when

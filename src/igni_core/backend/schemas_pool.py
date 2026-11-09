@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, SerializeAsAny, field_validator
 
 from igni_core.backend.rpc_binding import RpcArgs
 from igni_core.extensions.service_events import DeliveryReceipt, NotHandled, ServiceEvent
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 
 class AttachSessionParams(RpcArgs):
@@ -155,6 +156,8 @@ class PoolAnswer(BaseModel):
 
     result: SerializeAsAny[BaseModel] | None = None
     error: str = ""
+    #: Why there is no result, when there is none.
+    code: RpcErrorCode | None = None
     dump_mode: Literal["python", "json"] = "python"
 
     @classmethod
@@ -164,8 +167,8 @@ class PoolAnswer(BaseModel):
         return cls(result=result, dump_mode=dump_mode)
 
     @classmethod
-    def failed(cls, reason: str) -> PoolAnswer:
-        return cls(error=reason)
+    def failed(cls, reason: str, code: RpcErrorCode) -> PoolAnswer:
+        return cls(error=reason, code=code)
 
     def wire_result(self) -> Any:
         """The result as the response carries it."""

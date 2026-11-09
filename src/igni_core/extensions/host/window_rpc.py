@@ -8,8 +8,9 @@ so a window's change and an extension's are one change. One method per
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Annotated, Literal, TypeAlias
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from igni_core.extensions.host.windows import WindowRequest, Windows
 from igni_core.protocol.json_value import WireJson
@@ -18,38 +19,60 @@ from igni_core.protocol.json_value import WireJson
 class Hydrated(BaseModel):
     """The whole model, its revision, and the fields nobody set."""
 
+    op: Literal["hydrate"] = "hydrate"
     state: dict[str, WireJson]
     rev: int
     unset: list[str]
 
 
 class Written(BaseModel):
+    """A field written: the window's revision after it, and whether the
+    value changed — a write of the value already there changes nothing,
+    and pushes nothing."""
+
+    op: Literal["write"] = "write"
     rev: int
+    changed: bool = True
 
 
 class ToastAdded(BaseModel):
+    """The toast as shown, with its id, and the window's revision."""
+
+    op: Literal["toast"] = "toast"
     toast: dict[str, WireJson]
     rev: int
 
 
 class Revised(BaseModel):
-    """A change that answers nothing but the window's new revision."""
+    """A toast dismissed: the window's new revision."""
+
+    op: Literal["dismiss_toast"] = "dismiss_toast"
 
     rev: int
 
 
 class DialogShown(BaseModel):
+    """The dialog as shown, with its id, and the window's revision."""
+
+    op: Literal["open_dialog"] = "open_dialog"
     dialog: dict[str, WireJson]
     rev: int
 
 
 class DialogAnswered(BaseModel):
+    """Whether the dialog answered was still the open one, and the window's revision."""
+
+    op: Literal["answer_dialog"] = "answer_dialog"
     #: ``False`` when that dialog is not the one open any more.
     answered: bool
     rev: int
 
 
-WindowReply = Hydrated | Written | ToastAdded | Revised | DialogShown | DialogAnswered
+#: One ``window_model`` answer, told apart by the ``op`` it answers.
+WindowReply: TypeAlias = Annotated[
+    Hydrated | Written | ToastAdded | Revised | DialogShown | DialogAnswered,
+    Field(discriminator="op"),
+]
 
 
 class WindowModelRpc:
@@ -91,10 +114,11 @@ class WindowModelRpc:
         )
 
     def _write(self, request: WindowRequest) -> WindowReply:
+        before = self._windows.rev(request.window)
         change = self._windows.write(
             request.window, request.field, request.value, token=request.token
         )
-        return Written(rev=change.rev)
+        return Written(rev=change.rev, changed=change.rev != before)
 
     def _toast(self, request: WindowRequest) -> WindowReply:
         window = request.window

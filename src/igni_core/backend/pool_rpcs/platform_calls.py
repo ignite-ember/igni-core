@@ -24,6 +24,7 @@ from igni_core.extensions.service_events import ServiceEventInbox
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 
 class VmSignIn(Protocol):
@@ -70,7 +71,7 @@ class VmSignInRpc(PoolRpc):
         producer's VM (nothing is mounted to take the session).
         """
         if not args.session_token:
-            raise PoolRefusal(self.NO_SESSION)
+            raise PoolRefusal(self.NO_SESSION, RpcErrorCode.INVALID)
         change = await self._sign_in(args.session_token, args.organisation)
         return VmCredentialState.model_validate(change.model_dump(mode="json"))
 
