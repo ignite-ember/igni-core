@@ -132,3 +132,25 @@ async def test_missing_package_metadata_is_refused(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(ValueError, match="package metadata"):
         await _call(handler, RpcMethod.CHECK_FOR_UPDATE, {})
+
+
+async def test_an_update_check_with_no_package_metadata_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Building the checker reads the installed package's metadata; a missing
+    distribution raised ``PackageNotFoundError`` past the update check's
+    "never raises", so the call failed with a raw import error instead of
+    the refusal every other failed check is."""
+    from importlib.metadata import PackageNotFoundError
+
+    from igni_core.core.utils import update_checker
+
+    def no_package() -> object:
+        raise PackageNotFoundError("igni-core")
+
+    monkeypatch.setattr(update_checker.UpdateChecker, "_pkg_cache", None)
+    monkeypatch.setattr(update_checker.PackageMetadata, "load", staticmethod(no_package))
+    handler, _ = _handler()
+
+    with pytest.raises(ValueError, match="update check failed"):
+        await _call(handler, RpcMethod.CHECK_FOR_UPDATE, {})

@@ -303,8 +303,11 @@ async def check_for_update(
     ``UpdateInfo.error=UpdateError.UNKNOWN`` — some interactive-loop
     callers rely on "never raises" as an invariant.
     """
-    checker = UpdateChecker(settings=settings, timeout=timeout)
     try:
+        # Inside the net: building the checker reads the installed
+        # package's metadata, and a missing distribution raised past the
+        # "never raises" promise.
+        checker = UpdateChecker(settings=settings, timeout=timeout)
         return await checker.check()
     except asyncio.CancelledError:
         raise
