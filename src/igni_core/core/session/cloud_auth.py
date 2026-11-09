@@ -98,6 +98,10 @@ class SessionCloudAuth:
 
     # ── Mutations ───────────────────────────────────────────────
 
+    def use_server(self, server_url: str) -> None:
+        """The igni server chosen since: cloud-routed tools built from now on use it."""
+        self._server_url = server_url
+
     def replace(self, creds: CloudCredentials) -> None:
         """Swap in a fresh :class:`CloudCredentials` and rebuild
         the main team so cloud-routed prompts / tool bindings pick

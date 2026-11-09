@@ -166,8 +166,9 @@ class AuthController:
         # config file the running process disagrees with is the
         # confusing half of this operation.
         self._settings.api_url = chosen
-        if portal:
-            self._settings.portal_url = portal
+        # Empty: derived from the new server, never the old server's.
+        self._settings.portal_url = portal
+        self._session.cloud_auth.use_server(chosen)
         self._portal = PortalClient(api_url=chosen, portal_url=portal or None)
         self._group_policy.use_portal(self._portal)
         logger.info("server set to %s", chosen)
