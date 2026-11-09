@@ -49,7 +49,7 @@ class AttachSessionRpc(PoolRpc):
         streams as any run does.
 
         Fails when ``project_dir`` is not a directory, or the session belongs
-        to another project.
+        to another project folder — an attach never moves a session.
         """
         attached = await self._sessions.attach(args.session_id, args.project_dir)
         if isinstance(attached, AttachRefused):
