@@ -103,14 +103,44 @@ def parse_args(argv: list[str]) -> tuple[str, dict[str, list[str]], list[str]]:
     return mode, options, command
 
 
+#: Where the run keeps its files, as igni set them. Windows sets ``TEMP``,
+#: ``TMP`` and ``LOCALAPPDATA`` afresh for a process it starts in an
+#: AppContainer — to the container's own folder under ``Packages``, whose
+#: ``Temp`` does not exist — so the runner hands igni's values to the shim,
+#: which puts them back before it starts the extension.
+KEPT_ENV = ("TEMP", "TMP", "TMPDIR", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA")
+
+
 def shim_argv(
-    python: str, script: str, forwards: list[tuple[int, str]], command: list[str]
+    python: str,
+    script: str,
+    forwards: list[tuple[int, str]],
+    command: list[str],
+    kept: Mapping[str, str] | None = None,
 ) -> list[str]:
     """The argv the runner starts inside the container."""
     argv = [python, "-I", script, "shim"]
     for port, pipe in forwards:
         argv += ["--forward", f"{port}={pipe}"]
+    for name, value in (kept or {}).items():
+        argv += ["--setenv", f"{name}={value}"]
     return [*argv, "--", *command]
+
+
+def kept_env(env: Mapping[str, str]) -> dict[str, str]:
+    """The run's own file locations from ``env``, to restore inside."""
+    return {name: env[name] for name in KEPT_ENV if env.get(name)}
+
+
+def restore_env(env: Mapping[str, str], setenv: list[str]) -> dict[str, str]:
+    """``env`` with each ``NAME=VALUE`` from ``--setenv`` put back."""
+    out = dict(env)
+    for item in setenv:
+        name, sep, value = item.partition("=")
+        if not sep or name not in KEPT_ENV:
+            raise ValueError(f"--setenv wants one of {', '.join(KEPT_ENV)}=VALUE, not {item!r}")
+        out[name] = value
+    return out
 
 
 _LOOPBACK = r"(?:127\.0\.0\.1|localhost|\[::1\])"
@@ -662,7 +692,7 @@ async def _run(options: dict[str, list[str]], command: list[str]) -> int:
     job = Job()
     parent = _open_parent(parent_pid)
     try:
-        argv = shim_argv(python, os.path.abspath(__file__), forwards, command)
+        argv = shim_argv(python, os.path.abspath(__file__), forwards, command, kept_env(os.environ))
         process = start_in_container(container_sid, argv, cwd, job)
         try:
             return await loop.run_in_executor(None, _wait, process, parent)
@@ -708,7 +738,7 @@ async def _shim(options: dict[str, list[str]], command: list[str]) -> int:
         server = await asyncio.start_server(functools.partial(to_pipe, pipe), "127.0.0.1", 0)
         servers.append(server)
         ports[port] = int(server.sockets[0].getsockname()[1])
-    env = rewrite_ports(os.environ, ports)
+    env = rewrite_ports(restore_env(os.environ, options.get("--setenv", [])), ports)
     # Its stdio passed on explicitly: on Windows a child inherits a pipe
     # handle only when it is redirected, and MCP speaks over these pipes.
     stdio = [fd if _open_fd(fd) else None for fd in (0, 1, 2)]
