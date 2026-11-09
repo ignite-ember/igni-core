@@ -347,15 +347,43 @@ class RpcAccess(StrEnum):
     """Who may make a call, as the backend enforces it
     (``backend/standing_policy.py``, ``backend/message_admission.py``).
 
-    * ``CLIENT`` — any attached connection: igni's window, an approver,
-      or a program that attached with the lockfile's token.
-    * ``APPROVER`` — igni's window, or a program the window minted an
-      approver token for.
-    * ``WINDOW`` — igni's own window only.
-    * ``PAGE`` — an extension's page, through igni's window, which sets
-      the request's ``caller``.
-    * ``PLATFORM`` — the platform (a cloud gateway); where the layer
-      requires it, only on its control connection.
+    * ``client`` — any connection igni admitted.
+    * ``approver`` — igni's window, or a connection standing as an approver.
+    * ``window`` — a connection standing as igni's window only.
+    * ``page`` — an extension's page, through a window that sets the
+      request's ``caller``, where the deployment lets a connection speak
+      for an extension.
+    * ``platform`` — the platform. Where the deployment requires it (the
+      cloud), only on the gateway's control connection; elsewhere any
+      connection.
+
+    A connection's standing is decided once, at the WebSocket handshake,
+    by the token it offers (``transport/ws_auth.py``):
+
+    * **Local client, on the desktop.** igni's desktop app launches igni
+      with a per-launch secret that only the app holds, so only the app's
+      own window stands as the window. A client attaching with the token
+      igni publishes in its owner-only lockfile stands as a *program*: it
+      reaches every ``client`` call and the ``platform`` calls (the
+      desktop does not require a control connection for them), and is
+      refused every ``window`` and ``approver`` call, every approval
+      answer (``hitl_response``), any ``caller``, and the window-only
+      slash commands. A client given an approver token (minted in igni's
+      window with ``mint_approver_token``) stands as an *approver*: it
+      also answers approval requests and calls ``approve_plan``, each
+      time once — no saved rule, no permission-mode change. It still
+      reaches no ``window`` call.
+    * **Local client, igni started without a secret** (by hand, or with
+      the development switch): every connection stands as the window, so
+      it reaches ``client``, ``approver`` and ``window`` calls.
+    * **Through Fleet's gateway** (a cloud VM): the gateway authenticates
+      the client — with a person's key or an app's — and igni on the VM
+      takes no token, so every connection stands as the window and
+      reaches ``client``, ``approver`` and ``window`` calls alike; igni
+      cannot tell a person's key from an app's. No connection there may
+      speak for an extension, so ``page`` calls are refused, and the
+      ``platform`` calls are taken only from the gateway's control
+      connection, which a client never has.
     """
 
     CLIENT = "client"

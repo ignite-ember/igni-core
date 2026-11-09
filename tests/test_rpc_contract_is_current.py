@@ -184,3 +184,8 @@ def _unconstrained(schema: Any, defs: dict[str, Any], where: str) -> Iterator[st
                 yield from walk(sub, f"{at}.{key}[{i}]")
 
     yield from walk(schema, where)
+
+
+def test_the_contract_says_who_reaches_each_access_level(contract: dict[str, Any]) -> None:
+    for level in RpcAccess:
+        assert f"``{level.value}``" in contract["access"], f"{level.value} is not explained"

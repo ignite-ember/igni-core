@@ -13,6 +13,7 @@ The file has this shape::
 
     {
       "version": 1,
+      "access": "<who reaches each access level, and how a client gets one>",
       "defs": {"<name>": <JSON Schema>, ...},
       "methods": {
         "<wire name>": {
@@ -238,6 +239,7 @@ def build() -> dict[str, Any]:
 
     return {
         "version": VERSION,
+        "access": inspect.getdoc(RpcAccess) or "",
         "defs": defs,
         "methods": methods,
         "messages": wire_messages,
