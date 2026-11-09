@@ -29,7 +29,13 @@ class ReadFileArgs(PanelArgs):
 
 
 class SearchCodeArgs(PanelArgs):
-    """``search_code``: the snippet to find across the project."""
+    """``search_code``: the snippet to find across the project.
+
+    A key it does not name is refused, not ignored: a call that sent the
+    snippet under another name (``snippet``) was told only that ``query``
+    was missing, and searched for nothing."""
+
+    model_config = ConfigDict(extra="forbid")
 
     query: str
 

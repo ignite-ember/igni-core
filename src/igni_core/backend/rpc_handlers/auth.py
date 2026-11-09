@@ -10,7 +10,7 @@ from igni_core.backend.schemas_auth import (
     ServerFound,
     SetServerArgs,
 )
-from igni_core.backend.schemas_rpc import LoginStarted
+from igni_core.backend.schemas_rpc import CloudPlan, LoginStarted
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
@@ -75,6 +75,18 @@ class AuthRpcHandler(RpcHandler):
         if self._ctx.notifications is not None:
             await self._ctx.notifications.signed_out()
         return status
+
+    @rpc(RpcMethod.GET_CLOUD_PLAN, args=NoArgs, scope=RpcScope.SESSION)
+    async def get_cloud_plan(self, args: NoArgs) -> CloudPlan | None:
+        """Read who is signed in to igni server, and their organisation's plan.
+
+        Takes no arguments. Asks igni server with this session's sign-in and
+        returns the person's ``email`` and ``full_name``, the organisation's
+        display name (``org_name``) and plan ``tier``; any of them may be
+        null when igni server does not say. Returns ``null`` when nobody is
+        signed in or igni server could not be asked.
+        """
+        return await self._controllers.auth.get_cloud_plan()
 
     @rpc(RpcMethod.DISCOVER_SERVER, args=DiscoverServerArgs, scope=RpcScope.IGNI)
     async def discover_server(self, args: DiscoverServerArgs) -> ServerFound:

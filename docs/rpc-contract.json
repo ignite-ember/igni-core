@@ -654,6 +654,65 @@
       "title": "CheckPermissionArgs",
       "type": "object"
     },
+    "CloudPlan": {
+      "description": "Wire shape for :meth:`AuthController.get_cloud_plan` \u2014 tier +\norg name for the org popover badge. Nullable fields because the\ntoken validation response may omit either.",
+      "properties": {
+        "email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Email"
+        },
+        "full_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Full Name"
+        },
+        "org_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Org Name"
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Tier"
+        }
+      },
+      "required": [
+        "tier",
+        "org_name",
+        "email",
+        "full_name"
+      ],
+      "title": "CloudPlan",
+      "type": "object"
+    },
     "Command": {
       "description": "Slash command from user.",
       "properties": {
@@ -5837,7 +5896,8 @@
       "type": "object"
     },
     "SearchCodeArgs": {
-      "description": "``search_code``: the snippet to find across the project.",
+      "additionalProperties": false,
+      "description": "``search_code``: the snippet to find across the project.\n\nA key it does not name is refused, not ignored: a call that sent the\nsnippet under another name (``snippet``) was told only that ``query``\nwas missing, and searched for nothing.",
       "properties": {
         "query": {
           "title": "Query",
@@ -9707,6 +9767,28 @@
       "scope": "session",
       "streams": [],
       "summary": "Read a session's conversation, turn by turn, as a client draws it."
+    },
+    "get_cloud_plan": {
+      "access": "client",
+      "area": "auth",
+      "args": {
+        "$ref": "#/defs/NoArgs"
+      },
+      "doc": "Read who is signed in to igni server, and their organisation's plan.\n\nTakes no arguments. Asks igni server with this session's sign-in and\nreturns the person's ``email`` and ``full_name``, the organisation's\ndisplay name (``org_name``) and plan ``tier``; any of them may be\nnull when igni server does not say. Returns ``null`` when nobody is\nsigned in or igni server could not be asked.",
+      "reply": "rpc_response",
+      "result": {
+        "anyOf": [
+          {
+            "$ref": "#/defs/CloudPlan"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "scope": "session",
+      "streams": [],
+      "summary": "Read who is signed in to igni server, and their organisation's plan."
     },
     "get_context_breakdown": {
       "access": "client",

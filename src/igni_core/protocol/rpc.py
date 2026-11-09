@@ -182,6 +182,9 @@ class RpcMethod(StrEnum):
     DISCOVER_SERVER = "discover_server"
     # Write that server down, so the next launch knows it.
     SET_SERVER = "set_server"
+    # Who is signed in, and their organisation's plan, read from igni
+    # server: the account menu's name and badge.
+    GET_CLOUD_PLAN = "get_cloud_plan"
     RELOAD_CLOUD_CREDENTIALS = "reload_cloud_credentials"
     CLEAR_CLOUD_CREDENTIALS = "clear_cloud_credentials"
     SWITCH_MODEL = "switch_model"
