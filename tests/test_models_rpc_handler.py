@@ -34,6 +34,13 @@ def _call(handler: ModelsRpcHandler, method: RpcMethod, wire: dict):
     return handler.methods()[method](wire)
 
 
+def _probe_answers(monkeypatch: pytest.MonkeyPatch, answer: UpdateInfo) -> None:
+    """Make the handler's update checker answer ``answer``."""
+    checker = MagicMock()
+    checker.check = AsyncMock(return_value=answer)
+    monkeypatch.setattr(models_module, "UpdateChecker", MagicMock(return_value=checker))
+
+
 def test_check_permission_gets_typed_tool_args() -> None:
     handler, ctx = _handler()
     permissions = ctx.backend.controllers.hitl.permissions
@@ -80,11 +87,7 @@ def test_a_refused_model_switch_fails_the_call() -> None:
 
 async def test_no_newer_release_answers_none(monkeypatch: pytest.MonkeyPatch) -> None:
     handler, _ = _handler()
-    monkeypatch.setattr(
-        models_module,
-        "check_for_update",
-        AsyncMock(return_value=UpdateInfo(available=False, current_version="1.0.0")),
-    )
+    _probe_answers(monkeypatch, UpdateInfo(available=False, current_version="1.0.0"))
     assert await _call(handler, RpcMethod.CHECK_FOR_UPDATE, {}) is None
 
 
@@ -96,7 +99,7 @@ async def test_a_newer_release_is_reported(monkeypatch: pytest.MonkeyPatch) -> N
         latest_version="1.1.0",
         download_url="https://example.invalid/igni",
     )
-    monkeypatch.setattr(models_module, "check_for_update", AsyncMock(return_value=found))
+    _probe_answers(monkeypatch, found)
     monkeypatch.setattr(
         models_module.PackageMetadata, "load", classmethod(lambda cls: PackageMetadata(name="igni"))
     )
@@ -114,7 +117,7 @@ async def test_a_failed_probe_fails_the_call(monkeypatch: pytest.MonkeyPatch) ->
         error=UpdateError.NETWORK,
         error_detail="connection refused",
     )
-    monkeypatch.setattr(models_module, "check_for_update", AsyncMock(return_value=failed))
+    _probe_answers(monkeypatch, failed)
 
     with pytest.raises(ValueError, match="network"):
         await _call(handler, RpcMethod.CHECK_FOR_UPDATE, {})
@@ -123,7 +126,7 @@ async def test_a_failed_probe_fails_the_call(monkeypatch: pytest.MonkeyPatch) ->
 async def test_missing_package_metadata_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     handler, _ = _handler()
     found = UpdateInfo(available=True, current_version="1.0.0", latest_version="1.1.0")
-    monkeypatch.setattr(models_module, "check_for_update", AsyncMock(return_value=found))
+    _probe_answers(monkeypatch, found)
 
     def _missing(cls: type[PackageMetadata]) -> PackageMetadata:
         raise PackageNotFoundError("igni-core")

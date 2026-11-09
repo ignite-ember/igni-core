@@ -16,18 +16,18 @@ the first existed there was no way to stop this request.
 Architecture — everything is on :class:`UpdateChecker`:
 
 * :class:`UpdateCache` (composed value object) owns the file-cache
-  read/write. Its constructor takes the cache path so tests can
-  point it at a tmp file without patching module globals.
-* :class:`PackageMetadata` (in the sibling schemas module) owns
-  the :func:`importlib.metadata.metadata` probe. Resolved *lazily*
-  on first :class:`UpdateChecker` construction — importing this
-  module no longer runs the probe.
-* :class:`UpdateChecker.check` is the orchestrator. The
-  module-level :func:`check_for_update` is a thin back-compat
-  wrapper that constructs a fresh checker on every call (so
-  ``patch('...CACHE_FILE', ...)`` still flows through) and
-  swallows any last-mile exception into an :class:`UpdateInfo`
-  with a typed :class:`UpdateError`.
+  read/write. Its constructor takes the cache path, so a test points
+  it at a tmp file instead of patching a module global.
+* :class:`PackageMetadata` (in the sibling schemas module) owns the
+  :func:`importlib.metadata.metadata` probe. The checker resolves it
+  lazily, on first use, and keeps it on the instance: importing this
+  module runs no probe, and two checkers share no state.
+* :meth:`UpdateChecker.check` is the entry point and the top
+  boundary. It never raises for a failed check — every failure comes
+  back as an :class:`UpdateInfo` carrying a typed
+  :class:`UpdateError`. Only :exc:`asyncio.CancelledError`
+  propagates, because a parent-task cancellation is not a failed
+  check.
 
 Every Pydantic model in this module comes from
 :mod:`.update_checker_schemas` and is re-exported here so
@@ -60,7 +60,6 @@ from igni_core.core.utils.update_checker_schemas import (
 
 # Re-exports so callers keep the single-import-site convention.
 __all__ = [
-    "CACHE_FILE",
     "PackageMetadata",
     "PyPIInfoResponse",
     "UpdateCache",
@@ -69,12 +68,20 @@ __all__ = [
     "UpdateError",
     "UpdateInfo",
     "Version",
-    "check_for_update",
+    "default_cache_path",
 ]
 
 logger = logging.getLogger(__name__)
 
-CACHE_FILE = Path.home() / CONFIG_DIR / ".update-check"
+
+def default_cache_path() -> Path:
+    """Where the update check's cache file lives.
+
+    A function rather than a module constant: the path depends on the
+    home directory, which is read when it is asked for — not frozen
+    into the module when it is imported.
+    """
+    return Path.home() / CONFIG_DIR / ".update-check"
 
 
 # ── Cache value object ────────────────────────────────────────────
@@ -143,8 +150,6 @@ class UpdateChecker:
     without patching module state.
     """
 
-    _pkg_cache: PackageMetadata | None = None
-
     def __init__(
         self,
         *,
@@ -153,37 +158,44 @@ class UpdateChecker:
         cache_path: Path | None = None,
         package: PackageMetadata | None = None,
     ) -> None:
-        # Read the module-level default at construction so
-        # ``patch('...CACHE_FILE', ...)`` in existing tests still
-        # flows into the instance.
         self._settings = settings
         self._timeout = timeout
-        self._cache = UpdateCache(cache_path if cache_path is not None else CACHE_FILE)
-        self._package = package if package is not None else self._resolve_package()
+        self._cache = UpdateCache(cache_path if cache_path is not None else default_cache_path())
+        self._package = package
 
-    @classmethod
-    def _resolve_package(cls) -> PackageMetadata:
-        """Lazy singleton for the installed-package probe.
+    @property
+    def package(self) -> PackageMetadata:
+        """The installed package's metadata.
 
-        The probe hits :mod:`importlib.metadata` which walks the
-        site-packages dist-info; not free. We resolve it on first
-        use and cache it on the class so subsequent checks are
-        instantaneous, without paying the cost at *import* time
-        the way the old module-level ``metadata()`` call did.
+        Resolved on first use and kept on the instance: the probe
+        walks the site-packages dist-info, so it is not free, but it
+        is not paid at import time either — and two checkers share
+        nothing.
         """
-        if cls._pkg_cache is None:
-            cls._pkg_cache = PackageMetadata.load()
-        return cls._pkg_cache
+        if self._package is None:
+            self._package = PackageMetadata.load()
+        return self._package
 
     async def check(self) -> UpdateInfo:
         """Ask PyPI (or the cache) whether a newer version exists.
 
-        Returns an :class:`UpdateInfo`. Narrow ``except`` clauses
-        inside — :exc:`asyncio.CancelledError` must propagate so a
-        parent-task cancellation isn't swallowed by the update
-        check. The module-level :func:`check_for_update` wrapper
-        catches anything truly unexpected.
+        The top boundary of the check: it never raises. A failure the
+        check knows about comes back with its own
+        :class:`UpdateError`; a failure it does not come back as
+        :attr:`UpdateError.UNKNOWN`. :exc:`asyncio.CancelledError`
+        propagates — a parent-task cancellation is not a failed
+        check.
         """
+        try:
+            return await self._check()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — the top boundary; reported, not raised
+            logger.warning("Update check failed (unexpected): %s", exc)
+            return self._failure(UpdateError.UNKNOWN, str(exc))
+
+    async def _check(self) -> UpdateInfo:
+        """The check itself, in three lanes: off, cache, network."""
         current = __version__
         settings = self._settings if self._settings is not None else SettingsLoader.load()
         ttl = settings.update_check_ttl
@@ -203,24 +215,29 @@ class UpdateChecker:
         # ``air_gapped`` is the same answer for a whole deployment: PyPI is
         # outside its network whatever the TTL says.
         if settings.air_gapped or ttl <= 0:
-            return UpdateInfo(available=False, current_version=current)
+            return self._current()
 
-        # Cache lane
         cached = self._cache.read(ttl)
         if cached is not None:
-            latest = cached.latest_version
-            if latest and Version.parse(latest) > Version.parse(current):
-                return UpdateInfo(
-                    available=True,
-                    latest_version=latest,
-                    current_version=current,
-                    release_notes=cached.release_notes,
-                    download_url=cached.download_url,
-                )
-            return UpdateInfo(available=False, current_version=current)
+            return self._from_cache(cached, current)
+        return await self._from_pypi(current)
 
-        # Network lane
-        pypi_url = f"https://pypi.org/pypi/{self._package.name}/json"
+    def _from_cache(self, cached: UpdateCacheEntry, current: str) -> UpdateInfo:
+        """The answer the cache holds, when it names a newer release."""
+        latest = cached.latest_version
+        if latest and Version.parse(latest) > Version.parse(current):
+            return UpdateInfo(
+                available=True,
+                latest_version=latest,
+                current_version=current,
+                release_notes=cached.release_notes,
+                download_url=cached.download_url,
+            )
+        return self._current()
+
+    async def _from_pypi(self, current: str) -> UpdateInfo:
+        """The answer PyPI holds — or the reason it could not be asked."""
+        pypi_url = f"https://pypi.org/pypi/{self.package.name}/json"
         try:
             async with (
                 busy_call("update-check"),
@@ -231,42 +248,22 @@ class UpdateChecker:
                 payload = resp.json()
         except httpx.HTTPStatusError as exc:
             logger.debug("Update check failed (HTTP status): %s", exc)
-            return UpdateInfo(
-                available=False,
-                current_version=current,
-                error=UpdateError.HTTP_STATUS,
-                error_detail=str(exc),
-            )
+            return self._failure(UpdateError.HTTP_STATUS, str(exc))
         except httpx.HTTPError as exc:
             logger.debug("Update check failed (network): %s", exc)
-            return UpdateInfo(
-                available=False,
-                current_version=current,
-                error=UpdateError.NETWORK,
-                error_detail=str(exc),
-            )
+            return self._failure(UpdateError.NETWORK, str(exc))
         except ValueError as exc:  # resp.json() decode failure
             logger.debug("Update check failed (parse): %s", exc)
-            return UpdateInfo(
-                available=False,
-                current_version=current,
-                error=UpdateError.PARSE,
-                error_detail=str(exc),
-            )
+            return self._failure(UpdateError.PARSE, str(exc))
 
         try:
             info = PyPIInfoResponse.model_validate(payload)
         except ValidationError as exc:
             logger.debug("Update check failed (schema): %s", exc)
-            return UpdateInfo(
-                available=False,
-                current_version=current,
-                error=UpdateError.PARSE,
-                error_detail=str(exc),
-            )
+            return self._failure(UpdateError.PARSE, str(exc))
 
         latest = info.info.version
-        release_url = info.info.project_url or self._package.project_url
+        release_url = info.info.project_url or self.package.project_url
 
         # Cache the response for the next session.
         self._cache.write(UpdateCacheEntry(latest_version=latest, download_url=release_url))
@@ -278,41 +275,17 @@ class UpdateChecker:
                 current_version=current,
                 download_url=release_url,
             )
-        return UpdateInfo(available=False, current_version=current)
+        return self._current()
 
+    def _current(self) -> UpdateInfo:
+        """The answer when nothing newer is out."""
+        return UpdateInfo(available=False, current_version=__version__)
 
-# ── Back-compat module-level wrapper ─────────────────────────────
-
-
-async def check_for_update(
-    settings: Settings | None = None,
-    timeout: float = 5.0,
-) -> UpdateInfo:
-    """Check PyPI for a newer CLI version.
-
-    Thin wrapper around :meth:`UpdateChecker.check` kept for the
-    existing call sites (``interactive_loop._check_update``,
-    ``rpc_router._check_for_update``, the test suite). Constructs
-    a *fresh* :class:`UpdateChecker` on every call so
-    ``patch('igni_core.core.utils.update_checker.CACHE_FILE', ...)``
-    in tests still flows into the instance's :class:`UpdateCache`.
-
-    Never raises. :exc:`asyncio.CancelledError` propagates so a
-    parent-task cancellation isn't silently swallowed; every other
-    exception is logged and reported via
-    ``UpdateInfo.error=UpdateError.UNKNOWN`` — some interactive-loop
-    callers rely on "never raises" as an invariant.
-    """
-    checker = UpdateChecker(settings=settings, timeout=timeout)
-    try:
-        return await checker.check()
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:  # noqa: BLE001 — top-boundary safety net
-        logger.debug("Update check failed (unexpected): %s", exc)
+    def _failure(self, error: UpdateError, detail: str) -> UpdateInfo:
+        """The answer when the check could not be made."""
         return UpdateInfo(
             available=False,
             current_version=__version__,
-            error=UpdateError.UNKNOWN,
-            error_detail=str(exc),
+            error=error,
+            error_detail=detail,
         )
