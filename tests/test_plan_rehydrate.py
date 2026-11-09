@@ -19,6 +19,7 @@ from igni_core.backend.restore_content import AssistantContentRestorer
 from igni_core.backend.server_history import ChatHistoryRebuilder
 from igni_core.backend.server_rehydrate import RehydrateController
 from igni_core.core.tools.plan import PlanStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.todo import TodoStore
 
 
@@ -50,7 +51,7 @@ def _make_rehydrate_with_runs(runs: list) -> tuple[RehydrateController, MagicMoc
     session.user_id = "u"
     agno_session = SimpleNamespace(runs=runs)
     session.main_team.aget_session = AsyncMock(return_value=agno_session)
-    return RehydrateController(session), session, session.plan_store
+    return RehydrateController(session, ProcessSupervisor()), session, session.plan_store
 
 
 async def _history(session: MagicMock) -> list[dict]:
@@ -67,7 +68,7 @@ class TestPlanRehydrate:
         session.user_id = "u"
         session.main_team.aget_session = AsyncMock(return_value=None)
 
-        await RehydrateController(session).plan_store()
+        await RehydrateController(session, ProcessSupervisor()).plan_store()
 
         assert session.plan_store.latest == ""
 
@@ -175,7 +176,7 @@ class TestPlanRehydrate:
         session.main_team.aget_session = AsyncMock(side_effect=RuntimeError("db gone"))
 
         # Must not raise.
-        await RehydrateController(session).plan_store()
+        await RehydrateController(session, ProcessSupervisor()).plan_store()
 
         assert session.plan_store.latest == ""
 

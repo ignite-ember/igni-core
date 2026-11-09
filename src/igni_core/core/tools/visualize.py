@@ -1,67 +1,89 @@
-"""VisualizeTools — agent-facing tool for pushing a json-render UI spec
-to attached clients.
+"""VisualizeTools — the visualizer sub-agent's render tool.
 
 The visualizer sub-agent (``bundled_agents/visualizer.md``) owns the
 json-render schema in its system prompt and produces a spec conforming
-to it. This tool is the one-way door that carries the spec across the
-BE→FE boundary — the FE renders the spec via ``@json-render/react``.
+to it. The card reaches the FE from the tool-call *stream*, not from
+this tool: ``orchestrate.py`` forwards every argument fragment the
+model streams as a ``visualization_delta`` and marks the card
+``final=True`` once the arguments are complete. By the time this
+method runs, the card is already on screen.
+
+That is what makes the tool a confirmation. It exists so the
+sub-agent has a tool to CALL — the whole point of moving from
+content-stream to tool-call — and so ``VisualizeTools`` shows up in
+``ToolRegistry``. The spec is one-way: it goes to the FE on the
+stream and never comes back into the model's context.
 
 Design notes:
 
-- **No server-side validation.** ``@json-render/core`` ships
-  ``validateSpec`` / ``autoFixSpec``; the FE's ``Renderer`` also
+- **No server-side validation of what the card says.** ``@json-render/core``
+  ships ``validateSpec`` / ``autoFixSpec``; the FE's ``Renderer`` also
   falls through to a placeholder for unknown components. Duplicating
   validation in Python invents a schema we don't own and drifts from
-  the library. We forward whatever the model produced and let the
-  client be the source of truth on shape.
+  the library. What the BE does instead is *accept* whatever the model
+  wrote: the tool's arguments are annotated with forgiving
+  normalisers, so a payload the FE would have drawn can never fail the
+  call — see :mod:`igni_core.core.tools.visualize_schemas`.
 - **No idempotency guard.** Streaming means multiple ``visualize``
   invocations per run are legitimate — each is a patch/refinement of
   the same card. Deduping happens on the FE via a stable
-  ``spec_id`` (the sub-agent's ``run_id`` when we have one, else a
-  toolkit-scoped uuid). One card per stream, updated in place.
+  ``spec_id``, which the orchestrate stream assigns per visualizer
+  run (``SubAgentStreamState.vis_spec_id``). One card per stream,
+  updated in place.
 """
 
 from __future__ import annotations
 
 import logging
-import uuid
+from typing import Annotated
 
 from agno.tools import Toolkit
+from pydantic import BeforeValidator
 
-from igni_core.core.broadcast_schema import BroadcastSink
+from igni_core.core.tools.visualize_schemas import JsonRenderSpec, SpecArgument
 
 logger = logging.getLogger(__name__)
 
 
-class VisualizeTools(Toolkit):
-    """Single-method toolkit: ``visualize(spec, title)``.
+def _title_text(raw: object) -> str:
+    """The title as a string, whatever the model wrote.
 
-    Each toolkit instance carries a stable ``spec_id`` used by the FE
-    to deduplicate: multiple calls with the same id update one card
-    instead of appending. Sub-agents get a fresh instance per spawn,
-    so ``spec_id`` naturally maps to "one card per visualizer run".
+    The visualizer's prompt marks the title optional, and a model
+    that leaves it out often writes ``null``. The card is already on
+    screen by the time this runs, so a title that is not a string
+    must not fail the call: a missing title is the empty title the FE
+    renders without a heading. A title that is not a scalar at all
+    is dropped rather than stringified — a heading is text, and a
+    container's repr is not text.
     """
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, bool):
+        return ""
+    if isinstance(raw, int | float):
+        return str(raw)
+    return ""
 
-    def __init__(self, broadcast: BroadcastSink | None = None) -> None:
+
+#: The title as the ``visualize`` tool takes it. Agno validates a
+#: tool call's arguments against the tool's own annotations *before*
+#: the tool body runs, so a plain ``str`` annotation turns the title
+#: into a hard gate on the whole call — over a heading that is
+#: optional to begin with.
+TitleArgument = Annotated[str, BeforeValidator(_title_text)]
+
+
+class VisualizeTools(Toolkit):
+    """Single-method toolkit: ``visualize(spec, title)``."""
+
+    def __init__(self) -> None:
         super().__init__(name="ember_visualize")
-        self._broadcast: BroadcastSink | None = broadcast
-        # Stable id for the FE's card-dedup logic. Regenerated per
-        # toolkit instance, so each sub-agent spawn gets a new one and
-        # doesn't collide with previously-emitted cards.
-        self._spec_id: str = uuid.uuid4().hex[:12]
         self.register(self.visualize)
-
-    def wire(self, broadcast: BroadcastSink) -> None:
-        """Attach or replace the broadcast callable. Used by the
-        orchestrator when it spawns a sub-agent whose tools were built
-        by a session-less path (``AgentPool.build_agent``) and only
-        gain a live broadcast at spawn time."""
-        self._broadcast = broadcast
 
     async def visualize(
         self,
-        spec: dict,
-        title: str = "",
+        spec: SpecArgument,
+        title: TitleArgument = "",
     ) -> str:
         """Render a json-render spec inline in the chat.
 
@@ -79,23 +101,23 @@ class VisualizeTools(Toolkit):
         Args:
             spec: A json-render spec of the form
                 ``{"root": "<id>", "elements": {"<id>": {"type": ..., "props": ..., "children": [...]}}}``.
-                Passed to the FE via the stream interception — no
-                server-side validation; ``@json-render/core``'s
-                ``validateSpec`` / ``Renderer`` fallback handle
-                malformed input.
-            title: Short human-readable title shown above the rendered
-                spec (e.g. ``"AAPL — Monthly Close"``). Optional.
+                Agno validates the tool call's arguments against this
+                annotation *before* the body runs, so the annotation
+                absorbs whatever the model wrote instead of rejecting
+                it — a spec the FE would have drawn must never fail
+                the call. It goes to the FE via the stream
+                interception; ``@json-render/core``'s ``validateSpec``
+                / ``Renderer`` fallback handle malformed input.
+            title: A short label for the card (e.g. ``"AAPL — Monthly
+                Close"``). The FE draws the card's own heading from the
+                spec's components, so this is the label the BE records
+                about the card, not a heading it renders. Optional — a
+                missing title is the empty string, not a failure.
 
         Returns a one-line confirmation so the sub-agent has
         something to recap. Never puts the spec back into the
         model's context — the payload is one-way.
         """
-        # Legacy broadcast path: unused in the tool-arg-streaming
-        # setup (orchestrate.py already emitted a ``final=True``
-        # visualization_delta from the ToolCallStartedEvent), but
-        # kept as a defensive fallback for callers that construct a
-        # VisualizeTools directly without the streaming interceptor
-        # wired up (unit tests, script harnesses).
-        _ = title
-        _ = spec  # noqa: F841 — intentionally unused; see docstring
+        rendered = JsonRenderSpec.absorb(spec)
+        logger.debug("visualize confirmed: %d element(s), title=%r", len(rendered.elements), title)
         return "Emitted visualization."

@@ -108,7 +108,7 @@ async def test_the_backgrounded_command_is_visible_to_the_watcher(tmp_path, supe
 
 def _known(supervisor):
     """(pid, cmd) for everything the watcher would list."""
-    return [(pid, cmd) for pid, cmd, *_ in supervisor.registry.all_known()]
+    return [(row.pid, row.cmd) for row in supervisor.registry.all_known()]
 
 
 async def _stop(supervisor, pid):

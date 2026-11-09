@@ -30,7 +30,6 @@ from igni_core.backend.schemas_processes import (
     StopProcessResult,
 )
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
-from igni_core.core.tools.process_supervisor_locator import supervisors
 
 # Re-export the wire schemas so existing ``from
 # igni_core.backend.server_processes import ProcessRow`` style
@@ -49,14 +48,12 @@ class ProcessesController:
 
     Doesn't hold a session reference because every operation reads
     from a :class:`~igni_core.core.tools.process_supervisor.ProcessSupervisor`
-    — by default the process-wide supervisor from
-    :attr:`~igni_core.core.tools.process_supervisor_locator.supervisors`,
-    but tests can inject a stub via the ``supervisor`` constructor
-    argument.
+    — the one the backend process shares, injected by the controller
+    registry. A test hands it a fresh supervisor for isolation.
     """
 
-    def __init__(self, supervisor: ProcessSupervisor | None = None) -> None:
-        self._supervisor = supervisor or supervisors.default()
+    def __init__(self, supervisor: ProcessSupervisor) -> None:
+        self._supervisor = supervisor
 
     def list(self) -> list[ProcessRow]:
         """Every process the registry knows about, running or finished.
@@ -67,13 +64,13 @@ class ProcessesController:
         """
         return [
             ProcessRow(
-                pid=pid,
-                cmd=cmd,
-                elapsed_seconds=elapsed,
-                is_running=running,
-                exit_code=exit_code,
+                pid=row.pid,
+                cmd=row.cmd,
+                elapsed_seconds=row.elapsed_seconds,
+                is_running=row.is_running,
+                exit_code=row.exit_code,
             )
-            for pid, cmd, elapsed, running, exit_code in self._supervisor.registry.all_known()
+            for row in self._supervisor.registry.all_known()
         ]
 
     def read_tail(self, pid: int, tail: int = 200) -> ProcessTailResult:
@@ -121,8 +118,10 @@ class ProcessesController:
             self._supervisor.registry.remove(pid)
             return StopProcessResult(pid=pid, killed=True, message=f"pid {pid} killed")
         # Live-process path — await the reader task so the final
-        # tail is flushed before the caller reads back.
-        reader = getattr(mp, "_reader_task", None)
+        # tail is flushed before the caller reads back. The task is
+        # part of the tracked-process contract, so this asks the
+        # process rather than reaching for its private slot.
+        reader = mp.reader_task
         if reader is not None:
             with contextlib.suppress(asyncio.TimeoutError, Exception):
                 await asyncio.wait_for(reader, timeout=2.0)

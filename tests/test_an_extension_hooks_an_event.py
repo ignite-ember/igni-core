@@ -19,7 +19,6 @@ import secrets
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
@@ -42,15 +41,17 @@ from igni_core.core.hooks.extension_values import (
 from igni_core.core.hooks.schemas import HookDefinition, HookPayload
 from igni_core.core.hooks.tool_events import PostToolUseFailurePayload, PreToolUsePayload
 from igni_core.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.session.core import Session
 from igni_core.core.session.schemas import PermissionModeSwitch, SessionLifecyclePayload
-from igni_core.core.tools.plan.store import PlanStore
 from igni_core.core.tools.plan.submission import PlanTransactionCoordinator
+from igni_core.core.tools.plan.submit_gate import PlanSubmitGate
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.wire import HookAnswer
 from igni_core.extensions.impact import ExtensionImpact, ImpactHook
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from tests.host_model_helpers import HostRig, manifest
+from tests.session_coordinators import plan_session
 
 CALL = PreToolUseValue(session_id="s-1", tool_name="run_shell_command", tool_args={"command": "ls"})
 
@@ -483,18 +484,31 @@ async def test_a_stop_an_extension_rejects_is_a_stop_hook_block() -> None:
     assert not result.should_continue and result.block_message == "Run the tests."
 
 
-def _plan_session(executor: HookExecutor | None = None) -> MagicMock:
-    session = MagicMock()
-    session.session_id = "s-1"
-    session.plan_store = PlanStore()
-    session.hook_executor = executor or HookExecutor({})
-    return session
+def _plan_session(executor: HookExecutor | None = None) -> Session:
+    """A session the plan transactions can work against.
+
+    The stand-in carries the collaborators the transactions read: the
+    plan store, the todo store, the broadcast bus, the hook executor
+    and the id. The mode switch is answered here too — the enter
+    transaction flips it.
+    """
+    return plan_session(
+        hook_executor=executor or HookExecutor({}),
+        set_permission_mode=lambda mode: PermissionModeSwitch(text=mode),
+    )
+
+
+def _plan_coordinator(session: Session) -> PlanTransactionCoordinator:
+    """A coordinator over the process's extension gate, so the
+    :class:`Gate` installed by a test answers the ``PlanSubmit``
+    question."""
+    return PlanTransactionCoordinator(session, gate=PlanSubmitGate(extension_hook_gate))
 
 
 async def test_a_rejected_plan_goes_back_to_the_agent_and_counts_as_an_attempt() -> None:
     gate = Gate(_no("Cite two files."))
     session = _plan_session()
-    coordinator = PlanTransactionCoordinator(session)
+    coordinator = _plan_coordinator(session)
 
     first = await coordinator.submit(plan="Do it.", tasks=None)
     second = await coordinator.submit(plan="Do it.", tasks=None)
@@ -514,7 +528,7 @@ async def test_a_changed_plan_is_the_one_the_person_sees() -> None:
     )
     session = _plan_session()
 
-    result = await PlanTransactionCoordinator(session).submit(plan="Do it.", tasks=None)
+    result = await _plan_coordinator(session).submit(plan="Do it.", tasks=None)
 
     assert result.ok
     assert session.plan_store.latest == "Do it.\n\nChecked."
@@ -534,7 +548,7 @@ async def test_a_configured_plan_submit_hook_can_reject_a_plan_too() -> None:
     )
     session = _plan_session(executor)
 
-    result = await PlanTransactionCoordinator(session).submit(plan="Do it.", tasks=None)
+    result = await _plan_coordinator(session).submit(plan="Do it.", tasks=None)
 
     assert not result.ok and result.reply_text == "Plan rejected: Too short."
     assert session.plan_store.rejected == 1
@@ -542,10 +556,10 @@ async def test_a_configured_plan_submit_hook_can_reject_a_plan_too() -> None:
 
 async def test_entering_plan_mode_starts_the_attempts_again() -> None:
     session = _plan_session()
-    session.set_permission_mode = MagicMock(return_value=PermissionModeSwitch(text="plan"))
-    session.plan_store.rejected = 2
+    session.plan_store.record_rejection()
+    session.plan_store.record_rejection()
 
-    await PlanTransactionCoordinator(session).enter(reason="", task="")
+    await _plan_coordinator(session).enter(reason="", task="")
 
     assert session.plan_store.rejected == 0
 

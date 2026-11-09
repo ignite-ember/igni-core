@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from igni_core.core.tools.process_registry import ProcessRegistry
 from igni_core.core.tools.sleep_blocker import SleepBlocker
+from tests.process_fakes import FakeTrackedProcess
 
 
 class _FakeBlocker(SleepBlocker):
@@ -44,20 +45,14 @@ class _FakeBlocker(SleepBlocker):
         self.depth -= 1
 
 
-class _FakeProc:
-    def __init__(self, pid: int) -> None:
-        self.pid = pid
-        self.returncode = 0
+def _FakeManaged(pid: int) -> FakeTrackedProcess:
+    """A tracked process the registry can hold.
 
-
-class _FakeManaged:
-    def __init__(self, pid: int) -> None:
-        self.proc = _FakeProc(pid)
-        self.cmd = f"sleep {pid}"
-        self.started_at = 0.0
-
-    def read(self, tail: int = 40) -> str:
-        return ""
+    The registry reads the command off it when it announces the start
+    and the elapsed time when it reports the completion, so the fake
+    answers both.
+    """
+    return FakeTrackedProcess(pid=pid, cmd=f"sleep {pid}", returncode=0)
 
 
 def _registry(blocker):

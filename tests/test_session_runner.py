@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from igni_core.core.session.runner import run_single_message
+from igni_core.core.tools.plan.store import PlanStore
 
 
 def _make_mock_session():
@@ -27,6 +28,11 @@ def _make_mock_session():
     mock_session.hook_executor.execute = AsyncMock()
     mock_session.handle_message = AsyncMock(return_value="Hello!")
     mock_session.display = MagicMock()
+    # A real session always carries a plan store — it is what
+    # ``exit_plan_mode`` writes to — and the run reads the last plan
+    # from it. A MagicMock's auto-attribute would answer with a mock
+    # instead of a plan.
+    mock_session.plan_store = PlanStore()
     return mock_session
 
 

@@ -14,11 +14,16 @@ the session.
 
 from __future__ import annotations
 
+from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.compaction import CompactionCoordinator, TeamSessionSource
 from igni_core.core.session.core import Session
+from igni_core.core.session.identity import SessionIdentity
 from igni_core.core.session.output_style_selection import OutputStyleSelection
 from igni_core.core.session.plan_ops import PlanCoordinator, PlanDeps
 from igni_core.core.session.state_ops import RuntimeModeCoordinator, RuntimeModeDeps
+from igni_core.core.tools.plan import PlanStore
+from igni_core.core.tools.todo import TodoStore
 
 
 def wire_coordinators(session: Session) -> Session:
@@ -65,3 +70,29 @@ def compaction_over(stub) -> CompactionCoordinator:
         hook_executor_ref=lambda: stub.hook_executor,
         rebuild_team=lambda: stub.rebuild_main_team(),
     )
+
+
+def plan_session(**attrs: object) -> Session:
+    """A session stand-in with the collaborators the plan tool needs.
+
+    The plan transactions read the session's plan store, todo store,
+    broadcast bus, hook executor and id — all construction invariants
+    of a real session. The stand-in carries the same ones, so the tool
+    meets a session and not a shape it has to guess at. Attributes
+    passed in override the defaults.
+    """
+    session = Session.__new__(Session)
+    session.plan_store = PlanStore()
+    session.todo_store = TodoStore()
+    session.broadcast_bus = BroadcastBus()
+    session.hook_executor = HookExecutor({})
+    session.identity = SessionIdentity(
+        session_id="test-session",
+        session_named=False,
+        user_id="tester",
+        main_team_ref=lambda: None,
+        persistence_ref=lambda: None,
+    )
+    for name, value in attrs.items():
+        setattr(session, name, value)
+    return session

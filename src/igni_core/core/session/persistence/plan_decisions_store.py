@@ -8,9 +8,8 @@ paths.
 Rule 1 fix: the store's ``save`` takes ONLY the typed
 :class:`PlanDecisionsBlob`; the legacy ``dict[str, str]`` branch
 that used to live in ``SessionPersistence.save_plan_decisions``
-is gone. The :class:`SessionPersistence` facade converts raw dicts
-to a :class:`PlanDecisionsBlob` at its own boundary so legacy
-callers (tests, backend flows) keep working without change.
+is gone, and so is the facade's raw-dict conversion — the blob
+crosses the whole boundary typed.
 """
 
 from __future__ import annotations

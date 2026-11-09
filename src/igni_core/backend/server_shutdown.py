@@ -34,7 +34,6 @@ from igni_core.backend.schemas_lifecycle import (
     ShutdownResult,
 )
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.tools.shell import IgniShellTools
 
 if TYPE_CHECKING:
     from igni_core.core.session import Session
@@ -129,7 +128,9 @@ class ShellCleanupStep(ShutdownStep):
     label: ClassVar[str] = "shell_cleanup"
 
     async def _run(self, session: Session, result: ShutdownResult) -> None:
-        killed = IgniShellTools.cleanup()
+        # The session's supervisor — the one the backend process
+        # shares — holds every process the shell tools registered.
+        killed = session.supervisor.registry.kill_all()
         result.record_shell_kills(killed)
         if killed:
             logger.info("Shutdown: killed %d background process(es)", killed)

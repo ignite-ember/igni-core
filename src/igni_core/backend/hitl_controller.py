@@ -137,7 +137,9 @@ class HitlController:
         and the run's auto-resolved requirements join them."""
         batch = ResolvedBatch()
         for d in decisions:
-            if self._session.sub_agent_hitl.resolve(d.requirement_id, d.action):
+            # The wire carries the action as a plain string; the
+            # coordinator reads it as the domain action it names.
+            if self._session.sub_agent_hitl.resolve(d.requirement_id, msg.HITLAction(d.action)):
                 # Sub-agent coordinator owns this req — drop any
                 # main-team entry under the same id.
                 self._store.pop(d.requirement_id)

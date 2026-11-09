@@ -17,13 +17,11 @@ Three events; the discriminator field is ``type``:
 ``EventType`` moved here from ``process_bus.py`` so the bus and the
 payload models share one source of truth.
 
-Subscribers receive a :class:`ProcessEvent` — the tagged union — and
-can either branch on ``event.type`` or access typed fields via
-``pattern matching``. Legacy subscribers written against the dict
-payload keep working: :class:`~igni_core.core.tools.process_bus.ProcessEventBus`
-still hands off a mapping-shaped view because the models are plain
-:class:`pydantic.BaseModel` instances (see the bus's ``emit`` path
-for details on the dict-emit shim).
+Subscribers receive the event model itself, never a mapping:
+:class:`~igni_core.core.tools.process_bus.ProcessEventBus` routes on
+the ``type`` discriminator, so the callback registered for ``"line"``
+is handed a :class:`ProcessLineEvent` and can read its fields
+directly.
 """
 
 from __future__ import annotations
@@ -93,16 +91,23 @@ ProcessEvent = Annotated[
 ]
 
 
-# Typed subscriber contract. Lives here (next to the payload
+# Typed subscriber contracts. They live here (next to the payload
 # models) rather than in ``shell.py`` per the OOP audit's
 # data-and-behavior-together finding — the callback contract
 # belongs alongside the discriminated union it consumes.
 #
-# NOTE: :class:`igni_core.core.tools.process_bus.ProcessEventBus`
-# currently normalises typed events to ``dict`` before firing
-# subscribers (a wire-compat shim retained for the legacy
-# push-bridge handlers that read fields via ``info["pid"]``).
-# New subscribers should still accept ``dict`` at runtime; the
-# alias here documents the intended payload SHAPE and lets tools
-# like mypy narrow on it once the dict-emit shim is removed.
+# ``ProcessEventCallback`` is the union-wide shape: every event the
+# bus can fire. The per-event aliases are the narrow shapes —
+# :class:`~igni_core.core.tools.process_bus.ProcessEventBus` binds
+# them to the event names through its overloads, so a subscriber
+# that reads ``event.pid`` and ``event.line`` is typed for exactly
+# the event it registered against.
+#
+# The bus stores subscribers under the union-wide shape. That is
+# sound because the bus routes on the payload's own ``type``
+# discriminator: the callback registered for ``"start"`` only ever
+# sees a ``ProcessStartEvent``.
 ProcessEventCallback = Callable[[ProcessEvent], None]
+StartSubscriber = Callable[[ProcessStartEvent], None]
+LineSubscriber = Callable[[ProcessLineEvent], None]
+ExitSubscriber = Callable[[ProcessExitEvent], None]

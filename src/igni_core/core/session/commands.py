@@ -4,6 +4,12 @@
 :class:`CommandHandler` and routes each :class:`CommandResult` through
 a per-action method table. TUI-only actions (sessions picker, model
 picker, MCP panel, login widget) get plain-text equivalents.
+
+The text those equivalents print lives here rather than in the command
+modules, which load when the command runs: the headless runner
+(:class:`~igni_core.core.session.single_message_run.SingleMessageRun`)
+prints the same words, and it must not pull a command module in to get
+them.
 """
 
 from __future__ import annotations
@@ -21,6 +27,19 @@ from igni_core.protocol.messages import CommandAction, CommandResultKind
 #: for the action that ends the REPL.
 ActionRenderer = Callable[[CommandResult], Awaitable[None]]
 
+#: What a bare ``/login`` says. It pointed at a TUI and a ``--no-tui``
+#: flag that were both removed in v0.9.7, so the one hint a person got
+#: on the command line named nothing they could run. The login action
+#: itself is carried out by the clients (a browser and a callback), so
+#: this text is all that either the dispatcher or a headless run has to
+#: print.
+LOGIN_HINT = (
+    "Signing in is its own command: run `igni login` (it prints the portal "
+    "address and waits for the browser), or `igni login --token-stdin` with "
+    "a token. Set `api_url` in ~/.igni/config.yaml first. The desktop app and "
+    "the IDE extensions sign in to the same ~/.igni/credentials.json."
+)
+
 
 class InteractiveCommandDispatcher:
     """Runs slash commands for the plain-text (--no-tui) REPL.
@@ -31,16 +50,6 @@ class InteractiveCommandDispatcher:
     interactive widgets in the TUI (sessions picker, model
     picker, MCP panel, login) get plain-text equivalents here.
     """
-
-    #: What ``igni -m /login`` says. It pointed at a TUI and a ``--no-tui``
-    #: flag that were both removed in v0.9.7, so the one hint a person got
-    #: on the command line named nothing they could run.
-    LOGIN_HINT = (
-        "Signing in is its own command: run `igni login` (it prints the portal "
-        "address and waits for the browser), or `igni login --token-stdin` with "
-        "a token. Set `api_url` in ~/.igni/config.yaml first. The desktop app and "
-        "the IDE extensions sign in to the same ~/.igni/credentials.json."
-    )
 
     def __init__(
         self,
@@ -128,7 +137,7 @@ class InteractiveCommandDispatcher:
         self.session.display.print_markdown(help_overview())
 
     async def _render_login(self, result: CommandResult) -> None:
-        self.session.display.print_info(self.LOGIN_HINT)
+        self.session.display.print_info(LOGIN_HINT)
 
     async def _render_sessions(self, result: CommandResult) -> None:
         """List past sessions as text (no interactive picker)."""

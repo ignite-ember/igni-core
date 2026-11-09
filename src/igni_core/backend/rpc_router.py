@@ -102,7 +102,10 @@ class RpcRouter:
         # warm ``FileIndex`` instead of sharing one across sessions
         # (a stale index would list files from the wrong project).
         file_completion = FileCompletionService(project_dir=backend.project_dir)
-        shell_runner = CapturedShellRunner(project_dir=backend.project_dir)
+        shell_runner = CapturedShellRunner(
+            project_dir=backend.project_dir,
+            supervisor=backend.supervisor,
+        )
         self._workflows = WorkflowRunner.for_project(project_dir=backend.project_dir, push=push)
 
         ctx = RpcHandlerContext(

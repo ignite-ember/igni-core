@@ -138,11 +138,11 @@ class SessionCommand:
         first run completes).
         """
         name = args.strip() or None
-        try:
-            new_id = await self._session.persistence.fork(name=name)
-        except Exception as exc:
-            logger.warning("/fork failed: %s", exc)
-            return CommandResult.error(f"Fork failed: {exc}")
+        result = await self._session.persistence.fork(name=name)
+        if not result.ok:
+            logger.warning("/fork failed: %s", result.error)
+            return CommandResult.error(f"Fork failed: {result.error or 'unknown error'}")
+        new_id = result.new_session_id
         # Re-bind every component that holds the active session id
         # so the next user turn lands in the fork, not the source.
         self._session.rotate_id(new_id)

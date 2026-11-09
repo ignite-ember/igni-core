@@ -27,8 +27,8 @@ Architecture (post-refactor):
 
 This module has ONE responsibility: the Agno toolkit. Callers that
 need cross-process state (subscribing to the bus, poking the
-registry, reaching for the singleton) should import directly from
-:mod:`igni_core.core.tools.process_supervisor` /
+registry, reaching for the shared supervisor) should import directly
+from :mod:`igni_core.core.tools.process_supervisor` /
 :mod:`igni_core.core.tools.managed_process` /
 :mod:`igni_core.core.tools.process_events`.
 """
@@ -44,7 +44,6 @@ from agno.tools import Toolkit
 
 from igni_core.core.tools.managed_process import ManagedProcess
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
-from igni_core.core.tools.process_supervisor_locator import supervisors
 from igni_core.core.tools.shell_config import ShellToolsConfig
 from igni_core.core.tools.tool_result import LLMResultBuffer
 
@@ -79,7 +78,7 @@ class IgniShellTools(Toolkit):
         *,
         base_dir: str | Path | None = None,
         requires_confirmation_tools: list[str] | None = None,
-        supervisor: ProcessSupervisor | None = None,
+        supervisor: ProcessSupervisor,
     ) -> None:
         """Build the toolkit.
 
@@ -88,11 +87,13 @@ class IgniShellTools(Toolkit):
         is kept so legacy call sites (registry.py, tests) work
         unchanged; they build a config internally.
 
-        ``supervisor`` is injected for test isolation — pass a fresh
-        :class:`ProcessSupervisor` and every tool call routes through
-        it. In production, the constructor defaults to the process-
-        wide supervisor via :attr:`supervisors` so all shell tool
-        instances share one registry (one BE = one watcher panel).
+        ``supervisor`` is the supervisor the tool's processes are
+        registered on. It is required: the backend hands every toolkit
+        the supervisor the process shares (one BE = one watcher
+        panel), and a test hands it a fresh
+        :class:`ProcessSupervisor` for isolation. Nothing is looked
+        up implicitly, so a toolkit can never end up talking to a
+        supervisor nobody asked for.
         """
         if config is None:
             config = ShellToolsConfig(
@@ -102,7 +103,7 @@ class IgniShellTools(Toolkit):
         super().__init__(name=config.name)
         self._config = config
         self.base_dir: Path | None = config.base_dir
-        self._supervisor = supervisor or supervisors.default()
+        self._supervisor = supervisor
         self._result_buffer = LLMResultBuffer()
         self.register(self.run_shell_command)
         self.register(self.read_process_output)
@@ -393,11 +394,15 @@ class IgniShellTools(Toolkit):
             return "No background processes running."
 
         lines = ["PID    | Elapsed | Command", "-------+---------+--------"]
-        for pid, cmd, elapsed in running:
-            lines.append(f"{pid:<6} | {elapsed:>5.0f}s  | {cmd}")
+        for row in running:
+            lines.append(f"{row.pid:<6} | {row.elapsed_seconds:>5.0f}s  | {row.cmd}")
         return "\n".join(lines)
 
-    @staticmethod
-    def cleanup() -> int:
-        """Kill all tracked processes. Called on session shutdown."""
-        return supervisors.default().registry.kill_all()
+    def cleanup(self) -> int:
+        """Kill every process tracked on this toolkit's supervisor.
+
+        Called on shutdown. The supervisor is the one the toolkit was
+        built with, so a toolkit that was handed an isolated
+        supervisor only kills that supervisor's processes.
+        """
+        return self._supervisor.registry.kill_all()

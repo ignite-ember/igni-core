@@ -40,6 +40,7 @@ from igni_core.core.auth.portal_client import PortalClient
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.group_policy.meta import PackMetaStore
 from igni_core.core.config.models import ModelRegistry
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 if TYPE_CHECKING:
     from igni_core.core.config.settings import Settings
@@ -123,15 +124,23 @@ class ControllerRegistry:
         user_config_store: Any,
         hitl_tracer: HITLTracer | None,
         message_queue: DurableMessageQueue | None,
+        supervisor: ProcessSupervisor,
     ) -> Controllers:
-        """Full production wiring — every controller built eagerly."""
+        """Full production wiring — every controller built eagerly.
+
+        ``supervisor`` is the supervisor the backend process shares —
+        the registry the watcher panel reads and the foreground slot
+        the cancel path kills. It is injected rather than looked up,
+        so every controller of one backend process talks to the same
+        one.
+        """
         # ── Foundation controllers (session-only deps) ──────────────
         mcp = McpController(session)
         files = FilesController(session)
         search = SearchController(session)
         panels = PanelsController(session)
-        processes = ProcessesController()
-        rehydrate = RehydrateController(session)
+        processes = ProcessesController(supervisor)
+        rehydrate = RehydrateController(session, supervisor)
         plan_snapshots = PlanSnapshotBuilder(session)
         viz_actions = VisualizationActionBus(session)
         team_wiring = TeamWiring(session)
@@ -151,6 +160,7 @@ class ControllerRegistry:
             pending_store=pending_store,
             message_queue=message_queue,
             stream_factory=hitl.stream_with_subagent,
+            supervisor=supervisor,
         )
 
         # Context needs pending_store for the crash-survival RPC.

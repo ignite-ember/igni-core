@@ -35,6 +35,8 @@ from igni_core.core.session.event_log_schema import (
     SessionEventKind,
 )
 from igni_core.core.session.schemas import PersistResult
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
@@ -88,7 +90,13 @@ class BackendServer:
         additional_dirs: list[Path] | None = None,
         contributions: PromptContributions | None = None,
         prompt_loader: PromptLoader | None = None,
+        supervisors: SupervisorLocator | None = None,
     ):
+        # The supervisor this backend process shares. The backend's
+        # composition root builds one locator per process and hands it
+        # here; a server built on its own gets a locator of its own,
+        # with its own supervisor.
+        self._supervisors = supervisors if supervisors is not None else SupervisorLocator()
         bootstrap = BackendBootstrap(
             settings=settings,
             project_dir=project_dir,
@@ -96,6 +104,7 @@ class BackendServer:
             additional_dirs=additional_dirs,
             contributions=contributions,
             prompt_loader=prompt_loader,
+            supervisor=self._supervisors.supervisor,
         )
         controllers = ControllerRegistry.build(
             session=bootstrap.session,
@@ -106,6 +115,7 @@ class BackendServer:
             user_config_store=bootstrap.user_config_store,
             hitl_tracer=bootstrap.hitl_tracer,
             message_queue=bootstrap.message_queue,
+            supervisor=self._supervisors.supervisor,
         )
         self._adopt(bootstrap.session, bootstrap.settings, controllers, bootstrap.message_queue)
 
@@ -117,14 +127,22 @@ class BackendServer:
         settings: Settings,
         controllers: Controllers,
         message_queue: DurableMessageQueue | None,
+        supervisors: SupervisorLocator,
     ) -> BackendServer:
         """Assemble a server from collaborators that are already built.
 
         The only alternate constructor: it skips :class:`BackendBootstrap`
         (tests supply their own session and stores) and goes through the
         same :meth:`_adopt` as :meth:`__init__`.
+
+        ``supervisors`` is required, and it is the same handle
+        :meth:`__init__` takes: the caller that built the controllers
+        passes the locator it built them with. A default would let the
+        server talk to one supervisor and its controllers to another —
+        the watcher panel would then read a registry nothing writes to.
         """
         server = cls.__new__(cls)
+        server._supervisors = supervisors
         server._adopt(session, settings, controllers, message_queue)
         return server
 
@@ -176,6 +194,23 @@ class BackendServer:
     @property
     def settings(self) -> Settings:
         return self._settings
+
+    @property
+    def supervisors(self) -> SupervisorLocator:
+        """The handle on the supervisor this backend process shares.
+
+        The composition root builds one per backend process and hands
+        it to every object that outlives a single session — the server
+        and the pool wiring. A caller that assembles a server from
+        parts it built itself passes the same locator back to
+        :meth:`from_parts`.
+        """
+        return self._supervisors
+
+    @property
+    def supervisor(self) -> ProcessSupervisor:
+        """The supervisor this backend process shares."""
+        return self._supervisors.supervisor
 
     @property
     def run_timeout(self) -> int:

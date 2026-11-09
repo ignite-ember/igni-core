@@ -144,6 +144,7 @@ from igni_core.core.skills.loader import SkillPool
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
 from igni_core.core.tools.plan import PlanStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.todo import TodoStore
 from igni_core.core.utils.audit import AuditLogger
@@ -168,8 +169,15 @@ class Session:
         additional_dirs: list[Path] | None = None,
         contributions: PromptContributions | None = None,
         prompt_loader: PromptLoader | None = None,
+        supervisor: ProcessSupervisor | None = None,
     ):
         self.settings = settings
+
+        #: The supervisor this session's shell toolkits run on. The
+        #: backend hands the session the supervisor the process shares
+        #: (one BE = one watcher panel); a session built on its own
+        #: gets a supervisor of its own.
+        self._supervisor = supervisor if supervisor is not None else ProcessSupervisor()
 
         #: What extensions have done to the prompts. Injected: the
         #: backend hands the session the process-wide table, so every
@@ -454,7 +462,10 @@ class Session:
     def _init_agent_and_skill_pools(self, settings: Settings) -> None:
         """The agent and skill pools from the current plugin set."""
         self.pool = AgentPool(
-            db=self.db, broadcast=self.broadcast, prompt_loader=self._prompt_loader
+            db=self.db,
+            broadcast=self.broadcast,
+            prompt_loader=self._prompt_loader,
+            supervisor=self._supervisor,
         )
         self.pool.load_definitions(
             settings,
@@ -489,7 +500,8 @@ class Session:
     def _check_agent_tools(self) -> UnresolvedAgentTools:
         try:
             return UnresolvedAgentTools.check(
-                self.pool.list_agents(), ToolRegistry(base_dir=str(self.project_dir))
+                self.pool.list_agents(),
+                ToolRegistry(base_dir=str(self.project_dir), supervisor=self._supervisor),
             )
         except Exception as exc:  # noqa: BLE001 — a diagnostic must not stop a start
             logger.debug("Could not check agent tools: %s", exc)
@@ -566,6 +578,17 @@ class Session:
         self.hooks_map: dict[str, list[HookDefinition]] = self.hooks.hooks_map
 
     # ── Cloud auth accessors (forward to SessionCloudAuth) ─────
+
+    @property
+    def supervisor(self) -> ProcessSupervisor:
+        """The supervisor this session's shell toolkits run on.
+
+        The backend hands the session the supervisor the backend
+        process shares, so the watcher panel lists every background
+        command the process started — this session's and its
+        sub-agents'.
+        """
+        return self._supervisor
 
     @property
     def cloud_connected(self) -> bool:

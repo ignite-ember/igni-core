@@ -1,7 +1,7 @@
 """Pydantic wire/data models for the web-tool subsystem.
 
 Extracted from :mod:`web` per the sibling schemas convention
-(mirrors :mod:`custom_loader_schemas`, :mod:`shell_orphan_schemas`,
+(mirrors :mod:`custom_loader_schemas`, :mod:`orphan_schemas`,
 and :mod:`process_store_schemas` in this exact directory). Every
 config / result model the web-fetching stack hands across a module
 boundary lives here so Rule 1 stays discoverable at one path.
