@@ -1,7 +1,8 @@
 """What one extension's sandbox lets through, decided once, OS-independent.
 
 :class:`SandboxPlan` is the grant list the platform profiles
-(:mod:`.seatbelt`, :mod:`.bubblewrap`) are written from:
+(:mod:`.seatbelt`, :mod:`.bubblewrap`, :mod:`.appcontainer`) are written
+from:
 
 * **files it may read** — its bundle (the install dir, its assets
   included), its Python environment and the interpreter that
@@ -18,7 +19,8 @@
   its ``permissions.egress``, narrowed to the network's own hosts when
   air-gapped.
 * **loopback ports** igni serves it on — the host channel and the token
-  endpoint — which a process in a network namespace needs bridged in.
+  endpoint — which a process in a network namespace (Linux) or an
+  AppContainer (Windows) needs bridged in.
 """
 
 from __future__ import annotations
@@ -181,13 +183,13 @@ class SandboxPlan:
             path = Path(found)
         out: list[Path] = []
         for exe in dict.fromkeys([path, _real(path)]):
-            prefix = exe.parent.parent
+            prefix = _prefix(exe)
             cfg = prefix / "pyvenv.cfg"
             if cfg.is_file():
                 out += _both(prefix)
                 home = _pyvenv_home(cfg)
                 if home is not None:
-                    out += _both(home.parent)
+                    out += _both(_home_prefix(home))
             else:
                 out += _both(prefix)
         return _dedupe(out)
@@ -239,6 +241,28 @@ class SandboxPlan:
             if parts.hostname and NetworkPolicy.is_loopback(parts.hostname) and port:
                 ports.append(port)
         self.loopback_ports = list(dict.fromkeys(ports))
+
+
+def _prefix(exe: Path) -> Path:
+    """The tree an executable belongs to.
+
+    ``<prefix>/bin/tool``, and a Windows virtual environment's
+    ``<prefix>\\Scripts\\python.exe``: the directory above.
+    A Windows interpreter's own ``python.exe`` sits in its prefix, with
+    no ``bin``: the directory it is in — never the drive above it.
+    """
+    if exe.parent.name.lower() in ("bin", "scripts") or exe.suffix.lower() != ".exe":
+        return exe.parent.parent
+    return exe.parent
+
+
+def _home_prefix(home: Path) -> Path:
+    """The interpreter tree a ``pyvenv.cfg`` ``home`` names.
+
+    ``<prefix>/bin`` on macOS and Linux; on Windows the prefix itself,
+    the directory ``python.exe`` is in.
+    """
+    return home.parent if home.name == "bin" else home
 
 
 def _pyvenv_home(cfg: Path) -> Path | None:

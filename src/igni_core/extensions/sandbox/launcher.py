@@ -19,11 +19,19 @@ What the process sees changes in four ways, all in its environment:
   ``TEMP``, Java's ``java.io.tmpdir`` through ``JAVA_TOOL_OPTIONS``) its
   run's temp directory — the person's home is not readable, and a tool
   that finds its config there would fail rather than start empty.
-* ``IGNI_SANDBOX`` names the sandbox (``seatbelt``, ``bubblewrap``).
+* ``IGNI_SANDBOX`` names the sandbox (``seatbelt``, ``bubblewrap``,
+  ``appcontainer``).
+
+On Windows also ``USERPROFILE``, ``APPDATA`` and ``LOCALAPPDATA`` are
+inside the run's home, and the proxy's and igni's loopback URLs are
+rewritten once more inside the sandbox, to ports of its own
+(:mod:`.winbridge`).
 
 Per platform: macOS uses Seatbelt (:mod:`.seatbelt`), Linux bubblewrap
-(:mod:`.bubblewrap`), and Windows nothing yet. Where there is no sandbox
-the process runs as before, with a warning in the log and on the
+(:mod:`.bubblewrap`), Windows an AppContainer of the run's own in a job
+object (:mod:`.appcontainer`). Where there is no sandbox — Linux without
+a usable ``bwrap``, Windows older than 10, igni itself already inside a
+sandbox — the process runs as before, with a warning in the log and on the
 extension (:attr:`Confinement.reason`), unless ``extensions.require_sandbox``
 is set, which refuses it (:class:`SandboxRefused`). ``extensions.sandbox:
 false`` turns all of this off for development
@@ -32,6 +40,7 @@ false`` turns all of this off for development
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import secrets
@@ -47,6 +56,7 @@ from igni_core.core.mcp.config import MCPServerConfig, MCPTransport
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.permissions import PermissionDenied
+from igni_core.extensions.sandbox.appcontainer import RUN_DIR_PREFIX, AppContainer, ContainerRun
 from igni_core.extensions.sandbox.bubblewrap import PROXY_PORT, Bubblewrap
 from igni_core.extensions.sandbox.plan import SandboxPlan
 from igni_core.extensions.sandbox.proxy import Connector, EgressProxy, LoopbackRelay
@@ -73,7 +83,7 @@ class Confinement:
     """How one extension's process runs: confined, or not and why."""
 
     extension_id: str
-    #: ``seatbelt`` or ``bubblewrap``; empty when it runs unconfined.
+    #: ``seatbelt``, ``bubblewrap`` or ``appcontainer``; empty when it runs unconfined.
     mechanism: str = ""
     #: Why it runs unconfined; empty when confined.
     reason: str = ""
@@ -83,6 +93,8 @@ class Confinement:
     plan: SandboxPlan | None = None
     proxy: EgressProxy | None = None
     relays: list[LoopbackRelay] = field(default_factory=list)
+    #: Windows: the run's AppContainer and what it was granted, to undo.
+    container: ContainerRun | None = None
 
     @property
     def confined(self) -> bool:
@@ -106,6 +118,7 @@ class ExtensionSandbox:
         platform: str | None = None,
         connect: Connector | None = None,
         run_root: Path | None = None,
+        appcontainer: AppContainer | None = None,
     ) -> None:
         """
         Args:
@@ -116,12 +129,15 @@ class ExtensionSandbox:
                 simulate a machine with no sandbox.
             connect: How the proxy opens an upstream connection (tests).
             run_root: Where run directories go; the system temp dir.
+            appcontainer: Windows' sandbox (tests pass one with fake
+                Win32 calls).
         """
         self._settings = settings if settings is not None else SandboxSettings.load()
         self._network = network or NetworkPolicy()
         self._platform = platform or sys.platform
         self._connect = connect
         self._run_root = run_root
+        self._appcontainer = appcontainer or AppContainer()
         self._probed: tuple[str, str] | None = None
         self._runs: dict[str, Confinement] = {}
 
@@ -162,8 +178,9 @@ class ExtensionSandbox:
         if self._platform.startswith("linux"):
             reason = await Bubblewrap.probe()
             return ("bubblewrap", "") if reason is None else ("", reason)
-        if self._platform in ("win32", "cygwin"):
-            return "", "extension processes are not sandboxed on Windows yet"
+        if self._platform == "win32":
+            reason = await self._appcontainer.probe()
+            return ("appcontainer", "") if reason is None else ("", reason)
         return "", f"no sandbox for {self._platform}"
 
     # ── the one entry point ────────────────────────────────────────
@@ -219,7 +236,7 @@ class ExtensionSandbox:
             return config
 
         run_dir = Path(
-            tempfile.mkdtemp(prefix=f"igni-ext-{_safe(manifest.id)}-", dir=self._run_root)
+            tempfile.mkdtemp(prefix=f"{RUN_DIR_PREFIX}{_safe(manifest.id)}-", dir=self._run_root)
         ).resolve()
         try:
             return await self._wrap(
@@ -294,6 +311,17 @@ class ExtensionSandbox:
             granted = {port, *plan.loopback_ports}
             plan.denied_ports = sorted((await Seatbelt.listening_ports()) - granted)
             command, args = Seatbelt.command(plan, config.command or "", list(config.args or []))
+        elif mechanism == "appcontainer":
+            port = await proxy.start_tcp()
+            run.container, command, args = await asyncio.to_thread(
+                self._appcontainer.start,
+                plan,
+                config.command or "",
+                list(config.args or []),
+                cwd=cwd,
+                forwards=[port, *plan.loopback_ports],
+            )
+            env.update(AppContainer.environment(plan))
         else:
             Bubblewrap.socket_dir(plan).mkdir(mode=0o700, exist_ok=True)
             await proxy.start_unix(Bubblewrap.proxy_socket(plan))
@@ -348,6 +376,11 @@ class ExtensionSandbox:
         for relay in run.relays:
             with contextlib.suppress(Exception):
                 await relay.stop()
+        if run.container is not None:
+            # Its entries come off the person's files before its run
+            # directory goes; a failure stays in the ledger for the next start.
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(self._appcontainer.stop, run.container)
         if run.plan is not None and run.plan.run_dir is not None:
             shutil.rmtree(run.plan.run_dir, ignore_errors=True)
 
