@@ -542,6 +542,28 @@ def test_the_bridge_reads_its_arguments_and_refuses_what_it_does_not_know():
         winbridge.parse_forward("3128=/tmp/not-a-pipe")
 
 
+def test_the_shim_puts_back_where_the_run_keeps_its_files():
+    """Windows points TEMP, TMP and LOCALAPPDATA of a process it starts in
+    an AppContainer at the container's own folder; the runner hands igni's
+    values to the shim, which puts them back."""
+    told = {
+        "TEMP": "C:\\run\\tmp",
+        "LOCALAPPDATA": "C:\\run\\tmp\\home\\AppData\\Local",
+        "PATH": "x",
+    }
+    kept = winbridge.kept_env(told)
+    assert kept == {"TEMP": "C:\\run\\tmp", "LOCALAPPDATA": told["LOCALAPPDATA"]}
+    argv = winbridge.shim_argv("py", "wb.py", [], ["x"], kept)
+    _, options, _ = winbridge.parse_args(argv[3:])
+    substituted = {"TEMP": "C:\\Users\\p\\AppData\\Local\\Packages\\igni.x\\AC\\Temp", "PATH": "y"}
+    restored = winbridge.restore_env(substituted, options["--setenv"])
+    assert restored["TEMP"] == "C:\\run\\tmp"
+    assert restored["LOCALAPPDATA"] == told["LOCALAPPDATA"]
+    assert restored["PATH"] == "y"  # only the run's file locations
+    with pytest.raises(ValueError):
+        winbridge.restore_env({}, ["PATH=C:\\evil"])
+
+
 def test_the_shim_runs_igni_s_python_isolated_with_the_same_pipes():
     argv = winbridge.shim_argv(
         "C:\\py\\python.exe",
@@ -678,7 +700,7 @@ attempt("write_outside", lambda: (outside / name).write_text("x") and "written")
 attempt("write_workspace", lambda: (workspace / name).write_text("x") and "written")
 attempt("write_data", lambda: (Path(os.environ["IGNI_EXTENSION_DATA"]) / name).write_text("x") and "written")
 attempt("write_tmp", lambda: (Path(os.environ["TEMP"]) / name).write_text("x") and "written")
-out["env"] = {k: os.environ.get(k, "") for k in ("IGNI_SANDBOX", "HTTP_PROXY", "USERPROFILE", "IGNI_HOST_URL")}
+out["env"] = {k: os.environ.get(k, "") for k in ("IGNI_SANDBOX", "HTTP_PROXY", "USERPROFILE", "IGNI_HOST_URL", "TEMP", "TMP", "APPDATA", "LOCALAPPDATA")}
 print(json.dumps(out), flush=True)
 """
 
@@ -766,6 +788,8 @@ class Rig:
 
     async def run(self, m: ExtensionManifest) -> dict:
         wrapped, env = await self.confine(m, "probe")
+        #: What igni told the process, to compare with what it saw.
+        self.told = dict(wrapped.env or {})
         proc = await asyncio.create_subprocess_exec(
             wrapped.command,
             *(wrapped.args or []),
@@ -785,6 +809,7 @@ async def test_on_windows_the_process_is_held_to_its_grants(tmp_path, upstream):
         seen = await rig.run(manifest(workspace="write", egress=["allowed.test:8080"]))
         sandbox_status = rig.sandbox.status("acme.probe")
         assert sandbox_status is not None and sandbox_status.mechanism == "appcontainer"
+        told = rig.told
     # Network: the declared host through the proxy, nothing directly.
     assert seen["allowed_via_proxy"] == ["ok", "hello from allowed.test:8080"]
     assert seen["refused_via_proxy"] == ["http", 403]
@@ -801,7 +826,11 @@ async def test_on_windows_the_process_is_held_to_its_grants(tmp_path, upstream):
     assert seen["write_outside"][0] == "oserror"
     assert seen["write_workspace"] == ["ok", "written"]
     assert seen["write_data"] == ["ok", "written"]
-    assert seen["write_tmp"] == ["ok", "written"]
+    # Its temp and app data are the run's, as igni set them — not the
+    # container folder Windows substitutes for a process it starts there.
+    for name in ("TEMP", "TMP", "APPDATA", "LOCALAPPDATA", "USERPROFILE"):
+        assert seen["env"][name] == told[name], (name, seen["env"])
+    assert seen["write_tmp"] == ["ok", "written"], seen["env"]
     assert seen["env"]["IGNI_SANDBOX"] == "appcontainer"
     assert seen["env"]["USERPROFILE"] != os.path.expanduser("~")
     # Reported, not asserted: whether the system resolver answers a
