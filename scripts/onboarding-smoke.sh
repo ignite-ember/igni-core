@@ -9,9 +9,9 @@
 #   1. Download uv for the current OS/arch from GitHub releases.
 #   2. Use uv to install a pinned CPython.
 #   3. Create a managed venv.
-#   4. Install ignite-ember at the pinned version (or from a local
+#   4. Install igni-core at the pinned version (or from a local
 #      source tree, see ``--local``).
-#   5. Prefetch the sentence-transformer embedding model.
+#   5. Prefetch Laya, igni's decision model.
 #   6. Spawn ``python -m igni_core.backend --ws-port 0`` and confirm
 #      the ready JSON line lands on stdout.
 #
@@ -55,7 +55,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 if [[ -z "$VERSION" ]]; then
     VERSION="$(grep -E '^version\s*=' "$REPO_ROOT/pyproject.toml" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 fi
-echo "→ Targeting ignite-ember version: $VERSION (local source: $LOCAL)"
+
+# The package this script installs is the one the desktop app installs
+# (``clients/tauri/src-tauri/src/runtime/managed.rs`` runs ``uv pip
+# install igni-core[decisions]==X``) and the one this repository
+# builds. It is not ``ignite-ember``: since the split that name is a
+# metadata-only alias that depends on igni-core, and the last
+# ``ignite-ember`` on PyPI still carries the pre-split ``ember_code``
+# package, so installing it left the interpreter with no ``igni_core``
+# to import and the smoke failed on a package nobody ships any more.
+PACKAGE="igni-core"
+EXTRAS="decisions"
+
+echo "→ Targeting $PACKAGE version: $VERSION (local source: $LOCAL)"
 
 # ── Log dir ─────────────────────────────────────────────────────────
 # The backend's stdout/stderr go HERE, deliberately NOT under the temp
@@ -120,7 +132,7 @@ cleanup() {
     # Logs outlive a failure — that is the only run where anyone wants
     # them, and it is the run where this handler fires. A clean pass
     # sweeps them up unless --keep asked otherwise.
-    if [[ "$status" -ne 0 ]]; then
+    if [[ "$status" -ne 0 && "$status" -ne 77 ]]; then
         echo "↳ Backend logs kept for diagnosis: $LOG_DIR" >&2
     elif [[ "$KEEP" == "true" ]]; then
         echo "↳ Keeping backend logs at $LOG_DIR (--keep)"
@@ -174,24 +186,36 @@ VENV_PYTHON="$VENV/bin/python"
 STEP_TIME=$(($(date +%s) - STEP_START))
 echo "  venv ready at $VENV (${STEP_TIME}s)"
 
-# ── Step 4: ignite-ember ────────────────────────────────────────────
+# ── Step 4: igni-core ───────────────────────────────────────────────
 STEP_START=$(date +%s)
 if [[ "$LOCAL" == "true" ]]; then
-    echo "→ Step 4: installing ignite-ember from local source ($REPO_ROOT)"
-    "$UV" pip install --python "$VENV_PYTHON" -e "$REPO_ROOT"
+    echo "→ Step 4: installing $PACKAGE from local source ($REPO_ROOT)"
+    # Braces around the variable: "$REPO_ROOT[$EXTRAS]" is an array
+    # subscript to bash and expands to nothing at all.
+    "$UV" pip install --python "$VENV_PYTHON" -e "${REPO_ROOT}[$EXTRAS]"
 else
-    echo "→ Step 4: installing ignite-ember==$VERSION from PyPI"
-    "$UV" pip install --python "$VENV_PYTHON" "ignite-ember==$VERSION"
+    # Is the version on PyPI at all? Before this repository's first
+    # release there is nothing to install, and uv's "no matching
+    # distribution" error names neither the package nor the reason.
+    # Exit 77 — the conventional "skipped" code — so CI can tell
+    # "nothing published yet" from "published and broken".
+    if ! curl -fsSL -o /dev/null "https://pypi.org/pypi/$PACKAGE/$VERSION/json"; then
+        echo "→ $PACKAGE==$VERSION is not on PyPI — nothing to smoke." >&2
+        echo "  (exiting 77: skipped, not failed)" >&2
+        exit 77
+    fi
+    echo "→ Step 4: installing $PACKAGE==$VERSION from PyPI"
+    "$UV" pip install --python "$VENV_PYTHON" "${PACKAGE}[$EXTRAS]==$VERSION"
 fi
 STEP_TIME=$(($(date +%s) - STEP_START))
-echo "  ignite-ember installed (${STEP_TIME}s)"
+echo "  $PACKAGE installed (${STEP_TIME}s)"
 
 # Sanity: import works.
 "$VENV_PYTHON" -c "import igni_core; print(f'  igni_core v{igni_core.__version__}')"
 
 # ── Step 5: prefetch model ──────────────────────────────────────────
 STEP_START=$(date +%s)
-echo "→ Step 5: prefetching embedding model"
+echo "→ Step 5: prefetching Laya (igni's decision model)"
 HF_HOME="$CACHE_DIR/hf" "$VENV_PYTHON" -m igni_core.prefetch_models
 STEP_TIME=$(($(date +%s) - STEP_START))
 echo "  model warmed (${STEP_TIME}s)"
