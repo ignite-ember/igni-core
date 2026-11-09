@@ -54,6 +54,7 @@ class Session:
             storage=SimpleNamespace(data_dir=str(tmp / "data")),
             auth=SimpleNamespace(credentials_file=str(tmp / "credentials.json")),
             api_url=None,
+            group_policy=SimpleNamespace(trusted_keys=[], required=False),
         )
         self.project_dir = tmp / "project"
         self.project_dir.mkdir()

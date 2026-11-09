@@ -29,6 +29,7 @@ import pytest
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
+from igni_core.core.config.settings import Settings
 from igni_core.core.mcp.config import MCPServerConfig, MCPTransport
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.extensions.installer import ExtensionInstaller
@@ -41,6 +42,7 @@ from igni_core.extensions.sandbox import (
     EgressProxy,
     ExtensionSandbox,
     HostAllowList,
+    MechanismName,
     SandboxPlan,
     SandboxRefused,
     SandboxSettings,
@@ -453,7 +455,7 @@ def test_the_backend_reads_the_group_policy_through_the_verifying_fetcher(monkey
             return lambda: group_pack({"require_sandbox": True})
 
     monkeypatch.setattr(sandbox_launcher, "CachedSettingsFetcher", Fetcher)
-    settings = object()
+    settings = Settings()
     sandbox = ExtensionSandbox.for_settings(settings)
     assert seen == [settings]
     assert sandbox.settings.required
@@ -673,8 +675,9 @@ async def test_on_macos_the_process_is_held_to_its_grants(tmp_path, upstream):
     sandbox = ExtensionSandbox(
         settings=SandboxSettings(), network=NetworkPolicy(), connect=upstream.connect
     )
-    if (await sandbox.mechanism())[0] != "seatbelt":
-        pytest.skip(f"sandbox-exec cannot confine a process here: {await sandbox.mechanism()}")
+    availability = await sandbox.availability()
+    if availability.name != MechanismName.SEATBELT:
+        pytest.skip(f"sandbox-exec cannot confine a process here: {availability.reason}")
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     # Two listeners in this process, which stands in for igni: one the
     # process is told about (as the host channel is), one it is not (as
@@ -734,7 +737,7 @@ async def test_on_macos_the_process_is_held_to_its_grants(tmp_path, upstream):
 @pytest.mark.skipif(not ON_MACOS, reason="Seatbelt is macOS")
 async def test_on_macos_a_read_only_workspace_cannot_be_written(tmp_path, upstream):
     sandbox = ExtensionSandbox(settings=SandboxSettings(), connect=upstream.connect)
-    if (await sandbox.mechanism())[0] != "seatbelt":
+    if (await sandbox.availability()).name != MechanismName.SEATBELT:
         pytest.skip("sandbox-exec cannot confine a process here")
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     try:
@@ -768,7 +771,7 @@ async def test_on_macos_the_process_cannot_hand_work_to_another_application(tmp_
     LaunchServices is not reachable.
     """
     sandbox = ExtensionSandbox(settings=SandboxSettings())
-    if (await sandbox.mechanism())[0] != "seatbelt":
+    if (await sandbox.availability()).name != MechanismName.SEATBELT:
         pytest.skip("sandbox-exec cannot confine a process here")
     target = (tmp_path / "reveal-me").resolve()
     target.mkdir()
@@ -848,7 +851,7 @@ async def test_on_macos_an_installed_extension_speaks_mcp_from_inside(tmp_path):
     from igni_core.core.mcp.client import MCPClientManager
 
     sandbox = ExtensionSandbox(settings=SandboxSettings())
-    if (await sandbox.mechanism())[0] != "seatbelt":
+    if (await sandbox.availability()).name != MechanismName.SEATBELT:
         pytest.skip("sandbox-exec cannot confine a process here")
     bundle = tmp_path / "bundle"
     bundle.mkdir()
@@ -928,9 +931,9 @@ def test_the_bwrap_command_hides_home_and_bridges_the_proxy_in(tmp_path):
 @pytest.mark.skipif(not ON_LINUX or shutil.which("bwrap") is None, reason="needs bwrap on Linux")
 async def test_on_linux_the_process_reaches_only_the_proxy(tmp_path, upstream):
     sandbox = ExtensionSandbox(settings=SandboxSettings(), connect=upstream.connect)
-    mechanism, why = await sandbox.mechanism()
-    if mechanism != "bubblewrap":
-        pytest.skip(f"bwrap cannot make a sandbox here: {why}")
+    availability = await sandbox.availability()
+    if availability.name != MechanismName.BUBBLEWRAP:
+        pytest.skip(f"bwrap cannot make a sandbox here: {availability.reason}")
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     try:
         wrapped, _, seen = await run_confined(

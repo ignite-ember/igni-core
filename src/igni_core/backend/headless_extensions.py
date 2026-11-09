@@ -23,10 +23,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from igni_core.backend.activity import Activity
 from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.session.client_state import ClientStateRead, ClientStateResult
@@ -62,6 +63,9 @@ from igni_core.extensions.service_token import (
 from igni_core.extensions.store import ExtensionStore
 from igni_core.protocol.messages import Message
 from igni_core.protocol.rpc import RpcMethod
+
+if TYPE_CHECKING:
+    from igni_core.extensions.sandbox import ExtensionSandbox
 
 logger = logging.getLogger(__name__)
 
@@ -285,7 +289,7 @@ class HeadlessExtensions:
             )
 
     @staticmethod
-    def _sandbox(settings: Any) -> Any:
+    def _sandbox(settings: Settings) -> ExtensionSandbox:
         """The OS sandbox every extension process here starts in.
 
         Imported here rather than at the top: this module is reached

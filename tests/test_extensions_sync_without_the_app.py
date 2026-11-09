@@ -50,6 +50,7 @@ class World:
             air_gapped=False,
             auth=SimpleNamespace(credentials_file=str(self.credentials)),
             storage=SimpleNamespace(data_dir=str(tmp_path / "data")),
+            group_policy=SimpleNamespace(trusted_keys=[], required=False),
         )
         monkeypatch.setattr(OneShotSync, "transport", self.igni.transport())
         monkeypatch.setattr(PolicySettingsLoader, "load", lambda _self: self.settings)

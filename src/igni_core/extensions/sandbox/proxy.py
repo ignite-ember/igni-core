@@ -450,6 +450,19 @@ class LoopbackRelay:
         await splice((reader, writer), upstream)
 
 
+async def stop_relays(relays: Iterable[LoopbackRelay]) -> None:
+    """Stop every relay, saying so when one will not stop.
+
+    Teardown must not raise: a relay that will not close must not keep
+    the others running.
+    """
+    for relay in relays:
+        try:
+            await relay.stop()
+        except Exception as exc:  # noqa: BLE001 — one relay must not stop the rest
+            logger.warning("a sandbox relay on port %s did not stop: %s", relay.port, exc)
+
+
 __all__ = [
     "DEFAULT_PORT",
     "EgressProxy",
@@ -457,4 +470,5 @@ __all__ = [
     "LoopbackRelay",
     "canonical_host",
     "splice",
+    "stop_relays",
 ]
