@@ -325,7 +325,23 @@ jobs:
           # Get previous tag
           PREV_TAG=$(git tag --sort=-version:refname | head -2 | tail -1)
           TAG=${GITHUB_REF#refs/tags/}
-          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "$TAG" ]; then
+
+          # A written set of notes wins, when the release has one:
+          # ``docs/releases/v<version>.md`` says what the release is, what
+          # changed and how to upgrade. Without it the body was built
+          # from the commit log, which for this repository's first tag
+          # was empty — every release before it was cut in the old
+          # repository, so there is no previous tag to compare with and
+          # the page said "Initial release" about version 1.0.4.
+          NOTES_FILE="docs/releases/${TAG}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            {
+              echo "body<<RELEASE_EOF"
+              cat "$NOTES_FILE"
+              echo ""
+              echo "RELEASE_EOF"
+            } >> "$GITHUB_OUTPUT"
+          elif [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "$TAG" ]; then
             echo "body=Initial release" >> "$GITHUB_OUTPUT"
           else
             NOTES=$(git log --pretty=format:"- %s" "$PREV_TAG".."$TAG" -- | head -50)

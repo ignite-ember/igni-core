@@ -24,17 +24,18 @@ brew install ignite-ember/tap/ignite-ember
 **pip:**
 
 ```bash
+pip install 'igni-core[decisions]==1.0.4'
+# or, under the old name, which installs the same package:
 pip install ignite-ember
 ```
 
-Those two install **v1.0.3, the last pre-split release** — the monolith,
-packaged as the `ember_code` module. `igni-core` has never been published
-to PyPI, so `pip install igni-core` finds nothing today; the
-`ignite-ember` alias that would forward to it
+Those two install **v1.0.4** — this repository's build: the `igni_core`
+module, the `igni` command and the decisions service. `igni-core` is on
+PyPI under its own name, and the `ignite-ember` alias
 (`packages/ignite-ember/` — metadata, and a dependency on `igni-core` at
-the same version) cannot be published before `igni-core` is. The command
-is `ignite-ember` under Homebrew, which symlinks one binary, and `igni`
-under pip, which installs both names.
+the same version) forwards to it. The command is `ignite-ember` under
+Homebrew, which symlinks one binary, and `igni` under pip, which installs
+both names.
 
 ## What `igni` is on the command line
 

@@ -62,15 +62,14 @@ install gives you `ignite-ember` and a pip install gives you both.
 On the command line it runs **one task and exits** (`-m`, or `-p` for a
 pipe); there is no terminal chat UI any more — run it bare and it says so.
 
-**What the published package holds today.** `ignite-ember` on PyPI is
-**v1.0.3, the last pre-split release** — the monolith, packaged as the
-`ember_code` module. It is not the igni this repository builds:
-`igni-core` has never been published, and the `ignite-ember` alias that
-would point at it (`packages/ignite-ember/` — metadata and a dependency
-on `igni-core` at the same version) cannot be published before
-`igni-core` is. The command above works either way; the product behind
-it is the old one until the first split release is cut. For the igni in
-this repository:
+**What the published package holds today.** `igni-core` on PyPI is
+**v1.0.4**, and it is this repository's build: the `igni_core` module,
+the `igni` command and the decisions service. The old name installs the
+same thing — `pip install ignite-ember` resolves to `igni-core==1.0.4`
+through the alias (`packages/ignite-ember/` — metadata, and a dependency
+on `igni-core` at the same version), and the Homebrew formula installs
+`igni-core` as well. The command above works either way. To work on it
+instead of installing it:
 
 ```bash
 git clone https://github.com/ignite-ember/igni-core.git
@@ -127,9 +126,9 @@ See [Quickstart](QUICKSTART.md) for the full setup guide.
 
 ### Quickstart (new setup)
 
-1. **Install** — `brew install ignite-ember/tap/ignite-ember` (or `pip install ignite-ember`).
-   That is the last pre-split release (v1.0.3); the igni in this repository is
-   not published yet, so install it from source — see [Quick Start](#quick-start).
+1. **Install** — `pip install 'igni-core[decisions]==1.0.4'` (or
+   `brew install ignite-ember/tap/ignite-ember`, or `pip install ignite-ember` —
+   the old name installs the same package).
 2. **Configure a model** — set `OPENAI_API_KEY` (or any provider key) and add the
    model to `.igni/config.yaml`; or point `api_url` at your igni server and run
    `igni login`
@@ -141,6 +140,16 @@ See [Quickstart](QUICKSTART.md) for the full guide.
 
 The VS Code and JetBrains extensions are no longer shipped or supported;
 release notes below that mention them are history.
+
+### The split release (v1.0.3 → v1.0.4)
+
+- **`igni-core` is on PyPI.** v1.0.4 is the first release published under igni's own name: `pip install 'igni-core[decisions]==1.0.4'` installs the `igni_core` module, the `igni` command and the decisions service. `ignite-ember` is now an alias — the same version, the same extras, nothing of its own — so `pip install ignite-ember` and the Homebrew formula install igni-core 1.0.4.
+- **The cloud layer is its own package.** `igni-cloud` holds the PostgreSQL storage and the producer/guest binding, found through the `igni.layers` and `igni.storage` entry points, rather than inside the core.
+- **The wire contract is typed.** The messages the backend and the app exchange have one definition, checked from both sides — the app's client is igni-core's contract, byte for byte.
+- **One module per concern.** The backend is split into modules that each own one thing — settings, auth, the cloud, the tools, the transport — behind interfaces the tests can substitute. Nothing reaches into another's internals.
+- **`igni login` is a command.** It opens the portal's sign-in page in a browser, takes the token back over a local callback, writes `~/.igni/credentials.json` and hydrates the group pack. `igni login --token-stdin` does it without a browser.
+- **The Windows sandbox is behind one interface.** What it allows is one thing to state, and one thing to test.
+- **An install made under the old name keeps working.** The desktop app still reads the cache directory and the install marker under their old names until the next write, so an app installed before the rename does not reinstall its runtime.
 
 ### Rebrand + signed desktop app (v0.7.0 → v0.7.1)
 

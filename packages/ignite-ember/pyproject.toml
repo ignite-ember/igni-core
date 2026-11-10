@@ -10,21 +10,21 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ignite-ember"
-version = "1.0.3"
+version = "1.0.4"
 description = "igni's backend and CLI, under its old name: installs igni-core"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 authors = [{ name = "Ignite Ember" }]
-dependencies = ["igni-core==1.0.3"]
+dependencies = ["igni-core==1.0.4"]
 
 [project.optional-dependencies]
-anthropic = ["igni-core[anthropic]==1.0.3"]
-decisions = ["igni-core[decisions]==1.0.3"]
-gemini = ["igni-core[gemini]==1.0.3"]
-mcp = ["igni-core[mcp]==1.0.3"]
-otel = ["igni-core[otel]==1.0.3"]
-web = ["igni-core[web]==1.0.3"]
+anthropic = ["igni-core[anthropic]==1.0.4"]
+decisions = ["igni-core[decisions]==1.0.4"]
+gemini = ["igni-core[gemini]==1.0.4"]
+mcp = ["igni-core[mcp]==1.0.4"]
+otel = ["igni-core[otel]==1.0.4"]
+web = ["igni-core[web]==1.0.4"]
 
 [project.urls]
 Homepage = "https://ignite-ember.sh"

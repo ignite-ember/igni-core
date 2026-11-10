@@ -1,11 +1,10 @@
 """The docs may only tell a reader to install what this repository builds.
 
-`igni-core` has never been published to PyPI: the name is a 404. The
-`ignite-ember` name on PyPI is the **pre-split monolith** — v1.0.3, the
-`ember_code` module — so the command is the same and the product behind
-it is the old one. A reader who followed `pip install igni-core` got
-nothing; a reader who followed `pip install ignite-ember` got the old
-product with no word about it.
+`igni-core` is on PyPI from v1.0.4, and it is this repository's build:
+the `igni_core` module, the `igni` command, the decisions service. The
+`ignite-ember` name on PyPI is the alias — the same version, the same
+extras, nothing of its own — so `pip install ignite-ember` installs
+`igni-core` and `pip install igni-core` installs the same thing.
 
 Three rules, stated over the markdown files rather than over a list
 somebody audited:
@@ -16,12 +15,13 @@ somebody audited:
 2. a fenced `git clone` is followed by a `cd` into the directory that
    clone creates — `git clone .../igni-core.git` creates `igni-core/`,
    and three documents said `cd igni`;
-3. while the published package holds the pre-split release, the README
-   and the quickstart say so, and name the version.
+3. the README and the quickstart say what is published today and name
+   its version.
 
-Rule 3 is the one that fires when the release lands: it demands the
-note come out of the docs, and the note is the only place that says
-what a reader would actually get.
+Rule 3 is the one that fires when a release lands: the note about the
+pre-split package comes out of the docs, and the version that replaced
+it takes its place. A reader who followed the docs has to be able to
+tell which build they would get.
 """
 
 from __future__ import annotations
@@ -49,11 +49,16 @@ _CLONE = re.compile(r"git clone\s+(\S+)")
 _CD = re.compile(r"^\s*cd\s+(\S+)")
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
-#: The phrase the install note carries, and the version it names. The
-#: release that publishes `igni-core` changes both — and this test is
-#: what says so.
+#: The phrase the install note carried while the published package was
+#: the pre-split release. It has to be gone now: the note said the
+#: published thing was not this repository's build, and that stopped
+#: being true when `igni-core` reached PyPI.
 _NOTE = "last pre-split release"
-_NOTE_VERSION = "1.0.3"
+
+#: What is published now, and the version it is at. The next release
+#: changes this — and this test is what says so.
+_PUBLISHED = "igni-core"
+_PUBLISHED_VERSION = "1.0.4"
 
 
 def _shell_blocks(doc: pathlib.Path) -> list[str]:
@@ -134,11 +139,15 @@ def test_a_clone_is_followed_by_a_cd_into_the_directory_it_creates(doc):
 
 @pytest.mark.parametrize("name", ["README.md", "QUICKSTART.md"])
 def test_the_install_note_says_what_is_published_today(name):
-    """The published package holds the pre-split release; the docs have to
-    say so, or a reader installs the old product without knowing."""
+    """`igni-core` is published; the docs have to say so and name the
+    version, or a reader cannot tell what they would install."""
     text = (_ROOT / name).read_text(encoding="utf-8")
-    assert _NOTE in text, (
-        f"{name} does not say that the published package is the {_NOTE}. "
-        f"It should, until igni-core is on PyPI."
+    assert _NOTE not in text, (
+        f"{name} still says the published package is the {_NOTE}. Since "
+        f"{_PUBLISHED_VERSION} that is not true: {_PUBLISHED} is on PyPI and "
+        f"holds this repository's build."
     )
-    assert _NOTE_VERSION in text, f"{name} does not name the published version."
+    assert _PUBLISHED in text, (
+        f"{name} does not name {_PUBLISHED}, the package PyPI carries today."
+    )
+    assert _PUBLISHED_VERSION in text, f"{name} does not name the published version."

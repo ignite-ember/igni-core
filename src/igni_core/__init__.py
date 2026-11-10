@@ -34,4 +34,4 @@ from igni_core.core.agno_telemetry import AgnoTelemetry
 # ``air_gapped: true``. ``core/agno_telemetry.py`` has the whole rule.
 AgnoTelemetry.apply_process_default()
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
