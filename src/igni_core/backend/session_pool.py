@@ -42,6 +42,7 @@ from igni_core.backend.session_stamping_transport import SessionStampingTranspor
 from igni_core.core.activity import BusyKind, background
 
 if TYPE_CHECKING:
+    from igni_core.backend.rpc_handlers.base import RpcCall
     from igni_core.backend.rpc_router import RpcRouter
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ class SessionRuntime:
         self,
         *,
         backend: BackendLike,
-        rpc_table: dict[str, Any],
+        rpc_table: dict[str, RpcCall],
         queue: MutableSequence[str],
         transport: TransportLike,
         known_ids: set[str] | None = None,

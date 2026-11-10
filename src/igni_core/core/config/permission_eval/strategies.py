@@ -126,7 +126,7 @@ class PermissionModeStrategy:
     def for_mode(cls, mode: PermissionMode) -> PermissionModeStrategy:
         """Return the strategy instance for ``mode``. One shared
         instance per mode (strategies are stateless), looked up per
-        call so that mutating ``evaluator.mode`` at runtime picks up
+        call so that moving the evaluator's mode at runtime picks up
         the new strategy on the very next :meth:`evaluate` call —
         no cached-property invalidation gymnastics."""
         return _STRATEGY_MAP[mode]

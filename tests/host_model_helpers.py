@@ -99,6 +99,7 @@ from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.store import ExtensionStore
 from igni_core.protocol import messages as msg
 from igni_core.transport.base import ListeningTransport
+from tests.shared_tables import SharedTables
 from tests.siblings import IGNI_SDK
 
 REPO = Path(__file__).resolve().parent.parent
@@ -687,6 +688,7 @@ class HostRig:
             storage=SimpleNamespace(data_dir=str(self.tmp / "data"), database_url=None)
         )
         self.settings = settings
+        tables = SharedTables(extensions=extensions)
         self.orchestrator = SessionOrchestrator.start(
             boot=BootRuntime(
                 backend=self.session, rpc_table=router.build_table(), router=router, queue=queue
@@ -697,7 +699,10 @@ class HostRig:
                 login=login,
                 supervisors=SupervisorLocator(self.session.supervisor),
                 gate=self.session.gate,
-                extensions=extensions,
+                contributions=tables.contributions,
+                prompt_loader=tables.prompt_loader,
+                tool_hints=tables.tool_hints,
+                extensions=tables.extensions,
                 extension_store=self.store,
             ),
             settings=settings,

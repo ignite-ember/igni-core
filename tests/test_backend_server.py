@@ -20,8 +20,6 @@ class TestBackendServerCommands:
 
     @pytest.mark.asyncio
     async def test_handle_command_returns_command_result(self):
-        server = make_backend(MagicMock(), settings=MagicMock())
-
         # ``handle_command`` returns whatever the handler produced,
         # unchanged — the backend ``CommandResult`` subclasses the
         # wire ``msg.CommandResult`` so no rebuild step is needed.
@@ -29,9 +27,14 @@ class TestBackendServerCommands:
         # + field assertions below still exercise the wire contract.
         mock_result = CommandResult.info("test output")
 
+        # The handler is built with the server, so the patch has to be
+        # in place before the server is — a patch applied afterwards
+        # would replace a name the server never reads again.
         with patch("igni_core.backend.server.CommandHandler") as MockHandler:
             instance = MockHandler.return_value
             instance.handle = AsyncMock(return_value=mock_result)
+
+            server = make_backend(MagicMock(), settings=MagicMock())
 
             result = await server.handle_command("/test")
 
@@ -141,6 +144,10 @@ class TestFromParts:
             # One gate per process, so every controller that starts
             # a run asks the same one.
             "_gate",
+            # The slash-command router, built with the server.
+            "_commands",
+            # The folder's trust controller, built with the server.
+            "_workspace_trust",
         }
         assert server.runtime is None
         assert (

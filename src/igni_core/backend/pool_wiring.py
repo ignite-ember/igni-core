@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.message_dispatcher import MessageDispatcher
@@ -15,18 +15,12 @@ from igni_core.backend.session_stamping_transport import SessionStampingTranspor
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.prompts.contributions import PromptContributions
-from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 from igni_core.extensions.origin import ExtensionOrigins
-from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.store import ExtensionStore
 from igni_core.notifications.center import NotificationCenter
-
-
-def _no_extensions() -> ExtensionRpc:
-    return ExtensionRpc(ExtensionRegistry())
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -53,6 +47,13 @@ class PoolWiring:
     because a session the pool resumes is a session of that process,
     and a resumed session that asked a gate of its own would answer
     a question the process has already answered.
+
+    The tables the extensions write into — ``contributions``,
+    ``prompt_loader``, ``tool_hints`` and ``extensions`` — are
+    required rather than defaulted. A default would be a *private*
+    table, and a wiring that quietly carries its own would break the
+    one-per-process contract this class exists to keep: the
+    composition root says which tables the process has.
     """
 
     transport: ObservedTransport
@@ -60,10 +61,10 @@ class PoolWiring:
     login: LoginCoordinator
     supervisors: SupervisorLocator
     gate: RunGate
-    contributions: PromptContributions = field(default_factory=PromptContributions)
-    prompt_loader: PromptLoader = field(default_factory=lambda: PromptLoader(PromptFragments()))
-    tool_hints: ToolHintsRegistry = field(default_factory=ToolHintsRegistry.shared)
-    extensions: ExtensionRpc = field(default_factory=_no_extensions)
+    contributions: PromptContributions
+    prompt_loader: PromptLoader
+    tool_hints: ToolHintsRegistry
+    extensions: ExtensionRpc
     origins: ExtensionOrigins | None = None
     extension_store: ExtensionStore | None = None
     notifications: NotificationCenter | None = None

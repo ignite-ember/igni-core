@@ -204,7 +204,7 @@ class RuntimeModeCoordinator:
         _ = self.starting_mode
         evaluator = self._deps.evaluator_ref()
         prev = evaluator.mode
-        evaluator.mode = new_mode
+        evaluator.set_mode(new_mode)
         if prev == new_mode:
             return PermissionModeSwitch(text=f"Permission mode already {new_mode.value}.")
         self._deps.bus.emit(PermissionModeChangedEvent(mode=new_mode, previous=prev))

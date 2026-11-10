@@ -2,8 +2,8 @@
 
 Kept as a lean dataclass — the class holds live rule lists that
 :meth:`PermissionEvaluator.remember` extends at runtime, and
-:mod:`igni_core.core.session.state_ops` reassigns
-:attr:`PermissionEvaluator.mode` after a slash-command switches
+:mod:`igni_core.core.session.state_ops` calls
+:meth:`PermissionEvaluator.set_mode` after a slash-command switches
 posture. Pydantic frozen model isn't the right fit for that call
 site; the dataclass shape matches what every existing caller
 expects.
@@ -135,20 +135,17 @@ class PermissionEvaluator:
         with self._mode_lock:
             return self._mode
 
-    @mode.setter
-    def mode(self, value: PermissionMode) -> None:
-        """Direct setter — preserved for back-compat with the
-        ``RuntimeModeCoordinator.set_permission_mode`` callers (which mutate
-        the attribute directly). Holds ``_mode_lock`` so the read
-        in :meth:`evaluate_outcome` sees the new value."""
-        with self._mode_lock:
-            self._mode = value
-
     def set_mode(self, value: PermissionMode) -> None:
-        """Atomic mode flip — the preferred API. Acquires
-        ``_mode_lock`` so the write is serialised against
-        in-flight reads. Used by the HITL atomic-flip path on
-        the BE (see ``HitlController.resolve_batch``)."""
+        """The one way to move the mode. Acquires ``_mode_lock`` so
+        the write is serialised against in-flight reads — a read
+        never sees a half-written mode. Used by the slash commands
+        and by the HITL atomic-flip path on the BE (see
+        ``HitlController.resolve_batch``).
+
+        There is deliberately no ``mode = ...`` setter: a plain
+        attribute write would carry no lock, and the lock is the
+        whole point of this class's mode handling.
+        """
         with self._mode_lock:
             self._mode = value
 
@@ -163,8 +160,10 @@ class PermissionEvaluator:
     ) -> PermissionEvaluator:
         """Convenience constructor — accepts raw strings from
         ``settings.permissions`` and parses them into
-        :class:`PermissionRule` objects, silently dropping malformed
-        entries (caller can check the lengths if it cares).
+        :class:`PermissionRule` objects. A malformed entry is
+        dropped with a warning naming it, not silently: a rule the
+        user wrote and never applies to is a rule they believe is
+        protecting them.
 
         ``catalog`` is the catalog the modes classify tools with; the
         default one reads the process's table of what an extension's
@@ -230,10 +229,10 @@ class PermissionEvaluator:
 
     def evaluate(self, tool_name: str, tool_args: dict[str, Any]) -> PermissionDecision:
         """Run the six-step pipeline and return just the
-        :class:`PermissionDecision`. Compatibility shim over
-        :meth:`evaluate_outcome` — callers that want the reason too
-        should use :meth:`evaluate_outcome` (or the ``explain_deny``
-        convenience method)."""
+        :class:`PermissionDecision` — the narrow answer to "may this
+        run?". A caller that wants the reason too should use
+        :meth:`evaluate_outcome` (or the ``explain_deny`` convenience
+        method)."""
         return self.evaluate_outcome(tool_name, tool_args).decision
 
     def evaluate_outcome(self, tool_name: str, tool_args: dict[str, Any]) -> PermissionOutcome:
@@ -245,7 +244,7 @@ class PermissionEvaluator:
 
         The whole body runs under :attr:`_mode_lock` so the mode
         read in :meth:`_strategy` is atomic with any concurrent
-        ``set_mode`` / ``mode = …`` write. Without this lock the
+        :meth:`set_mode` write. Without this lock the
         BE's WS orchestrator could dispatch a slash-command
         mode-flip concurrently with the agent's tool-check hook —
         the hook would read the OLD mode and decide to prompt
@@ -482,7 +481,7 @@ class PermissionEvaluator:
         """Look up the strategy for the current ``self.mode``.
 
         Not cached on the instance — ``state_ops.set_permission_mode``
-        reassigns ``self.mode`` at runtime and a cached-property here
+        calls :meth:`set_mode` at runtime and a cached-property here
         would go stale. One dict lookup per evaluate() call is
         cheap; correctness first."""
         return PermissionModeStrategy.for_mode(self.mode)

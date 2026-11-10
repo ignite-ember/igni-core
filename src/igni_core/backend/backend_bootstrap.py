@@ -35,13 +35,13 @@ from typing import TYPE_CHECKING
 
 from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
-from igni_core.core import session as session_module
 from igni_core.core.approvals.journal import ApprovalJournal
 from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.loader import PromptLoader
+from igni_core.core.session import Session
 from igni_core.core.session.pending_messages import PendingMessageStore
 from igni_core.core.session.queued_messages import DurableMessageQueue, QueuedMessageStore
 from igni_core.core.session.session_preferences import SessionPreferencesStore
@@ -83,13 +83,14 @@ class BackendBootstrap:
         if resume_session_id:
             persisted_model = self.session_prefs.get_model(resume_session_id)
             if persisted_model and persisted_model in settings.models.registry:
+                # The pool copies these settings for every session it
+                # resumes, so a resumed session's model must not become
+                # the default the others start on. Copy before changing
+                # it: the caller's settings stay as they were given.
+                settings = settings.model_copy(deep=True)
                 settings.models.default = persisted_model
 
-        # The session is read off the module, not bound by name: a
-        # test that patches ``igni_core.core.session.Session`` still
-        # intercepts the construction. The package is imported at the
-        # top of this file already, so nothing is deferred here.
-        self.session = session_module.Session(
+        self.session = Session(
             settings,
             project_dir=project_dir,
             resume_session_id=resume_session_id,

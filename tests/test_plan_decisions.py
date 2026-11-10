@@ -148,6 +148,9 @@ class _StubPermissionEvaluator:
     def __init__(self) -> None:
         self.mode = PermissionMode.PLAN
 
+    def set_mode(self, mode: PermissionMode) -> None:
+        self.mode = mode
+
 
 class _StubPersistence:
     """Captures save_plan_decisions calls without touching disk.

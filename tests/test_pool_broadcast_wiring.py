@@ -41,6 +41,7 @@ from igni_core.core.tools.plan import PlanModeEnteredEvent, PlanSubmittedEvent
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 from igni_core.protocol import messages as msg
+from tests.shared_tables import SharedTables
 
 
 class _PooledBackend:
@@ -90,7 +91,15 @@ class _PooledBackend:
 
 
 class _PooledRuntimes(SessionRuntimeFactory):
-    server_cls = _PooledBackend  # type: ignore[assignment]
+    """The real factory, resuming sessions onto a stand-in backend."""
+
+    def __init__(self, *, wiring: PoolWiring, settings: Settings, dirs: PoolDirectories) -> None:
+        super().__init__(
+            wiring=wiring,
+            settings=settings,
+            dirs=dirs,
+            server_cls=_PooledBackend,  # type: ignore[arg-type]
+        )
 
 
 class _CapturingTransport:
@@ -273,6 +282,7 @@ class TestOrchestratorAndAppWiring:
             SessionDirectoryStore.from_locator(StorageLocator.from_settings(settings)),
             ProjectDirs(project_dir=tmp_path),
         )
+        tables = SharedTables()
         factory = _PooledRuntimes(
             wiring=PoolWiring(
                 transport=windows,
@@ -280,6 +290,10 @@ class TestOrchestratorAndAppWiring:
                 login=LoginCoordinator(backend=boot, push_bridge=push),
                 supervisors=SupervisorLocator(),
                 gate=RunGate(),
+                contributions=tables.contributions,
+                prompt_loader=tables.prompt_loader,
+                tool_hints=tables.tool_hints,
+                extensions=tables.extensions,
             ),
             settings=settings,
             dirs=directories,

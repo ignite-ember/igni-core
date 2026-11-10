@@ -176,6 +176,15 @@ class BackendServer:
         #: Messages typed during a run, durable — the runtime's queue.
         self.message_queue = message_queue
         self._runtime: SessionRuntime | None = None
+        # The slash-command router, built once. It holds the session
+        # and two dispatchers, and neither carries state between
+        # commands: the markdown tier discovers its commands per call,
+        # so a file dropped into the folder mid-session is still
+        # found.
+        self._commands = CommandHandler(session)
+        # The folder's trust, read afresh: the controller decides per
+        # call, so building it once does not freeze the answer.
+        self._workspace_trust = WorkspaceTrustController(session.project_dir)
         # A new dialogue should pick up an admin's change.
         session.on_new_dialogue = controllers.group_policy.revalidate_for_new_dialogue
 
@@ -319,7 +328,7 @@ class BackendServer:
             yield proto
 
     async def handle_command(self, text: str) -> msg.CommandResult:
-        return await CommandHandler(self._session).handle(text)
+        return await self._commands.handle(text)
 
     def wire_queue_hook(self, queue: MutableSequence[str]) -> None:
         self.controllers.team_wiring.wire_queue_hook(queue)
@@ -441,7 +450,7 @@ class BackendServer:
     @property
     def workspace_trust(self) -> WorkspaceTrustController:
         """Status and answers for this runtime's folder, read afresh."""
-        return WorkspaceTrustController(self.project_dir)
+        return self._workspace_trust
 
     async def apply_workspace_trust(self) -> None:
         """Rebuild this runtime's session after the folder's trust changed:

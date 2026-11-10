@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import MutableSequence
 from dataclasses import dataclass
-from typing import Any, ClassVar
 
 from igni_core.backend.pool_directories import PoolDirectories
 from igni_core.backend.pool_wiring import PoolWiring
+from igni_core.backend.rpc_handlers.base import RpcCall
 from igni_core.backend.rpc_router import RpcRouter
 from igni_core.backend.schemas_sessions import BackendLike
 from igni_core.backend.server import BackendServer
@@ -21,7 +21,7 @@ class BootRuntime:
     """The session the backend booted with, wired before the pool exists."""
 
     backend: BackendLike
-    rpc_table: dict[str, Any]
+    rpc_table: dict[str, RpcCall]
     router: RpcRouter
     queue: MutableSequence[str]
 
@@ -29,14 +29,22 @@ class BootRuntime:
 class SessionRuntimeFactory:
     """Builds a :class:`SessionRuntime` per session, from the pool's shared wiring."""
 
-    #: What a resumed session runs on. A class seam, so a test can make
-    #: sessions that boot no model team.
-    server_cls: ClassVar[type[BackendServer]] = BackendServer
-
-    def __init__(self, *, wiring: PoolWiring, settings: Settings, dirs: PoolDirectories) -> None:
+    def __init__(
+        self,
+        *,
+        wiring: PoolWiring,
+        settings: Settings,
+        dirs: PoolDirectories,
+        server_cls: type[BackendServer] = BackendServer,
+    ) -> None:
         self._wiring = wiring
         self._settings = settings
         self._dirs = dirs
+        # What a resumed session runs on. A constructor argument
+        # rather than a class attribute: a seam a test rebinds on the
+        # class is a seam every instance of that class sees, which is
+        # a global wearing a class's clothes.
+        self._server_cls = server_cls
 
     def boot(self, boot: BootRuntime) -> SessionRuntime:
         """The boot session as the pool's default, on a transport stamping its id."""
@@ -52,7 +60,7 @@ class SessionRuntimeFactory:
         """Resume ``session_id`` in its own directory, with its own router and queue."""
         # Deep-copied: resuming applies the session's persisted model
         # preference, which must not leak into other runtimes' defaults.
-        backend = self.server_cls(
+        backend = self._server_cls(
             self._settings.model_copy(deep=True),
             project_dir=self._dirs.dir_for(session_id),
             resume_session_id=session_id,
@@ -93,7 +101,7 @@ class SessionRuntimeFactory:
     def bind(
         *,
         backend: BackendLike,
-        rpc_table: dict[str, Any],
+        rpc_table: dict[str, RpcCall],
         queue: MutableSequence[str],
         transport: SessionStampingTransport,
         router: RpcRouter,
