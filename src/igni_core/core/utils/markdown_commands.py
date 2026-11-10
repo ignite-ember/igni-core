@@ -9,7 +9,8 @@ template that gets sent to the agent after substitution.
 
 Supported template tokens. ``!`cmd``` and ``@<path>`` are resolved
 against the *template body*; ``$ARGUMENTS`` is substituted last, so
-argument text can never become a token (see :meth:`MarkdownCommand.render`):
+argument text can never become a token (see
+:mod:`igni_core.core.utils.markdown_command_renderer`):
 
 * ``!`cmd``` → run ``cmd`` via the shell, capture stdout, inline
   it. Errors / non-zero exits are inlined as an ``[error: ...]``
@@ -25,8 +26,9 @@ argument text can never become a token (see :meth:`MarkdownCommand.render`):
   directory, with ``~`` expansion and project-relative
   interpretation.
 
-YAML frontmatter (all optional) is parsed and stashed on the
-returned ``MarkdownCommand``:
+YAML frontmatter (all optional) is parsed into a
+:class:`~igni_core.core.utils.markdown_command_frontmatter.CommandFrontmatter`
+and stashed on the returned ``MarkdownCommand``:
 
 * ``description`` — one-line summary shown in help listings.
 * ``allowed-tools`` — comma-separated list (CC parity). Currently
@@ -38,9 +40,9 @@ returned ``MarkdownCommand``:
 Precedence (lower → higher, last write wins on name collisions):
 
 1. ``~/.claude/commands/`` (cross-tool user)
-2. ``~/.igni/commands/`` (ember user)
+2. ``~/.igni/commands/`` (igni user)
 3. ``<project>/.claude/commands/`` (cross-tool project)
-4. ``<project>/.igni/commands/`` (ember project)
+4. ``<project>/.igni/commands/`` (igni project)
 
 The ``read_claude`` toggle (settings.rules.cross_tool_support)
 mirrors the rest of the cross-tool plumbing — flip it off and the
@@ -49,49 +51,18 @@ mirrors the rest of the cross-tool plumbing — flip it off and the
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
-import re
-import shlex
 from pathlib import Path
-from typing import Any
 
-import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.core.data_paths import canonical_project_dir
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.utils.markdown_command_frontmatter import CommandFrontmatter
+from igni_core.core.utils.markdown_command_renderer import MarkdownCommandRenderer
 from igni_core.core.workspace_trust import process_trust
 
 logger = logging.getLogger(__name__)
-
-
-# Frontmatter parser is intentionally permissive — accept anything
-# YAML accepts, store whatever's there, ignore unknown keys. CC's
-# command files are user-authored so brittle parsing would punish
-# benign experimentation.
-_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)", re.DOTALL)
-
-# Shell-injection token: ``!`...```. Greedy on the inner content but
-# stops at the first closing backtick so adjacent tokens don't
-# bleed. Multi-line shell commands need not apply.
-_SHELL_TOKEN_RE = re.compile(r"!`([^`\n]+)`")
-
-# ``@<path>`` token. Path runs to the first whitespace or closing
-# paren so a markdown link like ``[label](@./foo)`` doesn't get
-# truncated mid-URL. ``.md`` is intentionally NOT required — command
-# templates routinely pull in ``@pyproject.toml`` / ``@Cargo.toml``.
-_AT_FILE_RE = re.compile(r"@([^\s)]+)")
-
-#: What a ``!`cmd``` token becomes in an untrusted folder's command.
-_UNTRUSTED_SHELL_MARKER = "[shell command not run: this folder is not trusted — see `igni trust`]"
-
-# How long any single shell substitution can run before we bail and
-# inline an error marker. 30 seconds keeps a hung command from
-# locking up the entire turn while still leaving room for slow git
-# operations on large repos.
-_SHELL_TIMEOUT_SECONDS = 30
 
 
 class MarkdownCommand(BaseModel):
@@ -125,14 +96,12 @@ class MarkdownCommand(BaseModel):
         the only shell that ever runs is the shell the command file
         itself wrote.
         """
-        if self._shell_allowed(project_dir):
-            text = await _substitute_shell(
-                self.body, args=args, cwd=project_dir or self.path.parent
-            )
-        else:
-            text = _SHELL_TOKEN_RE.sub(_UNTRUSTED_SHELL_MARKER, self.body)
-        text = _substitute_files(text, source=self.path, project_dir=project_dir)
-        return text.replace("$ARGUMENTS", args)
+        renderer = MarkdownCommandRenderer(
+            source=self.path,
+            project_dir=project_dir,
+            shell_allowed=self._shell_allowed(project_dir),
+        )
+        return await renderer.render(self.body, args)
 
     def _shell_allowed(self, project_dir: Path | None) -> bool:
         """A command file from the folder itself runs its ``!`cmd``` tokens
@@ -157,7 +126,7 @@ class MarkdownCommand(BaseModel):
         """Walk all configured roots and return ``name → command``.
 
         Later roots override earlier ones on name collisions — project
-        commands beat user-global, ember beats claude (within the same
+        commands beat user-global, igni beats claude (within the same
         tier). The leading-slash isn't part of the key (users invoke
         ``/review`` but the dict is keyed ``review``).
 
@@ -165,20 +134,44 @@ class MarkdownCommand(BaseModel):
         and placed *below* the project's, so a command the project
         declares under the same name is the one that runs."""
         out: dict[str, MarkdownCommand] = {}
-        for root in _commands_dirs(project_dir, read_claude=read_claude, group_dir=group_dir):
+        for root in _command_roots(project_dir, read_claude=read_claude, group_dir=group_dir):
             if not root.is_dir():
                 continue
             for path in sorted(root.glob("*.md")):
-                cmd = _load_command_file(path)
+                cmd = cls.load(path)
                 if cmd is not None:
                     out[cmd.name] = cmd
         return out
+
+    @classmethod
+    def load(cls, path: Path) -> MarkdownCommand | None:
+        """Read one ``.md`` file and return a ``MarkdownCommand``, or
+        ``None`` if the file is unreadable. The command name is the
+        stem (so ``review.md`` → ``review``); leading ``.`` files (e.g.
+        editor backups) are skipped."""
+        if path.name.startswith("."):
+            return None
+        try:
+            content = path.read_text()
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.debug("Markdown command read %s failed: %s", path, exc)
+            return None
+        frontmatter, body = CommandFrontmatter.parse(content)
+        return cls(
+            name=path.stem,
+            path=path.resolve(),
+            description=frontmatter.description,
+            allowed_tools=frontmatter.allowed_tools,
+            argument_hint=frontmatter.argument_hint,
+            model=frontmatter.model,
+            body=body,
+        )
 
 
 # ── Discovery ────────────────────────────────────────────────────
 
 
-def _commands_dirs(
+def _command_roots(
     project_dir: Path,
     read_claude: bool,
     group_dir: Path | None = None,
@@ -208,210 +201,4 @@ def _commands_dirs(
     return roots
 
 
-def _parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
-    """Pull a YAML frontmatter block off the top of ``content``.
-
-    Returns ``({}, content)`` when there's no frontmatter or the
-    block can't be parsed — fail-open so a malformed header
-    doesn't sink the whole command."""
-    match = _FRONTMATTER_RE.match(content)
-    if not match:
-        return {}, content
-    raw, body = match.group(1), match.group(2)
-    try:
-        meta = yaml.safe_load(raw) or {}
-    except yaml.YAMLError as exc:
-        logger.debug("Markdown command frontmatter parse failed: %s", exc)
-        return {}, body
-    if not isinstance(meta, dict):
-        return {}, body
-    return meta, body
-
-
-def _parse_allowed_tools(raw: Any) -> tuple[str, ...]:
-    """Normalize the ``allowed-tools`` frontmatter field into a tuple.
-
-    Accepts either the CC comma-separated string form (``"Read, Bash"``)
-    or a native YAML list (``["Read", "Bash"]``). Anything else
-    collapses to an empty tuple so authorship mistakes fail closed
-    rather than granting unintended permissions."""
-    if isinstance(raw, str):
-        return tuple(t.strip() for t in raw.split(",") if t.strip())
-    if isinstance(raw, list):
-        return tuple(str(t).strip() for t in raw if str(t).strip())
-    return ()
-
-
-def _load_command_file(path: Path) -> MarkdownCommand | None:
-    """Read one ``.md`` file and return a ``MarkdownCommand``, or
-    ``None`` if the file is unreadable. The command name is the
-    stem (so ``review.md`` → ``review``); leading ``.`` files (e.g.
-    editor backups) are skipped."""
-    if path.name.startswith("."):
-        return None
-    try:
-        content = path.read_text()
-    except (OSError, UnicodeDecodeError) as exc:
-        logger.debug("Markdown command read %s failed: %s", path, exc)
-        return None
-    meta, body = _parse_frontmatter(content)
-    return MarkdownCommand(
-        name=path.stem,
-        path=path.resolve(),
-        description=str(meta.get("description", "")).strip(),
-        allowed_tools=_parse_allowed_tools(meta.get("allowed-tools", "")),
-        argument_hint=str(meta.get("argument-hint", "")).strip(),
-        model=str(meta["model"]).strip() if meta.get("model") else None,
-        body=body,
-    )
-
-
-def discover_markdown_commands(
-    project_dir: Path,
-    read_claude: bool = True,
-    group_dir: Path | None = None,
-) -> dict[str, MarkdownCommand]:
-    """Thin wrapper around :meth:`MarkdownCommand.discover` retained
-    for existing module-level call sites (``backend/server.py``,
-    ``backend/command_handler.py``, several tests that patch by
-    dotted path). New code should call the classmethod directly."""
-    return MarkdownCommand.discover(project_dir, read_claude=read_claude, group_dir=group_dir)
-
-
-# ── Token substitution ──────────────────────────────────────────
-
-
-def _inject_args(cmd: str, args: str) -> str:
-    """Substitute ``$ARGUMENTS`` inside one ``!`cmd``` token, quoted.
-
-    The token's text comes from the command file (trusted); ``args``
-    does not — via the ``slash_command`` tool it is whatever the model
-    typed. Pasting it in raw turns a body of ``!`git log $ARGUMENTS```
-    into an arbitrary-command primitive on the first ``;``, so it goes
-    in as exactly one ``shlex.quote``d word: the command still sees the
-    text, the shell never sees it as syntax.
-    """
-    if "$ARGUMENTS" not in cmd:
-        return cmd
-    return cmd.replace("$ARGUMENTS", shlex.quote(args))
-
-
-async def _substitute_shell(text: str, *, args: str = "", cwd: Path) -> str:
-    """Replace every ``!`cmd``` token with the captured stdout.
-
-    Runs each command via ``/bin/sh -c`` (matching CC's shell-
-    inline semantics) with a 30-second timeout. Non-zero exits and
-    timeouts produce a clearly-marked inline error so the agent
-    notices the failure instead of silently working from empty
-    output.
-
-    ``text`` must be the raw template body — never a string that has
-    already had ``$ARGUMENTS`` pasted into it, or the caller has
-    handed the arguments a shell.
-    """
-    # Collect tokens first so we can fan out concurrently — a
-    # template that runs ``git status`` + ``git log`` doesn't need
-    # to serialize them.
-    matches = list(_SHELL_TOKEN_RE.finditer(text))
-    if not matches:
-        return text
-    results = await asyncio.gather(
-        *(_run_shell(_inject_args(m.group(1), args), cwd=cwd) for m in matches),
-        return_exceptions=False,
-    )
-    # ``re.sub`` calls ``replace`` in match order, so a single-
-    # pass iterator over ``results`` returns each captured stdout
-    # to the correct token without an O(N) start-offset scan.
-    result_iter = iter(results)
-
-    def replace(_m: re.Match[str]) -> str:
-        return next(result_iter)
-
-    return _SHELL_TOKEN_RE.sub(replace, text)
-
-
-async def _run_shell(cmd: str, *, cwd: Path) -> str:
-    """Run a single shell snippet, capturing stdout. Errors come
-    back as ``[error: ...]`` strings rather than raising so the
-    caller can keep going."""
-    try:
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            cwd=str(cwd),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except OSError as exc:
-        return f"[error: {exc}]"
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=_SHELL_TIMEOUT_SECONDS)
-    except TimeoutError:
-        proc.kill()
-        with contextlib.suppress(Exception):
-            await proc.wait()
-        return f"[error: timed out after {_SHELL_TIMEOUT_SECONDS}s — {shlex.quote(cmd)}]"
-    if proc.returncode != 0:
-        stderr_txt = err.decode("utf-8", errors="replace").strip()
-        return f"[error: exit {proc.returncode} — {stderr_txt or shlex.quote(cmd)}]"
-    return out.decode("utf-8", errors="replace").rstrip("\n")
-
-
-def _resolve_at_path(token: str, source: Path) -> tuple[Path, str]:
-    """Resolve an ``@token`` to a candidate ``Path`` + trailing
-    punctuation that should be re-appended to the inlined file
-    body. Kept as a pure helper so the caller stays flat."""
-    # Trailing punctuation (``,`` ``.`` ``;`` etc.) is almost always
-    # sentence flow, not part of the path. Strip it back to the
-    # file separator so ``See @README.md.`` works.
-    path_str = token.rstrip(",.;:!?)\"'")
-    trailing = token[len(path_str) :]
-    if path_str.startswith("~"):
-        return Path(path_str).expanduser(), trailing
-    if path_str.startswith("/"):
-        return Path(path_str), trailing
-    return source.parent / path_str, trailing
-
-
-def _at_path_allowed(resolved: Path, source: Path, project_dir: Path | None) -> bool:
-    """Enforce the project-boundary rule for ``@path`` substitution.
-
-    User-home command files (source outside ``project_dir``) can
-    reference anywhere — they're explicitly authored by the user.
-    Project command files must reference paths inside the project
-    to prevent an ``@/etc/passwd`` from silently exfiltrating."""
-    if project_dir is None:
-        return True
-    project_root = project_dir.resolve()
-    try:
-        resolved.relative_to(project_root)
-        return True
-    except ValueError:
-        # Out-of-project ref. Block only when the source itself is
-        # under the project (i.e. a project-authored command).
-        try:
-            source.resolve().relative_to(project_root)
-            return False
-        except ValueError:
-            return True
-
-
-def _substitute_files(text: str, *, source: Path, project_dir: Path | None) -> str:
-    """Inline ``@path`` references. Paths resolve in order:
-    user-home expansion, absolute, then relative to the command
-    file's directory. Unreadable / non-existent paths are left as
-    literals so the agent can see the broken reference."""
-
-    def replace(m: re.Match[str]) -> str:
-        token = m.group(1)
-        candidate, trailing = _resolve_at_path(token, source)
-        try:
-            resolved = candidate.resolve()
-            if not resolved.is_file():
-                return m.group(0)
-            if not _at_path_allowed(resolved, source, project_dir):
-                return m.group(0)
-            return resolved.read_text() + trailing
-        except (OSError, UnicodeDecodeError):
-            return m.group(0)
-
-    return _AT_FILE_RE.sub(replace, text)
+__all__ = ["MarkdownCommand"]

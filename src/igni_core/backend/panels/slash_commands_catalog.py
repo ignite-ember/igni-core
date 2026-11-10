@@ -28,7 +28,7 @@ from igni_core.core.contributed_commands import (
     ContributedCommands,
     contributed_commands,
 )
-from igni_core.core.utils.markdown_commands import discover_markdown_commands
+from igni_core.core.utils.markdown_commands import MarkdownCommand
 
 if TYPE_CHECKING:
     from igni_core.core.session import Session
@@ -67,7 +67,7 @@ class SlashCommandsCatalog:
         ``.claude/commands/`` (CC parity)."""
         try:
             read_claude = self._session.settings.rules.cross_tool_support
-            md_commands = discover_markdown_commands(
+            md_commands = MarkdownCommand.discover(
                 self._session.project_dir,
                 read_claude=read_claude,
             )

@@ -15,11 +15,8 @@ from pydantic import ValidationError
 
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.core.paths import CONFIG_DIR
-from igni_core.core.utils.markdown_commands import (
-    MarkdownCommand,
-    _parse_frontmatter,
-    discover_markdown_commands,
-)
+from igni_core.core.utils.markdown_command_frontmatter import CommandFrontmatter
+from igni_core.core.utils.markdown_commands import MarkdownCommand
 from igni_core.protocol.messages import CommandAction
 
 
@@ -33,36 +30,37 @@ def _write(p: Path, text: str) -> None:
 
 class TestParseFrontmatter:
     def test_no_frontmatter_returns_empty_meta(self):
-        meta, body = _parse_frontmatter("Just a body, no header.\n")
-        assert meta == {}
+        meta, body = CommandFrontmatter.parse("Just a body, no header.\n")
+        assert meta == CommandFrontmatter()
         assert body == "Just a body, no header.\n"
 
     def test_simple_frontmatter(self):
-        meta, body = _parse_frontmatter(
+        meta, body = CommandFrontmatter.parse(
             "---\ndescription: Quick status\nmodel: sonnet\n---\nBody.\n"
         )
-        assert meta == {"description": "Quick status", "model": "sonnet"}
+        assert meta.description == "Quick status"
+        assert meta.model == "sonnet"
         assert body == "Body.\n"
 
     def test_malformed_yaml_is_no_op(self):
         """A broken frontmatter block shouldn't sink the whole
         command — fail open and treat the file as bodyless meta."""
-        meta, body = _parse_frontmatter("---\n: : not valid:\n  :\n---\nBody survives.\n")
-        assert meta == {}
+        meta, body = CommandFrontmatter.parse("---\n: : not valid:\n  :\n---\nBody survives.\n")
+        assert meta == CommandFrontmatter()
         assert "Body survives" in body
 
     def test_non_dict_yaml_treated_as_empty(self):
         """A scalar / list at the top level isn't a meta dict."""
-        meta, body = _parse_frontmatter("---\njust a string\n---\nBody.\n")
-        assert meta == {}
+        meta, body = CommandFrontmatter.parse("---\njust a string\n---\nBody.\n")
+        assert meta == CommandFrontmatter()
         assert body == "Body.\n"
 
 
 # ── Discovery ─────────────────────────────────────────────────
 
 
-class TestDiscoverMarkdownCommands:
-    def test_finds_project_ember_command(self, tmp_path, monkeypatch):
+class TestDiscover:
+    def test_finds_project_igni_command(self, tmp_path, monkeypatch):
         """Most basic case: a single command at
         ``<project>/.igni/commands/review.md``."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
@@ -71,7 +69,7 @@ class TestDiscoverMarkdownCommands:
             tmp_path / CONFIG_DIR / "commands" / "review.md",
             "---\ndescription: Review the diff\n---\nReview changes.\n",
         )
-        cmds = discover_markdown_commands(tmp_path)
+        cmds = MarkdownCommand.discover(tmp_path)
         assert "review" in cmds
         assert cmds["review"].description == "Review the diff"
         assert "Review changes." in cmds["review"].body
@@ -83,7 +81,7 @@ class TestDiscoverMarkdownCommands:
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: home)
         _write(home / CONFIG_DIR / "commands" / "global.md", "Globally available.\n")
-        cmds = discover_markdown_commands(tmp_path)
+        cmds = MarkdownCommand.discover(tmp_path)
         assert "global" in cmds
 
     def test_project_overrides_user_global_on_name_collision(self, tmp_path, monkeypatch):
@@ -94,23 +92,23 @@ class TestDiscoverMarkdownCommands:
         monkeypatch.setattr(Path, "home", lambda: home)
         _write(home / CONFIG_DIR / "commands" / "review.md", "GLOBAL\n")
         _write(tmp_path / CONFIG_DIR / "commands" / "review.md", "PROJECT\n")
-        cmds = discover_markdown_commands(tmp_path)
+        cmds = MarkdownCommand.discover(tmp_path)
         assert "PROJECT" in cmds["review"].body
         assert "GLOBAL" not in cmds["review"].body
 
-    def test_ember_dir_beats_claude_dir_at_same_tier(self, tmp_path, monkeypatch):
-        """Within the same tier (e.g. both project), ember wins —
+    def test_igni_dir_beats_claude_dir_at_same_tier(self, tmp_path, monkeypatch):
+        """Within the same tier (e.g. both project), igni wins —
         keeps our own namespace authoritative when both exist."""
         home = tmp_path / "home"
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: home)
         _write(tmp_path / ".claude" / "commands" / "review.md", "FROM-CLAUDE\n")
-        _write(tmp_path / CONFIG_DIR / "commands" / "review.md", "FROM-EMBER\n")
-        cmds = discover_markdown_commands(tmp_path)
-        assert "FROM-EMBER" in cmds["review"].body
+        _write(tmp_path / CONFIG_DIR / "commands" / "review.md", "FROM-IGNI\n")
+        cmds = MarkdownCommand.discover(tmp_path)
+        assert "FROM-IGNI" in cmds["review"].body
 
     def test_read_claude_false_skips_claude_dirs(self, tmp_path, monkeypatch):
-        """``cross_tool_support=False`` → only ember dirs scanned.
+        """``cross_tool_support=False`` → only igni dirs scanned.
         A user with this toggle off shouldn't get drive-by command
         injection from ``~/.claude/commands/``."""
         home = tmp_path / "home"
@@ -118,11 +116,33 @@ class TestDiscoverMarkdownCommands:
         monkeypatch.setattr(Path, "home", lambda: home)
         _write(home / ".claude" / "commands" / "claude.md", "Should-not-load")
         _write(tmp_path / ".claude" / "commands" / "proj.md", "Should-not-load")
-        _write(tmp_path / CONFIG_DIR / "commands" / "ember.md", "Loads")
-        cmds = discover_markdown_commands(tmp_path, read_claude=False)
+        _write(tmp_path / CONFIG_DIR / "commands" / "igni.md", "Loads")
+        cmds = MarkdownCommand.discover(tmp_path, read_claude=False)
         assert "claude" not in cmds
         assert "proj" not in cmds
-        assert "ember" in cmds
+        assert "igni" in cmds
+
+    def test_a_project_claude_command_is_found_when_the_toggle_is_on(self, tmp_path, monkeypatch):
+        """The cross-tool sources are read when the user consents."""
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        _write(tmp_path / ".claude" / "commands" / "cc_proj.md", "CC PROJECT\n")
+
+        cmds = MarkdownCommand.discover(tmp_path, read_claude=True)
+
+        assert "CC PROJECT" in cmds["cc_proj"].body
+
+    def test_a_user_claude_command_is_found_when_the_toggle_is_on(self, tmp_path, monkeypatch):
+        """The user tier's cross-tool source is read too."""
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        _write(home / ".claude" / "commands" / "cc_user.md", "CC USER\n")
+
+        cmds = MarkdownCommand.discover(tmp_path, read_claude=True)
+
+        assert "CC USER" in cmds["cc_user"].body
 
     def test_dotfiles_ignored(self, tmp_path, monkeypatch):
         """Editor backup files like ``.review.md.swp`` shouldn't
@@ -131,7 +151,7 @@ class TestDiscoverMarkdownCommands:
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: home)
         _write(tmp_path / CONFIG_DIR / "commands" / ".backup.md", "Should not load")
-        cmds = discover_markdown_commands(tmp_path)
+        cmds = MarkdownCommand.discover(tmp_path)
         assert cmds == {}
 
     def test_allowed_tools_parsed_as_list(self, tmp_path, monkeypatch):
@@ -142,7 +162,7 @@ class TestDiscoverMarkdownCommands:
             tmp_path / CONFIG_DIR / "commands" / "rev.md",
             "---\nallowed-tools: Bash, Read,Write \n---\nBody\n",
         )
-        cmds = discover_markdown_commands(tmp_path)
+        cmds = MarkdownCommand.discover(tmp_path)
         assert cmds["rev"].allowed_tools == ("Bash", "Read", "Write")
 
     def test_allowed_tools_from_yaml_list(self, tmp_path, monkeypatch):
@@ -153,7 +173,7 @@ class TestDiscoverMarkdownCommands:
             tmp_path / CONFIG_DIR / "commands" / "rev.md",
             "---\nallowed-tools:\n  - Bash\n  - Read\n---\nBody\n",
         )
-        cmds = discover_markdown_commands(tmp_path)
+        cmds = MarkdownCommand.discover(tmp_path)
         assert cmds["rev"].allowed_tools == ("Bash", "Read")
 
     def test_argument_hint_and_model_parsed(self, tmp_path, monkeypatch):
@@ -164,7 +184,7 @@ class TestDiscoverMarkdownCommands:
             tmp_path / CONFIG_DIR / "commands" / "rev.md",
             "---\nargument-hint: <path>\nmodel: opus\n---\nBody\n",
         )
-        cmds = discover_markdown_commands(tmp_path)
+        cmds = MarkdownCommand.discover(tmp_path)
         assert cmds["rev"].argument_hint == "<path>"
         assert cmds["rev"].model == "opus"
 
@@ -172,51 +192,85 @@ class TestDiscoverMarkdownCommands:
         home = tmp_path / "home"
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: home)
-        assert discover_markdown_commands(tmp_path) == {}
+        assert MarkdownCommand.discover(tmp_path) == {}
 
-
-class TestMarkdownCommandClassmethodDiscover:
-    """The class-method ``MarkdownCommand.discover(...)`` is the
-    preferred entry point post-refactor (Rule 5.3 — public API
-    lives on the class). The module-level ``discover_markdown_commands``
-    is retained as a thin delegate for backwards compatibility
-    with test monkey-patches that pin the dotted path. These tests
-    lock in that both APIs return equivalent results."""
-
-    def test_classmethod_finds_commands(self, tmp_path, monkeypatch):
+    def test_the_group_root_sits_between_the_globals_and_the_project(self, tmp_path, monkeypatch):
+        """The org's commands are a deliberate decision, so they beat
+        a stray file in ``~`` — and a project knows more about itself
+        than a group-wide command does."""
         home = tmp_path / "home"
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: home)
-        _write(
-            tmp_path / CONFIG_DIR / "commands" / "hello.md",
-            "---\ndescription: greeting\n---\nHi.\n",
-        )
-        cmds = MarkdownCommand.discover(tmp_path)
-        assert "hello" in cmds
-        assert cmds["hello"].description == "greeting"
+        group = tmp_path / "group"
+        group.mkdir()
+        _write(home / CONFIG_DIR / "commands" / "shared.md", "GLOBAL\n")
+        _write(group / "shared.md", "GROUP\n")
+        _write(tmp_path / CONFIG_DIR / "commands" / "shared.md", "PROJECT\n")
 
-    def test_classmethod_and_delegate_return_equivalent_dict(self, tmp_path, monkeypatch):
+        cmds = MarkdownCommand.discover(tmp_path, group_dir=group)
+
+        assert "PROJECT" in cmds["shared"].body
+
+    def test_the_group_wins_over_a_user_global(self, tmp_path, monkeypatch):
+        """Same collision, one tier lower: the org's command beats
+        the user's global, and the project's (absent here) would beat
+        the org's."""
         home = tmp_path / "home"
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: home)
-        _write(tmp_path / CONFIG_DIR / "commands" / "a.md", "A body.\n")
-        _write(tmp_path / CONFIG_DIR / "commands" / "b.md", "B body.\n")
-        via_class = MarkdownCommand.discover(tmp_path)
-        via_func = discover_markdown_commands(tmp_path)
-        # Both entry points must produce identical maps — the module
-        # function delegates to the classmethod under the hood.
-        assert set(via_class) == set(via_func)
-        for name in via_class:
-            assert via_class[name] == via_func[name]
+        group = tmp_path / "group"
+        group.mkdir()
+        _write(home / CONFIG_DIR / "commands" / "shared.md", "GLOBAL\n")
+        _write(group / "shared.md", "GROUP\n")
 
-    def test_classmethod_respects_read_claude_toggle(self, tmp_path, monkeypatch):
-        # Same off-switch semantics as the module function.
-        home = tmp_path / "home"
-        home.mkdir()
-        monkeypatch.setattr(Path, "home", lambda: home)
-        _write(tmp_path / ".claude" / "commands" / "cc_only.md", "CC.\n")
-        assert "cc_only" in MarkdownCommand.discover(tmp_path, read_claude=True)
-        assert "cc_only" not in MarkdownCommand.discover(tmp_path, read_claude=False)
+        cmds = MarkdownCommand.discover(tmp_path, group_dir=group)
+
+        assert "GROUP" in cmds["shared"].body
+
+
+class TestMarkdownCommandLoad:
+    """``MarkdownCommand.load`` reads one file — the unit discovery
+    is built from."""
+
+    def test_the_name_is_the_stem(self, tmp_path):
+        path = tmp_path / "review.md"
+        path.write_text("Body.\n")
+
+        cmd = MarkdownCommand.load(path)
+
+        assert cmd is not None
+        assert cmd.name == "review"
+        assert cmd.path == path.resolve()
+
+    def test_a_dotfile_is_not_a_command(self, tmp_path):
+        path = tmp_path / ".backup.md"
+        path.write_text("Body.\n")
+
+        assert MarkdownCommand.load(path) is None
+
+    def test_an_unreadable_file_is_not_a_command(self, tmp_path):
+        """A path the process cannot read is skipped, not raised —
+        discovery walks a directory the user does not own."""
+        path = tmp_path / "locked.md"
+        path.mkdir()
+
+        assert MarkdownCommand.load(path) is None
+
+    def test_a_non_utf8_file_is_not_a_command(self, tmp_path):
+        path = tmp_path / "binary.md"
+        path.write_bytes(b"\xff\xfe\x00broken")
+
+        assert MarkdownCommand.load(path) is None
+
+    def test_the_frontmatter_becomes_the_header(self, tmp_path):
+        path = tmp_path / "review.md"
+        path.write_text("---\ndescription: Look at it\n---\nBody.\n")
+
+        cmd = MarkdownCommand.load(path)
+
+        assert cmd is not None
+        assert cmd.description == "Look at it"
+        assert cmd.body == "Body.\n"
 
 
 class TestMarkdownCommandModel:
@@ -303,6 +357,29 @@ class TestRenderShell:
         out = await cmd.render("", project_dir=tmp_path)
         assert "A=first" in out
         assert "B=second" in out
+
+    @pytest.mark.asyncio
+    async def test_a_command_with_no_project_runs_its_shell(self, tmp_path):
+        """With no project there is no folder to be trusted, so there
+        is nothing to gate."""
+        cmd = MarkdownCommand(name="x", path=tmp_path / "x.md", body="Echo: !`echo hello`")
+        out = await cmd.render("")
+        assert "Echo: hello" in out
+
+    @pytest.mark.asyncio
+    async def test_a_command_from_outside_the_project_runs_its_shell(self, tmp_path):
+        """A user-tier command is the user's own, not the project's —
+        the trust gate is about the folder a command comes *from*."""
+        user_cmd = tmp_path / "home" / CONFIG_DIR / "commands" / "go.md"
+        user_cmd.parent.mkdir(parents=True)
+        user_cmd.write_text("Echo: !`echo hello`\n")
+        project = tmp_path / "project"
+        project.mkdir()
+        cmd = MarkdownCommand(name="go", path=user_cmd, body=user_cmd.read_text())
+
+        out = await cmd.render("", project_dir=project)
+
+        assert "Echo: hello" in out
 
 
 class TestRenderFiles:

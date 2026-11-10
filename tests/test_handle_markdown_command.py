@@ -2,7 +2,7 @@
 wrapper that surfaces markdown-authored slash commands to the
 dispatcher.
 
-The discovery side (``discover_markdown_commands``) is exhaustively
+The discovery side (``MarkdownCommand.discover``) is exhaustively
 covered in ``test_markdown_commands.py``. This file pins the
 WRAPPER's contract:
 
@@ -20,57 +20,21 @@ error" or vice versa.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.protocol.messages import CommandAction, CommandResultKind
 
-# The dispatcher reads ``discover_markdown_commands`` via the
-# ``command_handler`` reference injected at construction time, so
-# the primary patch path is
-# ``igni_core.backend.command_handler.discover_markdown_commands``.
-# The legacy
-# ``igni_core.backend.markdown_command_dispatcher.discover_markdown_commands``
-# patch is stacked as defensive belt-and-braces in case a future
-# refactor re-introduces a module-level alias here. With the
-# constructor-injected design, that path is currently dead — but
-# the helper costs nothing and protects against regressions.
-_DISCOVERY_PATCH_TARGETS = (
-    "igni_core.backend.command_handler.discover_markdown_commands",
-    "igni_core.backend.markdown_command_dispatcher.discover_markdown_commands",
-)
 
-
-def _patch_discovery(**kwargs):
-    """Stack patch() contexts for every module that re-exports
-    ``discover_markdown_commands`` and return a context manager.
-    The first mock (the ``command_handler`` path, which is what
-    gets injected into the dispatcher) is recorded as
-    ``ctx.first_mock`` so callers can assert call args.
-
-    IMPORTANT: callers must build ``CommandHandler`` INSIDE the
-    ``with`` block so the patched symbol is what gets captured at
-    construction (see :func:`_make_handler`).
-    """
-    from contextlib import ExitStack
-
-    stack = ExitStack()
-    mocks = []
-    for target in _DISCOVERY_PATCH_TARGETS:
-        mocks.append(stack.enter_context(patch(target, **kwargs)))
-    stack.first_mock = mocks[0]
-    return stack
-
-
-def _make_handler(tmp_path: Path) -> CommandHandler:
+def _make_handler(tmp_path: Path, discover=None) -> CommandHandler:
     """Build a minimal CommandHandler with just enough Session
-    state for ``_handle_markdown_command`` to exercise. The
-    injected ``discover`` callable captures whatever
-    ``command_handler.discover_markdown_commands`` resolves to at
-    THIS moment — call this INSIDE a ``_patch_discovery`` block so
-    the patched symbol lands on the dispatcher.
+    state for ``_handle_markdown_command`` to exercise.
+
+    ``discover`` is the markdown tier's discovery callable — the
+    handler takes it as a constructor argument, so a test hands in
+    a stub instead of patching a module-level symbol.
     """
     session = MagicMock()
     session.project_dir = tmp_path
@@ -79,7 +43,7 @@ def _make_handler(tmp_path: Path) -> CommandHandler:
     # as a bare MagicMock it would hand the loader a Mock to scan, which
     # is neither of the two states the code has to handle.
     session.group_policy.shipped_dir.return_value = None
-    return CommandHandler(session)
+    return CommandHandler(session, discover=discover)
 
 
 class TestEmptyName:
@@ -101,16 +65,15 @@ class TestEmptyName:
 class TestDiscoveryFailure:
     @pytest.mark.asyncio
     async def test_discovery_exception_swallowed_and_fall_through(self, tmp_path):
-        # If ``discover_markdown_commands`` throws (e.g. a YAML
-        # parse error in some other unrelated file), we must
-        # fall through to the next dispatcher tier rather than
-        # surfacing the failure as a user-facing error. The
-        # user typed a slash command; if it ISN'T a markdown
-        # command they want the dispatcher to try the next
+        # If discovery throws (e.g. a YAML parse error in some other
+        # unrelated file), we must fall through to the next dispatcher
+        # tier rather than surfacing the failure as a user-facing
+        # error. The user typed a slash command; if it ISN'T a
+        # markdown command they want the dispatcher to try the next
         # registry, not bail.
-        with _patch_discovery(side_effect=RuntimeError("oops")):
-            handler = _make_handler(tmp_path)
-            result = await handler._handle_markdown_command("/foo", "")
+        discover = MagicMock(side_effect=RuntimeError("oops"))
+        handler = _make_handler(tmp_path, discover)
+        result = await handler._handle_markdown_command("/foo", "")
         assert result is None
 
 
@@ -118,9 +81,8 @@ class TestUnknownName:
     @pytest.mark.asyncio
     async def test_unknown_command_returns_none(self, tmp_path):
         # No commands defined → lookup misses → fall through.
-        with _patch_discovery(return_value={}):
-            handler = _make_handler(tmp_path)
-            result = await handler._handle_markdown_command("/unknown", "")
+        handler = _make_handler(tmp_path, MagicMock(return_value={}))
+        result = await handler._handle_markdown_command("/unknown", "")
         assert result is None
 
 
@@ -130,9 +92,9 @@ class TestSuccessfulRender:
         # Happy path — command found, render returns the
         # filled-in prompt, wrapper returns it as a RUN_PROMPT
         # action so the dispatcher feeds it to the agent.
-        with _patch_discovery(return_value={"deploy": _mock_md("rendered prompt body")}):
-            handler = _make_handler(tmp_path)
-            result = await handler._handle_markdown_command("/deploy", "to staging")
+        discover = MagicMock(return_value={"deploy": _mock_md("rendered prompt body")})
+        handler = _make_handler(tmp_path, discover)
+        result = await handler._handle_markdown_command("/deploy", "to staging")
 
         assert result is not None
         assert result.kind == CommandResultKind.INFO
@@ -145,9 +107,9 @@ class TestSuccessfulRender:
         # after ``/cmd `` is forwarded as the ``args`` so the
         # markdown body's ``$ARGUMENTS`` substitution works.
         md = _mock_md("ok")
-        with _patch_discovery(return_value={"deploy": md}):
-            handler = _make_handler(tmp_path)
-            await handler._handle_markdown_command("/deploy", "to staging")
+        discover = MagicMock(return_value={"deploy": md})
+        handler = _make_handler(tmp_path, discover)
+        await handler._handle_markdown_command("/deploy", "to staging")
         md.render.assert_awaited_once_with("to staging", project_dir=tmp_path)
 
 
@@ -160,9 +122,9 @@ class TestRenderFailure:
         # through, which would make them think the command
         # doesn't exist).
         md = _mock_md(side_effect=ValueError("template bad"))
-        with _patch_discovery(return_value={"deploy": md}):
-            handler = _make_handler(tmp_path)
-            result = await handler._handle_markdown_command("/deploy", "")
+        discover = MagicMock(return_value={"deploy": md})
+        handler = _make_handler(tmp_path, discover)
+        result = await handler._handle_markdown_command("/deploy", "")
 
         assert result is not None
         assert result.kind == CommandResultKind.ERROR
@@ -177,22 +139,22 @@ class TestCrossToolSupport:
         # ``cross_tool_support`` flag is forwarded as
         # ``read_claude`` to discovery. Pin the wiring so a
         # rename or default-change is visible.
-        with _patch_discovery(return_value={}) as ctx:
-            handler = _make_handler(tmp_path)
-            handler._session.settings.rules.cross_tool_support = True
-            await handler._handle_markdown_command("/foo", "")
+        discover = MagicMock(return_value={})
+        handler = _make_handler(tmp_path, discover)
+        handler._session.settings.rules.cross_tool_support = True
+        await handler._handle_markdown_command("/foo", "")
         # ``group_dir`` is part of the pinned signature now — the
         # group's commands are read from the policy cache rather than
         # copied into the project, and a mock session ships none.
-        ctx.first_mock.assert_called_once_with(tmp_path, read_claude=True, group_dir=None)
+        discover.assert_called_once_with(tmp_path, read_claude=True, group_dir=None)
 
     @pytest.mark.asyncio
     async def test_skips_claude_when_cross_tool_support_off(self, tmp_path):
-        with _patch_discovery(return_value={}) as ctx:
-            handler = _make_handler(tmp_path)
-            handler._session.settings.rules.cross_tool_support = False
-            await handler._handle_markdown_command("/foo", "")
-        ctx.first_mock.assert_called_once_with(tmp_path, read_claude=False, group_dir=None)
+        discover = MagicMock(return_value={})
+        handler = _make_handler(tmp_path, discover)
+        handler._session.settings.rules.cross_tool_support = False
+        await handler._handle_markdown_command("/foo", "")
+        discover.assert_called_once_with(tmp_path, read_claude=False, group_dir=None)
 
 
 def _mock_md(return_value="rendered prompt body", *, side_effect=None):
