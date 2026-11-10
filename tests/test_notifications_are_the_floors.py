@@ -319,9 +319,7 @@ def test_the_counts_reach_the_client_on_their_own_channel():
 
     assert len(sent) == 1
     assert sent[0].channel == PushChannel.NOTIFICATIONS_CHANGED
-    assert sent[0].payload == {
-        "counts": {"unread": 2, "by_source": {"igni.artifacts": 2}}
-    }
+    assert sent[0].payload == {"counts": {"unread": 2, "by_source": {"igni.artifacts": 2}}}
 
 
 def test_the_three_rpcs_are_the_handlers():

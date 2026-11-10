@@ -111,9 +111,7 @@ class PoolSession:
         titled: PersistResult = await runtime.backend.title_session(title)
         if titled.ok:
             await runtime.transport.send(
-                msg.push_session_named(
-                    SessionNamedPayload(session_id=self.session_id, name=title)
-                )
+                msg.push_session_named(SessionNamedPayload(session_id=self.session_id, name=title))
             )
         return titled
 

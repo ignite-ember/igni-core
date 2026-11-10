@@ -290,10 +290,16 @@ class TestTheEntryPointsBuildOne:
         ``BackendServer`` and to every runtime in the pool."""
         _publish({"learning": {"enabled": False}})
 
-        assert BackendSettingsLoader(project_dir=tmp_path, gate=RunGate()).load().learning.enabled is False
+        assert (
+            BackendSettingsLoader(project_dir=tmp_path, gate=RunGate()).load().learning.enabled
+            is False
+        )
 
     def test_the_backend_still_boots_without_a_policy(self, tmp_path: Path):
-        assert BackendSettingsLoader(project_dir=tmp_path, gate=RunGate()).load().learning.enabled is True
+        assert (
+            BackendSettingsLoader(project_dir=tmp_path, gate=RunGate()).load().learning.enabled
+            is True
+        )
 
     def test_the_cli_applies_group_policy_too(self):
         """``igni -m`` runs a real session in this process, so a policy that
