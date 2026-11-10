@@ -147,7 +147,5 @@ def test_the_install_note_says_what_is_published_today(name):
         f"{_PUBLISHED_VERSION} that is not true: {_PUBLISHED} is on PyPI and "
         f"holds this repository's build."
     )
-    assert _PUBLISHED in text, (
-        f"{name} does not name {_PUBLISHED}, the package PyPI carries today."
-    )
+    assert _PUBLISHED in text, f"{name} does not name {_PUBLISHED}, the package PyPI carries today."
     assert _PUBLISHED_VERSION in text, f"{name} does not name the published version."
