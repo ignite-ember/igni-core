@@ -73,7 +73,7 @@ class PlanTransactionCoordinator:
         reason_clean = (reason or "").strip()
         task_clean = (task or "").strip()
 
-        switch = self._session.set_permission_mode("plan")
+        switch = self._session.mode.set_permission_mode("plan")
         if switch.refused:
             # Evaluator refused the flip — propagate the status
             # verbatim.

@@ -19,7 +19,7 @@ Typical pattern, inside the loop prompt::
     ``loop_progress_set("section_X", "verified ok")``, then
     stop. If every section already appears, say DONE.
 
-The tool's run_id is read from :attr:`Session.loop_run_id` on
+The tool's run_id is read from :attr:`LoopController.loop_run_id` on
 every call, so it always operates on the *current* loop's
 progress; entries from a previous (different ``run_id``) loop
 stay in the DB but are invisible. Without an active loop, each
@@ -50,7 +50,7 @@ class LoopProgressTool(Toolkit):
         self.register(self.loop_progress_clear)
 
     def _run_id_or_error(self) -> tuple[str, None] | tuple[None, str]:
-        run_id = self._session.loop_run_id
+        run_id = self._session.loop.loop_run_id
         if not run_id:
             return None, (
                 "ERROR: no /loop is active — start one with loop_start() "

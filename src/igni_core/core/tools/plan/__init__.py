@@ -25,7 +25,7 @@ adds the missing pieces:
   extensions answer first, then igni's own ``PlanSubmit`` hooks.
 
 The complementary half (``/plan`` slash command +
-``Session.set_permission_mode``) lives in ``backend/command_handler.py``
+``RuntimeModeCoordinator.set_permission_mode``) lives in ``backend/command_handler.py``
 and ``core/session/core.py`` respectively.
 
 This module was a single 517-LoC file until the OOP split; the

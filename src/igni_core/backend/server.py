@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, MutableSequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from igni_core.backend.activity import SessionActivity
 from igni_core.backend.backend_bootstrap import BackendBootstrap
@@ -27,6 +27,7 @@ from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustController, reload_settings
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.session.event_log_schema import (
@@ -63,8 +64,10 @@ if TYPE_CHECKING:
     )
     from igni_core.backend.server_files import ReadFileResult
     from igni_core.backend.server_processes import ProcessRow
+    from igni_core.backend.session_pool import SessionRuntime
     from igni_core.core.agents import AgentInfo
     from igni_core.core.config.settings import Settings
+    from igni_core.core.mcp.client import MCPClientManager
     from igni_core.core.plugins.models import MarketplaceInfo, PluginInfo
     from igni_core.core.scheduler.models import ScheduledTask
     from igni_core.core.session.core import Session
@@ -93,7 +96,8 @@ class BackendServer:
         prompt_loader: PromptLoader | None = None,
         supervisors: SupervisorLocator | None = None,
         gate: RunGate | None = None,
-    ):
+        tool_hints: ToolHintsRegistry | None = None,
+    ) -> None:
         # The supervisor this backend process shares. The backend's
         # composition root builds one locator per process and hands it
         # here; a server built on its own gets a locator of its own,
@@ -112,6 +116,7 @@ class BackendServer:
             contributions=contributions,
             prompt_loader=prompt_loader,
             supervisor=self._supervisors.supervisor,
+            tool_hints=tool_hints,
         )
         controllers = ControllerRegistry.build(
             session=bootstrap.session,
@@ -170,19 +175,28 @@ class BackendServer:
         self.controllers = controllers
         #: Messages typed during a run, durable — the runtime's queue.
         self.message_queue = message_queue
-        self._runtime: Any = None
+        self._runtime: SessionRuntime | None = None
+        # The slash-command router, built once. It holds the session
+        # and two dispatchers, and neither carries state between
+        # commands: the markdown tier discovers its commands per call,
+        # so a file dropped into the folder mid-session is still
+        # found.
+        self._commands = CommandHandler(session)
+        # The folder's trust, read afresh: the controller decides per
+        # call, so building it once does not freeze the answer.
+        self._workspace_trust = WorkspaceTrustController(session.project_dir)
         # A new dialogue should pick up an admin's change.
         session.on_new_dialogue = controllers.group_policy.revalidate_for_new_dialogue
 
     # ── Runtime + session identity ────────────────────────────────
 
-    def attach_runtime(self, runtime: Any) -> None:
+    def attach_runtime(self, runtime: SessionRuntime) -> None:
         """Called by :class:`SessionRuntimeFactory` once the runtime
         that owns this backend is built."""
         self._runtime = runtime
 
     @property
-    def runtime(self) -> Any:
+    def runtime(self) -> SessionRuntime | None:
         return self._runtime
 
     @property
@@ -190,7 +204,7 @@ class BackendServer:
         return self._session.project_dir
 
     @property
-    def mcp_manager(self) -> Any:
+    def mcp_manager(self) -> MCPClientManager:
         """The session's MCP client manager, for the extension installer
         and health monitor."""
         return self._session.mcp_manager
@@ -262,7 +276,7 @@ class BackendServer:
         await self.controllers.lifecycle.shutdown()
 
     def start_boot_background_services(self) -> None:
-        self._session.start_marketplace_refresh_background()
+        self._session.startup.start_marketplace_refresh_background()
 
     def register_broadcast(self, subscriber: BroadcastSink) -> None:
         self._session.broadcast_bus.register(subscriber)
@@ -277,13 +291,15 @@ class BackendServer:
         Before the hook so the hook and the first turn see the same
         configuration. A failed revalidation leaves the cached pack in
         place: a session that will not start is worse than one running a
-        slightly stale pack.
+        slightly stale pack. The failure comes back in the result — the
+        pack is stale, not the session broken — so it is read here, not
+        caught.
         """
-        try:
-            await self.controllers.group_policy.revalidate_for_new_dialogue()
-        except Exception:
+        outcome = await self.controllers.group_policy.revalidate_for_new_dialogue()
+        if outcome.error:
             logger.warning(
-                "group-policy revalidation failed; continuing with cached pack", exc_info=True
+                "group-policy revalidation failed; continuing with the cached pack: %s",
+                outcome.error,
             )
         await self._session.fire_session_start_hook()
 
@@ -316,7 +332,7 @@ class BackendServer:
             yield proto
 
     async def handle_command(self, text: str) -> msg.CommandResult:
-        return await CommandHandler(self._session).handle(text)
+        return await self._commands.handle(text)
 
     def wire_queue_hook(self, queue: MutableSequence[str]) -> None:
         self.controllers.team_wiring.wire_queue_hook(queue)
@@ -438,7 +454,7 @@ class BackendServer:
     @property
     def workspace_trust(self) -> WorkspaceTrustController:
         """Status and answers for this runtime's folder, read afresh."""
-        return WorkspaceTrustController(self.project_dir)
+        return self._workspace_trust
 
     async def apply_workspace_trust(self) -> None:
         """Rebuild this runtime's session after the folder's trust changed:

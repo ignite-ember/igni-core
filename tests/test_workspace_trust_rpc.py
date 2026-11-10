@@ -175,7 +175,7 @@ async def test_a_running_session_picks_up_trust_and_its_revocation(tmp_path: Pat
 
     project = _project(tmp_path)
     session = Session(settings=reload_settings(project), project_dir=project)
-    session.set_permission_mode("plan")
+    session.mode.set_permission_mode("plan")
 
     def project_hooks() -> int:
         return sum(
@@ -186,7 +186,7 @@ async def test_a_running_session_picks_up_trust_and_its_revocation(tmp_path: Pat
         )
 
     def denies_make_deploy() -> bool:
-        evaluator = session._tool_hook_factory.permission_evaluator
+        evaluator = session.tool_hook_factory.permission_evaluator
         return any("make deploy" in rule.display() for rule in evaluator.deny)
 
     assert project_hooks() == 0

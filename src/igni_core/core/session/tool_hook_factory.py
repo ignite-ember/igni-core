@@ -16,7 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from igni_core.core.config.permission_eval import PermissionEvaluator
+from igni_core.core.config.permission_eval import PermissionEvaluator, ToolCategoryCatalog
 from igni_core.core.config.permission_eval.schemas import PermissionMode
 from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.bypass_explainer import CallExplainer
@@ -44,6 +44,7 @@ class ToolEventHookFactory:
         hooks: SessionHooks,
         session_id_ref: Callable[[], str],
         permission_evaluator: PermissionEvaluator | None = None,
+        tool_hints: ToolHintsRegistry | None = None,
     ) -> None:
         self._settings = settings
         self._rules_index = rules_index
@@ -54,6 +55,10 @@ class ToolEventHookFactory:
         # ``settings.permissions.mode`` — dropping a person out of plan mode
         # because they installed a plugin.
         self._permission_evaluator: PermissionEvaluator | None = permission_evaluator
+        # What an extension's tools say about themselves. The modes and
+        # Bypass's last check both read it, so both are given the one
+        # table — the one the installer fills.
+        self._tool_hints = tool_hints
         #: Bypass mode's last check; set by the session once it can ask.
         self.bypass_guard: BypassGuard | None = None
         #: The session's in-run approval channel, for a call the evaluator
@@ -66,9 +71,20 @@ class ToolEventHookFactory:
         first access (explicit lists, per-category levels, ``--read-only``)."""
         if self._permission_evaluator is None:
             self._permission_evaluator = PermissionEvaluator.from_permissions(
-                self._settings.permissions
+                self._settings.permissions,
+                catalog=self._catalog(),
             )
         return self._permission_evaluator
+
+    def _catalog(self) -> ToolCategoryCatalog | None:
+        """The catalog the modes classify tools with.
+
+        ``None`` leaves the default one, which reads the process's
+        table of what an extension's tools say they are.
+        """
+        if self._tool_hints is None:
+            return None
+        return ToolCategoryCatalog(tool_hints=self._tool_hints)
 
     @property
     def in_bypass(self) -> bool:

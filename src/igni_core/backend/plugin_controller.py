@@ -142,7 +142,7 @@ class PluginController:
                 source_root=p.source.root,
                 path=str(p.root_path),
                 # Managed plugins ignore the persisted disable
-                # list (see ``Session._disabled_plugins``); reflect
+                # list (see ``session.disabled_plugins``); reflect
                 # that here so the panel shows them enabled and
                 # locks the toggle.
                 enabled=p.is_managed or p.name not in disabled,

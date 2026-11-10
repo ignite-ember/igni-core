@@ -1,7 +1,7 @@
 """Tests for the background marketplace refresh.
 
 Verifies that :meth:`MarketplaceWarmupPhase.start_background` (what
-:meth:`Session.start_marketplace_refresh_background` runs):
+:meth:`Session.startup.start_marketplace_refresh_background` runs):
 
   - Schedules an asyncio task on the running loop.
   - Calls ``MarketplaceRegistryStore.refresh`` for each registered marketplace.

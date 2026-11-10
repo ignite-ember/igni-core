@@ -3,9 +3,9 @@
 Six phase methods (``build_tools`` / ``build_prompt`` /
 ``build_instructions`` / ``build_model`` / ``build_spec`` /
 ``build``) each own one slice of the main-agent construction. All
-Session state is read through the session's public accessors
-(``cloud_access_token``,
-``active_output_style``, ``tool_event_hook()``, ``agent_catalog(pool.list_agents())``)
+Session state is read from the collaborator that owns it
+(``cloud_auth.access_token``,
+``output_style.active``, ``tool_hook_factory``, ``agent_catalog(pool.list_agents())``)
 so this sub-package never reaches into ``session._underscore`` attributes.
 
 Constructor injection is required: the caller passes ``agent_cls`` /
@@ -100,8 +100,8 @@ class MainAgentBuilder:
                 permissions_cls=self._permissions_cls,
                 registry_cls=self._registry_cls,
                 cloud=CloudCredentials(
-                    token=s.cloud_access_token,
-                    server_url=s.cloud_server_url,
+                    token=s.cloud_auth.access_token,
+                    server_url=s.cloud_auth.server_url,
                 ),
                 broadcast=s.broadcast,
                 supervisor=s.supervisor,
@@ -138,8 +138,9 @@ class MainAgentBuilder:
             # and the user-memory store only contributes that tool when
             # ``learning.user_memory`` is on (``to_user_memory_input``
             # returns ``False`` otherwise). ``learning.enabled=false`` or a
-            # session with no db both leave ``s.learning`` None.
-            user_memory_available=s.learning is not None and s.settings.learning.user_memory,
+            # session with no db both leave ``s.learning_mgr.machine`` None.
+            user_memory_available=s.learning_mgr.machine is not None
+            and s.settings.learning.user_memory,
             agent_catalog=agent_catalog(s.pool.list_agents()),
             skill_descriptions=s.skill_pool.describe(),
             prompt_loader=self._prompt_loader,
@@ -155,8 +156,8 @@ class MainAgentBuilder:
             project_instructions=s.project_instructions,
             workspace=s.workspace,
             settings=s.settings,
-            output_styles=s.output_styles,
-            active_output_style_name=s.active_output_style,
+            output_styles=s.output_style.styles,
+            active_output_style_name=s.output_style.active,
             contributions=s.prompt_contributions,
             prompt_loader=self._prompt_loader,
         ).assemble(prompt)
@@ -227,7 +228,7 @@ class MainAgentBuilder:
             knowledge=None,
             search_knowledge=False,
             pre_hooks=self._guardrails_factory(s.settings),
-            learning=s.learning,
+            learning=s.learning_mgr.machine,
             add_learnings_to_context=True,
             # In the cloud, memory-file writes reach the database
             # after every tool call (``Session.memory_sync_hooks``).

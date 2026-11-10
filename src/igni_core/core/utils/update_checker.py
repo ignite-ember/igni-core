@@ -28,11 +28,6 @@ Architecture — everything is on :class:`UpdateChecker`:
   :class:`UpdateError`. Only :exc:`asyncio.CancelledError`
   propagates, because a parent-task cancellation is not a failed
   check.
-* :func:`check_for_update` is a thin back-compat wrapper around it:
-  it builds a fresh checker on every call and swallows any last-mile
-  exception into an :class:`UpdateInfo` with a typed
-  :class:`UpdateError`, so a caller that only wants "is there a newer
-  release?" needs one import and no error handling.
 
 Every Pydantic model in this module comes from
 :mod:`.update_checker_schemas` and is re-exported here so
@@ -73,7 +68,6 @@ __all__ = [
     "UpdateError",
     "UpdateInfo",
     "Version",
-    "check_for_update",
     "default_cache_path",
 ]
 
@@ -294,39 +288,4 @@ class UpdateChecker:
             current_version=__version__,
             error=error,
             error_detail=detail,
-        )
-
-
-# ── Back-compat module-level wrapper ─────────────────────────────
-
-
-async def check_for_update(
-    settings: Settings | None = None,
-    timeout: float = 5.0,
-) -> UpdateInfo:
-    """Check PyPI for a newer CLI version.
-
-    Thin wrapper around :meth:`UpdateChecker.check` kept for the
-    callers that import it as a function. Constructs a *fresh*
-    :class:`UpdateChecker` on every call, so each call reads the
-    settings and takes the current default cache path.
-
-    Never raises. :exc:`asyncio.CancelledError` propagates so a
-    parent-task cancellation isn't silently swallowed; every other
-    exception is logged and reported via
-    ``UpdateInfo.error=UpdateError.UNKNOWN`` — some interactive-loop
-    callers rely on "never raises" as an invariant.
-    """
-    try:
-        checker = UpdateChecker(settings=settings, timeout=timeout)
-        return await checker.check()
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:  # noqa: BLE001 — top-boundary safety net
-        logger.debug("Update check failed (unexpected): %s", exc)
-        return UpdateInfo(
-            available=False,
-            current_version=__version__,
-            error=UpdateError.UNKNOWN,
-            error_detail=str(exc),
         )

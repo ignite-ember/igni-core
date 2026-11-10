@@ -46,6 +46,7 @@ import pytest
 from pydantic import BaseModel
 
 from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.pool_directories import PoolDirectories
 from igni_core.backend.pool_rpcs import HostModelRpcs, ServiceEventRpc, VmSignInRpc
 from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
@@ -66,6 +67,7 @@ from igni_core.extensions.service_events import DeliveryReceipt
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 from tests.host_model_helpers import manifest
+from tests.shared_tables import SharedTables
 
 
 class _Hitl:
@@ -155,6 +157,7 @@ class _Pooled(_Backend):
         additional_dirs: Any,
         contributions: Any = None,
         prompt_loader: Any = None,
+        tool_hints: Any = None,
         supervisors: SupervisorLocator | None = None,
         gate: RunGate | None = None,
     ) -> None:
@@ -239,7 +242,15 @@ class _Credential(BaseModel):
 
 
 class _PooledRuntimes(SessionRuntimeFactory):
-    server_cls = _Pooled  # type: ignore[assignment]
+    """The real factory, resuming sessions onto a stand-in backend."""
+
+    def __init__(self, *, wiring: PoolWiring, settings: Settings, dirs: PoolDirectories) -> None:
+        super().__init__(
+            wiring=wiring,
+            settings=settings,
+            dirs=dirs,
+            server_cls=_Pooled,  # type: ignore[arg-type]
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -259,6 +270,7 @@ def _orchestrator(
     push = PushNotificationBridge(transport=transport, loop=None, queue=queue)
     login = LoginCoordinator(backend=backend, push_bridge=push)
     router = RpcRouter(backend=backend, login=login, push=push)
+    tables = SharedTables()
     orchestrator = SessionOrchestrator.start(
         boot=BootRuntime(
             backend=backend, rpc_table=router.build_table(), router=router, queue=queue
@@ -269,6 +281,10 @@ def _orchestrator(
             login=login,
             supervisors=SupervisorLocator(backend.supervisor),
             gate=backend.gate,
+            contributions=tables.contributions,
+            prompt_loader=tables.prompt_loader,
+            tool_hints=tables.tool_hints,
+            extensions=tables.extensions,
         ),
         settings=settings,
         dirs=ProjectDirs(project_dir=project),

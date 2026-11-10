@@ -311,8 +311,9 @@ class _ReminderSession:
         self.project_dir = project_dir
         self.settings = SimpleNamespace(models=ModelsConfig(default="m"))
         self.reminders = PendingReminderQueue()
+        self.learning_mgr = SimpleNamespace(inject=self._inject_learnings)
 
-    async def inject_learnings(self) -> None:
+    async def _inject_learnings(self) -> None:
         return None
 
     def _drain_pending_reminders(self) -> list[str]:

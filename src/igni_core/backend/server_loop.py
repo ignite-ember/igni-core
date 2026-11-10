@@ -73,7 +73,7 @@ class LoopController:
 
     async def pop_pending_iteration(self) -> LoopAdvance | None:
         """Pop the next ``/loop`` iteration descriptor."""
-        return await self._session.advance_loop()
+        return await self._session.loop.advance_loop()
 
     async def cancel_pending(self) -> bool:
         """Clear ``/loop`` state. Returns whether anything was cancelled.
@@ -81,17 +81,17 @@ class LoopController:
         Paused loops (loaded from disk on startup, not yet resumed)
         are intentionally NOT cancelled here.
         """
-        if self._session.loop_paused:
+        if self._session.loop.paused:
             return False
-        return await self._session.cancel_loop()
+        return await self._session.loop.cancel_loop()
 
     async def pause(self) -> bool:
         """Pause the active loop without advancing the counter."""
-        return await self._session.pause_loop()
+        return await self._session.loop.pause_loop()
 
     async def resume(self) -> str:
         """Flip the loop from paused to pumping and return the prompt."""
-        prompt = await self._session.resume_loop()
+        prompt = await self._session.loop.resume_loop()
         return prompt or ""
 
     async def status(self) -> LoopStatusSnapshot:

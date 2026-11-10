@@ -18,6 +18,7 @@ for the RPCs that have no facade method. Nothing is mocked.
 from __future__ import annotations
 
 import base64
+import logging
 from typing import get_args
 
 import pytest
@@ -26,6 +27,7 @@ from igni_core.backend.activity import ActivityState, SessionActivity
 from igni_core.backend.schemas_hitl import ToolCallArgs
 from igni_core.backend.schemas_visualization import VisualizationAction
 from igni_core.backend.server import BackendServer
+from igni_core.core.config.group_policy.revalidation import PolicyRevalidation
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.tool_permissions import PermissionLevel
@@ -279,7 +281,7 @@ async def test_with_no_loop_running_there_is_nothing_to_advance_or_cancel(backen
 
 
 async def test_a_paused_loop_is_not_cancelled_by_a_new_message_and_resumes(backend):
-    await backend._session.start_loop("check the build", 3, immediate=False, cap_explicit=True)
+    await backend._session.loop.start_loop("check the build", 3, immediate=False, cap_explicit=True)
     assert await backend.loop_pause() is True
 
     assert await backend.controllers.loop.cancel_pending() is False
@@ -303,8 +305,14 @@ async def test_startup_and_shutdown_run_on_a_fresh_project(backend):
 
 
 async def test_the_session_start_hook_fires_even_if_revalidating_policy_fails(backend):
-    async def _fails() -> None:
-        raise RuntimeError("portal unreachable")
+    """A failed revalidation leaves the cached pack in place.
+
+    The failure comes back in the result — the pack is stale, not the
+    session broken — so the hook still fires.
+    """
+
+    async def _fails() -> PolicyRevalidation:
+        return PolicyRevalidation(error="portal unreachable")
 
     fired: list[bool] = []
 
@@ -317,6 +325,41 @@ async def test_the_session_start_hook_fires_even_if_revalidating_policy_fails(ba
     await backend.fire_session_start_hook()
 
     assert fired == [True]
+
+
+async def test_the_failure_is_reported_and_not_swallowed(backend, caplog):
+    """The reason is said out loud.
+
+    The failure used to be caught and logged here; now it arrives in
+    the result, and saying so is this method's job.
+    """
+
+    async def _fails() -> PolicyRevalidation:
+        return PolicyRevalidation(error="portal unreachable")
+
+    backend.controllers.group_policy.revalidate_for_new_dialogue = _fails
+
+    with caplog.at_level(logging.WARNING):
+        await backend.fire_session_start_hook()
+
+    assert "portal unreachable" in caplog.text
+
+
+async def test_a_crash_in_the_revalidation_is_not_swallowed(backend):
+    """A bug is not an expected failure, so it is not swallowed.
+
+    The portal being unreachable is expected and comes back in the
+    result; a crash in the revalidation is a programming error, and it
+    surfaces to whoever asked for the session to start.
+    """
+
+    async def _crashes() -> PolicyRevalidation:
+        raise RuntimeError("a bug, not an outage")
+
+    backend.controllers.group_policy.revalidate_for_new_dialogue = _crashes
+
+    with pytest.raises(RuntimeError, match="a bug, not an outage"):
+        await backend.fire_session_start_hook()
 
 
 async def test_a_change_of_workspace_trust_reloads_the_settings(backend):

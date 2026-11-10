@@ -1,6 +1,6 @@
 """An organisation's mode is a floor a session cannot switch past (CC-40).
 
-``Session.set_permission_mode`` used to flip the live evaluator with no
+``Session.mode.set_permission_mode`` used to flip the live evaluator with no
 check, so ``/accept`` and ``/bypass`` could move a session looser than
 the mode its managed settings or group policy set. These tests go
 through the real loader (a managed file on disk, a group pack through
@@ -154,7 +154,7 @@ class TestAManagedFloor:
         settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
         session = _session(settings)
 
-        switch = session.set_permission_mode("default")
+        switch = session.mode.set_permission_mode("default")
         assert switch.refused
         assert "group policy" in switch.text
         assert _mode(session) is PermissionMode.PLAN
@@ -166,7 +166,7 @@ class TestAManagedFloor:
             project_dir=tmp_path,
         )
         assert settings.permissions.mode == "default"
-        assert _session(settings).set_permission_mode("acceptEdits").refused
+        assert _session(settings).mode.set_permission_mode("acceptEdits").refused
 
     def test_a_user_config_mode_is_not_a_floor(self, tmp_path):
         """Only the organisation's tiers make a floor. A mode in the
@@ -174,7 +174,7 @@ class TestAManagedFloor:
         _user_config("permissions:\n  mode: plan\n")
         session = _session(SettingsLoader.load(project_dir=tmp_path))
         assert _mode(session) is PermissionMode.PLAN
-        assert "→ bypassPermissions" in session.set_permission_mode("bypassPermissions").text
+        assert "→ bypassPermissions" in session.mode.set_permission_mode("bypassPermissions").text
 
 
 # ── allow_bypass: false ─────────────────────────────────────────────
@@ -204,13 +204,13 @@ class TestBypassCanBeForbidden:
     @pytest.mark.asyncio
     async def test_the_tool_paths_cannot_enter_bypass(self, tmp_path):
         """What a tool or the HITL "accept all" flip reaches is
-        ``Session.set_permission_mode``; the agent's slash-command tool
+        ``Session.mode.set_permission_mode``; the agent's slash-command tool
         refuses ``/bypass`` before it gets that far."""
         pack = _pack({"permissions": {"allow_bypass": False}})
         settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
         session = _session(settings)
 
-        switch = session.set_permission_mode("bypassPermissions")
+        switch = session.mode.set_permission_mode("bypassPermissions")
         assert switch.refused
         assert "group policy" in switch.text
         assert _mode(session) is PermissionMode.DEFAULT
@@ -231,7 +231,7 @@ class TestBypassCanBeForbidden:
         )
         assert settings.permissions.mode_policy == ModePolicy()
         assert settings.permissions.mode == "bypassPermissions"
-        assert "→" in _session(settings).set_permission_mode("default").text
+        assert "→" in _session(settings).mode.set_permission_mode("default").text
 
 
 # ── off returns where the session started ───────────────────────────
@@ -339,7 +339,7 @@ class TestTheStricterTierWins:
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: true\n")
         pack = _pack({"permissions": {"allow_bypass": False}})
         settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
-        switch = _session(settings).set_permission_mode("bypassPermissions")
+        switch = _session(settings).mode.set_permission_mode("bypassPermissions")
         assert switch.refused
         assert "group policy" in switch.text
 
@@ -403,7 +403,7 @@ class TestARefusedFlipFromAnApprovalReachesThePerson:
             "for a looser mode."
         )
         session = MagicMock()
-        session.set_permission_mode = MagicMock(
+        session.mode.set_permission_mode = MagicMock(
             return_value=PermissionModeSwitch(refused=True, text=refusal)
         )
         session.session_id = "s"

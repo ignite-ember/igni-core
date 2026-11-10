@@ -14,6 +14,8 @@ the session.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.compaction import CompactionCoordinator, TeamSessionSource
@@ -21,30 +23,42 @@ from igni_core.core.session.core import Session
 from igni_core.core.session.identity import SessionIdentity
 from igni_core.core.session.output_style_selection import OutputStyleSelection
 from igni_core.core.session.plan_ops import PlanCoordinator, PlanDeps
+from igni_core.core.session.schemas import PermissionModeSwitch
 from igni_core.core.session.state_ops import RuntimeModeCoordinator, RuntimeModeDeps
 from igni_core.core.tools.plan import PlanStore
 from igni_core.core.tools.todo import TodoStore
 
 
-def wire_coordinators(session: Session) -> Session:
+def wire_coordinators(
+    session: Session,
+    *,
+    set_permission_mode: Callable[[str], PermissionModeSwitch] | None = None,
+) -> Session:
     """Build ``session.mode`` and ``session.plan`` from what ``session`` carries.
 
     ``broadcast_bus`` is required. ``output_style`` defaults to an empty
-    selection; ``plan_store``, ``persistence``, ``main_team`` and
-    ``settings`` may be missing, as on a session that never had them.
+    selection; ``plan_store``, ``persistence``, ``main_team``,
+    ``settings`` and ``permission_evaluator`` may be missing, as on a
+    session that never had them.
+
+    ``set_permission_mode`` replaces the coordinator's own mode switch
+    for a test that wants to answer the flip itself (the plan
+    transactions read the switch the session hands them).
     """
     if not hasattr(session, "output_style"):
         session.output_style = OutputStyleSelection()
     settings = getattr(session, "settings", None)
     session.mode = RuntimeModeCoordinator(
         RuntimeModeDeps(
-            evaluator_ref=lambda: session.permission_evaluator,
+            evaluator_ref=lambda: getattr(session, "permission_evaluator", None),
             output_style=session.output_style,
             team_ref=lambda: getattr(session, "main_team", None),
             bus=session.broadcast_bus,
             permissions=settings.permissions if settings is not None else None,
         )
     )
+    if set_permission_mode is not None:
+        session.mode.set_permission_mode = set_permission_mode  # type: ignore[method-assign]
     session.plan = PlanCoordinator(
         PlanDeps(
             plan_store=getattr(session, "plan_store", None),

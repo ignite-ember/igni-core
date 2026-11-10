@@ -160,8 +160,13 @@ class TestSessionPreferencesStore:
 
 class TestBackendServerResumeOverride:
     """On ``--continue``, ``BackendServer.__init__`` must consult the
-    per-session store and override ``settings.models.default`` BEFORE
-    ``Session.__init__`` builds the main team."""
+    per-session store and override the default model BEFORE
+    ``Session.__init__`` builds the main team.
+
+    The override belongs to the resumed session alone: the settings
+    the caller handed over are the ones the session pool copies for
+    every other session, so a resumed session's model must not become
+    their default."""
 
     @staticmethod
     def _make_settings(tmp_path, registry):
@@ -175,20 +180,20 @@ class TestBackendServerResumeOverride:
     def _construct_server(settings, project_dir, captured, **kwargs):
         """Run ``BackendServer.__init__`` with Session mocked.
 
-        Records the value of ``settings.models.default`` at the
-        moment Session is instantiated — that's the only thing
+        Records the value of ``settings.models.default`` of the
+        settings the Session was *given* — that's the only thing
         these tests care about. The returned mock has a real
         ``project_dir`` so the downstream PendingMessageStore call
         succeeds.
         """
 
         def fake_session(*args, **kw):
-            captured["default"] = settings.models.default
+            captured["default"] = args[0].models.default
             m = MagicMock()
             m.project_dir = project_dir
             return m
 
-        with patch("igni_core.core.session.Session", side_effect=fake_session):
+        with patch("igni_core.backend.backend_bootstrap.Session", side_effect=fake_session):
             BackendServer(settings, project_dir=project_dir, **kwargs)
 
     def test_resume_overrides_default_with_persisted_choice(self, tmp_path):
@@ -215,6 +220,34 @@ class TestBackendServerResumeOverride:
             resume_session_id="resumed-sess",
         )
         assert captured["default"] == "per-session-model"
+
+    def test_the_callers_settings_are_not_mutated(self, tmp_path):
+        """The caller's settings are the pool's, and the pool copies
+        them for every session it resumes. A resumed session's model
+        must not become the default those copies start on."""
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        db_path = state_db_path(project_dir, data_dir=str(tmp_path / "ember"))
+        SessionPreferencesStore(db_path).set_model("resumed-sess", "per-session-model")
+
+        settings = self._make_settings(
+            tmp_path,
+            {
+                "user-level-default": {"url": "x", "model_id": "x"},
+                "per-session-model": {"url": "y", "model_id": "y"},
+            },
+        )
+
+        captured: dict = {}
+        self._construct_server(
+            settings,
+            project_dir,
+            captured,
+            resume_session_id="resumed-sess",
+        )
+        assert settings.models.default == "user-level-default", (
+            "the caller's settings were changed in place"
+        )
 
     def test_resume_falls_back_when_persisted_model_missing_from_registry(self, tmp_path):
         """Stale row pointing at a model no longer in the registry

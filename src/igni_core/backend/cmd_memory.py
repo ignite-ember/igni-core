@@ -91,7 +91,7 @@ class MemoryCommand:
         Recalls with no ``session_id`` so only cross-session stores
         answer. A failed recall is reported as an error, never as
         "no learnings"."""
-        learning = self._session.learning_machine
+        learning = self._session.learning_mgr.effective_machine
         if learning is None:
             return CommandResult.info(
                 "Learning is not enabled. Set learning.enabled=true in config."

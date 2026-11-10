@@ -104,7 +104,7 @@ class PromptBuilder:
         # Injects into the team's instructions. Fire-and-forget onto
         # ``main_team.instructions`` — no data flows back through
         # the return value.
-        await self._session.inject_learnings()
+        await self._session.learning_mgr.inject()
 
         if interrupted_summary:
             info.append(msg.Info(text="(continuing from an interrupted previous run)"))

@@ -29,7 +29,9 @@ class _Learning:
 
 
 def _command(learning: _Learning | None) -> MemoryCommand:
-    return MemoryCommand(SimpleNamespace(learning_machine=learning, user_id="u1"))
+    return MemoryCommand(
+        SimpleNamespace(learning_mgr=SimpleNamespace(effective_machine=learning), user_id="u1")
+    )
 
 
 async def test_every_known_store_renders_its_section() -> None:

@@ -10,11 +10,33 @@ uses (``get_session`` / ``upsert_session`` / ``rename_session`` /
 Marked ``@runtime_checkable`` so tests can smoke-check
 ``isinstance(real_agno_db, AgnoSessionDb)`` to catch drift
 between this hand-written protocol and Agno's actual signatures.
+
+:class:`ScopedAgnoDb` is the other half of the same contract: what a
+*shared* database's storage adds on top — the scope it fixes Agno's
+``user_id`` to, so every row the session writes is found again by it.
+The desktop's storage has no such field, which is why the protocol
+is a question rather than a cast.
 """
 
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
+
+
+@runtime_checkable
+class ScopedAgnoDb(Protocol):
+    """An Agno database whose rows are fixed to one scope.
+
+    In the cloud the storage behind the session's ``db`` is scoped: it
+    fixes Agno's ``user_id`` to the session's scope, so the rows of one
+    producer are the rows of nobody else. The desktop's storage has no
+    scope of its own — its file is the boundary.
+    """
+
+    @property
+    def scoped_user_id(self) -> str:
+        """The scope Agno's ``user_id`` is fixed to."""
+        ...
 
 
 @runtime_checkable

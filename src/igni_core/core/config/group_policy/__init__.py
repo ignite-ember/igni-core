@@ -37,4 +37,5 @@ Layout, one responsibility per module:
 * :mod:`.settings_fetcher` — the ``group_policy_fetcher`` handed to ``SettingsLoader.load``.
 * :mod:`.policy_settings`  — the two-pass load every process uses to apply it.
 * :mod:`.gate`             — whether this process may run agent sessions.
+* :mod:`.revalidation`     — what one revalidation attempt did.
 """

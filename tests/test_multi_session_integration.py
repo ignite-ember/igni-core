@@ -37,8 +37,8 @@ from igni_core.backend.message_dispatcher import MessageDispatcher
 from igni_core.backend.session_pool import (
     SessionPool,
     SessionRuntime,
-    SessionStampingTransport,
 )
+from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.protocol import messages as msg
 from igni_core.transport.websocket import WebSocketServerTransport
 from tests.backend_server_factory import make_backend

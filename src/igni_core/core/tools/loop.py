@@ -105,7 +105,7 @@ class LoopTools(Toolkit):
         Returns:
             A confirmation string the agent can show inline.
         """
-        result = await self._session.start_loop_from_tool(prompt, max_iterations)
+        result = await self._session.loop.start_loop_from_tool(prompt, max_iterations)
         return result.render()
 
     async def loop_stop(self) -> str:
@@ -118,7 +118,7 @@ class LoopTools(Toolkit):
         to call this defensively if you can't tell whether a loop is
         active — it's a no-op when there's nothing to cancel.
         """
-        result = await self._session.stop_loop_from_tool()
+        result = await self._session.loop.stop_loop_from_tool()
         return result.render()
 
     async def loop_set_total(self, total: int) -> str:
@@ -165,14 +165,14 @@ class LoopTools(Toolkit):
         Errors when there's no loop to resume or when the loop is
         already pumping.
         """
-        result = await self._session.resume_loop_from_tool()
+        result = await self._session.loop.resume_loop_from_tool()
         return result.render()
 
     async def loop_status(self) -> str:
         """Report whether a loop is active and how many iterations
         remain. Useful when the user asks something like *"are we still
         looping?"* — answer from this rather than guessing."""
-        result = self._session.loop_status_from_tool()
+        result = self._session.loop.loop_status_from_tool()
         return result.render()
 
 

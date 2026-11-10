@@ -23,7 +23,7 @@ def wrap_iteration_prompt(prompt: str, iteration: int, total: int | None = None)
     """Prepend a one-line meta-instruction to an iteration's prompt.
 
     Called from every site that feeds a prompt into an iteration —
-    :py:meth:`Session.advance_loop`, :py:meth:`Session.resume_loop`,
+    :py:meth:`LoopController.advance_loop`, :py:meth:`LoopController.resume_loop`,
     and ``_cmd_loop`` (for iteration 1 fired via the
     ``run_prompt`` action).
 

@@ -248,8 +248,10 @@ class _FakeSession:
     def __init__(self, project_dir: Path) -> None:
         self.project_dir = project_dir
         self.settings = Settings(permissions=PermissionsConfig(web_search="deny", web_fetch="deny"))
-        self.cloud_access_token = "tok-42"
-        self.cloud_server_url = "https://cloud.example"
+        self.cloud_auth = SimpleNamespace(
+            access_token="tok-42",
+            server_url="https://cloud.example",
+        )
         self.broadcast = _broadcast
         # The supervisor the session's shell toolkit runs on.
         self.supervisor = ProcessSupervisor()
@@ -264,6 +266,8 @@ class _FakeSession:
         self.mcp_manager = _StubMcpManager({})
         self.lsp_manager = None
         self.monitor_manager = None
+        # The loop toolkit asks the session's loop controller.
+        self.loop = SimpleNamespace(loop_status_from_tool=self.loop_status_from_tool)
 
     def loop_status_from_tool(self):
         """What the loop toolkit asks the session for."""

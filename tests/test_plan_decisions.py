@@ -15,7 +15,7 @@ persisted-via-explicit-decision. These tests pin the new
 contract end to end:
 
 * ``PlanStore.decisions`` — in-memory map, validated input.
-* ``Session.approve_plan`` / ``dismiss_plan`` — recording +
+* ``Session.plan.approve`` / ``Session.plan.dismiss`` — recording +
   persistence + broadcast + mode flip (approve only).
 * The "I've never approved it" regression — a mode flip with
   no decision must leave state ``pending``.
@@ -139,7 +139,7 @@ class TestPlanStoreDecisions:
         assert store.get_decision("r1") == "approved"  # store unchanged
 
 
-# ── Session.approve_plan / dismiss_plan ─────────────────────
+# ── Session.plan.approve / dismiss_plan ─────────────────────
 
 
 class _StubPermissionEvaluator:
@@ -147,6 +147,9 @@ class _StubPermissionEvaluator:
 
     def __init__(self) -> None:
         self.mode = PermissionMode.PLAN
+
+    def set_mode(self, mode: PermissionMode) -> None:
+        self.mode = mode
 
 
 class _StubPersistence:
@@ -191,7 +194,7 @@ def _build_session() -> object:
 class TestSessionApproveDismiss:
     async def test_approve_records_decision(self) -> None:
         session = _build_session()
-        result = await session.approve_plan("run-123")
+        result = await session.plan.approve("run-123")
         assert session.plan_store.get_decision("run-123") == "approved"
         assert result.run_id == "run-123"
         assert result.decision == "approved"
@@ -201,13 +204,13 @@ class TestSessionApproveDismiss:
         # decision evaporates on reload, which is the original
         # bug.
         session = _build_session()
-        await session.approve_plan("run-123")
+        await session.plan.approve("run-123")
         saved = session.persistence.saved
         assert saved and saved[-1] == {"run-123": "approved"}
 
     async def test_approve_flips_mode_to_default(self) -> None:
         session = _build_session()
-        await session.approve_plan("run-123")
+        await session.plan.approve("run-123")
         assert session.permission_evaluator.mode is PermissionMode.DEFAULT
 
     async def test_approve_broadcasts_plan_decided(self) -> None:
@@ -217,7 +220,7 @@ class TestSessionApproveDismiss:
         session = _build_session()
         received: list[tuple[str, dict]] = []
         session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
-        await session.approve_plan("run-123")
+        await session.plan.approve("run-123")
         decided = [(c, p) for c, p in received if c == "plan_decided"]
         assert decided
         c, p = decided[0]
@@ -225,21 +228,21 @@ class TestSessionApproveDismiss:
 
     async def test_dismiss_records_decision(self) -> None:
         session = _build_session()
-        await session.dismiss_plan("run-789")
+        await session.plan.dismiss("run-789")
         assert session.plan_store.get_decision("run-789") == "dismissed"
 
     async def test_dismiss_does_NOT_flip_mode(self) -> None:
         # Refine = "stay in plan mode, let me iterate". A mode
         # flip here would defeat the entire point of the button.
         session = _build_session()
-        await session.dismiss_plan("run-789")
+        await session.plan.dismiss("run-789")
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     async def test_dismiss_broadcasts_plan_decided(self) -> None:
         session = _build_session()
         received: list[tuple[str, dict]] = []
         session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
-        await session.dismiss_plan("run-789")
+        await session.plan.dismiss("run-789")
         decided = [(c, p) for c, p in received if c == "plan_decided"]
         assert decided
         assert decided[0][1] == {"run_id": "run-789", "decision": "dismissed"}
@@ -251,11 +254,11 @@ class TestSessionApproveDismiss:
         # FE now surfaces the error inline via the RPC response
         # instead of catching a generic RPC failure.
         session = _build_session()
-        approve_result = await session.approve_plan("")
+        approve_result = await session.plan.approve("")
         assert approve_result.ok is False
         assert approve_result.error is not None
         assert "non-empty" in approve_result.error
-        dismiss_result = await session.dismiss_plan("")
+        dismiss_result = await session.plan.dismiss("")
         assert dismiss_result.ok is False
         assert dismiss_result.error is not None
         assert "non-empty" in dismiss_result.error
@@ -271,7 +274,7 @@ class TestSessionApproveDismiss:
         # invariant holds even on the DB-down path.
         session = _build_session()
         session.persistence.fail = True
-        result = await session.approve_plan("run-1")
+        result = await session.plan.approve("run-1")
         assert result.ok is False
         assert result.error is not None
         assert "persist failed" in result.error

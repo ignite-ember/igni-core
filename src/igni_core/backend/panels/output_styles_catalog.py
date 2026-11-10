@@ -1,8 +1,8 @@
 """Output-styles catalog controller.
 
 Owns the output-styles picker chip: discovered styles + the
-currently-applied one, read through
-:attr:`Session.active_output_style`.
+currently-applied one, read through the session's
+:class:`~igni_core.core.session.output_style_selection.OutputStyleSelection`.
 """
 
 from __future__ import annotations
@@ -23,8 +23,9 @@ class OutputStylesCatalog:
 
     def snapshot(self) -> OutputStylesResult:
         """Discovered styles + the currently-active one."""
-        styles = getattr(self._session, "output_styles", {}) or {}
-        active = self._session.active_output_style or ""
+        selection = self._session.output_style
+        styles = selection.styles
+        active = selection.active or ""
         return OutputStylesResult(
             active=active,
             styles=[

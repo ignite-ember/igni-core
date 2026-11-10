@@ -56,7 +56,7 @@ class ContextCommand:
     :class:`CommandHandler` state object, so we don't reach into
     ``handler._session`` from inside the coordinator (Rule 6: no
     private-attribute reach-in). The active output style is read
-    via the public :attr:`Session.active_output_style` property.
+    via the public :attr:`OutputStyleSelection.active` property.
     """
 
     def __init__(self, session: Session) -> None:
@@ -108,7 +108,7 @@ class ContextCommand:
         payload is an ACTION result with no markdown template to
         move.
         """
-        result = await self._session.force_compact()
+        result = await self._session.compaction.force_compact()
         return CommandResult(
             kind=CommandResultKind.ACTION,
             action=CommandAction.COMPACT,
@@ -125,7 +125,7 @@ class ContextCommand:
         the user can see why the meter doesn't drop to zero after
         compaction.
         """
-        breakdown = await self._session.context_breakdown()
+        breakdown = await self._session.compaction.context_breakdown()
         result = ContextBreakdownView.from_domain(breakdown).to_command_result()
         # The action opens the page in clients that have one; the
         # markdown stays on the result so kind-based renderers — the
@@ -138,13 +138,13 @@ class ContextCommand:
 
     def _render_list(self) -> CommandResult:
         return OutputStylesListView(
-            styles=self._session.output_styles,
-            active=self._session.active_output_style,
+            styles=self._session.output_style.styles,
+            active=self._session.output_style.active,
         ).to_command_result()
 
     def _render_status(self) -> CommandResult:
         return OutputStyleStatusView(
-            active=self._session.active_output_style,
+            active=self._session.output_style.active,
         ).to_command_result()
 
     async def _set_style(self, target_name: str) -> CommandResult:
@@ -152,10 +152,10 @@ class ContextCommand:
             return CommandResult.error(
                 "Usage: /output-style <name> (or `/output-style list` to see options)."
             )
-        status_line = self._session.set_output_style(target_name)
-        if status_line.startswith("Error"):
-            return CommandResult.error(status_line)
-        return CommandResult.info(status_line)
+        switch = self._session.mode.set_output_style(target_name)
+        if switch.refused:
+            return CommandResult.error(switch.text)
+        return CommandResult.info(switch.text)
 
 
 # ── Public shim entry points ─────────────────────────────────────

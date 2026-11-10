@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from igni_core.backend.group_pack_hydrator import GroupPackHydrator
 from igni_core.core.activity import background
 from igni_core.core.auth.portal_client import PortalClient
+from igni_core.core.config.group_policy.revalidation import PolicyRevalidation
 
 if TYPE_CHECKING:
     from igni_core.core.config.settings import Settings
@@ -64,7 +65,7 @@ class GroupPolicySync:
         loop (a bare CLI utility) there is nothing to schedule on, so
         this does nothing.
         """
-        token = self._session.cloud_access_token
+        token = self._session.cloud_auth.access_token
         if not token:
             return
         try:
@@ -127,7 +128,7 @@ class GroupPolicySync:
         while True:
             try:
                 await asyncio.sleep(interval)
-                token = self._session.cloud_access_token
+                token = self._session.cloud_auth.access_token
                 if token:
                     await self.hydrate(token)
             except asyncio.CancelledError:
@@ -135,7 +136,7 @@ class GroupPolicySync:
             except Exception as exc:  # noqa: BLE001 — the loop outlives its errors
                 logger.debug("group-policy poll failed: %s", exc)
 
-    async def revalidate_for_new_dialogue(self) -> bool:
+    async def revalidate_for_new_dialogue(self) -> PolicyRevalidation:
         """Ask the server whether the group changed, bounded by a timeout.
 
         A new dialogue is the moment somebody should pick up an admin's
@@ -149,23 +150,26 @@ class GroupPolicySync:
         five-minute-old pack: the on-disk cache exists so sessions work
         offline, and this must not undo that. On timeout or failure the
         cached pack stands and the background poller catches up.
+
+        **The failure is a value.** The portal being unreachable is an
+        expected failure, so it comes back in the result — the caller
+        reads it and carries on — rather than as an exception every
+        caller has to catch. Nothing here raises for it.
         """
-        token = self._session.cloud_access_token
+        token = self._session.cloud_auth.access_token
         if not token:
-            return False
+            return PolicyRevalidation()
         try:
-            return await asyncio.wait_for(
+            changed = await asyncio.wait_for(
                 self.hydrate(token, force=True), timeout=self.NEW_DIALOGUE_TIMEOUT
             )
         except asyncio.TimeoutError:
-            logger.info(
-                "group-policy revalidation timed out after %ss; using the cached pack",
-                self.NEW_DIALOGUE_TIMEOUT,
+            return PolicyRevalidation(
+                error=f"the server did not answer within {self.NEW_DIALOGUE_TIMEOUT}s"
             )
-            return False
         except Exception as exc:  # noqa: BLE001 — a session that starts outranks the update
-            logger.warning("group-policy revalidation failed: %s", exc)
-            return False
+            return PolicyRevalidation(error=str(exc))
+        return PolicyRevalidation(changed=changed)
 
     async def hydrate(self, token: str, *, force: bool = False) -> bool:
         """Refresh the cached group pack; ``True`` when a new one landed.

@@ -58,7 +58,7 @@ class PlanRpcHandler(RpcHandler):
         mode change, and ``ok``; ``ok: false`` with ``error`` when
         ``run_id`` is empty or the decision could not be recorded.
         """
-        return await self._ctx.backend.session.approve_plan(run_id=args.run_id)
+        return await self._ctx.backend.session.plan.approve(run_id=args.run_id)
 
     @rpc(
         RpcMethod.DISMISS_PLAN,
@@ -75,4 +75,4 @@ class PlanRpcHandler(RpcHandler):
         shape as ``approve_plan``, with an empty ``mode_status``; ``ok:
         false`` with ``error`` when ``run_id`` is empty.
         """
-        return await self._ctx.backend.session.dismiss_plan(run_id=args.run_id)
+        return await self._ctx.backend.session.plan.dismiss(run_id=args.run_id)

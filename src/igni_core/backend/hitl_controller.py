@@ -194,7 +194,7 @@ class HitlController:
         )
         if not target:
             return None
-        switch = self._session.set_permission_mode(target)
+        switch = self._session.mode.set_permission_mode(target)
         _HITL_LLM_LOGGER.info("resolve_hitl_batch: atomic mode flip → %s (%s)", target, switch.text)
         return msg.Error(text=switch.text) if switch.refused else None
 

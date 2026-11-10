@@ -54,19 +54,23 @@ def _coord(s) -> RuntimeModeCoordinator:
 class TestSetOutputStyle:
     def test_switches_active_style(self):
         s = _bare_session()
-        msg = _coord(s).set_output_style("explanatory")
+        switch = _coord(s).set_output_style("explanatory")
         assert s.output_style.active == "explanatory"
-        assert "default" in msg and "explanatory" in msg
+        assert switch.refused is False
+        assert switch.changed is True
+        assert "default" in switch.text and "explanatory" in switch.text
 
     def test_unknown_style_returns_error(self):
         s = _bare_session()
-        msg = _coord(s).set_output_style("nonexistent")
-        assert "Error" in msg
+        switch = _coord(s).set_output_style("nonexistent")
+        assert switch.refused is True
+        assert switch.changed is False
+        assert "Error" in switch.text
         # Unchanged state.
         assert s.output_style.active == "default"
         # Available styles listed for discoverability.
-        assert "default" in msg
-        assert "explanatory" in msg
+        assert "default" in switch.text
+        assert "explanatory" in switch.text
 
     def test_hot_patches_team_instructions(self):
         # Headline invariant: the switch mutates the LIVE team's
@@ -117,17 +121,19 @@ class TestSetOutputStyle:
 
     def test_switch_to_same_style_reports_noop(self):
         s = _bare_session()
-        msg = _coord(s).set_output_style("default")
-        assert "already" in msg.lower()
+        switch = _coord(s).set_output_style("default")
+        assert switch.refused is False
+        assert switch.changed is False
+        assert "already" in switch.text.lower()
 
     def test_no_team_yet_is_ok(self):
         # No main team built yet.
         s = _bare_session()
         s.main_team = None
-        msg = _coord(s).set_output_style("explanatory")
+        switch = _coord(s).set_output_style("explanatory")
         # Style change still recorded + broadcast.
         assert s.output_style.active == "explanatory"
-        assert "explanatory" in msg
+        assert "explanatory" in switch.text
 
 
 class TestSetPermissionMode:

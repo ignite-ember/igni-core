@@ -28,7 +28,7 @@ All three commands accept the same arg vocabulary:
 
 A switch looser than a mode the organisation's managed settings or
 group policy set, or into ``bypassPermissions`` when the policy says
-``allow_bypass: false``, is refused by ``Session.set_permission_mode``
+``allow_bypass: false``, is refused by ``RuntimeModeCoordinator.set_permission_mode``
 and reported as an error; the mode does not change.
 * ``status`` / ``show`` — report the current mode without
   changing it.
@@ -280,7 +280,7 @@ class ModesCommand:
             return CommandResult.error(error)
         assert target is not None  # status branch returned above
 
-        switch = self._session.set_permission_mode(target.value)
+        switch = self._session.mode.set_permission_mode(target.value)
         if switch.refused:
             # Refused by the organisation's mode policy — nothing changed,
             # so neither transition hook fires.

@@ -159,7 +159,9 @@ async def test_no_evaluator_changes_nothing(evaluator: Any):
 def test_the_session_hands_its_evaluator_through_a_callable():
     import inspect
 
-    from igni_core.core.session.core import Session
+    from igni_core.core.session.parts.runtime import RuntimeBuilder
 
-    construction = inspect.getsource(Session.__init__).split("SessionMessageHandler(")[1]
+    construction = inspect.getsource(RuntimeBuilder.build_message_handler).split(
+        "SessionMessageHandler("
+    )[1]
     assert "permission_evaluator_ref=lambda:" in construction

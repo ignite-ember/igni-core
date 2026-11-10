@@ -157,7 +157,7 @@ class TestDispatch:
         session = _make_session()
         from igni_core.core.session.schemas import CompactResult
 
-        session.force_compact = AsyncMock(
+        session.compaction.force_compact = AsyncMock(
             return_value=CompactResult(
                 ok=True,
                 status="Context compacted.",
@@ -166,7 +166,7 @@ class TestDispatch:
         )
         result = await dispatch(session, "/compact")
         assert result is True
-        session.force_compact.assert_called_once()
+        session.compaction.force_compact.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_dispatch_bug(self):

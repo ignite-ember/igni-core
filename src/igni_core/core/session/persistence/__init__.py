@@ -12,6 +12,8 @@ Public re-exports:
   create-if-missing branch, the merge-and-upsert flow).
 * :class:`AgnoSessionDb` — runtime-checkable protocol closing the
   ``db: Any`` seam.
+* :class:`ScopedAgnoDb` — runtime-checkable protocol for the scope a
+  *shared* database's storage fixes Agno's ``user_id`` to.
 * :class:`SessionListing` / :class:`SessionNamer` /
   :class:`SessionForker` / :class:`PlanDecisionsStore` /
   :class:`TodoSnapshotStore` / :class:`EventLogStore` — the six
@@ -20,7 +22,7 @@ Public re-exports:
 """
 
 from igni_core.core.session.persistence.data_service import SessionDataService
-from igni_core.core.session.persistence.db_protocol import AgnoSessionDb
+from igni_core.core.session.persistence.db_protocol import AgnoSessionDb, ScopedAgnoDb
 from igni_core.core.session.persistence.event_log_store import EventLogStore
 from igni_core.core.session.persistence.facade import SessionPersistence
 from igni_core.core.session.persistence.forker import SessionForker
@@ -35,6 +37,7 @@ __all__ = [
     "AgnoSessionDb",
     "EventLogStore",
     "PlanDecisionsStore",
+    "ScopedAgnoDb",
     "SessionDataService",
     "SessionForker",
     "SessionListing",

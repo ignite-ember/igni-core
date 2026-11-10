@@ -23,6 +23,7 @@ from igni_core.backend.plugin_schemas import (
     ResolvedInstallRef,
     UpdateResult,
 )
+from igni_core.core.config.settings import Settings
 from igni_core.core.plugins.git import GitError
 from igni_core.core.plugins.installer import PluginError, PluginInstaller
 from igni_core.core.plugins.marketplace_store import MarketplaceRegistryStore
@@ -55,6 +56,19 @@ class PluginBackendGateway:
             data_dir=data_dir, source_policy=self._source_policy
         )
         self._marketplaces = marketplaces or MarketplaceRegistryStore(data_dir)
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> PluginBackendGateway:
+        """A gateway over the settings' plugin data dir and source policy.
+
+        Where the plugin data lives is the settings' business, so the
+        gateway reads it from there instead of every caller digging
+        the path out of the settings for itself.
+        """
+        return cls(
+            data_dir=settings.storage.data_dir,
+            source_policy=PluginSourcePolicy.from_settings(settings),
+        )
 
     def is_git_available(self) -> bool:
         """Precondition every install/update path checks. Verbs call

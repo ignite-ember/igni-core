@@ -5,9 +5,9 @@ point and :class:`LearnBootResult` as the typed envelope callers
 unwrap. Kept as a free function (not folded into
 :class:`~igni_core.core.session.learning_ops.SessionLearningManager`)
 because the module-path
-``igni_core.core.session.core.create_learning_machine`` is a pinned
-test-patch target across the session + learning-ops modules and
-their tests. Rule 6 "OOP is mandatory" §Exceptions clause applies:
+``igni_core.core.session.parts.persistence.create_learning_machine`` is
+a pinned test-patch target across the session + learning-ops modules
+and their tests. Rule 6 "OOP is mandatory" §Exceptions clause applies:
 stateless leaf, no shared subject, no module-level state.
 """
 

@@ -11,17 +11,9 @@ from igni_core.backend.schemas_rpc import SessionPoolConfig
 from igni_core.backend.session_pool import (
     SessionPool,
     SessionRuntime,
-    SessionStampingTransport,
 )
-from igni_core.backend.session_stamping_transport import (
-    SessionStampingTransport as SessionStampingTransportDirect,
-)
+from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.protocol import messages as msg
-
-# The re-export from session_pool must resolve to the same class as
-# the direct import from session_stamping_transport — this keeps the
-# one-release-cycle shim honest.
-assert SessionStampingTransport is SessionStampingTransportDirect
 
 
 def _runtime(session_id: str) -> SessionRuntime:

@@ -7,7 +7,7 @@ no-op'ing confuses the model, so refuse clearly instead.
 
 ``/plan``, ``/accept`` and ``/bypass`` are not inert. ``CommandHandler``
 dispatches them to ``ModesCommand``, which calls
-``Session.set_permission_mode`` on the live ``PermissionEvaluator``, and
+``Session.mode.set_permission_mode`` on the live ``PermissionEvaluator``, and
 the docstring on ``/bypass`` says what that means: "the permission
 evaluator skips the HITL prompt for ANY tool". ``/accept`` does it for
 every file edit. ``/plan off`` walks back out of the read-only sandbox a

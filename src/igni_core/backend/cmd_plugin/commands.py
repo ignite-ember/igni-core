@@ -10,7 +10,7 @@ constructs it the first time the command runs.
 
 Each ``run(handler, args)`` implementation:
 
-1. Reads ``session.plugin_data_dir`` fresh.
+1. Reads ``session.settings.storage.data_dir`` fresh.
 2. Constructs a :class:`PluginBackendGateway` per call, so every
    invocation starts from fresh state.
 3. Builds a :class:`SlashCommandContext` bundling session +
@@ -30,7 +30,6 @@ from igni_core.backend.cmd_plugin.routers import (
     PluginsToggleRouter,
 )
 from igni_core.backend.command_result import CommandResult
-from igni_core.core.plugins.source_policy import PluginSourcePolicy
 
 if TYPE_CHECKING:
     from igni_core.backend.command_handler import CommandHandler
@@ -45,15 +44,12 @@ class _BaseSlashCommand:
 
     def _make_context(self, handler: CommandHandler) -> SlashCommandContext:
         session = handler.session
-        # ``plugin_data_dir`` is the new public property on Session —
-        # avoids the previous ``session.settings.storage.data_dir``
-        # three-level Demeter chain.
-        data_dir = session.plugin_data_dir
-        gateway = PluginBackendGateway(
-            data_dir=data_dir,
-            source_policy=PluginSourcePolicy.from_settings(session.settings),
+        gateway = PluginBackendGateway.from_settings(session.settings)
+        return SlashCommandContext(
+            session=session,
+            plugin_data_dir=session.settings.storage.data_dir,
+            gateway=gateway,
         )
-        return SlashCommandContext(session=session, plugin_data_dir=data_dir, gateway=gateway)
 
 
 class PluginCommand(_BaseSlashCommand):

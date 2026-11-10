@@ -13,18 +13,20 @@ HITL pauses — except the manual mode switch has no HITL batch
 to piggyback on, so the fix lives in the evaluator itself.
 
 What we pin:
-- The mode is read under the same lock the setter / ``set_mode``
-  acquires. Concurrent mode flip + evaluate never interleave.
+- The mode is read under the same lock :meth:`set_mode` acquires.
+  Concurrent mode flip + evaluate never interleave.
 - Switching modes mid-flight is observable: an evaluate started
   AFTER ``set_mode`` returns sees the new value.
-- The dataclass surface still works — ``PermissionEvaluator.mode``
-  reads + ``mode = ...`` writes still work via the property, and
-  :meth:`set_mode` is the preferred atomic API.
+- ``mode`` is a read-only property: the only way to move the mode is
+  :meth:`set_mode`, which takes the lock. A plain attribute write
+  would not.
 """
 
 from __future__ import annotations
 
 import threading
+
+import pytest
 
 from igni_core.core.config.permission_eval import (
     PermissionDecision,
@@ -45,13 +47,18 @@ class TestModeLock:
         e.set_mode(PermissionMode.BYPASS_PERMISSIONS)
         assert e.mode is PermissionMode.BYPASS_PERMISSIONS
 
-    def test_property_setter_still_works(self) -> None:
-        """Back-compat: callers that mutate ``evaluator.mode = X``
-        directly (e.g. the Session's ``set_permission_mode``)
-        still work — the property setter holds the lock."""
+    def test_the_mode_cannot_be_written_directly(self) -> None:
+        """``mode`` is a read-only property: writing it raises.
+
+        The write that used to be allowed (``evaluator.mode = X``)
+        carried no lock, and the lock is what pairs a mode flip with
+        the tool-check read it must not interleave with. One way to
+        move the mode, and it takes the lock.
+        """
         e = PermissionEvaluator()
-        e.mode = PermissionMode.PLAN
-        assert e.mode is PermissionMode.PLAN
+        with pytest.raises(AttributeError):
+            e.mode = PermissionMode.PLAN
+        assert e.mode is PermissionMode.DEFAULT
 
     def test_evaluate_outcome_sees_current_mode(self) -> None:
         """Bypass mode lets shell tools through; default mode
@@ -91,7 +98,7 @@ class TestRaceCondition:
             try:
                 for i in range(iterations):
                     e.set_mode(modes[i % len(modes)])
-                    e.mode = modes[(i + 1) % len(modes)]
+                    e.set_mode(modes[(i + 1) % len(modes)])
             except BaseException as exc:  # noqa: BLE001 — test stress
                 errors.append(exc)
 

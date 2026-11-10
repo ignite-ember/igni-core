@@ -4,8 +4,8 @@ Targets :class:`LoopController` directly (Pattern-4 ideal after
 the iter-141 refactor — the controller owns its own state, no
 Session host to stub). Assertions read ``ctrl.state.*`` and
 ``ctrl.paused`` rather than session-shaped attributes; the two
-external read points (``Session.loop_paused``,
-``Session.pending_loop_prompt``, …) are unit-tested against the
+external read points (``Session.loop.loop_paused``,
+``Session.loop.pending_loop_prompt``, …) are unit-tested against the
 proxy path in ``tests/test_session.py``.
 
 Invariants pinned here:

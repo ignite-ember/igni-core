@@ -20,7 +20,7 @@ def _controller(result: MCPConnectResult) -> tuple[McpController, SimpleNamespac
     session = SimpleNamespace(
         mcp_manager=SimpleNamespace(connect=AsyncMock(return_value=result)),
         mcp_failures=SimpleNamespace(record=MagicMock()),
-        rebuild_mcp=MagicMock(),
+        startup=SimpleNamespace(rebuild_mcp=MagicMock()),
     )
     return McpController(session), session  # type: ignore[arg-type]
 
@@ -32,7 +32,7 @@ async def test_a_server_that_did_not_connect_fails_the_call_with_its_reason() ->
         await controller.connect("github")
 
     session.mcp_failures.record.assert_called_once()
-    session.rebuild_mcp.assert_not_called()
+    session.startup.rebuild_mcp.assert_not_called()
 
 
 async def test_a_server_that_connected_says_so() -> None:
@@ -41,4 +41,4 @@ async def test_a_server_that_connected_says_so() -> None:
     info = await controller.connect("github")
 
     assert info.text == "Connected MCP: github"
-    session.rebuild_mcp.assert_called_once_with()
+    session.startup.rebuild_mcp.assert_called_once_with()

@@ -21,7 +21,7 @@ def _controller(tmp_path, models: ModelsConfig) -> tuple[AuthController, SimpleN
     CredentialsStore(path).save(Credentials(access_token="tok", email="ada@acme.io"))
     session = SimpleNamespace(
         settings=SimpleNamespace(models=models),
-        clear_cloud_credentials=MagicMock(),
+        cloud_auth=SimpleNamespace(clear=MagicMock()),
         rebuild_main_team=MagicMock(),
     )
     controller = AuthController(
@@ -43,7 +43,7 @@ def test_signing_out_deletes_the_saved_credentials(tmp_path) -> None:
 
     load = CredentialsStore(path).load()
     assert not (load.ok and load.creds is not None), "a later session would sign in from them"
-    session.clear_cloud_credentials.assert_called_once_with()
+    session.cloud_auth.clear.assert_called_once_with()
 
 
 def test_a_cloud_model_gives_way_to_one_that_has_its_own_key(tmp_path) -> None:

@@ -32,7 +32,6 @@ table keeps importing them by name.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import uuid
 from typing import TYPE_CHECKING
@@ -158,12 +157,16 @@ class SessionCommand:
         session-start RPC, so without this it would keep whatever pack
         the previous one had. Inside the fire-and-forget task, so the
         command returns immediately either way.
+
+        A failed revalidation is reported and then left behind: the
+        cached pack stands, and the session carries on.
         """
         hook = self._session.on_new_dialogue
         if hook is None:
             return
-        with contextlib.suppress(Exception):
-            await hook()
+        outcome = await hook()
+        if outcome.error:
+            logger.warning("group-policy revalidation failed: %s", outcome.error)
 
 
 # ── Module-level shims ───────────────────────────────────────────

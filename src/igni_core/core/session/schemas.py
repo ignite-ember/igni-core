@@ -772,6 +772,28 @@ class PermissionModeSwitch(BaseModel):
     text: str
 
 
+class OutputStyleSwitch(BaseModel):
+    """What :meth:`RuntimeModeCoordinator.set_output_style` did.
+
+    The same shape as :class:`PermissionModeSwitch`, because the two
+    flips answer the same question for the person who asked: did it
+    happen, and what do I say about it?
+
+    * ``refused`` — the style was not switched: no style by that name.
+      ``text`` says why, and lists the names that do exist.
+    * ``changed`` — the active style is now different from what it was
+      (``False`` for a refusal and for a switch to the style already in
+      force).
+    * ``text`` — the one-line status for the person.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    refused: bool = False
+    changed: bool = False
+    text: str
+
+
 # ── MCP startup schemas ─────────────────────────────────────
 #
 # Typed wrapper for the ``name → client`` mapping and the

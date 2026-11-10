@@ -14,7 +14,7 @@ the sibling :mod:`schemas_context` module.
 * :meth:`ContextController.compact_if_needed` — compaction on
   threshold cross.
 * :meth:`ContextController.extract_learnings` — fire-and-forget
-  learning-pipeline push (delegates to :meth:`Session.extract_learnings`).
+  learning-pipeline push (delegates to :meth:`SessionLearningManager.extract`).
 * :meth:`ContextController.truncate_history` — drop a run and
   every later run from the Agno session.
 * :meth:`ContextController.get_pending_messages` — surface
@@ -94,9 +94,9 @@ class ContextController:
         return msg.StatusUpdate(
             model=self._settings.models.default,
             model_configured=self._models.has_usable_model(),
-            cloud_connected=self._session.cloud_connected,
-            cloud_org=self._session.cloud_org_name or "",
-            cloud_email=self._session.cloud_email or "",
+            cloud_connected=self._session.cloud_auth.connected,
+            cloud_org=self._session.cloud_auth.org_name or "",
+            cloud_email=self._session.cloud_auth.email or "",
             context_tokens=self._session.context_budget.last_input_tokens,
             max_context=self._settings.models.max_context_window,
             permission_mode=self._session.permission_mode_value,
@@ -122,7 +122,7 @@ class ContextController:
         memories, injected summary) that is rebaked into every prompt
         and cannot be compacted away.
         """
-        return await self._session.context_breakdown()
+        return await self._session.compaction.context_breakdown()
 
     async def count_context_tokens(self) -> int:
         """The conversation's size: the server's count at the last answer, plus the tail after it."""
@@ -144,7 +144,7 @@ class ContextController:
 
     async def compact_if_needed(self, ctx_tokens: int, max_ctx: int) -> msg.SessionCleared | None:
         """Compact session if approaching context limit."""
-        compacted = await self._session.compact_if_needed(ctx_tokens, max_ctx)
+        compacted = await self._session.compaction.compact_if_needed(ctx_tokens, max_ctx)
         if not compacted:
             return None
         summary = ""
@@ -167,11 +167,11 @@ class ContextController:
     async def extract_learnings(self, user_msg: str, assistant_msg: str) -> None:
         """Push a completed turn into the learning pipeline.
 
-        Thin forward to :meth:`Session.extract_learnings` — the
+        Thin forward to :meth:`SessionLearningManager.extract` — the
         None-guard on the learning machine and the background-task
         launch both live on :class:`Session`.
         """
-        await self._session.extract_learnings(user_msg, assistant_msg)
+        await self._session.learning_mgr.extract(user_msg, assistant_msg)
 
     async def truncate_history(self, session_id: str, run_id: str) -> TruncateHistoryResult:
         """Drop the run with ``run_id`` and every later run from the

@@ -137,9 +137,14 @@ class TestNothingLoadsTiktoken:
         assert offenders == []
 
     def test_the_session_builds_its_agent_with_the_measured_compression(self) -> None:
-        source = (ROOT / "src" / "igni_core" / "core" / "session" / "core.py").read_text()
-        assert "compression_cls=MeasuredCompression" in source
-        assert "CompressionManager" not in source
+        # The agent build lives in the session's parts package now; the
+        # guarantee is the same — the measured compression, and no
+        # CompressionManager anywhere under the session package.
+        builder = (
+            ROOT / "src" / "igni_core" / "core" / "session" / "parts" / "agents.py"
+        ).read_text()
+        assert "compression_cls=MeasuredCompression" in builder
+        assert "CompressionManager" not in builder
 
     def test_a_compression_check_on_a_real_model_leaves_tiktoken_unloaded(self) -> None:
         script = (

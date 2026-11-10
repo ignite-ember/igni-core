@@ -20,8 +20,6 @@ class TestBackendServerCommands:
 
     @pytest.mark.asyncio
     async def test_handle_command_returns_command_result(self):
-        server = make_backend(MagicMock(), settings=MagicMock())
-
         # ``handle_command`` returns whatever the handler produced,
         # unchanged — the backend ``CommandResult`` subclasses the
         # wire ``msg.CommandResult`` so no rebuild step is needed.
@@ -29,9 +27,14 @@ class TestBackendServerCommands:
         # + field assertions below still exercise the wire contract.
         mock_result = CommandResult.info("test output")
 
+        # The handler is built with the server, so the patch has to be
+        # in place before the server is — a patch applied afterwards
+        # would replace a name the server never reads again.
         with patch("igni_core.backend.server.CommandHandler") as MockHandler:
             instance = MockHandler.return_value
             instance.handle = AsyncMock(return_value=mock_result)
+
+            server = make_backend(MagicMock(), settings=MagicMock())
 
             result = await server.handle_command("/test")
 
@@ -45,11 +48,11 @@ class TestBackendServerCommands:
         settings.models.default = "test-model"
         settings.models.max_context_window = 128_000
         session = MagicMock()
-        session.cloud_connected = True
-        session.cloud_org_name = "Test Org"
+        session.cloud_auth.connected = True
+        session.cloud_auth.org_name = "Test Org"
         # The header names the account, not just the org, so the
         # status push carries the address too.
-        session.cloud_email = "maya@acme.test"
+        session.cloud_auth.email = "maya@acme.test"
         session.context_budget.last_input_tokens = 1234
         # ``Session.permission_mode_value`` is the wire-safe string
         # StatusUpdate needs — MagicMock returns another MagicMock
@@ -141,6 +144,10 @@ class TestFromParts:
             # One gate per process, so every controller that starts
             # a run asks the same one.
             "_gate",
+            # The slash-command router, built with the server.
+            "_commands",
+            # The folder's trust controller, built with the server.
+            "_workspace_trust",
         }
         assert server.runtime is None
         assert (
@@ -331,8 +338,8 @@ class TestBackendServerRealConstruction:
         session = backend._session
 
         # _init_loop_state — six loop fields + two stores.
-        assert session.pending_loop_prompt is None
-        assert session.loop_iteration_index == 0
+        assert session.loop.pending_loop_prompt is None
+        assert session.loop.loop_iteration_index == 0
         assert session.loop_store is not None
         assert session.loop_progress_store is not None
 
@@ -354,10 +361,10 @@ class TestBackendServerRealConstruction:
 
         # _init_plugins_output_styles_hooks — plugin_loader + hooks + output_styles.
         assert session.plugin_loader is not None
-        assert isinstance(session._disabled_plugins, set)
+        assert isinstance(session.disabled_plugins, set)
         assert session.hooks_map is not None
         assert session.hook_executor is not None
-        assert isinstance(session.output_styles, dict)
+        assert isinstance(session.output_style.styles, dict)
 
         # _init_agent_and_skill_pools — pool + skill_pool.
         assert session.pool is not None

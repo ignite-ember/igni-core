@@ -45,10 +45,10 @@ class SessionLearningManager:
     owns (:attr:`_CONTEXT_HEADING`) — see :meth:`inject` for why
     the prune cannot key off the context text itself.
 
-    The learning machine itself is built by :class:`Session`
-    (calling :func:`create_learning_machine` from its own module
-    namespace) so test-patches at
-    ``igni_core.core.session.core.create_learning_machine``
+    The learning machine itself is built by the session's
+    construction (:func:`create_learning_machine`, called from
+    ``core/session/parts/persistence.py``) so test-patches at
+    ``igni_core.core.session.parts.persistence.create_learning_machine``
     still intercept.
     """
 

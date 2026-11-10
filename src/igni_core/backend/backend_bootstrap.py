@@ -7,10 +7,11 @@ inline imports. Every one of those imports lived under a "late-
 import to avoid cycle" comment; the fix is to move the *class
 boundary*, not to hide the import.
 
-:class:`BackendBootstrap` accepts the four caller-supplied inputs
-(``settings``, ``project_dir``, ``resume_session_id``,
-``additional_dirs``) and exposes the built collaborators as
-attributes:
+:class:`BackendBootstrap` accepts the caller-supplied inputs — the
+settings, the project directory, the session id to resume, the extra
+directories, and the process-wide tables the extensions write into
+(prompt contributions, prompt anchors, tool hints) — and exposes the
+built collaborators as attributes:
 
 * :attr:`session` — the :class:`Session`.
 * :attr:`settings` — the ``Settings`` passed in.
@@ -37,8 +38,10 @@ from igni_core.backend.pending_requirements_store import PendingRequirementsStor
 from igni_core.core.approvals.journal import ApprovalJournal
 from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.core.db.locator import StorageLocator
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.loader import PromptLoader
+from igni_core.core.session import Session
 from igni_core.core.session.pending_messages import PendingMessageStore
 from igni_core.core.session.queued_messages import DurableMessageQueue, QueuedMessageStore
 from igni_core.core.session.session_preferences import SessionPreferencesStore
@@ -66,6 +69,7 @@ class BackendBootstrap:
         contributions: PromptContributions | None = None,
         prompt_loader: PromptLoader | None = None,
         supervisor: ProcessSupervisor | None = None,
+        tool_hints: ToolHintsRegistry | None = None,
     ) -> None:
         resolved_project_dir = project_dir or Path.cwd()
 
@@ -79,13 +83,12 @@ class BackendBootstrap:
         if resume_session_id:
             persisted_model = self.session_prefs.get_model(resume_session_id)
             if persisted_model and persisted_model in settings.models.registry:
+                # The pool copies these settings for every session it
+                # resumes, so a resumed session's model must not become
+                # the default the others start on. Copy before changing
+                # it: the caller's settings stay as they were given.
+                settings = settings.model_copy(deep=True)
                 settings.models.default = persisted_model
-
-        # Late-import ``Session`` — resolved at call time so
-        # ``patch('igni_core.core.session.Session', ...)`` in
-        # ``tests/test_model_persistence.py`` continues to
-        # intercept construction.
-        from igni_core.core.session import Session  # noqa: PLC0415 — mock-patch target
 
         self.session = Session(
             settings,
@@ -95,6 +98,7 @@ class BackendBootstrap:
             contributions=contributions,
             prompt_loader=prompt_loader,
             supervisor=supervisor,
+            tool_hints=tool_hints,
         )
         self.settings = settings
 

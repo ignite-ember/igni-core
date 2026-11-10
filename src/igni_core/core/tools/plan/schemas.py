@@ -227,7 +227,7 @@ class PlanEnterResult(BaseModel):
     * ``mode_flipped`` — did the permission mode actually change?
       A no-op "already in plan" is ``ok=True, mode_flipped=False``.
     * ``mode_status`` — the raw string
-      :meth:`Session.set_permission_mode` returned (empty on
+      :meth:`RuntimeModeCoordinator.set_permission_mode` returned (empty on
       refusal). Used to preserve the exact message on error paths.
     * ``reason`` — machine-readable refusal reason (empty on ok).
     * ``researcher_report`` — the plan_researcher sub-agent's

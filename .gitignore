@@ -22,10 +22,12 @@ eggs/
 .eggs/
 # Anchor with a leading slash so this Python convention (which
 # only ever lives at the repo root) doesn't accidentally match
-# nested directories like ``src/igni_core/lib``.
+# nested directories like ``src/igni_core/lib``. ``/parts/`` is
+# anchored for the same reason: the session's builders live in
+# ``src/igni_core/core/session/parts/`` and must be committed.
 /lib/
 /lib64/
-parts/
+/parts/
 sdist/
 var/
 wheels/

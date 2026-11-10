@@ -40,6 +40,7 @@ from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.settings import Settings
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.layer import BackendHooks, layers
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.observability import OtelRuntime
 from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.prompts.contributions import PromptContributions
@@ -156,6 +157,10 @@ class BackendApp:
         # process: the extension system registers into it and every
         # session of this backend reads from it.
         prompt_loader = PromptLoader(PromptFragments())
+        # What the extension tools say about themselves. One table for
+        # the process: the extension installer declares into it and
+        # every session of this backend judges those tools by it.
+        tool_hints = ToolHintsRegistry.shared()
         # The supervisor this backend process shares — one registry,
         # one watcher panel, one foreground slot, whatever the number
         # of windows. Built here, at the composition root, and handed
@@ -170,6 +175,7 @@ class BackendApp:
             prompt_loader=prompt_loader,
             supervisors=supervisors,
             gate=gate,
+            tool_hints=tool_hints,
         )
         # Hydrates any persisted ``/loop`` state from the project's ``state.db``.
         await backend.startup()
@@ -238,6 +244,7 @@ class BackendApp:
                 gate=gate,
                 contributions=contributions,
                 prompt_loader=prompt_loader,
+                tool_hints=tool_hints,
                 extensions=extensions.rpc,
                 origins=extensions.origins,
                 extension_store=store,
