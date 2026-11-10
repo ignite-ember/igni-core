@@ -15,13 +15,13 @@ from typing import Any, ClassVar
 
 from igni_core.backend.activity import ActivityState
 from igni_core.backend.schemas_pool import ExtensionPost
-from igni_core.backend.schemas_push import SessionNamedPayload
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.host.hooks import ExtensionHooks, HookFailure
 from igni_core.extensions.host.wire import Outcome
 from igni_core.extensions.service_events import EventHandling, ServiceEvent, UnattendedPost
 from igni_core.protocol import messages as msg
+from igni_core.protocol.schemas.push_payloads import SessionNamedPayload
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ class PoolSession:
         if titled.ok:
             await runtime.transport.send(
                 msg.push_session_named(
-                    SessionNamedPayload(session_id=self.session_id, name=title).model_dump()
+                    SessionNamedPayload(session_id=self.session_id, name=title)
                 )
             )
         return titled

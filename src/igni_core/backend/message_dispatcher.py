@@ -31,7 +31,6 @@ from typing import Any
 from igni_core.backend.agent_framing import ExtensionMessage, PlanResearchHint
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.rpc_result import RpcResult
-from igni_core.backend.schemas_push import SessionNamedPayload
 from igni_core.backend.schemas_sessions import DispatchedBackend, TransportLike
 from igni_core.core.activity import BusyKind, background
 from igni_core.extensions.host.attachments import ChatAttachments
@@ -39,6 +38,7 @@ from igni_core.extensions.registry import ExtensionRefused
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Message
+from igni_core.protocol.schemas.push_payloads import SessionNamedPayload
 
 logger = logging.getLogger(__name__)
 

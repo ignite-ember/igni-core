@@ -1,12 +1,24 @@
-"""Typed payloads for every ``PushNotification`` the BE sends the FE.
+"""The payload models the push channels igni produces carry.
 
-Extracted out of :mod:`igni_core.backend.__main__` where dozens of
-raw ``dict`` literals used to be constructed inline. Every push
-payload flowing through :class:`PushNotificationBridge` is a Pydantic
-model here so the wire shape can be validated at the seam.
+Every push is a *channel* — which kind of event — and a *payload* —
+the event's own fields. This module holds one model per payload, so a
+producer builds a typed payload and the wire shape is validated at the
+seam rather than spelled out as a dict literal at the call site.
+
+The models live with the wire contract (:mod:`igni_core.protocol`)
+rather than in the backend, because they *are* the wire contract: the
+backend produces them and the frontend reads them, and the protocol
+package is the leaf layer both sides depend on.
 
 Naming mirrors the ``PushNotification.channel`` value one-for-one so
-the FE contract stays greppable.
+the wire contract stays greppable.
+
+A payload model here is the *producer's* model — strict about the
+fields it names. The extension host reads pushes through its own
+deliberately lenient readers
+(:mod:`igni_core.extensions.host.broadcasts.push_payloads`), which
+accept a producer's partial payload and keep its extra fields; those
+are a separate set on purpose.
 """
 
 from __future__ import annotations
@@ -100,3 +112,17 @@ class SessionNamedPayload(BaseModel):
 
     session_id: str
     name: str
+
+
+__all__ = [
+    "BackgroundProcessDonePayload",
+    "FileEditedPayload",
+    "LoginResultPayload",
+    "LoginStatusPayload",
+    "ProcessExitedPayload",
+    "ProcessLinePayload",
+    "ProcessStartedPayload",
+    "SchedulerCompletedPayload",
+    "SchedulerStartedPayload",
+    "SessionNamedPayload",
+]
