@@ -25,25 +25,30 @@ The same happens on the desktop after igni is quit and started again.
 from __future__ import annotations
 
 import copy
-import json
 import logging
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from agno.agent import Agent
 from agno.models.message import Message
 from agno.models.response import ToolExecution
 from agno.run.agent import RunOutput, RunStatus
 from agno.run.requirement import RunRequirement
 
 from igni_core.backend.schemas_hitl import StreamFactory
-from igni_core.core.approvals.journal import SpawnLink
+from igni_core.core.approvals.records import SpawnLink
+from igni_core.core.hitl.models import RestoredRun
 from igni_core.core.hooks.untrusted import UntrustedOutputHook
-from igni_core.core.sub_agent_hitl import RestoredRun
 from igni_core.core.tools.orchestrate import OrchestrateTools
-from igni_core.core.tools.orchestrate_agent_stream import ResumedSubAgentStreamHandler
-from igni_core.core.tools.orchestrate_events import SubAgentRegistry
-from igni_core.core.tools.orchestrate_spawn import TeamSpawn
-from igni_core.core.tools.orchestrate_team_stream import ResumedTeamStreamHandler
+from igni_core.core.tools.orchestrate_resumed_agent_stream import ResumedSubAgentStreamHandler
+from igni_core.core.tools.orchestrate_resumed_team_stream import ResumedTeamStreamHandler
+from igni_core.core.tools.orchestrate_spawn_team import TeamSpawn
+from igni_core.core.tools.orchestrate_spawn_types import TeamBuildRequest
+from igni_core.core.tools.orchestrate_stream_context import (
+    ResumeSpec,
+    StreamContext,
+    StreamSinks,
+)
 from igni_core.core.tools.spawn_context import ParentCall, SpawnCalls
 from igni_core.protocol import messages as msg
 
@@ -78,18 +83,17 @@ class ColdSpawnResume:
                 "with the previous backend and cannot be continued."
             )
             return
-        if self.is_team(link.parents[0]):
+        if link.parents[0].is_team_spawn:
             result = await self._continue_team(ready, link)
         else:
             agent = self._pool_agent(link.agent_name)
             if agent is None:
                 yield msg.Error(text=f"The agent {link.agent_name!r} is no longer available.")
                 return
-            result = await self._continue(
-                ResumedSubAgentStreamHandler,
+            result = await self._continue_agent(
                 agent,
+                link.agent_name,
                 chain=link.parents,
-                path=SpawnCalls.path_to(link.agent_name, link.parents),
                 run_id=ready.run_id,
                 session_id=link.agent_session_id,
                 requirements=ready.requirements,
@@ -141,11 +145,10 @@ class ColdSpawnResume:
             # window, and it can ask the person again — that pause is
             # stored with the calls still waiting above it.
             rest = link.parents[depth + 1 :]
-            result = await self._continue(
-                ResumedSubAgentStreamHandler,
+            result = await self._continue_agent(
                 caller,
+                parent.agent_name,
                 chain=rest,
-                path=SpawnCalls.path_to(parent.agent_name, rest),
                 run_id=parent.run_id,
                 session_id=parent.session_id,
                 requirements=list(run_output.requirements or []),
@@ -163,80 +166,103 @@ class ColdSpawnResume:
         paused members are continued with the decisions before the team
         leader goes on.
         """
-        call = link.parents[0]
+        args = link.parents[0].spawn_args
         tools = self._orchestrate_tools()
         if tools is None:
             return "The team could not be rebuilt: no spawn tools in this session."
         built = TeamSpawn.build_team(
-            pool=self._session.pool,
-            settings=tools.settings,
-            names=self.team_names(call),
-            mode=str(call.tool_args.get("mode") or ""),
-            depth=tools.current_depth + 1,
-            deps=tools.spawn_deps(),
+            TeamBuildRequest(
+                pool=self._session.pool,
+                settings=tools.settings,
+                names=args.team_names,
+                mode=args.mode,
+                depth=tools.current_depth + 1,
+            ),
+            tools.spawn_deps(),
         )
         if built.team is None:
             return f"The team could not be rebuilt: {built.error}"
-        return await self._continue(
-            ResumedTeamStreamHandler,
-            built.team,
-            chain=link.parents,
-            path=SpawnCalls.path_to(f"team({','.join(self.team_names(call))})", link.parents),
-            run_id=ready.run_id,
-            session_id=link.agent_session_id,
-            requirements=ready.requirements,
-        )
-
-    @staticmethod
-    def team_names(call: ParentCall) -> list[str]:
-        raw = str(call.tool_args.get("agent_names") or "")
-        return [n.strip() for n in raw.split(",") if n.strip()]
-
-    @classmethod
-    def is_team(cls, call: ParentCall) -> bool:
-        return call.tool_name == "spawn_team" and len(cls.team_names(call)) > 1
-
-    async def _continue(
-        self,
-        handler_cls: Any,
-        runnable: Any,
-        *,
-        chain: list[ParentCall],
-        path: list[str],
-        **resume: Any,
-    ) -> str:
-        """Run one continued agent through its stream handler, under the
-        calls still waiting above it."""
-        tools = self._orchestrate_tools()
-        with SpawnCalls.restored(chain):
-            handler = handler_cls(
-                runnable,
-                on_progress=tools.on_progress if tools is not None else None,
-                hitl_coordinator=self._session.sub_agent_hitl,
-                agent_path=path,
-                card_id="",
-                subagent_registry=(
-                    tools.subagent_registry if tools is not None else SubAgentRegistry()
+        with SpawnCalls.restored(link.parents):
+            handler = ResumedTeamStreamHandler(
+                StreamContext(
+                    runnable=built.team,
+                    task=args.task,
+                    agent_path=SpawnCalls.path_to(
+                        f"team({','.join(args.team_names)})", link.parents
+                    ),
+                    card_id="",
+                    sinks=self._sinks(tools),
                 ),
-                event_appender=tools.event_appender if tools is not None else None,
-                **resume,
+                ResumeSpec(
+                    run_id=ready.run_id,
+                    session_id=link.agent_session_id,
+                    requirements=ready.requirements,
+                ),
             )
             result, _activity = await handler.run()
         return str(result)
 
-    @classmethod
-    def tool_result(cls, call: ParentCall, result: str) -> str:
+    async def _continue_agent(
+        self,
+        agent: Agent,
+        name: str,
+        *,
+        chain: list[ParentCall],
+        run_id: str,
+        session_id: str,
+        requirements: list[RunRequirement],
+        run_response: RunOutput | None = None,
+    ) -> str:
+        """Run one continued agent through its stream handler, under the
+        calls still waiting above it: by ``run_id`` from Agno's stored
+        run, or from ``run_response`` when given."""
+        with SpawnCalls.restored(chain):
+            handler = ResumedSubAgentStreamHandler(
+                StreamContext(
+                    runnable=agent,
+                    task="",
+                    agent_path=SpawnCalls.path_to(name, chain),
+                    card_id="",
+                    sinks=self._sinks(self._orchestrate_tools()),
+                ),
+                ResumeSpec(
+                    run_id=run_id,
+                    session_id=session_id,
+                    requirements=requirements,
+                    run_response=run_response,
+                ),
+            )
+            result, _activity = await handler.run()
+        return str(result)
+
+    def _sinks(self, tools: OrchestrateTools | None) -> StreamSinks:
+        """The sinks a continued run reports through.
+
+        The session's spawn tools carry them — the same ones a live
+        spawn reports through, so a continued run's progress reaches
+        the same window a live one would. A session without spawn
+        tools gets an empty set: the run then reports nowhere, which
+        is all such a session can offer.
+
+        The HITL bridge is the session's own, not the toolkit's: it is
+        what a continued run pauses against.
+        """
+        if tools is None:
+            return StreamSinks(hitl_coordinator=self._session.sub_agent_hitl)
+        sinks = tools.wiring.sinks.model_copy()
+        sinks.hitl_coordinator = self._session.sub_agent_hitl
+        return sinks
+
+    @staticmethod
+    def tool_result(call: ParentCall, result: str) -> str:
         """What the waiting call returns: the spawned agent's or team's
         answer, headed the way a live spawn heads it."""
-        task = str(call.tool_args.get("task", ""))
-        if cls.is_team(call):
-            mode = str(call.tool_args.get("mode") or "coordinate")
-            head = f"[Team: {', '.join(cls.team_names(call))}] (mode: {mode})"
+        args = call.spawn_args
+        if call.is_team_spawn:
+            head = f"[Team: {', '.join(args.team_names)}] (mode: {args.mode or 'coordinate'})"
         else:
-            head = (
-                f"[Agent: {call.tool_args.get('agent_name') or call.tool_args.get('agent_names')}]"
-            )
-        return f"{head}\n[Task: {task}]\n\nResponse:\n{result}"
+            head = f"[Agent: {args.agent_label}]"
+        return f"{head}\n[Task: {args.task}]\n\nResponse:\n{result}"
 
     #: The result a call gets when the restart cut it off.
     INTERRUPTED = (
@@ -270,29 +296,20 @@ class ColdSpawnResume:
         done = finished or {}
         executions: list[ToolExecution] = []
         requirements: list[RunRequirement] = []
-        calls = parent.turn() or [
-            {
-                "id": parent.tool_call_id,
-                "function": {"name": parent.tool_name, "arguments": "{}"},
-            }
-        ]
-        for call in calls:
-            call_id = str(call.get("id") or "")
-            function = call.get("function") or {}
-            if call_id == parent.tool_call_id:
+        for call in parent.turn():
+            if call.id == parent.tool_call_id:
                 name, args = parent.tool_name, dict(parent.tool_args)
                 result = UntrustedOutputHook.quarantine(name, answer)
             else:
-                name = str(function.get("name") or "")
-                args = cls._arguments(function.get("arguments"))
-                stored = done.get(call_id)
+                name, args = call.name, call.arguments
+                stored = done.get(call.id)
                 result = (
                     cls.INTERRUPTED
                     if stored is None
                     else UntrustedOutputHook.quarantine(name, stored)
                 )
             execution = ToolExecution(
-                tool_call_id=call_id,
+                tool_call_id=call.id,
                 tool_name=name,
                 tool_args=args,
                 external_execution_required=True,
@@ -312,29 +329,18 @@ class ColdSpawnResume:
             status=RunStatus.paused,
         )
 
-    @staticmethod
-    def _arguments(raw: Any) -> dict[str, Any]:
-        if isinstance(raw, dict):
-            return dict(raw)
-        try:
-            parsed = json.loads(raw or "{}")
-        except (TypeError, ValueError):
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-
     def _is_main(self, parent: ParentCall) -> bool:
-        main = getattr(self._session, "main_team", None)
-        return main is not None and parent.agent_name == str(getattr(main, "name", "") or "")
+        return parent.agent_name == (self._session.main_team.name or "")
 
-    def _pool_agent(self, name: str) -> Any:
-        try:
-            return copy.copy(self._session.pool.get(name))
-        except KeyError:
+    def _pool_agent(self, name: str) -> Agent | None:
+        agent = self._session.pool.get(name)
+        if agent is None:
             logger.warning("cold resume: no agent %r in the pool", name)
             return None
+        return copy.copy(agent)
 
     def _orchestrate_tools(self) -> OrchestrateTools | None:
-        for tool in getattr(self._session.main_team, "tools", None) or []:
+        for tool in self._session.main_team.tools or []:
             if isinstance(tool, OrchestrateTools):
                 return tool
         return None

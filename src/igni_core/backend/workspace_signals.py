@@ -63,15 +63,15 @@ class WorkspaceSignals:
 
     def _wanted(self, topic: HostTopic) -> bool:
         """Is anyone entitled subscribed to this signal?"""
-        return self._model is not None and bool(self._model.bus.wanted(str(topic)))
+        return self._model is not None and bool(self._model.services.bus.wanted(str(topic)))
 
     def head_changed(self, head: Head) -> None:
         if self._model is not None:
-            self._model.head_changed(head)
+            self._model.services.observations.head_changed(head)
 
     def files_changed(self, paths: frozenset[str]) -> None:
         if self._model is not None:
-            self._model.files_changed(paths, self.MAX_PATHS)
+            self._model.services.observations.files_changed(paths, self.MAX_PATHS)
 
 
 __all__ = ["WorkspaceSignals"]

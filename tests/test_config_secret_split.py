@@ -70,18 +70,17 @@ class TestTheMergeTheSplitRestsOn:
             },
         )
 
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
 
-        settings = load_settings(project_dir=project)
+        settings = SettingsLoader.load(project_dir=project)
         entry = settings.models.registry["m3"]
-        data = entry if isinstance(entry, dict) else entry.model_dump()
 
         # Both halves survived. If tiers replaced whole entries rather
         # than merging fields, one of these would be missing and the
         # split would be silently impossible.
-        assert data["model_id"] == "MiniMax-M3"
-        assert data["url"] == "https://api.minimax.io/v1"
-        assert data["api_key"] == "sk-from-home"
+        assert entry.model_id == "MiniMax-M3"
+        assert entry.url == "https://api.minimax.io/v1"
+        assert entry.api_key == "sk-from-home"
 
     def test_the_project_still_wins_a_shared_field(self, tmp_path: Path, monkeypatch):
         """Merging must not invert the precedence it merges into."""
@@ -101,13 +100,12 @@ class TestTheMergeTheSplitRestsOn:
             {"models": {"registry": {"m3": {"model_id": "m", "context_window": 204800}}}},
         )
 
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
 
-        settings = load_settings(project_dir=project)
+        settings = SettingsLoader.load(project_dir=project)
         entry = settings.models.registry["m3"]
-        data = entry if isinstance(entry, dict) else entry.model_dump()
-        assert data["context_window"] == 204800
-        assert data["api_key"] == "k"
+        assert entry.context_window == 204800
+        assert entry.api_key == "k"
 
 
 class TestAMissingKeySaysSo:

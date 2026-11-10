@@ -16,7 +16,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import CONFIG_DIR
 
 
@@ -41,9 +41,9 @@ class DebugLogging:
         """
         log_path = path if path is not None else cls.DEFAULT_PATH
         handler: logging.Handler
-        if not Layers.current().log_files():
+        if not layers.current().log_files():
             # No debug.log where the layer keeps no log files.
-            handler = Layers.current().log_handler()
+            handler = layers.current().log_handler()
         else:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             handler = RotatingFileHandler(

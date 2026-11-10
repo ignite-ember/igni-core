@@ -12,7 +12,8 @@ from typing import Any
 import pytest
 
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.schemas import HookDefinition
+from igni_core.core.hooks.schemas import HookDefinition, HookPayload
+from igni_core.core.hooks.tool_events import PreToolUsePayload
 from igni_core.core.paths import CONFIG_DIR
 
 # ── prompt handler ───────────────────────────────────────────────
@@ -27,7 +28,7 @@ async def test_prompt_handler_returns_text_as_message() -> None:
         text="Remember to run make fmt before committing.",
     )
     executor = HookExecutor({"PreToolUse": [hook]})
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.should_continue is True
     assert "make fmt" in result.message
 
@@ -39,10 +40,14 @@ async def test_prompt_handler_with_matcher() -> None:
     hook = HookDefinition(type="prompt", text="HIT", matcher="^edit_file$")
     executor = HookExecutor({"PreToolUse": [hook]})
 
-    matched = await executor.execute("PreToolUse", payload={}, target="edit_file")
+    matched = await executor.execute(
+        "PreToolUse", payload=PreToolUsePayload(tool_name="x"), target="edit_file"
+    )
     assert "HIT" in matched.message
 
-    not_matched = await executor.execute("PreToolUse", payload={}, target="file_read")
+    not_matched = await executor.execute(
+        "PreToolUse", payload=PreToolUsePayload(tool_name="x"), target="file_read"
+    )
     assert not_matched.message == ""
 
 
@@ -71,7 +76,7 @@ async def test_mcp_tool_handler_calls_resolved_function() -> None:
         mcp_args={"channel": "#alerts"},
     )
     executor = HookExecutor({"PreToolUse": [hook]}, mcp_resolver=resolver)
-    payload = {"tool_name": "edit_file", "tool_args": {"file_path": "x.py"}}
+    payload = PreToolUsePayload(tool_name="edit_file", tool_args={"file_path": "x.py"})
     result = await executor.execute("PreToolUse", payload=payload)
 
     assert result.should_continue is True
@@ -80,7 +85,7 @@ async def test_mcp_tool_handler_calls_resolved_function() -> None:
     # canonical (event, payload) keys.
     assert captured["channel"] == "#alerts"
     assert captured["event"] == "PreToolUse"
-    assert captured["payload"] == payload
+    assert captured["payload"] == HookPayload(body=payload).to_wire_dict()
 
 
 @pytest.mark.asyncio
@@ -89,7 +94,7 @@ async def test_mcp_tool_handler_no_resolver_is_quiet() -> None:
     non-blocking pass-through. Better than crashing the tool call."""
     hook = HookDefinition(type="mcp_tool", mcp_server="slack", mcp_tool="x")
     executor = HookExecutor({"PreToolUse": [hook]})  # no resolver
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.should_continue is True
     assert result.message == ""
 
@@ -103,7 +108,7 @@ async def test_mcp_tool_handler_unknown_server_is_quiet() -> None:
 
     hook = HookDefinition(type="mcp_tool", mcp_server="missing", mcp_tool="x")
     executor = HookExecutor({"PreToolUse": [hook]}, mcp_resolver=resolver)
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.should_continue is True
 
 
@@ -121,7 +126,7 @@ async def test_mcp_tool_handler_invoker_exception_is_quiet() -> None:
 
     hook = HookDefinition(type="mcp_tool", mcp_server="x", mcp_tool="y")
     executor = HookExecutor({"PreToolUse": [hook]}, mcp_resolver=resolver)
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.should_continue is True
 
 
@@ -138,7 +143,7 @@ async def test_mcp_tool_handler_awaits_async_invoker() -> None:
 
     hook = HookDefinition(type="mcp_tool", mcp_server="x", mcp_tool="y", timeout=2000)
     executor = HookExecutor({"PreToolUse": [hook]}, mcp_resolver=resolver)
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.message == "async-result"
 
 
@@ -151,7 +156,7 @@ async def test_unknown_type_is_skipped() -> None:
     crashing the pipeline (logged at debug)."""
     hook = HookDefinition(type="commandd", command="echo x")  # typo
     executor = HookExecutor({"PreToolUse": [hook]})
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     # No real hook ran → no message, but ``execute`` short-circuits
     # to the empty-tasks path so we still get a non-blocking result.
     assert result.should_continue is True
@@ -219,7 +224,7 @@ async def test_mcp_tool_result_dict_continue_false_blocks() -> None:
 
     hook = HookDefinition(type="mcp_tool", mcp_server="x", mcp_tool="y")
     executor = HookExecutor({"PreToolUse": [hook]}, mcp_resolver=resolver)
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.should_continue is False
     assert "blocked by policy" in result.message
 
@@ -239,7 +244,7 @@ async def test_mcp_tool_result_hookSpecificOutput_permission_decision() -> None:
 
     hook = HookDefinition(type="mcp_tool", mcp_server="x", mcp_tool="y")
     executor = HookExecutor({"PreToolUse": [hook]}, mcp_resolver=resolver)
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.permission_decision == "allow"
 
 
@@ -256,7 +261,7 @@ async def test_mcp_tool_result_bare_permission_decision_fallback() -> None:
 
     hook = HookDefinition(type="mcp_tool", mcp_server="x", mcp_tool="y")
     executor = HookExecutor({"PreToolUse": [hook]}, mcp_resolver=resolver)
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.permission_decision == "deny"
     assert result.message == "no"
 
@@ -277,7 +282,7 @@ async def test_mcp_tool_string_result_still_supported() -> None:
 
     hook = HookDefinition(type="mcp_tool", mcp_server="x", mcp_tool="y")
     executor = HookExecutor({"PreToolUse": [hook]}, mcp_resolver=resolver)
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.should_continue is True
     assert result.message == "raw-string-result"
     assert result.permission_decision == ""
@@ -297,6 +302,6 @@ async def test_mcp_tool_none_result_is_quiet() -> None:
 
     hook = HookDefinition(type="mcp_tool", mcp_server="x", mcp_tool="y")
     executor = HookExecutor({"PreToolUse": [hook]}, mcp_resolver=resolver)
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.should_continue is True
     assert result.message == ""

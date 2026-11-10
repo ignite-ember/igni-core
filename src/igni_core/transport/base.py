@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 from igni_core.protocol.messages import Message
 
@@ -37,7 +37,46 @@ class Transport(ABC):
         """Whether the transport has been closed."""
 
 
-class ListeningTransport(Transport):
+class ClientAwareTransport(Transport):
+    """A :class:`Transport` that serves client connections and names them.
+
+    A view is a client connection: the socket's one frontend, or each
+    WebSocket tab. A transport that knows its views can say how many are
+    attached, tell a watcher when one comes or goes, and say whether a
+    given client id is one of its own — which is what routes a reply
+    addressed to a single client (``Message.to_client``).
+
+    Making this an explicit ABC lets
+    :class:`~igni_core.transport.composite.CompositeTransport` dispatch
+    to the children that know about their clients via ``isinstance``
+    instead of duck-typing them with ``getattr`` / ``hasattr``. Pure
+    client-side transports (``NDJsonStreamTransport`` under
+    ``UnixSocketClientTransport``, ``InProcessTransport``) stay on plain
+    :class:`Transport`: they carry messages, not connections.
+    """
+
+    @property
+    @abstractmethod
+    def client_count(self) -> int:
+        """How many clients are connected now."""
+
+    def watch_connections(self, watcher: Callable[[str, str], None]) -> None:
+        """Be told ``("attached" | "detached", client_id)`` for every view.
+
+        A transport that tells no views apart (one client on a socket)
+        reports none; one that does overrides this.
+        """
+
+    @abstractmethod
+    def owns_client(self, client_id: str) -> bool:
+        """Whether ``client_id`` names a connection of this transport.
+
+        A transport whose single connection carries no id (the Unix
+        socket) owns no named client.
+        """
+
+
+class ListeningTransport(ClientAwareTransport):
     """A :class:`Transport` that owns a server socket lifecycle.
 
     Server-side transports (Unix socket, WebSocket) need two extra
@@ -48,10 +87,11 @@ class ListeningTransport(Transport):
     Making this an explicit ABC lets :class:`~igni_core.transport.composite.CompositeTransport`
     dispatch to child listening transports via ``isinstance`` instead
     of duck-typing them with ``getattr`` / ``hasattr`` — pure
-    client-side transports (``NDJsonStreamClientTransport`` under
+    client-side transports (``NDJsonStreamTransport`` under
     ``UnixSocketClientTransport``, ``InProcessTransport``) stay on
     plain :class:`Transport` and are not asked to grow spurious
-    ``start`` / ``wait_for_connection`` methods.
+    ``start`` / ``wait_for_connection`` methods. The client-facing half
+    of the contract lives on :class:`ClientAwareTransport`.
     """
 
     @abstractmethod

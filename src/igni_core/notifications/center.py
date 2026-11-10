@@ -35,6 +35,8 @@ from igni_core.notifications.schemas import (
     FloorNotification,
     MarkReadRequest,
     NotificationCounts,
+    NotificationsCause,
+    NotificationsChanged,
     NotificationsListResult,
     NotificationsReadResult,
     ServerNotification,
@@ -62,7 +64,7 @@ class NotificationCenter:
         *,
         server: SignedInServer,
         local: LocalNotificationStore,
-        announce: Callable[[NotificationCounts], None],
+        announce: Callable[[NotificationsChanged], None],
         transport: httpx.AsyncBaseTransport | None = None,
         backoff: Backoff | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -70,7 +72,8 @@ class NotificationCenter:
         """
         Args:
             announce: Tell the client the counts moved. Called with the
-                merged counts every time either half changes.
+                merged counts, and what moved them, every time either half
+                changes.
             transport, backoff, sleep: For tests — a fake igni server
                 and a clock that does not wait.
         """
@@ -136,7 +139,7 @@ class NotificationCenter:
         self._server_counts = NotificationCounts()
         self._server_error = ""
         self._organisations = None
-        self._announce(self.counts())
+        self._tell("signed_out")
 
     async def stop(self) -> None:
         await self._follower.stop()
@@ -164,8 +167,8 @@ class NotificationCenter:
             if not self._again:
                 return
 
-    async def refresh(self) -> None:
-        """Read igni server's list and counts now, and tell the client."""
+    async def refresh(self, cause: NotificationsCause = "server") -> None:
+        """Read igni server's list and counts now, and tell the client why."""
         try:
             rows, counts = await asyncio.gather(
                 self._client.listing(limit=self.LIMIT), self._client.counts()
@@ -184,7 +187,10 @@ class NotificationCenter:
             logger.info("notifications not refreshed: %s", exc)
         else:
             self._server_rows, self._server_counts, self._server_error = rows, counts, ""
-        self._announce(self.counts())
+        self._tell(cause)
+
+    def _tell(self, cause: NotificationsCause) -> None:
+        self._announce(NotificationsChanged(counts=self.counts(), cause=cause))
 
     # ── This machine's half ──────────────────────────────────────
 
@@ -192,7 +198,7 @@ class NotificationCenter:
         """Keep a notice an extension told this host. ``None`` for a repeat."""
         kept = self._local.add(source, notice)
         if kept is not None:
-            self._announce(self.counts())
+            self._tell("extension")
         return kept
 
     # ── What the client asks ─────────────────────────────────────
@@ -212,7 +218,7 @@ class NotificationCenter:
 
     async def listing(self) -> NotificationsListResult:
         """Both halves, newest first, read from igni server now."""
-        await self.refresh()
+        await self.refresh("listed")
         organisations = await self._organisation_names() if self._server_rows else {}
         merged = [FloorNotification.from_server(row, organisations) for row in self._server_rows]
         merged.extend(self._local.listing(limit=self.LIMIT))
@@ -265,8 +271,8 @@ class NotificationCenter:
             except NotificationsUnavailable as exc:
                 error = str(exc)
         if not error:
-            await self.refresh()
+            await self.refresh("marked_read")
             error = self._server_error
         else:
-            self._announce(self.counts())
+            self._tell("marked_read")
         return NotificationsReadResult(counts=self.counts(), server_error=error)

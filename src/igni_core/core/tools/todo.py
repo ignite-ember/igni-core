@@ -6,164 +6,215 @@ the entire list (atomic snapshot semantics — matches CC's
 ``TodoWrite``), so the agent ships the full intended state on
 every call instead of issuing per-item updates.
 
-Why a tool at all (vs. having the agent narrate its plan in the
-conversation):
-
-* The user gets a stable, structured view of intent that survives
-  intermediate tool calls and reasoning — no scrolling through
-  output to find "what was the plan again?".
-* The list is consumable by external surfaces (a webview sidebar,
-  the TUI status line) via the ``GET_TODOS`` RPC without parsing
-  prose.
-* The model is steered to **commit** to a plan and tick it off
-  one step at a time, instead of dropping intermediate planning
-  noise into every turn.
+A tool at all (vs. having the agent narrate its plan): the user gets
+a stable view of intent that survives intermediate tool calls, the
+list is consumable by external surfaces (a webview sidebar, the TUI
+status line) via the ``GET_TODOS`` RPC without parsing prose, and
+the model is steered to **commit** to a plan and tick it off.
 
 The single rule the model needs to follow: keep at most one item
 in ``in_progress`` at a time, and flip a completed item before
 starting the next. That property isn't enforced here (we record
-whatever the model writes) — it's encouraged by the docstring
-and surfaced in the tool's reply summary so the model can self-
-correct.
+whatever the model writes) — it's encouraged by the docstring and
+surfaced in the tool's reply summary so the model can self-correct.
+
+Shapes are typed end to end: the agent's loose rows become
+:class:`TodoItemInput` models, the rows that survive validation
+become :class:`TodoItemWire` rows, and those rows are the only
+shape the store, the broadcast, the RPC and the persistence layer
+carry. There is one set of row rules —
+:meth:`TodoItemInput.validate_batch` — and every boundary uses it.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
 from agno.tools import Toolkit
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+
+from igni_core.core.broadcast_schema import BroadcastEvent
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session
+    from igni_core.core.session.schemas import PersistResult
 
 logger = logging.getLogger(__name__)
 
 
 TodoStatus = Literal["pending", "in_progress", "completed"]
-_VALID_STATUSES: frozenset[str] = frozenset(("pending", "in_progress", "completed"))
+
+#: The statuses a row may carry — derived from :data:`TodoStatus`
+#: itself, so there is no second list of valid values to keep in
+#: step with the type.
+VALID_STATUSES: frozenset[str] = frozenset(get_args(TodoStatus))
 
 
+# The canonical todo row: the one shape every boundary carries. The
+# camelCase alias keeps Claude Code parity: every model_dump() emits
+# ``activeForm``.
 class TodoItemWire(BaseModel):
-    """Wire shape for one todo row — CC-parity ``activeForm``
-    camelCase alias so the SDK-facing payload matches Claude Code
-    verbatim. Constructed via keyword-args with the Python-side
-    ``active_form`` snake case; ``.model_dump(by_alias=True)``
-    produces the camelCase dict for broadcasts / persistence."""
+    """One item in the agent's todo checklist."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
-    content: str
-    status: str
-    active_form: str = Field("", alias="activeForm")
+    content: str = Field(description="What the item is, in imperative form, e.g. `Run tests`.")
+    status: TodoStatus = Field(
+        description="Progress of the item: `pending` (not started), `in_progress` (being "
+        "worked on now) or `completed`."
+    )
+    active_form: str = Field(
+        default="",
+        alias="activeForm",
+        description="Present-tense form shown while the item is in progress, e.g. "
+        "`Running tests`. Empty when the agent gave none.",
+    )
 
     @classmethod
-    def coerce_snapshot(cls, raw: object) -> list[TodoItemWire]:
-        """Filter — SILENTLY drops malformed entries.
+    def parse_snapshot(cls, raw: object) -> list[TodoItemWire]:
+        """Best-effort read of a persisted snapshot.
 
-        Absorbed from the pre-refactor module-level
-        ``_coerce_todo_snapshot`` helper in ``session/persistence.py``
-        so the shape rule (``content`` non-empty, ``status`` in the
-        three allowed values, ``active_form`` defaults to empty)
-        lives on the model that defines the shape, not in a free
-        function on a persistence-module boundary.
-
-        Use this for the persistence load/save round-trip where a
-        stale/corrupt on-disk row must NOT sink the whole read —
-        callers get a best-effort list of valid rows and the bad
-        entries drop. For strict validation, use
-        :meth:`model_validate` directly instead.
+        A stale or corrupt row on disk must NOT sink the whole read
+        — the malformed rows drop and the valid ones come back.
         """
-        out: list[TodoItemWire] = []
         if not isinstance(raw, list):
-            return out
-        for entry in raw:
-            if not isinstance(entry, dict):
-                continue
-            content = str(entry.get("content", "")).strip()
-            if not content:
-                continue
-            status = str(entry.get("status", "pending"))
-            if status not in _VALID_STATUSES:
-                continue
-            active_form = str(entry.get("activeForm", entry.get("active_form", "")) or "")
-            out.append(cls(content=content, status=status, active_form=active_form))
-        return out
+            return []
+        return TodoItemInput.validate_batch(raw).items
 
 
-@dataclass(frozen=True)
-class TodoItem:
-    """One row in the session's todo list.
+class TodoItemInput(BaseModel):
+    """One row as the agent sent it — the tolerant input shape.
 
-    ``activeForm`` is the verb-noun gerund the UI shows while the
-    item is ``in_progress`` — e.g. ``"Running tests"`` (active)
-    paired with ``content`` ``"Run tests"`` (imperative). Two
-    fields, not one, so the UI can render the active form
-    distinctly without re-conjugating verbs at display time.
+    The agent's rows are loose JSON: camelCase or snake_case keys,
+    a number where a string belongs, occasionally a bare string
+    where a row was expected. This model absorbs that without
+    failing the whole tool call; :meth:`validate_batch` then
+    applies the one set of rules.
     """
 
-    content: str
-    status: TodoStatus
-    active_form: str = ""
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    content: str = Field(
+        default="", description="Imperative description of the work, e.g. 'Run tests'."
+    )
+    status: str = Field(
+        default="", description="One of: pending, in_progress, completed (default pending)."
+    )
+    active_form: str = Field(
+        default="", alias="activeForm", description="Gerund shown while in progress."
+    )
+
+    #: Set when the row was not an object at all — not a validation
+    #: error yet, but a row the batch validator has to name.
+    _not_a_row: bool = PrivateAttr(default=False)
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _absorb(cls, raw: Any, handler: Any) -> TodoItemInput:
+        """Take the row as it came.
+
+        A row that is not an object at all travels on as an empty,
+        flagged row instead of raising inside the agent's tool call.
+        Everything else is normalised to strings here (numbers
+        become their string form, values are stripped).
+        """
+        if not isinstance(raw, dict):
+            row = cls.model_construct(content="", status="", active_form="")
+            row._not_a_row = True
+            return row
+        data = dict(raw)
+        for key in ("content", "status", "activeForm", "active_form"):
+            if key in data:
+                value = data[key]
+                data[key] = "" if value is None else str(value).strip()
+        return handler(data)
+
+    @classmethod
+    def validate_batch(cls, rows: Iterable[Any] | None) -> TodoBatch:
+        """Validate a batch of todo rows.
+
+        Returns the rows that can be applied as typed
+        :class:`TodoItemWire` rows plus one error message per row
+        that could not be used. The caller applies the good rows
+        and surfaces the errors so the agent can correct on the
+        next call.
+
+        The row index in an error message uses the ``todos[i]``
+        prefix the plan pipeline uses — the same row naming in both
+        replies.
+        """
+        if rows is None:
+            return TodoBatch()
+        if not isinstance(rows, (list, tuple)):
+            return TodoBatch(errors=["todos must be a list"])
+        items: list[TodoItemWire] = []
+        errors: list[str] = []
+        for index, entry in enumerate(rows):
+            row = entry if isinstance(entry, cls) else cls.model_validate(entry)
+            if row._not_a_row:
+                errors.append(f"todos[{index}]: not a dict")
+                continue
+            if not row.content:
+                errors.append(f"todos[{index}]: empty content")
+                continue
+            # An absent status means "pending"; a status the agent
+            # spelled out is taken at its word (and lower-cased).
+            status = (row.status if "status" in row.model_fields_set else "pending").lower()
+            if status not in VALID_STATUSES:
+                errors.append(f"todos[{index}]: status {status!r} not in {sorted(VALID_STATUSES)}")
+                continue
+            items.append(
+                TodoItemWire(
+                    content=row.content,
+                    status=cast(TodoStatus, status),
+                    active_form=row.active_form,
+                )
+            )
+        return TodoBatch(items=items, errors=errors)
 
 
-@dataclass
+class TodoBatch(BaseModel):
+    """The outcome of validating a batch of todo rows: the rows that
+    can be applied, and one error message per rejected row."""
+
+    model_config = ConfigDict(frozen=True)
+
+    items: list[TodoItemWire] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
+class TodosUpdatedEvent(BroadcastEvent):
+    """The agent's todo checklist changed; carries the whole new list."""
+
+    channel: Literal["todos_updated"] = "todos_updated"
+    todos: list[TodoItemWire] = Field(
+        description="The full checklist, in order. Replaces any list received before; empty "
+        "when the agent cleared it."
+    )
+
+
 class TodoStore:
-    """Per-session todo list. Plain list under the hood, but the
-    accessors (``set`` / ``items``) live here so future work
-    (event emission, persistence) has a single chokepoint."""
+    """Per-session todo list — the rows the agent last published.
 
-    items: list[TodoItem] = field(default_factory=list)
+    Every reader goes through :attr:`items`, so there is one place
+    the rows change.
+    """
 
-    def set(self, items: list[TodoItem]) -> None:
-        # Replace atomically — the contract is "the list IS now
-        # this". No partial merge, no delta detection.
-        self.items = list(items)
+    def __init__(self) -> None:
+        self._items: list[TodoItemWire] = []
 
-    def snapshot(self) -> list[dict]:
-        """Serialise to the wire shape (``activeForm`` camelCase,
-        matching how CC's tool payload looks on the SDK). The
-        shape is defined once by :class:`TodoItemWire`; the
-        list-comp constructs and dumps via ``by_alias=True`` so
-        any future field addition/rename goes through the model,
-        not a hand-rolled dict."""
-        return [
-            TodoItemWire(
-                content=item.content,
-                status=item.status,
-                active_form=item.active_form,
-            ).model_dump(by_alias=True)
-            for item in self.items
-        ]
+    @property
+    def items(self) -> list[TodoItemWire]:
+        """The current rows — a copy, so a reader cannot mutate the
+        store behind its back."""
+        return list(self._items)
 
-
-def _coerce_items(raw: list) -> tuple[list[TodoItem], list[str]]:
-    """Validate and convert the agent-supplied list. Returns
-    ``(items, errors)``. Errors are surfaced in the tool's reply
-    so the model can correct on the next call rather than
-    silently dropping malformed rows."""
-    items: list[TodoItem] = []
-    errors: list[str] = []
-    if not isinstance(raw, list):
-        return [], ["todos must be a list"]
-    for idx, entry in enumerate(raw):
-        if not isinstance(entry, dict):
-            errors.append(f"todos[{idx}]: not a dict")
-            continue
-        content = str(entry.get("content", "")).strip()
-        if not content:
-            errors.append(f"todos[{idx}]: empty content")
-            continue
-        status = str(entry.get("status", "pending")).strip().lower()
-        if status not in _VALID_STATUSES:
-            errors.append(f"todos[{idx}]: status {status!r} not in {sorted(_VALID_STATUSES)}")
-            continue
-        # Accept both camelCase (CC parity) and snake_case keys.
-        active_form = str(entry.get("activeForm", entry.get("active_form", "")) or "").strip()
-        items.append(TodoItem(content=content, status=status, active_form=active_form))
-    return items, errors
+    def set(self, items: Sequence[TodoItemWire]) -> None:
+        """Replace the list atomically — the contract is "the list
+        IS now this". No partial merge, no delta detection."""
+        self._items = list(items)
 
 
 class TodoTools(Toolkit):
@@ -175,48 +226,32 @@ class TodoTools(Toolkit):
         self.register(self.todo_write)
 
     def _broadcast_state(self) -> None:
-        """Push the current ``TodoStore`` snapshot on the
-        ``todos_updated`` channel so attached clients (the
-        PlanCard checklist, a future todos panel) re-render
-        with the latest statuses. Best-effort — sessions
-        without a wired transport (tests, headless) just no-op
-        via the empty broadcast list."""
-        broadcast = getattr(self._session, "broadcast", None)
-        store = getattr(self._session, "todo_store", None)
-        if broadcast is None or store is None:
-            return
-        broadcast("todos_updated", {"todos": store.snapshot()})
+        """Push the current rows on the ``todos_updated`` channel so
+        attached clients re-render with the latest statuses. A
+        session without a wired transport has no subscribers."""
+        self._session.broadcast(TodosUpdatedEvent(todos=self._session.todo_store.items))
 
-    async def _persist_state(self) -> None:
-        """Write the current ``TodoStore`` snapshot to
-        ``session_data["todos"]`` so the live execution state
-        (in_progress / completed flips) survives BE restart.
+    async def _persist_state(self) -> PersistResult:
+        """Write the current rows to ``session_data["todos"]`` so the
+        live execution state (in_progress / completed flips) survives
+        a BE restart.
 
-        Without this, ``_rehydrate_plan_store`` falls back to
-        the plan's original ``exit_plan_mode(tasks=...)`` list —
-        everything pending, all progress erased. Best-effort:
-        no persistence layer / DB error → silent skip (the
-        in-memory state and ``todos_updated`` broadcast still
-        reach attached clients).
+        Without this, rehydration falls back to the plan's original
+        ``exit_plan_mode(tasks=...)`` list — everything pending, all
+        progress erased. The envelope carries a failed write instead
+        of swallowing it.
         """
-        persistence = getattr(self._session, "persistence", None)
-        store = getattr(self._session, "todo_store", None)
-        if persistence is None or store is None:
-            return
-        try:
-            await persistence.save_todos(store.snapshot())
-        except Exception as exc:
-            logger.debug("todo persist failed: %s", exc)
+        return await self._session.persistence.save_todos(self._session.todo_store.items)
 
-    async def todo_write(self, todos: list) -> str:
+    async def todo_write(self, todos: list[TodoItemInput]) -> str:
         """Replace the session's todo list with ``todos``.
 
-        Each item is a dict with three fields:
+        Each row carries three fields:
 
         * ``content`` — imperative description (e.g. ``"Run
           tests"``). Required, non-empty.
         * ``status`` — ``"pending"``, ``"in_progress"``, or
-          ``"completed"``. Required.
+          ``"completed"``. Defaults to ``pending``.
         * ``activeForm`` — verb-noun gerund to display while the
           item is in progress (e.g. ``"Running tests"``).
           Optional.
@@ -227,24 +262,26 @@ class TodoTools(Toolkit):
         one item ``in_progress``.
 
         Returns a short summary so the model gets immediate
-        feedback ("3 todos: 1 completed, 1 in_progress, 1
-        pending") and surfaces any validation errors from the
-        payload.
+        feedback ("3 todos: 1 completed, 1 in_progress, 1 pending")
+        and surfaces any validation errors from the payload.
         """
-        items, errors = _coerce_items(todos)
+        batch = TodoItemInput.validate_batch(todos)
+        items = batch.items
+        errors = batch.errors
+        persist: PersistResult | None = None
         if not errors and not items:
             # Empty list IS valid (clears the plan) but we want
             # a positive confirmation so the model knows the call
             # took effect.
             self._session.todo_store.set([])
             self._broadcast_state()
-            await self._persist_state()
-            return "Cleared todo list."
+            persist = await self._persist_state()
+            return self._with_persist_note("Cleared todo list.", persist)
         if items:
             self._session.todo_store.set(items)
             self._broadcast_state()
-            await self._persist_state()
-        counts = {s: 0 for s in _VALID_STATUSES}
+            persist = await self._persist_state()
+        counts = {status: 0 for status in VALID_STATUSES}
         for item in items:
             counts[item.status] += 1
         msg = (
@@ -262,4 +299,18 @@ class TodoTools(Toolkit):
                 " mark the previous in_progress item completed before"
                 " starting another."
             )
-        return msg
+        return self._with_persist_note(msg, persist)
+
+    @staticmethod
+    def _with_persist_note(msg: str, persist: PersistResult | None) -> str:
+        """Surface a failed snapshot write instead of swallowing it.
+
+        The in-memory state and the broadcast still reach the
+        attached clients — but the agent is told the snapshot did
+        not land, so it does not assume the restart keeps its
+        progress.
+        """
+        if persist is None or persist.ok:
+            return msg
+        logger.error("todo persist failed: %s", persist.error)
+        return f"{msg} Warning: the todo snapshot was not persisted ({persist.error})."

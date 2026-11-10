@@ -21,37 +21,38 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from agno.models.response import ToolExecution
+from agno.run.agent import RunOutput
+from agno.run.base import RunStatus
+from agno.run.requirement import RunRequirement
 
 from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 from igni_core.core.config.settings import Settings
 from igni_core.core.guardrails.runner import GuardrailRunner
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.session.message_handler import SessionMessageHandler
+from igni_core.core.session.compaction.context_budget import ContextBudget
+from igni_core.core.session.message_handler import MessageHandlerDeps, SessionMessageHandler
 
 
-class _Requirement:
-    def __init__(self, command: str) -> None:
-        self.tool_execution = SimpleNamespace(
-            tool_name="run_shell_command", tool_args={"command": command}
+def _requirement(command: str) -> RunRequirement:
+    """A real Agno requirement waiting on a confirmation."""
+    return RunRequirement(
+        tool_execution=ToolExecution(
+            tool_name="run_shell_command",
+            tool_args={"command": command},
+            requires_confirmation=True,
         )
-        self.verdict: str | None = None
-        self.note: str | None = None
-
-    def confirm(self) -> None:
-        self.verdict = "confirmed"
-
-    def reject(self, note: str | None = None) -> None:
-        self.verdict = "rejected"
-        self.note = note
+    )
 
 
-def _paused(*commands: str) -> Any:
-    reqs = [_Requirement(c) for c in commands]
-    return SimpleNamespace(
-        status="paused",
+def _paused(*commands: str) -> RunOutput:
+    reqs = [_requirement(c) for c in commands]
+    return RunOutput(
+        status=RunStatus.paused,
         requirements=reqs,
-        active_requirements=reqs,
-        tools=[SimpleNamespace(tool_name="run_shell_command", is_paused=True) for _ in reqs],
+        tools=[
+            ToolExecution(tool_name="run_shell_command", requires_confirmation=True) for _ in reqs
+        ],
         content="I have tools to execute, but I need confirmation.",
     )
 
@@ -68,23 +69,24 @@ class _Team:
 
     async def acontinue_run(self, **kwargs: Any) -> Any:
         self.continued.append(kwargs)
-        return SimpleNamespace(status="completed", content="Version 0.3.1.")
+        return RunOutput(status=RunStatus.completed, content="Version 0.3.1.")
 
 
 def _handler(team: _Team, evaluator: PermissionEvaluator | None) -> SessionMessageHandler:
     return SessionMessageHandler(
-        hook_executor=HookExecutor({}),
-        audit=MagicMock(),
-        display=MagicMock(),
-        guardrail_runner=GuardrailRunner(Settings()),
-        team_ref=lambda: team,
-        pending_reminders_drain=lambda: [],
-        compact_hook=AsyncMock(return_value=False),
-        ensure_mcp=AsyncMock(),
-        session_id_ref=lambda: "s1",
-        context_window_ref=lambda: 100_000,
-        latch_input_tokens=lambda _tokens: None,
-        permission_evaluator_ref=lambda: evaluator,
+        MessageHandlerDeps(
+            hooks=SimpleNamespace(executor=HookExecutor({})),
+            audit=MagicMock(),
+            display=MagicMock(),
+            guardrail_runner=GuardrailRunner(Settings()),
+            team_ref=lambda: team,
+            pending_reminders_drain=lambda: [],
+            compact_hook=AsyncMock(return_value=False),
+            ensure_mcp=AsyncMock(),
+            session_id_ref=lambda: "s1",
+            budget=ContextBudget(window=100_000),
+            permission_evaluator_ref=lambda: evaluator,
+        )
     )
 
 
@@ -95,7 +97,7 @@ async def test_plan_mode_runs_a_read_headless():
     reply = await handler.handle("what version does README.md say?")
 
     assert reply == "Version 0.3.1."
-    assert team.first.requirements[0].verdict == "confirmed"
+    assert team.first.requirements[0].confirmation is True
     assert team.continued and team.continued[0]["run_response"] is team.first
     assert handler.last_failure == ""
 
@@ -105,7 +107,7 @@ async def test_an_allow_rule_runs_its_command_headless():
     handler = _handler(team, PermissionEvaluator.from_strings(allow=["Bash(python3 -m pytest *)"]))
 
     assert await handler.handle("run the tests") == "Version 0.3.1."
-    assert team.first.requirements[0].verdict == "confirmed"
+    assert team.first.requirements[0].confirmation is True
 
 
 async def test_a_deny_rule_refuses_and_the_model_reads_why():
@@ -115,8 +117,8 @@ async def test_a_deny_rule_refuses_and_the_model_reads_why():
     await handler.handle("delete the tests")
 
     req = team.first.requirements[0]
-    assert req.verdict == "rejected"
-    assert req.note and req.note.startswith("Blocked:")
+    assert req.confirmation is False
+    assert req.confirmation_note and req.confirmation_note.startswith("Blocked:")
 
 
 async def test_what_the_policy_leaves_to_a_person_is_still_not_run():
@@ -126,7 +128,7 @@ async def test_what_the_policy_leaves_to_a_person_is_still_not_run():
 
     reply = await handler.handle("delete the tests")
 
-    assert team.first.requirements[0].verdict is None
+    assert team.first.requirements[0].confirmation is None
     assert team.continued == []
     assert "Run paused for confirmation" in reply
     assert handler.last_failure
@@ -139,7 +141,7 @@ async def test_one_undecided_call_leaves_the_whole_pause_alone():
 
     await handler.handle("read and fetch")
 
-    assert [r.verdict for r in team.first.requirements] == [None, None]
+    assert [r.confirmation for r in team.first.requirements] == [None, None]
     assert team.continued == []
 
 

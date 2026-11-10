@@ -8,7 +8,6 @@ is that both mutations take effect WITHOUT rebuilding the agent
 — that's the invariant worth pinning).
 """
 
-import types
 from types import SimpleNamespace
 
 import pytest
@@ -16,7 +15,8 @@ import pytest
 from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
 from igni_core.core.output_styles import OutputStyle
 from igni_core.core.session.broadcast import BroadcastBus
-from igni_core.core.session.state_ops import RuntimeModeCoordinator
+from igni_core.core.session.output_style_selection import OutputStyleSelection
+from igni_core.core.session.state_ops import RuntimeModeCoordinator, RuntimeModeDeps
 
 
 def _bare_session(styles: dict[str, OutputStyle] | None = None):
@@ -31,42 +31,39 @@ def _bare_session(styles: dict[str, OutputStyle] | None = None):
             ),
         }
     )
-    # SimpleNamespace can't hold a property, so build a fresh subclass
-    # per instance that exposes ``active_output_style`` as a live
-    # property mirroring Session's public accessor.
-    stub_cls = type(
-        "_SessionStub",
-        (SimpleNamespace,),
-        {
-            "active_output_style": property(lambda self: self._active_output_style),
-        },
-    )
-    stub = stub_cls(
-        output_styles=default_styles,
-        _active_output_style="default",
+    return SimpleNamespace(
+        output_style=OutputStyleSelection(default_styles, active="default"),
         main_team=SimpleNamespace(instructions=[]),
         broadcast_bus=BroadcastBus(),
         permission_evaluator=PermissionEvaluator.from_strings(mode="default"),
     )
-    stub.set_active_output_style = types.MethodType(
-        lambda self, n: setattr(self, "_active_output_style", n), stub
+
+
+def _coord(s) -> RuntimeModeCoordinator:
+    """The coordinator over ``s``'s collaborators, as the session builds it."""
+    return RuntimeModeCoordinator(
+        RuntimeModeDeps(
+            evaluator_ref=lambda: s.permission_evaluator,
+            output_style=s.output_style,
+            team_ref=lambda: s.main_team,
+            bus=s.broadcast_bus,
+        )
     )
-    return stub
 
 
 class TestSetOutputStyle:
     def test_switches_active_style(self):
         s = _bare_session()
-        msg = RuntimeModeCoordinator(s).set_output_style("explanatory")
-        assert s._active_output_style == "explanatory"
+        msg = _coord(s).set_output_style("explanatory")
+        assert s.output_style.active == "explanatory"
         assert "default" in msg and "explanatory" in msg
 
     def test_unknown_style_returns_error(self):
         s = _bare_session()
-        msg = RuntimeModeCoordinator(s).set_output_style("nonexistent")
+        msg = _coord(s).set_output_style("nonexistent")
         assert "Error" in msg
         # Unchanged state.
-        assert s._active_output_style == "default"
+        assert s.output_style.active == "default"
         # Available styles listed for discoverability.
         assert "default" in msg
         assert "explanatory" in msg
@@ -81,7 +78,7 @@ class TestSetOutputStyle:
             "# Output style: default\n\nBe terse.",
             "trailing block",
         ]
-        RuntimeModeCoordinator(s).set_output_style("explanatory")
+        _coord(s).set_output_style("explanatory")
         # Old style block replaced, not appended alongside.
         assert not any(
             isinstance(i, str) and i.startswith("# Output style: default")
@@ -102,7 +99,7 @@ class TestSetOutputStyle:
             }
         )
         s.main_team.instructions = ["# Output style: default\n\nBe terse."]
-        RuntimeModeCoordinator(s).set_output_style("silent")
+        _coord(s).set_output_style("silent")
         # No # Output style: header should remain.
         assert not any(
             isinstance(i, str) and i.startswith("# Output style:") for i in s.main_team.instructions
@@ -111,8 +108,8 @@ class TestSetOutputStyle:
     def test_broadcasts_change(self):
         s = _bare_session()
         captured: list[tuple[str, dict]] = []
-        s.broadcast_bus.register(lambda ch, p: captured.append((ch, p)))
-        RuntimeModeCoordinator(s).set_output_style("explanatory")
+        s.broadcast_bus.register(lambda e: captured.append((e.channel, e.to_payload())))
+        _coord(s).set_output_style("explanatory")
         assert len(captured) == 1
         channel, payload = captured[0]
         assert channel == "output_style_changed"
@@ -120,29 +117,29 @@ class TestSetOutputStyle:
 
     def test_switch_to_same_style_reports_noop(self):
         s = _bare_session()
-        msg = RuntimeModeCoordinator(s).set_output_style("default")
+        msg = _coord(s).set_output_style("default")
         assert "already" in msg.lower()
 
     def test_no_team_yet_is_ok(self):
-        # Partial init (Session.__new__ path) — no main_team.
+        # No main team built yet.
         s = _bare_session()
         s.main_team = None
-        msg = RuntimeModeCoordinator(s).set_output_style("explanatory")
+        msg = _coord(s).set_output_style("explanatory")
         # Style change still recorded + broadcast.
-        assert s._active_output_style == "explanatory"
+        assert s.output_style.active == "explanatory"
         assert "explanatory" in msg
 
 
 class TestSetPermissionMode:
     def test_flips_mode(self):
         s = _bare_session()
-        msg = RuntimeModeCoordinator(s).set_permission_mode("plan")
+        msg = _coord(s).set_permission_mode("plan").text
         assert s.permission_evaluator.mode is PermissionMode.PLAN
         assert "plan" in msg
 
     def test_unknown_mode_returns_error(self):
         s = _bare_session()
-        msg = RuntimeModeCoordinator(s).set_permission_mode("invalid_mode")
+        msg = _coord(s).set_permission_mode("invalid_mode").text
         assert "Error" in msg
         # Valid modes listed for discoverability.
         assert "default" in msg
@@ -152,20 +149,20 @@ class TestSetPermissionMode:
     def test_same_mode_reports_noop(self):
         s = _bare_session()
         captured: list[tuple[str, dict]] = []
-        s.broadcast_bus.register(lambda ch, p: captured.append((ch, p)))
-        msg = RuntimeModeCoordinator(s).set_permission_mode("default")
+        s.broadcast_bus.register(lambda e: captured.append((e.channel, e.to_payload())))
+        msg = _coord(s).set_permission_mode("default").text
         assert "already" in msg.lower()
         assert captured == []
 
     def test_broadcasts_change(self):
         s = _bare_session()
         captured: list[tuple[str, dict]] = []
-        s.broadcast_bus.register(lambda ch, p: captured.append((ch, p)))
-        RuntimeModeCoordinator(s).set_permission_mode("plan")
+        s.broadcast_bus.register(lambda e: captured.append((e.channel, e.to_payload())))
+        _coord(s).set_permission_mode("plan")
         assert len(captured) == 1
         channel, payload = captured[0]
         assert channel == "permission_mode_changed"
-        assert payload == {"mode": "plan", "previous": "default"}
+        assert payload == {"kind": "switched", "mode": "plan", "previous": "default"}
 
 
 # Ensure the assertion above about ``pytest`` isn't accidentally unused.

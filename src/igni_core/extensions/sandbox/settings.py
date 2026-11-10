@@ -13,12 +13,18 @@ setting             managed file  env    group policy  user file  project
 ==================  ============  =====  ============  =========  =======
 
 The group policy is the organisation's pack as igni server signed it and
-igni verified it (:class:`~igni_core.core.config.group_policy.CachedSettingsFetcher`),
+igni verified it (:class:`~igni_core.core.config.group_policy.settings_fetcher.CachedSettingsFetcher`),
 never the cached files beside it: a pack that does not verify sets
 nothing. It may require the sandbox; it may not turn it off.
 
 A project's value for either is never read: a repository somebody cloned
 must not be able to unconfine the extensions that run beside it.
+
+Each tier's block is read as an
+:class:`~igni_core.core.config.schemas.extensions.ExtensionsConfig` — the
+model the rest of igni validates settings with — so a switch is only ever
+the value that model says it is, and a block that does not validate
+applies nothing at all rather than half of it.
 """
 
 from __future__ import annotations
@@ -26,14 +32,17 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+
+import yaml
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from igni_core.core.config.config_io import YamlSource
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.schemas.extensions import ExtensionsConfig
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import home_config_dir
 
 logger = logging.getLogger(__name__)
@@ -45,9 +54,10 @@ REQUIRE_SANDBOX_ENV = "IGNI_EXTENSIONS_REQUIRE_SANDBOX"
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 
-@dataclass(frozen=True, slots=True)
-class SandboxSettings:
+class SandboxSettings(BaseModel):
     """The two switches, each from where it may come."""
+
+    model_config = ConfigDict(frozen=True)
 
     #: Confine extension processes. ``False`` only from managed or user.
     enabled: bool = True
@@ -63,7 +73,7 @@ class SandboxSettings:
         managed_path: Callable[[], Path | None] = ManagedPolicySource.platform_path,
         user_file: Path | None = None,
         environ: Mapping[str, str] | None = None,
-        group: Callable[[], Any] | None = None,
+        group: Callable[[], GroupPolicyPack | None] | None = None,
     ) -> SandboxSettings:
         """Read the managed file, the env and the user's file.
 
@@ -74,23 +84,23 @@ class SandboxSettings:
             group: Returns the verified group-policy pack, or ``None``.
         """
         env = os.environ if environ is None else environ
-        managed = cls._block(managed_path())
-        if user_file is None and Layers.current().reads_local_settings():
+        if user_file is None and layers.current().reads_local_settings():
             user_file = home_config_dir() / "config.yaml"
-        user = cls._block(user_file)
-
+        managed = cls._file_block(managed_path())
+        user = cls._file_block(user_file)
         by_group = cls._group_block(group)
+
         required = (
-            managed.get("require_sandbox") is True
+            managed.require_sandbox
             or env.get(REQUIRE_SANDBOX_ENV, "").strip().lower() in _TRUTHY
-            or by_group.get("require_sandbox") is True
+            or by_group.require_sandbox
         )
-        if by_group.get("sandbox") is False:
+        if not by_group.sandbox:
             logger.warning(
                 "extensions.sandbox: false in the group policy is ignored: an "
                 "organisation's pack may require the sandbox, not turn it off"
             )
-        if "require_sandbox" in user:
+        if "require_sandbox" in user.model_fields_set:
             logger.warning(
                 "extensions.require_sandbox in %s is ignored: only the managed "
                 "settings file or %s may set it",
@@ -99,9 +109,9 @@ class SandboxSettings:
             )
 
         disabled_by = ""
-        if managed.get("sandbox") is False:
+        if not managed.sandbox:
             disabled_by = "managed"
-        elif "sandbox" not in managed and user.get("sandbox") is False:
+        elif "sandbox" not in managed.model_fields_set and not user.sandbox:
             disabled_by = "user"
         if disabled_by and required:
             logger.warning(
@@ -112,42 +122,53 @@ class SandboxSettings:
             disabled_by = ""
         return cls(enabled=not disabled_by, required=required, disabled_by=disabled_by)
 
-    @classmethod
-    def _group_block(cls, group: Callable[[], Any] | None) -> dict[str, Any]:
-        """The ``extensions`` block of the verified group-policy pack."""
-        if group is None:
-            return {}
-        try:
-            pack = group()
-        except Exception as exc:  # noqa: BLE001 — no verified pack sets nothing
-            logger.warning("group policy not read for extensions: %s", exc)
-            return {}
-        if pack is None:
-            return {}
-        return cls._valid(pack.to_settings_dict().get("extensions"), "the group policy")
-
     @staticmethod
-    def _valid(raw: Any, where: Any) -> dict[str, Any]:
-        if not isinstance(raw, dict):
-            return {}
-        try:
-            ExtensionsConfig.model_validate(raw)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("extensions block in %s is invalid and ignored: %s", where, exc)
-            return {}
-        return {k: v for k, v in raw.items() if k in ExtensionsConfig.model_fields}
-
-    @staticmethod
-    def _block(path: Path | None) -> dict[str, Any]:
-        """The ``extensions`` block of one YAML file, validated, as set keys only."""
+    def _file_block(path: Path | None) -> ExtensionsConfig:
+        """The ``extensions`` block of one YAML file, validated."""
         if path is None:
-            return {}
+            return ExtensionsConfig()
         try:
             raw = YamlSource(path).load().get("extensions")
-        except Exception as exc:  # noqa: BLE001 — an unreadable file sets nothing
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
             logger.warning("could not read %s: %s", path, exc)
-            return {}
-        return SandboxSettings._valid(raw, path)
+            return ExtensionsConfig()
+        return SandboxSettings._validated(raw, str(path))
+
+    @staticmethod
+    def _group_block(group: Callable[[], GroupPolicyPack | None] | None) -> ExtensionsConfig:
+        """The ``extensions`` block of the verified group-policy pack.
+
+        No pack, or a pack the organisation required and that cannot be
+        had, sets nothing — the second says so in a warning. Anything
+        else is a bug, and is not swallowed.
+        """
+        if group is None:
+            return ExtensionsConfig()
+        try:
+            pack = group()
+        except (GroupPolicyUnavailable, OSError) as exc:
+            logger.warning("group policy not read for extensions: %s", exc)
+            return ExtensionsConfig()
+        if pack is None:
+            return ExtensionsConfig()
+        return SandboxSettings._validated(
+            pack.to_settings_dict().get("extensions"), "the group policy"
+        )
+
+    @staticmethod
+    def _validated(raw: object, where: str) -> ExtensionsConfig:
+        """One tier's ``extensions`` block, validated.
+
+        A block that is not a mapping, or that does not validate, is
+        ignored whole: nothing in it applies.
+        """
+        if not isinstance(raw, dict):
+            return ExtensionsConfig()
+        try:
+            return ExtensionsConfig.model_validate(raw)
+        except ValidationError as exc:
+            logger.warning("extensions block in %s is invalid and ignored: %s", where, exc)
+            return ExtensionsConfig()
 
 
 __all__ = ["REQUIRE_SANDBOX_ENV", "SandboxSettings"]

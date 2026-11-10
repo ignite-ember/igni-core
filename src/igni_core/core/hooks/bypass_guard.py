@@ -38,56 +38,20 @@ explicitly allowed, so this would add latency and no protection.
 
 from __future__ import annotations
 
-import json
 import logging
-import threading
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel
 
 from igni_core.core.config.schemas.safety import BypassGuardConfig
-from igni_core.core.decisions import Laya, Priority
 from igni_core.core.hooks.bypass_explainer import CallExplainer
-from igni_core.core.hooks.bypass_rules import flag_file_read, flag_shell, flag_url, flag_write
+from igni_core.core.hooks.bypass_judge import HarmJudge
+from igni_core.core.hooks.bypass_tool_kind import ToolKind
+from igni_core.core.mcp.hints import ToolHintsRegistry
 
 logger = logging.getLogger(__name__)
-
-#: The checkpoint the questions below were measured on; ``laya`` pins its
-#: revision. Extensions get Laya's general checkpoints instead
-#: (:mod:`igni_core.core.decisions.laya`).
-LAYA_MODEL = "typed-decisions"
-
-#: Asked about every checked call, in one forward pass. Wording is the
-#: one measured; changing it changes the threshold's meaning.
-QUESTIONS: dict[str, Any] = {
-    "destructive": {
-        "type": "noul",
-        "instructions": "Would running `tool_call` delete or overwrite data, or make changes that are hard to undo?",
-    },
-    "exfiltration": {
-        "type": "noul",
-        "instructions": "Would `tool_call` send secrets, credentials or private data to an outside party?",
-    },
-    "outside_scope": {
-        "type": "noul",
-        "instructions": (
-            "Does `tool_call` change systems outside the developer's own project, such as production, "
-            "cloud resources, other machines or operating-system settings?"
-        ),
-    },
-    "harm_severity": {
-        "type": "score",
-        "instructions": "How much harm could running `tool_call` cause?",
-        "criteria": [
-            "none: routine development action",
-            "minor: easily undone",
-            "serious: data loss or unwanted external change",
-            "severe: destructive, irreversible or leaks secrets",
-        ],
-    },
-}
 
 #: How a call the guard kept from running is reported, to the model and
 #: on the tool card. ``protocol/tool_error_conventions.py`` recognises it
@@ -96,13 +60,6 @@ NOT_RUN = "Not run:"
 
 #: The reason when Laya could not run; the call is asked about, not let through.
 _UNCHECKED = "could not be checked for safety"
-
-_PLAIN = {
-    "destructive": "might delete or overwrite data",
-    "exfiltration": "might send secrets or private data elsewhere",
-    "outside_scope": "might change systems outside this project",
-    "harm_severity": "might cause serious harm",
-}
 
 #: Tools that only read or report. Everything else is checked — an
 #: unfamiliar tool (an MCP server's, a plugin's) is checked, not trusted.
@@ -135,13 +92,6 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-_SHELL_TOOLS = frozenset({"run_shell_command", "bash", "shell"})
-_WRITE_TOOLS = frozenset({"edit_file", "edit_file_replace_all", "create_file", "write_file"})
-#: Read-only file tools that take a path. They sit in READ_ONLY_TOOLS (waved
-#: through), but a read of a *secret* path is exactly the exfil first step that
-#: exemption should not cover, so check() consults flag_file_read for these.
-_READ_FILE_TOOLS = frozenset({"read_file", "search_files"})
-
 
 class Verdict(BaseModel):
     """Why a call needs a yes, or that it does not."""
@@ -152,52 +102,64 @@ class Verdict(BaseModel):
     #: True when the reason is the model's judgment rather than a rule's.
     judged: bool = False
 
+    @property
+    def scored(self) -> bool:
+        return self.judged and self.score is not None
+
+    def prompt(self, kind: ToolKind) -> str:
+        """What the person reads in the dialog: what the call does, who flagged it, and why it stopped.
+
+        The bare reason ("force-pushes, rewriting shared history") under
+        "Requested by safety check" left them to work out that Bypass had
+        paused on purpose and on what grounds.
+        """
+        if self.scored:
+            grounds = (
+                f"{kind.subject} {self.reason}, in the safety model's judgment "
+                f"(risk score {self.score:.2f} of 1)."
+            )
+        else:
+            grounds = f"{kind.subject} {self.reason}."
+        return (
+            f"{grounds} Bypass mode skips approvals, but the safety check stops here so you decide."
+        )
+
+    def explained(self, sentence: str) -> str:
+        """The model's description of the call, then what stopped it.
+
+        The description says what *this* call does; the basis keeps the
+        person able to tell a rule's certainty from a model's guess.
+        """
+        if self.scored:
+            basis = f"the safety model rated it {self.score:.2f} of 1 ({self.reason})"
+        elif self.reason == _UNCHECKED:
+            basis = "the call could not be checked for safety"
+        else:
+            basis = f"a safety rule matched ({self.reason})"
+        sentence = sentence if sentence.endswith((".", "!", "?")) else f"{sentence}."
+        return f"{sentence} Bypass paused here because {basis}."
+
 
 FollowUp = Callable[[], Awaitable[str | None]]
 """A better explanation, fetched after the question is already on screen; None keeps the first."""
 
-Ask = Callable[..., Awaitable[bool | None]]
-"""``(tool_name, args, reason, agent_path, *, follow_up=None) -> True | False | None``.
 
-None means nobody can answer. ``follow_up``, when given, is awaited
-while the person reads the question; a string it returns replaces
-``reason`` on screen.
-"""
+class Ask(Protocol):
+    """Puts one call to the person: True / False, or None when nobody can answer.
 
+    ``follow_up``, when given, is awaited while the person reads the
+    question; a string it returns replaces ``reason`` on screen.
+    """
 
-class HarmJudge:
-    """The measured questions, asked of the process's shared Laya ahead of anything else."""
-
-    _shared: HarmJudge | None = None
-    _shared_lock = threading.Lock()
-
-    def __init__(self, model: str = LAYA_MODEL, laya: Laya | None = None) -> None:
-        self._model = model
-        self._laya = laya if laya is not None else Laya.shared()
-
-    @classmethod
-    def shared(cls) -> HarmJudge:
-        with cls._shared_lock:
-            if cls._shared is None:
-                cls._shared = cls()
-            return cls._shared
-
-    async def score(self, text: str) -> tuple[float, str]:
-        """``(highest violation probability, which question)`` for ``text``."""
-        result = await self._laya.predict(
-            {"tool_call": text}, QUESTIONS, model=self._model, priority=Priority.APPROVAL
-        )
-        answers = result["answers"]
-        probabilities = {
-            name: float(answers[name]["noul"])
-            for name in ("destructive", "exfiltration", "outside_scope")
-        }
-        levels = answers["harm_severity"].get("probabilities") or {}
-        values = list(levels.values()) if isinstance(levels, dict) else list(levels)
-        if len(values) == 4:
-            probabilities["harm_severity"] = float(values[2]) + float(values[3])
-        worst = max(probabilities, key=probabilities.__getitem__)
-        return probabilities[worst], worst
+    async def __call__(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        reason: str,
+        agent_path: list[str],
+        *,
+        follow_up: FollowUp | None = None,
+    ) -> bool | None: ...
 
 
 class BypassGuard:
@@ -210,17 +172,17 @@ class BypassGuard:
         project_dir: Path | None,
         in_bypass: Callable[[], bool],
         ask: Ask | None,
+        tool_hints: ToolHintsRegistry,
         judge: HarmJudge | None = None,
         explainer: CallExplainer | None = None,
     ) -> None:
         self._config = config
+        self._tool_hints = tool_hints
         self._project_dir = project_dir
         self._in_bypass = in_bypass
         self._ask = ask
         self._explainer = explainer
-        self._judge = (
-            judge if judge is not None else (HarmJudge.shared() if config.use_model else None)
-        )
+        self._judge = judge if judge is not None else (HarmJudge() if config.use_model else None)
 
     async def check(
         self, tool_name: str, args: dict[str, Any], agent_path: list[str] | None = None
@@ -228,13 +190,12 @@ class BypassGuard:
         """A block message when the call must not run, otherwise None."""
         if not self._config.enabled or not self._in_bypass():
             return None
+        if self._is_extension_local_read(tool_name):
+            return None
+        kind = ToolKind.of(tool_name)
         # A read of a secret path is checked even though the tool is read-only:
         # reading ~/.ssh/id_rsa is not the ordinary read that exemption is for.
-        secret = (
-            flag_file_read(str(args.get("file_path") or args.get("path") or ""))
-            if tool_name in _READ_FILE_TOOLS
-            else None
-        )
+        secret = kind.secret_read(args)
         if secret is None and tool_name in READ_ONLY_TOOLS:
             return None
         verdict = (
@@ -249,7 +210,7 @@ class BypassGuard:
             await self._ask(
                 tool_name,
                 args,
-                explain(tool_name, verdict),
+                verdict.prompt(kind),
                 list(agent_path or []),
                 follow_up=self._follow_up(tool_name, args, verdict),
             )
@@ -273,6 +234,15 @@ class BypassGuard:
         # telling the user a system policy had stopped the call.
         return f"{NOT_RUN} the user rejected this call when asked to approve it."
 
+    def _is_extension_local_read(self, tool_name: str) -> bool:
+        """An extension tool whose manifest says it only reads its own data.
+
+        Waved through as igni's own local reads are; every other extension
+        tool gets the same check as a shell command.
+        """
+        hints = self._tool_hints.get(tool_name)
+        return hints is not None and hints.is_local_read
+
     def _follow_up(self, tool_name: str, args: dict[str, Any], verdict: Verdict) -> FollowUp | None:
         explainer = self._explainer
         if explainer is None:
@@ -280,97 +250,27 @@ class BypassGuard:
 
         async def described() -> str | None:
             sentence = await explainer.explain(tool_name, args, verdict.reason)
-            return explained(verdict, sentence) if sentence else None
+            return verdict.explained(sentence) if sentence else None
 
         return described
 
     async def verdict(self, tool_name: str, args: dict[str, Any]) -> Verdict:
         """Rules first; Laya for what no rule names; ask on any failure to judge."""
-        rule = self._rule(tool_name, args)
+        kind = ToolKind.of(tool_name)
+        rule = kind.rule(args, self._project_dir)
         if rule:
             return Verdict(needs_approval=True, reason=rule)
         if self._judge is None:
             return Verdict(needs_approval=False)
         try:
-            probability, question = await self._judge.score(_describe(tool_name, args))
+            harm = await self._judge.score(kind.describe(tool_name, args))
         except Exception as exc:  # noqa: BLE001 — fail closed, whatever went wrong
             logger.warning(
                 "bypass guard: could not judge %s (%s); asking", tool_name, type(exc).__name__
             )
             return Verdict(needs_approval=True, reason=_UNCHECKED)
-        if probability >= self._config.threshold:
+        if harm.probability >= self._config.threshold:
             return Verdict(
-                needs_approval=True,
-                reason=_PLAIN[question],
-                score=probability,
-                judged=True,
+                needs_approval=True, reason=harm.reason, score=harm.probability, judged=True
             )
-        return Verdict(needs_approval=False, score=probability)
-
-    def _rule(self, tool_name: str, args: dict[str, Any]) -> str | None:
-        if tool_name in _SHELL_TOOLS:
-            return flag_shell(str(args.get("command") or args.get("cmd") or ""), self._project_dir)
-        if tool_name in _WRITE_TOOLS:
-            return flag_write(
-                str(args.get("path") or args.get("file_path") or ""), self._project_dir
-            )
-        if tool_name in ("fetch_url", "fetch_json"):
-            return flag_url(str(args.get("url") or ""))
-        return None
-
-
-def explain(tool_name: str, verdict: Verdict) -> str:
-    """What the person reads in the dialog: what the call does, who flagged it, and why it stopped.
-
-    The bare reason ("force-pushes, rewriting shared history") under
-    "Requested by safety check" left them to work out that Bypass had
-    paused on purpose and on what grounds.
-    """
-    if tool_name in _SHELL_TOOLS:
-        subject = "This command"
-    elif tool_name in _WRITE_TOOLS:
-        subject = "This file write"
-    elif tool_name in ("fetch_url", "fetch_json"):
-        subject = "This request"
-    elif tool_name in _READ_FILE_TOOLS:
-        subject = "This file read"
-    else:
-        subject = "This call"
-    if verdict.judged and verdict.score is not None:
-        grounds = (
-            f"{subject} {verdict.reason}, in the safety model's judgment "
-            f"(risk score {verdict.score:.2f} of 1)."
-        )
-    else:
-        grounds = f"{subject} {verdict.reason}."
-    return f"{grounds} Bypass mode skips approvals, but the safety check stops here so you decide."
-
-
-def explained(verdict: Verdict, sentence: str) -> str:
-    """The model's description of the call, then what stopped it.
-
-    The description says what *this* call does; the basis keeps the
-    person able to tell a rule's certainty from a model's guess.
-    """
-    if verdict.judged and verdict.score is not None:
-        basis = f"the safety model rated it {verdict.score:.2f} of 1 ({verdict.reason})"
-    elif verdict.reason == _UNCHECKED:
-        basis = "the call could not be checked for safety"
-    else:
-        basis = f"a safety rule matched ({verdict.reason})"
-    sentence = sentence if sentence.endswith((".", "!", "?")) else f"{sentence}."
-    return f"{sentence} Bypass paused here because {basis}."
-
-
-def _describe(tool_name: str, args: dict[str, Any]) -> str:
-    """The call as Laya was measured on it: ``Tool: argument``."""
-    if tool_name in _SHELL_TOOLS:
-        return f"Bash: {args.get('command') or args.get('cmd') or ''}"
-    if tool_name in _WRITE_TOOLS:
-        content = str(args.get("content") or args.get("new_string") or "")[:400]
-        return f"Write: {args.get('path') or args.get('file_path') or ''}  content: {content!r}"
-    if tool_name in ("fetch_url", "fetch_json"):
-        return f"WebFetch: {args.get('url') or ''}"
-    if tool_name in _READ_FILE_TOOLS:
-        return f"Read: {args.get('file_path') or args.get('path') or ''}"
-    return f"{tool_name}: {json.dumps(args, default=str)[:1500]}"
+        return Verdict(needs_approval=False, score=harm.probability)

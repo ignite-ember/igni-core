@@ -41,19 +41,20 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from igni_core.core.hooks.schemas import HookLoadResult
+from igni_core.core.hooks.load_result import HookLoadResult
 from igni_core.core.paths import CONFIG_DIR, DEFAULT_DATA_DIR, managed_policy_dir
 from igni_core.core.plugins.models import (
     PluginDefinition,
     PluginManifest,
     PluginSource,
 )
+from igni_core.core.tools.custom_loader_schemas import PluginToolDir
+from igni_core.core.workspace_trust import TrustGate, WorkspaceTrust
 
 if TYPE_CHECKING:
     from igni_core.core.agents import AgentPool
     from igni_core.core.hooks.loader import HookLoader
     from igni_core.core.hooks.registry import HookRegistry
-    from igni_core.core.hooks.schemas import HookLoadResult
     from igni_core.core.mcp.config import MCPConfigLoader, MCPServerConfig
     from igni_core.core.skills.loader import SkillPool
 
@@ -81,8 +82,16 @@ def _platform_managed_plugins_root() -> Path | None:
 class PluginLoader:
     """Discovers plugins and applies their bundled extensions."""
 
-    def __init__(self, data_dir: str | Path = DEFAULT_DATA_DIR) -> None:
+    def __init__(
+        self,
+        data_dir: str | Path = DEFAULT_DATA_DIR,
+        *,
+        trust: WorkspaceTrust | None = None,
+    ) -> None:
         self._plugins: dict[str, PluginDefinition] = {}
+        #: The trust service that says whether a folder's own plugins
+        #: may load. The process's own, unless a caller says otherwise.
+        self._trust = TrustGate(trust)
         # Used to compute the org-installed ``group-policy`` root.
         # ``Path.home()`` is still the default for the user-tier
         # roots below so existing callers don't need to update.
@@ -110,9 +119,7 @@ class PluginLoader:
         # A folder's own plugins bring hooks, tools, MCP servers, language
         # servers and monitors — code — so they load only once the folder is
         # trusted (``core/workspace_trust``).
-        from igni_core.core.workspace_trust import WorkspaceTrust
-
-        if WorkspaceTrust.shared().is_trusted(project_dir, what="plugins"):
+        if self._trust.is_trusted(project_dir, what="plugins"):
             roots += [
                 ("project-claude", project_dir / ".claude" / "plugins", 3),
                 ("project-igni", project_dir / CONFIG_DIR / "plugins", 4),
@@ -302,17 +309,18 @@ class PluginLoader:
         self,
         *,
         disabled: set[str] | None = None,
-    ) -> list[tuple[str, Path]]:
-        """Return ``(plugin_name, tools_dir)`` for every enabled plugin
-        that bundles a ``tools/`` directory.
+    ) -> list[PluginToolDir]:
+        """Return every enabled plugin that bundles a ``tools/``
+        directory, with the name that namespaces it.
 
-        Used by ``load_custom_tools(plugin_tool_dirs=...)``. The
-        returned list preserves plugin discovery order so toolkit
-        registration is deterministic across sessions.
+        The custom-tool loader loads these under
+        ``custom_<plugin>_<file>``. The returned list preserves
+        plugin discovery order so toolkit registration is
+        deterministic across sessions.
         """
         disabled = disabled or set()
         return [
-            (p.name, p.root_path / "tools")
+            PluginToolDir(plugin_name=p.name, tools_dir=p.root_path / "tools")
             for p in self._plugins.values()
             if p.name not in disabled and p.has_tools
         ]
@@ -341,7 +349,7 @@ class PluginLoader:
     ) -> list[tuple[Path, str]]:
         """Return ``(plugin_root, plugin_name)`` for every enabled
         plugin that bundles a ``.monitors.json``. Consumed by
-        :func:`igni_core.core.monitors.config.load_monitor_config`
+        :class:`igni_core.core.monitors.loader.MonitorConfigLoader`
         to register plugin-bundled background monitors under the
         plugin's namespace."""
         disabled = disabled or set()

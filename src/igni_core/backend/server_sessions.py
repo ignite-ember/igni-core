@@ -23,6 +23,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
+
 from igni_core.backend.chat_history_searcher import ChatHistorySearcher
 from igni_core.backend.schemas_history import ChatHistoryEntry, ChatSearchHit
 from igni_core.backend.schemas_sessions import AutoNameResult
@@ -30,6 +32,7 @@ from igni_core.core.session.schemas import PersistResult
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
+    from igni_core.backend.schemas_history import ChatTurn
     from igni_core.core.session import Session
 
 logger = logging.getLogger(__name__)
@@ -41,25 +44,26 @@ class SessionsController:
     def __init__(
         self,
         session: Session,
-        chat_history_provider: Callable[[str], Awaitable[list[ChatHistoryEntry] | list[dict]]],
+        chat_history_provider: Callable[
+            [str], Awaitable[list[ChatTurn] | list[ChatHistoryEntry] | list[dict]]
+        ],
     ) -> None:
         self._session = session
-        # Injected as a callable so this class doesn't depend on
-        # BackendServer (which owns the chat-history rebuilder).
-        # The provider currently returns ``list[dict]`` at the wire
-        # boundary (see :meth:`BackendServer.get_chat_history` for
-        # the byte-identical-serialisation rationale). This class
-        # normalises the shape to :class:`ChatHistoryEntry` before
-        # handing it to :class:`ChatHistorySearcher`, which expects
-        # a typed list — see :meth:`search_chat` for the model_validate
-        # seam.
+        # :meth:`ChatHistoryRebuilder.rebuild` in production; injected
+        # as a callable so this class does not own the rebuilder.
+        # :meth:`search_chat` normalises whatever it returns to
+        # :class:`ChatHistoryEntry`.
         self._chat_history_provider = chat_history_provider
 
     async def list_sessions(self) -> msg.SessionListResult:
         """List all sessions for this project. No cap — the FE has
         virtualisation."""
-        raw = await self._session.persistence.list_sessions(limit=None)
-        return msg.SessionListResult(sessions=raw)
+        rows = await self._session.persistence.list_sessions(limit=None)
+        # The wire boundary is the one place a persistence row turns
+        # into JSON — the typed row in, the wire entry out.
+        return msg.SessionListResult(
+            sessions=[msg.SessionListEntry(**row.model_dump()) for row in rows]
+        )
 
     async def maybe_auto_name_session(self, *, model_busy: bool = False) -> AutoNameResult:
         """Auto-generate a name for the current session if it has none.
@@ -92,7 +96,7 @@ class SessionsController:
         """Name this session now — before its first run, too — so no auto-name replaces it."""
         result = await self._session.persistence.title(name)
         if result.ok:
-            self._session.session_named = True
+            self._session.identity.mark_named()
         return result
 
     async def switch_session(self, session_id: str) -> msg.Info:
@@ -123,14 +127,19 @@ class SessionsController:
         if not needle:
             return []
         raw_history = await self._chat_history_provider(session_id)
-        # Normalise at the RPC seam: ``get_chat_history`` returns
-        # ``list[dict]`` (see the byte-identical-serialisation
-        # rationale on :meth:`BackendServer.get_chat_history`), but
-        # tests exercise this method with pre-typed
-        # :class:`ChatHistoryEntry` lists too — accept both shapes
-        # here so ChatHistorySearcher receives a uniform typed input.
-        history: list[ChatHistoryEntry] = [
-            entry if isinstance(entry, ChatHistoryEntry) else ChatHistoryEntry.model_validate(entry)
-            for entry in raw_history
-        ]
+        history = [self._as_entry(entry) for entry in raw_history]
         return ChatHistorySearcher(history).search(needle, limit=limit)
+
+    @staticmethod
+    def _as_entry(entry: ChatTurn | ChatHistoryEntry | dict) -> ChatHistoryEntry:
+        """One history turn as the searcher's :class:`ChatHistoryEntry`.
+
+        A :class:`ChatTurn` goes through its JSON dump — the same shape
+        the wire carries — because validating the model instance
+        directly would collapse its per-role fields.
+        """
+        if isinstance(entry, ChatHistoryEntry):
+            return entry
+        if isinstance(entry, BaseModel):
+            return ChatHistoryEntry.model_validate(entry.model_dump(mode="json"))
+        return ChatHistoryEntry.model_validate(entry)

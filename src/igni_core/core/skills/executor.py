@@ -83,16 +83,15 @@ class SkillExecutor:
 
         Centralizes the agent-resolution + ``arun`` try/except that
         used to live in the two parallel ``_execute_forked`` /
-        ``_execute_inline`` methods. ``KeyError`` (unknown agent) is
-        handled separately so we can return a precise message; the
+        ``_execute_inline`` methods. An unknown agent is handled
+        separately so we can return a precise message; the
         narrow ``RuntimeError`` / ``ValueError`` / ``OSError`` catch
         covers expected agent-runtime failures. Programming bugs
         (``AttributeError``, ``TypeError``, …) intentionally propagate
         — they're not the executor's job to flatten.
         """
-        try:
-            agent = self.pool.get(agent_name)
-        except KeyError:
+        agent = self.pool.get(agent_name)
+        if agent is None:
             return SkillResult(ok=False, text=missing_message, error=missing_message)
 
         try:

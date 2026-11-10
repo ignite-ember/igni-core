@@ -11,7 +11,7 @@ Asserting on return values alone would pass even if the call had been
 attempted and failed, which on an air-gapped network it would.
 
 The desktop updater's and runtime's halves live in Rust and are tested
-there (``clients/tauri/src-tauri/src/update_policy.rs``, ``runtime.rs``).
+there (``clients/tauri/src-tauri/src/update_policy.rs``, ``runtime/mod.rs``).
 """
 
 from __future__ import annotations
@@ -30,17 +30,19 @@ import pytest
 
 from igni_core.backend.cmd_plugin.gateway import PluginBackendGateway
 from igni_core.core import air_gap
-from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.schemas import PluginsConfig, StorageConfig
-from igni_core.core.config.settings import Settings, SettingsLoader, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.tool_permissions import ToolPermissions
 from igni_core.core.decisions.schemas import DecisionsUnavailable
-from igni_core.core.plugins import marketplaces as _marketplaces
 from igni_core.core.plugins.installer import PluginError, PluginInstaller
+from igni_core.core.plugins.marketplace_store import MarketplaceRegistryStore
 from igni_core.core.plugins.models import MarketplaceEntry, MarketplaceRegistry
 from igni_core.core.plugins.source_policy import PluginSourcePolicy
 from igni_core.core.plugins.state import load_state, save_state
-from igni_core.core.session.core import Session
 from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.tool_spec import (
@@ -76,10 +78,8 @@ class GitRecorder:
         return [c[-2] for c in self.calls if c[:2] == ["git", "clone"]]
 
 
-def _session_with(settings: Settings) -> Session:
-    sess = Session.__new__(Session)
-    sess.settings = settings
-    return sess
+def _warmup(settings: Settings) -> MarketplaceWarmupPhase:
+    return MarketplaceWarmupPhase(settings_ref=lambda: settings)
 
 
 def _air_gapped(tmp_path: Path, **plugins) -> Settings:
@@ -121,7 +121,7 @@ class TestTheSwitch:
     def test_the_config_key_turns_it_on(self, tmp_path):
         (Path.home() / ".igni").mkdir(parents=True, exist_ok=True)
         (Path.home() / ".igni" / "config.yaml").write_text("air_gapped: true\n")
-        assert load_settings(project_dir=tmp_path).air_gapped is True
+        assert SettingsLoader.load(project_dir=tmp_path).air_gapped is True
 
     @pytest.mark.parametrize("value", ["1", "true", "YES", " on "])
     def test_the_environment_variable_turns_it_on(self, monkeypatch, value):
@@ -136,11 +136,11 @@ class TestTheSwitch:
     def test_a_managed_settings_file_turns_it_on(self, tmp_path, monkeypatch):
         managed = tmp_path / "managed-settings.yaml"
         managed.write_text("air_gapped: true\n")
-        monkeypatch.setattr(SettingsLoader, "platform_managed_settings_path", lambda: managed)
+        monkeypatch.setattr(ManagedPolicySource, "platform_path", lambda: managed)
         # A user cannot switch a sysadmin's air gap back off.
         (Path.home() / ".igni").mkdir(parents=True, exist_ok=True)
         (Path.home() / ".igni" / "config.yaml").write_text("air_gapped: false\n")
-        assert load_settings(project_dir=tmp_path).air_gapped is True
+        assert SettingsLoader.load(project_dir=tmp_path).air_gapped is True
 
     def test_a_group_policy_turns_it_on(self, tmp_path):
         pack = GroupPolicyPack(
@@ -156,7 +156,7 @@ class TestTheSwitch:
                 )
             ],
         )
-        settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
+        settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
         assert settings.air_gapped is True
 
 
@@ -188,7 +188,7 @@ class TestTheMarketplaceClone:
         """Not even with the opt-in on: air-gapped mode overrules it."""
         git = GitRecorder()
         settings = _air_gapped(tmp_path, default_marketplace=True)
-        phase = MarketplaceWarmupPhase(_session_with(settings))
+        phase = _warmup(settings)
         with patch("igni_core.core.plugins.git.subprocess.run", git):
             await phase._refresh_all()
         assert git.calls == []
@@ -200,7 +200,7 @@ class TestTheMarketplaceClone:
         _register(Path(settings.storage.data_dir), MarketplaceEntry(name="official", url=OFFICIAL))
         git = GitRecorder()
         with patch("igni_core.core.plugins.git.subprocess.run", git):
-            await MarketplaceWarmupPhase(_session_with(settings))._refresh_all()
+            await _warmup(settings)._refresh_all()
         assert git.calls == []
 
     async def test_the_clone_has_its_own_switch(self, tmp_path):
@@ -210,7 +210,7 @@ class TestTheMarketplaceClone:
         )
         git = GitRecorder()
         with patch("igni_core.core.plugins.git.subprocess.run", git):
-            await MarketplaceWarmupPhase(_session_with(settings))._refresh_all()
+            await _warmup(settings)._refresh_all()
         assert git.calls == []
 
     async def test_the_customers_own_marketplace_is_registered(self, tmp_path):
@@ -218,10 +218,10 @@ class TestTheMarketplaceClone:
         settings = _air_gapped(tmp_path, marketplaces=[str(repo)])
         git = GitRecorder(passthrough=True)
         with patch("igni_core.core.plugins.git.subprocess.run", git):
-            await MarketplaceWarmupPhase(_session_with(settings))._refresh_all()
+            await _warmup(settings)._refresh_all()
 
         assert git.clone_urls() == [str(repo)]
-        registry = _marketplaces.load_registry(settings.storage.data_dir)
+        registry = MarketplaceRegistryStore(settings.storage.data_dir).load()
         assert [m.name for m in registry.marketplaces] == ["acme-internal"]
 
     def test_a_user_cannot_add_a_public_marketplace(self, tmp_path):
@@ -296,7 +296,7 @@ class TestTheWebTools:
         (Path.home() / ".igni" / "config.yaml").write_text(
             "air_gapped: true\npermissions:\n  web_fetch: allow\n  web_search: allow\n"
         )
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
         assert settings.permissions.web_fetch == "deny"
         assert settings.permissions.web_search == "deny"
 

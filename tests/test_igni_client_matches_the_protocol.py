@@ -40,7 +40,7 @@ from igni_client import ApprovalRequested, IgniClient  # noqa: E402 — a packag
 from igni_client import connection as client_connection  # noqa: E402
 from igni_client import targets as client_targets  # noqa: E402
 from igni_client.events import EVENT_TYPES  # noqa: E402
-from igni_client.testing import Delay, FakeIgni  # noqa: E402
+from igni_client.testing import Delay, FakeIgni, Steps  # noqa: E402
 
 
 def _igni_messages() -> dict[str, type[Message]]:
@@ -102,22 +102,22 @@ def test_what_the_client_refuses_to_send_names_igni_s_own_methods() -> None:
 async def test_every_frame_the_client_sends_is_one_igni_accepts() -> None:
     """Drive every feature against the fake, then read each sent frame as igni would."""
     async with FakeIgni() as fake:
-        fake.script = lambda text: (
-            [FakeIgni.approval("deploy"), *FakeIgni.answer("done")]
+        fake.runs.script = lambda text: (
+            [Steps.approval("deploy"), *Steps.answer("done")]
             if text == "deploy"
             else [Delay(seconds=30)]
             if text == "long"
-            else FakeIgni.answer("hi")
+            else Steps.answer("hi")
         )
         async with IgniClient(fake.local()) as igni:
             session = await igni.sessions.create(project_dir="/workspace")
             await igni.sessions.open(session.id)
             await igni.sessions.list()
             await igni.sessions.default()
-            await igni.models.list()
-            await session.use_model("igni-1")
+            await session.models.list()
+            await session.models.switch("igni-1")
             await session.status()
-            await session.history()
+            await session.history.get()
             await session.ask("hello")
             async for event in session.send("deploy", files={"a.py": "x"}):
                 if isinstance(event, ApprovalRequested):
@@ -128,23 +128,25 @@ async def test_every_frame_the_client_sends_is_one_igni_accepts() -> None:
             await session.cancel()
             await asyncio.wait_for(follow, 5)
 
-    sent = [r.frame for r in fake.received]
-    kinds = {frame["type"] for frame in sent}
+    sent = [r.frame for r in fake.socket.received]
+    kinds = {frame.type for frame in sent}
     assert {
         "rpc_request",
         "user_message",
         "hitl_response_batch",
         "queue_message",
-        "cancel",
     } <= kinds
+    # Cancelling a turn is the ``cancel_run`` method, not a ``cancel`` frame.
+    assert "cancel_run" in {frame.method for frame in sent if frame.type == "rpc_request"}
     for frame in sent:
-        cls = IGNI.get(frame["type"])
-        assert cls is not None, f"igni does not accept {frame['type']!r}"
-        unknown = set(frame) - set(cls.model_fields)
-        assert not unknown, f"{frame['type']}: igni drops {sorted(unknown)}"
-        cls.model_validate(frame)
-        if frame["type"] == "hitl_response_batch":
-            for decision in frame["decisions"]:
+        cls = IGNI.get(frame.type)
+        assert cls is not None, f"igni does not accept {frame.type!r}"
+        wire = frame.model_dump(exclude_unset=True)
+        unknown = set(wire) - set(cls.model_fields)
+        assert not unknown, f"{frame.type}: igni drops {sorted(unknown)}"
+        cls.model_validate(wire)
+        if frame.type == "hitl_response_batch":
+            for decision in wire["decisions"]:
                 decision_cls = IGNI["hitl_decision"]
                 assert not set(decision) - set(decision_cls.model_fields)
                 decision_cls.model_validate(decision)

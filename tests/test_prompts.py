@@ -2,23 +2,28 @@
 
 import pytest
 
-from igni_core.core.prompts import PROMPTS_DIR, load_prompt
+from igni_core.core.prompts import PROMPTS_DIR, PromptFragments, PromptLoader
+
+
+@pytest.fixture
+def loader() -> PromptLoader:
+    return PromptLoader(PromptFragments())
 
 
 class TestLoadPrompt:
-    def test_loads_main_agent_prompt(self):
-        result = load_prompt("main_agent")
+    def test_loads_main_agent_prompt(self, loader):
+        result = loader.load("main_agent")
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_raises_on_missing_prompt(self):
+    def test_raises_on_missing_prompt(self, loader):
         with pytest.raises(FileNotFoundError):
-            load_prompt("nonexistent_prompt_xyz")
+            loader.load("nonexistent_prompt_xyz")
 
     def test_prompts_dir_exists(self):
         assert PROMPTS_DIR.exists()
         assert PROMPTS_DIR.is_dir()
 
-    def test_result_is_stripped(self):
-        result = load_prompt("main_agent")
+    def test_result_is_stripped(self, loader):
+        result = loader.load("main_agent")
         assert result == result.strip()

@@ -12,15 +12,18 @@ named as if it were igni's. Workflows are now read, in order (later wins):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-import pytest
-
-import igni_core.backend.workflow_runner as runner_mod
-from igni_core.backend.workflow_runner import WorkflowDiscovery, WorkflowRunner
+import igni_core.backend.workflow_layers as layers_mod
+from igni_core.backend.schemas_workflows import WorkflowRunRequest
+from igni_core.backend.workflow_discovery import WorkflowDiscovery
+from igni_core.backend.workflow_layers import FallbackLayerNotice
+from igni_core.backend.workflow_runner import WorkflowRunner
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.paths import CONFIG_DIR
 
 
@@ -52,18 +55,14 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text)
 
 
-@pytest.fixture(autouse=True)
-def _reset_deprecation_note():
-    runner_mod.WorkflowDiscovery._claude_dir_noted = False
-    yield
-    runner_mod.WorkflowDiscovery._claude_dir_noted = False
-
-
 async def test_not_found_names_the_igni_directory(tmp_path: Path) -> None:
-    runner = WorkflowRunner(project_dir=tmp_path, push=AsyncMock())
-    with pytest.raises(FileNotFoundError) as caught:
-        await runner.run(name="no-such-workflow", args={}, session=AsyncMock())
-    message = str(caught.value)
+    runner = WorkflowRunner.for_project(project_dir=tmp_path, push=AsyncMock(), gate=RunGate())
+    result = await runner.run(
+        request=WorkflowRunRequest(name="no-such-workflow"), session=AsyncMock()
+    )
+    assert not result.ok
+    assert result.failure == "not_found"
+    message = result.reason
     assert str(tmp_path / CONFIG_DIR / "workflows") in message
     assert ".claude" not in message
 
@@ -71,32 +70,30 @@ async def test_not_found_names_the_igni_directory(tmp_path: Path) -> None:
 async def test_igni_workflows_win_over_claude_workflows(tmp_path: Path, monkeypatch) -> None:
     _write(tmp_path / ".claude" / "workflows" / "shared.mjs", "claude-version")
     _write(tmp_path / CONFIG_DIR / "workflows" / "shared.mjs", "igni-version")
-    monkeypatch.setattr(
-        runner_mod.asyncio, "create_subprocess_exec", _fake_exec_reporting_source(tmp_path)
-    )
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec_reporting_source(tmp_path))
 
-    disc = WorkflowDiscovery(project_dir=tmp_path)
+    disc = WorkflowDiscovery.for_project(project_dir=tmp_path)
     found = await disc.resolve("shared")
 
     assert found is not None
     assert found.meta.name == "igni-version"
     assert found.path == f"{CONFIG_DIR}/workflows/shared.mjs"
-    assert disc.workflows_dir == tmp_path / CONFIG_DIR / "workflows"
+    assert disc.layers.project == tmp_path / CONFIG_DIR / "workflows"
 
 
 async def test_claude_workflows_still_read_with_one_deprecation_note(
     tmp_path: Path, monkeypatch, caplog
 ) -> None:
     _write(tmp_path / ".claude" / "workflows" / "old.mjs", "old")
-    monkeypatch.setattr(
-        runner_mod.asyncio, "create_subprocess_exec", _fake_exec_reporting_source(tmp_path)
-    )
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec_reporting_source(tmp_path))
 
-    disc = WorkflowDiscovery(project_dir=tmp_path)
-    with caplog.at_level(logging.WARNING, logger=runner_mod.__name__):
+    # One notice shared by two discoveries: said once between them.
+    notice = FallbackLayerNotice()
+    disc = WorkflowDiscovery.for_project(project_dir=tmp_path, notice=notice)
+    with caplog.at_level(logging.WARNING, logger=layers_mod.__name__):
         first = await disc.list_workflows()
         await disc.list_workflows()
-        await WorkflowDiscovery(project_dir=tmp_path).list_workflows()
+        await WorkflowDiscovery.for_project(project_dir=tmp_path, notice=notice).list_workflows()
 
     assert [env.meta.name for env in first] == ["old"]
     notes = [r for r in caplog.records if ".claude/workflows" in r.getMessage()]
@@ -112,11 +109,9 @@ async def test_user_level_workflows_are_read_and_project_shadows_them(
     _write(home / CONFIG_DIR / "workflows" / "mine.mjs", "mine")
     _write(home / CONFIG_DIR / "workflows" / "shared.mjs", "user-version")
     _write(project / CONFIG_DIR / "workflows" / "shared.mjs", "project-version")
-    monkeypatch.setattr(
-        runner_mod.asyncio, "create_subprocess_exec", _fake_exec_reporting_source(project)
-    )
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec_reporting_source(project))
 
-    disc = WorkflowDiscovery(project_dir=project, home_dir=home)
+    disc = WorkflowDiscovery.for_project(project_dir=project, home_dir=home)
     names = [env.meta.name for env in await disc.list_workflows()]
     mine = await disc.resolve("mine")
 

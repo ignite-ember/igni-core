@@ -2,8 +2,8 @@
 
 :class:`BackendServer` is the object every RPC lands on. Most of its
 methods are one line into a controller, and most of the suite tests the
-controllers directly — or builds the server through ``__new__`` with a
-mocked session, which skips everything ``__init__`` wires. So nothing
+controllers directly — or builds the server through ``from_parts`` with
+a mocked session, which skips what ``BackendBootstrap`` wires. So nothing
 checked that the server a real boot builds actually answers: that the
 panel RPCs return their typed shapes, that nothing in the idle state
 raises, and that the questions a window asks on connect have answers
@@ -11,48 +11,34 @@ before the first message.
 
 Every test here constructs the server the way ``BackendApp`` does — real
 settings, a real project directory, a real session — and asks it what a
-window would. Nothing is mocked. The second half pins the ``__new__``
-path itself: dozens of older tests build a partial server that way, and
-the accessors' fallbacks are what keep those tests meaning anything.
+window would — through the facade, or through ``backend.controllers``
+for the RPCs that have no facade method. Nothing is mocked.
 """
 
 from __future__ import annotations
 
-import asyncio
 import base64
 from typing import get_args
 
 import pytest
 
 from igni_core.backend.activity import ActivityState, SessionActivity
-from igni_core.backend.hitl_controller import HitlController
-from igni_core.backend.marketplace_controller import MarketplaceController
-from igni_core.backend.model_switcher import ModelSwitcher
-from igni_core.backend.plan_snapshot_builder import PlanSnapshotBuilder
-from igni_core.backend.plugin_controller import PluginController
 from igni_core.backend.schemas_hitl import ToolCallArgs
+from igni_core.backend.schemas_visualization import VisualizationAction
 from igni_core.backend.server import BackendServer
-from igni_core.backend.server_auth import AuthController
-from igni_core.backend.server_context import ContextController
-from igni_core.backend.server_files import FilesController
-from igni_core.backend.server_lifecycle import LifecycleController
-from igni_core.backend.server_loop import LoopController
-from igni_core.backend.server_mcp import McpController
-from igni_core.backend.server_panels import PanelsController
-from igni_core.backend.server_processes import ProcessesController
-from igni_core.backend.server_rehydrate import RehydrateController
-from igni_core.backend.server_search import SearchController
-from igni_core.backend.server_sessions import SessionsController
-from igni_core.backend.team_wiring import TeamWiring
-from igni_core.backend.visualization_action_bus import VisualizationActionBus
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.tool_permissions import PermissionLevel
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaDraft,
+    VisualizationDeltaPayload,
+)
 from igni_core.protocol import messages as msg
 
 
 @pytest.fixture
 def backend(tmp_path) -> BackendServer:
-    return BackendServer(load_settings(project_dir=tmp_path), project_dir=tmp_path)
+    return BackendServer(SettingsLoader.load(project_dir=tmp_path), project_dir=tmp_path)
 
 
 # ── On connect ────────────────────────────────────────────────────
@@ -117,7 +103,7 @@ def test_every_panel_answers_with_its_typed_shape(backend):
     assert backend.get_skill_pool() is backend._session.skill_pool
     assert backend.get_output_styles() is not None
     assert backend.get_group_policy() is not None
-    assert isinstance(backend.reload_hooks_rpc(), msg.Info)
+    assert isinstance(backend.controllers.panels.reload_hooks(), msg.Info)
 
 
 def test_the_mcp_panel_is_empty_for_a_project_with_no_servers(backend):
@@ -126,16 +112,14 @@ def test_the_mcp_panel_is_empty_for_a_project_with_no_servers(backend):
 
 
 async def test_connecting_an_mcp_server_nobody_configured_says_so(backend):
-    reply = await backend.mcp_connect("nobody-configured-this")
-
-    assert isinstance(reply, msg.Info)
-    assert "nobody-configured-this" in reply.text
+    with pytest.raises(ValueError, match="nobody-configured-this: No config found"):
+        await backend.mcp_connect("nobody-configured-this")
 
 
 def test_the_plugin_panel_lists_nothing_and_a_missing_plugin_is_an_error(backend):
     assert backend.get_plugin_details() == []
 
-    contents = backend.get_plugin_contents("not-installed")
+    contents = backend.controllers.plugins.contents("not-installed")
 
     assert contents.error == "Plugin 'not-installed' not found"
 
@@ -147,7 +131,7 @@ def test_an_installed_plugin_is_inventoried_from_its_directory(backend, tmp_path
     installed = type("Plugin", (), {"name": "plug", "root_path": root})()
     backend._session.plugin_loader.list_plugins = lambda: [installed]
 
-    contents = backend.get_plugin_contents("plug")
+    contents = backend.controllers.plugins.contents("plug")
 
     assert contents.error == ""
     assert [s.name for s in contents.skills] == ["greet"]
@@ -162,26 +146,41 @@ def test_marketplaces_start_from_what_the_user_registered(backend):
 
 def test_a_visualization_action_is_recorded_and_echoed(backend):
     seen: list[tuple[str, dict]] = []
-    backend.register_broadcast(lambda channel, payload: seen.append((channel, payload)))
+    backend.register_broadcast(lambda e: seen.append((e.channel, e.to_payload())))
 
-    result = backend.dispatch_visualization_action("select_row", {"row": 3})
+    result = backend.dispatch_visualization_action(
+        VisualizationAction(action="select_row", params={"row": 3})
+    )
 
     assert result.ok is True
     assert result.action == "select_row"
     assert result.params == {"row": 3}
+    assert (
+        "visualization_action_dispatched",
+        {"action": "select_row", "params": {"row": 3}},
+    ) in seen
 
 
 async def test_an_event_recorded_is_an_event_the_session_replays(backend):
-    await backend.record_event("extension_card", {"title": "Deploys"}, run_id="r1")
+    await backend.record_event(
+        VisualizationDeltaDraft(
+            payload=VisualizationDeltaPayload(spec_id="s1", spec_json="{}", title="Deploys"),
+            run_id="r1",
+        )
+    )
 
-    (event,) = backend.session_events("extension_card")
+    (event,) = backend.session_events("visualization_delta")
 
-    assert event.payload == {"title": "Deploys"}
-    assert backend.session_events("something_else") == []
+    assert event.payload.spec_id == "s1"
+    assert event.payload.title == "Deploys"
+    assert event.run_id == "r1"
+    assert backend.session_events("workflow_event") == []
 
 
-def test_an_attachment_uploaded_can_be_read_back(backend):
-    upload = backend.upload_attachment("note.txt", base64.b64encode(b"hello").decode())
+async def test_an_attachment_uploaded_can_be_read_back(backend):
+    upload = await backend.controllers.files.upload_attachment(
+        "note.txt", base64.b64encode(b"hello").decode()
+    )
 
     assert upload.path
     read = backend.read_file(upload.path)
@@ -190,14 +189,16 @@ def test_an_attachment_uploaded_can_be_read_back(backend):
     assert read.contents == "hello"
 
 
-def test_code_search_on_an_empty_project_finds_nothing(backend):
-    result = backend.search_code("def nowhere():")
+async def test_code_search_on_an_empty_project_finds_nothing(backend):
+    result = await backend.controllers.search.search_code("def nowhere():")
 
     assert result.matches == []
 
 
 def test_a_permission_is_checked_against_the_projects_rules(backend):
-    level = backend.check_permission("Write", "save_file", ToolCallArgs(file_path="a.txt"))
+    level = backend.controllers.hitl.permissions.check(
+        "Write", "save_file", ToolCallArgs(file_path="a.txt")
+    )
 
     assert level in get_args(PermissionLevel)
 
@@ -209,16 +210,28 @@ def test_toggling_verbose_flips_it_and_back(backend):
 
 
 def test_switching_the_model_rebuilds_the_team_on_the_new_one(backend):
+    backend.settings.models.registry["another-model"] = ModelRegistryEntry(model_id="another")
+
     reply = backend.switch_model("another-model")
 
     assert isinstance(reply, msg.Info)
     assert backend.settings.models.default == "another-model"
 
 
+def test_a_model_the_registry_does_not_know_is_refused(backend):
+    before = backend.settings.models.default
+
+    reply = backend.switch_model("no-such-model")
+
+    assert isinstance(reply, msg.Error)
+    assert "no-such-model" in reply.text
+    assert backend.settings.models.default == before
+
+
 def test_the_plan_research_flag_is_read_once(backend):
     assert backend.consume_plan_research_flag() is False
 
-    backend._session._plan_research_armed = True
+    backend._session.plan.arm_research(True)
 
     assert backend.consume_plan_research_flag() is True
     assert backend.consume_plan_research_flag() is False
@@ -228,7 +241,7 @@ def test_the_plan_research_flag_is_read_once(backend):
 
 
 def test_cancelling_a_sub_agent_run_without_an_id_is_refused(backend):
-    result = backend.cancel_agent_run("")
+    result = backend.controllers.runs.cancel_agent_run("")
 
     assert result.ok is False
     assert result.error == "missing run_id"
@@ -241,20 +254,25 @@ def test_cancelling_when_nothing_runs_does_nothing(backend):
 
 
 async def test_a_process_nobody_started_has_no_output_and_cannot_be_stopped(backend):
-    tail = backend.read_process_tail(999_999)
-    stopped = await backend.stop_background_process(999_999)
+    tail = backend.controllers.processes.read_tail(999_999)
+    stopped = await backend.controllers.processes.stop(999_999)
 
-    assert tail == {"pid": 999_999, "output": "", "is_running": False, "exit_code": None}
-    assert stopped["killed"] is False
+    assert tail.model_dump() == {
+        "pid": 999_999,
+        "output": "",
+        "is_running": False,
+        "exit_code": None,
+    }
+    assert stopped.killed is False
 
 
 # ── /loop and the scheduler ───────────────────────────────────────
 
 
 async def test_with_no_loop_running_there_is_nothing_to_advance_or_cancel(backend):
-    assert await backend.pop_pending_loop_iteration() is None
-    assert await backend.cancel_pending_loop() is False
-    assert await backend.loop_resume() == ""
+    assert await backend.controllers.loop.pop_pending_iteration() is None
+    assert await backend.controllers.loop.cancel_pending() is False
+    assert await backend.controllers.loop.resume() == ""
     status = await backend.loop_status()
 
     assert status.active is False
@@ -264,17 +282,16 @@ async def test_a_paused_loop_is_not_cancelled_by_a_new_message_and_resumes(backe
     await backend._session.start_loop("check the build", 3, immediate=False, cap_explicit=True)
     assert await backend.loop_pause() is True
 
-    assert await backend.cancel_pending_loop() is False
+    assert await backend.controllers.loop.cancel_pending() is False
     assert (await backend.loop_status()).paused is True
-    assert "check the build" in await backend.loop_resume()
-    assert await backend.cancel_pending_loop() is True
+    assert "check the build" in await backend.controllers.loop.resume()
+    assert await backend.controllers.loop.cancel_pending() is True
 
 
 async def test_the_scheduler_starts_with_no_tasks(backend):
     assert await backend.get_scheduled_tasks() == []
-    reply = await backend.cancel_scheduled_task("no-such-task")
-
-    assert isinstance(reply, msg.Info)
+    with pytest.raises(ValueError, match="no scheduled task 'no-such-task'"):
+        await backend.controllers.loop.scheduler.cancel("no-such-task")
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────
@@ -294,7 +311,7 @@ async def test_the_session_start_hook_fires_even_if_revalidating_policy_fails(ba
     async def _hook() -> None:
         fired.append(True)
 
-    backend.auth.revalidate_for_new_dialogue = _fails
+    backend.controllers.group_policy.revalidate_for_new_dialogue = _fails
     backend._session.fire_session_start_hook = _hook
 
     await backend.fire_session_start_hook()
@@ -316,74 +333,20 @@ async def test_a_change_of_workspace_trust_reloads_the_settings(backend):
     assert backend.workspace_trust is not None
 
 
-# ── The ``__new__`` path older tests build ────────────────────────
-
-_ACCESSORS: dict[str, type] = {
-    "plugins": PluginController,
-    "marketplaces": MarketplaceController,
-    "mcp": McpController,
-    "hitl": HitlController,
-    "context": ContextController,
-    "auth": AuthController,
-    "files": FilesController,
-    "search": SearchController,
-    "panels": PanelsController,
-    "loop": LoopController,
-    "processes": ProcessesController,
-    "sessions": SessionsController,
-    "rehydrate": RehydrateController,
-    "lifecycle": LifecycleController,
-    "plan_snapshots": PlanSnapshotBuilder,
-    "viz_actions": VisualizationActionBus,
-    "team_wiring": TeamWiring,
-    "model_switcher": ModelSwitcher,
-}
+# ── The one alternate constructor ─────────────────────────────────
 
 
-@pytest.fixture
-def partial(backend) -> BackendServer:
-    """A server built the way older fixtures build one: no controllers."""
-    server = BackendServer.__new__(BackendServer)
-    server._session = backend._session
-    server._settings = backend._settings
-    server._hitl_store = backend._hitl_store
-    server._session_prefs = backend._session_prefs
-    server._pending_store = backend._pending_store
-    return server
+def test_a_server_from_parts_answers_like_the_one_it_was_built_from(backend):
+    rebuilt = BackendServer.from_parts(
+        session=backend.session,
+        settings=backend.settings,
+        controllers=backend.controllers,
+        message_queue=backend.message_queue,
+        supervisors=backend.supervisors,
+        gate=backend.gate,
+    )
 
-
-@pytest.mark.parametrize(("name", "kind"), sorted(_ACCESSORS.items()))
-def test_a_partly_built_server_builds_each_controller_once(partial, name, kind):
-    first = getattr(partial, name)
-
-    assert isinstance(first, kind)
-    assert getattr(partial, name) is first
-
-
-def test_a_partly_built_server_keeps_the_run_fields_a_fixture_sets(partial):
-    lock = asyncio.Lock()
-    partial._run_lock = lock
-    partial._current_run_task = None
-
-    assert partial._run_lock is lock
-    assert partial._current_run_task is None
-    assert partial.processing is False
-
-
-def test_a_partly_built_server_cancels_without_a_run_pipeline(partial):
-    assert partial.cancel_agent_run("").error == "missing run_id"
-    assert partial.cancel_agent_run("not-a-live-run").ok in (True, False)
-
-    partial.cancel_run()
-
-
-async def test_a_partly_built_server_still_rebuilds_history(partial):
-    assert await partial.get_chat_history(partial.session_id) == []
-
-
-def test_a_server_with_no_session_has_no_manager_and_no_broadcasts():
-    server = BackendServer.__new__(BackendServer)
-
-    assert server.mcp_manager is None
-    assert server.consume_plan_research_flag() is False
-    server.register_broadcast(lambda *_: None)
+    assert set(vars(rebuilt)) == set(vars(backend))
+    assert rebuilt.session_id == backend.session_id
+    assert rebuilt.processing is False
+    assert rebuilt.runtime is None

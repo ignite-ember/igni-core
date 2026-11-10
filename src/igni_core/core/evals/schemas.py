@@ -18,6 +18,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from igni_core.core.evals.assertions import FileAssertion, FileCheckResult
+
 
 class FixtureSpec(BaseModel):
     """One fixture entry from an eval suite YAML.
@@ -65,20 +67,6 @@ class ToolTraceEntry(BaseModel):
     args: dict[str, Any] | None = None
     result_preview: str = ""
     error: bool = False
-
-
-class FileCheckResult(BaseModel):
-    """Result of a single file-assertion check.
-
-    Replaces the old ``tuple[str, bool, str]`` return so reporter /
-    JSON consumers see named fields rather than positional indices.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    type: str
-    passed: bool
-    detail: str
 
 
 class CheckResult(BaseModel):
@@ -144,12 +132,9 @@ class EvalCase(BaseModel):
     accuracy_threshold: float = 7.0
     judge_guidelines: str | None = None
     num_iterations: int = 1
-    # File assertions — validated per-entry at load time. Kept as a
-    # heterogeneous ``list[Any]`` on the model because the assertions
-    # module owns the FileAssertion type and importing it here creates
-    # a cycle; the loader validates each entry via
-    # :class:`FileAssertion.model_validate` before it lands here.
-    file_assertions: list[Any] | None = None
+    # File assertions — validated per-entry at load time so a typo'd
+    # ``type`` fails the load, not the run.
+    file_assertions: list[FileAssertion] | None = None
     # Prior turns — sent in order on the same session before ``input``.
     # Empty/missing means the case is single-shot (the common case).
     prior_messages: list[str] = Field(default_factory=list)

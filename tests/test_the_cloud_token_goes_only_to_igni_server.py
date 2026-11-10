@@ -33,7 +33,7 @@ from igni_core.core.auth.credentials import Credentials, CredentialsStore
 from igni_core.core.config.context_window import ContextWindowResolver
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.models import ModelRegistry
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 
 
 def _token() -> str:
@@ -154,7 +154,7 @@ def _project(tmp_path: Path, models: dict) -> Path:
 
 
 async def _chat(repo: Path, name: str) -> None:
-    model = ModelRegistry(load_settings(project_dir=repo)).get_model(name)
+    model = ModelRegistry(SettingsLoader.load(project_dir=repo)).get_model(name)
     client = model.get_async_client()
     await client.chat.completions.create(model="m", messages=[{"role": "user", "content": "hi"}])
 

@@ -19,7 +19,10 @@ import pytest
 
 from igni_core.backend.activity import ActivityState, SessionActivity
 from igni_core.core.approvals.events import ApprovalChange, ApprovalState, approval_events
+from igni_core.core.db.locator import StorageLocator
+from igni_core.core.session.session_directories import SessionDirectoryStore
 from igni_core.extensions.host.definition import HOST_SCHEMA
+from igni_core.extensions.host.signals import SubscribeOutcome
 from igni_core.extensions.host.spec import PropertySpec
 from igni_core.extensions.registry import ExtensionState
 from igni_core.protocol import messages as msg
@@ -136,7 +139,7 @@ class TestTheSchemaIsTheAuthority:
         unbuilt = tuple(
             p.model_copy(update={"stage": 2}) if p.name == "version" else p for p in app.properties
         )
-        rig.model.schema = HOST_SCHEMA.model_copy(
+        rig.model.binder.schema = HOST_SCHEMA.model_copy(
             update={
                 "objects": tuple(
                     o.model_copy(update={"properties": unbuilt}) if o.path == "app" else o
@@ -167,8 +170,8 @@ class TestChatPost:
         ext = rig.install(host=["chat.post", "chat.read"])
         sink = Sink()
         assert rig.model is not None
-        subscriber = rig.model.bus.attach(ext, sink)
-        rig.model.bus.subscribe(subscriber, ["chat.message_added", "chat.run_completed"])
+        subscriber = rig.model.services.bus.attach(ext, sink)
+        rig.model.services.bus.subscribe(subscriber, ["chat.message_added", "chat.run_completed"])
 
         ok(await rig.ask(ext, "call", "chat.post", text="Two issues in auth.py."))
         await rig.settle()
@@ -219,7 +222,7 @@ class TestViews:
         assert push.payload["final"] is True
         assert json.loads(push.payload["json"]) == self.SPEC
         # Kept in the session's log, so a reload shows it again.
-        assert [e.payload["spec_id"] for e in rig.session.events] == [view_id]
+        assert [e.payload.spec_id for e in rig.session.events] == [view_id]
         # Never a turn: the model was not asked anything.
         assert rig.session.ran == []
         [listed] = ok(await rig.ask(ext, "get", "chat.views.list"))
@@ -257,7 +260,10 @@ class TestWritesAreRefusedWhereThePersonsWouldBe:
         assert rig.orchestrator is not None
         elsewhere = rig.tmp / "elsewhere"
         elsewhere.mkdir()
-        rig.orchestrator._dir_registry.set_dir("other", elsewhere)  # type: ignore[union-attr]
+        # Another backend, in another project, attached it there.
+        SessionDirectoryStore.from_locator(StorageLocator.from_settings(rig.settings)).set_dir(
+            "other", elsewhere
+        )
         message = refused(await rig.ask(ext, "set", "sessions.current", to="other"), "refused")
         assert "different project" in message
 
@@ -282,7 +288,9 @@ class TestApprovals:
         ext = rig.install(host=["chat.approvals"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["chat.approvals.requested"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["chat.approvals.requested"]
+        )
         await rig.transport.send(
             msg.RunPaused(
                 session_id="boot",
@@ -323,7 +331,7 @@ class TestApprovals:
             run_id="r",
             requirements=[msg.HITLRequest(requirement_id="q9", tool_name="shell")],
         )
-        rig.session.hitl = SimpleNamespace(waiting_messages=lambda: [restored])
+        rig.session.controllers.hitl = SimpleNamespace(waiting_messages=lambda: [restored])
         [waiting] = ok(await rig.ask(ext, "get", "chat.approvals.waiting"))
         assert waiting["requirement_id"] == "q9"
         ok(
@@ -341,7 +349,9 @@ class TestApprovals:
         ext = rig.install(host=["chat.approvals"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["chat.approvals.changed"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["chat.approvals.changed"]
+        )
         for state in (ApprovalState.WAITING, ApprovalState.RESOLVED):
             approval_events.announce(
                 ApprovalChange(
@@ -369,7 +379,9 @@ class TestActivity:
 
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["app.activity_changed"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["app.activity_changed"]
+        )
         rig.session.activity = lambda: SessionActivity(
             session_id="boot", state=ActivityState.WAITING, waiting_approvals=1
         )
@@ -408,13 +420,13 @@ class TestWindowsAndUi:
         ext = rig.install(host=["ui"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(
-            rig.model.bus.attach(ext, sink), ["windows.opened", "windows.closed"]
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["windows.opened", "windows.closed"]
         )
         await rig.window("w-1", connection="ws-a")
         [window] = ok(await rig.ask(ext, "get", "windows.list"))
         assert window["id"] == "w-1" and window["kind"] == "tauri"
-        rig.model.connection_closed("ws-a")
+        rig.model.services.windows.registry.detached("ws-a")
         assert ok(await rig.ask(ext, "get", "windows.list")) == []
         assert [v["id"] for v in sink.values("windows.opened")] == ["w-1"]
         assert [v["id"] for v in sink.values("windows.closed")] == ["w-1"]
@@ -434,8 +446,9 @@ class TestWindowsAndUi:
         ext = rig.install(host=["ui", "sessions"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(
-            rig.model.bus.attach(ext, sink), ["ui.sidebar_changed", "session.switched", "changed"]
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink),
+            ["ui.sidebar_changed", "session.switched", "changed"],
         )
         await rig.window("w-1")
         await rig.window_writes("w-1", "sidebar", {"open": True})
@@ -450,6 +463,10 @@ class TestWindowsAndUi:
         assert sink.values("session.switched") == [{"session_id": "boot", "window": "w-1"}]
         changed = {c["path"] for c in sink.values("changed")}
         assert {"ui.sidebar", "sessions.current"} <= changed
+        # The change says which window it is about.
+        windows = {c["path"]: c["window"] for c in sink.values("changed")}
+        assert windows["ui.sidebar"] == "w-1"
+        assert windows["sessions.current"] == "w-1"
 
     async def test_a_page_reaches_its_own_window(self, rig: HostRig) -> None:
         ext = rig.install(host=["ui"])
@@ -531,7 +548,9 @@ class TestSignals:
         ext = rig.install(host=["chat.read"], workspace="read", workspacePaths=["src/**"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["chat.run_completed"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["chat.run_completed"]
+        )
         await rig.transport.send(msg.RunStarted(session_id="boot", run_id="r1"))
         await rig.transport.send(
             msg.PushNotification(
@@ -559,14 +578,12 @@ class TestSignals:
         ext = rig.install(host=[])
         assert rig.model is not None
         sink = Sink()
-        outcome = rig.model.bus.subscribe(
-            rig.model.bus.attach(ext, sink), ["chat.run_started", "chat.nope"]
+        outcome = rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["chat.run_started", "chat.nope"]
         )
-        assert outcome == {
-            "subscribed": [],
-            "not_granted": ["chat.run_started"],
-            "unknown": ["chat.nope"],
-        }
+        assert outcome == SubscribeOutcome(
+            subscribed=[], not_granted=["chat.run_started"], unknown=["chat.nope"]
+        )
         await rig.transport.send(msg.RunStarted(session_id="boot", run_id="r1"))
         assert sink.got == []
 
@@ -577,11 +594,13 @@ class TestSignals:
         watcher = rig.install("acme.two", host=["extensions"])
         assert rig.model is not None
         own, all_ = Sink(), Sink()
-        rig.model.bus.subscribe(
-            rig.model.bus.attach(mine, own), ["self.state_changed", "extension.state-changed"]
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(mine, own),
+            ["self.state_changed", "extension.state-changed"],
         )
-        rig.model.bus.subscribe(
-            rig.model.bus.attach(watcher, all_), ["extension.state-changed", "self.state_changed"]
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(watcher, all_),
+            ["extension.state-changed", "self.state_changed"],
         )
         rig.registry.set_state(mine, ExtensionState.FAILED, "its service died")
         assert own.values("self.state_changed") == [
@@ -595,12 +614,27 @@ class TestSignals:
         ext = rig.install(host=["models"])
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["models.changed"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["models.changed"]
+        )
         assert rig.orchestrator is not None
         await rig.orchestrator.dispatch(
             msg.RPCRequest(id="fe-1", method="switch_model", args={"model_name": "large"})
         )
         assert sink.values("models.changed") == [{"current": "large"}]
+
+    async def test_a_refused_window_switch_is_not_a_signal(self, rig: HostRig) -> None:
+        ext = rig.install(host=["models"])
+        assert rig.model is not None
+        sink = Sink()
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["models.changed"]
+        )
+        assert rig.orchestrator is not None
+        await rig.orchestrator.dispatch(
+            msg.RPCRequest(id="fe-2", method="switch_model", args={"model_name": "no-such-model"})
+        )
+        assert sink.values("models.changed") == []
 
 
 class TestExtensionsAndTheirWebHome:
@@ -618,12 +652,46 @@ class TestExtensionsAndTheirWebHome:
         ext = rig.install()
         assert rig.model is not None
         sink = Sink()
-        rig.model.bus.subscribe(rig.model.bus.attach(ext, sink), ["self.settings_changed"])
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["self.settings_changed"]
+        )
         ok(await rig.ask(ext, "set", "self.settings", to={"serviceUrl": "https://x.test"}))
         assert ok(await rig.ask(ext, "get", "self.settings"))["serviceUrl"] == "https://x.test"
         assert sink.values("self.settings_changed") == [
             {"values": {"serviceUrl": "https://x.test"}}
         ]
+
+    async def test_a_refused_setting_reaches_the_extension_and_is_not_a_signal(
+        self, rig: HostRig
+    ) -> None:
+        ext = rig.install()
+        assert rig.model is not None
+        sink = Sink()
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["self.settings_changed"]
+        )
+        message = refused(await rig.ask(ext, "set", "self.settings", to={"backdoor": 1}), "refused")
+        assert "backdoor" in message
+        assert "backdoor" not in ok(await rig.ask(ext, "get", "self.settings"))
+        assert sink.values("self.settings_changed") == []
+
+    async def test_a_refused_window_settings_write_is_not_a_signal(self, rig: HostRig) -> None:
+        ext = rig.install()
+        assert rig.model is not None and rig.orchestrator is not None
+        sink = Sink()
+        rig.model.services.bus.subscribe(
+            rig.model.services.bus.attach(ext, sink), ["self.settings_changed"]
+        )
+        await rig.orchestrator.dispatch(
+            msg.RPCRequest(
+                id="fe-3",
+                method="set_extension_settings",
+                args={"extension_id": ext, "values": {"backdoor": 1}},
+            )
+        )
+        [reply] = [m for m in rig.windows.of(msg.RPCResponse) if m.id == "fe-3"]
+        assert reply.error and "backdoor" in reply.error
+        assert sink.values("self.settings_changed") == []
 
 
 class TestAPageReachesTheSameModel:

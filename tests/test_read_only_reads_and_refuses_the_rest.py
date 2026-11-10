@@ -24,16 +24,18 @@ from __future__ import annotations
 import pytest
 
 from igni_core.cli.options import CliOptions
-from igni_core.core.config.models import CliOverrides
+from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.permission_eval import PermissionDecision, PermissionMode
 from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
+from igni_core.core.hooks.permission.denial import Denial
+from igni_core.core.hooks.permission.evaluator_stage import PermissionEvaluatorStage
 from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
 
 
 def _read_only_evaluator() -> PermissionEvaluator:
-    payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
-    perms = load_settings(cli_overrides=payload).permissions
+    payload = CliOverrides.from_options(CliOptions(read_only=True))
+    perms = SettingsLoader.load(cli_overrides=payload).permissions
     return PermissionEvaluator.from_permissions(perms)
 
 
@@ -116,8 +118,8 @@ def test_a_fetch_that_carries_a_token_still_asks(tool: str, url: str):
 
 
 def test_air_gapped_still_refuses_the_web():
-    payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
-    settings = load_settings(cli_overrides=payload)
+    payload = CliOverrides.from_options(CliOptions(read_only=True))
+    settings = SettingsLoader.load(cli_overrides=payload)
     settings.air_gapped = True
     settings = settings.model_validate(settings.model_dump())
     assert settings.permissions.web_search == "deny"
@@ -132,8 +134,8 @@ def test_air_gapped_still_refuses_the_web():
 
 
 def test_a_deny_rule_still_wins_over_reading_the_web():
-    payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
-    perms = load_settings(cli_overrides=payload).permissions
+    payload = CliOverrides.from_options(CliOptions(read_only=True))
+    perms = SettingsLoader.load(cli_overrides=payload).permissions
     perms.deny.append("WebFetch")
     evaluator = PermissionEvaluator.from_permissions(perms)
     assert evaluator.evaluate("fetch_url", {"url": "https://x.test/"}) is PermissionDecision.DENY
@@ -188,15 +190,15 @@ def test_switching_mode_does_not_reopen_it(mode: PermissionMode):
 
 
 def test_a_deny_rule_still_wins_over_a_read():
-    payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
-    perms = load_settings(cli_overrides=payload).permissions
+    payload = CliOverrides.from_options(CliOptions(read_only=True))
+    perms = SettingsLoader.load(cli_overrides=payload).permissions
     perms.deny.append("Bash(cat *)")
     evaluator = PermissionEvaluator.from_permissions(perms)
     assert _shell(evaluator, "cat .env") is PermissionDecision.DENY
 
 
 def test_without_the_flag_nothing_changes():
-    perms = load_settings(cli_overrides=None).permissions
+    perms = SettingsLoader.load(cli_overrides=None).permissions
     evaluator = PermissionEvaluator.from_permissions(perms)
     assert evaluator.read_only is False
     assert _shell(evaluator, "rm -rf build") is PermissionDecision.DEFER
@@ -206,10 +208,8 @@ def test_the_shell_is_not_reported_as_off_entirely():
     """The denial used to add "Shell access is off in this session" — true
     then, false now: reads still work, and saying otherwise costs the model
     the moves it has."""
-    from igni_core.core.hooks.permission_pipeline import PermissionEvaluatorStage
-
     stage = PermissionEvaluatorStage(_read_only_evaluator(), firer=None)  # type: ignore[arg-type]
-    assert stage._tool_is_off_entirely("run_shell_command") is False
+    assert stage._tool_is_off_entirely(Denial("run_shell_command")) is False
 
 
 def test_the_session_evaluator_carries_the_flag(tmp_path):
@@ -217,12 +217,12 @@ def test_the_session_evaluator_carries_the_flag(tmp_path):
 
     from igni_core.core.session.tool_hook_factory import ToolEventHookFactory
 
-    payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
+    payload = CliOverrides.from_options(CliOptions(read_only=True))
     factory = ToolEventHookFactory(
-        settings=load_settings(cli_overrides=payload),
+        settings=SettingsLoader.load(cli_overrides=payload),
         rules_index=MagicMock(),
         project_dir=tmp_path,
-        hook_executor_ref=MagicMock(),
+        hooks=MagicMock(),
         session_id_ref=lambda: "s",
     )
     assert factory.permission_evaluator.read_only is True

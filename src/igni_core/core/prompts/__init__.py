@@ -1,33 +1,25 @@
-"""Prompt templates — loads prompt files from the prompts directory."""
+"""igni's prompts: the files it ships, and the anchors extensions fill into them.
 
-from pathlib import Path
+The table of anchors is :class:`~igni_core.core.prompts.fragments.PromptFragments`;
+the files, read through it, are
+:class:`~igni_core.core.prompts.loader.PromptLoader`. Both are injected:
+whoever wires the backend creates them and hands the same instances to
+every session.
+"""
 
-from igni_core.core.prompts.fragments import PromptFragments, fragments
+from igni_core.core.prompts.fragments import (
+    ANCHOR,
+    AnchorRegistration,
+    FragmentSupplier,
+    PromptFragments,
+)
+from igni_core.core.prompts.loader import PROMPTS_DIR, PromptLoader
 
 __all__ = [
+    "ANCHOR",
     "PROMPTS_DIR",
+    "AnchorRegistration",
+    "FragmentSupplier",
     "PromptFragments",
-    "expand_anchors",
-    "fragments",
-    "load_prompt",
+    "PromptLoader",
 ]
-
-PROMPTS_DIR = Path(__file__).parent
-
-
-def expand_anchors(text: str) -> str:
-    """Fill every ``{{ANCHOR}}`` an installed extension supplies.
-
-    A no-op for text with no anchors, so it is safe to call on every
-    prompt and every agent body. See :mod:`igni_core.core.prompts.fragments`.
-    """
-    return fragments.expand(text)
-
-
-def load_prompt(name: str) -> str:
-    """Load a prompt template by name (without extension).
-
-    Raises ``FileNotFoundError`` if the prompt file does not exist.
-    """
-    path = PROMPTS_DIR / f"{name}.md"
-    return expand_anchors(path.read_text().strip())

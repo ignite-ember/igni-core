@@ -67,8 +67,8 @@ def process_group_of(pid: int) -> int | None:
 
     Both holes were load-bearing on Windows: :meth:`ManagedProcess.kill`
     raised before reaching ``proc.kill()``, so ESC stopped cancelling
-    and BE shutdown killed nothing at all, and
-    ``ProcessRegistry._persist_add`` raised out of ``announce_start``,
+    and BE shutdown killed nothing at all, and the registry's
+    persist-on-announce step raised out of ``announce_start``,
     so backgrounding — the documented required path for any
     long-running command — failed outright.
 
@@ -179,6 +179,18 @@ class ManagedProcess:
     def reader_task(self) -> asyncio.Task | None:
         return self._reader_task
 
+    @property
+    def started_epoch(self) -> int:
+        """When the process started, in epoch seconds.
+
+        The instance's own ``started_at`` is monotonic — right for
+        measuring how long a process has run, meaningless to anything
+        that outlives this process. The registry writes this value to
+        a row a later backend lifetime reads back, so it has to be
+        wall-clock.
+        """
+        return int(time.time() - (time.monotonic() - self.started_at))
+
     async def wait_for_reader(self, timeout: float) -> None:
         """Wait up to ``timeout`` seconds for the reader task to
         drain any trailing output after the process exits. Used by
@@ -276,7 +288,10 @@ class ManagedProcess:
             self._log_file = None
 
     def read(self, tail: int = 100) -> str:
-        """Return the last ``tail`` lines of output."""
+        """Return the last ``tail`` lines of output; none for ``tail`` below one
+        (``output[-0:]`` is all of it)."""
+        if tail < 1:
+            return ""
         with self.lock:
             lines = self.output[-tail:]
         return "\n".join(lines)

@@ -26,13 +26,14 @@ import logging
 import os
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
 
-from igni_core.core.config.settings import PermissionsConfig
+from igni_core.core.config.schemas import PermissionsConfig
 from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.tool_spec import ToolSpecCatalog
 
 
@@ -132,6 +133,7 @@ def test_agent_builder_passes_settings_permissions_to_the_registry() -> None:
         artifact_mgr: Any = None
         db: Any = None
         broadcast: Any = None
+        supervisor: Any = field(default_factory=ProcessSupervisor)
 
     @dataclass
     class StubDefinition:
@@ -157,37 +159,42 @@ def test_agent_builder_passes_settings_permissions_to_the_registry() -> None:
 # ── 3. A pause is an error, never an answer ─────────────────────────
 
 
-def test_paused_run_raises_instead_of_being_returned_as_the_answer() -> None:
+def test_a_paused_run_is_a_failure_not_an_answer() -> None:
     """``grep RunStatus.paused src/`` found nothing outside ``backend/``:
     pause handling lived only behind the React client's RPC. On this path
     the placeholder content was extracted and printed as the response.
+
+    The pause is a value now, not an exception raised and caught again:
+    :class:`TurnFailure` says what happened, and the pipeline reports it.
     """
-    from igni_core.core.session.message_handler import SessionMessageHandler
+    from agno.models.response import ToolExecution
+    from agno.run.agent import RunOutput
+    from agno.run.base import RunStatus
 
-    class PausedToolCall:
-        tool_name = "web_search"
-        is_paused = True
+    from igni_core.core.session.message_outcome import OutcomeKind, TurnFailure, TurnOutcome
 
-    class PausedResponse:
-        status = "paused"
-        content = "I have tools to execute, but I need confirmation."
-        tools = [PausedToolCall()]
+    paused = RunOutput(
+        status=RunStatus.paused,
+        content="I have tools to execute, but I need confirmation.",
+        tools=[ToolExecution(tool_name="web_search", requires_confirmation=True)],
+    )
 
-    with pytest.raises(RuntimeError) as excinfo:
-        SessionMessageHandler._reject_paused_run(PausedResponse())
-    assert "web_search" in str(excinfo.value)
+    outcome = TurnOutcome.from_run(paused)
+    failure = TurnFailure.paused(outcome)
+
+    assert outcome.kind is OutcomeKind.PAUSED
+    assert "web_search" in failure.message
 
 
 def test_a_normal_run_is_left_alone() -> None:
-    from igni_core.core.session.message_handler import SessionMessageHandler
+    from agno.run.agent import RunOutput
+    from agno.run.base import RunStatus
 
-    class CompletedResponse:
-        status = "completed"
-        content = "done"
-        tools: list[Any] = []
+    from igni_core.core.session.message_outcome import OutcomeKind, TurnOutcome
 
-    SessionMessageHandler._reject_paused_run(CompletedResponse())
-    SessionMessageHandler._reject_paused_run(object())  # no status attribute at all
+    done = RunOutput(status=RunStatus.completed, content="done")
+
+    assert TurnOutcome.from_run(done).kind is OutcomeKind.COMPLETED
 
 
 # ── 4. Startup leaves no stderr handler for the firehose to fill ────
@@ -308,7 +315,7 @@ def test_drain_cancels_leftover_tasks_and_returns() -> None:
     """
     import asyncio
 
-    from igni_core.cli import _run_then_drain
+    from igni_core.cli.headless_run import HeadlessRun
 
     leaked: list[asyncio.Task[None]] = []
 
@@ -319,7 +326,7 @@ def test_drain_cancels_leftover_tasks_and_returns() -> None:
         leaked.append(asyncio.create_task(forever()))
         await asyncio.sleep(0)  # let it start
 
-    asyncio.run(_run_then_drain(scenario()))
+    asyncio.run(HeadlessRun().drain_after(scenario()))
     assert leaked and leaked[0].cancelled()
 
 
@@ -329,7 +336,7 @@ def test_drain_gives_up_on_a_task_that_ignores_cancellation() -> None:
     abandoned, not waited on."""
     import asyncio
 
-    from igni_core.cli import _run_then_drain
+    from igni_core.cli.headless_run import HeadlessRun
 
     async def scenario() -> None:
         async def stubborn() -> None:
@@ -341,14 +348,8 @@ def test_drain_gives_up_on_a_task_that_ignores_cancellation() -> None:
         asyncio.create_task(stubborn())
         await asyncio.sleep(0)
 
-    import igni_core.cli as cli_module
-
-    original = cli_module._DRAIN_TIMEOUT_SECONDS
-    cli_module._DRAIN_TIMEOUT_SECONDS = 0.05
-    try:
-        asyncio.run(_run_then_drain(scenario()))  # returns rather than hanging
-    finally:
-        cli_module._DRAIN_TIMEOUT_SECONDS = original
+    # returns rather than hanging
+    asyncio.run(HeadlessRun(drain_timeout_seconds=0.05).drain_after(scenario()))
 
 
 def test_the_body_logger_does_not_propagate_either() -> None:

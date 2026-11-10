@@ -2,10 +2,35 @@
 
 from __future__ import annotations
 
-from typing import Any
+from pydantic import BaseModel, ConfigDict, Field
 
-from igni_core.backend.rpc_handlers.base import RpcHandler, rpc
-from igni_core.protocol.rpc import RpcMethod
+from igni_core.backend.rpc_binding import NoArgs, rpc
+from igni_core.backend.rpc_handlers.base import RpcHandler
+from igni_core.backend.schemas_context import CompactionOutcome
+from igni_core.backend.schemas_loop import LoopStatusSnapshot
+from igni_core.core.session.schemas import LoopAdvance
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
+
+
+class CompactIfNeededArgs(BaseModel):
+    """Arguments for compacting the conversation when its context is
+    nearly full."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    ctx_tokens: int = Field(description="Tokens of context the last turn used.")
+    max_ctx: int = Field(
+        description="The model's context window, in tokens. Compaction happens at 80% or more."
+    )
+
+
+class ExtractLearningsArgs(BaseModel):
+    """Arguments for learning from one finished turn."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    user_msg: str = Field(description="The user's message in the turn.")
+    assistant_msg: str = Field(description="The assistant's answer in the turn.")
 
 
 class LoopRpcHandler(RpcHandler):
@@ -13,30 +38,93 @@ class LoopRpcHandler(RpcHandler):
     the compaction + learning extraction RPCs that ride on the same
     turn boundary."""
 
-    @rpc(RpcMethod.POP_PENDING_LOOP_ITERATION)
-    def loop_pop(self, args: dict) -> Any:
-        return self._ctx.backend.pop_pending_loop_iteration()
+    @rpc(
+        RpcMethod.POP_PENDING_LOOP_ITERATION,
+        duration=RpcDuration.IO,
+        args=NoArgs,
+        scope=RpcScope.SESSION,
+    )
+    async def loop_pop(self, args: NoArgs) -> LoopAdvance | None:
+        """Take the next step of this session's ``/loop``, for the client to send.
 
-    @rpc(RpcMethod.CANCEL_PENDING_LOOP)
-    def loop_cancel(self, args: dict) -> Any:
-        return self._ctx.backend.cancel_pending_loop()
+        Takes no arguments. Returns ``null`` when there is no loop or it is
+        paused. Otherwise ``kind`` says what happened: ``step`` carries the
+        ``prompt`` to send as the next message (and ``display_prompt`` to
+        show), the iteration number and how many remain; ``completed``
+        says the loop reached its cap and ended; ``safety_paused`` says it
+        reached the hard cap and paused.
+        """
+        return await self._controllers.loop.pop_pending_iteration()
 
-    @rpc(RpcMethod.LOOP_STATUS)
-    def loop_status(self, args: dict) -> Any:
-        return self._ctx.backend.loop_status()
+    @rpc(
+        RpcMethod.CANCEL_PENDING_LOOP, duration=RpcDuration.IO, args=NoArgs, scope=RpcScope.SESSION
+    )
+    async def loop_cancel(self, args: NoArgs) -> bool:
+        """End this session's running ``/loop``.
 
-    @rpc(RpcMethod.LOOP_RESUME)
-    def loop_resume(self, args: dict) -> Any:
-        return self._ctx.backend.loop_resume()
+        Takes no arguments. Returns ``true`` when a loop was ended;
+        ``false`` when there was none or it is paused (a paused loop is
+        resumed or left alone, not cancelled).
+        """
+        return await self._controllers.loop.cancel_pending()
 
-    @rpc(RpcMethod.LOOP_PAUSE)
-    def loop_pause(self, args: dict) -> Any:
-        return self._ctx.backend.loop_pause()
+    @rpc(RpcMethod.LOOP_STATUS, args=NoArgs, scope=RpcScope.SESSION)
+    async def loop_status(self, args: NoArgs) -> LoopStatusSnapshot:
+        """Read the state of this session's ``/loop``.
 
-    @rpc(RpcMethod.COMPACT_IF_NEEDED)
-    def compact_if_needed(self, args: dict) -> Any:
-        return self._ctx.backend.compact_if_needed(args["ctx_tokens"], args["max_ctx"])
+        Takes no arguments. Returns whether a loop is ``active`` and
+        ``paused``, its prompt, which iteration it is on and how many
+        remain, whether its cap was set explicitly, and the total the agent
+        announced, if any.
+        """
+        return await self._ctx.backend.loop_status()
 
-    @rpc(RpcMethod.EXTRACT_LEARNINGS)
-    def extract_learnings(self, args: dict) -> Any:
-        return self._ctx.backend.extract_learnings(args["user_msg"], args["assistant_msg"])
+    @rpc(RpcMethod.LOOP_RESUME, args=NoArgs, scope=RpcScope.SESSION)
+    async def loop_resume(self, args: NoArgs) -> str:
+        """Resume this session's paused ``/loop``.
+
+        Takes no arguments. Returns the prompt of the iteration to run next,
+        for the client to send as a message — nothing runs on its own — or
+        ``""`` when there is no paused loop.
+        """
+        return await self._controllers.loop.resume()
+
+    @rpc(RpcMethod.LOOP_PAUSE, args=NoArgs, scope=RpcScope.SESSION)
+    async def loop_pause(self, args: NoArgs) -> bool:
+        """Pause this session's ``/loop`` after the current iteration.
+
+        Takes no arguments. Returns ``true`` when the loop is now paused
+        (or already was), ``false`` when there is no loop.
+        """
+        return await self._ctx.backend.loop_pause()
+
+    @rpc(
+        RpcMethod.COMPACT_IF_NEEDED,
+        duration=RpcDuration.LONG,
+        args=CompactIfNeededArgs,
+        scope=RpcScope.SESSION,
+    )
+    async def compact_if_needed(self, args: CompactIfNeededArgs) -> CompactionOutcome:
+        """Compact this session's conversation when its context is nearly full.
+
+        ``ctx_tokens`` is the context the last turn used and ``max_ctx``
+        the model's window; at 80% or more the conversation is summarised
+        and replaced by the summary (the ``PreCompact`` hooks may refuse).
+        Returns ``compacted`` and, when it was, the ``summary``.
+        """
+        cleared = await self._controllers.context.compact_if_needed(args.ctx_tokens, args.max_ctx)
+        if cleared is None:
+            return CompactionOutcome(compacted=False)
+        return CompactionOutcome(
+            compacted=True, new_session_id=cleared.new_session_id, summary=cleared.summary
+        )
+
+    @rpc(RpcMethod.EXTRACT_LEARNINGS, args=ExtractLearningsArgs, scope=RpcScope.SESSION)
+    async def extract_learnings(self, args: ExtractLearningsArgs) -> None:
+        """Let igni learn from one finished turn, in the background.
+
+        ``user_msg`` and ``assistant_msg`` are the turn's message and
+        answer. Returns at once with nothing; what is learnt is kept for
+        later sessions, and a failure is only logged.
+        """
+        await self._controllers.context.extract_learnings(args.user_msg, args.assistant_msg)

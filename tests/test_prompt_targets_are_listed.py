@@ -22,11 +22,12 @@ import pytest
 
 from igni_core.core.prompts import PROMPTS_DIR
 from igni_core.core.prompts.document import PromptDocument, PromptTargets
+from tests.siblings import IGNI_SERVER
 
 REPO = Path(__file__).resolve().parents[1]
 AGENTS_DIR = REPO / "src" / "igni_core" / "bundled_agents"
 LISTED = REPO / "docs" / "prompt-targets.json"
-SERVER_COPY = REPO.parent / "igni__server" / "app" / "services" / "identity" / "prompt_targets.json"
+SERVER_COPY = IGNI_SERVER / "app" / "services" / "identity" / "prompt_targets.json"
 
 
 def test_the_list_is_what_the_prompts_have():
@@ -60,7 +61,7 @@ def test_every_agent_igni_ships_is_made_of_sections():
         ), f"{path.name} has text outside any section"
 
 
-@pytest.mark.skipif(not SERVER_COPY.is_file(), reason="no igni__server checkout beside this one")
+@pytest.mark.skipif(not SERVER_COPY.is_file(), reason=f"no igni-server checkout at {IGNI_SERVER}")
 def test_igni_servers_copy_is_the_same():
     """igni server keeps a copy to check bundles against; it must not drift."""
     assert PromptTargets.model_validate_json(SERVER_COPY.read_text()) == PromptTargets.current(

@@ -15,10 +15,11 @@ from typing import Any
 
 from igni_cloud.db.agno_tables import AgnoTables
 from igni_cloud.db.rls import RowLevelSecurity
+from igni_cloud.storage.agno_table_cache import AgnoTableCache
 from igni_cloud.storage.attachments import LargeObjectAttachments
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from igni_core.core.db.database import Database
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.providers import SharedStorage
 from igni_core.core.db.scope import StorageScope
 from igni_core.core.db.urls import DatabaseUrl
@@ -26,6 +27,11 @@ from igni_core.core.memory.manager import StorageManager
 
 
 class PostgresStorage(SharedStorage):
+    def __init__(self) -> None:
+        # One per process (``SharedStorages`` finds each dialect's once),
+        # so Agno's tables are looked up once per process.
+        self._agno_tables = AgnoTableCache()
+
     def agno_db(
         self,
         *,
@@ -36,7 +42,8 @@ class PostgresStorage(SharedStorage):
     ) -> Any:
         return ScopedAsyncPostgresDb(
             scope=scope,
-            db_engine=cache.get_async_engine(url),
+            tables=self._agno_tables,
+            db_engine=engines.get_async_engine(url),
             # ``igni migrate`` made Agno's tables as the admin role: a
             # producer's role may not create any.
             create_schema=False,

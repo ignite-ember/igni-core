@@ -36,6 +36,7 @@ from igni_core.core.config.permission_eval import (
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.session.core import Session
+from tests.session_coordinators import wire_coordinators
 
 # ── Slash command → mode flip → evaluator denies ─────────────
 
@@ -56,6 +57,7 @@ class TestSlashBypassThenDenyRule:
         from igni_core.core.session.broadcast import BroadcastBus
 
         session.broadcast_bus = BroadcastBus()
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio

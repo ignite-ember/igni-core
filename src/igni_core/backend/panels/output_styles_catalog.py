@@ -1,9 +1,8 @@
 """Output-styles catalog controller.
 
 Owns the output-styles picker chip: discovered styles + the
-currently-applied one. Uses :attr:`Session.active_output_style`
-(the existing public property) instead of the
-``session._active_output_style`` reach-in.
+currently-applied one, read through
+:attr:`Session.active_output_style`.
 """
 
 from __future__ import annotations

@@ -24,7 +24,7 @@ import threading
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.engine_registry import DatabaseTarget
 from igni_core.core.db.urls import DatabaseUrl
 
@@ -53,7 +53,7 @@ class SchemaRevision:
         if url.is_sqlite and (path is None or not path.is_file()):
             return None
         try:
-            with cache.get_engine(url).connect() as connection:
+            with engines.get_engine(url).connect() as connection:
                 row = connection.execute(text("SELECT version_num FROM alembic_version")).first()
         except SQLAlchemyError:
             return None

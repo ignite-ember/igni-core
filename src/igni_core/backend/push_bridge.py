@@ -7,8 +7,11 @@ event loop. :class:`PushNotificationBridge` centralises the
 loop-affinity + coroutine-scheduling boilerplate that used to live
 as five separate nested closures inside ``__main__._run``.
 
-Every payload is a typed :mod:`schemas_push` model — no more raw
-``dict`` literals flowing across the wire.
+Every push is built by one of the typed factories in
+:mod:`igni_core.protocol.schemas.push` — the channel and its payload
+model are bound together there, so no producer here can pair the
+wrong payload with the wrong channel, and no raw ``dict`` literal
+flows across the wire.
 """
 
 from __future__ import annotations
@@ -17,15 +20,33 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable, MutableSequence
-from typing import Any
 
-from igni_core.backend.schemas_push import (
+from igni_core.backend.schemas_sessions import TransportLike
+from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
+from igni_core.backend.server import BackendServer
+from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
+from igni_core.core.activity import background
+from igni_core.core.broadcast_schema import BroadcastEvent
+from igni_core.core.run_context import CURRENT_RUN_ID
+from igni_core.core.tools.edit import (
+    FileEditNotifier,
+    default_file_edit_notifier,
+)
+from igni_core.core.tools.orchestrate_events import OrchestrateEvent
+from igni_core.core.tools.process_events import (
+    ProcessExitEvent,
+    ProcessLineEvent,
+    ProcessStartEvent,
+)
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.notifications.schemas import NotificationCounts, NotificationsChanged
+from igni_core.protocol import messages as msg
+from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.push_payloads import (
     BackgroundProcessDonePayload,
     FileEditedPayload,
     LoginResultPayload,
     LoginStatusPayload,
-    OrchestrateProgressLinePayload,
-    ProcessDoneEvent,
     ProcessExitedPayload,
     ProcessLinePayload,
     ProcessStartedPayload,
@@ -33,14 +54,6 @@ from igni_core.backend.schemas_push import (
     SchedulerStartedPayload,
     SessionNamedPayload,
 )
-from igni_core.core.activity import background
-from igni_core.core.tools.edit import (
-    FileEditNotifier,
-    default_file_edit_notifier,
-)
-from igni_core.notifications.schemas import NotificationCounts, NotificationsChanged
-from igni_core.protocol import messages as msg
-from igni_core.protocol.schemas.enums import PushChannel
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +64,7 @@ class PushNotificationBridge:
 
     Constructed once during BE boot. The transport it stamps
     through can be replaced per-runtime via :meth:`for_transport`
-    (used by :class:`SessionOrchestrator` when a pooled runtime's
+    (used by :class:`SessionRuntimeFactory` when a pooled runtime's
     ``SessionStampingTransport`` needs to carry its own session id
     on broadcasts).
     """
@@ -59,7 +72,7 @@ class PushNotificationBridge:
     def __init__(
         self,
         *,
-        transport: Any,
+        transport: TransportLike,
         loop: asyncio.AbstractEventLoop | None,
         queue: MutableSequence[str],
         file_edit_notifier: FileEditNotifier | None = None,
@@ -81,6 +94,21 @@ class PushNotificationBridge:
         # thing that gates conversation injection.
         self._live_session_count: Callable[[], int] = lambda: 1
 
+    @classmethod
+    def wired(
+        cls, *, transport: TransportLike, loop: asyncio.AbstractEventLoop, backend: BackendServer
+    ) -> PushNotificationBridge:
+        """The boot session's bridge, every push channel bound.
+
+        Its queue is the backend's durable one, so what a previous
+        backend left waiting is in it already.
+        """
+        queue = backend.message_queue
+        bridge = cls(transport=transport, loop=loop, queue=queue)
+        backend.wire_queue_hook(queue)
+        bridge.wire_all(backend)
+        return bridge
+
     # ── Runtime binding ─────────────────────────────────────────
 
     def set_live_session_count(self, probe: Callable[[], int]) -> None:
@@ -93,24 +121,23 @@ class PushNotificationBridge:
         self._live_session_count = probe
 
     def for_transport(
-        self, transport: Any, *, queue: MutableSequence[str] | None = None
+        self, transport: TransportLike, *, queue: MutableSequence[str]
     ) -> PushNotificationBridge:
         """Sub-bridge bound to a different transport (typically a
         :class:`SessionStampingTransport` for a pooled runtime). The
         loop + file-edit notifier references are shared with the
         parent bridge.
 
-        ``queue`` is NOT shared by default any more. The queue is a
-        conversation — whatever is appended to it is injected as a
-        synthetic user message on the owning session's next turn — so
-        a sub-bridge that kept the parent's list would speak into the
-        boot session no matter which window it belongs to. Callers
-        pass the runtime's own queue; the parent's is the fallback
-        only for callers that have none."""
+        ``queue`` is never shared. The queue is a conversation —
+        whatever is appended to it is injected as a synthetic user
+        message on the owning session's next turn — so a sub-bridge
+        that kept the parent's list would speak into the boot session
+        no matter which window it belongs to. Callers pass the
+        runtime's own queue."""
         sub = PushNotificationBridge(
             transport=transport,
             loop=self._loop,
-            queue=self._queue if queue is None else queue,
+            queue=queue,
             file_edit_notifier=self._file_edit_notifier,
         )
         sub.set_live_session_count(self._live_session_count)
@@ -118,12 +145,16 @@ class PushNotificationBridge:
 
     # ── Login channel ────────────────────────────────────────────
 
-    async def on_login_status(self, text: str) -> None:
-        await self._transport.send(msg.push_login_status(LoginStatusPayload(text=text)))
-
-    async def on_login_result(self, success: bool, result: str) -> None:
+    async def on_login_status(self, text: str, flow_id: str = "") -> None:
         await self._transport.send(
-            msg.push_login_result(LoginResultPayload(success=success, result=result))
+            msg.push_login_status(LoginStatusPayload(text=text, flow_id=flow_id))
+        )
+
+    async def on_login_result(self, success: bool, result: str, flow_id: str = "") -> None:
+        await self._transport.send(
+            msg.push_login_result(
+                LoginResultPayload(success=success, result=result, flow_id=flow_id)
+            )
         )
 
     # ── Scheduler channel ────────────────────────────────────────
@@ -152,62 +183,62 @@ class PushNotificationBridge:
         )
         background.daemon(self._transport.send(msg.push_scheduler_completed(payload)), name="push")
 
-    def start_scheduler(self, backend: Any) -> None:
+    def start_scheduler(self, backend: BackendServer) -> None:
         """Kick off the scheduled-task poller with our push
         callbacks. Replaces the old free-function
         ``_start_scheduler_with_push``."""
-        backend.start_scheduler(
+        backend.controllers.loop.scheduler.start(
             on_task_started=self._on_scheduler_started,
             on_task_completed=self._on_scheduler_completed,
         )
 
     # ── Background-process channel ──────────────────────────────
 
-    def bind_to_process_supervisor(self) -> None:
+    def bind_to_process_supervisor(self, supervisor: ProcessSupervisor) -> None:
         """Subscribe our per-line / start / exit handlers on the
-        default process registry bus. Idempotent-safe: the bus
-        uses an append-only subscriber list.
+        process registry bus of ``supervisor`` — the one the backend
+        process shares. Idempotent-safe: the bus uses an append-only
+        subscriber list.
 
         Post-split (see ``process_supervisor.py`` module docstring)
         the bus lives on
         :class:`~igni_core.core.tools.process_registry.ProcessRegistry`
         rather than on the supervisor — event emission co-locates
         with the state that emits it.
-        """
-        from igni_core.core.tools.process_supervisor_locator import supervisors  # noqa: PLC0415
 
-        bus = supervisors.default().registry.bus
+        The bus hands every subscriber the typed event model for the
+        event it registered against, so a handler reads
+        ``event.pid`` / ``event.line`` directly and no mapping is
+        built anywhere on the way.
+        """
+        bus = supervisor.registry.bus
         bus.on("start", self._on_process_started)
         bus.on("line", self._on_process_line)
         bus.on("exit", self._on_process_exited)
         bus.on("exit", self._on_process_done)
 
-    def _on_process_started(self, info: dict) -> None:
-        event = ProcessDoneEvent.from_bus(info)
+    def _on_process_started(self, event: ProcessStartEvent) -> None:
         payload = ProcessStartedPayload(pid=event.pid, cmd=event.cmd, started_at=event.started_at)
-        self._schedule_push("process_started", payload.model_dump())
+        self._schedule_push(msg.push_process_started(payload))
 
-    def _on_process_line(self, info: dict) -> None:
-        event = ProcessDoneEvent.from_bus(info)
+    def _on_process_line(self, event: ProcessLineEvent) -> None:
         payload = ProcessLinePayload(pid=event.pid, line=event.line)
-        self._schedule_push("process_line", payload.model_dump())
+        self._schedule_push(msg.push_process_line(payload))
 
-    def _on_process_exited(self, info: dict) -> None:
-        event = ProcessDoneEvent.from_bus(info)
+    def _on_process_exited(self, event: ProcessExitEvent) -> None:
         payload = ProcessExitedPayload(
             pid=event.pid,
             cmd=event.cmd,
             exit_code=event.exit_code,
             duration_seconds=event.duration_seconds,
         )
-        self._schedule_push("process_exited", payload.model_dump())
+        self._schedule_push(msg.push_process_exited(payload))
 
-    def _on_process_done(self, info: dict) -> None:
+    def _on_process_done(self, event: ProcessExitEvent) -> None:
         """Long-form background-process completion notice + queue
         injection. The queue-injected text lands as a synthetic
         user message on the next tool result so the agent reacts to
         the completion naturally."""
-        event = ProcessDoneEvent.from_bus(info)
         status = "succeeded" if event.exit_code == 0 else f"failed (exit {event.exit_code})"
         # Include a one-line hint pointing at ``read_process_output``
         # so the agent knows it can pull more than the 40-line tail.
@@ -228,8 +259,8 @@ class PushNotificationBridge:
         # The FE push below is addressed to a pid, so it is always
         # safe. The queue append is not: it becomes a synthetic user
         # message in THIS bridge's conversation, and the process bus
-        # is process-wide (one ``supervisors.default()`` for every
-        # session in the BE — see ``bind_to_process_supervisor``).
+        # is process-wide (one supervisor for every session in the BE
+        # — see ``bind_to_process_supervisor``).
         # Only the boot bridge subscribes, so with a pool live, a
         # build finishing in one window was narrated into the boot
         # session's conversation — a different window, potentially a
@@ -253,7 +284,7 @@ class PushNotificationBridge:
             exit_code=event.exit_code,
             duration_seconds=event.duration_seconds,
         )
-        self._schedule_push("background_process_done", payload.model_dump())
+        self._schedule_push(msg.push_background_process_done(payload))
 
     # ── File-edit channel ───────────────────────────────────────
 
@@ -265,11 +296,11 @@ class PushNotificationBridge:
 
     def _on_file_edited(self, abs_path: str) -> None:
         payload = FileEditedPayload(path=abs_path)
-        self._schedule_push("file_edited", payload.model_dump())
+        self._schedule_push(msg.push_file_edited(payload))
 
     # ── Broadcast bus ───────────────────────────────────────────
 
-    def bind_to_broadcast_bus(self, backend: Any) -> None:
+    def bind_to_broadcast_bus(self, backend: BackendServer) -> None:
         """Wire the backend's broadcast bus to fan every broadcast
         out as a :class:`PushNotification` stamped for this bridge's
         transport. Pooled runtimes bind a bridge whose transport is
@@ -280,34 +311,37 @@ class PushNotificationBridge:
         into ``backend._session.broadcast_bus`` — so the seam is
         typed at BackendServer, not scattered across coordinators.
         """
-        if backend is None:
-            return
         backend.register_broadcast(self._on_broadcast)
 
-    def _on_broadcast(self, channel: str, payload: dict) -> None:
+    def _on_broadcast(self, event: BroadcastEvent) -> None:
         """Sync-callable broadcast handler (session.broadcast is
         sync and may be called from a tool-call context that isn't
         itself awaiting). We hop onto the loop via
         ``call_soon_threadsafe``.
 
-        The payload is already Pydantic-validated at the broadcast
-        source (see :mod:`core.broadcast_schema`); we
-        forward it as-is so downstream views see the exact same
-        wire shape the broadcast defined."""
-        self._schedule_push(channel, payload)
+        The event is serialised here, at the transport boundary."""
+        self._schedule_push(msg.push_on(event.channel, event.to_payload()))
 
     # ── Orchestrate progress ────────────────────────────────────
 
-    def on_orchestrate_progress(self, event: Any) -> None:
-        """Handle both structured-event dicts (new orchestrate.py
-        contract) and plain string progress lines (unported paths).
-        Kept sync — the tool fires it from inside a run without
-        awaiting."""
-        if isinstance(event, dict):
-            self._schedule_push("orchestrate_event", event)
-        else:
-            payload = OrchestrateProgressLinePayload(line=str(event))
-            self._schedule_push("orchestrate_progress", payload.model_dump())
+    def on_orchestrate_progress(self, event: OrchestrateEvent) -> None:
+        """Forward one orchestrate sub-agent event onto
+        ``orchestrate_event``. Kept sync — the tool fires it from
+        inside a run without awaiting.
+
+        The event arrives as the model it is; this is where it
+        becomes a wire payload, so the shape is produced once rather
+        than at each emit site.
+
+        The payload shape belongs to the orchestrate events, not to
+        the push wire — hence the open channel rather than one of the
+        typed factories above."""
+        self._schedule_push(
+            msg.push_on(
+                PushChannel.ORCHESTRATE_EVENT,
+                event.model_dump(by_alias=True, exclude_none=True),
+            )
+        )
 
     # ── Session naming ──────────────────────────────────────────
 
@@ -317,43 +351,65 @@ class PushNotificationBridge:
 
     # ── Composite wiring ────────────────────────────────────────
 
-    def wire_all(self, backend: Any) -> None:
+    def wire_all(self, backend: BackendServer) -> None:
         """One call = every push channel bound to its source.
-        Called by :class:`BackendApp` after backend + session are
+        Called by :meth:`wired` after backend + session are
         up. Individual ``bind_*`` methods stay public so tests can
         wire selectively."""
-        self.bind_to_process_supervisor()
+        self.bind_to_process_supervisor(backend.supervisor)
         self.bind_to_file_edit_listener()
         backend.wire_orchestrate_progress(self.on_orchestrate_progress)
         self.bind_to_broadcast_bus(backend)
 
-    def notifications_changed(self, counts: NotificationCounts) -> None:
-        """The floor's unread counts, after either path moved them."""
-        self._schedule_push(
-            PushChannel.NOTIFICATIONS_CHANGED,
-            NotificationsChanged(counts=counts).model_dump(),
-        )
+    def notifications_changed(self, change: NotificationsChanged | NotificationCounts) -> None:
+        """The floor's unread counts, after either path moved them, and why.
 
-    def workspace_trust(self, status: dict) -> None:
+        The floor's centre hands over the whole change — the counts and
+        what moved them — so a client can say *why* its badge moved and
+        not only that it did. A caller that holds the counts alone hands
+        those over instead, and the counts alone are what goes out.
+        """
+        payload = (
+            {"counts": change.model_dump()}
+            if isinstance(change, NotificationCounts)
+            else change.model_dump()
+        )
+        self._schedule_push(msg.push_on(PushChannel.NOTIFICATIONS_CHANGED, payload))
+
+    def workspace_trust(self, status: WorkspaceTrustStatus) -> None:
         """The folder's workspace-trust status, after an answer (or when a
         window must ask): every window showing the trust dialog for that
         folder closes it, or opens it when ``state`` is ``ask``."""
-        self._schedule_push(PushChannel.WORKSPACE_TRUST_REQUIRED, status)
+        self._schedule_push(msg.push_on(PushChannel.WORKSPACE_TRUST_REQUIRED, status.model_dump()))
+
+    def workflow_event(self, record: WorkflowEventRecord) -> None:
+        """One event of a running workflow, for the window folding it into
+        that run's chat item."""
+        self._schedule_push(msg.push_on(PushChannel.WORKFLOW_EVENT, record.model_dump()))
 
     # ── Private helpers ─────────────────────────────────────────
 
-    def _schedule_push(self, channel: str, payload: dict) -> None:
-        """Hop onto the running loop and enqueue a
+    def _schedule_push(self, push: msg.PushNotification) -> None:
+        """Hop onto the running loop and send a
         :class:`PushNotification`. Safe to call from any thread —
         the reader thread + the file-edit listener thread + the
-        orchestrate progress thread all end up here."""
+        orchestrate progress thread all end up here.
+
+        The push arrives already built: the channel and its payload
+        were bound together by the factory that made it, so there is
+        nothing left to pair up here."""
+
+        # Read here, in the caller's context: the hop onto the loop loses it.
+        run_id = CURRENT_RUN_ID.get()
+        if run_id and not push.run_id:
+            # The push belongs to the run that raised it, so a client can
+            # fold it into that run's item. A push that already names a
+            # run keeps the one it names.
+            push = push.model_copy(update={"run_id": run_id})
 
         def _send() -> None:
             # A message to the windows: too short to count as busy.
-            background.daemon(
-                self._transport.send(msg.PushNotification(channel=channel, payload=payload)),
-                name=f"push-{channel}",
-            )
+            background.daemon(self._transport.send(push), name=f"push-{push.channel}")
 
         # Event loop closed during shutdown — drop the push instead
         # of crashing the callback thread. ``loop`` is optional so

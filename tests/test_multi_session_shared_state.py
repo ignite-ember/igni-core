@@ -32,6 +32,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
+from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.settings import Settings
 from igni_core.core.db.engine_registry import EngineRegistry
 from igni_core.core.session.client_state import ClientStateStore
@@ -44,8 +45,8 @@ def _settings_with_two_models() -> Settings:
     s = Settings()
     s.models.default = "gpt-default"
     s.models.registry = {
-        "gpt-default": {"vendor": "openai"},
-        "claude-default": {"vendor": "anthropic"},
+        "gpt-default": ModelRegistryEntry(model_id="gpt", url="https://openai.example/v1"),
+        "claude-default": ModelRegistryEntry(model_id="claude", url="https://anthropic.example/v1"),
     }
     return s
 
@@ -63,17 +64,17 @@ def test_runtime_settings_deepcopy_isolates_models_default():
     rt_b = base.model_copy(deep=True)
 
     rt_a.models.default = "claude-default"
-    # Mutate a *nested* mapping to exercise full deep-copy depth — a
-    # shallow copy would share ``registry``'s inner dicts.
-    rt_b.models.registry["gpt-default"]["vendor"] = "MUTATED"
+    # Mutate a *nested* entry to exercise full deep-copy depth — a
+    # shallow copy would share ``registry``'s entries.
+    rt_b.models.registry["gpt-default"].url = "MUTATED"
 
     assert base.models.default == "gpt-default", "original leaked"
     assert rt_a.models.default == "claude-default"
     assert rt_b.models.default == "gpt-default"
 
-    assert base.models.registry["gpt-default"]["vendor"] == "openai"
-    assert rt_a.models.registry["gpt-default"]["vendor"] == "openai"
-    assert rt_b.models.registry["gpt-default"]["vendor"] == "MUTATED"
+    assert base.models.registry["gpt-default"].url == "https://openai.example/v1"
+    assert rt_a.models.registry["gpt-default"].url == "https://openai.example/v1"
+    assert rt_b.models.registry["gpt-default"].url == "MUTATED"
 
 
 def test_runtime_settings_registry_object_identity_diverges():
@@ -157,20 +158,22 @@ async def test_client_state_concurrent_writes_from_many_clients(tmp_path: Path):
 
     async def write_all(client_idx: int) -> None:
         for k in range(KEYS_PER_CLIENT):
-            await asyncio.to_thread(
+            written = await asyncio.to_thread(
                 store.set_value,
                 f"c{client_idx}",
                 f"key{k}",
                 f"value-c{client_idx}-k{k}",
             )
+            assert written.ok, written.error
 
     await asyncio.gather(*(write_all(c) for c in range(N_CLIENTS)))
 
     for c in range(N_CLIENTS):
         snapshot = store.get_for_client(f"c{c}")
-        assert len(snapshot) == KEYS_PER_CLIENT
+        assert snapshot.ok, snapshot.error
+        assert len(snapshot.values) == KEYS_PER_CLIENT
         for k in range(KEYS_PER_CLIENT):
-            assert snapshot[f"key{k}"] == f"value-c{c}-k{k}"
+            assert snapshot.values[f"key{k}"] == f"value-c{c}-k{k}"
 
 
 # ── SQLite stores: WAL + busy_timeout + explicit close contract ──────

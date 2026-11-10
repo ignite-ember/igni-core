@@ -19,13 +19,17 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
+from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
+from igni_core.core.config.settings import Settings
 from igni_core.core.workspace_trust import (
     GATED_SUMMARY,
     TrustDecision,
+    TrustRefused,
     WorkspaceTrust,
+    process_trust,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,23 +38,43 @@ TrustAnswer = Literal["trust", "distrust", "once"]
 
 
 class WorkspaceTrustStatus(BaseModel):
-    """What ``get_workspace_trust`` returns and ``workspace_trust_required`` carries."""
+    """Whether the project folder is trusted, and why.
 
-    #: ``trusted`` / ``untrusted`` / ``ask`` (nobody has decided; runs untrusted).
-    state: Literal["trusted", "untrusted", "ask"]
-    #: False when the organisation's policy forbids trusting this folder.
-    can_trust: bool
-    reason: str
-    #: Canonical folder path.
-    path: str
-    #: The folder's git remote (canonical, credentials removed), or ``None``.
-    remote: str | None = None
-    #: ``ask`` / ``trusted_remotes`` / ``never``.
-    policy_mode: str
-    #: What an untrusted folder does not get, for the dialog.
-    gated: str = GATED_SUMMARY
-    #: How the answer was reached: ``policy`` / ``run`` / ``store`` / ``unset``.
-    source: str = ""
+    Until a folder is trusted, its own tools, hooks, plugins and
+    configuration are not loaded."""
+
+    state: Literal["trusted", "untrusted", "ask"] = Field(
+        description=(
+            "`trusted`, `untrusted`, or `ask` when nobody has decided yet "
+            "(the folder is treated as untrusted meanwhile)."
+        )
+    )
+    can_trust: bool = Field(
+        description="`false` when the organisation's policy forbids trusting this folder."
+    )
+    reason: str = Field(description="Human-readable explanation of the current state.")
+    path: str = Field(description="The folder's full canonical path.")
+    remote: str | None = Field(
+        default=None,
+        description="The folder's git remote URL, with any credentials removed; `null` if none.",
+    )
+    policy_mode: str = Field(
+        description=(
+            "The organisation's trust policy: `ask` (the user decides), `trusted_remotes` "
+            "(only folders whose git remote is approved) or `never` (no folder is trusted)."
+        )
+    )
+    gated: str = Field(
+        default=GATED_SUMMARY,
+        description="Short summary of what an untrusted folder does not get, for showing to the user.",
+    )
+    source: str = Field(
+        default="",
+        description=(
+            "How the state was reached: `policy` (organisation policy), `run` (trusted "
+            "once, until igni exits), `store` (the user's saved answer) or `unset` (no answer yet)."
+        ),
+    )
 
     @classmethod
     def of(cls, decision: TrustDecision) -> WorkspaceTrustStatus:
@@ -72,17 +96,10 @@ class WorkspaceTrustRefusedError(Exception):
 def reload_settings(project_dir: Path) -> Settings:
     """Settings for ``project_dir`` the way the backend boots them: a local
     pass to find the group-policy cache, then the load that counts."""
-    from igni_core.core.config.group_policy import (
-        CachedSettingsFetcher,
-        GroupPolicyUnavailable,
-    )
-
-    local_only = load_settings(project_dir=project_dir)
+    loader = PolicySettingsLoader(project_dir)
+    local_only = loader.local()
     try:
-        return load_settings(
-            project_dir=project_dir,
-            group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
-        )
+        return loader.load(local_only)
     except GroupPolicyUnavailable as exc:
         logger.error("group-policy: %s", exc)
         return local_only
@@ -97,8 +114,8 @@ class WorkspaceTrustController:
 
     @property
     def _service(self) -> WorkspaceTrust:
-        # Read per call: the process-wide instance can be replaced (tests).
-        return self._trust or WorkspaceTrust.shared()
+        # Read per call: the process's instance can be replaced (tests).
+        return self._trust if self._trust is not None else process_trust()
 
     def status(self) -> WorkspaceTrustStatus:
         return WorkspaceTrustStatus.of(self._service.decide(self._project_dir))
@@ -110,8 +127,6 @@ class WorkspaceTrustController:
         policy does not allow the folder to be trusted, or the answer is not
         one of ``trust`` / ``distrust`` / ``once``.
         """
-        from igni_core.core.workspace_trust import TrustRefused
-
         before = self._service.decide(self._project_dir).trusted
         try:
             if decision == "trust":

@@ -56,13 +56,13 @@ class SessionPreferencesStore:
     def __init__(self, db: Database | str | Path) -> None:
         self._db = Database.of(db)
 
-    def set_model(self, session_id: str, model_name: str) -> None:
+    def set_model(self, session_id: str, model_name: str) -> bool:
         """Upsert the model preference for ``session_id``.
 
-        Best-effort: persistence failures are logged but do not
-        propagate. The in-memory switch has already taken effect by
-        the time we get here — the only consequence of a failed save
-        is that ``--continue`` won't restore this specific choice.
+        Returns ``False`` (and logs) when the write fails rather than
+        raising: the in-memory switch has already taken effect, and
+        the only consequence of a failed save is that ``--continue``
+        won't restore this choice — the caller tells the user so.
         """
         now = int(time.time())
         try:
@@ -80,7 +80,9 @@ class SessionPreferencesStore:
                     )
                 )
         except Exception as exc:
-            logger.debug("set_model failed for %s: %s", session_id, exc)
+            logger.warning("set_model failed for %s: %s", session_id, exc)
+            return False
+        return True
 
     def get_model(self, session_id: str) -> str | None:
         """Return the persisted model for ``session_id`` or None."""
@@ -98,8 +100,8 @@ class SessionPreferencesStore:
 
     # ── Async wrappers ────────────────────────────────────────────
 
-    async def aset_model(self, session_id: str, model_name: str) -> None:
-        await asyncio.to_thread(self.set_model, session_id, model_name)
+    async def aset_model(self, session_id: str, model_name: str) -> bool:
+        return await asyncio.to_thread(self.set_model, session_id, model_name)
 
     async def aget_model(self, session_id: str) -> str | None:
         return await asyncio.to_thread(self.get_model, session_id)

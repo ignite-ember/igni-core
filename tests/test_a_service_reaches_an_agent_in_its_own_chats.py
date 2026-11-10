@@ -141,13 +141,11 @@ async def test_the_files_go_through_the_composers_own_upload(tmp_path: Path):
         settings=SimpleNamespace(storage=SimpleNamespace(database_url=None, data_dir=tmp_path)),
     )
 
-    class Backend:
-        def upload_attachment(self, filename: str, content_base64: str) -> Any:
-            return FilesController(session).upload_attachment(filename, content_base64)
+    backend = SimpleNamespace(controllers=SimpleNamespace(files=FilesController(session)))
 
     class Pool:
         async def get_or_create(self, session_id: str) -> Any:
-            return SimpleNamespace(backend=Backend())
+            return SimpleNamespace(backend=backend)
 
     desk = PoolChatDesk(SimpleNamespace(pool=Pool()))
     ref = await desk.keep_file(session_id="s-claim", filename="damage photo.png", content=PNG)

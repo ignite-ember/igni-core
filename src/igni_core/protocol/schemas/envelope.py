@@ -23,9 +23,9 @@ callers that want the value object.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 
-from pydantic import BaseModel, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr
 
 
 class Standing(StrEnum):
@@ -50,26 +50,46 @@ class Standing(StrEnum):
     PROGRAM = "program"
 
 
+class Direction(StrEnum):
+    """Which way a message travels."""
+
+    #: igni to its clients.
+    TO_CLIENT = "to_client"
+    #: A client to igni.
+    TO_IGNI = "to_igni"
+    #: Both: a client sends it and igni relays it to every client.
+    BOTH = "both"
+
+
 class Message(BaseModel):
     """Base envelope for all protocol messages."""
 
-    type: str
-    id: str = ""  # optional correlation ID
-    # Session routing (multi-session BE). FE→BE: which session this
-    # message targets — empty routes to the default session, so views
-    # that predate the pool (the TUI) keep working unchanged. BE→FE:
-    # which session emitted the event — views filter to their bound
-    # session; empty means session-agnostic (Welcome, global pushes).
-    session_id: str = ""
-    # Per-frame sequence number stamped on every BE→FE send by
-    # :meth:`WebSocketServerTransport.send`. Resets to 1 at the
-    # start of every stream (i.e. after ``stream_end``). The FE
-    # dedups by (id, event_seq) so events that arrive twice (e.g.
-    # when two WebSocket clients are attached due to a StrictMode
-    # double-mount of IgniClient) are dropped; the monotonic
-    # counter also pins the canonical ordering of events in a
-    # stream. Empty on FE→BE messages.
-    event_seq: int = 0
+    #: Which way this message travels; every concrete message says.
+    direction: ClassVar[Direction]
+
+    type: str = Field(description="What kind of message this is.")
+    id: str = Field(
+        default="",
+        description="Ties messages together: a reply carries its request's id, and the "
+        "events a request streams carry it too. Empty when nothing is tied.",
+    )
+    # Session routing (multi-session backend). Client to igni: which
+    # session this message targets — empty routes to the default session.
+    # igni to client: which session emitted the event — empty means
+    # session-agnostic (Welcome, global pushes).
+    session_id: str = Field(
+        default="",
+        description="The session the message is for (sent to igni) or from (sent by "
+        "igni). Empty: the default session, or none in particular.",
+    )
+    # Per-frame sequence number stamped on every send by the WebSocket
+    # transport, restarting after each ``stream_end``; clients drop a
+    # repeat of (id, event_seq) and order a stream by it.
+    event_seq: int = Field(
+        default=0,
+        description="The message's place in its stream, counting from 1; a client drops a "
+        "message whose (id, event_seq) it has seen. 0 on messages sent to igni.",
+    )
     #: Arrived on the platform's own control connection (a gateway's): set
     #: by the transport from the connection, never read from the message,
     #: so a client cannot claim it. See :meth:`via_control`.
@@ -128,8 +148,11 @@ class RunHeader(BaseModel):
     call, not another verbatim getattr chain.
     """
 
-    run_id: str = ""
-    parent_run_id: str = ""
+    run_id: str = Field(default="", description="The run the event belongs to.")
+    parent_run_id: str = Field(
+        default="",
+        description="The run that started this one, for a sub-agent's run; empty otherwise.",
+    )
 
     @classmethod
     def from_event(cls, event: Any) -> RunHeader:
@@ -157,8 +180,12 @@ class RunScopedMessage(Message):
     helper) come from one place.
     """
 
-    run_id: str = ""
-    parent_run_id: str = ""
+    run_id: str = Field(default="", description="The id of the run this event belongs to.")
+    parent_run_id: str = Field(
+        default="",
+        description="The id of the run that started this one, for a sub-agent's run; empty "
+        "for a top-level run.",
+    )
 
     def header(self) -> RunHeader:
         """Materialise a :class:`RunHeader` from the two flat
@@ -168,4 +195,4 @@ class RunScopedMessage(Message):
         return RunHeader(run_id=self.run_id, parent_run_id=self.parent_run_id)
 
 
-__all__ = ["Message", "RunHeader", "RunScopedMessage"]
+__all__ = ["Direction", "Message", "RunHeader", "RunScopedMessage"]

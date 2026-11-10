@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from igni_core.core.config.settings import GuardrailsConfig, Settings
+from igni_core.core.config.schemas import GuardrailsConfig
+from igni_core.core.config.settings import Settings
 from igni_core.core.guardrails.base import Guardrail, GuardrailResult
 
 logger = logging.getLogger(__name__)

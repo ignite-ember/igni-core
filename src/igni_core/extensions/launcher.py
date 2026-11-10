@@ -21,7 +21,8 @@ from pathlib import Path
 from igni_core.extensions.contributions import ExtensionContributions
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
-from igni_core.extensions.store import ExtensionStore, StoreError
+from igni_core.extensions.store import ExtensionStore
+from igni_core.extensions.store_errors import StoreError
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ class ExtensionLauncher:
             self._contributions.note_bundle(extension_id, bundle)
         try:
             entry = await self._installer.install(
-                bundle, distribution=self._store.distribution_of(extension_id)
+                bundle, distribution=self._store.provenance.of(extension_id)
             )
         except Exception as exc:  # noqa: BLE001 — one extension must not stop the rest
             # Refused before registration — a bad manifest, a

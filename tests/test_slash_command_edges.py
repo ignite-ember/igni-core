@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from igni_core.backend.command_handler import CommandHandler, CommandResult
+from igni_core.core.hooks.schemas import HookDefinition
+from igni_core.core.session.memory_ops import MemoryReadResult
 from igni_core.core.session.schemas import PersistResult
 
 
@@ -15,7 +17,7 @@ def _make_session():
     """Create a mock Session with enough attributes for CommandHandler."""
     session = MagicMock()
     session.pool.list_agents.return_value = []
-    session.pool.list_ephemeral.return_value = []
+    session.pool.ephemeral.list_agents.return_value = []
     session.skill_pool.list_skills.return_value = []
     session.skill_pool.match_user_command.return_value = None
     session.hooks_map = {}
@@ -40,7 +42,7 @@ def _make_session():
     session.settings.guardrails.moderation = False
     session.settings.orchestration.max_total_agents = 20
     session.settings.orchestration.max_nesting_depth = 3
-    session.memory_mgr.get_memories = AsyncMock(return_value=[])
+    session.memory_mgr.get_memories = AsyncMock(return_value=MemoryReadResult.ok([]))
     session.mcp_manager.list_servers.return_value = []
     session.mcp_manager.list_connected.return_value = []
     return session
@@ -130,7 +132,7 @@ class TestAgentsEdgeCases:
     async def test_agents_promote_nonexistent(self):
         """'/agents promote nonexistent' should show error."""
         session = _make_session()
-        session.pool.promote_ephemeral = MagicMock(side_effect=KeyError("not found"))
+        session.pool.ephemeral.promote = MagicMock(side_effect=ValueError("not found"))
         handler = CommandHandler(session)
         result = await handler.handle("/agents promote nonexistent")
         assert isinstance(result, CommandResult)
@@ -175,6 +177,27 @@ class TestHooksCommand:
         result = await handler.handle("/hooks")
         assert isinstance(result, CommandResult)
         assert "no" in result.content.lower() or result.content == ""
+
+    @pytest.mark.asyncio
+    async def test_hooks_list_renders_each_hook(self):
+        """'/hooks list' renders one markdown line per loaded hook."""
+        session = _make_session()
+        session.hooks_map = {
+            "PreToolUse": [HookDefinition(type="command", command="test.sh", matcher="Bash")],
+            "Stop": [HookDefinition(type="http", url="https://example.test/hook")],
+        }
+        handler = CommandHandler(session)
+        result = await handler.handle("/hooks list")
+        assert "- **PreToolUse**: `test.sh` (matcher: Bash)" in result.content
+        assert "- **Stop**: `https://example.test/hook`" in result.content
+
+    @pytest.mark.asyncio
+    async def test_hooks_list_empty(self):
+        """'/hooks list' with no hooks says so."""
+        session = _make_session()
+        handler = CommandHandler(session)
+        result = await handler.handle("/hooks list")
+        assert result.content == "No hooks loaded."
 
 
 class TestConfigCommand:

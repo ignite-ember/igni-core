@@ -32,6 +32,8 @@ from pathlib import Path
 
 import pytest
 
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+
 _ROOT = Path(__file__).resolve().parent.parent
 _TOOLS = _ROOT / "src/igni_core/core/tools"
 _TESTS = _ROOT / "tests"
@@ -171,7 +173,10 @@ class TestExecutionToolsAreGated:
             "the underlying kernel action — see ScheduleSpec's docstring"
         ),
         "LS": "read-only directory listing; build() forces confirm=False",
-        "Visualize": "one-way broadcast to the FE, no side effect on the host",
+        "Visualize": (
+            "confirms a card the FE already received on the tool-call "
+            "stream; no side effect on the host"
+        ),
     }
 
     @staticmethod
@@ -258,7 +263,10 @@ class TestExecutionToolsAreGated:
             pytest.skip(f"{spec_name} gates nothing by design")
 
         try:
-            toolkit = spec.build(ToolBuildContext(base_dir=Path("/tmp")), confirm=True)
+            toolkit = spec.build(
+                ToolBuildContext(base_dir=Path("/tmp"), supervisor=ProcessSupervisor()),
+                confirm=True,
+            )
         except ImportError as exc:  # optional extra not installed
             pytest.skip(f"{spec_name}: {exc}")
 
@@ -308,7 +316,10 @@ class TestExecutionToolsAreGated:
         spec = next((s for s in ToolSpecCatalog.default().specs if s.name == spec_name), None)
         assert spec is not None
         try:
-            toolkit = spec.build(ToolBuildContext(base_dir=Path("/tmp")), confirm=True)
+            toolkit = spec.build(
+                ToolBuildContext(base_dir=Path("/tmp"), supervisor=ProcessSupervisor()),
+                confirm=True,
+            )
         except ImportError as exc:
             pytest.skip(f"{spec_name}: {exc}")
 

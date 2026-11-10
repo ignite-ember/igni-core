@@ -18,6 +18,8 @@ Consumers:
   instead of them being swallowed into a DEBUG log line.
 * :class:`EvictionReport` — richer result for the periodic evictor
   sweep, carrying per-runtime idle age + a shutdown outcome each.
+* :class:`DispatchedBackend` — the wider slice the message
+  dispatcher drives.
 * :class:`BackendLike` / :class:`TransportLike` — structural typing
   Protocols so :class:`~igni_core.backend.session_pool.SessionPool`
   and :class:`~igni_core.backend.session_stamping_transport.SessionStampingTransport`
@@ -33,9 +35,19 @@ from pydantic import BaseModel
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
     from pathlib import Path
 
+    from igni_core.backend.activity import SessionActivity
+    from igni_core.backend.controller_registry import Controllers
     from igni_core.backend.session_pool import SessionRuntime
+    from igni_core.core.session.event_log_schema import (
+        SessionEvent,
+        SessionEventAppendResult,
+        SessionEventDraft,
+        SessionEventKind,
+    )
+    from igni_core.core.utils.media_schemas import MediaAttachments
 
 
 class AutoNameResult(BaseModel):
@@ -137,11 +149,43 @@ class BackendLike(Protocol):
     session_id: str
     project_dir: str | Path
     processing: bool
+    controllers: Controllers
 
     async def shutdown(self) -> None: ...
     def wire_queue_hook(self, queue: list[str]) -> None: ...
     def attach_runtime(self, runtime: SessionRuntime) -> None: ...
     def reload_agents(self) -> bool: ...
+    def activity(self) -> SessionActivity: ...
+    async def record_event(self, event: SessionEventDraft) -> SessionEventAppendResult: ...
+    def session_events(self, event_type: SessionEventKind) -> list[SessionEvent]: ...
+
+
+class DispatchedBackend(BackendLike, Protocol):
+    """The slice of ``BackendServer`` that
+    :class:`~igni_core.backend.message_dispatcher.MessageDispatcher`
+    drives one wire message into: a turn, a HITL decision, a command,
+    a session / model / MCP switch, a cancel, and the post-run naming.
+    """
+
+    @property
+    def runtime(self) -> SessionRuntime | None: ...
+    def run_message(
+        self, text: str, media: MediaAttachments | None = None
+    ) -> AsyncIterator[msg.Message]: ...
+    def resolve_hitl(
+        self, requirement_id: str, action: str, choice: str = "once"
+    ) -> AsyncIterator[msg.Message]: ...
+    def resolve_hitl_batch(
+        self, decisions: list[msg.HITLDecision]
+    ) -> AsyncIterator[msg.Message]: ...
+    async def handle_command(self, text: str) -> msg.CommandResult: ...
+    async def list_sessions(self) -> msg.SessionListResult: ...
+    async def switch_session(self, session_id: str) -> msg.Info: ...
+    def switch_model(self, model_name: str) -> msg.Info | msg.Error: ...
+    async def toggle_mcp(self, server_name: str, connect: bool) -> msg.Info: ...
+    def cancel_run(self) -> None: ...
+    def consume_plan_research_flag(self) -> bool: ...
+    async def maybe_auto_name_session(self) -> AutoNameResult: ...
 
 
 class TransportLike(Protocol):
@@ -162,6 +206,7 @@ class TransportLike(Protocol):
 __all__ = [
     "AutoNameResult",
     "BackendLike",
+    "DispatchedBackend",
     "EvictedRuntimeReport",
     "EvictionReport",
     "ShutdownReport",

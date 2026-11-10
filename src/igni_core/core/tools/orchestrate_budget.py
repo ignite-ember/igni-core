@@ -3,9 +3,8 @@
 Owns the counter that used to live as module-globals
 (``_agent_counter_lock`` / ``_agent_counters``) in
 ``orchestrate.py``. One :class:`SpawnBudget` per session; the
-per-session instance is served by
-:meth:`AgentPool.spawn_budget`, so every
-:class:`OrchestrateTools` created for that session shares the
+per-session instance is owned by the session and handed to
+every :class:`OrchestrateTools` it builds, so they all share the
 same counter — replaces the module-dict-keyed-by-session-id
 pattern with an object-per-session.
 
@@ -24,8 +23,7 @@ class SpawnBudget:
     :meth:`try_reserve` atomically checks the requested count
     against the cap and either reserves the slots (returns
     ``None``) or refuses with an error string. :meth:`reset`
-    drops the counter to zero — called on session teardown via
-    :meth:`AgentPool.forget_spawn_budget`.
+    drops the counter to zero.
 
     ``max_agents`` is the hard cap:
     :class:`OrchestrateTools` surfaces ``"Error: Maximum total
@@ -76,7 +74,7 @@ class SpawnBudget:
         rather than of agents. Naming an agent that does not exist
         is the model's documented failure mode on this tool (DPO-4:
         79/79 rejected sides named a phantom ``researcher``), and
-        ``AgentPool.get`` rejects it with ``KeyError`` — so twenty
+        ``AgentPool.get`` finds nothing for it — so twenty
         typos silently retired a session's entire 20-agent budget
         without a single sub-agent having run, with nothing in the
         refusal to suggest why.

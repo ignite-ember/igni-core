@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from igni_core.core.agents.markdown import AgentMarkdownFile
 from igni_core.core.agents.schemas import (
@@ -59,11 +59,14 @@ class EphemeralAgentStore:
     #: that does not override it.
     DEFAULT_TOOLS: tuple[str, ...] = ("Write", "Edit", "Bash")
 
+    #: How many ephemerals may exist at once unless the caller says otherwise.
+    DEFAULT_MAX_EPHEMERAL: ClassVar[int] = 5
+
     def __init__(
         self,
         project_dir: Path,
         pool: AgentPool,
-        max_ephemeral: int = 5,
+        max_ephemeral: int = DEFAULT_MAX_EPHEMERAL,
     ) -> None:
         self._dir: Path = project_dir / CONFIG_DIR / "agents.tmp"
         self._pool = pool
@@ -73,6 +76,10 @@ class EphemeralAgentStore:
     def directory(self) -> Path:
         """Path to the on-disk tmp directory."""
         return self._dir
+
+    def owns(self, defn: AgentDefinition) -> bool:
+        """Whether ``defn`` was loaded from a file in this store's directory."""
+        return bool(defn.source_path and self._dir in defn.source_path.parents)
 
     @property
     def max_ephemeral(self) -> int:
@@ -104,7 +111,7 @@ class EphemeralAgentStore:
         so a fresh boot doesn't advertise stale ephemerals. This
         method opts back in explicitly."""
         self._dir.mkdir(parents=True, exist_ok=True)
-        self._pool.load_ephemeral_directory(self._dir)
+        self._pool.load_directory(self._dir, AgentPriority.EPHEMERAL)
 
     # ── CRUD ──────────────────────────────────────────────────────
 
@@ -128,7 +135,7 @@ class EphemeralAgentStore:
                 f"Ephemeral agent limit reached ({self._max}). "
                 f"Promote or remove existing ephemeral agents first."
             )
-        if self._pool.has_definition(name):
+        if self._pool.get_entry(name) is not None:
             raise ValueError(f"Agent '{name}' already exists in the pool.")
 
         resolved_tools = ToolRegistry.normalize_agno_names(list(tools or self.DEFAULT_TOOLS))
@@ -143,9 +150,11 @@ class EphemeralAgentStore:
         md_path = self._dir / f"{name}.md"
         md_path.write_text(md_content)
 
-        definition = AgentMarkdownFile(md_path).parse()
+        definition = AgentMarkdownFile(md_path, prompt_loader=self._pool.prompt_loader).parse()
         self._pool.upsert_entry(AgentEntry(definition=definition, priority=AgentPriority.EPHEMERAL))
-        return self._pool.get(name)
+        agent = self._pool.get(name)
+        assert agent is not None, "an entry upserted a line ago is in the pool"
+        return agent
 
     def list_agents(self) -> list[AgentDefinition]:
         """Ephemeral definitions currently registered in the pool."""
@@ -171,6 +180,8 @@ class EphemeralAgentStore:
             )
         subdir, priority = _PROMOTE_DIRS[target]
         entry = self._pool.get_entry(name)
+        if entry is None:
+            raise ValueError(self._pool.missing(name))
         defn = entry.definition
         if not defn.source_path or self._dir not in defn.source_path.parents:
             raise ValueError(f"Agent '{name}' is not an ephemeral agent.")
@@ -192,6 +203,8 @@ class EphemeralAgentStore:
     def discard(self, name: str) -> None:
         """Delete an ephemeral from disk and remove from the pool."""
         entry = self._pool.get_entry(name)
+        if entry is None:
+            raise ValueError(self._pool.missing(name))
         defn = entry.definition
         if not defn.source_path or self._dir not in defn.source_path.parents:
             raise ValueError(f"Agent '{name}' is not an ephemeral agent.")

@@ -8,13 +8,13 @@ live neo4j / live LLM:
    short-circuit. Mocked subprocess emits canned ``workflow_meta``
    lines; the discovery aggregates + caches by mtime.
 
-2. :class:`WorkflowRunner._drain_stdout` — line-by-line event
-   parsing, with the persisted + push side effects exercised
-   against an in-memory append + a fake push bridge.
+2. :meth:`WorkflowRun.drain` — line-by-line event parsing, with the
+   persisted + push side effects exercised against an in-memory
+   append + a fake push bridge.
 
-3. The agent bridge — an ``agent_request`` event fans out a
-   coroutine that calls ``session.main_team.arun`` and writes the
-   matching ``agent_response`` back to the subprocess stdin.
+3. :class:`WorkflowAgentBridge` — an ``agent_request`` is answered
+   with ``session.main_team.arun``, and :class:`WorkflowRun` writes
+   the matching ``agent_response`` back to the subprocess stdin.
 
 The e2e path (real subprocess, real session, real push) lives in
 ``tests/test_workflow_e2e.py`` and is gated behind
@@ -30,8 +30,29 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.backend.workflow_runner import WorkflowDiscovery, WorkflowRunner, _RunState
+from igni_core.backend.schemas_workflow_events import (
+    AgentRequestEvent,
+    AgentRequestPayload,
+    WorkflowEventRecord,
+    WorkflowRuntimeEventReader,
+)
+from igni_core.backend.schemas_workflows import (
+    WorkflowCancelOutcome,
+    WorkflowRunIdentity,
+    WorkflowRunPhase,
+    WorkflowRunRequest,
+)
+from igni_core.backend.workflow_agent_bridge import WorkflowAgentBridge
+from igni_core.backend.workflow_discovery import WorkflowDiscovery
+from igni_core.backend.workflow_run import WorkflowEventSink, WorkflowRun
+from igni_core.backend.workflow_runner import WorkflowRunner
+from igni_core.backend.workflow_runtime_process import (
+    CANCEL_GRACE_SECONDS,
+    WorkflowRuntimeProcess,
+)
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.event_log_schema import SessionEventAppendResult
 
 
 def _meta_line(name: str = "smoke", phases: int = 2) -> str:
@@ -89,6 +110,22 @@ class _FakeStream:
         return False
 
 
+def _run(proc: object, session: object, push: object, run_id: str = "wf_abc") -> WorkflowRun:
+    """A :class:`WorkflowRun` over a fake process, with real collaborators."""
+    return WorkflowRun(
+        identity=WorkflowRunIdentity(workflow_run_id=run_id, name="smoke"),
+        process=WorkflowRuntimeProcess(proc),
+        sink=WorkflowEventSink(session, push),  # type: ignore[arg-type]
+        bridge=WorkflowAgentBridge(session, RunGate()),  # type: ignore[arg-type]
+    )
+
+
+def _agent_request(payload: dict, run_id: str = "wf_call") -> AgentRequestEvent:
+    return AgentRequestEvent(
+        ts=1, run_id=run_id, seq=0, payload=AgentRequestPayload.model_validate(payload)
+    )
+
+
 class _FakeProcess:
     def __init__(self, lines: list[bytes], exit_code: int = 0) -> None:
         self.stdout = _FakeStream(lines)
@@ -128,14 +165,10 @@ async def test_discovery_aggregates_and_caches(tmp_path: Path) -> None:
         )
         return proc
 
-    # Patch the symbol where the runner uses it (its module's
-    # local binding), NOT the asyncio module — direct attribute
-    # assignment on asyncio leaks across other tests.
-    import igni_core.backend.workflow_runner as runner_mod
-
+    # MonkeyPatch undoes the patch on exit, so it does not leak.
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(runner_mod.asyncio, "create_subprocess_exec", fake_exec)
-        disc = WorkflowDiscovery(project_dir=tmp_path)
+        mp.setattr(asyncio, "create_subprocess_exec", fake_exec)
+        disc = WorkflowDiscovery.for_project(project_dir=tmp_path)
         first = await disc.list_workflows()
         assert [env.meta.name for env in first] == ["alpha", "beta"], (
             f"got {[e.meta.name for e in first]}"
@@ -150,12 +183,12 @@ async def test_discovery_aggregates_and_caches(tmp_path: Path) -> None:
 
 async def test_discovery_skips_when_no_dir(tmp_path: Path) -> None:
     """Empty project: no workflows dir → empty list, no subprocess."""
-    disc = WorkflowDiscovery(project_dir=tmp_path)
+    disc = WorkflowDiscovery.for_project(project_dir=tmp_path)
     assert await disc.list_workflows() == []
 
 
 async def test_resolve_unknown_returns_none(tmp_path: Path) -> None:
-    disc = WorkflowDiscovery(project_dir=tmp_path)
+    disc = WorkflowDiscovery.for_project(project_dir=tmp_path)
     assert await disc.resolve("does-not-exist") is None
 
 
@@ -200,11 +233,9 @@ async def test_user_layer_shadows_team_layer(tmp_path: Path) -> None:
         proc.returncode = 0
         return proc
 
-    import igni_core.backend.workflow_runner as runner_mod
-
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(runner_mod.asyncio, "create_subprocess_exec", fake_exec)
-        disc = WorkflowDiscovery(project_dir=tmp_path)
+        mp.setattr(asyncio, "create_subprocess_exec", fake_exec)
+        disc = WorkflowDiscovery.for_project(project_dir=tmp_path)
         result = await disc.list_workflows()
         # Two unique workflows (one deduplicated by shadow).
         assert [env.meta.name for env in result] == ["personal", "user-version"]
@@ -242,11 +273,9 @@ async def test_discovery_scans_both_layers_independently(tmp_path: Path) -> None
         proc.returncode = 0
         return proc
 
-    import igni_core.backend.workflow_runner as runner_mod
-
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(runner_mod.asyncio, "create_subprocess_exec", fake_exec)
-        disc = WorkflowDiscovery(project_dir=tmp_path)
+        mp.setattr(asyncio, "create_subprocess_exec", fake_exec)
+        disc = WorkflowDiscovery.for_project(project_dir=tmp_path)
         result = await disc.list_workflows()
         assert [env.meta.name for env in result] == ["user-only"]
         assert result[0].path == f"{CONFIG_DIR}/workflows/user-only.mjs"
@@ -265,23 +294,21 @@ async def test_event_drain_persists_and_pushes(tmp_path: Path) -> None:
     proc = _FakeProcess(lines, exit_code=0)
 
     push = MagicMock()
-    push._schedule_push = MagicMock()
     session = MagicMock()
-    session.append_event = AsyncMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
 
-    runner = WorkflowRunner(project_dir=tmp_path, push=push)
-    state = _RunState(proc=proc, workflow_run_id="wf_abc", name="smoke")
+    run = _run(proc, session, push)
 
-    await runner._drain_stdout(state, session)
+    await run.drain()
 
     assert session.append_event.await_count == 3
-    assert push._schedule_push.call_count == 3
+    assert push.workflow_event.call_count == 3
     # Persisted envelope has the workflow_run_id + event type.
-    first_payload = session.append_event.await_args_list[0].args[1]
-    assert first_payload["workflow_run_id"] == "wf_abc"
-    assert first_payload["type"] == "workflow_started"
-    # Final status is captured for the await_completion short-circuit.
-    assert state.final_status == "completed"
+    first_payload = session.append_event.await_args_list[0].args[0].payload
+    assert first_payload.workflow_run_id == "wf_abc"
+    assert first_payload.type == "workflow_started"
+    # The terminal event moved the phase, so finish() adds nothing.
+    assert run.phase is WorkflowRunPhase.COMPLETED
 
 
 async def test_synthetic_workflow_failed_on_non_zero_exit(tmp_path: Path) -> None:
@@ -291,88 +318,192 @@ async def test_synthetic_workflow_failed_on_non_zero_exit(tmp_path: Path) -> Non
     proc = _FakeProcess(lines, exit_code=2)
 
     push = MagicMock()
-    push._schedule_push = MagicMock()
     session = MagicMock()
-    session.append_event = AsyncMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
 
-    runner = WorkflowRunner(project_dir=tmp_path, push=push)
-    state = _RunState(proc=proc, workflow_run_id="wf_boom", name="x")
+    run = _run(proc, session, push, run_id="wf_boom")
 
     # Drain the started event first.
-    await runner._drain_stdout(state, session)
-    # Then the await_completion notices the non-zero exit and
-    # synthesises the failure.
-    await runner._await_completion(state, session)
+    await run.drain()
+    # Then finish() notices the non-zero exit and synthesises the failure.
+    await run.finish()
 
     # The synthetic event is the 2nd call (after the started line).
-    types = [c.args[0] for c in session.append_event.await_args_list]
-    payloads = [c.args[1] for c in session.append_event.await_args_list]
+    types = [c.args[0].type for c in session.append_event.await_args_list]
+    payloads = [c.args[0].payload for c in session.append_event.await_args_list]
     assert types == ["workflow_event", "workflow_event"]
-    assert payloads[1]["type"] == "workflow_failed"
-    assert payloads[1]["payload"]["exit_code"] == 2
+    assert payloads[1].type == "workflow_failed"
+    assert payloads[1].payload["exit_code"] == 2
     # Pushed too.
-    pushed = [c.args[0] for c in push._schedule_push.call_args_list]
-    assert pushed == ["workflow_event", "workflow_event"]
+    pushed: list[WorkflowEventRecord] = [c.args[0] for c in push.workflow_event.call_args_list]
+    assert [r.type for r in pushed] == ["workflow_started", "workflow_failed"]
+    assert pushed[1].payload["exit_code"] == 2
+    assert run.phase is WorkflowRunPhase.FAILED
+
+
+async def test_a_cancelled_run_without_a_terminal_event_ends_cancelled(tmp_path: Path) -> None:
+    """A run stopped through cancel that exits without saying so ends on a
+    synthetic ``workflow_completed{status: cancelled}``, not a failure."""
+    proc = _FakeProcess([], exit_code=-15)
+    proc.returncode = None
+    push = MagicMock()
+    session = MagicMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
+    run = _run(proc, session, push, run_id="wf_stop")
+
+    assert await run.cancel() is WorkflowCancelOutcome.CANCELLED
+    await run.finish()
+
+    record: WorkflowEventRecord = push.workflow_event.call_args.args[0]
+    assert record.type == "workflow_completed"
+    assert record.payload == {"status": "cancelled", "exit_code": -15, "synthetic": True}
+    assert run.phase is WorkflowRunPhase.CANCELLED
 
 
 async def test_agent_request_bridges_to_team(tmp_path: Path) -> None:
-    """An agent_request fans out a coroutine that calls team.arun and
-    writes an agent_response back to subprocess stdin."""
+    """An agent_request is answered with team.arun, and the run writes
+    the agent_response back to subprocess stdin."""
     proc = _FakeProcess([], exit_code=0)
 
     push = MagicMock()
-    push._schedule_push = MagicMock()
     session = MagicMock()
-    session.append_event = AsyncMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
     team = MagicMock()
     team.arun = AsyncMock(return_value="agent result text")
     session.main_team = team
 
-    runner = WorkflowRunner(project_dir=tmp_path, push=push)
-    state = _RunState(proc=proc, workflow_run_id="wf_call", name="smoke")
-
-    req = (
-        json.dumps(
-            {
-                "ts": 1,
-                "run_id": "wf_call",
-                "seq": 0,
-                "type": "agent_request",
-                "payload": {
-                    "id": "req_42",
-                    "prompt": "do the thing",
-                    "label": "test-agent",
-                    "phase": None,
-                    "timeout_seconds": 30,
-                },
-            }
-        ).encode("utf-8")
-        + b"\n"
+    raw = json.dumps(
+        {
+            "ts": 1,
+            "run_id": "wf_call",
+            "seq": 0,
+            "type": "agent_request",
+            "payload": {
+                "id": "req_42",
+                "prompt": "do the thing",
+                "label": "test-agent",
+                "phase": None,
+                "timeout_seconds": 30,
+            },
+        }
     )
-    # Force a read so the drain sees the line.
-    proc.stdout._lines = [req]  # type: ignore[attr-defined]
+    event = WorkflowRuntimeEventReader.parse_line(raw)
+    assert isinstance(event, AgentRequestEvent)
 
-    # Run a single drain iteration by reading the first line manually.
-    raw = await proc.stdout.readline()
-    event = json.loads(raw.decode("utf-8"))
-    assert event["type"] == "agent_request"
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(event)
 
-    # Invoke the bridge directly.
-    from igni_core.backend.schemas_workflows import WorkflowEvent
-
-    ev = WorkflowEvent.model_validate_json(raw.decode("utf-8"))
-    await runner._handle_agent_request(state, session, ev)  # type: ignore[attr-defined]
-
-    # team.arun was called with the prompt.
     team.arun.assert_awaited_once()
-    call_args = team.arun.await_args
-    assert call_args.args[0] == "do the thing"
-    # agent_response was written to stdin.
-    written = b"".join(proc.stdin.written).decode("utf-8")  # type: ignore[attr-defined]
-    assert '"type": "agent_response"' in written
-    assert '"id": "req_42"' in written
-    assert '"ok": true' in written
-    assert '"result": "agent result text"' in written
+    assert team.arun.await_args.args[0] == "do the thing"
+    assert reply.ok is True
+    assert reply.id == "req_42"
+    assert reply.result == "agent result text"
+
+    # Through the run, the reply is written to stdin as one JSON line.
+    run = _run(proc, session, push, run_id="wf_call")
+    await run._answer(event)
+    written = json.loads(b"".join(proc.stdin.written).decode("utf-8"))  # type: ignore[attr-defined]
+    assert written == {
+        "type": "agent_response",
+        "id": "req_42",
+        "ok": True,
+        "result": "agent result text",
+        "error": None,
+    }
+
+
+async def test_agent_timeout_of_zero_means_no_timeout() -> None:
+    """``workflow_runtime.mjs`` reads ``timeoutSeconds <= 0`` as no limit;
+    the bridge passed 0 to ``wait_for``, which timed the call out at once."""
+    session = MagicMock()
+    session.main_team.arun = AsyncMock(return_value="done")
+    seen: list[object] = []
+    real_wait_for = asyncio.wait_for
+
+    async def spy_wait_for(coro, timeout):  # type: ignore[no-untyped-def]
+        seen.append(timeout)
+        return await real_wait_for(coro, timeout=timeout)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(asyncio, "wait_for", spy_wait_for)
+        reply = await WorkflowAgentBridge(session, RunGate()).answer(
+            _agent_request({"id": "req_0", "prompt": "p", "timeout_seconds": 0})
+        )
+
+    assert seen == [None]
+    assert reply.ok is True
+    assert reply.result == "done"
+
+
+async def test_a_dict_prompt_and_a_null_label_reach_team_arun() -> None:
+    """``team.arun`` takes message dicts as well as strings, and JS passes a
+    ``label: null`` through; neither is a reason to refuse the call."""
+    session = MagicMock()
+    session.main_team.arun = AsyncMock(return_value="done")
+    prompt = {"role": "user", "content": "hi"}
+
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(
+        _agent_request({"id": "req_dict", "prompt": prompt, "label": None})
+    )
+
+    assert reply.ok is True, reply.error
+    session.main_team.arun.assert_awaited_once()
+    assert session.main_team.arun.await_args.args[0] == prompt
+
+
+async def test_a_malformed_agent_request_is_refused_not_left_waiting() -> None:
+    session = MagicMock()
+    session.main_team.arun = AsyncMock(return_value="never")
+
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(
+        _agent_request({"id": "req_bad", "timeout_seconds": "soon"})
+    )
+
+    assert reply.ok is False
+    assert reply.id == "req_bad"
+    assert "agent request invalid" in (reply.error or "")
+    session.main_team.arun.assert_not_awaited()
+
+
+async def test_an_unserialisable_agent_result_is_refused() -> None:
+    session = MagicMock()
+    session.main_team.arun = AsyncMock(return_value=MagicMock(content=object()))
+
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(_agent_request({"id": "req_obj"}))
+
+    assert reply.ok is False
+    assert "not JSON-serialisable" in (reply.error or "")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        {"type": "workflow_completed", "payload": {"status": "cancelled", "duration_ms": 12}},
+        {
+            "type": "workflow_completed",
+            "payload": {"status": "completed", "duration_ms": 40, "result": {"ok": True}},
+        },
+        {"type": "workflow_completed", "payload": {"status": "completed", "result": None}},
+        {
+            "type": "workflow_failed",
+            "payload": {"error": "boom", "stack": "Error: boom\n  at x", "duration_ms": 3},
+        },
+        {"type": "workflow_failed", "payload": {"error": "boom", "duration_ms": 3, "extra": 1}},
+        {"type": "phase_started", "payload": {"phase_id": "p1", "title": "A"}},
+    ],
+)
+def test_forwarded_payloads_are_byte_identical(line: dict) -> None:
+    """Each terminal shape ``workflow_runtime.mjs`` emits reaches the record
+    exactly as sent: no defaults added, no unknown keys dropped."""
+    raw = json.dumps({"ts": 5, "run_id": "wf_x", "seq": 3, **line})
+    event = WorkflowRuntimeEventReader.parse_line(raw)
+    assert event is not None
+
+    record = WorkflowEventRecord.from_event(
+        WorkflowRunIdentity(workflow_run_id="wf_x", name="smoke"), event
+    )
+
+    assert json.dumps(record.payload) == json.dumps(line["payload"])
+    assert record.type == line["type"]
 
 
 # ── Runner edge cases (cancel, cwd-relative, agent timeout) ──
@@ -420,14 +551,14 @@ async def test_runner_spawns_user_layer_workflow_with_cwd_relative_path(
         captured["cwd"] = kwargs.get("cwd")
         return _FakeProcess([], exit_code=0)
 
-    import igni_core.backend.workflow_runner as runner_mod
-
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(runner_mod.asyncio, "create_subprocess_exec", fake_exec)
-        runner = WorkflowRunner(project_dir=tmp_path, push=MagicMock())
+        mp.setattr(asyncio, "create_subprocess_exec", fake_exec)
+        runner = WorkflowRunner.for_project(project_dir=tmp_path, push=MagicMock(), gate=RunGate())
         session = MagicMock()
         session.id = "sess_x"
-        run_id = await runner.run(name="personal", args={}, session=session)
+        result = await runner.run(request=WorkflowRunRequest(name="personal"), session=session)
+        assert result.ok
+        run_id = result.workflow_run_id
         assert run_id.startswith("wf_")
         # The Node subprocess was spawned with the project dir as cwd.
         assert captured["cwd"] == str(tmp_path)
@@ -440,23 +571,17 @@ async def test_runner_spawns_user_layer_workflow_with_cwd_relative_path(
 
 
 async def test_runner_cancel_sends_cancel_message_and_sends_sigterm(tmp_path: Path) -> None:
-    """``cancel(workflow_run_id)`` writes a ``{"type":"cancel"}`` line
-    to the subprocess stdin, then waits for natural exit. If the
-    subprocess doesn't exit within ``CANCEL_GRACE_SECONDS``, the
-    runner sends SIGTERM, then SIGKILL as a last resort.
+    """``cancel()`` writes a ``{"type":"cancel"}`` line to the
+    subprocess stdin, then waits for natural exit. If the subprocess
+    doesn't exit within ``CANCEL_GRACE_SECONDS``, the process is sent
+    SIGTERM, then SIGKILL as a last resort.
 
     We exercise the cancel-message path here; the SIGTERM/SIGKILL
     escalation is covered separately by the subprocess integration
     tests (which need a real Node — outside the unit-test surface).
     """
-    from igni_core.backend.workflow_runner import (
-        CANCEL_GRACE_SECONDS,
-        WorkflowRunner,
-    )
-
     proc = _FakeProcess([], exit_code=0)
     proc.returncode = None  # not yet exited
-    state = _RunState(proc=proc, workflow_run_id="wf_cancel", name="smoke")
 
     written: list[bytes] = []
 
@@ -470,12 +595,7 @@ async def test_runner_cancel_sends_cancel_message_and_sends_sigterm(tmp_path: Pa
         def is_closing(self) -> bool:
             return False
 
-    proc.stdin = _CancelStream()
-
-    push = MagicMock()
-    push._schedule_push = MagicMock()
-    runner = WorkflowRunner(project_dir=tmp_path, push=push)
-    runner._runs["wf_cancel"] = state
+    proc.stdin = _CancelStream()  # type: ignore[assignment]
 
     async def fake_wait(*a, **kw):
         # Subprocess exits cleanly after the cancel message.
@@ -484,11 +604,8 @@ async def test_runner_cancel_sends_cancel_message_and_sends_sigterm(tmp_path: Pa
 
     proc.wait = fake_wait  # type: ignore[method-assign]
 
-    # Patch asyncio.wait_for to call fake_wait directly (avoids
-    # the actual asyncio.wait_for scheduling).
-    import igni_core.backend.workflow_runner as runner_mod
-
-    real_wait_for = runner_mod.asyncio.wait_for
+    run = _run(proc, MagicMock(), MagicMock(), run_id="wf_cancel")
+    real_wait_for = asyncio.wait_for
 
     async def fake_wait_for(coro, timeout):
         # Make sure the cancel message is written before we "wait"
@@ -498,12 +615,13 @@ async def test_runner_cancel_sends_cancel_message_and_sends_sigterm(tmp_path: Pa
         return await real_wait_for(coro, timeout=0.1)
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(runner_mod.asyncio, "wait_for", fake_wait_for)
-        await runner.cancel("wf_cancel")
+        mp.setattr(asyncio, "wait_for", fake_wait_for)
+        assert await run.cancel() is WorkflowCancelOutcome.CANCELLED
 
     # The cancel message was written to stdin.
     assert len(written) == 1
     assert json.loads(written[0].decode()) == {"type": "cancel"}
+    assert run.phase is WorkflowRunPhase.CANCELLING
 
 
 async def test_agent_bridge_timeout_fires_agent_response_error(
@@ -514,18 +632,7 @@ async def test_agent_bridge_timeout_fires_agent_response_error(
     and rejects the agent's promise — the workflow continues
     on the next event.
     """
-    import igni_core.backend.workflow_runner as runner_mod
-    from igni_core.backend.workflow_runner import (
-        _RunState,
-    )
-
     proc = _FakeProcess([], exit_code=0)
-    state = _RunState(proc=proc, workflow_run_id="wf_t", name="smoke")
-
-    push = MagicMock()
-    push._schedule_push = MagicMock()
-    runner = WorkflowRunner(project_dir=tmp_path, push=push)
-
     session = MagicMock()
 
     # team.arun hangs forever; the bridge must time it out.
@@ -535,14 +642,16 @@ async def test_agent_bridge_timeout_fires_agent_response_error(
 
     session.main_team.arun = hang
 
-    ev = MagicMock()
-    ev.payload = {
-        "id": "req_slow",
-        "prompt": "slow",
-        "label": "slow",
-        "phase": "S",
-        "timeout_seconds": 1,
-    }
+    ev = _agent_request(
+        {
+            "id": "req_slow",
+            "prompt": "slow",
+            "label": "slow",
+            "phase": "S",
+            "timeout_seconds": 1,
+        },
+        run_id="wf_t",
+    )
 
     written: list[bytes] = []
 
@@ -556,9 +665,10 @@ async def test_agent_bridge_timeout_fires_agent_response_error(
         def is_closing(self) -> bool:
             return False
 
-    proc.stdin = _Stream()
+    proc.stdin = _Stream()  # type: ignore[assignment]
+    run = _run(proc, session, MagicMock(), run_id="wf_t")
 
-    real_wait_for = runner_mod.asyncio.wait_for
+    real_wait_for = asyncio.wait_for
 
     async def fast_wait_for(coro, timeout):
         # Don't actually wait the full timeout — force the timeout
@@ -569,8 +679,8 @@ async def test_agent_bridge_timeout_fires_agent_response_error(
         return await real_wait_for(coro, timeout=timeout)
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(runner_mod.asyncio, "wait_for", fast_wait_for)
-        await runner._handle_agent_request(state, session, ev)  # type: ignore[attr-defined]
+        mp.setattr(asyncio, "wait_for", fast_wait_for)
+        await run._answer(ev)
 
     # The bridge wrote an agent_response with ok=False and an error.
     assert len(written) == 1
@@ -621,16 +731,15 @@ async def test_runner_passes_args_to_subprocess_as_json_string(
         captured_args.append(args[i + 1])
         return _FakeProcess([], exit_code=0)
 
-    import igni_core.backend.workflow_runner as runner_mod
-
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(runner_mod.asyncio, "create_subprocess_exec", fake_exec)
-        runner = WorkflowRunner(project_dir=tmp_path, push=MagicMock())
+        mp.setattr(asyncio, "create_subprocess_exec", fake_exec)
+        runner = WorkflowRunner.for_project(project_dir=tmp_path, push=MagicMock(), gate=RunGate())
         session = MagicMock()
         session.id = "sess_x"
         await runner.run(
-            name="personal",
-            args={"file": "src/example.py", "tag": "demo"},
+            request=WorkflowRunRequest(
+                name="personal", args={"file": "src/example.py", "tag": "demo"}
+            ),
             session=session,
         )
 
@@ -639,5 +748,33 @@ async def test_runner_passes_args_to_subprocess_as_json_string(
     assert parsed == {"file": "src/example.py", "tag": "demo"}
 
 
-# Quick patch: redefine fake_exec to handle discovery too.
-# (Replaces the previous fake_exec in the args test.)
+async def test_a_run_is_started_for_the_session_s_own_id(tmp_path: Path) -> None:
+    """``Session`` names its id ``session_id``; a run read ``session.id``,
+    which a real session does not have, so every real run failed with
+    ``AttributeError`` while mocked sessions passed."""
+    from types import SimpleNamespace
+
+    from igni_core.backend.workflow_run_registry import WorkflowRunRegistry
+    from igni_core.core.activity.background import BackgroundTasks
+
+    envelope = MagicMock()
+    discovery = MagicMock()
+    discovery.resolve = AsyncMock(return_value=envelope)
+    runtime = MagicMock()
+    runtime.preflight = MagicMock(return_value=None)
+    runtime.start = AsyncMock(return_value=MagicMock())
+    runner = WorkflowRunner(
+        discovery=discovery,
+        runtime=runtime,
+        push=MagicMock(),
+        registry=WorkflowRunRegistry(tasks=BackgroundTasks.shared()),
+        gate=RunGate(),
+    )
+    session = SimpleNamespace(session_id="s-real")  # no ``id``, as a real Session has none
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(WorkflowRun, "for_session", MagicMock())
+        patch.setattr(runner._registry, "admit", MagicMock())
+        await runner.run(request=WorkflowRunRequest(name="smoke"), session=session)  # type: ignore[arg-type]
+
+    assert runtime.start.await_args.kwargs["session_id"] == "s-real"

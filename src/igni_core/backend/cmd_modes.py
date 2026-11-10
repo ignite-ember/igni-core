@@ -171,12 +171,10 @@ class PlanModeToggle(ModeToggle):
     exit_tail: str = "\n\nPlan mode exited. The agent can now execute as normal."
 
     def enter(self, session: Session) -> None:
-        session.set_plan_research_armed(True)
+        session.plan.arm_research(True)
 
     def exit(self, session: Session) -> None:
-        # ``set_plan_research_armed`` is a Session method — no
-        # attribute reach-in needed, and Session owns the semantics.
-        session.set_plan_research_armed(False)
+        session.plan.arm_research(False)
 
 
 class AcceptModeToggle(ModeToggle):
@@ -277,18 +275,17 @@ class ModesCommand:
                 content=f"Permission mode: **{current.value}**",
             )
 
-        target, error = toggle.target_for(
-            normalized, current, self._session.permission_starting_mode()
-        )
+        target, error = toggle.target_for(normalized, current, self._session.mode.starting_mode)
         if error:
             return CommandResult.error(error)
         assert target is not None  # status branch returned above
 
-        status_line = self._session.set_permission_mode(target.value)
-        if status_line.startswith("Error"):
+        switch = self._session.set_permission_mode(target.value)
+        if switch.refused:
             # Refused by the organisation's mode policy — nothing changed,
             # so neither transition hook fires.
-            return CommandResult.error(status_line)
+            return CommandResult.error(switch.text)
+        status_line = switch.text
 
         if target is toggle.target:
             # Entering target mode — fire the transition-in hook,

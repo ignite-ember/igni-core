@@ -30,10 +30,12 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from pydantic import BaseModel
+
 from igni_core.core.activity import background
 from igni_core.core.hooks.envelope import HookEnvelope
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.hooks.extension_gate import ExtensionHookGate
+from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.hooks.group_hook_gate import GroupHookGate
 from igni_core.core.hooks.handlers import HookHandlerRegistry, MCPResolver
 from igni_core.core.hooks.matcher import HookMatcher
@@ -42,7 +44,6 @@ from igni_core.core.hooks.registry import HookRegistry
 from igni_core.core.hooks.schemas import (
     HookDefinition,
     HookPayload,
-    HookPayloadBase,
     HookResult,
 )
 from igni_core.core.network_policy import NetworkPolicy
@@ -70,7 +71,7 @@ class HookExecutor:
     #: ``background: true`` SessionEnd hook never executed a single
     #: line — ``_await_foreground`` returns without suspending when
     #: the event has no foreground hook, so the freshly-created task
-    #: had not been scheduled once by the time ``cli._run_then_drain``
+    #: had not been scheduled once by the time ``HeadlessRun.drain_after``
     #: cancelled every pending task on its way out.
     _DRAIN_EVENTS: frozenset[str] = frozenset({HookEvent.SESSION_END.value})
 
@@ -146,7 +147,7 @@ class HookExecutor:
     async def execute(
         self,
         event: str,
-        payload: HookPayloadBase | dict[str, Any],
+        payload: BaseModel,
         target: str = "",
     ) -> HookResult:
         """Execute all matching hooks for an event.
@@ -156,12 +157,15 @@ class HookExecutor:
         Background hooks are fire-and-forget, EXCEPT on the
         terminal events in :attr:`_DRAIN_EVENTS`, where "later" is
         never and they are drained before this returns.
+
+        ``payload`` is the event's own typed model; the handlers put
+        it on the wire.
         """
-        typed_payload = HookPayload.coerce(payload)
+        typed_payload = HookPayload(body=payload)
         # Extensions that hook an event deciding nothing hear it here,
         # wherever it fires; the deciding ones are asked where they fire,
         # with the real values (:mod:`.extension_gate`).
-        ExtensionHookGate.tell(event, typed_payload.to_wire_dict())
+        extension_hook_gate.tell(event, typed_payload)
         hooks = self._registry.for_event_and_target(event, target)
         if not hooks:
             return HookResult(should_continue=True)
@@ -211,7 +215,7 @@ class HookExecutor:
         self,
         hook: HookDefinition,
         event: str,
-        payload: HookPayloadBase,
+        payload: HookPayload,
     ) -> Awaitable[HookResult] | None:
         """Dispatch one hook to its handler.
 
@@ -229,7 +233,7 @@ class HookExecutor:
         self,
         hook: HookDefinition,
         event: str,
-        payload: HookPayloadBase,
+        payload: HookPayload,
     ) -> HookResult:
         """Coroutine wrapper around the handler registry's
         ``.run`` — flattens the ``Optional[HookResult]`` to a
@@ -246,7 +250,7 @@ class HookExecutor:
         self,
         bg_hooks: list[HookDefinition],
         event: str,
-        payload: HookPayloadBase,
+        payload: HookPayload,
     ) -> None:
         """Fire-and-forget background hooks."""
         for hook in bg_hooks:
@@ -258,7 +262,7 @@ class HookExecutor:
         self,
         fg_hooks: list[HookDefinition],
         event: str,
-        payload: HookPayloadBase,
+        payload: HookPayload,
     ) -> None:
         """``async_rewake`` implies a background dispatch (a sync
         hook with rewake would be a contradiction — the agent
@@ -289,7 +293,7 @@ class HookExecutor:
         self,
         fg_hooks: list[HookDefinition],
         event: str,
-        payload: HookPayloadBase,
+        payload: HookPayload,
     ) -> HookResult:
         """Run non-rewake foreground hooks in parallel, merge
         their :class:`HookResult` instances via

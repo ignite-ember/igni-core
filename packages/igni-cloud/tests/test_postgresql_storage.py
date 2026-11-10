@@ -18,13 +18,14 @@ from agno.db.base import SessionType
 from agno.db.schemas.memory import UserMemory
 from agno.run.agent import RunOutput
 from agno.session import AgentSession
+from igni_cloud.storage.agno_table_cache import AgnoTableCache
 from igni_cloud.storage.attachments import LargeObjectAttachments
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from sqlalchemy import text
 
 from igni_core.backend.server_files import FilesController
 from igni_core.core.db.database import Database
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.db.scope import StorageScope, Tenant, tenancy
 from igni_core.core.db.urls import DatabaseUrl
@@ -71,11 +72,11 @@ def test_attachments_are_large_objects_written_and_read_in_chunks(
 def test_a_failed_upload_leaves_no_large_object(postgres_url: str):
     url = DatabaseUrl.parse(postgres_url)
     store = LargeObjectAttachments(Database(url, scope=Scopes.fresh()))
-    with cache.get_engine(url).connect() as connection:
+    with engines.get_engine(url).connect() as connection:
         before = connection.scalar(text("SELECT count(*) FROM pg_largeobject_metadata"))
     with pytest.raises(ValueError):
         store.save("s1", "x.bin", Base64Chunks("not base64!"))
-    with cache.get_engine(url).connect() as connection:
+    with engines.get_engine(url).connect() as connection:
         after = connection.scalar(text("SELECT count(*) FROM pg_largeobject_metadata"))
     assert after == before
 
@@ -83,11 +84,12 @@ def test_a_failed_upload_leaves_no_large_object(postgres_url: str):
 async def test_agno_rows_are_kept_to_their_scope(postgres_url: str):
     url = DatabaseUrl.parse(postgres_url)
     first, second = Scopes.fresh(), Scopes.fresh()
-    engine = cache.get_async_engine(url)
+    engine = engines.get_async_engine(url)
 
     def agno_db(scope: StorageScope) -> ScopedAsyncPostgresDb:
         return ScopedAsyncPostgresDb(
             scope=scope,
+            tables=AgnoTableCache(),
             db_engine=engine,
             session_table="ember_sessions",
             memory_table="ember_memories",
@@ -117,7 +119,7 @@ async def test_agno_rows_are_kept_to_their_scope(postgres_url: str):
     other = await theirs.get_session(session_id, SessionType.AGENT)
     assert other is not None and other.agent_id == "other"  # type: ignore[union-attr]
     assert other.session_id == session_id  # type: ignore[union-attr]
-    with cache.get_engine(url).connect() as connection:
+    with engines.get_engine(url).connect() as connection:
         stored = connection.scalars(
             text("SELECT session_id FROM ai.ember_sessions WHERE session_id LIKE :id"),
             {"id": f"%#{session_id}"},
@@ -139,11 +141,12 @@ async def test_agno_runs_are_kept_to_their_scope(postgres_url: str):
     wrapper's to hold.
     """
     url = DatabaseUrl.parse(postgres_url)
-    engine = cache.get_async_engine(url)
+    engine = engines.get_async_engine(url)
 
     def agno_db(scope: StorageScope) -> ScopedAsyncPostgresDb:
         return ScopedAsyncPostgresDb(
             scope=scope,
+            tables=AgnoTableCache(),
             db_engine=engine,
             session_table="ember_sessions",
             memory_table="ember_memories",
@@ -172,7 +175,7 @@ async def test_agno_runs_are_kept_to_their_scope(postgres_url: str):
     assert await theirs.delete_run(run_id) is False
     await theirs.delete_runs([run_id])
     assert [r.run_id for r in await mine.get_runs(session_id=session_id)] == [run_id]  # type: ignore[union-attr]
-    with cache.get_engine(url).connect() as connection:
+    with engines.get_engine(url).connect() as connection:
         row = connection.execute(
             text("SELECT session_id, user_id FROM ai.ember_sessions_runs WHERE run_id = :id"),
             {"id": run_id},

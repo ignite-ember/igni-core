@@ -8,7 +8,7 @@ sub-agent's stream and the backend run loop.
 
 Test strategy: mock Agno's Agent with a tiny fake that emits a
 controlled stream (RunStarted → RunPaused → ... post-resume → RunContent →
-RunCompleted). Drive ``_run_agent_streaming`` from
+RunCompleted). Drive ``run_agent_streaming`` from
 ``core.tools.orchestrate`` and assert the coordinator receives the
 requirement, the resume call lands, and the final content is captured.
 
@@ -30,8 +30,11 @@ from agno.run.agent import (
 )
 from pydantic import BaseModel
 
-from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator, _PendingEntry
-from igni_core.core.tools.orchestrate import _run_agent_streaming
+from igni_core.core.hitl.models import PendingEntry
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
+from igni_core.core.tools.orchestrate_stream_context import StreamContext, StreamSinks
+from igni_core.core.tools.orchestrate_streaming import run_agent_streaming
+from igni_core.protocol import messages as msg
 
 
 class _FakeRequirement:
@@ -156,6 +159,11 @@ class _FakeAgentCompletedOnly(_FakeAgent):
         self._run_output.content = self._final_content
 
 
+def _stream(agent: Any, task: str = "test", **sinks: Any):
+    """The stream one sub-agent run is driven through."""
+    return run_agent_streaming(StreamContext(runnable=agent, task=task, sinks=StreamSinks(**sinks)))
+
+
 async def _wait_until(predicate, timeout: float = 5.0, interval: float = 0.02) -> bool:
     """Poll ``predicate()`` until truthy or ``timeout`` elapses."""
     loop = asyncio.get_event_loop()
@@ -176,20 +184,18 @@ class TestSubAgentHITLPlumbing:
         coordinator = SubAgentHITLCoordinator()
         agent = _FakeAgent()
 
-        spawn_task = asyncio.create_task(
-            _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
-        )
+        spawn_task = asyncio.create_task(_stream(agent, hitl_coordinator=coordinator))
 
         # Coordinator should receive the requirement within a tick or two
-        arrived = await _wait_until(lambda: bool(coordinator._pending))
+        arrived = await _wait_until(lambda: bool(coordinator.pending.ids()))
         assert arrived, "coordinator never received the sub-agent requirement"
 
         # spawn_task is blocked waiting for resolution
         assert not spawn_task.done(), "spawn_task completed before resolve"
 
         # Clean up: resolve so the task can finish
-        req_id = next(iter(coordinator._pending))
-        coordinator.resolve(req_id, "confirm")
+        req_id = coordinator.pending.ids()[0]
+        coordinator.resolve(req_id, msg.HITLAction.CONFIRM)
         await asyncio.wait_for(spawn_task, timeout=2)
 
     @pytest.mark.asyncio
@@ -198,15 +204,13 @@ class TestSubAgentHITLPlumbing:
         coordinator = SubAgentHITLCoordinator()
         agent = _FakeAgent()
 
-        spawn_task = asyncio.create_task(
-            _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
-        )
+        spawn_task = asyncio.create_task(_stream(agent, hitl_coordinator=coordinator))
 
-        await _wait_until(lambda: bool(coordinator._pending))
-        req_id = next(iter(coordinator._pending))
+        await _wait_until(lambda: bool(coordinator.pending.ids()))
+        req_id = coordinator.pending.ids()[0]
 
         # Simulate user clicking "allow"
-        handled = coordinator.resolve(req_id, "confirm")
+        handled = coordinator.resolve(req_id, msg.HITLAction.CONFIRM)
         assert handled, "coordinator.resolve should report it owned the req"
 
         result, activity = await asyncio.wait_for(spawn_task, timeout=2)
@@ -236,14 +240,12 @@ class TestSubAgentHITLPlumbing:
         coordinator = SubAgentHITLCoordinator()
         agent = _FakeAgent()
 
-        spawn_task = asyncio.create_task(
-            _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
-        )
+        spawn_task = asyncio.create_task(_stream(agent, hitl_coordinator=coordinator))
 
-        await _wait_until(lambda: bool(coordinator._pending))
-        req_id = next(iter(coordinator._pending))
+        await _wait_until(lambda: bool(coordinator.pending.ids()))
+        req_id = coordinator.pending.ids()[0]
 
-        coordinator.resolve(req_id, "reject")
+        coordinator.resolve(req_id, msg.HITLAction.REJECT)
         await asyncio.wait_for(spawn_task, timeout=2)
 
         assert agent._requirement.rejected
@@ -257,7 +259,7 @@ class TestSubAgentHITLPlumbing:
         the no-coordinator code path."""
         agent = _FakeAgent()
 
-        spawn_task = asyncio.create_task(_run_agent_streaming(agent, "test", hitl_coordinator=None))
+        spawn_task = asyncio.create_task(_stream(agent))
 
         # No coordinator → the loop just falls through the pause event.
         # Should complete (no resume happens, but no infinite wait either).
@@ -273,16 +275,14 @@ class TestSubAgentHITLPlumbing:
         coordinator = SubAgentHITLCoordinator()
         agent = _FakeAgent()
 
-        spawn_task = asyncio.create_task(
-            _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
-        )
+        spawn_task = asyncio.create_task(_stream(agent, hitl_coordinator=coordinator))
 
-        await _wait_until(lambda: bool(coordinator._pending))
-        req_id = next(iter(coordinator._pending))
-        coordinator.resolve(req_id, "confirm")
+        await _wait_until(lambda: bool(coordinator.pending.ids()))
+        req_id = coordinator.pending.ids()[0]
+        coordinator.resolve(req_id, msg.HITLAction.CONFIRM)
         await asyncio.wait_for(spawn_task, timeout=2)
 
-        assert coordinator._pending == {}, "coordinator should be empty after resolve"
+        assert coordinator.pending.ids() == [], "coordinator should be empty after resolve"
         assert not coordinator.has_unresolved()
 
     @pytest.mark.asyncio
@@ -298,10 +298,22 @@ class TestSubAgentHITLPlumbing:
         id_b = await coordinator.push_requirement(req_b, run_id="run-b")
 
         first = coordinator.list_new_pending()
-        assert sorted(rid for rid, _ in first) == sorted([id_a, id_b])
+        assert sorted(handle.requirement_id for handle in first) == sorted([id_a, id_b])
 
         # Second call returns nothing — both already surfaced.
         assert coordinator.list_new_pending() == []
+
+    @pytest.mark.asyncio
+    async def test_a_wire_action_string_is_read_as_the_action_it_names(self):
+        """The wire carries the action as a plain string; the coordinator
+        reads it as the domain action it names."""
+        coordinator = SubAgentHITLCoordinator()
+        req = _FakeRequirement()
+        req_id = await coordinator.push_requirement(req, run_id="run-wire")
+
+        assert coordinator.resolve(req_id, "confirm") is True
+        assert req.confirmed is True
+        assert req.rejected is False
 
     @pytest.mark.asyncio
     async def test_post_resume_content_in_completed_event(self):
@@ -313,13 +325,11 @@ class TestSubAgentHITLPlumbing:
         coordinator = SubAgentHITLCoordinator()
         agent = _FakeAgentCompletedOnly()
 
-        spawn_task = asyncio.create_task(
-            _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
-        )
+        spawn_task = asyncio.create_task(_stream(agent, hitl_coordinator=coordinator))
 
-        await _wait_until(lambda: bool(coordinator._pending))
-        req_id = next(iter(coordinator._pending))
-        coordinator.resolve(req_id, "confirm")
+        await _wait_until(lambda: bool(coordinator.pending.ids()))
+        req_id = coordinator.pending.ids()[0]
+        coordinator.resolve(req_id, msg.HITLAction.CONFIRM)
 
         result, activity = await asyncio.wait_for(spawn_task, timeout=2)
         assert "Final answer delivered in completion" in result, (
@@ -339,8 +349,9 @@ class TestSubAgentHITLPlumbing:
 
         entries = coordinator.list_new_pending()
         assert len(entries) == 1
-        rid, entry = entries[0]
-        assert rid == req_id
+        handle = entries[0]
+        assert handle.requirement_id == req_id
+        entry = handle.entry
         assert entry.agent_path == path
         # Mutating the original list must not bleed into the entry.
         path.append("editor")
@@ -348,17 +359,17 @@ class TestSubAgentHITLPlumbing:
 
 
 class TestPendingEntryModel:
-    """Post-refactor ``_PendingEntry`` is a Pydantic BaseModel (Rule 1
+    """Post-refactor ``PendingEntry`` is a Pydantic BaseModel (Rule 1
     compliance — was a dataclass before). These tests lock in that the
     coordinator's public methods still round-trip data cleanly and
     that the mutable fields (``surfaced`` + ``event``) still flip
     from within the coordinator's methods."""
 
     def test_pending_entry_is_pydantic(self):
-        assert issubclass(_PendingEntry, BaseModel)
+        assert issubclass(PendingEntry, BaseModel)
 
     def test_pending_entry_defaults_and_mutability(self):
-        entry = _PendingEntry(requirement=object(), run_id="r1")
+        entry = PendingEntry(requirement=object(), run_id="r1")
         # Defaults survive the dataclass → BaseModel migration.
         assert entry.agent_path == []
         assert entry.surfaced is False
@@ -380,14 +391,14 @@ class TestPendingEntryModel:
         # Newly-pushed entry surfaces exactly once.
         new_1 = coord.list_new_pending()
         assert len(new_1) == 1
-        assert new_1[0][0] == req_id
-        assert new_1[0][1].run_id == "run-x"
-        assert new_1[0][1].agent_path == ["arch"]
+        assert new_1[0].requirement_id == req_id
+        assert new_1[0].entry.run_id == "run-x"
+        assert new_1[0].entry.agent_path == ["arch"]
         # Second call returns nothing (already surfaced).
         assert coord.list_new_pending() == []
         assert coord.has_unresolved() is True
         # Resolve → future wait resolves.
-        assert coord.resolve(req_id, "confirm") is True
+        assert coord.resolve(req_id, msg.HITLAction.CONFIRM) is True
         resolved = await coord.wait_resolved(req_id)
         assert resolved is req
         # Confirm side effect on the fake requirement.

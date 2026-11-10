@@ -83,7 +83,7 @@ class EjectCommand:
                 "take a copy of."
             )
 
-        source_dir = self._session.group_root(kind)
+        source_dir = self._session.group_policy.shipped_dir(kind)
         if source_dir is None:
             return CommandResult.error(f"Your group ships no {kind}. Nothing to eject.")
 

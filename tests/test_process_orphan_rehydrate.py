@@ -13,12 +13,11 @@ These tests pin the fix:
 * :class:`BackgroundProcessStore` round-trips rows through real
   SQLite (in-memory file). Same shape as the matching
   ``test_session_data_real_db.py`` for plan decisions.
-* :meth:`OrphanRehydrator.run` (and the thin
-  ``rehydrate_orphan_processes`` back-compat wrapper) injects
-  alive pids into the registry as :class:`OrphanProcess` entries;
-  dead pids get pruned from the DB and the typed
-  :class:`RehydrateResult` populates ``surfaced`` / ``pruned`` /
-  ``reason`` fields so failure modes are observable.
+* :meth:`OrphanRehydrator.run` injects alive pids into the
+  registry as :class:`OrphanProcess` entries; dead pids get pruned
+  from the DB and the typed :class:`RehydrateResult` populates
+  ``surfaced`` / ``pruned`` / ``reason`` fields so failure modes are
+  observable.
 * :class:`OrphanProcess` quacks like ``ManagedProcess``: the
   registry's ``all_running`` reports it, ``read`` returns a
   placeholder, ``kill`` sends SIGTERM via the saved pgid,
@@ -32,15 +31,13 @@ from __future__ import annotations
 
 import asyncio
 import os
-import signal
-import sys
 import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
-from igni_core.backend.server import BackendServer
+from igni_core.backend.server_processes import ProcessesController
 from igni_core.core.db.database import Database
 from igni_core.core.tools import process_store as ps_mod
 from igni_core.core.tools.orphan_process import OrphanProcess
@@ -48,16 +45,24 @@ from igni_core.core.tools.orphan_rehydrator import (
     OrphanRehydrator,
     build_rehydrator,
 )
+from igni_core.core.tools.orphan_schemas import RehydrateResult
+from igni_core.core.tools.process_persistence import ProcessPersistenceWriter
 from igni_core.core.tools.process_registry import ProcessRegistry
-from igni_core.core.tools.process_store import (
-    BackgroundProcessRow,
-    BackgroundProcessStore,
-)
-from igni_core.core.tools.process_supervisor_locator import supervisors
-from igni_core.core.tools.shell_orphan import (
-    rehydrate_orphan_processes,
-)
-from igni_core.core.tools.shell_orphan_schemas import RehydrateResult
+from igni_core.core.tools.process_store import BackgroundProcessStore
+from igni_core.core.tools.process_store_schemas import BackgroundProcessRow, UpsertResult
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+
+
+@pytest.fixture
+def supervisor() -> ProcessSupervisor:
+    """The supervisor this test owns.
+
+    The backend injects the supervisor the process shares; a test
+    builds its own, so the registry, the log store and the event bus
+    start empty.
+    """
+    return ProcessSupervisor()
+
 
 # ── BackgroundProcessStore round-trip ────────────────────────
 
@@ -117,30 +122,35 @@ class TestBackgroundProcessStore:
 
 
 class TestOrphanProcess:
-    def setup_method(self) -> None:
-        # Each test gets a fresh registry — orphan entries from a
-        # prior test would survive otherwise (module-global).
-        supervisors.default().registry.clear()
-
-    def test_is_running_true_for_alive_pid(self) -> None:
+    def test_is_running_true_for_alive_pid(self, supervisor: ProcessSupervisor) -> None:
         # Use our own pid as the "alive" sample — guaranteed to
         # exist for the duration of the test.
         orphan = OrphanProcess(
-            pid=os.getpid(), cmd="self", started_epoch=int(time.time()), pgid=None
+            pid=os.getpid(),
+            cmd="self",
+            started_epoch=int(time.time()),
+            pgid=None,
+            log_store=supervisor.log_store,
         )
         assert orphan.is_running() is True
 
-    def test_is_running_false_for_dead_pid(self) -> None:
+    def test_is_running_false_for_dead_pid(self, supervisor: ProcessSupervisor) -> None:
         # ``-1`` is never a valid pid; ``os.kill(-1, 0)`` raises
         # PermissionError on Linux/macOS in practice. Use a
         # provably-dead pid by picking something well outside
         # PID_MAX. ``os.kill(0x7FFFFFFF, 0)`` raises ProcessLookupError.
-        orphan = OrphanProcess(pid=0x7FFFFFFE, cmd="dead", started_epoch=0, pgid=None)
+        orphan = OrphanProcess(
+            pid=0x7FFFFFFE,
+            cmd="dead",
+            started_epoch=0,
+            pgid=None,
+            log_store=supervisor.log_store,
+        )
         assert orphan.is_running() is False
         # State is sticky — once observed dead it stays dead.
         assert orphan.is_running() is False
 
-    def test_read_returns_placeholder_not_empty(self) -> None:
+    def test_read_returns_placeholder_not_empty(self, supervisor: ProcessSupervisor) -> None:
         # The watcher's tail pane needs SOMETHING to render, not
         # an empty string. When the log file is missing/empty
         # (no buffered output yet), the orphan returns the
@@ -150,25 +160,35 @@ class TestOrphanProcess:
         # Force the lookup into a tmp dir so we don't read from
         # a real project's log file by accident.
         with tempfile.TemporaryDirectory() as tmp:
-            supervisors.default().configure_log_store(tmp)
+            supervisor.configure_log_store(tmp)
             try:
                 orphan = OrphanProcess(
-                    pid=os.getpid(), cmd="x", started_epoch=int(time.time()), pgid=None
+                    pid=os.getpid(),
+                    cmd="x",
+                    started_epoch=int(time.time()),
+                    pgid=None,
+                    log_store=supervisor.log_store,
                 )
                 text = orphan.read()
                 assert "no buffered output" in text.lower()
                 assert "kill button" in text.lower()
             finally:
-                supervisors.default().configure_log_store(None)
+                supervisor.configure_log_store(None)
 
-    def test_kill_no_pgid_does_not_raise(self) -> None:
+    def test_kill_no_pgid_does_not_raise(self, supervisor: ProcessSupervisor) -> None:
         # PGid missing (e.g. row from a different platform / OS
         # error during ``getpgid``) — kill must still attempt the
         # bare pid call and not crash.
-        orphan = OrphanProcess(pid=0x7FFFFFFE, cmd="x", started_epoch=0, pgid=None)
+        orphan = OrphanProcess(
+            pid=0x7FFFFFFE,
+            cmd="x",
+            started_epoch=0,
+            pgid=None,
+            log_store=supervisor.log_store,
+        )
         orphan.kill()  # must not raise
 
-    def test_registry_all_running_handles_orphan(self) -> None:
+    def test_registry_all_running_handles_orphan(self, supervisor: ProcessSupervisor) -> None:
         # ``ProcessRegistry.all_running`` previously assumed
         # ``mp.started_at`` (monotonic). Orphans carry epoch
         # instead — the branch must produce a sensible elapsed.
@@ -178,27 +198,38 @@ class TestOrphanProcess:
             cmd="self",
             started_epoch=int(time.time()) - 30,
             pgid=None,
+            log_store=supervisor.log_store,
         )
-        reg.add(orphan)  # type: ignore[arg-type]
+        reg.add(orphan)
         rows = reg.all_running()
         assert len(rows) == 1
-        pid, cmd, elapsed = rows[0]
-        assert pid == os.getpid()
-        assert cmd == "self"
+        row = rows[0]
+        assert row.pid == os.getpid()
+        assert row.cmd == "self"
         # ~30s ago, allow a few seconds slop.
-        assert 25 <= elapsed <= 60
+        assert 25 <= row.elapsed_seconds <= 60
 
 
-# ── rehydrate_orphan_processes ───────────────────────────────
+# ── the rehydrate pass ───────────────────────────────────────
+
+
+async def _rehydrate(supervisor: ProcessSupervisor, project_dir: Path) -> RehydrateResult:
+    """Run the rehydrate pass and return its typed result.
+
+    The typed path is the only path: the old
+    ``rehydrate_orphan_processes`` wrapper collapsed a store-init
+    failure and "no rows" into the same bare ``0`` — exactly the gap
+    these tests exist to close.
+    """
+    build = build_rehydrator(supervisor, project_dir)
+    assert build.rehydrator is not None, build.result.reason
+    return await build.rehydrator.run()
 
 
 class TestRehydrateOrphanProcesses:
-    def setup_method(self) -> None:
-        supervisor = supervisors.default()
-        supervisor.registry.clear()
-        supervisor.registry.attach_persistence(None)
-
-    async def test_surfaces_alive_pid_as_orphan(self, tmp_path: Path) -> None:
+    async def test_surfaces_alive_pid_as_orphan(
+        self, tmp_path: Path, supervisor: ProcessSupervisor
+    ) -> None:
         # Seed the DB with our own pid (guaranteed alive), then
         # rehydrate. The registry should now have the orphan.
         store = BackgroundProcessStore(db_path=tmp_path / "state.db")
@@ -215,17 +246,17 @@ class TestRehydrateOrphanProcesses:
         original_resolver = ps_mod._resolve_database
         ps_mod._resolve_database = lambda *_, **__: Database(tmp_path / "state.db")
         try:
-            count = await rehydrate_orphan_processes(project_dir=tmp_path)
+            result = await _rehydrate(supervisor, tmp_path)
         finally:
             ps_mod._resolve_database = original_resolver
 
-        assert count == 1
-        mp = supervisors.default().registry.get(os.getpid())
+        assert result.surfaced == 1
+        mp = supervisor.registry.get(os.getpid())
         assert isinstance(mp, OrphanProcess)
         assert mp.cmd == "pretend dev server"
 
     async def test_a_dead_pid_becomes_history_rather_than_being_deleted(
-        self, tmp_path: Path
+        self, tmp_path: Path, supervisor: ProcessSupervisor
     ) -> None:
         """The row survives the process, and the process survives the BE.
 
@@ -243,12 +274,12 @@ class TestRehydrateOrphanProcesses:
         original_resolver = ps_mod._resolve_database
         ps_mod._resolve_database = lambda *_, **__: Database(tmp_path / "state.db")
         try:
-            count = await rehydrate_orphan_processes(project_dir=tmp_path)
+            result = await _rehydrate(supervisor, tmp_path)
         finally:
             ps_mod._resolve_database = original_resolver
 
-        assert count == 1, "the finished process was not surfaced"
-        entry = supervisors.default().registry.get(dead_pid)
+        assert result.surfaced == 1, "the finished process was not surfaced"
+        entry = supervisor.registry.get(dead_pid)
         assert entry is not None and not entry.is_running()
 
         rows = await BackgroundProcessStore(db_path=tmp_path / "state.db").list_all()
@@ -257,17 +288,19 @@ class TestRehydrateOrphanProcesses:
         # but the *fact* that it ended is recorded.
         assert rows[0].finished_at is not None
         assert rows[0].exit_code is None
-        supervisors.default().registry.remove(dead_pid)
+        supervisor.registry.remove(dead_pid)
 
-    async def test_empty_db_is_noop(self, tmp_path: Path) -> None:
+    async def test_empty_db_is_noop(self, tmp_path: Path, supervisor: ProcessSupervisor) -> None:
         original_resolver = ps_mod._resolve_database
         ps_mod._resolve_database = lambda *_, **__: Database(tmp_path / "state.db")
         try:
-            count = await rehydrate_orphan_processes(project_dir=tmp_path)
+            result = await _rehydrate(supervisor, tmp_path)
         finally:
             ps_mod._resolve_database = original_resolver
 
-        assert count == 0
+        assert result.ok is True
+        assert result.surfaced == 0
+        assert result.reason == ""
 
 
 # ── OrphanRehydrator (typed-result direct entry point) ───────
@@ -276,19 +309,14 @@ class TestRehydrateOrphanProcesses:
 class TestOrphanRehydratorRun:
     """The typed :meth:`OrphanRehydrator.run` entry point returns
     a :class:`RehydrateResult` with populated ``surfaced`` /
-    ``pruned`` / ``reason`` fields. The three failure branches
-    (store init, ``list_all``, per-row ``remove``) each surface a
-    distinct ``reason`` so :class:`RehydrateController` can plumb
-    it through instead of collapsing to a bare ``int``.
+    ``pruned`` / ``reason`` fields. The two failure branches
+    (store init, ``list_all``) each surface a distinct ``reason``
+    so :class:`RehydrateController` can plumb it through instead of
+    collapsing to a bare ``int``.
     """
 
-    def setup_method(self) -> None:
-        supervisor = supervisors.default()
-        supervisor.registry.clear()
-        supervisor.registry.attach_persistence(None)
-
     async def test_run_returns_typed_result_with_surfaced_and_pruned_counts(
-        self, tmp_path: Path
+        self, tmp_path: Path, supervisor: ProcessSupervisor
     ) -> None:
         # Two rows: one alive (our own pid), one dead. Both are now
         # surfaced — the alive one as an orphan to adopt, the dead one
@@ -308,7 +336,7 @@ class TestOrphanRehydratorRun:
             BackgroundProcessRow(pid=dead_pid, cmd="ghost", pgid=dead_pid, started_at=0)
         )
 
-        rehydrator = OrphanRehydrator(supervisors.default(), store)
+        rehydrator = OrphanRehydrator(supervisor, store)
         result = await rehydrator.run()
 
         assert isinstance(result, RehydrateResult)
@@ -316,24 +344,31 @@ class TestOrphanRehydratorRun:
         assert result.surfaced == 2, "the finished row was not surfaced as history"
         assert result.pruned == 0, "nothing here is past the retention window"
         assert result.reason == ""
-        supervisors.default().registry.remove(dead_pid)
-        supervisors.default().registry.remove(os.getpid())
+        supervisor.registry.remove(dead_pid)
+        supervisor.registry.remove(os.getpid())
 
-    async def test_run_reports_reason_when_list_all_fails(self, tmp_path: Path) -> None:
+    async def test_run_reports_reason_when_list_all_fails(
+        self, tmp_path: Path, supervisor: ProcessSupervisor
+    ) -> None:
         # A store whose ``list_all`` raises should NOT crash the
         # pass — the failure surfaces via the typed reason instead.
         class _FailingStore:
             async def list_all(self) -> list[BackgroundProcessRow]:
                 raise RuntimeError("db locked")
 
-            async def remove(self, pid: int) -> None:  # pragma: no cover
-                return None
+            async def finish(  # pragma: no cover
+                self, pid: int, exit_code: int | None
+            ) -> UpsertResult:
+                return UpsertResult(ok=True)
+
+            async def prune_history(self, *, older_than_seconds: float) -> int:  # pragma: no cover
+                return 0
 
             async def upsert(self, row: BackgroundProcessRow) -> None:  # pragma: no cover
                 return None
 
         rehydrator = OrphanRehydrator(
-            supervisors.default(),
+            supervisor,
             _FailingStore(),  # type: ignore[arg-type]
         )
         result = await rehydrator.run()
@@ -344,7 +379,7 @@ class TestOrphanRehydratorRun:
         assert "db locked" in result.reason
 
     async def test_a_store_that_cannot_record_the_ending_still_surfaces_it(
-        self, tmp_path: Path
+        self, tmp_path: Path, supervisor: ProcessSupervisor
     ) -> None:
         """History is best-effort on the write, firm on the read.
 
@@ -360,39 +395,41 @@ class TestOrphanRehydratorRun:
             BackgroundProcessRow(pid=dead_pid, cmd="ghost", pgid=dead_pid, started_at=0)
         )
 
-        class _FailingRemoveStore:
+        class _FailingFinishStore:
             def __init__(self, inner: BackgroundProcessStore) -> None:
                 self._inner = inner
 
             async def list_all(self) -> list[BackgroundProcessRow]:
                 return await self._inner.list_all()
 
-            async def remove(self, pid: int) -> None:  # pragma: no cover
-                return None
+            async def prune_history(self, *, older_than_seconds: float) -> int:
+                return await self._inner.prune_history(older_than_seconds=older_than_seconds)
 
-            async def finish(self, pid: int, exit_code: int | None) -> None:
-                raise RuntimeError("cannot stamp")
+            async def finish(self, pid: int, exit_code: int | None) -> UpsertResult:
+                # The store's own contract: a failed write is a typed
+                # result, not an exception.
+                return UpsertResult(ok=False, reason="cannot stamp")
 
             async def upsert(self, row: BackgroundProcessRow) -> None:  # pragma: no cover
                 return None
 
         rehydrator = OrphanRehydrator(
-            supervisors.default(),
-            _FailingRemoveStore(real_store),  # type: ignore[arg-type]
+            supervisor,
+            _FailingFinishStore(real_store),  # type: ignore[arg-type]
         )
         result = await rehydrator.run()
 
         assert result.ok is True
         assert result.surfaced == 1, "a row we could not stamp was dropped from the panel"
-        entry = supervisors.default().registry.get(dead_pid)
+        entry = supervisor.registry.get(dead_pid)
         assert entry is not None and not entry.is_running()
-        supervisors.default().registry.remove(dead_pid)
+        supervisor.registry.remove(dead_pid)
 
     async def test_build_rehydrator_reports_reason_on_store_init_failure(
-        self, tmp_path: Path
+        self, tmp_path: Path, supervisor: ProcessSupervisor
     ) -> None:
         # If the store constructor itself raises, ``build_rehydrator``
-        # returns ``(None, RehydrateResult(ok=False, reason=...))`` so
+        # returns a build with no rehydrator and a failed result, so
         # the caller can surface the store-init failure instead of
         # silently falling back to "return 0".
         original_resolver = ps_mod._resolve_database
@@ -402,30 +439,25 @@ class TestOrphanRehydratorRun:
 
         ps_mod._resolve_database = _broken_resolver  # type: ignore[assignment]
         try:
-            rehydrator, failure = build_rehydrator(supervisors.default(), tmp_path)
+            build = build_rehydrator(supervisor, tmp_path)
         finally:
             ps_mod._resolve_database = original_resolver
 
-        assert rehydrator is None
-        assert failure is not None
-        assert failure.ok is False
-        assert "store_init" in failure.reason
+        assert build.rehydrator is None
+        assert build.result.ok is False
+        assert "store_init" in build.result.reason
 
 
-# ── BackendServer.stop_background_process for orphans ────────
+# ── ProcessesController.stop for orphans ────────
 
 
 class TestStopOrphanProcess:
-    def setup_method(self) -> None:
-        supervisors.default().registry.clear()
-
     async def test_killing_orphan_drops_registry_and_db_row(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisor: ProcessSupervisor
     ) -> None:
         # Use a doubly-stubbed orphan so we don't actually kill
         # anything. Track that ``kill`` was called and that
         # cleanup landed.
-        supervisor = supervisors.default()
         store = BackgroundProcessStore(db_path=tmp_path / "state.db")
         await store.upsert(BackgroundProcessRow(pid=12345, cmd="fake", pgid=12345, started_at=0))
         supervisor.registry.attach_persistence(store)
@@ -440,13 +472,18 @@ class TestStopOrphanProcess:
             def kill(self) -> None:  # type: ignore[override]
                 kill_calls.append(self.pid)
 
-        fake = _Fake(pid=12345, cmd="fake", started_epoch=int(time.time()), pgid=12345)
-        supervisor.registry.add(fake)  # type: ignore[arg-type]
+        fake = _Fake(
+            pid=12345,
+            cmd="fake",
+            started_epoch=int(time.time()),
+            pgid=12345,
+            log_store=supervisor.log_store,
+        )
+        supervisor.registry.add(fake)
 
-        server = BackendServer.__new__(BackendServer)
-        result = await server.stop_background_process(pid=12345)
+        result = await ProcessesController(supervisor).stop(pid=12345)
 
-        assert result["killed"] is True
+        assert result.killed is True
         assert kill_calls == [12345]
         # Orphan path explicitly removed the registry row.
         assert supervisor.registry.get(12345) is None
@@ -464,24 +501,16 @@ class TestStopOrphanProcess:
 
 
 class TestPersistGuards:
-    """The persistence hooks in the registry's hot path must NOT
-    raise when no store is wired (test/headless contexts) or
-    when there's no running loop. These guards exist so the
-    shell tool stays usable in the standalone pytest harness."""
+    """The persistence writer must NOT raise when no store is wired
+    (test/headless contexts) or when there's no running loop. These
+    guards exist so the shell tool stays usable in the standalone
+    pytest harness."""
 
-    def test_persist_add_noop_when_store_unset(self) -> None:
-        registry = supervisors.default().registry
-        registry.attach_persistence(None)
+    def test_record_start_noop_when_store_unset(self) -> None:
+        writer = ProcessPersistenceWriter()
         # No exception even though there's no store + no loop.
-        registry._persist_add(12345, "x")
+        writer.record_start(12345, "x")
 
-    def test_persist_remove_noop_when_store_unset(self) -> None:
-        registry = supervisors.default().registry
-        registry.attach_persistence(None)
-        registry._persist_remove(12345)
-
-
-# Silence unused-import warnings — kept so the test runner can
-# resolve module attributes on test discovery.
-_ = signal
-_ = sys
+    def test_forget_noop_when_store_unset(self) -> None:
+        writer = ProcessPersistenceWriter()
+        writer.forget(12345)

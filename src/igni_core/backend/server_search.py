@@ -25,6 +25,7 @@ Multi-line snippets become a single literal pattern.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -66,7 +67,7 @@ class SearchController:
         self._strategy = strategy if strategy is not None else SearchStrategy.pick()
         self._cache = cache if cache is not None else LruSearchCache()
 
-    def search_code(self, snippet: str, max_results: int = 20) -> SearchCodeResult:
+    async def search_code(self, snippet: str, max_results: int = 20) -> SearchCodeResult:
         """Find exact-substring occurrences of ``snippet`` across
         the project.
 
@@ -74,6 +75,10 @@ class SearchController:
         cache lookup. Short snippets (< 5 chars) short-circuit to an
         empty result — the composer paste heuristic isn't useful
         below that length and matches would be dominated by noise.
+
+        The search itself (``rg``, or a walk of the tree, for up to its
+        timeout) runs in a worker thread: on the event loop it held up
+        every session while it ran.
         """
         snippet = (snippet or "").strip()
         if len(snippet) < 5:
@@ -89,6 +94,8 @@ class SearchController:
             return cached
 
         snippet_lines = snippet.count("\n") + 1
-        payload = self._strategy.search(project_root, snippet, snippet_lines, max_results)
+        payload = await asyncio.to_thread(
+            self._strategy.search, project_root, snippet, snippet_lines, max_results
+        )
         self._cache.put(cache_key, payload)
         return payload

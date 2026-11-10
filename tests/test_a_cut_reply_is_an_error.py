@@ -15,6 +15,7 @@ as the protocol messages the web client and the backend see.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
@@ -25,8 +26,10 @@ from igni_core.core.config.logging_model import LoggingModel
 from igni_core.core.config.settings import Settings
 from igni_core.core.guardrails.runner import GuardrailRunner
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.session.message_handler import SessionMessageHandler
+from igni_core.core.session.compaction.context_budget import ContextBudget
+from igni_core.core.session.message_handler import MessageHandlerDeps, SessionMessageHandler
 from igni_core.core.session.runner import run_single_message
+from igni_core.core.tools.plan.store import PlanStore
 from igni_core.protocol import messages as msg
 from igni_core.protocol.serializer import serialize_event
 
@@ -175,24 +178,25 @@ async def test_a_cut_non_streamed_reply_fails_the_headless_run():
     agent = Agent(model=model(whole=completion("\n\n", "length")))
     display = MagicMock()
     handler = SessionMessageHandler(
-        hook_executor=HookExecutor({}),
-        audit=MagicMock(),
-        display=display,
-        guardrail_runner=GuardrailRunner(Settings()),
-        team_ref=lambda: agent,
-        pending_reminders_drain=lambda: [],
-        compact_hook=AsyncMock(return_value=False),
-        ensure_mcp=AsyncMock(),
-        session_id_ref=lambda: "s1",
-        context_window_ref=lambda: 100_000,
-        latch_input_tokens=lambda _tokens: None,
+        MessageHandlerDeps(
+            hooks=SimpleNamespace(executor=HookExecutor({})),
+            audit=MagicMock(),
+            display=display,
+            guardrail_runner=GuardrailRunner(Settings()),
+            team_ref=lambda: agent,
+            pending_reminders_drain=lambda: [],
+            compact_hook=AsyncMock(return_value=False),
+            ensure_mcp=AsyncMock(),
+            session_id_ref=lambda: "s1",
+            budget=ContextBudget(window=100_000),
+        )
     )
     session = MagicMock()
     session.session_id = "s1"
     session.settings.models.default = "igni-1.0-4b"
     session.hook_executor = HookExecutor({})
     session.display = display
-    session.plan_store = None
+    session.plan_store = PlanStore()
     session.handle_message = handler.handle
     type(session).last_turn_failure = PropertyMock(side_effect=lambda: handler.last_failure)
 

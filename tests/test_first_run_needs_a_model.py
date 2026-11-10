@@ -11,6 +11,7 @@ contract between two files that had no idea they shared one.
 
 from __future__ import annotations
 
+from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.settings import Settings
 
@@ -40,7 +41,11 @@ def test_a_discovered_model_counts_even_without_a_default():
     """Cloud discovery merges entries without necessarily setting a
     default; `_effective_default` falls through to the first key, so a
     logged-in user with models is configured."""
-    registry = ModelRegistry(_settings(default="", registry={"claude-opus-5": {}}))
+    registry = ModelRegistry(
+        _settings(
+            default="", registry={"claude-opus-5": ModelRegistryEntry(model_id="claude-opus-5")}
+        )
+    )
 
     assert registry.has_usable_model() is True
 

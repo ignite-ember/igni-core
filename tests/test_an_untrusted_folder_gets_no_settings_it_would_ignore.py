@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from igni_core.core.init.project_initializer import ProjectInitializer
+from igni_core.core.workspace_trust import process_trust
 
 pytestmark = pytest.mark.workspace_trust
 
@@ -17,17 +18,15 @@ pytestmark = pytest.mark.workspace_trust
 def test_an_untrusted_folder_gets_no_permissions_file(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
-    ProjectInitializer.initialize(project)
+    ProjectInitializer(project_dir=project, trust=process_trust()).run()
     assert not (project / ".igni" / "settings.local.json").exists() or (
         "permissions" not in (project / ".igni" / "settings.local.json").read_text()
     )
 
 
 def test_a_trusted_folder_still_gets_its_starter_permissions(tmp_path):
-    from igni_core.core.workspace_trust import WorkspaceTrust
-
     project = tmp_path / "project"
     project.mkdir()
-    WorkspaceTrust.shared().trust(project, remember=False)
-    ProjectInitializer.initialize(project)
+    process_trust().trust(project, remember=False)
+    ProjectInitializer(project_dir=project, trust=process_trust()).run()
     assert "permissions" in (project / ".igni" / "settings.local.json").read_text()

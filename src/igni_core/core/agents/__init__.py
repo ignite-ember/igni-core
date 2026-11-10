@@ -7,7 +7,7 @@ knowing the internal layout. Mirrors the sibling packages
 """
 
 from igni_core.core.agents.builder import AgentBuilder
-from igni_core.core.agents.compat import PoolCompatShim
+from igni_core.core.agents.contributions import AgentContributionApplier
 from igni_core.core.agents.ephemeral import EphemeralAgentStore
 from igni_core.core.agents.loader import AgentDefinitionLoader
 from igni_core.core.agents.markdown import AgentMarkdownFile
@@ -27,6 +27,7 @@ from igni_core.core.agents.schemas import (
 __all__ = [
     "AgentBuildContext",
     "AgentBuilder",
+    "AgentContributionApplier",
     "AgentConstructorArgs",
     "AgentDefinition",
     "AgentDefinitionLoader",
@@ -39,5 +40,4 @@ __all__ = [
     "LoadError",
     "LoadReport",
     "PluginRestrictionPolicy",
-    "PoolCompatShim",
 ]

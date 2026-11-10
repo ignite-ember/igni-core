@@ -5,9 +5,9 @@ installer built and returns one that runs the same command confined to
 the extension's grants (:class:`~.plan.SandboxPlan`), with an egress
 proxy (:class:`~.proxy.EgressProxy`) running for it in igni. Every
 process igni starts for an extension goes through here
-(:meth:`ExtensionInstaller._service_config`'s result is confined before
-it is started); an ``endpoint`` extension has no process here and is
-left as it is.
+(:meth:`~igni_core.extensions.install_process.ExtensionProcess.confine`
+confines the config the installer built, before it is started); an
+``endpoint`` extension has no process here and is left as it is.
 
 What the process sees changes in four ways, all in its environment:
 
@@ -19,37 +19,59 @@ What the process sees changes in four ways, all in its environment:
   ``TEMP``, Java's ``java.io.tmpdir`` through ``JAVA_TOOL_OPTIONS``) its
   run's temp directory — the person's home is not readable, and a tool
   that finds its config there would fail rather than start empty.
-* ``IGNI_SANDBOX`` names the sandbox (``seatbelt``, ``bubblewrap``).
+* ``IGNI_SANDBOX`` names the sandbox (``seatbelt``, ``bubblewrap``,
+  ``appcontainer``).
 
-Per platform: macOS uses Seatbelt (:mod:`.seatbelt`), Linux bubblewrap
-(:mod:`.bubblewrap`), and Windows nothing yet. Where there is no sandbox
-the process runs as before, with a warning in the log and on the
-extension (:attr:`Confinement.reason`), unless ``extensions.require_sandbox``
-is set, which refuses it (:class:`SandboxRefused`). ``extensions.sandbox:
+On Windows also ``USERPROFILE``, ``APPDATA`` and ``LOCALAPPDATA`` are
+inside the run's home, and the proxy's and igni's loopback URLs are
+rewritten once more inside the sandbox, to ports of its own
+(:mod:`.winbridge`).
+
+Which sandbox that is depends on the machine: macOS uses Seatbelt
+(:mod:`.seatbelt`), Linux bubblewrap (:mod:`.bubblewrap`), and Windows
+an AppContainer of the run's own (:mod:`.appcontainer`). The three are
+asked the same questions through one interface (:mod:`.mechanism`), so
+this module names none. Where there is no sandbox the process runs as
+before, with a warning in the log and on the extension
+(:attr:`Confinement.reason`), unless ``extensions.require_sandbox`` is
+set, which refuses it (:class:`SandboxRefused`). ``extensions.sandbox:
 false`` turns all of this off for development
 (:class:`~.settings.SandboxSettings`).
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import secrets
 import shutil
 import sys
 import tempfile
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
+from igni_core.core.config.settings import Settings
 from igni_core.core.mcp.config import MCPServerConfig, MCPTransport
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.permissions import PermissionDenied
-from igni_core.extensions.sandbox.bubblewrap import PROXY_PORT, Bubblewrap
+from igni_core.extensions.sandbox.appcontainer import RUN_DIR_PREFIX, ContainerRun
+from igni_core.extensions.sandbox.mechanism import (
+    MechanismDeps,
+    MechanismName,
+    MechanismRun,
+    SandboxAvailability,
+    SandboxMechanism,
+    probe_platform,
+)
 from igni_core.extensions.sandbox.plan import SandboxPlan
-from igni_core.extensions.sandbox.proxy import Connector, EgressProxy, LoopbackRelay
-from igni_core.extensions.sandbox.seatbelt import Seatbelt
+from igni_core.extensions.sandbox.proxy import (
+    Connector,
+    EgressProxy,
+    LoopbackRelay,
+    stop_relays,
+)
 from igni_core.extensions.sandbox.settings import SandboxSettings
 
 logger = logging.getLogger(__name__)
@@ -67,25 +89,41 @@ class SandboxRefused(PermissionDenied):
     """``extensions.require_sandbox`` is set and this machine has no sandbox."""
 
 
-@dataclass(slots=True)
-class Confinement:
+class Confinement(BaseModel):
     """How one extension's process runs: confined, or not and why."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     extension_id: str
-    #: ``seatbelt`` or ``bubblewrap``; empty when it runs unconfined.
-    mechanism: str = ""
+    #: Which sandbox confines it; ``None`` when it runs unconfined.
+    mechanism: MechanismName | None = None
     #: Why it runs unconfined; empty when confined.
     reason: str = ""
     #: Unconfined because a setting turned the sandbox off, rather than
     #: because this machine has none.
     deliberate: bool = False
+    #: The grants it runs with.
     plan: SandboxPlan | None = None
+    #: The egress proxy igni runs for it.
     proxy: EgressProxy | None = None
-    relays: list[LoopbackRelay] = field(default_factory=list)
+    #: The relays that bridge igni's loopback ports into its sandbox.
+    relays: list[LoopbackRelay] = Field(default_factory=list)
+    #: What the mechanism made ready for this run: the command, the
+    #: ports, and what is undone when the run ends.
+    prepared: MechanismRun | None = None
+
+    @property
+    def container(self) -> ContainerRun | None:
+        """The AppContainer of a Windows run, and what it was granted.
+
+        ``None`` for the runs of the other platforms, which have no
+        container to undo.
+        """
+        return self.prepared.container if self.prepared is not None else None
 
     @property
     def confined(self) -> bool:
-        return bool(self.mechanism)
+        return self.mechanism is not None
 
     def describe(self) -> str:
         """One line for the extensions panel."""
@@ -105,6 +143,7 @@ class ExtensionSandbox:
         platform: str | None = None,
         connect: Connector | None = None,
         run_root: Path | None = None,
+        deps: MechanismDeps | None = None,
     ) -> None:
         """
         Args:
@@ -115,31 +154,32 @@ class ExtensionSandbox:
                 simulate a machine with no sandbox.
             connect: How the proxy opens an upstream connection (tests).
             run_root: Where run directories go; the system temp dir.
+            deps: What a mechanism needs from igni when it is made — the
+                AppContainer Windows' mechanism grants paths with, with
+                its Win32 calls faked in tests.
         """
         self._settings = settings if settings is not None else SandboxSettings.load()
         self._network = network or NetworkPolicy()
         self._platform = platform or sys.platform
         self._connect = connect
         self._run_root = run_root
-        self._probed: tuple[str, str] | None = None
+        self._deps = deps or MechanismDeps()
+        self._availability: SandboxAvailability | None = None
         self._runs: dict[str, Confinement] = {}
 
     @classmethod
-    def for_settings(cls, settings: Any) -> ExtensionSandbox:
+    def for_settings(cls, settings: Settings) -> ExtensionSandbox:
         """From igni's loaded settings: its air gap, and the switches from their tiers.
 
         The organisation's group policy counts for ``require_sandbox``
         only as the pack igni server signed and igni verifies here, the
-        same way the settings loader reads it.
+        same way the settings loader reads it. A pack that cannot be
+        read is not the same as no pack, so nothing here hides a failure
+        to read it: it is raised, rather than running the extensions
+        without the organisation's ``require_sandbox``.
         """
-        from igni_core.core.config.group_policy import CachedSettingsFetcher
-
-        try:
-            group = CachedSettingsFetcher.for_settings(settings)
-        except Exception:  # noqa: BLE001 — a partial settings object has no pack
-            group = None
         return cls(
-            settings=SandboxSettings.load(group=group),
+            settings=SandboxSettings.load(group=CachedSettingsFetcher.for_settings(settings)),
             network=NetworkPolicy.from_settings(settings),
         )
 
@@ -150,22 +190,11 @@ class ExtensionSandbox:
     def status(self, extension_id: str) -> Confinement | None:
         return self._runs.get(extension_id)
 
-    async def mechanism(self) -> tuple[str, str]:
-        """``(name, "")`` for this machine's sandbox, or ``("", why there is none)``."""
-        if self._probed is None:
-            self._probed = await self._probe()
-        return self._probed
-
-    async def _probe(self) -> tuple[str, str]:
-        if self._platform == "darwin":
-            reason = await Seatbelt.probe()
-            return ("seatbelt", "") if reason is None else ("", reason)
-        if self._platform.startswith("linux"):
-            reason = await Bubblewrap.probe()
-            return ("bubblewrap", "") if reason is None else ("", reason)
-        if self._platform in ("win32", "cygwin"):
-            return "", "extension processes are not sandboxed on Windows yet"
-        return "", f"no sandbox for {self._platform}"
+    async def availability(self) -> SandboxAvailability:
+        """Whether this machine has a sandbox, and which one."""
+        if self._availability is None:
+            self._availability = await probe_platform(self._platform, self._deps)
+        return self._availability
 
     # ── the one entry point ────────────────────────────────────────
 
@@ -191,7 +220,7 @@ class ExtensionSandbox:
 
         if not self._settings.enabled:
             self._runs[manifest.id] = Confinement(
-                manifest.id,
+                extension_id=manifest.id,
                 reason=f"extensions.sandbox is false in the {self._settings.disabled_by} settings",
                 deliberate=True,
             )
@@ -202,25 +231,28 @@ class ExtensionSandbox:
             )
             return config
 
-        mechanism, why = await self.mechanism()
-        if not mechanism:
+        availability = await self.availability()
+        mechanism = availability.mechanism
+        if mechanism is None:
             if self._settings.required:
                 raise SandboxRefused(
                     f"{manifest.id} was not started: extensions.require_sandbox is set "
-                    f"and this machine has no sandbox ({why})."
+                    f"and this machine has no sandbox ({availability.reason})."
                 )
-            self._runs[manifest.id] = Confinement(manifest.id, reason=why)
+            self._runs[manifest.id] = Confinement(
+                extension_id=manifest.id, reason=availability.reason
+            )
             logger.warning(
                 "extension %s runs UNSANDBOXED, with this person's full file and network "
                 "access: %s. Set extensions.require_sandbox in managed settings to refuse "
                 "instead.",
                 manifest.id,
-                why,
+                availability.reason,
             )
             return config
 
         run_dir = Path(
-            tempfile.mkdtemp(prefix=f"igni-ext-{_safe(manifest.id)}-", dir=self._run_root)
+            tempfile.mkdtemp(prefix=f"{RUN_DIR_PREFIX}{_safe(manifest.id)}-", dir=self._run_root)
         ).resolve()
         try:
             return await self._wrap(
@@ -236,12 +268,12 @@ class ExtensionSandbox:
             )
         except Exception:
             await self.release(manifest.id)
-            shutil.rmtree(run_dir, ignore_errors=True)
+            _remove_run_dir(run_dir)
             raise
 
     async def _wrap(
         self,
-        mechanism: str,
+        mechanism: SandboxMechanism,
         manifest: ExtensionManifest,
         config: MCPServerConfig,
         *,
@@ -287,45 +319,43 @@ class ExtensionSandbox:
         proxy = EgressProxy(
             manifest.id, plan.hosts, connect=self._connect, token=secrets.token_urlsafe(24)
         )
-        run = Confinement(manifest.id, mechanism=mechanism, plan=plan, proxy=proxy)
+        run = Confinement(
+            extension_id=manifest.id, mechanism=mechanism.name, plan=plan, proxy=proxy
+        )
         self._runs[manifest.id] = run
 
-        if mechanism == "seatbelt":
-            port = await proxy.start_tcp()
-            granted = {port, *plan.loopback_ports}
-            plan.denied_ports = sorted((await Seatbelt.listening_ports()) - granted)
-            command, args = Seatbelt.command(plan, config.command or "", list(config.args or []))
-        else:
-            Bubblewrap.socket_dir(plan).mkdir(mode=0o700, exist_ok=True)
-            await proxy.start_unix(Bubblewrap.proxy_socket(plan))
-            for loop_port in plan.loopback_ports:
-                relay = LoopbackRelay(loop_port, Bubblewrap.relay_socket(plan, loop_port))
-                await relay.start()
-                run.relays.append(relay)
-            port = PROXY_PORT
-            command, args = Bubblewrap.command(
-                plan, config.command or "", list(config.args or []), cwd=cwd
-            )
+        prepared = await mechanism.prepare(
+            plan,
+            proxy,
+            command=config.command or "",
+            args=list(config.args or []),
+            cwd=cwd,
+        )
+        run.relays.extend(prepared.relays)
+        run.prepared = prepared
 
-        env.update(self._environment(plan, proxy.url(port), mechanism, env))
+        env.update(prepared.env)
+        env.update(self._environment(plan, proxy.url(prepared.proxy_port), mechanism.name, env))
         logger.info(
             "extension %s sandboxed (%s): reads %d paths, writes %s, reaches %s",
             manifest.id,
-            mechanism,
+            mechanism.name,
             len(plan.read),
             ", ".join(str(p) for p in plan.write),
             ", ".join(plan.hosts.entries) or "no host beyond this machine",
         )
-        return config.model_copy(update={"command": command, "args": args, "env": env})
+        return config.model_copy(
+            update={"command": prepared.command, "args": prepared.args, "env": env}
+        )
 
     @staticmethod
     def _environment(
-        plan: SandboxPlan, proxy: str, mechanism: str, env: dict[str, str]
+        plan: SandboxPlan, proxy: str, mechanism: MechanismName, env: dict[str, str]
     ) -> dict[str, str]:
         tmp = str(plan.temp_dir)
         java = env.get("JAVA_TOOL_OPTIONS", "")
         out = {
-            SANDBOX_ENV: mechanism,
+            SANDBOX_ENV: mechanism.value,
             "HOME": str(plan.home_dir),
             "TMPDIR": tmp,
             "TMP": tmp,
@@ -344,13 +374,26 @@ class ExtensionSandbox:
         if run is None:
             return
         if run.proxy is not None:
-            with contextlib.suppress(Exception):
+            try:
                 await run.proxy.stop()
-        for relay in run.relays:
-            with contextlib.suppress(Exception):
-                await relay.stop()
+            except Exception as exc:  # noqa: BLE001 — teardown must not raise
+                logger.warning("the egress proxy for %s did not stop: %s", extension_id, exc)
+        await stop_relays(run.relays)
+        await self._release(extension_id, run)
         if run.plan is not None and run.plan.run_dir is not None:
-            shutil.rmtree(run.plan.run_dir, ignore_errors=True)
+            _remove_run_dir(run.plan.run_dir)
+
+    async def _release(self, extension_id: str, run: Confinement) -> None:
+        """Let the mechanism undo what it made ready for this run."""
+        if run.prepared is None:
+            return
+        mechanism = self._availability.mechanism if self._availability is not None else None
+        if mechanism is None:
+            return
+        try:
+            await mechanism.release(run.prepared)
+        except Exception as exc:  # noqa: BLE001 — teardown must not raise
+            logger.warning("the sandbox for %s did not let go: %s", extension_id, exc)
 
     async def close(self) -> None:
         for extension_id in list(self._runs):
@@ -359,6 +402,21 @@ class ExtensionSandbox:
 
 def _safe(extension_id: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in extension_id)[:40]
+
+
+def _remove_run_dir(run_dir: Path) -> None:
+    """Remove a run directory, saying so when part of it stays.
+
+    Best effort: a run directory that will not go must not stop the
+    extension from being released, but it is said out loud, because it
+    holds what the extension wrote.
+    """
+    try:
+        shutil.rmtree(run_dir)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        logger.warning("the run directory %s was not removed: %s", run_dir, exc)
 
 
 __all__ = ["NO_PROXY", "SANDBOX_ENV", "Confinement", "ExtensionSandbox", "SandboxRefused"]

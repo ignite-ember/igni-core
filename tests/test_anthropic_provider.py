@@ -29,8 +29,8 @@ from agno.agent import Agent
 from agno.media import File, Image
 
 from igni_core.backend.model_http_client_manager import ModelHttpClientManager
-from igni_core.cli.invocation import load_settings_from_options
 from igni_core.cli.options import CliOptions
+from igni_core.cli.run_settings import CliSettingsLoader
 from igni_core.core.agents.schemas import AgentConstructorArgs
 from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.auth.credentials import Credentials, CredentialsStore
@@ -40,7 +40,8 @@ from igni_core.core.config.model_entry import CLOUD_TOKEN_SENTINEL, ModelRegistr
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.provider_builders import AnthropicBuilder
 from igni_core.core.config.provider_catalog import ProviderCatalog
-from igni_core.core.config.settings import ModelsConfig, Settings
+from igni_core.core.config.schemas import ModelsConfig
+from igni_core.core.config.settings import Settings
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.core import Session
 from tests.anthropic_stub import Reply, StubMessagesApi, ToolUse
@@ -479,7 +480,7 @@ async def test_an_igni_turn_on_claude_reaches_only_the_configured_endpoint(
     project.mkdir()
     with StubMessagesApi(Reply(text="Nothing left the building.")) as stub:
         _write_config(Path.home(), stub.url)
-        settings = load_settings_from_options(CliOptions(no_web=True))
+        settings = CliSettingsLoader(CliOptions(no_web=True)).load()
         AgnoTelemetry.enforce(os.environ, air_gapped=settings.air_gapped)
         with EgressGuard(network=InternalNetwork()).watching() as log:
             session = Session(settings, project_dir=project)

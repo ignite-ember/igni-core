@@ -33,13 +33,15 @@ import pytest
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.hook_firer import HookFirer
-from igni_core.core.hooks.permission_pipeline import ToolCallContext
+from igni_core.core.hooks.permission.context import ToolCallContext
 from igni_core.core.hooks.schemas import HookDefinition
 from igni_core.core.hooks.tool_call_invoker import ToolCallInvoker
+from igni_core.core.hooks.tool_events import PreToolUsePayload
+from igni_core.core.session.schemas import SessionLifecyclePayload
 
 
 async def _cancel_sweep() -> None:
-    """The teardown ``cli._run_then_drain`` performs verbatim: cancel
+    """The teardown ``HeadlessRun.drain_after`` performs verbatim: cancel
     every task other than this one, wait briefly, move on."""
     pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     for task in pending:
@@ -71,7 +73,9 @@ class TestBackgroundHooksSurviveLongEnoughToRun:
             }
         )
 
-        await executor.execute(HookEvent.SESSION_END.value, payload={"session_id": "s"})
+        await executor.execute(
+            HookEvent.SESSION_END.value, payload=SessionLifecyclePayload(session_id="s")
+        )
         await _cancel_sweep()
 
         assert marker.exists(), (
@@ -94,7 +98,9 @@ class TestBackgroundHooksSurviveLongEnoughToRun:
             }
         )
 
-        await executor.execute(HookEvent.SESSION_START.value, payload={})
+        await executor.execute(
+            HookEvent.SESSION_START.value, payload=SessionLifecyclePayload(session_id="s")
+        )
 
         live = [t for t in executor._background if not t.done()]
         assert len(live) == 1, "the background task is referenced by nothing"
@@ -121,7 +127,9 @@ class TestBackgroundHooksSurviveLongEnoughToRun:
 
         loop = asyncio.get_running_loop()
         started = loop.time()
-        await executor.execute(HookEvent.SESSION_END.value, payload={})
+        await executor.execute(
+            HookEvent.SESSION_END.value, payload=SessionLifecyclePayload(session_id="s")
+        )
         elapsed = loop.time() - started
 
         assert elapsed < 5.0, f"SessionEnd blocked for {elapsed:.1f}s on one hook"
@@ -148,7 +156,9 @@ class TestAHookThatCouldNotRunSaysSo:
         )
 
         result = await executor.execute(
-            HookEvent.PRE_TOOL_USE.value, payload={}, target="run_shell_command"
+            HookEvent.PRE_TOOL_USE.value,
+            payload=PreToolUsePayload(tool_name="run_shell_command"),
+            target="run_shell_command",
         )
 
         assert result.should_continue is True  # fail open is the design

@@ -1,7 +1,7 @@
 """``plan_store`` rehydrates from persisted ``exit_plan_mode`` tool calls.
 
 The store lives in memory; on BE restart it's empty even when the
-previous session clearly produced a plan. ``BackendServer.startup``
+previous session clearly produced a plan. ``LifecycleController.startup``
 runs a one-shot rehydration that scans the resumed Agno session for
 the most recent ``exit_plan_mode`` invocation and re-populates the
 store from its arguments — so the FE's ``get_latest_plan`` RPC
@@ -14,9 +14,13 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock  # noqa: F401  (used in tests)
 
+from igni_core.backend.plan_snapshot_builder import PlanSnapshotBuilder
 from igni_core.backend.restore_content import AssistantContentRestorer
-from igni_core.backend.server import BackendServer
+from igni_core.backend.server_history import ChatHistoryRebuilder
+from igni_core.backend.server_rehydrate import RehydrateController
 from igni_core.core.tools.plan import PlanStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.todo import TodoStore
 
 
 def _assistant_msg_with_tool_call(name: str, args: dict | str) -> SimpleNamespace:
@@ -38,41 +42,45 @@ def _run(messages: list) -> SimpleNamespace:
     return SimpleNamespace(run_id="run_x", messages=messages)
 
 
-def _make_backend_with_runs(runs: list) -> tuple[BackendServer, PlanStore]:
-    server = BackendServer.__new__(BackendServer)
-    server._session = MagicMock()
-    server._session.plan_store = PlanStore()
-    server._session.todo_store = MagicMock()
-    server._session.todo_store.set = MagicMock()
-    server._session.session_id = "sess-1"
-    server._session.user_id = "u"
+def _make_rehydrate_with_runs(runs: list) -> tuple[RehydrateController, MagicMock, PlanStore]:
+    session = MagicMock()
+    session.plan_store = PlanStore()
+    session.todo_store = MagicMock()
+    session.todo_store.set = MagicMock()
+    session.session_id = "sess-1"
+    session.user_id = "u"
     agno_session = SimpleNamespace(runs=runs)
-    server._session.main_team.aget_session = AsyncMock(return_value=agno_session)
-    return server, server._session.plan_store
+    session.main_team.aget_session = AsyncMock(return_value=agno_session)
+    return RehydrateController(session, ProcessSupervisor()), session, session.plan_store
+
+
+async def _history(session: MagicMock) -> list[dict]:
+    """The rebuilt history as the RPC puts it on the wire."""
+    turns = await ChatHistoryRebuilder(session=session).rebuild("sess")
+    return [t.model_dump(mode="json") for t in turns]
 
 
 class TestPlanRehydrate:
     async def test_no_session_leaves_store_empty(self) -> None:
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.plan_store = PlanStore()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(return_value=None)
+        session = MagicMock()
+        session.plan_store = PlanStore()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(return_value=None)
 
-        await server._rehydrate_plan_store()
+        await RehydrateController(session, ProcessSupervisor()).plan_store()
 
-        assert server._session.plan_store.latest == ""
+        assert session.plan_store.latest == ""
 
     async def test_already_populated_store_is_left_alone(self) -> None:
-        server, store = _make_backend_with_runs([])
+        rehydrate, session, store = _make_rehydrate_with_runs([])
         store.set_plan("Live plan from current session.")
 
-        await server._rehydrate_plan_store()
+        await rehydrate.plan_store()
 
         assert store.latest == "Live plan from current session."
         # And we never touched the agno session (early exit).
-        server._session.main_team.aget_session.assert_not_called()
+        session.main_team.aget_session.assert_not_called()
 
     async def test_finds_plan_in_last_run(self) -> None:
         runs = [
@@ -86,9 +94,9 @@ class TestPlanRehydrate:
                 ]
             )
         ]
-        server, store = _make_backend_with_runs(runs)
+        rehydrate, session, store = _make_rehydrate_with_runs(runs)
 
-        await server._rehydrate_plan_store()
+        await rehydrate.plan_store()
 
         assert store.latest == "Step 1: do thing.\nStep 2: do other thing."
 
@@ -106,9 +114,9 @@ class TestPlanRehydrate:
                 ]
             ),
         ]
-        server, store = _make_backend_with_runs(runs)
+        rehydrate, session, store = _make_rehydrate_with_runs(runs)
 
-        await server._rehydrate_plan_store()
+        await rehydrate.plan_store()
 
         assert store.latest == "Newer plan."
 
@@ -124,9 +132,9 @@ class TestPlanRehydrate:
                 ]
             )
         ]
-        server, store = _make_backend_with_runs(runs)
+        rehydrate, session, store = _make_rehydrate_with_runs(runs)
 
-        await server._rehydrate_plan_store()
+        await rehydrate.plan_store()
 
         assert store.latest == "The real plan."
 
@@ -139,9 +147,9 @@ class TestPlanRehydrate:
                 ]
             )
         ]
-        server, store = _make_backend_with_runs(runs)
+        rehydrate, session, store = _make_rehydrate_with_runs(runs)
 
-        await server._rehydrate_plan_store()
+        await rehydrate.plan_store()
 
         assert store.latest == "Good plan."
 
@@ -154,24 +162,23 @@ class TestPlanRehydrate:
                 ]
             )
         ]
-        server, store = _make_backend_with_runs(runs)
+        rehydrate, session, store = _make_rehydrate_with_runs(runs)
 
-        await server._rehydrate_plan_store()
+        await rehydrate.plan_store()
 
         assert store.latest == "Recovered plan."
 
     async def test_aget_session_exception_swallowed(self) -> None:
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.plan_store = PlanStore()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(side_effect=RuntimeError("db gone"))
+        session = MagicMock()
+        session.plan_store = PlanStore()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(side_effect=RuntimeError("db gone"))
 
         # Must not raise.
-        await server._rehydrate_plan_store()
+        await RehydrateController(session, ProcessSupervisor()).plan_store()
 
-        assert server._session.plan_store.latest == ""
+        assert session.plan_store.latest == ""
 
     def test_get_latest_plan_pending_when_plan_present(self) -> None:
         # Replaces the deleted ``_infer_plan_state`` tests. The
@@ -179,22 +186,20 @@ class TestPlanRehydrate:
         # restored plan starts ``"pending"`` until the FE proves
         # otherwise via ``approve_plan`` / ``dismiss_plan``.
         # Empty plan → empty state (no card to render).
-        server = BackendServer.__new__(BackendServer)
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             plan_store=PlanStore(latest="some plan text"),
-            todo_store=SimpleNamespace(snapshot=lambda: []),
+            todo_store=TodoStore(),
         )
-        result = server.get_latest_plan()
+        result = PlanSnapshotBuilder(session).latest()
         assert result.state == "pending"
         assert result.latest == "some plan text"
 
     def test_get_latest_plan_empty_state_when_no_plan(self) -> None:
-        server = BackendServer.__new__(BackendServer)
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             plan_store=PlanStore(),
-            todo_store=SimpleNamespace(snapshot=lambda: []),
+            todo_store=TodoStore(),
         )
-        result = server.get_latest_plan()
+        result = PlanSnapshotBuilder(session).latest()
         assert result.state == ""
         assert result.latest == ""
 
@@ -251,16 +256,13 @@ class TestPlanRehydrate:
             metrics=None,
         )
         agno_session = SimpleNamespace(runs=[run])
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(return_value=agno_session)
-        server._session.permission_evaluator = SimpleNamespace(
-            mode=SimpleNamespace(value="default")
-        )
+        session = MagicMock()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(return_value=agno_session)
+        session.permission_evaluator = SimpleNamespace(mode=SimpleNamespace(value="default"))
 
-        history = await server.get_chat_history("sess")
+        history = await _history(session)
 
         # Should contain a plan turn between the user and stats.
         plan_turns = [t for t in history if t.get("role") == "plan"]
@@ -326,16 +328,13 @@ class TestPlanRehydrate:
             messages=[assistant_msg],
             metrics=None,
         )
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(return_value=SimpleNamespace(runs=[run]))
-        server._session.permission_evaluator = SimpleNamespace(
-            mode=SimpleNamespace(value="default")
-        )
+        session = MagicMock()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(return_value=SimpleNamespace(runs=[run]))
+        session.permission_evaluator = SimpleNamespace(mode=SimpleNamespace(value="default"))
 
-        history = await server.get_chat_history("sess")
+        history = await _history(session)
 
         # First two turns must be thinking then assistant (order
         # preserved from the inline tag position).
@@ -384,14 +383,13 @@ class TestPlanRehydrate:
             messages=[assistant_msg, tool_msg],
             metrics=None,
         )
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(return_value=SimpleNamespace(runs=[run]))
-        server._session.permission_evaluator = SimpleNamespace(mode=SimpleNamespace(value="plan"))
+        session = MagicMock()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(return_value=SimpleNamespace(runs=[run]))
+        session.permission_evaluator = SimpleNamespace(mode=SimpleNamespace(value="plan"))
 
-        history = await server.get_chat_history("sess")
+        history = await _history(session)
 
         plan_turns = [t for t in history if t.get("role") == "plan"]
         assert len(plan_turns) == 1
@@ -414,12 +412,12 @@ class TestPlanRehydrate:
                 ]
             )
         ]
-        server, store = _make_backend_with_runs(runs)
+        rehydrate, session, store = _make_rehydrate_with_runs(runs)
 
-        await server._rehydrate_plan_store()
+        await rehydrate.plan_store()
 
         assert store.latest == "Plan with checklist."
-        server._session.todo_store.set.assert_called_once()
+        session.todo_store.set.assert_called_once()
         # Items passed should reflect both tasks.
-        passed = server._session.todo_store.set.call_args.args[0]
+        passed = session.todo_store.set.call_args.args[0]
         assert len(passed) == 2

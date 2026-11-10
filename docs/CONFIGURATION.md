@@ -243,13 +243,18 @@ The key difference: Claude Code only supports Anthropic models through different
 
 models:
   default: "MiniMax-M2.7"             # Default model for most agents
-  fast: "MiniMax-M2.7-highspeed"      # Fast model (~100 TPS, 2x cost)
   max_context_window: 200000          # Hard ceiling for context usage (see below)
 
   # Model registry: maps model names (used in agent .md files) to providers.
-  # Built-in entries (MiniMax-M2.7, MiniMax-M2.7-highspeed) route through
-  # the your igni server and are always available.
-  # Add entries here to override built-ins or register new models.
+  # The hosted catalogue's entries — every model your igni server offers —
+  # route through your igni server and are merged in at session start.
+  # Add entries here to register new models or to override a hosted one.
+  #
+  # There is one default, not a default and a fast one: `fast:` used to
+  # sit here and did nothing, because the models block has no such field
+  # and an unknown key is dropped without a word. To use a different
+  # model, name it — `models.default` below, a `model:` in an agent's
+  # frontmatter, `igni --model <id>`, or `/model` in a session.
   registry:
     # Example: Gemini (direct API key)
     # gemini-2.5-flash:
@@ -324,17 +329,20 @@ safety:
 
 # Memory & storage
 storage:
-  # Backend: "sqlite" (default, local), "postgres", "mongodb", "redis", "dynamodb", etc.
-  # Agno supports 15+ storage backends. SQLite is the default for zero-config local use.
-  # Use a remote backend (postgres, mongodb, etc.) to sync sessions across devices.
-  backend: "sqlite"
-  session_db: "~/.igni/sessions.db"   # SQLite path (when backend=sqlite)
-  memory_db: "~/.igni/memory.db"      # SQLite path (when backend=sqlite)
-  # Remote backend example (uncomment to sync across devices):
-  # backend: "postgres"
-  # db_url: "postgresql://user:pass@host:5432/igni_core"
-  audit_log: "~/.igni/audit.log"      # Tool execution log
-  max_history_runs: 10000              # Effectively unlimited (auto-compact handles context)
+  # Where igni keeps its state. Each project gets its own database
+  # under <data_dir>/projects/<id>/state.db (sessions, scheduler, loop,
+  # processes, and the user's memory through Agno), and the one global
+  # database — which folder a session is in, window state, local
+  # notifications — sits beside them.
+  data_dir: "~/.igni"
+  # Tool execution log
+  audit_log: "~/.igni/audit.log"
+  max_history_runs: 10000            # Effectively unlimited (auto-compact handles context)
+  # Move the state out of the local files with a SQLAlchemy URL —
+  # PostgreSQL in the cloud (docs/CLOUD.md §9). IGNI_DATABASE_URL wins
+  # over this: it is a deployment's decision, made where the process is
+  # started.
+  # database_url: "postgresql://user:pass@host:5432/igni"
 
 # Context compression
 #
@@ -802,7 +810,7 @@ rather than allows.
 igni can send traces and metrics to **your own** OpenTelemetry collector, over
 OTLP. It is off by default and there is **no default endpoint**: with none
 configured nothing is exported, and the OpenTelemetry SDK is not set up at all.
-It needs the `otel` extra (`pip install 'igni-core[otel]'`); without it a
+It needs the `otel` extra (`pip install -e '.[otel]'`); without it a
 configured endpoint is ignored with a warning.
 
 ```yaml
@@ -898,7 +906,7 @@ Run the shared service with `python -m igni_core.decisions_server --host 0.0.0.0
 ```bash
 # Model selection
 igni --model MiniMax-M2.7
-igni --model MiniMax-M2.7-highspeed  # faster variant
+igni --model <id>                    # any id your igni server's catalogue offers
 igni --model gpt-4o                  # use OpenAI
 
 # Safety modes
@@ -910,12 +918,9 @@ igni --verbose               # show routing + reasoning
 igni --quiet                 # minimal output
 igni --no-color              # disable colors
 
-# TUI mode (default — use --no-tui to fall back to plain Rich CLI)
-igni --no-tui                # disable TUI, use plain Rich CLI output
-
 # Session
-igni --resume                # resume last session
-igni --resume <session-id>   # resume specific session
+igni --continue              # resume the most recent session
+igni --session-id <id>       # resume a specific session
 
 # Direct execution
 igni -m "add tests for auth module"   # non-interactive single task

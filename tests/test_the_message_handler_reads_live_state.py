@@ -20,7 +20,11 @@ changes underneath it, and one of them was never there at all.
   ``/model`` rebuilds the team around a different model and left the
   compaction threshold measuring against the old model's window.
 
-The three are tested together because they are one habit: a collaborator
+* **The hook executor.** Handed over by value, while ``/hooks reload`` and
+  every plugin reload build a new one — so headless turns kept firing
+  ``UserPromptSubmit`` and ``Stop`` on the old executor and the old hooks.
+
+They are tested together because they are one habit: a collaborator
 that outlives the state it copied.
 """
 
@@ -29,8 +33,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from agno.metrics import RunMetrics
+from agno.run.agent import RunOutput
+from agno.run.base import RunStatus
+from pydantic import BaseModel
 
-from igni_core.core.session.message_handler import SessionMessageHandler
+from igni_core.core.session.compaction.context_budget import ContextBudget
+from igni_core.core.session.message_handler import MessageHandlerDeps, SessionMessageHandler
 
 
 class _Hooks:
@@ -40,7 +49,7 @@ class _Hooks:
         self.payloads: list[tuple[str, dict]] = []
         self._stop_blocks = stop_blocks
 
-    async def execute(self, *, event: str, payload: dict):
+    async def execute(self, *, event: str, payload: BaseModel):
         self.payloads.append((event, payload))
         if event == "Stop" and self._stop_blocks > 0:
             self._stop_blocks -= 1
@@ -48,7 +57,7 @@ class _Hooks:
         return SimpleNamespace(should_continue=True, message="")
 
     def session_ids_for(self, event: str) -> list[str]:
-        return [p["session_id"] for name, p in self.payloads if name == event]
+        return [p.session_id for name, p in self.payloads if name == event]
 
 
 class _Audit:
@@ -65,7 +74,7 @@ class _Guardrails:
 
 
 class _Team:
-    """Records every ``arun`` and hands back a RunOutput-shaped value.
+    """Records every ``arun`` and hands back a real Agno run output.
 
     Deliberately has **no** ``run_response`` attribute — matching the
     installed agno — so a handler that goes looking for one finds
@@ -79,36 +88,37 @@ class _Team:
     async def arun(self, message: str, **kwargs):
         self.calls.append(message)
         tokens = self._input_tokens.pop(0) if self._input_tokens else 0
-        return SimpleNamespace(
-            status="completed",
+        return RunOutput(
+            status=RunStatus.completed,
             content="answer",
-            metrics=SimpleNamespace(input_tokens=tokens),
+            metrics=RunMetrics(input_tokens=tokens),
         )
 
 
 def _build(
     *,
     team: _Team,
-    hooks: _Hooks,
+    hooks: _Hooks | SimpleNamespace,
     audit: _Audit,
     session_id_ref,
-    context_window_ref,
+    budget: ContextBudget,
     compact_calls: list,
-    latched: list,
 ) -> SessionMessageHandler:
+    source = hooks if isinstance(hooks, SimpleNamespace) else SimpleNamespace(executor=hooks)
     return SessionMessageHandler(
-        hook_executor=hooks,
-        audit=audit,
-        display=SimpleNamespace(print_error=lambda msg: None),
-        guardrail_runner=_Guardrails(),
-        team_ref=lambda: team,
-        pending_reminders_drain=list,
-        compact_hook=_recorder(compact_calls),
-        ensure_mcp=_noop,
-        session_id_ref=session_id_ref,
-        context_window_ref=context_window_ref,
-        latch_input_tokens=latched.append,
-        extract_response_text=lambda resp: resp.content,
+        MessageHandlerDeps(
+            hooks=source,
+            audit=audit,
+            display=SimpleNamespace(print_error=lambda msg: None),
+            guardrail_runner=_Guardrails(),
+            team_ref=lambda: team,
+            pending_reminders_drain=list,
+            compact_hook=_recorder(compact_calls),
+            ensure_mcp=_noop,
+            session_id_ref=session_id_ref,
+            budget=budget,
+            extract_response_text=lambda resp: resp.content,
+        )
     )
 
 
@@ -131,20 +141,19 @@ class TestTheTokenLatchAndCompactionActuallyFire:
         lists stayed empty on every turn, so ``/ctx`` reported a stale
         count and history grew unbounded past the compaction threshold."""
         compacted: list = []
-        latched: list = []
+        budget = ContextBudget(window=128_000)
         handler = _build(
             team=_Team([91_000]),
             hooks=_Hooks(),
             audit=_Audit(),
             session_id_ref=lambda: "s-1",
-            context_window_ref=lambda: 128_000,
+            budget=budget,
             compact_calls=compacted,
-            latched=latched,
         )
 
         assert await handler.handle("hello") == "answer"
 
-        assert latched == [91_000]
+        assert budget.last_input_tokens == 91_000
         assert compacted == [(91_000, 128_000)]
 
     @pytest.mark.asyncio
@@ -153,20 +162,19 @@ class TestTheTokenLatchAndCompactionActuallyFire:
         critique, so its input count is the larger one — and the only one
         the next threshold check can be right about."""
         compacted: list = []
-        latched: list = []
+        budget = ContextBudget(window=128_000)
         handler = _build(
             team=_Team([40_000, 44_000]),
             hooks=_Hooks(stop_blocks=1),
             audit=_Audit(),
             session_id_ref=lambda: "s-1",
-            context_window_ref=lambda: 128_000,
+            budget=budget,
             compact_calls=compacted,
-            latched=latched,
         )
 
         await handler.handle("hello")
 
-        assert latched == [44_000]
+        assert budget.last_input_tokens == 44_000
         assert compacted == [(44_000, 128_000)]
 
 
@@ -184,9 +192,8 @@ class TestTheHandlerReadsTheLiveSessionId:
             hooks=hooks,
             audit=audit,
             session_id_ref=lambda: live["id"],
-            context_window_ref=lambda: 128_000,
+            budget=ContextBudget(window=128_000),
             compact_calls=[],
-            latched=[],
         )
 
         await handler.handle("first")
@@ -214,9 +221,8 @@ class TestTheHandlerReadsTheLiveSessionId:
             hooks=hooks,
             audit=audit,
             session_id_ref=lambda: live["id"],
-            context_window_ref=lambda: 128_000,
+            budget=ContextBudget(window=128_000),
             compact_calls=[],
-            latched=[],
         )
 
         assert "boom" in await handler.handle("go")
@@ -231,30 +237,55 @@ class TestTheHandlerReadsTheLiveContextWindow:
         """``/model`` from a 200k model to a 32k one used to leave the
         threshold at 200k — compaction waiting for a limit the new model
         blows past six times over."""
-        window = {"n": 200_000}
+        budget = ContextBudget(window=200_000)
         compacted: list = []
         handler = _build(
             team=_Team([50_000, 50_000]),
             hooks=_Hooks(),
             audit=_Audit(),
             session_id_ref=lambda: "s-1",
-            context_window_ref=lambda: window["n"],
+            budget=budget,
             compact_calls=compacted,
-            latched=[],
         )
 
         await handler.handle("first")
-        window["n"] = 32_000
+        budget.window = 32_000
         await handler.handle("second")
 
         assert compacted == [(50_000, 200_000), (50_000, 32_000)]
 
 
+class TestTheHandlerReadsTheLiveHookExecutor:
+    @pytest.mark.asyncio
+    async def test_a_reloaded_executor_runs_the_next_turns_hooks(self):
+        """``/hooks reload`` replaces the executor. A by-value copy kept
+        firing the old one, so an edited hook never ran headless."""
+        old, new = _Hooks(), _Hooks()
+        source = SimpleNamespace(executor=old)
+        handler = _build(
+            team=_Team([10, 10]),
+            hooks=source,
+            audit=_Audit(),
+            session_id_ref=lambda: "s-1",
+            budget=ContextBudget(window=128_000),
+            compact_calls=[],
+        )
+
+        await handler.handle("first")
+        source.executor = new
+        await handler.handle("second")
+
+        assert old.session_ids_for("UserPromptSubmit") == ["s-1"]
+        assert new.session_ids_for("UserPromptSubmit") == ["s-1"]
+        assert new.session_ids_for("Stop") == ["s-1"]
+
+
 class TestTheSessionWiresTheRefsThrough:
-    def test_session_passes_callables_not_copies(self):
+    def test_session_passes_live_owners_not_copies(self):
         """The handler can only read live state if ``Session`` hands it
-        callables — passing ``self.session_id`` reintroduces the whole
-        defect with the handler unchanged."""
+        callables or the stable owners — passing ``self.session_id`` or
+        ``self.hook_executor`` reintroduces the whole defect with the
+        handler unchanged."""
         import inspect
 
         from igni_core.core.session.core import Session
@@ -263,18 +294,19 @@ class TestTheSessionWiresTheRefsThrough:
         construction = source.split("SessionMessageHandler(")[1]
 
         assert "session_id_ref=lambda: self.session_id" in construction
-        assert "context_window_ref=lambda: self._context_window" in construction
+        assert "budget=self.context_budget" in construction
+        assert "hooks=self.hooks" in construction
 
     def test_rebuilding_the_team_reresolves_the_window(self):
         """``/model`` reaches the window only through
-        ``_rebuild_main_team`` — every model swap funnels there."""
+        ``rebuild_main_team`` — every model swap funnels there."""
         import inspect
 
         from igni_core.core.session.core import Session
 
-        source = inspect.getsource(Session._rebuild_main_team)
+        source = inspect.getsource(Session.rebuild_main_team)
 
-        assert "self._context_window = self._resolve_context_window()" in source
+        assert "self.context_budget.resize(self.settings)" in source
 
 
 class TestTheUserMemoryCapabilityIsGateable:
@@ -292,15 +324,18 @@ class TestTheUserMemoryCapabilityIsGateable:
     def _builder(self, *, user_memory: bool):
         from pathlib import Path
 
+        from igni_core.core.prompts import PromptFragments, PromptLoader
+        from igni_core.core.prompts.contributions import PromptContributions
         from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
 
         return PromptBuilder(
             project_dir=Path("/nonexistent"),
             settings=SimpleNamespace(storage=SimpleNamespace(data_dir=Path("/nonexistent"))),
+            contributions=PromptContributions(),
             user_memory_available=user_memory,
             agent_catalog="",
             skill_descriptions="",
-            prompt_loader=lambda name: "",
+            prompt_loader=PromptLoader(PromptFragments()),
         )
 
     def test_the_span_is_cut_when_the_tool_is_not_attached(self):

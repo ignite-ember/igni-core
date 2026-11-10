@@ -33,56 +33,24 @@ Chat-view models (slash-command output):
   :mod:`igni_core.core.session.schemas` stays presentation-
   free (no ``CommandResult`` import in the domain layer).
 
-``OutputStyle`` (a ``@dataclass``) is imported lazily under
-``TYPE_CHECKING`` so this module stays import-cheap. Views that
-wrap it set ``arbitrary_types_allowed=True``.
-
-``ContextBreakdown`` **is not**, and cannot be. It is the
-*annotation of a Pydantic field*, and with
-``from __future__ import annotations`` every annotation in this
-file is a string that Pydantic resolves at class-build time
-against the module's real namespace. Under ``TYPE_CHECKING`` that
-name does not exist at runtime, so the model never finished
-building and every construction raised::
-
-    PydanticUserError: `ContextBreakdownView` is not fully
-    defined; you should define `ContextBreakdown`, then call
-    `ContextBreakdownView.model_rebuild()`.
-
-Which means ``/ctx`` did not work at all — not in an edge case,
-ever — and the error reached the user as ``session routing
-failed: …`` with a Pydantic docs link in it. ``arbitrary_types_
-allowed`` does not help: it permits non-pydantic *types*, it does
-not conjure a *name*.
-
-The field is annotated ``Any`` now — see the comment on it. No
-import of ``ContextBreakdown`` at runtime is possible from this
-module at all; both the top and the foot of the file were tried and
-each only changed which entry point the cycle killed.
-
-The domain :class:`~igni_core.core.session.pending_messages.PendingMessage`
-dataclass — the storage-row type this module's wire model wraps —
-is imported under ``TYPE_CHECKING`` as ``PendingMessageRow`` to
-avoid shadowing the wire-model class name at runtime.
+``OutputStyle`` is a plain ``@dataclass``; views that wrap it set
+``arbitrary_types_allowed=True``.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.backend.command_result import CommandResult
 from igni_core.core.output_styles import OutputStyle
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.session.pending_messages import InterruptedMessage as InterruptedMessageRow
+from igni_core.core.session.pending_messages import InterruptedReason
+from igni_core.core.session.pending_messages import PendingMessage as PendingMessageRow
 
 if TYPE_CHECKING:
-    from igni_core.core.session.pending_messages import (
-        InterruptedMessage as InterruptedMessageRow,
-    )
-    from igni_core.core.session.pending_messages import (
-        PendingMessage as PendingMessageRow,
-    )
     from igni_core.core.session.schemas import ContextBreakdown
 
 
@@ -95,40 +63,31 @@ PENDING_STALENESS_SECONDS = 60
 
 
 class TruncateHistoryResult(BaseModel):
-    """Wire shape for :meth:`ContextController.truncate_history` —
-    ``removed`` is the count of runs dropped (0 on any failure);
-    ``error`` is empty on success."""
+    """The outcome of cutting a session's history back to before a given run."""
 
-    removed: int
-    error: str = ""
+    removed: int = Field(
+        description="How many runs were removed, the given one included; `0` on failure."
+    )
+    error: str = Field(default="", description="Why nothing was removed; empty on success.")
 
 
 class PendingMessage(BaseModel):
-    """One pre-persisted user message row surfaced by
-    :meth:`ContextController.get_pending_messages`. ``role`` is
-    always ``"user"`` — only user turns get pre-persisted, so this
-    is a constant on the wire; declared as a plain field (not a
-    discriminator) for FE-parity.
+    """A user message whose run has started but not yet finished."""
 
-    Build one from a storage-row dataclass via
-    :meth:`from_pending_row` so the controller doesn't have to
-    hardcode the ``role="user"`` constant at every call site.
-    """
-
-    role: str
-    content: str
-    received_at: int
-    message_id: str
+    # Only user turns are stored before their run completes, so `role`
+    # is always "user". Build one with from_pending_row.
+    role: Literal["user"] = Field(default="user", description="Always `user`.")
+    content: str = Field(description="The message's text.")
+    received_at: int = Field(description="When igni received it, in seconds since the Unix epoch.")
+    message_id: str = Field(description="The message's id.")
 
     @classmethod
     def from_pending_row(cls, row: PendingMessageRow) -> PendingMessage:
-        """Project a domain :class:`PendingMessage` storage row
+        """Project a domain ``PendingMessage`` storage row
         (the ``@dataclass`` in
         :mod:`igni_core.core.session.pending_messages`) onto the
-        wire model. ``role`` is fixed to ``"user"`` — the pending
-        table only holds user turns."""
+        wire model."""
         return cls(
-            role="user",
             content=row.text,
             received_at=row.received_at,
             message_id=row.message_id,
@@ -136,36 +95,34 @@ class PendingMessage(BaseModel):
 
 
 class InterruptedRun(BaseModel):
-    """Wire shape for one explicitly-interrupted run surfaced by
-    :meth:`ContextController.get_interrupted_runs`.
+    """A run that stopped before it finished, and the user message that
+    started it. A client can offer to retry it, discard it, or edit the
+    message and send it again."""
 
-    A row is "interrupted" when the cancel or error path in
-    :class:`RunController` stamped it with ``interrupted_at`` and
-    ``interrupted_reason``. The FE renders this as the banner on
-    the assistant bubble that was in-flight when the run stopped,
-    with Retry / Discard / Edit-prompt actions.
-
-    ``reason`` is one of ``"cancelled" | "errored" | "abandoned"``
-    — same set as the storage column. ``last_error`` is set when
-    ``reason == "errored"`` and ``None`` otherwise.
-    """
-
-    message_id: str
-    content: str
-    received_at: int
-    interrupted_at: int
-    reason: str
-    last_error: str | None = None
+    message_id: str = Field(description="The id of the user message that started the run.")
+    content: str = Field(description="That message's text.")
+    received_at: int = Field(
+        description="When igni received the message, in seconds since the Unix epoch."
+    )
+    interrupted_at: int = Field(
+        description="When the run stopped, in seconds since the Unix epoch."
+    )
+    reason: InterruptedReason = Field(
+        description="Why it stopped: `cancelled` (the user stopped it), `errored` (it "
+        "failed; see `last_error`) or `abandoned` (it never finished, e.g. igni stopped "
+        "while it ran)."
+    )
+    last_error: str | None = Field(
+        default=None, description="The error, when `reason` is `errored`; `null` otherwise."
+    )
 
     @classmethod
     def from_interrupted_row(
         cls,
         row: InterruptedMessageRow,
     ) -> InterruptedRun:
-        """Project a domain :class:`InterruptedMessage` storage row
-        onto the wire model. Keeps the controller free of literal
-        field-by-field mapping — see the sibling
-        :meth:`PendingMessage.from_pending_row`."""
+        """Project a domain ``InterruptedMessage`` storage row
+        onto the wire model."""
         return cls(
             message_id=row.message_id,
             content=row.text,
@@ -176,13 +133,34 @@ class InterruptedRun(BaseModel):
         )
 
 
-class DiscardInterruptedRunResult(BaseModel):
-    """Wire shape for :meth:`ContextController.discard_interrupted_run`.
-    ``ok`` is ``False`` when the row didn't exist (idempotent — the
-    FE can treat the row as gone regardless)."""
+class CompactionOutcome(BaseModel):
+    """Whether the conversation was compacted, and if so the summary it
+    was replaced by."""
 
-    ok: bool
-    error: str = ""
+    compacted: bool = Field(
+        description="`false` when the context was below the threshold, a `PreCompact` "
+        "hook refused, or there was nothing to compact."
+    )
+    new_session_id: str = Field(
+        default="",
+        description="The session the conversation continues in (currently the same id); "
+        "empty when not compacted.",
+    )
+    summary: str = Field(
+        default="",
+        description="What the compacted conversation was replaced by; empty when not compacted.",
+    )
+
+
+class DiscardInterruptedRunResult(BaseModel):
+    """The outcome of discarding an interrupted run."""
+
+    ok: bool = Field(
+        description="`true` once no such interrupted run is left, also when there was none, "
+        "so a retry is harmless. `false` when the id was empty or the change could not "
+        "be saved."
+    )
+    error: str = Field(default="", description="Why it failed; empty when `ok` is true.")
 
 
 class OutputStylesListView(BaseModel):
@@ -242,57 +220,33 @@ class OutputStyleStatusView(BaseModel):
 
 
 class ContextBreakdownView(BaseModel):
-    """Wraps a domain :class:`ContextBreakdown` for the ``/ctx``
-    markdown card.
+    """The ``/ctx`` markdown card for a domain :class:`ContextBreakdown`.
 
-    Owns the 7-line ``**Context breakdown**`` template plus the
-    ``runs/total*100`` percentage calculation, so the domain
-    model in :mod:`core.session.schemas` stays render-free.
-    Constructed via :meth:`from_domain` so the coordinator never
-    has to know about the field names — it just hands over the
-    ``ContextBreakdown`` it got from
-    :meth:`Session.context_breakdown`.
+    Owns the ``**Context breakdown**`` template plus the
+    ``runs/total*100`` percentage calculation, so the domain model in
+    :mod:`core.session.schemas` stays render-free. Built via
+    :meth:`from_domain`.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    #: The domain :class:`ContextBreakdown`, typed ``Any`` on purpose.
-    #:
-    #: It cannot be annotated with the real class. With
-    #: ``from __future__ import annotations`` Pydantic resolves the
-    #: annotation against this module's runtime namespace, so the name
-    #: has to be importable *here* — and importing
-    #: ``core.session.schemas`` runs ``core.session.__init__``, which
-    #: reaches ``interactive → interactive_loop → commands →
-    #: backend.command_handler``, which is what imports this file. A
-    #: genuine cycle, and it does not matter whether the import sits
-    #: at the top of the module or the foot: both were tried, and each
-    #: only moved which entry point died.
-    #:
-    #: ``Any`` always resolves, so the model finishes building. The
-    #: real type still guards the boundary — ``from_domain`` is the
-    #: only constructor and it is annotated, so a wrong argument is a
-    #: type error at the call site rather than a validation error at
-    #: runtime. That is the right trade for an internal view whose
-    #: input comes from one method in this repository.
-    breakdown: Any
+    total: int
+    runs: int
+    floor: int
 
     @classmethod
     def from_domain(cls, breakdown: ContextBreakdown) -> ContextBreakdownView:
-        return cls(breakdown=breakdown)
+        return cls(total=breakdown.total, runs=breakdown.runs, floor=breakdown.floor)
+
+    @property
+    def runs_percent(self) -> float:
+        return (self.runs / self.total * 100.0) if self.total else 0.0
 
     def to_command_result(self) -> CommandResult:
-        b = self.breakdown
-        total = b.total
-        runs = b.runs
-        floor = b.floor
-        pct = (runs / total * 100.0) if total else 0.0
         lines = [
             "**Context breakdown**",
             "",
-            f"- **Total:** {total:,} tokens",
-            f"- **Conversation (runs):** {runs:,} tokens ({pct:.1f}% of total)",
-            f"- **Floor (system + tools + rules + memories + summary):** {floor:,} tokens",
+            f"- **Total:** {self.total:,} tokens",
+            f"- **Conversation (runs):** {self.runs:,} tokens ({self.runs_percent:.1f}% of total)",
+            f"- **Floor (system + tools + rules + memories + summary):** {self.floor:,} tokens",
             "",
             "`/compact` only clears the conversation portion — the floor "
             "is rebaked into every prompt and cannot be compacted away.",
@@ -304,6 +258,8 @@ __all__ = [
     "PENDING_STALENESS_SECONDS",
     "TruncateHistoryResult",
     "PendingMessage",
+    "InterruptedRun",
+    "DiscardInterruptedRunResult",
     "OutputStylesListView",
     "OutputStyleStatusView",
     "ContextBreakdownView",

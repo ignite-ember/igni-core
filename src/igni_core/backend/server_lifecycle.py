@@ -18,11 +18,9 @@ methods on it.
   ``errors`` list) rather than getting swallowed by
   ``contextlib.suppress`` blocks.
 
-The controller no longer reaches into ``backend._runs`` or
-``backend._pending_store`` — both are constructor-injected.
-Backward-compat free-function shims are gone; callers use
-``backend.lifecycle.*`` directly (via the ``BackendServer``
-delegates).
+Every collaborator (run controller, pending store, rehydrate
+controller, message queue) is constructor-injected; the controller
+holds no reference back to ``BackendServer``.
 """
 
 from __future__ import annotations
@@ -41,10 +39,10 @@ from igni_core.backend.server_shutdown import ShutdownPipeline
 
 if TYPE_CHECKING:
     from igni_core.backend.run_controller import RunController
-    from igni_core.backend.server import BackendServer
     from igni_core.backend.server_rehydrate import RehydrateController
     from igni_core.core.session import Session
     from igni_core.core.session.pending_messages import PendingMessageStore
+    from igni_core.core.session.queued_messages import DurableMessageQueue
 
 logger = logging.getLogger(__name__)
 
@@ -59,23 +57,13 @@ class LifecycleController:
         runs: RunController | None,
         rehydrate: RehydrateController,
         scheduler_stop: Callable[[], Awaitable[None]] | None = None,
-        backend: BackendServer | None = None,
+        message_queue: DurableMessageQueue | None = None,
     ) -> None:
         self._session = session
         self._pending_store = pending_store
         self._runs = runs
         self._rehydrate = rehydrate
-        # Held so :meth:`startup` can route rehydrate calls through
-        # ``BackendServer._rehydrate_*`` / ``._detect_interrupted_run``
-        # method-attributes, keeping the test-patch seams live for
-        # ``__new__``-bypass fixtures that patch those names.
-        # Documented AP6 test-shape concession: 12+ tests (e.g.
-        # test_plan_rehydrate.py, test_plan_rpc_wiring.py,
-        # test_session_restart_round_trip.py) bind ``AsyncMock`` on
-        # those attribute names on partial-init instances — keeping
-        # the underscore seam preserves those fixtures. Cleanup is
-        # tracked as a follow-up ticket.
-        self._backend = backend
+        self._message_queue = message_queue
         self._summary_builder = InterruptedRunSummaryBuilder(
             session=session,
             pending_store=pending_store,
@@ -88,6 +76,10 @@ class LifecycleController:
             session=session,
             scheduler_stop=scheduler_stop,
         )
+        # The first teardown's outcome. A session is torn down once: the
+        # ``shutdown`` call, the pool evicting it and igni exiting can each
+        # ask, and ``SessionEnd`` must not fire twice.
+        self._shutdown: ShutdownResult | None = None
 
     async def startup(self) -> None:
         """Async post-construction hook.
@@ -101,20 +93,14 @@ class LifecycleController:
         :class:`RehydrateOutcomeSet` which owns the summary log.
         """
         await self._session.load_persisted_loop_state()
-        # Route detect + rehydrate through BackendServer's thin
-        # wrappers (`_detect_interrupted_run`, `_rehydrate_*`) so
-        # tests that patch those method names on partial-init
-        # instances (via ``BackendServer.__new__``) still intercept.
-        # The wrappers themselves delegate to this controller — the
-        # extra hop costs one function call per step.
-        await self._backend._detect_interrupted_run()
+        await self.detect_interrupted_run()
         outcomes = RehydrateOutcomeSet.of(
-            await self._backend._rehydrate_plan_store(),
-            await self._backend._rehydrate_plan_decisions(),
-            await self._backend._rehydrate_todos(),
-            await self._backend._rehydrate_event_log(),
-            await self._backend._rehydrate_orphan_processes(),
-            await self._backend._rehydrate_queued_messages(),
+            await self._rehydrate.plan_store(),
+            await self._rehydrate.plan_decisions(),
+            await self._rehydrate.todos(),
+            await self._rehydrate.event_log(),
+            await self._rehydrate.orphan_processes(),
+            await self._rehydrate.queued_messages(self._message_queue),
         )
         outcomes.log(logger)
 
@@ -134,7 +120,10 @@ class LifecycleController:
         return summary
 
     async def shutdown(self) -> ShutdownResult:
-        """Graceful shutdown — disconnect MCP, fire hooks, kill bg processes.
+        """Graceful shutdown — fire hooks, clean the agent pool, disconnect
+        MCP, stop the scheduler. Once: a later call answers the first
+        teardown's outcome and runs nothing again. Background processes
+        are igni's, and end when igni does (``BackendSupervisor.teardown``).
 
         Returns a typed :class:`ShutdownResult` so cleanup failures
         are observable outcomes rather than silent swallows. The
@@ -142,4 +131,6 @@ class LifecycleController:
         best-effort (an exception in one step is recorded and the
         runner moves on).
         """
-        return await self._shutdown_pipeline.run()
+        if self._shutdown is None:
+            self._shutdown = await self._shutdown_pipeline.run()
+        return self._shutdown

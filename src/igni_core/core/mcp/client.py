@@ -29,6 +29,7 @@ returns no longer cross the RPC boundary.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -96,8 +97,8 @@ class MCPClientManager:
     Focused surface after the extraction refactor: connection
     lifecycle (:meth:`connect`, :meth:`disconnect_all`,
     :meth:`disconnect_one`), client lookup
-    (:meth:`get_client`, :meth:`all_clients`), server
-    enumeration (:meth:`list_servers`, :meth:`list_connected`,
+    (:meth:`get_client`, :meth:`all_clients`, :meth:`get_tool`),
+    server enumeration (:meth:`list_servers`, :meth:`list_connected`,
     :meth:`list_required`), and per-tool state delegation to
     the composed :class:`MCPToolFilter`.
     """
@@ -205,6 +206,20 @@ class MCPClientManager:
         return None
 
     # ── Connection lifecycle ──────────────────────────────────────
+
+    def register_server(self, config: MCPServerConfig) -> None:
+        """Add a server igni configures itself, to connect it by name.
+
+        The extension layer configures an extension's service at
+        install time — it is in nobody's ``.mcp.json`` and in no
+        managed settings — and then connects to it. Registering it
+        here rather than writing into :attr:`configs` keeps the
+        manager's own map an implementation detail of the manager.
+
+        Args:
+            config: The server to add, under ``config.name``.
+        """
+        self.configs[config.name] = config
 
     async def connect(self, name: str) -> MCPConnectResult:
         """Connect to an MCP server by name.
@@ -389,12 +404,37 @@ class MCPClientManager:
         mapping.
 
         Public accessor over the internal ``_clients`` dict —
-        lets collaborators (:class:`MCPToolResolver`) walk every
+        lets collaborators walk every
         live client without reaching into a private
         attribute. The returned dict is a copy so external
         mutations don't leak into the manager's own state.
         """
         return dict(self._clients)
+
+    def get_tool(self, name: str, tool: str) -> Callable[..., Any] | None:
+        """Return the invoker of the registered tool ``tool`` of server ``name``.
+
+        ``tool`` is the name the tool is registered under — the same
+        names :meth:`get_tools` hands out, not the server's own name
+        for it (see
+        :func:`~igni_core.core.mcp.naming.registered_tool_name`).
+
+        Agno holds every MCP tool as a :class:`Function` model whose
+        ``entrypoint`` is the callable that talks to the server; the
+        model itself is not callable, so the entrypoint is what comes
+        back here. ``None`` means "no invoker": the server is not
+        connected, the tool is not registered (a disabled tool is
+        removed from the live table), or it carries no callable
+        entrypoint.
+        """
+        client = self._clients.get(name)
+        if client is None:
+            return None
+        function = client.functions.get(tool)
+        if function is None:
+            return None
+        entrypoint = function.entrypoint
+        return entrypoint if callable(entrypoint) else None
 
     # ── Server enumeration ────────────────────────────────────────
 

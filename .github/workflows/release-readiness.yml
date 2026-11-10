@@ -2,7 +2,7 @@ name: Release readiness
 
 # Runs the end-to-end onboarding smoke that exercises the exact path
 # a new user takes: download uv → install Python → install
-# ignite-ember → prefetch embedding model → spawn the BE → confirm
+# igni-core → prefetch Laya → spawn the BE → confirm
 # the ready line. ~2-3 min per platform.
 #
 # Why a separate workflow:
@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "ignite-ember version to install (blank = read from pyproject.toml)"
+        description: "igni-core version to install (blank = read from pyproject.toml)"
         required: false
         default: ""
       use_local:
@@ -58,7 +58,7 @@ jobs:
         # sdist file) needs 1–5 minutes to expose a fresh version.
         # Polling the JSON index is cheap and returns 200 as soon
         # as the release row is queryable — gate the smoke script
-        # on that so ``uv pip install ignite-ember==X.Y.Z`` doesn't
+        # on that so ``uv pip install igni-core==X.Y.Z`` doesn't
         # race the propagation and fail unsatisfiable. Skipped when
         # ``use_local=true`` (manual dispatch with local sdist).
         # Only gate on PyPI when we're actually installing a freshly-
@@ -77,7 +77,7 @@ jobs:
           else
             VERSION="${GITHUB_REF##*/v}"
           fi
-          URL="https://pypi.org/pypi/ignite-ember/${VERSION}/json"
+          URL="https://pypi.org/pypi/igni-core/${VERSION}/json"
           echo "waiting for $URL"
           for i in $(seq 1 20); do
             if curl -fsSL -o /dev/null "$URL"; then
@@ -87,7 +87,7 @@ jobs:
             echo "  attempt $i/20 — not yet, waiting 30s"
             sleep 30
           done
-          echo "::error::PyPI never returned 200 for ignite-ember==$VERSION after 10 minutes"
+          echo "::error::PyPI never returned 200 for igni-core==$VERSION after 10 minutes"
           exit 1
 
       - name: Run onboarding smoke (POSIX)
@@ -102,7 +102,17 @@ jobs:
           if [[ -n "${{ inputs.version }}" ]]; then
             ARGS+=(--version "${{ inputs.version }}")
           fi
+          # The script exits 77 when the version is not on PyPI: there
+          # is nothing published to smoke yet, which is not a failure.
+          set +e
           ./scripts/onboarding-smoke.sh "${ARGS[@]}"
+          code=$?
+          set -e
+          if [[ "$code" == "77" ]]; then
+            echo "::notice::igni-core is not on PyPI at that version - the smoke had nothing to check."
+            exit 0
+          fi
+          exit "$code"
 
       # The script writes ``log-dir=<abs path>`` to $GITHUB_OUTPUT before
       # it does anything that can fail, and keeps that directory when the
@@ -156,7 +166,7 @@ jobs:
           } else {
             $version = "$env:GITHUB_REF" -replace '^refs/tags/v', ''
           }
-          $url = "https://pypi.org/pypi/ignite-ember/$version/json"
+          $url = "https://pypi.org/pypi/igni-core/$version/json"
           Write-Host "waiting for $url"
           for ($i = 1; $i -le 20; $i++) {
             try {
@@ -170,7 +180,7 @@ jobs:
               Start-Sleep -Seconds 30
             }
           }
-          Write-Error "PyPI never returned 200 for ignite-ember==$version after 10 minutes"
+          Write-Error "PyPI never returned 200 for igni-core==$version after 10 minutes"
           exit 1
 
       - name: Run onboarding smoke (Windows)
@@ -182,7 +192,15 @@ jobs:
           $args = @()
           if ("${{ inputs.use_local }}" -eq "true") { $args += "-Local" }
           if ("${{ inputs.version }}") { $args += "-Version"; $args += "${{ inputs.version }}" }
+          # Exit 77 means the version is not on PyPI: there is nothing
+          # published to smoke yet, which is not a failure.
           & ./scripts/onboarding-smoke.ps1 @args
+          $code = $LASTEXITCODE
+          if ($code -eq 77) {
+            Write-Host "::notice::igni-core is not on PyPI at that version - the smoke had nothing to check."
+            exit 0
+          }
+          exit $code
 
       # Same contract as the POSIX leg: the .ps1 reports ``log-dir`` to
       # $GITHUB_OUTPUT up front and keeps that directory on failure.
@@ -198,3 +216,36 @@ jobs:
           path: ${{ steps.smoke.outputs.log-dir }}
           if-no-files-found: warn
           retention-days: 7
+
+  # The extension sandbox's real Windows path: an AppContainer per run,
+  # a job object, and the named pipes winbridge.py relays the egress
+  # proxy and igni's endpoints through
+  # (tests/test_an_extension_process_is_confined_on_windows.py). Those
+  # tests start a real confined process and skip everywhere but Windows,
+  # so this is the one place they run. They fail rather than skip when
+  # the sandbox cannot be set up here, and a skip naming AppContainer
+  # fails the job, so it cannot go green having run nothing it exists for.
+  sandbox-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version-file: .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Sandbox tests under a real AppContainer
+        shell: pwsh
+        run: |
+          uv run --no-sync pytest tests/test_an_extension_process_is_confined_on_windows.py -q -rs -s 2>&1 | Tee-Object -FilePath sandbox.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Select-String -Path sandbox.log -Pattern "SKIPPED.*AppContainer" -Quiet) {
+            Write-Error "A Windows sandbox test skipped on a Windows runner"
+            exit 1
+          }

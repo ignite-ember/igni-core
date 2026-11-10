@@ -24,11 +24,14 @@ import json
 import logging
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from igni_core.backend.activity import ActivityState
+from igni_core.backend.schemas_rpc import AttachSessionResult
 from igni_core.backend.service_event_delivery import PoolSession
 from igni_core.core.activity import background
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaDraft,
+    VisualizationDeltaPayload,
+)
 from igni_core.extensions.service_events import UnattendedPost
 from igni_core.extensions.service_threads import HeldPosts
 from igni_core.protocol import messages as msg
@@ -38,20 +41,6 @@ logger = logging.getLogger(__name__)
 
 class FileNotKept(Exception):
     """The chat would not keep an item's file."""
-
-
-class ServiceView(BaseModel):
-    """A view a service shows in a chat: the ``visualization_delta`` an extension's ``chat.append`` sends."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    type: str = Field(default="visualization_delta", frozen=True)
-    agent_path: str
-    spec_id: str
-    spec_json: str = Field(alias="json")
-    final: bool = True
-    title: str = ""
-    source: str
 
 
 class PoolChatDesk:
@@ -65,6 +54,9 @@ class PoolChatDesk:
 
     async def open_chat(self, title: str) -> str:
         attached = await self._orchestrator.attach("", None)
+        if not isinstance(attached, AttachSessionResult):
+            # Neither a directory nor an id: nothing an attach could refuse.
+            raise RuntimeError(f"a new chat was refused: {attached.reason}")
         await self.rename(session_id=attached.session_id, title=title)
         return str(attached.session_id)
 
@@ -94,7 +86,9 @@ class PoolChatDesk:
 
     async def keep_file(self, *, session_id: str, filename: str, content: bytes) -> str:
         runtime = await self._runtime(session_id)
-        kept = runtime.backend.upload_attachment(filename, base64.b64encode(content).decode())
+        kept = await runtime.backend.controllers.files.upload_attachment(
+            filename, base64.b64encode(content).decode()
+        )
         if kept.error or not kept.path:
             raise FileNotKept(f"{filename}: {kept.error or 'not kept'}")
         return str(kept.path)
@@ -103,19 +97,21 @@ class PoolChatDesk:
         self, *, session_id: str, extension_id: str, view_id: str, view: dict[str, Any], title: str
     ) -> None:
         runtime = await self._runtime(session_id)
-        payload = ServiceView(
+        payload = VisualizationDeltaPayload(
             agent_path=f"ext:{extension_id}",
             spec_id=view_id,
             spec_json=json.dumps(view),
             title=title,
             source=extension_id,
-        ).model_dump(by_alias=True)
+        )
         await runtime.transport.send(
-            msg.PushNotification(channel="orchestrate_event", payload=payload)
+            msg.PushNotification(
+                channel="orchestrate_event", payload=payload.model_dump(by_alias=True)
+            )
         )
         record = getattr(runtime.backend, "record_event", None)
         if record is not None:
-            await record("visualization_delta", payload, "")
+            await record(VisualizationDeltaDraft(payload=payload))
 
     async def rename(self, *, session_id: str, title: str) -> None:
         titled = await PoolSession(self._orchestrator, session_id).title(title)
@@ -176,4 +172,4 @@ class HeldPostFlusher:
             await asyncio.sleep(self.INTERVAL_SECONDS)
 
 
-__all__ = ["FileNotKept", "HeldPostFlusher", "PoolChatDesk", "ServiceView"]
+__all__ = ["FileNotKept", "HeldPostFlusher", "PoolChatDesk"]

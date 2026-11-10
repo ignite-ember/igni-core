@@ -15,30 +15,10 @@ QUICKSTART.md as igni's permission model, and the schema said they were
 passing tests covered the machinery, which is what made it look maintained.
 
 Those levels are now honoured by the live evaluator, via
-``PermissionsConfig.category_rules``. What remains here is the shared type
-vocabulary — ``PermissionLevel`` and ``PermissionRequest`` are used by the HITL
-controller and the hook events, and ``PermissionCategory`` by
-``tool_permissions.schemas``.
+``PermissionsConfig.category_rules``. What remains here is
+``PermissionCategory`` and ``PermissionLevel``.
 """
 
-from igni_core.core.config.permissions.schemas import (
-    AllowlistFile,
-    AllowlistPattern,
-    ApprovalChoice,
-    DecisionSource,
-    GuardDecision,
-    PermissionCategory,
-    PermissionLevel,
-    PermissionRequest,
-)
+from igni_core.core.config.permissions.schemas import PermissionCategory, PermissionLevel
 
-__all__ = [
-    "AllowlistFile",
-    "AllowlistPattern",
-    "ApprovalChoice",
-    "DecisionSource",
-    "GuardDecision",
-    "PermissionCategory",
-    "PermissionLevel",
-    "PermissionRequest",
-]
+__all__ = ["PermissionCategory", "PermissionLevel"]

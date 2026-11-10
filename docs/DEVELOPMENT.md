@@ -18,7 +18,8 @@ igni/
 │   ├── backend/            # the long-lived server the GUI clients speak to — slash-command
 │   │   │                   # and RPC dispatch, run streaming, HITL, session pool, panels
 │   │   ├── panels/         # data behind the clients' agents / skills / hooks panels
-│   │   └── rpc_handlers/   # one handler module per RPC domain (auth, mcp, loop, knowledge, …)
+│   │   └── rpc_handlers/   # one handler module per RPC domain (auth, extensions, hooks,
+│   │                       # mcp, panels, session, skills, plugins, scheduler, …)
 │   ├── core/               # everything that is not CLI, wire format, or server plumbing
 │   │   ├── agents/         # agent `.md` discovery, frontmatter parsing, AgentPool, agent build
 │   │   ├── auth/           # browser login, local callback server, credential storage
@@ -48,7 +49,6 @@ igni/
 │   ├── bundled_agents/     # the agent `.md` files that ship inside the wheel
 │   ├── bundled_skills/     # the `SKILL.md` directories that ship inside the wheel
 │   └── migrations/         # Alembic environment + `versions/`
-├── clients/                # the front-ends: `web` (the web client, and the UI the desktop app loads), `tauri`
 ├── agents/                 # repo-root copies of most agent `.md` files, read by a few
 │                           # scripts and one parity test. `bundled_agents/` is what ships,
 │                           # and the two have already drifted apart.
@@ -56,7 +56,7 @@ igni/
 ├── docs/                   # this file and its siblings — `ls docs/` is the list
 ├── evals/                  # YAML eval suites and their fixtures
 ├── scripts/                # dev + ops scripts: profiling, eval drivers, client builds
-├── tests/                  # ~313 files, flat, one per behaviour.
+├── tests/                  # hundreds of files, flat, one per behaviour.
 │   │                       # Not listed here: a hand-kept sample reads as the
 │   │                       # whole suite and goes stale silently — the last one
 │   │                       # still named test_knowledge.py, test_permissions.py,
@@ -71,16 +71,18 @@ igni/
 └── LICENSE
 ```
 
-There is no `tui/` package. The Textual TUI was removed; interactive
-chat lives in the React clients under `clients/`, which talk to the
-backend started by `python -m igni_core.backend`.
+There is no `tui/` package, and no `clients/` directory either. The
+Textual TUI was removed and the front-ends moved to their own repo:
+the React clients live in igni-app (`clients/web`, the web client and
+the UI the desktop app loads, and `clients/tauri`, the desktop shell).
+They talk to the backend started by `python -m igni_core.backend`.
 
 ## Setup
 
 ```bash
 # Clone
 git clone https://github.com/ignite-ember/igni-core.git
-cd igni
+cd igni-core
 
 # Create virtual environment
 python -m venv .venv
@@ -106,14 +108,17 @@ make check
 ### Running the web client against a backend
 
 A backend you start by hand (`python -m igni_core.backend --ws-port 8765
---project-dir .`) requires no WebSocket token, so `npm --prefix clients/web
-run dev` reaches it as before; only pages from a foreign `Origin` are
-refused. A backend the desktop app spawns requires its per-launch token
-(`IGNI_WS_TOKEN`, handed to the webview as `#igni_ws_token=…`; see
+--project-dir .`) requires no WebSocket token, so the web client's dev
+server reaches it as before — run `npm --prefix clients/web run dev` in
+igni-app, which is where the clients live; only pages from a foreign
+`Origin` are refused. A backend the desktop app spawns requires its
+per-launch token (`IGNI_WS_TOKEN`, handed to the webview as
+`#igni_ws_token=…`; see
 [SECURITY.md](SECURITY.md#10-the-backends-local-websocket)). To connect
 something else to that one during development, start the app with
-`IGNI_DEV_NO_WS_TOKEN=1 cargo tauri dev`: debug builds then spawn the
-backend without a token, and both print a warning. Release builds ignore it.
+`IGNI_DEV_NO_WS_TOKEN=1 cargo tauri dev` (in igni-app): debug builds
+then spawn the backend without a token, and both print a warning.
+Release builds ignore it.
 
 ## Makefile
 
@@ -149,10 +154,10 @@ The `make check` target is the single command to verify everything is clean befo
 
 **Optional** — one bullet per extra in `[project.optional-dependencies]`, and no others. There is no `knowledge` extra, and no graph database or embedder in igni at all: CodeIndex's local index (Neo4j per commit, a sentence-transformer) is its extension's, installed from its bundle.
 
-- `mcp` — Model Context Protocol (`pip install "igni-core[mcp]"`)
-- `google-genai` — Gemini models (`pip install "igni-core[gemini]"`)
-- `anthropic` — Claude over the native Messages API (`pip install "igni-core[anthropic]"`)
-- `duckduckgo-search` — Web search (`pip install "igni-core[web]"`)
+- `mcp` — Model Context Protocol (`pip install -e ".[mcp]"`)
+- `google-genai` — Gemini models (`pip install -e ".[gemini]"`)
+- `anthropic` — Claude over the native Messages API (`pip install -e ".[anthropic]"`)
+- `duckduckgo-search` — Web search (`pip install -e ".[web]"`)
 
 **Dev:**
 - `pytest` + `pytest-asyncio` — Testing
@@ -161,37 +166,49 @@ The `make check` target is the single command to verify everything is clean befo
 
 ## Key Implementation Details
 
-### 1. Agent Pool (pool.py)
+### 1. Agent Pool (`core/agents/pool.py`)
 
-The AgentPool discovers, parses, and manages agent definitions from `.md` files:
+The AgentPool discovers, parses, and manages agent definitions from `.md`
+files. Discovery itself lives in `core/agents/loader.py`, which reads every
+root and ranks it — on a name collision the higher priority wins, so the
+project's own agent beats the user's global:
 
 ```python
-class AgentPool:
-    """Loads agent definitions from .md files and builds Agno Agent objects."""
-
-    def _load_all(self, config: Settings):
-        # Load in priority order (highest last, so they overwrite)
-        dirs = [
-            (Path.home() / ".igni" / "agents", 0),        # user global
-            (Path(".igni/agents.local"), 1),               # project local
-            (Path(".igni/agents"), 2),                     # project shared
-        ]
+dirs: list[tuple[Path, AgentPriority]] = [
+    (Path.home() / CONFIG_DIR / "agents", AgentPriority.USER_EMBER),
+]
+if self._group_dir is not None:
+    dirs.append((self._group_dir, AgentPriority.ORG_GROUP))
+dirs += [
+    (project_dir / CONFIG_DIR / "agents.local", AgentPriority.PROJECT_LOCAL),
+    (project_dir / CONFIG_DIR / "agents", AgentPriority.PROJECT_EMBER),
+]
 ```
 
-### 2. Orchestration (tools/orchestrate.py)
+The enum members still carry the pre-rename spelling (`USER_EMBER`,
+`PROJECT_EMBER`); the paths they rank are igni's.
 
-The main agent has `OrchestrateTools` which provides `spawn_agent()`, `spawn_team()`, and `create_agent()`. There is no separate orchestrator — the main agent itself decides when to delegate via tool calls. Sub-teams are built from the `AgentPool` with all Agno features (session persistence, compression, knowledge, learning, guardrails) applied by `Session._build_main_agent()`.
+With `agents.cross_tool_support` on (the default), `.claude/agents` — the
+project's and the user's — is read as well, ranked below the native roots.
+`load_definitions` parses without building and returns a `LoadReport` the
+backend surfaces to the client and the audit log; `build_agents` turns the
+surviving definitions into Agno agents.
 
-### 5. Backend Architecture (backend/)
+### 2. Orchestration (`core/tools/orchestrate.py`)
+
+The main agent has `OrchestrateTools` which provides `spawn_agent()`, `spawn_team()`, and `create_agent()`. There is no separate orchestrator — the main agent itself decides when to delegate via tool calls. Sub-teams are built from the `AgentPool` with the Agno features igni uses (session persistence, compression, learning, guardrails) applied by `Session._build_main_agent()`. There is no Agno knowledge base: what an agent may search arrives from the extensions that provide it.
+
+### 3. Backend Architecture (`backend/`)
 
 The Textual TUI this section used to describe no longer exists. Its
 separation-of-concerns shape survived the move: the backend server is a
 thin shell that delegates to focused classes, and the interactive
-surface is now the React clients under `clients/`.
+surface is now the React clients in igni-app.
 
 | Class | File | Responsibility |
 |---|---|---|
-| `BackendApp` | `backend/app.py` | Process shell: transport setup, wiring, lifecycle |
+| `BackendApp` | `backend/app.py` | Composition root: runs the boot in order, hands off to `ServingBackend` |
+| `ServingBackend` | `backend/serving_backend.py` | Serves the first window onward; owns the teardown order |
 | `SessionPool` | `backend/session_pool.py` | Per-project `SessionRuntime` instances, switching |
 | `RunController` | `backend/run_controller.py` | Execution pipeline, streaming, cancellation |
 | `StreamEventDispatcher` | `backend/stream_event_dispatcher.py` | Agno run events → wire messages |
@@ -199,16 +216,22 @@ surface is now the React clients under `clients/`.
 | `CommandHandler` | `backend/command_handler.py` | Slash-command dispatch |
 | `HitlController` | `backend/hitl_controller.py` | Permission prompts, confirmations, user input |
 
-### 6. Model Resolver (config/models.py)
+### 4. Model Resolver (`core/config/models.py`)
 
-Agent `.md` files specify models by name. The registry maps names to provider, endpoint, model ID, and credentials:
+Agent `.md` files specify models by name. `ModelRegistry` maps a name to an
+Agno model instance, resolving in this order:
 
 ```python
-def get_model(name: str, config: Settings) -> Model:
-    # 1. User config registry (BYOM)
-    # 2. Built-in registry (server-hosted)
-    # 3. provider:model_id syntax (e.g., "openai_like:gpt-4o")
+class ModelRegistry:
+    def get_model(self, name: str | None = None) -> Model:
+        # 1. The config registry (`models.registry`: the built-in defaults
+        #    plus whatever the user or the project added)
+        # 2. `provider:model_id` syntax (e.g. "openai_like:gpt-4o")
 ```
+
+A name that resolves to nothing raises `ValueError`; an unset default that
+resolves to nothing returns a `NoModelConfigured` placeholder, so a session
+can still be built and `/login` reached.
 
 ## Testing
 
@@ -229,48 +252,55 @@ make test            # verify tests still pass
 
 ### Test Strategy
 
-- **Unit tests** — agent pool, .md parsing, tool registry, config merging, knowledge models, backend server
+- **Unit tests** — agent pool, .md parsing, tool registry, config merging, backend server
 - **Integration tests** — Orchestrator decisions, team assembly, AgnoFeatures application
 - **Mock LLM calls** — mock model responses to test orchestration logic
 - **Agent definition tests** — validate all built-in `.md` files parse correctly
-- **912 tests** across 53 test files, all passing
+- **One file per behaviour.** The suite is flat and large; `ls tests/` is
+  the map of what the product does. A count of the files goes stale the
+  week after it is written, so this is not one.
 
 ## Slash Commands
 
-Built-in commands available in interactive mode:
+Every built-in command, in the order the registry lists them:
 
 | Command | Description |
 |---|---|
-| `/help` | Show available commands and keyboard shortcuts |
-| `/quit` or `/exit` | Exit igni |
-| `/clear` | Clear conversation and reset session |
-| `/config` | Show current settings (model, permissions, features) |
-| `/agents` | List loaded agents with their tools |
-| `/skills` | List loaded skills |
-| `/hooks` | List loaded hooks |
-| `/sessions` | Browse and resume past sessions |
+| `/help` | Show help and the available commands |
+| `/quit` or `/exit` | Exit the session |
+| `/clear` | Clear the current conversation |
+| `/config` | Show the current settings (model, permissions, features) |
+| `/agents` | List and manage agents |
+| `/skills` | List installed skills |
+| `/hooks` | List installed hooks |
+| `/extensions` | Installed extensions and their settings |
+| `/sessions` | List past sessions |
 | `/rename <name>` | Rename the current session |
-| `/memory` | List stored memories |
-| `/memory optimize` | Consolidate memories |
-| `/knowledge` | Show knowledge base status |
-| `/knowledge add <url\|path\|text>` | Add content to knowledge base |
-| `/knowledge search <query>` | Search the knowledge base |
-| `/evals [agent]` | Run agent evals (optionally filter by agent name) |
-| `/sync-knowledge` | Sync knowledge between git file and vector DB |
-| `/login` | Authenticate via device-flow (opens browser) |
+| `/fork` | Fork the current session under a new id |
+| `/memory` | Inspect or optimise learned memories (`/memory optimize`) |
+| `/evals [agent]` | Run evaluation suites (optionally filter by agent name) |
+| `/login` | Sign in to your igni server (device flow — opens the browser) |
+| `/logout` | Sign out of your igni server |
+| `/whoami` | Show the signed-in user |
 | `/schedule add <when> <prompt>` | Schedule a one-off or recurring prompt (e.g. `/schedule add review code at 5pm`, `/schedule add run linter every 2 hours`) |
 | `/loop <prompt>` | Re-fire the same prompt as the next user turn until cap, `/loop stop`, or any non-`/loop` input (default cap 30, hard cap 200). Forms: `/loop` (status), `/loop <N> <prompt>` (explicit cap), `/loop stop` (cancel) |
-| `/plugins` | Open the Textual plugins panel (browse, toggle enable/disable, update/remove, browse marketplaces, install). See [Plugins](PLUGINS.md). |
+| `/plugins` | Open the client's plugins panel (browse, toggle enable/disable, update/remove, browse marketplaces, install). See [Plugins](PLUGINS.md). |
 | `/plugins enable <name>` / `/plugins disable <name>` | Toggle a plugin without opening the panel — takes effect on next session start. |
 | `/plugin install <git-url\|@marketplace/plugin>` | Install a Claude-Code-compatible plugin into `~/.igni/plugins/`. Optional `--ref <branch\|tag\|sha>`. |
 | `/plugin update <name>` / `/plugin remove <name>` | Update (fetch + reset to origin's HEAD or `--ref`) or uninstall. |
 | `/plugin marketplace add\|list\|remove\|refresh` | Manage registered marketplaces — Claude-Code-compatible catalogs at the root of any git repo. |
-| `/compact` | Manually compact session history (otherwise triggers at 80% of the context window) |
-| `/bug` | Capture a bug report with session context |
-| `/mcp` | List configured MCP servers and their connection status |
-| `/model` | Switch the active model (or show current) |
-| `/whoami` | Show the active your igni server login |
-| `/logout` | Clear cached your igni server credentials |
+| `/compact` | Compact the conversation context (otherwise at 80% of the context window) |
+| `/ctx` | Show context window usage |
+| `/plan` | Toggle plan mode (read-only sandbox, plan-then-execute) |
+| `/accept` | Toggle acceptEdits mode (auto-approve file edits) |
+| `/bypass` | Toggle bypassPermissions mode (auto-approve every tool — no HITL prompts) |
+| `/output-style` | List or switch the active output style (tone / verbosity) |
+| `/mcp` | Open the MCP servers panel |
+| `/programs` | Let a program answer approval requests |
+| `/watcher` | Open the background-process watcher panel |
+| `/eject` | Copy something your group ships into this project, so yours wins |
+| `/model` | Switch the active model (or show the current one) |
+| `/bug` | Open a bug report |
 | `/<skill-name> [args]` | Invoke a skill (e.g., `/commit`) |
 
 A built-in is one entry in `backend/builtin_command_registry.py`: its
@@ -295,8 +325,8 @@ that constant to decide whether to migrate at all;
 - **Tool ecosystem** — 100+ pre-built toolkits
 - **Model agnostic** — swap models without code changes
 - **Reasoning** — built-in chain-of-thought with `reasoning=True`
-- **Knowledge** — ChromaDB vector stores with pluggable embedders
-- **Learning** — LearningMachine for user profiles and entity memory
+- **Documents** — extensions keep their own stores and reach the agent over MCP
+- **Learning** — LearningMachine for user memory
 - **Guardrails** — PII detection, prompt injection, moderation as pre-hooks
 
 ### Why dynamic team assembly instead of a fixed hierarchy?
@@ -319,11 +349,13 @@ A fixed Router → Agent hierarchy forces you to pre-decide what agents exist an
 
 The interactive surface is a GUI client, not a terminal app — `igni`
 and `ignite-ember` are the non-interactive CLI, and chat happens in the
-clients under `clients/`, which connect to the server started by
+clients in igni-app, which connect to the server started by
 `python -m igni_core.backend`. Splitting the front-end out means the
 same backend serves the desktop app and the web client over one wire
-protocol. Inside the backend, `BackendApp` is a thin shell that
-delegates to the controllers listed above; each stays testable in
+protocol. Inside the backend, `BackendApp` is a thin composition root
+that builds one small class per subsystem (`ExtensionsRuntime`,
+`ExtensionStartup`, `BackendNotifications`, `ServiceEventIngress`,
+`HostModelRuntime`) and delegates to the controllers listed above; each stays testable in
 isolation and none of them becomes the god-class.
 
 ## Roadmap

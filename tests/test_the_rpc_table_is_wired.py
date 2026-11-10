@@ -6,7 +6,7 @@ an `RpcMethod` has no handler. That is a good guard against the "added
 an enum member, forgot to register it" mistake.
 
 **It had never run in CI.** `build_table` is called from
-`session_orchestrator`, `app.py` and `__main__` — all production paths.
+`session_runtime_factory`, `app.py` and `__main__` — all production paths.
 So adding an enum value without a handler left the suite green and the
 desktop app dead on launch: R-8's shape, in the one component a user
 meets first.
@@ -23,8 +23,8 @@ Beyond exhaustiveness, two properties `validate_rpc_table` cannot see:
   app, with no test naming it. Forty-nine of the hundred handlers are
   referenced nowhere in this suite, so a signature check over all of
   them is worth more than a test for any one;
-* **the pool-level guards refuse.** Four RPCs are intercepted by
-  `SessionOrchestrator` before per-runtime routing, and are registered
+* **the pool-level guards refuse.** The pool-level RPCs are answered by
+  `PoolRpcRouter` before per-runtime routing, and are registered
   in the table as deliberate "you should never reach here" traps. A trap
   that returned `None` instead of raising would make a mis-route
   invisible, which is the failure it exists to make loud.
@@ -40,7 +40,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.rpc_binding import RpcBinding
+from igni_core.backend.rpc_router import RPC_HANDLERS, RpcRouter
 from igni_core.protocol.rpc import RpcMethod
 
 
@@ -53,7 +54,7 @@ def _router() -> RpcRouter:
     """
     backend = MagicMock()
     backend.project_dir = Path(tempfile.mkdtemp())
-    return RpcRouter(backend=backend, transport=MagicMock(), login=MagicMock(), push=MagicMock())
+    return RpcRouter(backend=backend, login=MagicMock(), push=MagicMock())
 
 
 class TestTheTableBuilds:
@@ -115,13 +116,17 @@ class TestEveryBindingCanBeCalled:
         The assumption was wrong and the code was right.
 
         What would be a real bug is that check disappearing while async
-        handlers remain. Then the RPC returns a coroutine, `_serialize`
+        handlers remain. Then the RPC returns a coroutine, `RpcResult.serialize`
         makes something meaningless of it, and the app sees a *success*
         containing nothing — worse than an error, because nothing looks
         wrong.
         """
-        table = _router().build_table()
-        coroutines = sorted(str(m) for m, fn in table.items() if inspect.iscoroutinefunction(fn))
+        coroutines = sorted(
+            str(method)
+            for handler in RPC_HANDLERS
+            for method, (name, _binding) in RpcBinding.on(handler).items()
+            if inspect.iscoroutinefunction(getattr(handler, name))
+        )
 
         assert coroutines, (
             "no handler is async any more. If that is deliberate the await below is dead "

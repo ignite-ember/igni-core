@@ -28,10 +28,11 @@ the sibling :mod:`schemas_context` module.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import time
 from typing import TYPE_CHECKING
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from igni_core.backend.schemas_context import (
     PENDING_STALENESS_SECONDS,
@@ -40,7 +41,11 @@ from igni_core.backend.schemas_context import (
     PendingMessage,
     TruncateHistoryResult,
 )
+from igni_core.core.config.group_policy.meta import PackMetaStore
+from igni_core.core.config.group_policy.pack import PackTheme
+from igni_core.core.config.models import ModelRegistry
 from igni_core.core.session.persistence.run_history import RunHistory
+from igni_core.core.session.schemas import ContextBreakdown
 from igni_core.core.session.token_estimate import TokenEstimate
 from igni_core.protocol import messages as msg
 
@@ -61,10 +66,14 @@ class ContextController:
         session: Session,
         settings: Settings,
         pending_store: PendingMessageStore,
+        models: ModelRegistry,
+        pack_meta: PackMetaStore,
     ) -> None:
         self._session = session
         self._settings = settings
         self._pending_store = pending_store
+        self._models = models
+        self._pack_meta = pack_meta
 
     def get_status(self) -> msg.StatusUpdate:
         """Status-bar snapshot.
@@ -77,52 +86,34 @@ class ContextController:
         because the FE already re-renders on every one of these, and a
         second channel for six optional strings would be its own thing
         to keep in sync.
+
+        The theme crosses the wire as the pass-through mapping
+        :attr:`StatusUpdate.theme` declares; an empty one is no theme.
         """
+        theme = self._group_theme()
         return msg.StatusUpdate(
             model=self._settings.models.default,
-            model_configured=self._has_usable_model(),
+            model_configured=self._models.has_usable_model(),
             cloud_connected=self._session.cloud_connected,
             cloud_org=self._session.cloud_org_name or "",
             cloud_email=self._session.cloud_email or "",
-            context_tokens=self._session.last_input_tokens,
+            context_tokens=self._session.context_budget.last_input_tokens,
             max_context=self._settings.models.max_context_window,
             permission_mode=self._session.permission_mode_value,
-            theme=self._group_theme(),
+            theme=(theme.model_dump() or None) if theme is not None else None,
         )
 
-    def _has_usable_model(self) -> bool:
-        """Ask the registry, never raise.
-
-        A brand-new install has no model, which is the normal first-run
-        state rather than an error — and a status poll that failed
-        because of it would take the whole status bar down with it.
-        """
-        try:
-            from igni_core.core.config.models import ModelRegistry
-
-            return ModelRegistry(self._settings).has_usable_model()
-        except Exception as exc:  # pragma: no cover — defensive
-            logger.debug("model availability unknown (%s); assuming configured", exc)
-            return True
-
-    def _group_theme(self) -> dict | None:
+    def _group_theme(self) -> PackTheme | None:
         """Brand overrides from the cached group pack, if any.
 
-        Never raises: a missing, unreadable or theme-less pack all mean
-        the same thing to the caller, and a status poll that fails
-        because of a branding lookup would take the status bar with it.
+        A missing or unreadable meta file reads as ``None`` already
+        (:meth:`PackMetaStore.load`), so a status poll never fails on a
+        branding lookup.
         """
-        try:
-            from igni_core.core.config.group_policy import GroupPolicyCache
+        meta = self._pack_meta.load()
+        return meta.theme if meta is not None else None
 
-            meta = GroupPolicyCache().read_pack_meta() or {}
-            theme = meta.get("theme")
-            return theme if isinstance(theme, dict) and theme else None
-        except Exception as exc:  # pragma: no cover — defensive
-            logger.debug("group theme unavailable (%s); using the shipped palette", exc)
-            return None
-
-    async def context_breakdown(self) -> dict:
+    async def context_breakdown(self) -> ContextBreakdown:
         """What the context is made of, for the ``/ctx`` page.
 
         ``count_context_tokens`` answers how big it is; this answers
@@ -130,13 +121,8 @@ class ContextController:
         versus the floor (system prompt, tool schemas, project rules,
         memories, injected summary) that is rebaked into every prompt
         and cannot be compacted away.
-
-        A plain dict on the wire: the page renders three numbers, and
-        a model here would be a second place to change when the domain
-        one grows a field.
         """
-        b = await self._session.context_breakdown()
-        return {"total": b.total, "runs": b.runs, "floor": b.floor}
+        return await self._session.context_breakdown()
 
     async def count_context_tokens(self) -> int:
         """The conversation's size: the server's count at the last answer, plus the tail after it."""
@@ -145,20 +131,15 @@ class ContextController:
                 session_id=self._session.session_id,
                 user_id=self._session.user_id,
             )
-        except Exception as exc:
-            logger.debug("aget_session failed (%s); reporting 0", exc)
+        except SQLAlchemyError:
+            logger.warning("count_context_tokens: session read failed; reporting 0", exc_info=True)
             return 0
         if agno_session is None:
             return 0
-        try:
-            messages = agno_session.get_messages()
-        except Exception as exc:
-            logger.debug("get_messages failed (%s); reporting 0", exc)
-            return 0
-        n = TokenEstimate.of(messages)
+        n = TokenEstimate.of(agno_session.get_messages())
         # Latch only when we actually measured something.
         if n > 0:
-            self._session.latch_input_tokens(n)
+            self._session.context_budget.latch(n)
         return n
 
     async def compact_if_needed(self, ctx_tokens: int, max_ctx: int) -> msg.SessionCleared | None:
@@ -167,13 +148,17 @@ class ContextController:
         if not compacted:
             return None
         summary = ""
-        with contextlib.suppress(Exception):
+        try:
             agno_session = await self._session.main_team.aget_session(
                 session_id=self._session.session_id,
                 user_id=self._session.user_id,
             )
-            if agno_session and agno_session.summary and agno_session.summary.summary:
-                summary = agno_session.summary.summary
+        except SQLAlchemyError:
+            # The compaction itself succeeded; only the summary echo is lost.
+            logger.warning("compact_if_needed: summary read failed", exc_info=True)
+            agno_session = None
+        if agno_session and agno_session.summary and agno_session.summary.summary:
+            summary = agno_session.summary.summary
         return msg.SessionCleared(
             new_session_id=self._session.session_id,
             summary=summary,
@@ -184,8 +169,7 @@ class ContextController:
 
         Thin forward to :meth:`Session.extract_learnings` — the
         None-guard on the learning machine and the background-task
-        launch both live on :class:`Session`, so this coordinator
-        stops reaching into ``session._learning``.
+        launch both live on :class:`Session`.
         """
         await self._session.extract_learnings(user_msg, assistant_msg)
 
@@ -220,7 +204,7 @@ class ContextController:
         # The latched context-token count was computed against the
         # pre-truncate session; invalidate it so the next status
         # read recomputes from the new (shorter) history.
-        self._session.latch_input_tokens(0)
+        self._session.context_budget.latch(0)
         return TruncateHistoryResult(removed=removed)
 
     async def get_pending_messages(self, session_id: str) -> list[PendingMessage]:
@@ -233,8 +217,8 @@ class ContextController:
         """
         try:
             rows = await self._pending_store.alist_pending(session_id)
-        except Exception as exc:
-            logger.debug("get_pending_messages failed: %s", exc)
+        except SQLAlchemyError:
+            logger.warning("get_pending_messages: store read failed", exc_info=True)
             return []
         cutoff = int(time.time()) - PENDING_STALENESS_SECONDS
         rows = [r for r in rows if r.received_at <= cutoff]
@@ -263,8 +247,8 @@ class ContextController:
         """
         try:
             rows = await self._pending_store.alist_interrupted(session_id)
-        except Exception as exc:
-            logger.debug("get_interrupted_runs failed: %s", exc)
+        except SQLAlchemyError:
+            logger.warning("get_interrupted_runs: store read failed", exc_info=True)
             return []
         return [InterruptedRun.from_interrupted_row(r) for r in rows]
 
@@ -275,8 +259,10 @@ class ContextController:
 
         Idempotent: deleting a row that no longer exists returns
         ``ok=True`` so the FE can stop polling / re-trying. The
-        row is matched by ``message_id`` (the wire-level id we
-        exposed via :meth:`get_interrupted_runs`).
+        row is matched by ``session_id`` and ``message_id`` (the
+        wire-level id we exposed via :meth:`get_interrupted_runs`),
+        and only an interrupted run is deleted. A storage failure is
+        ``ok=False`` with the error.
 
         Does NOT touch other interrupted rows for the session —
         only the one the user picked. The "discard all" semantics
@@ -286,8 +272,8 @@ class ContextController:
         if not message_id:
             return DiscardInterruptedRunResult(ok=False, error="message_id is required")
         try:
-            await self._pending_store.adiscard(message_id)
-        except Exception as exc:
+            await self._pending_store.adiscard_interrupted(session_id, message_id)
+        except SQLAlchemyError as exc:
             logger.warning("discard_interrupted_run failed: %s", exc)
             return DiscardInterruptedRunResult(ok=False, error=str(exc))
         return DiscardInterruptedRunResult(ok=True)

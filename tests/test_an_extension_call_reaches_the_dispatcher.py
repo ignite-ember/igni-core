@@ -25,6 +25,7 @@ from igni_core.backend.message_dispatcher import MessageDispatcher
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.protocol import messages as msg
 from tests.siblings import IGNI_SDK, needs_sdk
 
 pytestmark = needs_sdk
@@ -41,11 +42,8 @@ class _Transport:
         self.sent.append(message)
 
 
-class _Request:
-    def __init__(self, method: str, args: dict, caller: str | None = None) -> None:
-        self.method = method
-        self.args = args
-        self.caller = caller
+def _Request(method: str, args: dict, caller: str | None = None) -> msg.RPCRequest:
+    return msg.RPCRequest(method=method, args=args, caller=caller)
 
 
 class _Service:
@@ -185,19 +183,17 @@ async def test_a_base_method_is_unaffected(
 async def test_a_request_without_a_caller_field_is_tolerated(
     extensions: tuple[ExtensionRpc, _Service],
 ) -> None:
-    """``caller`` is a new optional field, so an older client's
-    request object may not carry it at all. That must be a refusal
-    with a reason, not an ``AttributeError`` out of the receive loop.
+    """``caller`` is an optional field, so an older client's request
+    may not carry it at all. That must be a refusal with a reason, not
+    an error out of the receive loop.
     """
     rpc, _ = extensions
     transport = _Transport()
     dispatcher = _dispatcher(transport, {}, rpc)
 
-    class _Old:
-        method = "ext.acme.scanner.list"
-        args: dict = {}
+    old = msg.RPCRequest.model_validate({"type": "rpc_request", "method": "ext.acme.scanner.list"})
 
-    await dispatcher._on_rpc_request(_Old(), "req-7")
+    await dispatcher._on_rpc_request(old, "req-7")
 
     (response,) = transport.sent
     assert "did not say which extension" in response.error

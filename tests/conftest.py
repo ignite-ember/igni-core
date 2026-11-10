@@ -9,16 +9,14 @@ from dotenv import load_dotenv
 
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.approvals.events import approval_events
+from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.schemas.storage_and_paths import StorageConfig
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.db.scope import tenancy
 from igni_core.core.db.urls import DatabaseUrl, Dialect
-from igni_core.core.hooks.extension_gate import ExtensionHookGate
-from igni_core.core.layer import Layers
+from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.layer import Layers, layers
 from igni_core.core.paths import CONFIG_DIR
-from igni_core.extensions.faults import ExtensionFaults
-from igni_core.extensions.host.hooks import ExtensionHooks
-from igni_core.extensions.host.processes import ExtensionProcesses
 from tests.egress_guard import EgressGuard, InternalNetwork
 from tests.root_guard import RootGuard
 from tests.storage_backends import ThrowawayPostgres
@@ -121,29 +119,36 @@ def _workspace_trust(request: pytest.FixtureRequest) -> Iterator[None]:
     Workspace trust (``core/workspace_trust``) starts every folder untrusted,
     and the tests written before it exist open project folders whose tools,
     hooks and settings are their subject. Those get a trusted folder, as a
-    person who had trusted it would. A test marked
-    ``@pytest.mark.workspace_trust`` gets the real decision, starting unset.
-    """
-    from igni_core.core.workspace_trust import WorkspaceTrust
+    person who had trusted it would be — a trust service that trusts what
+    nobody has decided about (``tests/workspace_trust_doubles.py``). A test
+    marked ``@pytest.mark.workspace_trust`` gets the real service and the
+    real decision, starting unset.
 
-    WorkspaceTrust.reset_shared(
-        trust_everything=not request.node.get_closest_marker(WORKSPACE_TRUST)
-    )
+    The service is put in place for the test and taken away afterwards, so
+    one test's decisions are never another's.
+    """
+    from igni_core.core.workspace_trust import WorkspaceTrust, trust_service
+    from tests.workspace_trust_doubles import TrustEverything
+
+    if request.node.get_closest_marker(WORKSPACE_TRUST):
+        trust_service.replace(WorkspaceTrust())
+    else:
+        trust_service.replace(TrustEverything())
     yield
-    WorkspaceTrust.reset_shared(trust_everything=True)
+    trust_service.replace(None)
 
 
 @pytest.fixture(autouse=True)
 def _isolate_user_settings(tmp_path_factory, monkeypatch):
     """Globally redirect ``Path.home()``, ``Path.cwd()``, and the
-    ``HOME`` env var to temp directories so ``load_settings()``
+    ``HOME`` env var to temp directories so ``SettingsLoader.load()``
     can't read the developer's real ``~/.igni/settings.json`` or
     the project's ``.igni/settings.local.json``. Both files
     contain real permission rules (deny/ask/allow) the developer
     set on their machine (e.g. ``Bash(echo *PERM_TEST_BLOCKED*)``
     from the row-9 walkthrough, ``ask: [Edit]`` from an /accept
     session) that otherwise leak into every test calling
-    ``load_settings`` without an explicit ``project_dir``. The
+    ``SettingsLoader.load`` without an explicit ``project_dir``. The
     ``HOME`` env override covers code paths that use
     ``os.path.expanduser`` (auth credentials path, etc.) instead
     of ``Path.home`` so the two stay consistent. Tests that need
@@ -167,9 +172,9 @@ def _desktop_storage(monkeypatch):
     monkeypatch.delenv(Layers.ENV, raising=False)
     # The desktop's layer, chosen afresh: a test that installs another
     # (``packages/igni-cloud``) does not leave it behind.
-    Layers.reset()
+    layers.reset()
     yield
-    Layers.reset()
+    layers.reset()
     tenancy.use(None)
     approval_events.clear()
 
@@ -221,10 +226,7 @@ def _no_extension_hooks_left_behind():
     every later test's tool calls waiting on a process that is not there.
     """
     yield
-    ExtensionHookGate.install(None)
-    ExtensionHooks.reset_shared()
-    ExtensionFaults.reset_shared()
-    ExtensionProcesses.reset_shared()
+    extension_hook_gate.install(None)
 
 
 @pytest.fixture
@@ -243,15 +245,15 @@ def settings():
     optional provider packages and without needing a real cloud
     connection.
     """
-    s = load_settings()
-    s.models.registry["MiniMax-M2.7"] = {
-        "provider": "openai_like",
-        "model_id": "MiniMaxAI/MiniMax-M2.7",
-        "url": "https://api.ignite-ember.sh/v1",
-        "api_key": "cloud_token",
-        "context_window": 204_800,
-        "vision": False,
-    }
+    s = SettingsLoader.load()
+    s.models.registry["MiniMax-M2.7"] = ModelRegistryEntry(
+        provider="openai_like",
+        model_id="MiniMaxAI/MiniMax-M2.7",
+        url="https://api.ignite-ember.sh/v1",
+        api_key="cloud_token",
+        context_window=204_800,
+        vision=False,
+    )
     s.models.default = "MiniMax-M2.7"
     return s
 

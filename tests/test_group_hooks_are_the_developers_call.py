@@ -30,18 +30,20 @@ from typing import Any
 import pytest
 
 from igni_core.cli.options import CliOptions
-from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
-from igni_core.core.config.models import CliOverrides
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.cli_overrides import CliOverrides
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.schemas.orchestration import GroupHookMode
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.group_hook_gate import (
-    APPROVAL_NAME,
-    GroupHookDecisions,
-    GroupHookGate,
-)
+from igni_core.core.hooks.group_hook_decisions import GroupHookDecisions
+from igni_core.core.hooks.group_hook_gate import APPROVAL_NAME, GroupHookGate
+from igni_core.core.hooks.load_result import HookLoadResult
 from igni_core.core.hooks.loader import HookLoader
 from igni_core.core.hooks.registry import HookRegistry
-from igni_core.core.hooks.schemas import HookDefinition, HookLoadResult, MergeStrategy
+from igni_core.core.hooks.schemas import HookDefinition, MergeStrategy
+from igni_core.core.hooks.tool_events import PreToolUsePayload
+from igni_core.core.session.schemas import SessionLifecyclePayload
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "igni_core"
 
@@ -72,7 +74,7 @@ class Asker:
         return self.answer
 
 
-def _gate(tmp_path: Path, mode: str, asker: Asker | None = None) -> GroupHookGate:
+def _gate(tmp_path: Path, mode: GroupHookMode, asker: Asker | None = None) -> GroupHookGate:
     return GroupHookGate(
         mode=mode,
         ask=asker,
@@ -82,7 +84,7 @@ def _gate(tmp_path: Path, mode: str, asker: Asker | None = None) -> GroupHookGat
 
 def _fire(hooks: list[HookDefinition], gate: GroupHookGate | None) -> None:
     executor = HookExecutor({"SessionStart": hooks}, group_hook_gate=gate)
-    asyncio.run(executor.execute("SessionStart", {"event": "SessionStart"}))
+    asyncio.run(executor.execute("SessionStart", SessionLifecyclePayload(session_id="s")))
 
 
 @pytest.fixture
@@ -128,31 +130,31 @@ def _user_config(text: str) -> None:
 class TestTheSettingIsTheDevelopers:
     def test_default_is_run(self, tmp_path: Path):
         """Today's behaviour stays the default."""
-        assert load_settings(project_dir=tmp_path).hooks.group == "run"
+        assert SettingsLoader.load(project_dir=tmp_path).hooks.group == "run"
 
     def test_the_users_own_config_sets_it(self, tmp_path: Path):
         _user_config("hooks:\n  group: refuse\n")
 
-        assert load_settings(project_dir=tmp_path).hooks.group == "refuse"
+        assert SettingsLoader.load(project_dir=tmp_path).hooks.group == "refuse"
 
     def test_strict_means_ask(self, tmp_path: Path):
         overrides = CliOverrides.from_options(CliOptions(strict=True))
 
-        assert overrides.hooks_group == "ask"
-        assert load_settings(overrides, project_dir=tmp_path).hooks.group == "ask"
+        assert overrides.hooks.group == "ask"
+        assert SettingsLoader.load(overrides, project_dir=tmp_path).hooks.group == "ask"
 
     def test_strict_does_not_loosen_a_stricter_choice(self, tmp_path: Path):
         _user_config("hooks:\n  group: refuse\n")
         overrides = CliOverrides.from_options(CliOptions(strict=True))
 
-        assert load_settings(overrides, project_dir=tmp_path).hooks.group == "refuse"
+        assert SettingsLoader.load(overrides, project_dir=tmp_path).hooks.group == "refuse"
 
     def test_a_group_policy_cannot_set_it(self, tmp_path: Path, caplog):
         _user_config("hooks:\n  group: ask\n")
         pack = _pack({"hooks": {"group": "run"}})
 
         with caplog.at_level(logging.WARNING):
-            settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
+            settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
 
         assert settings.hooks.group == "ask"
         assert "hooks.group may be set only" in caplog.text
@@ -161,7 +163,9 @@ class TestTheSettingIsTheDevelopers:
         overrides = CliOverrides.from_options(CliOptions(strict=True))
         pack = _pack({"hooks": {"group": "run"}})
 
-        settings = load_settings(overrides, project_dir=tmp_path, group_policy_fetcher=lambda: pack)
+        settings = SettingsLoader.load(
+            overrides, project_dir=tmp_path, group_policy_fetcher=lambda: pack
+        )
 
         assert settings.hooks.group == "ask"
 
@@ -172,23 +176,23 @@ class TestTheSettingIsTheDevelopers:
         (project / "config.yaml").write_text("hooks:\n  group: run\n", encoding="utf-8")
         (project / "config.local.yaml").write_text("hooks:\n  group: run\n", encoding="utf-8")
 
-        assert load_settings(project_dir=tmp_path).hooks.group == "refuse"
+        assert SettingsLoader.load(project_dir=tmp_path).hooks.group == "refuse"
 
     def test_the_managed_file_cannot_set_it(self, tmp_path: Path, monkeypatch):
         managed = tmp_path / "managed.yaml"
         managed.write_text("hooks:\n  group: run\n", encoding="utf-8")
         monkeypatch.setattr(
-            "igni_core.core.config.settings.SettingsLoader.platform_managed_settings_path",
+            "igni_core.core.config.managed_policy.ManagedPolicySource.platform_path",
             staticmethod(lambda: managed),
         )
         _user_config("hooks:\n  group: ask\n")
 
-        assert load_settings(project_dir=tmp_path).hooks.group == "ask"
+        assert SettingsLoader.load(project_dir=tmp_path).hooks.group == "ask"
 
     def test_a_typo_reads_as_ask_not_run(self, tmp_path: Path):
         _user_config("hooks:\n  group: refues\n")
 
-        assert load_settings(project_dir=tmp_path).hooks.group == "ask"
+        assert SettingsLoader.load(project_dir=tmp_path).hooks.group == "ask"
 
 
 # ── which hooks are the group's ──────────────────────────────────────
@@ -315,9 +319,7 @@ class TestRefuse:
         hook = HookDefinition(type="command", command="exit 2").mark_from_group("g")
         executor = HookExecutor({"PreToolUse": [hook]}, group_hook_gate=_gate(tmp_path, "refuse"))
 
-        result = asyncio.run(
-            executor.execute("PreToolUse", {"event": "PreToolUse", "tool_name": "x"})
-        )
+        result = asyncio.run(executor.execute("PreToolUse", PreToolUsePayload(tool_name="x")))
 
         assert result.should_continue
 
@@ -407,6 +409,50 @@ class TestAsk:
         assert len(asker.calls) == 1
 
 
+class TestTheDecisionsFile:
+    def test_an_answer_is_kept_with_what_the_hook_did(self, tmp_path: Path):
+        path = tmp_path / "decisions.json"
+        hook = HookDefinition(type="http", url="http://x").mark_from_group("g")
+
+        GroupHookDecisions(path).set(hook.digest(), "refuse", hook)
+
+        assert GroupHookDecisions(path).get(hook.digest()) == "refuse"
+        record = json.loads(path.read_text(encoding="utf-8"))["hooks"][hook.digest()]
+        assert record["what"] == "POST http://x"
+        assert record["source"] == "g"
+
+    def test_an_unreadable_file_asks_again(self, tmp_path: Path):
+        path = tmp_path / "decisions.json"
+        path.write_text('{"hooks": {"abc": {"decision": "maybe"}}}', encoding="utf-8")
+
+        assert GroupHookDecisions(path).get("abc") is None
+
+    def test_one_bad_entry_costs_only_its_own_answer(self, tmp_path: Path):
+        path = tmp_path / "decisions.json"
+        kept = {
+            "decision": "refuse",
+            "what": "x",
+            "source": "g",
+            "decided_at": "2026-01-01T00:00:00Z",
+        }
+        path.write_text(
+            json.dumps({"version": 1, "hooks": {"A": kept, "B": {"decision": "maybe"}}}),
+            encoding="utf-8",
+        )
+        hook = HookDefinition(type="prompt", text="hi").mark_from_group("g")
+
+        assert GroupHookDecisions(path).get("A") == "refuse"
+        assert GroupHookDecisions(path).get("B") is None
+
+        GroupHookDecisions(path).set(hook.digest(), "run", hook)
+
+        hooks = json.loads(path.read_text(encoding="utf-8"))["hooks"]
+        assert hooks["A"] == kept
+        assert hooks["B"] == {"decision": "maybe"}
+        assert GroupHookDecisions(path).get("A") == "refuse"
+        assert GroupHookDecisions(path).get(hook.digest()) == "run"
+
+
 class TestAskWithNobodyThere:
     def test_a_headless_run_refuses(self, tmp_path: Path, spawned):
         """The channel says ``None`` when no client is listening."""
@@ -472,29 +518,40 @@ class TestNoPathAroundTheGate:
         assert sites == ["core/hooks/handlers/registry.py"]
 
     def test_the_session_hands_its_executors_a_gate(self):
-        source = (SRC / "core" / "session" / "core.py").read_text(encoding="utf-8")
+        """:class:`SessionHooks` is the one place a session builds an executor."""
+        source = (SRC / "core" / "session" / "hooks.py").read_text(encoding="utf-8")
         constructions = source.count("HookExecutor(")
 
         assert constructions >= 1
-        assert source.count("group_hook_gate=self._group_hook_gate()") == constructions
+        assert source.count("group_hook_gate=self._gate") == constructions
+        session_source = (SRC / "core" / "session" / "core.py").read_text(encoding="utf-8")
+        assert "HookExecutor(" not in session_source
 
-    def test_the_sessions_gate_reads_the_live_setting(self):
-        from igni_core.core.session.core import Session
+    def test_the_sessions_gate_reads_the_live_setting(self, tmp_path: Path):
+        from igni_core.core.session.hooks import SessionHooks
+        from igni_core.core.session.mcp_resolver import MCPToolResolver
+        from igni_core.core.session.reminders import PendingReminderQueue
 
-        class Holder:
-            settings = load_settings()
+        async def nobody(*_: Any, **__: Any) -> bool | None:
+            return None
 
-            async def _ask_about_tool_call(self, *_: Any) -> bool | None:
-                return None
-
-        holder = Holder()
-        gate = Session._group_hook_gate(holder)  # type: ignore[arg-type]
+        settings = SettingsLoader.load()
+        hooks = SessionHooks(
+            project_dir=tmp_path,
+            settings=settings,
+            group_hooks_dir=tmp_path / "group-hooks",
+            reminders=PendingReminderQueue(),
+            resolver=MCPToolResolver(lambda: None),
+            ask=nobody,
+        )
+        gate = hooks.gate
         assert gate.mode() == "run"
 
-        holder.settings.hooks.group = "refuse"
+        settings.hooks.group = "refuse"
 
         assert gate.mode() == "refuse"
-        assert Session._group_hook_gate(holder) is gate  # type: ignore[arg-type]
+        hooks.reload()
+        assert hooks.gate is gate
 
 
 class TestStrictSaysSo:

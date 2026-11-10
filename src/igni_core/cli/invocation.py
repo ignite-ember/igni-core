@@ -4,23 +4,10 @@ Owns every ounce of behaviour the pre-refactor procedural
 callback used to run inline: debug logging, resume-id lookup,
 worktree setup, additional-dirs resolution, and mode dispatch
 (pipe / single-message / help-pointer). The Click decorator
-surface in :mod:`igni_core.cli.__init__` collapses to three
-lines that build a :class:`CliOptions`, load settings, and
+surface in :mod:`igni_core.cli.__init__` collapses to a few
+lines that build a :class:`CliOptions`, load settings
+(:class:`~igni_core.cli.run_settings.CliSettingsLoader`), and
 delegate here.
-
-Test seams (preserved intentionally):
-
-* ``_settings_module.load_settings`` is called via the module
-  attribute so ``tests/test_cli.py`` can patch
-  ``igni_core.core.config.settings.load_settings`` and have the
-  CLI observe the mock. This is the ONE surviving module-level
-  function on :mod:`core.config.settings`; every other former
-  shim has been promoted to a method on
-  :class:`SettingsLoader` / :class:`ManagedPolicySource` /
-  :class:`UserConfigStore` / :class:`CloudModelMigrator`.
-* The ``asyncio.run(...)`` calls in the mode-dispatch tail happen
-  in :mod:`igni_core.cli.__init__` so ``tests/test_cli.py`` can
-  patch ``igni_core.cli.asyncio.run``.
 """
 
 from __future__ import annotations
@@ -31,11 +18,13 @@ from pathlib import Path
 import click
 
 from igni_core.cli.context import CliContext
+from igni_core.cli.headless_run import HeadlessRun
 from igni_core.cli.logging import DebugLogging
 from igni_core.cli.options import CliOptions
 from igni_core.cli.resume import ResumeResolver
-from igni_core.core.config import settings as _settings_module
 from igni_core.core.config.settings import Settings
+from igni_core.core.session.single_message_run import SingleMessageRun
+from igni_core.core.workspace_trust import process_trust
 from igni_core.core.worktree import WorktreeManager
 
 #: The console script pyproject installs. `ignite-ember` is the other
@@ -52,9 +41,9 @@ _HELP_TEXT = (
     f'  • {COMMAND} -m "<message>"         one-shot message\n'
     f"  • {COMMAND} -p                      pipe mode (stdin → stdout)\n"
     f'  • {COMMAND} -c -m "<message>"      resume last session, one-shot\n'
-    "  • python -m igni_core.backend --socket <path>\n"
+    "  • python -m igni_core.backend --ws-port 0\n"
     "        start the backend for a React client (web / Tauri)\n"
-    "        to connect via Unix socket.\n"
+    "        to connect to over WebSocket.\n"
 )
 
 
@@ -66,9 +55,7 @@ class CliInvocation:
 
     * :class:`CliOptions` — typed view of the Click params.
     * :class:`Settings` — the merged, validated settings snapshot.
-    * :class:`click.Context` — used for :meth:`click.echo` routing
-      and ``ctx.obj`` stashing so subcommands can read the same
-      settings / worktree state.
+    * :class:`HeadlessRun` — runs a ``-m`` / ``-p`` session and exits.
 
     All methods are I/O-side-effecting by design (the callback IS
     the CLI's imperative shell) — the class exists to give that
@@ -80,14 +67,12 @@ class CliInvocation:
         self,
         options: CliOptions,
         settings: Settings,
-        ctx: click.Context,
+        headless_run: HeadlessRun,
     ) -> None:
         self._options = options
         self._settings = settings
-        self._ctx = ctx
+        self._headless_run = headless_run
         self._resume_session_id: str | None = None
-        self._project_dir: Path | None = None
-        self._additional_dirs: list[Path] | None = None
         self._worktree_manager: WorktreeManager | None = None
 
     # ── Startup phases ──────────────────────────────────────────
@@ -132,52 +117,44 @@ class CliInvocation:
             click.echo(f"worktree failed: {result.message}", err=True)
             raise SystemExit(1)
         info = result.info
-        self._project_dir = info.worktree_path
         self._worktree_manager = wm
         click.echo(f"Worktree: {info.worktree_path} (branch: {info.branch_name})")
 
-    def resolve_additional_dirs(self) -> None:
-        """Resolve each ``--add-dir`` value to an absolute path."""
-        raw = self._options.add_dir
-        if not raw:
+    def carry_trust_into_worktree(self, folder: Path) -> None:
+        """``--worktree`` runs in a new folder of the same repository:
+        trusted for this run when ``folder``, the one it was made from,
+        is (and policy allows it)."""
+        worktree = self.project_dir
+        if worktree is None or worktree == folder:
             return
-        self._additional_dirs = [Path(d).resolve() for d in raw]
+        service = process_trust()
+        if service.is_trusted(folder):
+            service.grant_for_run(worktree)
 
-    def store_context(self) -> None:
+    def store_context(self, ctx: click.Context) -> None:
         """Stash the typed :class:`CliContext` on ``ctx.obj`` so
         subcommands can read the same settings / worktree state."""
-        self._ctx.obj = CliContext(
+        ctx.obj = CliContext(
             settings=self._settings,
             worktree_manager=self._worktree_manager,
-            project_dir=self._project_dir,
-            additional_dirs=self._additional_dirs,
+            project_dir=self.project_dir,
+            additional_dirs=self.additional_dirs,
         )
-
-    # ── Public accessors used by the click surface ──────────────
-
-    @property
-    def resume_session_id(self) -> str | None:
-        return self._resume_session_id
 
     @property
     def project_dir(self) -> Path | None:
-        return self._project_dir
+        """The worktree the run happens in, when ``--worktree`` made one."""
+        if self._worktree_manager is None or self._worktree_manager.info is None:
+            return None
+        return self._worktree_manager.info.worktree_path
 
     @property
     def additional_dirs(self) -> list[Path] | None:
-        return self._additional_dirs
-
-    @property
-    def worktree_manager(self) -> WorktreeManager | None:
-        return self._worktree_manager
-
-    @property
-    def settings(self) -> Settings:
-        return self._settings
-
-    @property
-    def options(self) -> CliOptions:
-        return self._options
+        """Each ``--add-dir`` value as an absolute path."""
+        raw = self._options.add_dir
+        if not raw:
+            return None
+        return [Path(d).resolve() for d in raw]
 
     # ── Mode dispatch tail ──────────────────────────────────────
 
@@ -202,9 +179,27 @@ class CliInvocation:
             raise SystemExit(1)
         return text
 
+    def run_pipe(self) -> None:
+        """Pipe mode: run one session on stdin (plus ``-m``), then exit."""
+        self.run_message(self.read_pipe_message())
+
+    def run_message(self, message: str) -> None:
+        """Run one session on ``message``, then exit (see :class:`HeadlessRun`)."""
+        self._headless_run.run(self._session(message), cleanup=self.cleanup_worktree)
+
+    async def _session(self, message: str) -> None:
+        # Built inside the coroutine so the session is constructed on the
+        # event loop :class:`HeadlessRun` starts, not before it.
+        await SingleMessageRun(
+            self._settings,
+            resume_session_id=self._resume_session_id,
+            project_dir=self.project_dir,
+            additional_dirs=self.additional_dirs,
+        ).run(message)
+
     def echo_help_pointer(self) -> None:
         """Print the "use a React client instead" pointer when
-        ``ember`` is called with no message and no subcommand."""
+        ``igni`` is called with no message and no subcommand."""
         click.echo(_HELP_TEXT)
 
     def cleanup_worktree(self) -> None:
@@ -213,82 +208,3 @@ class CliInvocation:
         if self._worktree_manager is None:
             return
         self._worktree_manager.report_cleanup(click.echo)
-
-
-def load_settings_from_options(options: CliOptions) -> Settings:
-    """Build a :class:`Settings` from a :class:`CliOptions` bundle.
-
-    Goes through ``_settings_module.load_settings`` (the module
-    attribute) rather than a direct import so
-    ``tests/test_cli.py`` can patch
-    ``igni_core.core.config.settings.load_settings`` and observe
-    the mock through the CLI call site.
-    """
-    # Local import: :mod:`core.config.models` pulls in Agno, which
-    # is heavy. Keeping it lazy shaves start-up cost off the
-    # ``--help`` / ``--version`` short paths (they never construct
-    # a Settings).
-    from igni_core.core.config.models import CliOverrides
-
-    overrides = CliOverrides.from_options(options)
-    # ``SettingsLoader.merge_cli`` accepts either the typed
-    # :class:`CliOverrides` bundle OR a raw dict (union type). We
-    # emit the dict form here because ``tests/test_cli.py`` inspects
-    # the payload via ``mock_load.call_args[1]["cli_overrides"]``
-    # expecting a dict shape — routing through
-    # ``CliOverrides.to_settings_payload`` (a method on the class,
-    # NOT a free function) keeps the assertion shape stable while
-    # still going through the typed encoder.
-    payload = overrides.to_settings_payload()
-
-    # Loaded twice, and the second is the one returned. ``-m`` and the pipe
-    # mode run a real session in this process, so an admin's group policy has
-    # to apply here too — otherwise ``{"permissions": {"web_fetch": "deny"}}``
-    # would hold in the app and not on the command line, which is the kind of
-    # half-enforcement a policy cannot have. The cache it is read from lives
-    # under ``storage.data_dir``, which is itself a setting, so the first pass
-    # answers "which directory" from local configuration alone. Both passes
-    # read a handful of small files; neither touches the network.
-    #
-    # The fetcher reads what the backend's ``AuthController`` last cached — a
-    # CLI invocation has no token of its own at settings-load time and must
-    # not stall on a portal call. See ``CachedSettingsFetcher``.
-    from igni_core.core.config.group_policy import CachedSettingsFetcher
-
-    # The pack is verified before it is merged; with ``group_policy.required``
-    # set and no verified pack, the fetcher raises ``GroupPolicyUnavailable``
-    # and this run starts no session (``main`` reports it).
-    local_only = _settings_module.load_settings(cli_overrides=payload)
-    settings = _settings_module.load_settings(
-        cli_overrides=payload,
-        group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
-    )
-    if options.auto_approve and _bypass_forbidden(settings):
-        # ``--auto-approve`` is bypass mode plus four categories set to
-        # ``allow``. The loader already refuses the mode; the categories
-        # would still run every shell command and push unasked, which is
-        # bypass under another name. Ignored with a warning — the way the
-        # group tier treats a loosening it refuses — and loaded again
-        # without the flag, so any other flag passed still applies.
-        source = settings.permissions.mode_policy.bypass_source or "policy"
-        click.echo(
-            f"Warning: --auto-approve is turned off by your organisation's {source} "
-            "(permissions.allow_bypass: false); running without it.",
-            err=True,
-        )
-        payload = CliOverrides.from_options(
-            options.model_copy(update={"auto_approve": False})
-        ).to_settings_payload()
-        settings = _settings_module.load_settings(
-            cli_overrides=payload,
-            group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
-        )
-    return settings
-
-
-def _bypass_forbidden(settings: Settings) -> bool:
-    """Did the organisation's managed settings or group policy turn bypass off?"""
-    from igni_core.core.config.permission_eval.mode_policy import ModePolicy
-
-    policy = getattr(getattr(settings, "permissions", None), "mode_policy", None)
-    return isinstance(policy, ModePolicy) and not policy.allow_bypass

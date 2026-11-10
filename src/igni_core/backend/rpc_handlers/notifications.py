@@ -10,51 +10,91 @@ floor's, not the extension's.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from igni_core.backend.rpc_handlers.base import RpcHandler, rpc
+from igni_core.backend.rpc_binding import Correlation, NoArgs, rpc
+from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.notifications.schemas import (
     MarkReadRequest,
     NotificationCounts,
     NotificationsListResult,
     NotificationsReadResult,
 )
-from igni_core.protocol.rpc import RpcMethod
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
+from igni_core.protocol.schemas.enums import PushChannel
 
 
 class MarkReadArgs(BaseModel):
-    """``notifications_mark_read``: ``{ids}``, ``{source}``, or ``{}`` for all."""
+    """Arguments for marking notifications read: give ``ids``, or
+    ``source``, or neither to mark every notification read."""
 
     model_config = ConfigDict(extra="ignore")
 
-    ids: list[str] | None = None
-    source: str | None = None
+    ids: list[str] | None = Field(
+        default=None, description="Ids of the notifications to mark read."
+    )
+    source: str | None = Field(
+        default=None,
+        description="An extension id: marks all of that extension's notifications read.",
+    )
 
 
 class NotificationsRpcHandler(RpcHandler):
     """List, count and mark the floor's notifications."""
 
-    @rpc(RpcMethod.NOTIFICATIONS_LIST)
-    async def notifications_list(self, args: dict) -> NotificationsListResult:
-        """Both paths, newest first, with igni server read now."""
+    @rpc(
+        RpcMethod.NOTIFICATIONS_LIST,
+        correlate=Correlation(by="payload.cause", equals="listed"),
+        duration=RpcDuration.NETWORK,
+        args=NoArgs,
+        scope=RpcScope.IGNI,
+        streams=(PushChannel.NOTIFICATIONS_CHANGED,),
+    )
+    async def notifications_list(self, args: NoArgs) -> NotificationsListResult:
+        """List the signed-in person's notifications, newest first.
+
+        Takes no arguments. Reads igni server again and merges in what
+        extensions on this machine posted. Returns at most 100
+        ``notifications`` (each with its source, title, body, target and
+        whether it is read), the unread ``counts`` in all and per
+        extension, and ``server_error`` when igni server could not be
+        read. The fresh counts are also pushed as ``notifications_changed``.
+        """
         center = self._ctx.notifications
         if center is None:
             return NotificationsListResult()
         return await center.listing()
 
-    @rpc(RpcMethod.NOTIFICATIONS_COUNTS)
-    def notifications_counts(self, args: dict) -> NotificationCounts:
-        """Unread, in all and per extension, as last read. Asks nobody:
-        the counts move by the ``notifications_changed`` push."""
+    @rpc(RpcMethod.NOTIFICATIONS_COUNTS, args=NoArgs, scope=RpcScope.IGNI)
+    def notifications_counts(self, args: NoArgs) -> NotificationCounts:
+        """Count the person's unread notifications, in all and per extension.
+
+        Takes no arguments. Answers from what was last read, asking nobody;
+        ``notifications_changed`` pushes the counts whenever they move.
+        """
         center = self._ctx.notifications
         if center is None:
             return NotificationCounts()
         return center.counts()
 
-    @rpc(RpcMethod.NOTIFICATIONS_MARK_READ)
-    async def notifications_mark_read(self, args: dict) -> NotificationsReadResult:
+    @rpc(
+        RpcMethod.NOTIFICATIONS_MARK_READ,
+        correlate=Correlation(by="payload.cause", equals="marked_read"),
+        duration=RpcDuration.NETWORK,
+        args=MarkReadArgs,
+        scope=RpcScope.IGNI,
+        streams=(PushChannel.NOTIFICATIONS_CHANGED,),
+    )
+    async def notifications_mark_read(self, args: MarkReadArgs) -> NotificationsReadResult:
+        """Mark notifications read.
+
+        ``ids`` names the notifications; ``source`` (an extension id) marks
+        all of that extension's; neither marks every notification. Returns
+        the unread ``counts`` afterwards, also pushed as
+        ``notifications_changed``, and ``server_error`` when igni server
+        could not be told.
+        """
         center = self._ctx.notifications
         if center is None:
             return NotificationsReadResult()
-        parsed = MarkReadArgs.model_validate(args or {})
-        return await center.mark_read(MarkReadRequest(ids=parsed.ids, source=parsed.source))
+        return await center.mark_read(MarkReadRequest(ids=args.ids, source=args.source))

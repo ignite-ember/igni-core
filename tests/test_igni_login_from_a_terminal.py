@@ -31,7 +31,7 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace
         auth=SimpleNamespace(credentials_file=str(tmp_path / "credentials.json")),
         storage=SimpleNamespace(data_dir=str(tmp_path / "data")),
     )
-    monkeypatch.setattr(login_cli, "_settings", lambda: value)
+    monkeypatch.setattr(login_cli.SettingsLoader, "load", classmethod(lambda cls: value))
     return value
 
 
@@ -73,7 +73,7 @@ def test_the_browser_flow_prints_where_to_sign_in(settings, monkeypatch):
         on_status("Waiting for login in browser...\nIf the browser didn't open, go to:\nhttps://x")
         return LoginResult(ok=True, email="ada@acme.test")
 
-    monkeypatch.setattr(login_cli.AuthController, "login", login)
+    monkeypatch.setattr(login_cli.BrowserSignIn, "login", login)
     result = CliRunner().invoke(cli, ["login"])
     assert result.exit_code == 0, result.output
     assert "https://x" in result.output

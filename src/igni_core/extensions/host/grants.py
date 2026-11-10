@@ -21,11 +21,16 @@ uses: an exact name, or a ``*``-suffixed prefix (``chat.*``).
 
 from __future__ import annotations
 
+from igni_core.extensions.host.errors import HostModelError
+from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.permissions import WorkspaceAccess
 
 #: The grant that ``permissions.workspace`` decides.
 WORKSPACE = "workspace"
+
+#: The grant that reaches every extension's notifications, not only its own.
+NOTIFICATIONS = "notifications"
 
 
 class HostGrants:
@@ -51,6 +56,25 @@ class HostGrants:
                 return True
         return False
 
+    @property
+    def sees_all_notifications(self) -> bool:
+        """Whether every extension's notifications reach it, not only its own."""
+        return self.allows(NOTIFICATIONS)
+
+    def require_workspace(self, what: str) -> None:
+        """Refuse ``what`` unless ``permissions.workspace`` is granted."""
+        if not self.workspace.granted:
+            raise HostModelError.not_granted(self.extension_id, what, WORKSPACE)
+
+    def require_workspace_path(self, path: str) -> None:
+        """Refuse a ``path`` outside what ``workspacePaths`` allows — a
+        preview still points the extension at the project."""
+        if not self.workspace.granted or not self.workspace.permits(path):
+            raise HostModelError(
+                ErrorCode.REFUSED,
+                f"'{path}' is outside what '{self.extension_id}' was granted of the workspace",
+            )
+
     def granted(self, known: set[str]) -> list[str]:
         """Every known permission this extension holds, for its hello."""
         return sorted(p for p in known if self.allows(p))
@@ -75,4 +99,4 @@ class HostGrants:
         return stray
 
 
-__all__ = ["WORKSPACE", "HostGrants"]
+__all__ = ["NOTIFICATIONS", "WORKSPACE", "HostGrants"]

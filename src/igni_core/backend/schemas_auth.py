@@ -1,4 +1,4 @@
-"""Typed schemas for the auth slash-command family.
+"""Typed schemas for the auth slash-command family and auth RPCs.
 
 Home for :class:`LogoutOutcome`, the composed result that
 :meth:`igni_core.backend.cmd_auth.AuthCommand.logout` builds before
@@ -16,9 +16,10 @@ module per top-level backend concern.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from igni_core.backend.command_result import CommandResult
+from igni_core.core.auth.discovery_schemas import Discovered
 from igni_core.protocol.messages import CommandAction, CommandResultKind
 
 
@@ -92,3 +93,66 @@ class LogoutOutcome(BaseModel):
             content="\n".join(lines),
             action=CommandAction.LOGOUT,
         )
+
+
+class DiscoverServerArgs(BaseModel):
+    """An email address to find the user's igni server from."""
+
+    email: str = Field(
+        description="The user's email address; its domain is looked up for an igni server."
+    )
+
+
+class SetServerArgs(BaseModel):
+    """The igni server to use from now on."""
+
+    api_url: str = Field(description="The server's API URL.")
+    portal_url: str = Field(
+        default="",
+        description="Where a person signs in; empty to derive it from `api_url`.",
+    )
+
+
+class ServerFound(BaseModel):
+    """Where an email address's organisation runs igni, or, with every
+    URL empty, why nothing usable was found."""
+
+    api_url: str = Field(default="", description="The server's API URL; empty when none was found.")
+    portal_url: str = Field(
+        default="",
+        description="Where a person signs in; empty when it is derived from `api_url` "
+        "or nothing was found.",
+    )
+    source: str = Field(
+        default="",
+        description="How the server was found: `well-known` (a document published on the "
+        "domain) or `dns` (a DNS record); empty when nothing was found.",
+    )
+    reason: str = Field(
+        default="",
+        description="Why nothing usable was found; empty when a server was found. A domain "
+        "with no record is normal, not a fault.",
+    )
+
+    @classmethod
+    def from_discovered(cls, found: Discovered) -> ServerFound:
+        return cls(
+            api_url=found.api_url,
+            portal_url=found.portal_url,
+            source=found.source,
+            reason=found.reason,
+        )
+
+
+class ServerChoice(BaseModel):
+    """The igni server now in use, or why the choice was refused."""
+
+    api_url: str = Field(default="", description="The server's API URL; empty when refused.")
+    portal_url: str = Field(
+        default="", description="Where a person signs in on that server; empty when refused."
+    )
+    error: str = Field(default="", description="Why the server was refused; empty on success.")
+
+    @classmethod
+    def refused(cls, error: str) -> ServerChoice:
+        return cls(error=error)

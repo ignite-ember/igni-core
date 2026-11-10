@@ -6,10 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.backend.command_result import CommandResult
+from igni_core.backend.model_http_client_manager import ModelHttpClientManager
+from igni_core.backend.schemas_model import ModelSwitchResult
 from igni_core.backend.server import BackendServer
 from igni_core.protocol import messages as msg
 from igni_core.protocol.registry import MessageRegistry
+from tests.backend_server_factory import make_backend
 
 
 class TestBackendServerCommands:
@@ -17,54 +20,46 @@ class TestBackendServerCommands:
 
     @pytest.mark.asyncio
     async def test_handle_command_returns_command_result(self):
-        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
-            server = BackendServer.__new__(BackendServer)
-            server._session = MagicMock()
-            server._settings = MagicMock()
-            server._hitl_store = PendingRequirementsStore()
-            server._processing = False
+        server = make_backend(MagicMock(), settings=MagicMock())
 
-            # ``handle_command`` returns whatever the handler produced,
-            # unchanged — the backend ``CommandResult`` subclasses the
-            # wire ``msg.CommandResult`` so no rebuild step is needed.
-            # Feed the mock a real ``CommandResult`` so the ``isinstance``
-            # + field assertions below still exercise the wire contract.
-            from igni_core.backend.command_result import CommandResult
+        # ``handle_command`` returns whatever the handler produced,
+        # unchanged — the backend ``CommandResult`` subclasses the
+        # wire ``msg.CommandResult`` so no rebuild step is needed.
+        # Feed the mock a real ``CommandResult`` so the ``isinstance``
+        # + field assertions below still exercise the wire contract.
+        mock_result = CommandResult.info("test output")
 
-            mock_result = CommandResult.info("test output")
+        with patch("igni_core.backend.server.CommandHandler") as MockHandler:
+            instance = MockHandler.return_value
+            instance.handle = AsyncMock(return_value=mock_result)
 
-            with patch("igni_core.backend.command_handler.CommandHandler") as MockHandler:
-                instance = MockHandler.return_value
-                instance.handle = AsyncMock(return_value=mock_result)
+            result = await server.handle_command("/test")
 
-                result = await server.handle_command("/test")
-
-            assert isinstance(result, msg.CommandResult)
-            assert result.kind == "info"
-            assert result.content == "test output"
+        assert isinstance(result, msg.CommandResult)
+        assert result.kind == "info"
+        assert result.content == "test output"
 
     @pytest.mark.asyncio
     async def test_get_status(self):
-        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
-            server = BackendServer.__new__(BackendServer)
-            server._settings = MagicMock()
-            server._settings.models.default = "test-model"
-            server._settings.models.max_context_window = 128_000
-            server._session = MagicMock()
-            server._session.cloud_connected = True
-            server._session.cloud_org_name = "Test Org"
-            # The header names the account, not just the org, so the
-            # status push carries the address too.
-            server._session.cloud_email = "maya@acme.test"
-            server._session.last_input_tokens = 1234
-            # ``Session.permission_mode_value`` is the wire-safe string
-            # StatusUpdate needs — MagicMock returns another MagicMock
-            # for arbitrary attribute access, which then fails pydantic
-            # validation. Pin it to the real default so we exercise the
-            # RPC path, not the MagicMock-glue plumbing.
-            server._session.permission_mode_value = "default"
+        settings = MagicMock()
+        settings.models.default = "test-model"
+        settings.models.max_context_window = 128_000
+        session = MagicMock()
+        session.cloud_connected = True
+        session.cloud_org_name = "Test Org"
+        # The header names the account, not just the org, so the
+        # status push carries the address too.
+        session.cloud_email = "maya@acme.test"
+        session.context_budget.last_input_tokens = 1234
+        # ``Session.permission_mode_value`` is the wire-safe string
+        # StatusUpdate needs — MagicMock returns another MagicMock
+        # for arbitrary attribute access, which then fails pydantic
+        # validation. Pin it to the real default so we exercise the
+        # RPC path, not the MagicMock-glue plumbing.
+        session.permission_mode_value = "default"
+        server = make_backend(session, settings=settings)
 
-            status = server.get_status()
+        status = server.get_status()
 
         assert isinstance(status, msg.StatusUpdate)
         assert status.model == "test-model"
@@ -76,30 +71,85 @@ class TestBackendServerCommands:
 
     @pytest.mark.asyncio
     async def test_switch_model(self):
-        with (
-            patch("igni_core.backend.server.BackendServer.__init__", return_value=None),
-            # The persistence side-effect now lives on
-            # :class:`UserConfigStore` — patch the class method so the
-            # real user config file isn't touched during the test.
-            patch("igni_core.core.config.user_config_store.UserConfigStore.set_default_model"),
-        ):
-            server = BackendServer.__new__(BackendServer)
-            server._session = MagicMock()
-            server._session.rebuild_main_team = MagicMock()
-            server._session.session_id = "test-sess"
-            server._settings = MagicMock()
-            server._session_prefs = MagicMock()
+        session = MagicMock()
+        session.session_id = "test-sess"
+        session.set_default_model.return_value = ModelSwitchResult(ok=True, model_name="new-model")
+        session.settings.models.has_vision.return_value = False
+        session_prefs = MagicMock()
+        session_prefs.set_model.return_value = True
+        # The persistence side-effect lives on :class:`UserConfigStore`;
+        # a stand-in keeps the real user config file untouched.
+        user_config_store = MagicMock()
+        user_config_store.set_default_model.return_value = True
+        server = make_backend(
+            session,
+            settings=MagicMock(),
+            session_prefs=session_prefs,
+            user_config_store=user_config_store,
+        )
 
-            result = server.switch_model("new-model")
+        result = server.switch_model("new-model")
+
+        assert result == msg.Info(text="Switched to new-model")
+        session.set_default_model.assert_called_once_with("new-model")
+        user_config_store.set_default_model.assert_called_once_with("new-model")
+        session_prefs.set_model.assert_called_once_with("test-sess", "new-model")
+
+    @pytest.mark.asyncio
+    async def test_switch_model_says_which_save_did_not_land(self):
+        session = MagicMock()
+        session.session_id = "test-sess"
+        session.set_default_model.return_value = ModelSwitchResult(ok=True, model_name="new-model")
+        session.settings.models.has_vision.return_value = False
+        session_prefs = MagicMock()
+        session_prefs.set_model.return_value = False
+        user_config_store = MagicMock()
+        user_config_store.set_default_model.return_value = False
+        server = make_backend(
+            session,
+            settings=MagicMock(),
+            session_prefs=session_prefs,
+            user_config_store=user_config_store,
+        )
+
+        result = server.switch_model("new-model")
 
         assert isinstance(result, msg.Info)
-        assert "new-model" in result.text
-        server._session.rebuild_main_team.assert_called_once()
-        server._session_prefs.set_model.assert_called_once_with("test-sess", "new-model")
+        assert "default for new sessions" in result.text
+        assert "--continue" in result.text
+
+
+class TestFromParts:
+    """``from_parts`` is the one alternate constructor; it must leave the
+    instance in the same shape ``__init__`` does."""
+
+    def test_sets_exactly_the_fields_the_server_carries(self):
+        session = MagicMock()
+        server = make_backend(session, settings=MagicMock())
+
+        assert set(vars(server)) == {
+            "_session",
+            "_settings",
+            "controllers",
+            "message_queue",
+            "_runtime",
+            # The handle on the supervisor this backend process
+            # shares — the watcher panel's registry and the
+            # foreground slot the cancel path kills.
+            "_supervisors",
+            # Whether this backend process may run agent sessions.
+            # One gate per process, so every controller that starts
+            # a run asks the same one.
+            "_gate",
+        }
+        assert server.runtime is None
+        assert (
+            session.on_new_dialogue == server.controllers.group_policy.revalidate_for_new_dialogue
+        )
 
 
 class TestCloseModelHttpClient:
-    """Test that _close_model_http_client properly closes and replaces the httpx client."""
+    """``ModelHttpClientManager.close_and_replace`` closes and replaces the httpx client."""
 
     @pytest.mark.asyncio
     async def test_closes_async_client(self):
@@ -109,7 +159,7 @@ class TestCloseModelHttpClient:
         team = MagicMock()
         team.model = model
 
-        await BackendServer._close_model_http_client(team)
+        await ModelHttpClientManager().close_and_replace(team)
 
         assert client.is_closed
         assert isinstance(model.http_client, httpx.AsyncClient)
@@ -123,7 +173,7 @@ class TestCloseModelHttpClient:
         team = MagicMock()
         team.model = model
 
-        await BackendServer._close_model_http_client(team)
+        await ModelHttpClientManager().close_and_replace(team)
 
         new_client = model.http_client
         pool = new_client._transport._pool
@@ -134,7 +184,7 @@ class TestCloseModelHttpClient:
     async def test_noop_when_no_model(self):
         """Should not raise when team has no model."""
         team = MagicMock(spec=[])  # no model attribute
-        await BackendServer._close_model_http_client(team)  # should not raise
+        await ModelHttpClientManager().close_and_replace(team)  # should not raise
 
     @pytest.mark.asyncio
     async def test_noop_when_no_http_client(self):
@@ -144,7 +194,7 @@ class TestCloseModelHttpClient:
         team = MagicMock()
         team.model = model
 
-        await BackendServer._close_model_http_client(team)  # should not raise
+        await ModelHttpClientManager().close_and_replace(team)  # should not raise
 
     @pytest.mark.asyncio
     async def test_noop_when_sync_client(self):
@@ -155,7 +205,7 @@ class TestCloseModelHttpClient:
         team = MagicMock()
         team.model = model
 
-        await BackendServer._close_model_http_client(team)
+        await ModelHttpClientManager().close_and_replace(team)
 
         assert not client.is_closed  # sync client should be left alone
         client.close()  # cleanup
@@ -214,7 +264,7 @@ class TestProtocolSerialization:
         # Round-trip through JSON string
         original = msg.UserMessage(text="hello")
         json_line = original.model_dump_json()
-        restored = MessageRegistry.default().deserialize(json_line)
+        restored = MessageRegistry().deserialize(json_line)
         assert isinstance(restored, msg.UserMessage)
         assert restored.text == "hello"
 
@@ -237,13 +287,13 @@ class TestBackendServerRealConstruction:
         `_init_*` phase methods and that ``get_status`` produces the
         typed StatusUpdate payload.
 
-        Constructs real Settings (via `load_settings`) rather than a
+        Constructs real Settings (via `SettingsLoader.load`) rather than a
         MagicMock so any `__init__` regression that only fires with
         real settings (missing field, wrong default, ordering bug)
         surfaces here."""
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
 
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
 
         backend = BackendServer(settings, project_dir=tmp_path)
 
@@ -274,9 +324,9 @@ class TestBackendServerRealConstruction:
         ``_init_agent_and_skill_pools`` →
         ``_init_mcp_client_manager`` → ``_init_lsp_and_monitors``.
         """
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
 
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
         backend = BackendServer(settings, project_dir=tmp_path)
         session = backend._session
 
@@ -315,7 +365,7 @@ class TestBackendServerRealConstruction:
 
         # _init_mcp_client_manager — MCP manager + init flag.
         assert session.mcp_manager is not None
-        assert session._mcp_initialized is False
+        assert session.startup.mcp_initialized is False
 
         # _init_lsp_and_monitors — LSP manager + monitor manager.
         assert session.lsp_manager is not None

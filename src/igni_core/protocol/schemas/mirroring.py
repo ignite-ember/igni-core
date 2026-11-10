@@ -9,74 +9,95 @@ per-run BE→FE events in :mod:`.be_events`.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
-from igni_core.protocol.schemas.envelope import Message
+from pydantic import Field
+
+from igni_core.protocol.schemas.envelope import Direction, Message
 
 
 class Welcome(Message):
-    """First message the BE sends a newly attached client.
-
-    ``client_id`` lets a view recognise its own broadcasts (e.g. skip
-    rendering an echo of a message it already painted locally).
-    """
+    """The first message igni sends a newly attached client."""
 
     type: Literal["welcome"] = "welcome"
-    client_id: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    client_id: str = Field(
+        default="",
+        description=(
+            "The id igni gave this client. Send it with your messages; messages igni echoes "
+            "to every client carry it, so you can skip your own."
+        ),
+    )
 
 
 class Typing(Message):
-    """Live draft of a client's composer, broadcast to every view.
+    """What the person is typing in one client, shared with every other client of the session.
 
-    Carries the FULL draft text (not per-character deltas) so views
-    can't drift on a dropped frame; senders throttle. Empty ``text``
-    clears the remote draft (sent on submit/clear).
+    Each message carries the whole draft, not a change to it. Send it at
+    a modest rate while the person types.
     """
 
     type: Literal["typing"] = "typing"
-    text: str = ""
-    client_id: str = ""
+    direction: ClassVar[Direction] = Direction.BOTH
+    text: str = Field(
+        default="", description="The whole draft so far; empty when it was sent or cleared."
+    )
+    client_id: str = Field(default="", description="The id of the client the person is typing in.")
 
 
 class UserMessageReceived(Message):
-    """Broadcast echo of an accepted user/queue message.
+    """A chat message igni accepted, sent to every client of the session so all show it.
 
-    The sending view already painted the bubble locally; other views
-    paint it from this event (and the sender skips it by client_id).
+    The client that sent it can recognise it by ``client_id`` and skip it.
     """
 
     type: Literal["user_message_received"] = "user_message_received"
-    text: str = ""
-    client_id: str = ""
-    queued: bool = False
-    #: Set when an extension posted it (``host.chat.post``): every view
-    #: paints it labelled as that extension's, never as the person's.
-    extension_id: str = ""
-    #: Set when the extension's service sent it, as a message item
-    #: (``docs/CLOUD.md`` §6.1): that service's client id. Posted as the
-    #: extension's all the same — ``extension_id`` is set too.
-    service_client_id: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    text: str = Field(default="", description="The message.")
+    client_id: str = Field(
+        default="", description="The id of the client that sent it; empty when no client did."
+    )
+    queued: bool = Field(
+        default=False, description="True when it was sent during a run and is queued for the agent."
+    )
+    extension_id: str = Field(
+        default="",
+        description=(
+            "Set when an extension posted the message (`host.chat.post`): show it as that "
+            "extension's, not the person's. Empty otherwise."
+        ),
+    )
+    # docs/CLOUD.md §6.1: a message item from the extension's service.
+    service_client_id: str = Field(
+        default="",
+        description=(
+            "Set when the extension's service sent the message: that service's client id. "
+            "`extension_id` is set too. Empty otherwise."
+        ),
+    )
 
 
 class RequirementResolved(Message):
-    """Broadcast when a HITL requirement is decided by any view, so
-    the other views dismiss their (now stale) permission dialogs."""
+    """An approval request was answered, in any client; close its dialog if you show one."""
 
     type: Literal["requirement_resolved"] = "requirement_resolved"
-    requirement_id: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    requirement_id: str = Field(
+        default="", description="The id of the approval request that was answered."
+    )
 
 
 class RequirementDetails(Message):
-    """The reason for an open HITL requirement, sent after its dialog.
+    """The reason for an open approval request, sent after the request itself.
 
-    The Bypass safety check raises its dialog with ``details_pending``
-    and no text, then sends this once the model has described the call
-    (or with the plain reason when it could not). Views swap the
-    spinner for ``details`` in place."""
+    A request sent with ``details_pending`` set gets its ``details``
+    later in this message; show it in place of the placeholder.
+    """
 
     type: Literal["requirement_details"] = "requirement_details"
-    requirement_id: str = ""
-    details: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    requirement_id: str = Field(default="", description="The id of the approval request.")
+    details: str = Field(default="", description="Why approval is being asked, for the person.")
 
 
 __all__ = [

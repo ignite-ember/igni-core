@@ -7,32 +7,28 @@ lists live inside the bus, not on Session.
 
 Delivery contract:
 
-* :meth:`BroadcastBus.emit` fires every callback synchronously
-  with ``(event.channel, event.payload)``. Callbacks are
-  expected to just enqueue a push, not to await IO. Exceptions
-  in one callback don't sink the rest — each is guarded
-  independently.
+* :meth:`BroadcastBus.emit` hands the typed event to every
+  subscriber synchronously; every subscriber receives the same
+  frozen instance. Subscribers are expected to just enqueue a
+  push, not to await IO. Exceptions in one subscriber don't sink
+  the rest — each is guarded independently.
 * :meth:`BroadcastBus.queue_post_run` defers delivery until
   the stream consumer calls :meth:`drain_post_run` (right
   after ``RunCompleted`` / ``RunError``). Used by tools whose
   card must appear at the *bottom* of a reply, not mid-stream
   — most notably ``exit_plan_mode``'s PlanCard.
-
-:class:`BroadcastEvent` and :data:`BroadcastCallback` are
-re-exported from the sibling schema module so callers keep one
-import path.
 """
 
 from __future__ import annotations
 
 import logging
 
-from igni_core.core.broadcast_schema import BroadcastCallback, BroadcastEvent
+from igni_core.core.broadcast_schema import BroadcastEvent, BroadcastSink
 
 logger = logging.getLogger(__name__)
 
 
-__all__ = ["BroadcastBus", "BroadcastEvent", "BroadcastCallback"]
+__all__ = ["BroadcastBus"]
 
 
 class BroadcastBus:
@@ -51,21 +47,20 @@ class BroadcastBus:
     """
 
     def __init__(self) -> None:
-        self._callbacks: list[BroadcastCallback] = []
+        self._callbacks: list[BroadcastSink] = []
         self._pending: list[BroadcastEvent] = []
 
     # ── Callback registration ──────────────────────────────────
 
-    def register(self, callback: BroadcastCallback) -> None:
-        """Append ``callback(channel, payload)`` to the callback
-        list. Idempotent — registering the same callable twice
+    def register(self, subscriber: BroadcastSink) -> None:
+        """Append ``subscriber`` to the subscriber list. Idempotent — registering the same callable twice
         does not double-fire (load-bearing for
         ``test_session::test_register_is_idempotent_on_same_callback``:
         both ``/plan`` and ``/accept`` slash-command bootstrap
         can register the same transport shim without inflating
         fan-out)."""
-        if callback not in self._callbacks:
-            self._callbacks.append(callback)
+        if subscriber not in self._callbacks:
+            self._callbacks.append(subscriber)
 
     # ── Read-only accessors ────────────────────────────────────
     # Public reads for state callers used to inspect on the raw
@@ -82,7 +77,7 @@ class BroadcastBus:
         """Number of events queued for post-run drain."""
         return len(self._pending)
 
-    def callbacks_snapshot(self) -> list[BroadcastCallback]:
+    def callbacks_snapshot(self) -> list[BroadcastSink]:
         """Copy of the callback list — safe to iterate without
         mutating the live subscription set."""
         return list(self._callbacks)
@@ -90,13 +85,8 @@ class BroadcastBus:
     # ── Immediate delivery ─────────────────────────────────────
 
     def emit(self, event: BroadcastEvent) -> None:
-        """Fire every registered callback with the event's
-        ``(channel, payload)``. Synchronous — callbacks enqueue,
-        they don't await.
-
-        Callbacks receive the payload dict by identity (no
-        defensive copy); emitters that mutate their dict after
-        firing see the change through the callback too.
+        """Hand ``event`` to every registered subscriber.
+        Synchronous — subscribers enqueue, they don't await.
 
         The callback list is iterated via ``list(self._callbacks)``
         so a callback that ``register()``s during broadcast joins
@@ -105,7 +95,7 @@ class BroadcastBus:
         """
         for cb in list(self._callbacks):
             try:
-                cb(event.channel, event.payload)
+                cb(event)
             except Exception as exc:
                 logger.debug(
                     "broadcast callback raised on channel %s: %s",
@@ -133,15 +123,10 @@ class BroadcastBus:
         Called by the BE stream consumer right after
         ``RunCompleted`` flushes. Safe on an empty queue (no-op).
 
-        ``run_id`` (when supplied) is stamped onto every payload
-        that doesn't already carry one — how ``plan_submitted``
-        payloads acquire the run_id the FE needs for
-        ``approve_plan`` / ``dismiss_plan``. The plan tool can't
-        see the current run_id from inside its toolkit context,
-        so the run-loop injects it at drain time. Stamping is
-        delegated to :meth:`BroadcastEvent.with_run_id` so the
-        "skip if already stamped" policy lives on the event
-        model, not inline here.
+        ``run_id`` (when supplied) is offered to each event via
+        :meth:`BroadcastEvent.with_run_id`; run-scoped events
+        (``plan_submitted``) take it, since the tool that queued
+        them cannot see the current run_id.
         """
         if not self._pending:
             return

@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from igni_core.backend.rpc_handlers.base import RpcHandlerContext
 from igni_core.backend.rpc_handlers.extensions import ExtensionsRpcHandler
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
-from igni_core.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.store import ExtensionStore
 from igni_core.extensions.web_home import ExtensionWebHome
 from tests.host_model_helpers import manifest
 
@@ -29,7 +31,7 @@ def record(extension_id: str, service_url: str) -> DistributionRecord:
 
 def test_a_distributed_extension_is_at_its_service(tmp_path: Path) -> None:
     store = ExtensionStore(tmp_path)
-    store.record_distribution(record("acme.reviewer", "https://reviewer.acme.test"))
+    store.provenance.record(record("acme.reviewer", "https://reviewer.acme.test"))
     assert (
         ExtensionWebHome(store).url_for(manifest("acme.reviewer")) == "https://reviewer.acme.test"
     )
@@ -39,7 +41,7 @@ def test_the_distribution_record_wins_over_a_setting(tmp_path: Path) -> None:
     store = ExtensionStore(tmp_path)
     m = manifest("acme.reviewer")
     store.save_settings(m, {"serviceUrl": "https://dev.acme.test"})
-    store.record_distribution(record("acme.reviewer", "https://reviewer.acme.test"))
+    store.provenance.record(record("acme.reviewer", "https://reviewer.acme.test"))
     assert ExtensionWebHome(store).url_for(m) == "https://reviewer.acme.test"
 
 
@@ -59,18 +61,22 @@ def test_only_a_web_address_is_a_home_page(tmp_path: Path) -> None:
     assert ExtensionWebHome(store).url_for(m) is None
 
 
-async def test_the_extension_list_carries_it_for_the_window() -> None:
+async def test_the_extension_list_carries_it_for_the_window(tmp_path: Path) -> None:
     """``list_extensions`` is what the Extensions panel and pages draw from."""
     registry = ExtensionRegistry()
     registry.install(manifest("acme.reviewer", host=["chat.read"]), state=ExtensionState.READY)
     registry.install(manifest("acme.plain"), state=ExtensionState.READY)
-    ExtensionStore().record_distribution(record("acme.reviewer", "https://reviewer.acme.test"))
+    store = ExtensionStore(tmp_path)
+    store.provenance.record(record("acme.reviewer", "https://reviewer.acme.test"))
     ctx = RpcHandlerContext(
         backend=None,
-        transport=None,
+        file_completion=MagicMock(),
+        shell_runner=MagicMock(),
         login=None,
         push=None,
+        workflows=None,  # type: ignore[arg-type]
         extensions=ExtensionRpc(registry),  # type: ignore[arg-type]
+        extension_store=store,
     )
 
     listed = await ExtensionsRpcHandler(ctx).list_extensions({})

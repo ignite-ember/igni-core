@@ -34,10 +34,12 @@ import inspect
 
 import pytest
 
-from igni_core.core.hooks.permission_pipeline import (
-    PATH_ARG_KEYS,
+from igni_core.core.hooks.permission.blocked_command_stage import (
     SHELL_ARG_KEYS,
     BlockedCommandStage,
+)
+from igni_core.core.hooks.permission.protected_path_stage import (
+    PATH_ARG_KEYS,
     ProtectedPathStage,
 )
 from igni_core.core.tools.tool_spec import ToolSpecCatalog

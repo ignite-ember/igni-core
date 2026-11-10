@@ -6,8 +6,8 @@ old inline ``_cmd_agents`` body handled four sub-commands
 panel) in a linear if/elif ladder. Now split into verb methods
 on :class:`AgentsCommand` with a ``dispatch(args)`` router.
 
-The pool's ``promote_ephemeral`` / ``discard_ephemeral`` still
-raise (tests pin that behaviour); the coordinator catches once
+:meth:`EphemeralAgentStore.promote` / :meth:`EphemeralAgentStore.discard`
+raise; the coordinator catches once
 and packages the outcome into a :class:`PromoteResult` /
 :class:`DiscardResult` so the try/except lives in a single spot.
 """
@@ -82,22 +82,23 @@ class AgentsCommand:
 
     def promote(self, name: str, target: str = "project") -> CommandResult:
         try:
-            dest = self._session.pool.promote_ephemeral(name, self._session.project_dir, target)
+            dest = self._session.pool.ephemeral.promote(name, self._session.project_dir, target)
             result = PromoteResult(ok=True, destination=str(dest))
-        except (KeyError, ValueError, RuntimeError) as exc:
+        except (ValueError, RuntimeError) as exc:
             result = PromoteResult(ok=False, error=str(exc))
         return result.to_command_result(name)
 
     def discard(self, name: str) -> CommandResult:
         try:
-            self._session.pool.discard_ephemeral(name)
+            self._session.pool.ephemeral.discard(name)
             result = DiscardResult(ok=True)
-        except (KeyError, ValueError, RuntimeError) as exc:
+        except (ValueError, RuntimeError) as exc:
             result = DiscardResult(ok=False, error=str(exc))
         return result.to_command_result(name)
 
     def list_ephemeral(self) -> CommandResult:
-        agents = self._session.pool.list_ephemeral()
+        pool = self._session.pool
+        agents = pool.ephemeral.list_agents() if pool.has_ephemeral else []
         return EphemeralAgentsView(agents=agents).to_command_result()
 
     def open_panel(self) -> CommandResult:

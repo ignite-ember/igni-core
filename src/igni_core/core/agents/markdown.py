@@ -16,8 +16,8 @@ from typing import ClassVar
 import yaml
 
 from igni_core.core.agents.schemas import AgentDefinition
-from igni_core.core.prompts import expand_anchors
 from igni_core.core.prompts.document import PromptDocument
+from igni_core.core.prompts.loader import PromptLoader
 
 
 class AgentMarkdownFile:
@@ -34,14 +34,19 @@ class AgentMarkdownFile:
         r"^---\s*\n(.*?)\n---\s*\n?(.*)", re.DOTALL
     )
 
-    def __init__(self, path: Path, content: str | None = None) -> None:
+    def __init__(
+        self, path: Path, content: str | None = None, *, prompt_loader: PromptLoader
+    ) -> None:
         """
         Args:
             content: The file's text when it is already in hand — an
                 agent an extension has composed — so nothing is read.
+            prompt_loader: Where the anchors an extension fills come
+                from. An agent's body may carry one.
         """
         self.path = path
         self._content = content
+        self._prompt_loader = prompt_loader
         self._frontmatter: dict | None = None
         self._body: str | None = None
         self._parse_ok: bool | None = None
@@ -113,7 +118,7 @@ class AgentMarkdownFile:
         # here so there is one description rather than one per prompt.
         # Its section markers name the parts an extension can change;
         # the model reads none of them.
-        body = expand_anchors(PromptDocument.unmarked(self._body))
+        body = self._prompt_loader.expand(PromptDocument.unmarked(self._body))
 
         if "name" not in fm:
             raise ValueError(f"Agent definition missing 'name' in {self.path}")

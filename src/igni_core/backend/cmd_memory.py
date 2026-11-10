@@ -7,9 +7,9 @@ Following the ``cmd_*`` family's pattern:
   :func:`cmd_memory` entry point is a two-line shim so
   :mod:`igni_core.backend.command_handler`'s dispatch table stays
   wire-compatible.
-* Payload shaping (untyped ``arecall`` dict → per-store Pydantic
-  section models) lives in :mod:`schemas_memory`. This module is
-  the coordinator only.
+* Payload shaping (``arecall`` stores → per-store Pydantic
+  section models) lives in :mod:`schemas_memory`. This module
+  fetches the recall and decides what reaches the user.
 
 Sub-commands handled here:
 
@@ -88,19 +88,20 @@ class MemoryCommand:
         """Render the Learning Machine's cross-session recall
         (user profile / memory / entity memory / session context).
 
-        Uses :attr:`Session.learning_machine` — the public
-        property that fuses ``main_team.learning_machine`` with
-        the fallback ``_learning`` field, so this method never
-        touches Session privates. Recall failures collapse to
-        the empty-recall path inside
-        :meth:`LearningRecall.aload`."""
+        Recalls with no ``session_id`` so only cross-session stores
+        answer. A failed recall is reported as an error, never as
+        "no learnings"."""
         learning = self._session.learning_machine
         if learning is None:
             return CommandResult.info(
                 "Learning is not enabled. Set learning.enabled=true in config."
             )
-        recall = await LearningRecall.aload(learning, self._session.user_id)
-        return recall.to_command_result()
+        try:
+            stores = await learning.arecall(user_id=self._session.user_id)
+        except Exception as exc:
+            logger.warning("Learning Machine recall failed: %s", exc)
+            return CommandResult.error(f"Could not read learnings: {exc}")
+        return LearningRecall.from_stores(stores).to_command_result()
 
 
 async def cmd_memory(handler: CommandHandler, args: str) -> CommandResult:

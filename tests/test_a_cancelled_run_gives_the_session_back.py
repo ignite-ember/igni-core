@@ -24,21 +24,21 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
+from agno.media import Image
 
-from igni_core.backend import run_controller as run_controller_mod
 from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.backend.run_controller import RunController
 from igni_core.backend.schemas_run import (
     HookGateResult,
-    MediaAttachments,
     ModelConfig,
     PromptBuildResult,
     RunPhase,
 )
-from igni_core.core.utils.media_schemas import ResolvedText
+from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.utils.media_schemas import MediaAttachments, ResolvedText
 from igni_core.protocol import messages as msg
 
 # ── Fakes ────────────────────────────────────────────────────────────
@@ -83,11 +83,6 @@ class _FakeSupervisor:
         return False
 
 
-class _FakeRegistry:
-    def default(self) -> _FakeSupervisor:
-        return _FakeSupervisor()
-
-
 async def _no_prefix(text: str) -> str:
     return ""
 
@@ -128,24 +123,37 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
     controller._session = SimpleNamespace(
         main_team=SimpleNamespace(arun=lambda *a, **k: None, run_id=None),
         guardrail_runner=SimpleNamespace(warning_prefix=_no_prefix),
+        memory_mirror=None,
     )
-    controller._backend = SimpleNamespace(
-        _stream_with_subagent_hitl=_stream,
-        _periodic_checkpoint=_forever,
-    )
+    controller._stream_factory = _stream
+    controller._message_queue = None
+    controller.periodic_checkpoint = _forever  # type: ignore[method-assign]
     controller._http_client_manager = SimpleNamespace(close_and_replace=_noop_async)
+    # The supervisor the controller cancels the foreground slot of.
+    # A fake one keeps the test off the real registry.
+    controller._supervisor = _FakeSupervisor()
+    # The run gate of the backend process — open, so the run starts.
+    controller._gate = RunGate()
     return controller
+
+
+async def _wait_for_streaming(controller: RunController) -> None:
+    """Wait until the controller is streaming — or fail instead of hanging.
+
+    A controller that never reaches the streaming phase is a broken
+    controller, and a bare spin loop would turn that into a hung test
+    rather than a failed one.
+    """
+
+    async def _until_streaming() -> None:
+        while controller.phase is not RunPhase.streaming:
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_until_streaming(), timeout=5)
 
 
 async def _drain(controller: RunController) -> list[msg.Message]:
     return [proto async for proto in controller.run_message("hello", None)]
-
-
-@pytest.fixture(autouse=True)
-def _no_real_supervisor(monkeypatch):
-    """``cancel_run`` reaches for the process-wide foreground slot; keep the
-    test off the real one."""
-    monkeypatch.setattr(run_controller_mod, "supervisors", _FakeRegistry())
 
 
 # ── Cancel must end the run ──────────────────────────────────────────
@@ -162,8 +170,7 @@ class TestACancelledRunIsOver:
                 collected.append(proto)
 
         task = asyncio.create_task(_consume())
-        while controller.phase is not RunPhase.streaming:
-            await asyncio.sleep(0)
+        await _wait_for_streaming(controller)
 
         controller.cancel_run()
         with contextlib.suppress(asyncio.CancelledError):
@@ -183,8 +190,7 @@ class TestACancelledRunIsOver:
                 pass
 
         task = asyncio.create_task(_consume())
-        while controller.phase is not RunPhase.streaming:
-            await asyncio.sleep(0)
+        await _wait_for_streaming(controller)
 
         controller.cancel_run()
         with contextlib.suppress(asyncio.CancelledError):
@@ -201,8 +207,7 @@ class TestACancelledRunIsOver:
                 pass
 
         task = asyncio.create_task(_consume())
-        while controller.phase is not RunPhase.streaming:
-            await asyncio.sleep(0)
+        await _wait_for_streaming(controller)
 
         controller.cancel_run()
         with contextlib.suppress(asyncio.CancelledError):
@@ -256,32 +261,41 @@ def _builder(attached: MediaAttachments | None) -> PromptBuilder:
     return builder
 
 
+def _image(path: str) -> MediaAttachments:
+    """A bundle holding one image at ``path`` — the shape the FE's paste
+    and the resolver's attach both produce."""
+    return MediaAttachments(images=[Image(filepath=Path(path))])
+
+
 class TestSuppliedAttachmentsAreKept:
     async def test_the_pasted_image_is_not_replaced_by_the_resolved_one(self):
         """Both reach the model — the branch used to return only the resolved
         bundle, dropping whatever the FE sent with the message."""
-        builder = _builder(MediaAttachments(images=["resolved-diagram"]))
-        supplied = MediaAttachments(images=["pasted-screenshot"])
+        builder = _builder(_image("/project/resolved-diagram.png"))
+        supplied = _image("/project/pasted-screenshot.png")
 
         step = builder._attach_file_references(
             "see diagram.png", supplied, ModelConfig(vision=True)
         )
 
         assert step.media is not None
-        assert step.media.images == ["pasted-screenshot", "resolved-diagram"]
+        assert [i.filepath for i in step.media.images] == [
+            Path("/project/pasted-screenshot.png"),
+            Path("/project/resolved-diagram.png"),
+        ]
 
     async def test_a_message_with_no_supplied_media_is_unchanged(self):
-        builder = _builder(MediaAttachments(images=["resolved-diagram"]))
+        builder = _builder(_image("/project/resolved-diagram.png"))
 
         step = builder._attach_file_references("see diagram.png", None, ModelConfig(vision=True))
 
         assert step.media is not None
-        assert step.media.images == ["resolved-diagram"]
+        assert [i.filepath for i in step.media.images] == [Path("/project/resolved-diagram.png")]
 
     async def test_nothing_attachable_leaves_the_supplied_bundle_alone(self):
         """``attach_local_paths`` returning ``None`` is the text-only path."""
         builder = _builder(None)
-        supplied = MediaAttachments(images=["pasted-screenshot"])
+        supplied = _image("/project/pasted-screenshot.png")
 
         step = builder._attach_file_references("see notes.txt", supplied, ModelConfig(vision=True))
 

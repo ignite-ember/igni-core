@@ -26,7 +26,7 @@ import os
 import time
 from pathlib import Path
 
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class HITLTracer:
         """
         if not self._enabled:
             return
-        if not Layers.current().log_files():
+        if not layers.current().log_files():
             # No hitl_trace.log where the layer keeps no log files: a record.
             TRACE_LOGGER.info(text)
             return

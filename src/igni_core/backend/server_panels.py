@@ -41,7 +41,7 @@ from igni_core.backend.schemas_rpc import (
     GroupPolicyPackResult,
 )
 from igni_core.core.agents import AgentInfo
-from igni_core.core.config.group_policy import GroupPolicyCache
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.skills import SkillPool
 from igni_core.core.skills.parser import SkillInfo
 from igni_core.protocol import messages as msg
@@ -130,13 +130,14 @@ class PanelsController:
         same-named project file simply outranks it, so nothing is copied
         anywhere and nothing can diverge.
         """
-        meta = GroupPolicyCache().read_pack_meta()
+        data_dir = self._session.settings.storage.data_dir
+        meta = GroupPolicyCache.for_data_dir(data_dir).meta.load()
         if meta is None:
             return GroupPolicyPackResult()
         return GroupPolicyPackResult(
-            group_id=meta.get("group_id"),
-            group_name=meta.get("group_name"),
-            fetched_at=meta.get("fetched_at"),
-            entry_count=meta.get("entry_count", 0),
-            default_model=meta.get("default_model"),
+            group_id=meta.group_id,
+            group_name=meta.group_name,
+            fetched_at=meta.fetched_at.isoformat() if meta.fetched_at else None,
+            entry_count=meta.entry_count,
+            default_model=meta.default_model,
         )

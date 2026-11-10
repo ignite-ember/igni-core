@@ -32,15 +32,20 @@ working directory are skipped — enforced by the injected
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.utils.context_schemas import (
+    ReadRulesDir,
+    ReadRulesDirFiles,
+    RulesFilenames,
+    SubdirectoryRules,
+)
 
 
 def load_project_rules(
-    read_rules_dir: Callable[..., str],
-    rules_filenames: Callable[[bool], tuple[str, ...]],
+    read_rules_dir: ReadRulesDir,
+    rules_filenames: RulesFilenames,
     project_dir: Path,
     read_claude_md: bool = True,
 ) -> str:
@@ -61,7 +66,7 @@ def load_project_rules(
 
 
 def load_project_rules_dirs(
-    read_rules_dir_files: Callable[..., str],
+    read_rules_dir_files: ReadRulesDirFiles,
     project_dir: Path,
     working_dir: Path | None = None,
     read_claude_md: bool = True,
@@ -103,12 +108,12 @@ def load_project_rules_dirs(
 
 
 def load_subdirectory_rules(
-    read_rules_dir: Callable[..., str],
-    rules_filenames: Callable[[bool], tuple[str, ...]],
+    read_rules_dir: ReadRulesDir,
+    rules_filenames: RulesFilenames,
     project_dir: Path,
     working_dir: Path | None = None,
     read_claude_md: bool = True,
-) -> list[tuple[str, str]]:
+) -> list[SubdirectoryRules]:
     """Collect rules from subdirectories between project root and working dir.
 
     Walks from ``working_dir`` up to (but not including)
@@ -117,7 +122,7 @@ def load_subdirectory_rules(
     prompt groups them with per-subdirectory headers.
 
     Returns:
-        List of ``(relative_path, content)`` tuples, ordered
+        List of :class:`SubdirectoryRules` entries, ordered
         shallowest-first.
 
     Helpers injected — see module docstring.
@@ -135,7 +140,7 @@ def load_subdirectory_rules(
     except ValueError:
         return []
 
-    results: list[tuple[str, str]] = []
+    results: list[SubdirectoryRules] = []
     current = working_dir
 
     filenames = rules_filenames(read_claude_md)
@@ -143,7 +148,7 @@ def load_subdirectory_rules(
         content = read_rules_dir(current, filenames, allowed_root=project_dir)
         if content:
             rel = current.relative_to(project_dir)
-            results.append((str(rel), content))
+            results.append(SubdirectoryRules(rel_path=str(rel), content=content))
         current = current.parent
 
     # Return shallowest first (closer to root = earlier in list).

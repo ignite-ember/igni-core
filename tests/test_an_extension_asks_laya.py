@@ -22,9 +22,10 @@ import httpx
 import pytest
 
 from igni_core.core.decisions import Laya, Priority
-from igni_core.core.decisions.laya import RemoteDecisions
+from igni_core.core.decisions.endpoints import RemoteDecisions
+from igni_core.core.decisions.laya_wire import LayaQuestions
 from igni_core.core.decisions.schemas import DecisionRequest
-from igni_core.core.hooks.bypass_guard import QUESTIONS, HarmJudge
+from igni_core.core.hooks.bypass_judge import QUESTIONS, HarmJudge
 from igni_core.decisions_server.app import DecisionsApp
 from igni_core.decisions_server.model import BUNDLE_REPO, HubCache, LayaModel, PriorityGate
 from tests.host_model_helpers import HostRig
@@ -137,7 +138,7 @@ class TestDecide:
     ) -> None:
         router = FakeRouter()
         assert rig.model is not None
-        rig.model.decisions = laya_over(router)
+        rig.model.services.decisions = laya_over(router)
         ext = rig.install(host=["decide"])
 
         decision = ok(
@@ -160,7 +161,7 @@ class TestDecide:
     ) -> None:
         router = FakeRouter()
         assert rig.model is not None
-        rig.model.decisions = laya_over(router)
+        rig.model.services.decisions = laya_over(router)
         ext = rig.install(host=["decide"])
 
         ok(await rig.ask(ext, "call", "decide", context={"text": "x"}, questions=TRIAGE))
@@ -182,7 +183,7 @@ class TestDecide:
     async def test_a_batch_answers_each_context_in_order(self, rig: HostRig) -> None:
         router = FakeRouter()
         assert rig.model is not None
-        rig.model.decisions = laya_over(router)
+        rig.model.services.decisions = laya_over(router)
         ext = rig.install(host=["decide"])
 
         decisions = ok(
@@ -200,7 +201,7 @@ class TestDecide:
 
     async def test_it_needs_the_decide_grant(self, rig: HostRig) -> None:
         assert rig.model is not None
-        rig.model.decisions = laya_over(FakeRouter())
+        rig.model.services.decisions = laya_over(FakeRouter())
         ext = rig.install(host=["app"])
         refused(
             await rig.ask(ext, "call", "decide", context={"text": "x"}, questions=TRIAGE),
@@ -211,7 +212,7 @@ class TestDecide:
         self, rig: HostRig
     ) -> None:
         assert rig.model is not None
-        rig.model.decisions = laya_over(FakeRouter(truncated=True))
+        rig.model.services.decisions = laya_over(FakeRouter(truncated=True))
         ext = rig.install(host=["decide"])
         message = refused(
             await rig.ask(ext, "call", "decide", context={"text": "x"}, questions=TRIAGE),
@@ -227,7 +228,7 @@ class TestDecide:
 
         model._build = broken  # type: ignore[method-assign]
         assert rig.model is not None
-        rig.model.decisions = service_over(model)
+        rig.model.services.decisions = service_over(model)
         ext = rig.install(host=["decide"])
         refused(
             await rig.ask(ext, "call", "decide", context={"text": "x"}, questions=TRIAGE),
@@ -265,7 +266,7 @@ class TestDecide:
     ) -> None:
         router = FakeRouter()
         assert rig.model is not None
-        rig.model.decisions = laya_over(router)
+        rig.model.services.decisions = laya_over(router)
         ext = rig.install(host=["decide"])
         message = refused(
             await rig.ask(ext, "call", "decide", context=context, questions=questions), "invalid"
@@ -275,7 +276,7 @@ class TestDecide:
 
     async def test_more_than_sixteen_contexts_is_refused(self, rig: HostRig) -> None:
         assert rig.model is not None
-        rig.model.decisions = laya_over(FakeRouter())
+        rig.model.services.decisions = laya_over(FakeRouter())
         ext = rig.install(host=["decide"])
         refused(
             await rig.ask(
@@ -293,12 +294,12 @@ class TestSharedWithTheBypassGuard:
     def test_the_guard_asks_its_measured_checkpoint_first(self) -> None:
         router = FakeRouter()
         judge = HarmJudge(laya=laya_over(router))
-        probability, which = asyncio.run(judge.score("Bash: rm -rf ~"))
+        harm = asyncio.run(judge.score("Bash: rm -rf ~"))
         [(state, questions, model)] = router.single
         assert state == {"tool_call": "Bash: rm -rf ~"}
-        assert questions == QUESTIONS  # sent over the wire, unchanged
+        assert questions == LayaQuestions.of(QUESTIONS).wire()  # in Laya's own shape
         assert model == "typed-decisions"
-        assert which in QUESTIONS and 0.0 <= probability <= 1.0
+        assert harm.question in {q.id for q in QUESTIONS} and 0.0 <= harm.probability <= 1.0
 
     def test_an_approval_waiting_goes_before_extensions_waiting(self) -> None:
         gate = PriorityGate()

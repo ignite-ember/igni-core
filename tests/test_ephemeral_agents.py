@@ -25,20 +25,18 @@ class TestEphemeralInit:
 
 
 class TestRegisterEphemeral:
-    """AgentPool.register_ephemeral() creates and registers temp agents."""
+    """AgentPool.ephemeral.register() creates and registers temp agents."""
 
     @pytest.fixture
     def pool(self, tmp_path, settings):
-        p = AgentPool()
-        p._settings = settings
-        p._base_dir = str(tmp_path)
+        p = AgentPool(settings=settings, project_dir=tmp_path)
         p.init_ephemeral(tmp_path)
         return p
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_register_creates_md_file(self, mock_build, pool, tmp_path):
         mock_build.return_value = MagicMock()
-        pool.register_ephemeral(
+        pool.ephemeral.register(
             name="helper",
             description="A helper agent",
             system_prompt="You help with things.",
@@ -53,17 +51,17 @@ class TestRegisterEphemeral:
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_register_adds_to_definitions(self, mock_build, pool):
         mock_build.return_value = MagicMock()
-        pool.register_ephemeral(
+        pool.ephemeral.register(
             name="helper",
             description="A helper",
             system_prompt="Help.",
         )
-        assert "helper" in pool.agent_names
+        assert pool.get_entry("helper") is not None
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_register_with_custom_tools(self, mock_build, pool, tmp_path):
         mock_build.return_value = MagicMock()
-        pool.register_ephemeral(
+        pool.ephemeral.register(
             name="searcher",
             description="Searches code",
             system_prompt="Search.",
@@ -80,7 +78,7 @@ class TestRegisterEphemeral:
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_register_with_model(self, mock_build, pool, tmp_path):
         mock_build.return_value = MagicMock()
-        pool.register_ephemeral(
+        pool.ephemeral.register(
             name="smart",
             description="Smart agent",
             system_prompt="Be smart.",
@@ -93,38 +91,35 @@ class TestRegisterEphemeral:
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_register_duplicate_raises(self, mock_build, pool):
         mock_build.return_value = MagicMock()
-        pool.register_ephemeral(name="dup", description="d", system_prompt="p")
+        pool.ephemeral.register(name="dup", description="d", system_prompt="p")
         with pytest.raises(ValueError, match="already exists"):
-            pool.register_ephemeral(name="dup", description="d2", system_prompt="p2")
+            pool.ephemeral.register(name="dup", description="d2", system_prompt="p2")
 
     def test_register_without_init_raises(self, settings):
-        pool = AgentPool()
-        pool._settings = settings
+        pool = AgentPool(settings=settings)
         with pytest.raises(RuntimeError, match="not initialized"):
-            pool.register_ephemeral(name="x", description="d", system_prompt="p")
+            pool.ephemeral.register(name="x", description="d", system_prompt="p")
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_register_respects_limit(self, mock_build, pool):
         mock_build.return_value = MagicMock()
-        pool._max_ephemeral = 2
-        pool.register_ephemeral(name="a1", description="d", system_prompt="p")
-        pool.register_ephemeral(name="a2", description="d", system_prompt="p")
+        pool.ephemeral.max_ephemeral = 2
+        pool.ephemeral.register(name="a1", description="d", system_prompt="p")
+        pool.ephemeral.register(name="a2", description="d", system_prompt="p")
         with pytest.raises(ValueError, match="limit reached"):
-            pool.register_ephemeral(name="a3", description="d", system_prompt="p")
+            pool.ephemeral.register(name="a3", description="d", system_prompt="p")
 
 
 class TestListEphemeral:
-    """AgentPool.list_ephemeral() returns only ephemeral agent definitions."""
+    """EphemeralAgentStore.list_agents() returns only ephemeral agent definitions."""
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_list_ephemeral_agents(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path)
 
-        pool.register_ephemeral(name="eph1", description="d", system_prompt="p")
+        pool.ephemeral.register(name="eph1", description="d", system_prompt="p")
 
         # Also add a non-ephemeral agent
         agents_dir = tmp_path / "agents"
@@ -132,30 +127,27 @@ class TestListEphemeral:
         (agents_dir / "perm.md").write_text(
             "---\nname: perm\ndescription: Permanent\n---\nPermanent agent.\n"
         )
-        pool.load_directory(agents_dir, priority=0, settings=settings)
+        pool.load_directory(agents_dir, priority=0)
 
-        ephemeral = pool.list_ephemeral()
+        ephemeral = pool.ephemeral.list_agents()
         assert len(ephemeral) == 1
         assert ephemeral[0].name == "eph1"
 
-    def test_list_ephemeral_without_init(self):
-        pool = AgentPool()
-        assert pool.list_ephemeral() == []
+    def test_no_store_without_init(self):
+        assert not AgentPool().has_ephemeral
 
 
 class TestPromoteEphemeral:
-    """AgentPool.promote_ephemeral() moves agent from tmp to permanent."""
+    """AgentPool.ephemeral.promote() moves agent from tmp to permanent."""
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_promote_moves_file(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path)
 
-        pool.register_ephemeral(name="promo", description="d", system_prompt="p")
-        dest = pool.promote_ephemeral("promo", tmp_path)
+        pool.ephemeral.register(name="promo", description="d", system_prompt="p")
+        dest = pool.ephemeral.promote("promo", tmp_path)
 
         assert dest == tmp_path / CONFIG_DIR / "agents" / "promo.md"
         assert dest.exists()
@@ -164,29 +156,24 @@ class TestPromoteEphemeral:
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_promote_decrements_count(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path)
 
-        pool.register_ephemeral(name="promo", description="d", system_prompt="p")
-        assert pool._ephemeral_count == 1
-        pool.promote_ephemeral("promo", tmp_path)
-        assert pool._ephemeral_count == 0
+        pool.ephemeral.register(name="promo", description="d", system_prompt="p")
+        assert pool.ephemeral.count == 1
+        pool.ephemeral.promote("promo", tmp_path)
+        assert pool.ephemeral.count == 0
 
     def test_promote_nonexistent_raises(self, tmp_path, settings):
-        pool = AgentPool()
-        pool._settings = settings
+        pool = AgentPool(settings=settings)
         pool.init_ephemeral(tmp_path)
-        with pytest.raises(KeyError, match="not found"):
-            pool.promote_ephemeral("ghost", tmp_path)
+        with pytest.raises(ValueError, match="not found"):
+            pool.ephemeral.promote("ghost", tmp_path)
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_promote_non_ephemeral_raises(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path)
 
         # Add a permanent agent
@@ -195,58 +182,51 @@ class TestPromoteEphemeral:
         (agents_dir / "perm.md").write_text(
             "---\nname: perm\ndescription: Permanent\n---\nPermanent.\n"
         )
-        pool.load_directory(agents_dir, priority=0, settings=settings)
+        pool.load_directory(agents_dir, priority=0)
 
         with pytest.raises(ValueError, match="not an ephemeral"):
-            pool.promote_ephemeral("perm", tmp_path)
+            pool.ephemeral.promote("perm", tmp_path)
 
 
 class TestDiscardEphemeral:
-    """AgentPool.discard_ephemeral() deletes an ephemeral agent."""
+    """AgentPool.ephemeral.discard() deletes an ephemeral agent."""
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_discard_removes_file_and_definition(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path)
 
-        pool.register_ephemeral(name="temp", description="d", system_prompt="p")
+        pool.ephemeral.register(name="temp", description="d", system_prompt="p")
         md_path = tmp_path / CONFIG_DIR / "agents.tmp" / "temp.md"
         assert md_path.exists()
-        assert "temp" in pool.agent_names
+        assert pool.get_entry("temp") is not None
 
-        pool.discard_ephemeral("temp")
+        pool.ephemeral.discard("temp")
         assert not md_path.exists()
-        assert "temp" not in pool.agent_names
+        assert pool.get_entry("temp") is None
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_discard_decrements_count(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path)
 
-        pool.register_ephemeral(name="temp", description="d", system_prompt="p")
-        assert pool._ephemeral_count == 1
-        pool.discard_ephemeral("temp")
-        assert pool._ephemeral_count == 0
+        pool.ephemeral.register(name="temp", description="d", system_prompt="p")
+        assert pool.ephemeral.count == 1
+        pool.ephemeral.discard("temp")
+        assert pool.ephemeral.count == 0
 
     def test_discard_nonexistent_raises(self, tmp_path, settings):
-        pool = AgentPool()
-        pool._settings = settings
+        pool = AgentPool(settings=settings)
         pool.init_ephemeral(tmp_path)
-        with pytest.raises(KeyError, match="not found"):
-            pool.discard_ephemeral("ghost")
+        with pytest.raises(ValueError, match="not found"):
+            pool.ephemeral.discard("ghost")
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_discard_non_ephemeral_raises(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path)
 
         agents_dir = tmp_path / "agents"
@@ -254,65 +234,60 @@ class TestDiscardEphemeral:
         (agents_dir / "perm.md").write_text(
             "---\nname: perm\ndescription: Permanent\n---\nPermanent.\n"
         )
-        pool.load_directory(agents_dir, priority=0, settings=settings)
+        pool.load_directory(agents_dir, priority=0)
 
         with pytest.raises(ValueError, match="not an ephemeral"):
-            pool.discard_ephemeral("perm")
+            pool.ephemeral.discard("perm")
 
     def test_discard_without_init_raises(self, settings):
-        pool = AgentPool()
-        pool._settings = settings
+        pool = AgentPool(settings=settings)
         with pytest.raises(RuntimeError, match="not initialized"):
-            pool.discard_ephemeral("x")
+            pool.ephemeral.discard("x")
 
 
 class TestCleanupEphemeral:
-    """AgentPool.cleanup_ephemeral() removes all ephemeral agents."""
+    """EphemeralAgentStore.cleanup() removes all ephemeral agents."""
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_cleanup_removes_all(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path)
 
-        pool.register_ephemeral(name="e1", description="d", system_prompt="p")
-        pool.register_ephemeral(name="e2", description="d", system_prompt="p")
-        assert pool._ephemeral_count == 2
+        pool.ephemeral.register(name="e1", description="d", system_prompt="p")
+        pool.ephemeral.register(name="e2", description="d", system_prompt="p")
+        assert pool.ephemeral.count == 2
 
-        removed = pool.cleanup_ephemeral()
+        removed = pool.ephemeral.cleanup()
         assert removed == 2
-        assert pool._ephemeral_count == 0
+        assert pool.ephemeral.count == 0
         assert not (tmp_path / CONFIG_DIR / "agents.tmp" / "e1.md").exists()
         assert not (tmp_path / CONFIG_DIR / "agents.tmp" / "e2.md").exists()
-        assert "e1" not in pool.agent_names
-        assert "e2" not in pool.agent_names
+        assert pool.get_entry("e1") is None
+        assert pool.get_entry("e2") is None
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_cleanup_leaves_permanent_agents(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path)
 
-        pool.register_ephemeral(name="eph", description="d", system_prompt="p")
+        pool.ephemeral.register(name="eph", description="d", system_prompt="p")
 
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
         (agents_dir / "perm.md").write_text(
             "---\nname: perm\ndescription: Permanent\n---\nPermanent.\n"
         )
-        pool.load_directory(agents_dir, priority=0, settings=settings)
+        pool.load_directory(agents_dir, priority=0)
 
-        removed = pool.cleanup_ephemeral()
+        removed = pool.ephemeral.cleanup()
         assert removed == 1
-        assert "perm" in pool.agent_names
+        assert pool.get_entry("perm") is not None
 
-    def test_cleanup_without_init_returns_zero(self):
-        pool = AgentPool()
-        assert pool.cleanup_ephemeral() == 0
+    def test_cleanup_without_init_raises(self):
+        with pytest.raises(RuntimeError, match="not initialized"):
+            AgentPool().ephemeral.cleanup()
 
 
 class TestCreateAgentTool:
@@ -321,9 +296,7 @@ class TestCreateAgentTool:
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_create_agent_returns_confirmation(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path)
 
         tools = OrchestrateTools(
@@ -340,14 +313,12 @@ class TestCreateAgentTool:
         )
         assert "Created ephemeral agent" in result
         assert "debugger" in result
-        assert "debugger" in pool.agent_names
+        assert pool.get_entry("debugger") is not None
 
     @patch("igni_core.core.agents.builder.AgentBuilder.build")
     def test_create_agent_error_on_limit(self, mock_build, tmp_path, settings):
         mock_build.return_value = MagicMock()
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(tmp_path)
+        pool = AgentPool(settings=settings, project_dir=tmp_path)
         pool.init_ephemeral(tmp_path, max_ephemeral=0)
 
         tools = OrchestrateTools(pool=pool, settings=settings)

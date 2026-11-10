@@ -22,6 +22,7 @@ from agno.db.base import SessionType
 from agno.session import AgentSession
 from igni_cloud.db.rls import AGNO_SCHEMA, ProducerCredentials, ProducerRoles
 from igni_cloud.producer import ProducerIncarnation, ProducerRef
+from igni_cloud.storage.agno_table_cache import AgnoTableCache
 from igni_cloud.storage.attachments import LargeObjectAttachments
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from sqlalchemy import BigInteger, Boolean, DateTime, Integer, create_engine, text
@@ -32,7 +33,7 @@ from igni_core.cli.migrate import SchemaMigration
 from igni_core.core.approvals import journal as _journal  # noqa: F401 — its tables
 from igni_core.core.db.base import Base
 from igni_core.core.db.database import Database
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.db.scope import StorageScope, Tenant
 from igni_core.core.db.urls import DatabaseUrl
@@ -222,11 +223,11 @@ def test_igni_runs_as_a_producer_and_migrations_still_run(
     assert [m.message_id for m in PendingMessageStore(a.db()).list_pending("s1")] == [message_id]
     assert PendingMessageStore(b.db()).list_pending("s1") == []
     ClientStateStore(a.db()).set_value("w", "k", "v")
-    assert ClientStateStore(a.db()).get_for_client("w") == {"k": "v"}
+    assert ClientStateStore(a.db()).get_for_client("w").values == {"k": "v"}
 
     locator = StorageLocator(database_url=admin.url, data_dir="/nonexistent")
     assert "already at" in SchemaMigration.migrate(locator.global_url())
-    assert ClientStateStore(a.db()).get_for_client("w") == {"k": "v"}
+    assert ClientStateStore(a.db()).get_for_client("w").values == {"k": "v"}
 
 
 def test_agno_works_as_a_producer_and_keeps_to_its_rows(producers: tuple[Producer, Producer]):
@@ -235,7 +236,8 @@ def test_agno_works_as_a_producer_and_keeps_to_its_rows(producers: tuple[Produce
     def agno(p: Producer) -> ScopedAsyncPostgresDb:
         return ScopedAsyncPostgresDb(
             scope=p.scope,
-            db_engine=cache.get_async_engine(p.url),
+            tables=AgnoTableCache(),
+            db_engine=engines.get_async_engine(p.url),
             session_table=StorageManager.SESSION_TABLE,
             memory_table=StorageManager.MEMORY_TABLE,
             create_schema=False,

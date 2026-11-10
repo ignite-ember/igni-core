@@ -20,36 +20,37 @@ import pytest
 
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.cli.options import CliOptions
-from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
-from igni_core.core.config.models import CliOverrides
+from igni_core.core.config.cli_overrides import CliOverrides
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.permission_eval import (
     PermissionDecision,
     PermissionEvaluator,
     PermissionMode,
 )
 from igni_core.core.config.permission_eval.mode_policy import ModePolicy, is_at_least_as_strict
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
+from igni_core.core.session.schemas import PermissionModeSwitch
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.core.tools.slash import SlashCommandTool
 from igni_core.protocol.messages import CommandResultKind
+from tests.session_coordinators import wire_coordinators
 
 
 @pytest.fixture(autouse=True)
 def _no_managed_file(monkeypatch):
     """No stray OS-level managed file; tests that want one set it."""
-    monkeypatch.setattr(
-        SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: None)
-    )
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: None))
 
 
 def _managed(tmp_path: Path, monkeypatch, text: str) -> None:
     path = tmp_path / "managed-settings.yaml"
     path.write_text(text)
-    monkeypatch.setattr(
-        SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: path)
-    )
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: path))
 
 
 def _pack(settings: dict) -> GroupPolicyPack:
@@ -81,6 +82,7 @@ def _session(settings: Settings) -> Session:
     session.settings = settings
     session.broadcast_bus = BroadcastBus()
     session.permission_evaluator = PermissionEvaluator.from_strings(mode=settings.permissions.mode)
+    wire_coordinators(session)
     return session
 
 
@@ -122,7 +124,7 @@ class TestAManagedFloor:
         self, tmp_path, monkeypatch
     ):
         _managed(tmp_path, monkeypatch, "permissions:\n  mode: default\n")
-        session = _session(load_settings(project_dir=tmp_path))
+        session = _session(SettingsLoader.load(project_dir=tmp_path))
         handler = CommandHandler(session)
 
         for command in ("/accept", "/accept on", "/bypass", "/bypass on"):
@@ -134,7 +136,7 @@ class TestAManagedFloor:
     @pytest.mark.asyncio
     async def test_a_stricter_mode_is_still_reachable(self, tmp_path, monkeypatch):
         _managed(tmp_path, monkeypatch, "permissions:\n  mode: acceptEdits\n")
-        session = _session(load_settings(project_dir=tmp_path))
+        session = _session(SettingsLoader.load(project_dir=tmp_path))
         handler = CommandHandler(session)
         assert _mode(session) is PermissionMode.ACCEPT_EDITS
 
@@ -149,30 +151,30 @@ class TestAManagedFloor:
 
     def test_a_group_policy_sets_a_floor_too(self, tmp_path):
         pack = _pack({"permissions": {"mode": "plan"}})
-        settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
+        settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
         session = _session(settings)
 
-        status = session.set_permission_mode("default")
-        assert status.startswith("Error")
-        assert "group policy" in status
+        switch = session.set_permission_mode("default")
+        assert switch.refused
+        assert "group policy" in switch.text
         assert _mode(session) is PermissionMode.PLAN
 
     def test_a_flag_cannot_lift_a_managed_floor(self, tmp_path, monkeypatch):
         _managed(tmp_path, monkeypatch, "permissions:\n  mode: default\n")
-        settings = load_settings(
+        settings = SettingsLoader.load(
             cli_overrides=CliOverrides.from_options(CliOptions(auto_approve=True)),
             project_dir=tmp_path,
         )
         assert settings.permissions.mode == "default"
-        assert _session(settings).set_permission_mode("acceptEdits").startswith("Error")
+        assert _session(settings).set_permission_mode("acceptEdits").refused
 
     def test_a_user_config_mode_is_not_a_floor(self, tmp_path):
         """Only the organisation's tiers make a floor. A mode in the
         user's own config is where the session starts, nothing more."""
         _user_config("permissions:\n  mode: plan\n")
-        session = _session(load_settings(project_dir=tmp_path))
+        session = _session(SettingsLoader.load(project_dir=tmp_path))
         assert _mode(session) is PermissionMode.PLAN
-        assert "→ bypassPermissions" in session.set_permission_mode("bypassPermissions")
+        assert "→ bypassPermissions" in session.set_permission_mode("bypassPermissions").text
 
 
 # ── allow_bypass: false ─────────────────────────────────────────────
@@ -181,7 +183,7 @@ class TestAManagedFloor:
 class TestBypassCanBeForbidden:
     def test_the_flag_cannot_start_a_session_in_bypass(self, tmp_path, monkeypatch):
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: false\n")
-        settings = load_settings(
+        settings = SettingsLoader.load(
             cli_overrides=CliOverrides.from_options(CliOptions(auto_approve=True)),
             project_dir=tmp_path,
         )
@@ -190,7 +192,7 @@ class TestBypassCanBeForbidden:
     @pytest.mark.asyncio
     async def test_the_command_cannot_enter_bypass(self, tmp_path, monkeypatch):
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: false\n")
-        session = _session(load_settings(project_dir=tmp_path))
+        session = _session(SettingsLoader.load(project_dir=tmp_path))
         result = await CommandHandler(session).handle("/bypass on")
         assert result.kind is CommandResultKind.ERROR
         assert "allow_bypass" in result.content
@@ -205,12 +207,12 @@ class TestBypassCanBeForbidden:
         ``Session.set_permission_mode``; the agent's slash-command tool
         refuses ``/bypass`` before it gets that far."""
         pack = _pack({"permissions": {"allow_bypass": False}})
-        settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
+        settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
         session = _session(settings)
 
-        status = session.set_permission_mode("bypassPermissions")
-        assert status.startswith("Error")
-        assert "group policy" in status
+        switch = session.set_permission_mode("bypassPermissions")
+        assert switch.refused
+        assert "group policy" in switch.text
         assert _mode(session) is PermissionMode.DEFAULT
 
         reply = await SlashCommandTool(session).slash_command("/bypass on")
@@ -223,13 +225,13 @@ class TestBypassCanBeForbidden:
         project.mkdir()
         (project / "config.yaml").write_text("permissions:\n  allow_bypass: false\n")
 
-        settings = load_settings(
+        settings = SettingsLoader.load(
             cli_overrides=CliOverrides.from_options(CliOptions(auto_approve=True)),
             project_dir=tmp_path,
         )
         assert settings.permissions.mode_policy == ModePolicy()
         assert settings.permissions.mode == "bypassPermissions"
-        assert "→" in _session(settings).set_permission_mode("default")
+        assert "→" in _session(settings).set_permission_mode("default").text
 
 
 # ── off returns where the session started ───────────────────────────
@@ -239,7 +241,7 @@ class TestOffRestoresTheStartingMode:
     @pytest.mark.asyncio
     async def test_off_returns_to_the_starting_mode(self, tmp_path):
         _user_config("permissions:\n  mode: acceptEdits\n")
-        session = _session(load_settings(project_dir=tmp_path))
+        session = _session(SettingsLoader.load(project_dir=tmp_path))
         handler = CommandHandler(session)
 
         await handler.handle("/bypass on")
@@ -254,14 +256,14 @@ class TestOffRestoresTheStartingMode:
     @pytest.mark.asyncio
     async def test_leaving_the_starting_mode_itself_goes_to_default(self, tmp_path):
         _user_config("permissions:\n  mode: acceptEdits\n")
-        session = _session(load_settings(project_dir=tmp_path))
+        session = _session(SettingsLoader.load(project_dir=tmp_path))
         await CommandHandler(session).handle("/accept off")
         assert _mode(session) is PermissionMode.DEFAULT
 
     @pytest.mark.asyncio
     async def test_off_under_a_floor_lands_on_the_floor(self, tmp_path, monkeypatch):
         _managed(tmp_path, monkeypatch, "permissions:\n  mode: acceptEdits\n")
-        session = _session(load_settings(project_dir=tmp_path))
+        session = _session(SettingsLoader.load(project_dir=tmp_path))
         handler = CommandHandler(session)
         await handler.handle("/plan on")
         await handler.handle("/plan off")
@@ -274,7 +276,7 @@ class TestOffRestoresTheStartingMode:
 class TestWithNoPolicyFullyAutomaticIsOneStepAway:
     @pytest.mark.asyncio
     async def test_bypass_runs_a_shell_command_without_asking(self, tmp_path):
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
         assert settings.permissions.mode_policy == ModePolicy()
         session = _session(settings)
 
@@ -286,7 +288,7 @@ class TestWithNoPolicyFullyAutomaticIsOneStepAway:
         assert decision is PermissionDecision.ALLOW
 
     def test_the_auto_approve_flag_runs_a_shell_command_without_asking(self, tmp_path):
-        settings = load_settings(
+        settings = SettingsLoader.load(
             cli_overrides=CliOverrides.from_options(CliOptions(auto_approve=True)),
             project_dir=tmp_path,
         )
@@ -336,10 +338,10 @@ class TestTheStricterTierWins:
     def test_a_managed_true_does_not_undo_a_group_false(self, tmp_path, monkeypatch):
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: true\n")
         pack = _pack({"permissions": {"allow_bypass": False}})
-        settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
-        status = _session(settings).set_permission_mode("bypassPermissions")
-        assert status.startswith("Error")
-        assert "group policy" in status
+        settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
+        switch = _session(settings).set_permission_mode("bypassPermissions")
+        assert switch.refused
+        assert "group policy" in switch.text
 
 
 # ── --auto-approve under allow_bypass: false ────────────────────────
@@ -347,11 +349,11 @@ class TestTheStricterTierWins:
 
 class TestAutoApproveIsIgnoredWhenBypassIsOff:
     def test_the_flag_loosens_nothing(self, tmp_path, monkeypatch, capsys):
-        from igni_core.cli.invocation import load_settings_from_options
+        from igni_core.cli.run_settings import CliSettingsLoader
 
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: false\n")
         monkeypatch.chdir(tmp_path)
-        settings = load_settings_from_options(CliOptions(auto_approve=True))
+        settings = CliSettingsLoader(CliOptions(auto_approve=True)).load()
 
         perms = settings.permissions
         assert perms.mode == "default"
@@ -360,19 +362,19 @@ class TestAutoApproveIsIgnoredWhenBypassIsOff:
         assert "--auto-approve is turned off" in capsys.readouterr().err
 
     def test_other_flags_still_apply(self, tmp_path, monkeypatch):
-        from igni_core.cli.invocation import load_settings_from_options
+        from igni_core.cli.run_settings import CliSettingsLoader
 
         _managed(tmp_path, monkeypatch, "permissions:\n  allow_bypass: false\n")
         monkeypatch.chdir(tmp_path)
-        settings = load_settings_from_options(CliOptions(auto_approve=True, no_web=True))
+        settings = CliSettingsLoader(CliOptions(auto_approve=True, no_web=True)).load()
         assert settings.permissions.shell_execute != "allow"
         assert settings.permissions.web_fetch == "deny"
 
     def test_without_the_policy_the_flag_is_untouched(self, tmp_path, monkeypatch):
-        from igni_core.cli.invocation import load_settings_from_options
+        from igni_core.cli.run_settings import CliSettingsLoader
 
         monkeypatch.chdir(tmp_path)
-        settings = load_settings_from_options(CliOptions(auto_approve=True))
+        settings = CliSettingsLoader(CliOptions(auto_approve=True)).load()
         assert settings.permissions.mode == "bypassPermissions"
         assert settings.permissions.shell_execute == "allow"
 
@@ -401,7 +403,9 @@ class TestARefusedFlipFromAnApprovalReachesThePerson:
             "for a looser mode."
         )
         session = MagicMock()
-        session.set_permission_mode = MagicMock(return_value=refusal)
+        session.set_permission_mode = MagicMock(
+            return_value=PermissionModeSwitch(refused=True, text=refusal)
+        )
         session.session_id = "s"
         session.main_team = MagicMock()
         session.main_team.acontinue_run = MagicMock(return_value=nothing())
@@ -409,9 +413,7 @@ class TestARefusedFlipFromAnApprovalReachesThePerson:
         session.hook_executor.execute = AsyncMock(
             return_value=SimpleNamespace(should_continue=False, message="")
         )
-        session.sub_agent_hitl = SimpleNamespace(
-            resolve=lambda *_: False, take_ready_restored=lambda: []
-        )
+        session.sub_agent_hitl = SubAgentHITLCoordinator()
         store = PendingRequirementsStore()
         store.register("req-1", PendingRequirement(req=MagicMock(), run_id="run-1"))
 

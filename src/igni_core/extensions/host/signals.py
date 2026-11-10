@@ -8,9 +8,9 @@ only the part of it the extension may see — a changed file outside its
 ``workspacePaths`` is not in the list it is handed.
 
 ``host.changed`` is produced here, from the others: whenever a signal
-fires, every property it reports a change of is announced as
-``Change{path, value}`` to the subscribers of ``changed`` that may see
-that property.
+fires, every property it reports a change of is announced as a
+:class:`Change` — the member's path, its new value, and the window it
+is about — to the subscribers of ``changed`` that may see that property.
 """
 
 from __future__ import annotations
@@ -19,9 +19,11 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol
 
+from pydantic import BaseModel
+
 from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.host.spec import HostSchema, ObjectSpec, SignalSpec
-from igni_core.extensions.host.wire import SignalMessage
+from igni_core.extensions.host.wire import Op, Request, SignalMessage
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +51,33 @@ class Subscriber:
         self.wires: set[str] = set()
 
 
-class SubscribeOutcome(dict[str, list[str]]):
+class SubscribeOutcome(BaseModel):
     """``{subscribed, not_granted, unknown}`` — told to the SDK so it can
     warn its author, never an error: subscribing to something ungranted
-    is allowed, and nothing arrives."""
+    is allowed, and nothing arrives.
+
+    The field order is the wire's key order; the SDKs and
+    ``docs/HOST_MODEL_PROTOCOL.md`` show it so."""
+
+    subscribed: list[str] = []
+    not_granted: list[str] = []
+    unknown: list[str] = []
+
+
+class Change(BaseModel):
+    """One change anywhere in the model, as ``host.changed`` reports it.
+
+    The shape the host schema publishes for the root signal
+    (``docs/host-schema.json``, ``Change``): the member that changed,
+    its new value, and the window it is about, for a per-window member.
+    """
+
+    #: The member that changed, ``object.member``.
+    path: str
+    #: Its new value, as the change signal carried it.
+    value: Any
+    #: The window, for a per-window member.
+    window: str | None = None
 
 
 class SignalBus:
@@ -102,19 +127,27 @@ class SignalBus:
 
     def subscribe(self, subscriber: Subscriber, wires: list[str]) -> SubscribeOutcome:
         grants = self._grants_for(subscriber.extension_id)
-        outcome = SubscribeOutcome(subscribed=[], not_granted=[], unknown=[])
+        outcome = SubscribeOutcome()
         for wire in wires:
             found = self._signals.get(wire)
             if found is None:
-                outcome["unknown"].append(wire)
+                outcome.unknown.append(wire)
                 continue
             spec, sig = found
             subscriber.wires.add(wire)
             if grants is None or not grants.allows(spec.permission_of(sig)):
-                outcome["not_granted"].append(wire)
+                outcome.not_granted.append(wire)
             else:
-                outcome["subscribed"].append(wire)
+                outcome.subscribed.append(wire)
         return outcome
+
+    def answer(self, subscriber: Subscriber, request: Request) -> SubscribeOutcome | None:
+        """A ``subscribe`` or ``unsubscribe`` request: the outcome of a
+        subscribe; nothing for an unsubscribe."""
+        if request.op is Op.SUBSCRIBE:
+            return self.subscribe(subscriber, request.signals)
+        self.unsubscribe(subscriber, request.signals)
+        return None
 
     def unsubscribe(self, subscriber: Subscriber, wires: list[str]) -> None:
         subscriber.wires.difference_update(wires)
@@ -143,12 +176,15 @@ class SignalBus:
         *,
         content: Content | None = None,
         only: str | None = None,
+        window: str | None = None,
     ) -> list[str]:
         """Fire one signal. Returns the extensions told.
 
         ``content`` replaces ``value`` with what each listener may see;
         ``only`` addresses one extension — for a signal about that
-        extension alone, which telling the others would leak.
+        extension alone, which telling the others would leak; ``window``
+        names the window the signal is about, which the ``changed``
+        report of a per-window member carries.
         """
         found = self._signals.get(wire)
         if found is None:
@@ -176,9 +212,10 @@ class SignalBus:
                     if prop is None or not grants.allows(owner.permission_of(prop)):
                         continue
                     path = f"{owner.path}.{prop_name}" if owner.path else prop_name
-                    window = seen.get("window") if isinstance(seen, dict) else None
-                    change = {"path": path, "value": seen, "window": window}
-                    self._deliver(subscriber, SignalMessage(signal=CHANGED, value=change))
+                    change = Change(path=path, value=seen, window=window)
+                    self._deliver(
+                        subscriber, SignalMessage(signal=CHANGED, value=change.model_dump())
+                    )
         return told
 
     @staticmethod
@@ -208,4 +245,12 @@ class _Nothing:
 
 _NOTHING: Any = _Nothing()
 
-__all__ = ["CHANGED", "Content", "SignalBus", "Sink", "SubscribeOutcome", "Subscriber"]
+__all__ = [
+    "CHANGED",
+    "Change",
+    "Content",
+    "SignalBus",
+    "Sink",
+    "SubscribeOutcome",
+    "Subscriber",
+]

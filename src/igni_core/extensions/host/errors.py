@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from igni_core.extensions.host.spec import ErrorCode
+from igni_core.extensions.host.wire import ErrorBody
 
 
 class HostModelError(Exception):
@@ -17,6 +18,10 @@ class HostModelError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+    def body(self) -> ErrorBody:
+        """What a reply carries for this refusal."""
+        return ErrorBody(code=self.code, message=self.message)
 
     @classmethod
     def not_granted(cls, extension_id: str, what: str, permission: str) -> HostModelError:

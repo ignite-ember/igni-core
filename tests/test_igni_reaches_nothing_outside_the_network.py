@@ -11,7 +11,7 @@ the request path is the one a customer's on-premises model gets.
 
 The `Session` path, driven the way the app drives it:
 
-- settings loaded the CLI's way (`load_settings_from_options`), from a
+- settings loaded the CLI's way (`CliSettingsLoader`), from a
   `~/.igni/config.yaml` an administrator would write, with `--no-web`;
 - `Session(...)` construction;
 - the boot background services the backend starts once the ready line is
@@ -64,13 +64,13 @@ from openai.types.chat.chat_completion_chunk import Choice as ChunkChoice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta
 from pydantic import BaseModel, ConfigDict
 
-from igni_core.cli.invocation import load_settings_from_options
 from igni_core.cli.options import CliOptions
+from igni_core.cli.run_settings import CliSettingsLoader
 from igni_core.core.activity import background
 from igni_core.core.config.settings import Settings
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.core import Session
-from igni_core.core.utils.update_checker import check_for_update
+from igni_core.core.utils.update_checker import UpdateChecker
 from tests.egress_guard import EgressGuard, EgressLog, InternalNetwork
 
 #: Whether the schema has the one switch that would turn D11 off.
@@ -217,7 +217,7 @@ class AirGappedInstall:
         config = self.home / CONFIG_DIR / "config.yaml"
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text(self._config_yaml(model_url))
-        return load_settings_from_options(CliOptions(no_web=not AIR_GAPPED_SETTING_EXISTS))
+        return CliSettingsLoader(CliOptions(no_web=not AIR_GAPPED_SETTING_EXISTS)).load()
 
     @staticmethod
     def _config_yaml(model_url: str) -> str:
@@ -251,8 +251,8 @@ class AirGappedInstall:
 
     async def _start_and_answer(self, settings: Settings, message: str) -> str:
         session = Session(settings, project_dir=self.project_dir)
-        session.start_boot_background_services()  # D11, as BackendApp does after ready
-        await check_for_update()  # D9, as the banner and the RPC do
+        session.start_marketplace_refresh_background()  # D11, as BackendApp does after ready
+        await UpdateChecker().check()  # D9, as the banner and the RPC do
         await session.fire_session_start_hook()
         response = await session.handle_message(message)
         await background.drain()

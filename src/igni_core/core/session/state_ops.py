@@ -14,11 +14,10 @@ that flip runtime state without rebuilding the agent:
 
 Both broadcast the corresponding change event to attached
 clients (``output_style_changed`` / ``permission_mode_changed``)
-so the FE's status chip updates without polling. Broadcast
-payloads use the typed :class:`OutputStyleChangedBroadcast` /
-:class:`PermissionModeChangedBroadcast` schemas (Rule 1 /
-Pattern 2), sourced from the canonical
-:mod:`~igni_core.core.session.schemas` module.
+so the FE's status chip updates without polling. The
+broadcasts are the typed :class:`OutputStyleChangedEvent` /
+:class:`PermissionModeChangedEvent` from
+:mod:`~igni_core.core.session.schemas`.
 
 The ``# Output style:`` block encoding — the marker prefix and
 the empty-body-prune rule — is owned by
@@ -30,20 +29,23 @@ list itself.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from igni_core.core.broadcast_schema import BroadcastEvent
-from igni_core.core.config.permission_eval import PermissionMode
+from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
 from igni_core.core.config.permission_eval.mode_policy import ModePolicy
+from igni_core.core.config.schemas.permissions import PermissionsConfig
+from igni_core.core.session.broadcast import BroadcastBus
+from igni_core.core.session.output_style_selection import OutputStyleSelection
 from igni_core.core.session.schemas import (
-    OutputStyleChangedBroadcast,
-    PermissionModeChangedBroadcast,
+    OutputStyleChangedEvent,
+    PermissionModeChangedEvent,
+    PermissionModeSwitch,
 )
 
 if TYPE_CHECKING:
     from agno.agent import Agent
-
-    from igni_core.core.session.core import Session
 
 
 class OutputStyleInstructionsPatcher:
@@ -89,32 +91,44 @@ class OutputStyleInstructionsPatcher:
         team.instructions = pruned
 
 
-class RuntimeModeCoordinator:
-    """Owns runtime-state mutations that don't require an agent rebuild.
+@dataclass(frozen=True)
+class RuntimeModeDeps:
+    """What the mode coordinator reads and writes.
 
-    Constructor holds a reference to the session so the coordinator
-    can reach ``main_team`` (which is reassigned by compact /
-    plugin-reload / MCP-rebuild — reading through ``self._session``
-    guarantees the live instance).
+    * ``evaluator_ref`` — the live evaluator; a plugin reload replaces it.
+    * ``output_style`` — the session's style selection (never replaced).
+    * ``team_ref`` — the main team; compaction, plugin reload and
+      MCP rebuild all replace it.
+    * ``bus`` — where the change events go.
+    * ``permissions`` — the settings the session started with: its
+      starting mode and the organisation's mode policy. ``None`` resolves
+      the starting mode from the evaluator and applies no policy.
     """
 
-    def __init__(self, session: Session) -> None:
-        self._session = session
+    evaluator_ref: Callable[[], PermissionEvaluator]
+    output_style: OutputStyleSelection
+    team_ref: Callable[[], Agent | None]
+    bus: BroadcastBus
+    permissions: PermissionsConfig | None = None
+
+
+class RuntimeModeCoordinator:
+    """Owns runtime-state mutations that don't require an agent rebuild."""
+
+    def __init__(self, deps: RuntimeModeDeps) -> None:
+        self._deps = deps
         self._patcher = OutputStyleInstructionsPatcher()
         # Recorded once, at session start: the mode the session began in
         # (where ``off`` returns to) and the organisation's mode policy
-        # (the floor and ``allow_bypass``). Read from the settings the
-        # session was built with; a stub without settings resolves the
-        # starting mode from its evaluator on first use and has no policy.
-        perms = getattr(getattr(session, "settings", None), "permissions", None)
+        # (the floor and ``allow_bypass``).
+        perms = deps.permissions
         self._starting_mode: PermissionMode | None = None
-        raw_start = getattr(perms, "mode", None)
-        if isinstance(raw_start, str):
+        if perms is not None:
             try:
-                self._starting_mode = PermissionMode(raw_start)
+                self._starting_mode = PermissionMode(perms.mode)
             except ValueError:
                 self._starting_mode = None
-        policy = getattr(perms, "mode_policy", None)
+        policy = perms.mode_policy if perms is not None else None
         self._policy: ModePolicy = policy if isinstance(policy, ModePolicy) else ModePolicy()
 
     @property
@@ -127,8 +141,7 @@ class RuntimeModeCoordinator:
         """The mode this session started in — where ``/accept off`` and
         friends return to."""
         if self._starting_mode is None:
-            evaluator = getattr(self._session, "permission_evaluator", None)
-            mode = getattr(evaluator, "mode", None)
+            mode = self._deps.evaluator_ref().mode
             self._starting_mode = (
                 mode if isinstance(mode, PermissionMode) else PermissionMode.DEFAULT
             )
@@ -140,77 +153,68 @@ class RuntimeModeCoordinator:
         Returns a short status string for the slash command to echo.
         Unknown style names produce a list of available options.
         """
-        session = self._session
+        selection = self._deps.output_style
         clean = (name or "").strip()
-        if clean not in session.output_styles:
-            available = sorted(session.output_styles)
+        if clean not in selection.styles:
+            available = sorted(selection.styles)
             return (
                 f"Error: unknown output style {clean!r}. "
                 f"Available: {', '.join(available) if available else '(none configured)'}"
             )
-        prev = session.active_output_style
-        session.set_active_output_style(clean)
+        prev = selection.active
+        selection.select(clean)
         self._patcher.apply(
-            session.main_team,
+            self._deps.team_ref(),
             clean,
-            session.output_styles[clean].body,
+            selection.styles[clean].body,
         )
         # Broadcast so the FE can show the active style in a status
         # chip (parallel to permission_mode_changed).
-        session.broadcast_bus.emit(
-            BroadcastEvent(
-                channel="output_style_changed",
-                payload=OutputStyleChangedBroadcast(style=clean, previous=prev).model_dump(),
-            )
-        )
+        self._deps.bus.emit(OutputStyleChangedEvent(style=clean, previous=prev))
         if prev == clean:
             return f"Output style already {clean}."
         return f"Output style: {prev or '(none)'} → {clean}."
 
-    def set_permission_mode(self, mode: str) -> str:
+    def set_permission_mode(self, mode: str) -> PermissionModeSwitch:
         """Flip the live ``PermissionEvaluator`` mode (e.g. into or
         out of plan mode) without rebuilding the agent.
 
         Broadcasts a ``permission_mode_changed`` push so the FE's
-        mode badge updates without polling. Returns a short status
-        string for the caller (slash command, ``exit_plan_mode``
-        tool) to surface.
+        mode badge updates without polling. Returns a
+        :class:`PermissionModeSwitch`: whether it was refused or changed
+        anything, and the status line for the caller (slash command,
+        ``exit_plan_mode`` tool) to surface.
         """
-        session = self._session
         try:
             new_mode = PermissionMode(mode)
         except ValueError:
             valid = ", ".join(m.value for m in PermissionMode)
-            return f"Error: unknown permission mode {mode!r}. Valid: {valid}"
+            return PermissionModeSwitch(
+                refused=True, text=f"Error: unknown permission mode {mode!r}. Valid: {valid}"
+            )
         # Every runtime switch — the slash commands, the HITL "accept all
         # edits" flip, ``enter_plan_mode`` and plan approval — arrives here,
         # so this is the one place the organisation's floor and
-        # ``allow_bypass: false`` are enforced. Callers match on "Error".
+        # ``allow_bypass: false`` are enforced.
         refusal = self._policy.refusal(new_mode)
         if refusal is not None:
-            return refusal
+            return PermissionModeSwitch(refused=True, text=refusal)
         # Pin the starting mode before the first switch changes what the
         # evaluator would report.
         _ = self.starting_mode
-        prev = session.permission_evaluator.mode
-        session.permission_evaluator.mode = new_mode
+        evaluator = self._deps.evaluator_ref()
+        prev = evaluator.mode
+        evaluator.mode = new_mode
         if prev == new_mode:
-            return f"Permission mode already {new_mode.value}."
-        # ``mode="json"`` collapses the :class:`PermissionMode`
-        # enum fields to their ``.value`` strings so downstream
-        # broadcast consumers keep the historic wire shape.
-        session.broadcast_bus.emit(
-            BroadcastEvent(
-                channel="permission_mode_changed",
-                payload=PermissionModeChangedBroadcast(mode=new_mode, previous=prev).model_dump(
-                    mode="json"
-                ),
-            )
+            return PermissionModeSwitch(text=f"Permission mode already {new_mode.value}.")
+        self._deps.bus.emit(PermissionModeChangedEvent(mode=new_mode, previous=prev))
+        return PermissionModeSwitch(
+            changed=True, text=f"Permission mode: {prev.value} → {new_mode.value}."
         )
-        return f"Permission mode: {prev.value} → {new_mode.value}."
 
 
 __all__ = [
     "OutputStyleInstructionsPatcher",
     "RuntimeModeCoordinator",
+    "RuntimeModeDeps",
 ]

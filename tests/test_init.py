@@ -13,10 +13,11 @@ from igni_core.core.init import (
     BUILT_IN_HOOKS,
     BuiltInHookSpec,
     HookDefinition,
+    InitConfig,
     ProjectInitializer,
-    initialize_project,
 )
 from igni_core.core.paths import CONFIG_DIR, PROJECT_CONTEXT_FILE
+from igni_core.core.workspace_trust import process_trust
 
 # All tests patch Path.home() so that ~/.igni/ writes go to tmp_path
 # instead of the real home directory.
@@ -29,25 +30,38 @@ def _patch_home(tmp_path):
     return patch.object(Path, "home", return_value=fake_home)
 
 
+def _initialize(project_dir: Path, config: InitConfig | None = None) -> bool:
+    """Run the initializer under the suite's trust service; ``True`` on first run."""
+    return (
+        ProjectInitializer(
+            project_dir=project_dir,
+            trust=process_trust(),
+            config=config or InitConfig(),
+        )
+        .run()
+        .first_run
+    )
+
+
 class TestInitializeProject:
     def test_creates_marker_file(self, tmp_path):
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
             assert (tmp_path / "home" / CONFIG_DIR / ".initialized").exists()
 
     def test_returns_true_on_first_run(self, tmp_path):
         with _patch_home(tmp_path):
-            assert initialize_project(tmp_path) is True
+            assert _initialize(tmp_path) is True
 
     def test_returns_false_on_second_run(self, tmp_path):
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
-            assert initialize_project(tmp_path) is False
+            _initialize(tmp_path)
+            assert _initialize(tmp_path) is False
 
     def test_updates_run_on_second_call(self, tmp_path):
         """Second run still updates built-in files (agents, skills, hooks)."""
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
             # Delete project hooks
             hooks = tmp_path / CONFIG_DIR / "hooks"
             if hooks.exists():
@@ -56,12 +70,12 @@ class TestInitializeProject:
                 shutil.rmtree(hooks)
 
             # Second run should recreate hooks (update always runs)
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
             assert (tmp_path / CONFIG_DIR / "hooks").exists()
 
     def test_creates_ember_directory(self, tmp_path):
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
             assert (tmp_path / CONFIG_DIR).is_dir()
 
     def test_existing_ember_dir_not_destroyed(self, tmp_path):
@@ -70,7 +84,7 @@ class TestInitializeProject:
         (igni_dir / "custom.txt").write_text("keep me")
 
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
             assert (igni_dir / "custom.txt").read_text() == "keep me"
 
 
@@ -108,7 +122,7 @@ class TestHomeModelMigration:
             "      vision: false\n",
         )
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         data = yaml.safe_load(path.read_text()) or {}
         # The whole models block tidied away — no leftover empty
         # registry or empty default.
@@ -133,7 +147,7 @@ class TestHomeModelMigration:
             "      vision: false\n",
         )
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         data = yaml.safe_load(path.read_text()) or {}
         assert "models" not in data
 
@@ -154,7 +168,7 @@ class TestHomeModelMigration:
         )
         before = path.read_text()
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         assert path.read_text() == before
 
     def test_mixed_config_keeps_only_custom(self, tmp_path):
@@ -178,7 +192,7 @@ class TestHomeModelMigration:
             "      api_key: my_token\n",
         )
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         data = yaml.safe_load(path.read_text()) or {}
         assert "MiniMax-M2.5" not in data["models"]["registry"]
         assert "my-model" in data["models"]["registry"]
@@ -193,7 +207,7 @@ class TestHomeModelMigration:
         )
         before = path.read_text()
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         assert path.read_text() == before
 
 
@@ -209,7 +223,7 @@ class TestAgentCopy:
         project = tmp_path / "project"
         project.mkdir()
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
 
         copied = project / CONFIG_DIR / "agents"
         assert (copied / "editor.md").exists()
@@ -229,7 +243,7 @@ class TestAgentCopy:
         (agents_dir / "editor.md").write_text("user version")
 
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
         assert (agents_dir / "editor.md").read_text() == "user version"
 
 
@@ -246,7 +260,7 @@ class TestSkillCopy:
         project = tmp_path / "project"
         project.mkdir()
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
 
         copied = project / CONFIG_DIR / "skills"
         assert (copied / "commit" / "SKILL.md").exists()
@@ -263,14 +277,14 @@ class TestSkillCopy:
         project = tmp_path / "project"
         project.mkdir()
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
         assert not (project / CONFIG_DIR / "skills" / "broken").exists()
 
 
 class TestHookProvisioning:
     def test_writes_hook_scripts(self, tmp_path):
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         hooks_dir = tmp_path / CONFIG_DIR / "hooks"
         for hook in BUILT_IN_HOOKS:
             script = hooks_dir / hook.filename
@@ -279,7 +293,7 @@ class TestHookProvisioning:
 
     def test_registers_hooks_in_settings(self, tmp_path):
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         # Settings written to project .igni/settings.json
         settings = json.loads((tmp_path / CONFIG_DIR / "settings.json").read_text())
         assert "hooks" in settings
@@ -297,7 +311,7 @@ class TestHookProvisioning:
         )
 
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         settings = json.loads((project_ember / "settings.json").read_text())
         assert settings["permissions"]["allow"] == ["Read"]
         assert "hooks" in settings
@@ -315,7 +329,7 @@ class TestTheProjectContextFile:
 
     def test_it_creates_the_project_context_file(self, tmp_path):
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         path = tmp_path / PROJECT_CONTEXT_FILE
         assert path.exists()
         assert "Project Context" in path.read_text()
@@ -324,7 +338,7 @@ class TestTheProjectContextFile:
         """The point of the rename, pinned. Asserting the constant alone
         would pass if somebody set it back."""
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
 
         assert (tmp_path / "igni.md").exists()
         assert not (tmp_path / "ember.md").exists()
@@ -332,7 +346,7 @@ class TestTheProjectContextFile:
     def test_it_does_not_overwrite_an_existing_one(self, tmp_path):
         (tmp_path / PROJECT_CONTEXT_FILE).write_text("my custom context")
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         assert (tmp_path / PROJECT_CONTEXT_FILE).read_text() == "my custom context"
 
     def test_an_existing_ember_md_is_still_read(self, tmp_path):
@@ -365,7 +379,7 @@ class TestChecksumUpdate:
 
         # First init — copies v1
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
         assert (project / CONFIG_DIR / "agents" / "editor.md").read_text() == "v1 content"
 
         # Simulate package update — change the source file
@@ -373,7 +387,7 @@ class TestChecksumUpdate:
 
         # Second run — should overwrite since user didn't modify
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
         assert (project / CONFIG_DIR / "agents" / "editor.md").read_text() == "v2 content"
 
     def test_user_modified_file_kept_with_new(self, tmp_path):
@@ -384,7 +398,7 @@ class TestChecksumUpdate:
 
         # First init
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
 
         # User modifies the file
         (project / CONFIG_DIR / "agents" / "editor.md").write_text("my custom agent")
@@ -394,7 +408,7 @@ class TestChecksumUpdate:
 
         # Second run — should keep user version and write .new
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
         assert (project / CONFIG_DIR / "agents" / "editor.md").read_text() == "my custom agent"
         assert (project / CONFIG_DIR / "agents" / "editor.md.new").read_text() == "v2 content"
 
@@ -406,14 +420,14 @@ class TestChecksumUpdate:
 
         # First init
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
 
         # Add new agent to package
         (fake_root / "bundled_agents" / "new-agent.md").write_text("new agent content")
 
         # Second run — should copy the new file
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
         assert (project / CONFIG_DIR / "agents" / "new-agent.md").read_text() == "new agent content"
 
     def test_user_custom_files_not_deleted(self, tmp_path):
@@ -423,14 +437,14 @@ class TestChecksumUpdate:
         project.mkdir()
 
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
 
         # User creates their own custom agent
         (project / CONFIG_DIR / "agents" / "my-custom.md").write_text("custom agent")
 
         # Second run — custom file should survive
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
         assert (project / CONFIG_DIR / "agents" / "my-custom.md").read_text() == "custom agent"
 
     def test_checksums_file_created(self, tmp_path):
@@ -439,7 +453,7 @@ class TestChecksumUpdate:
         project = tmp_path / "project"
         project.mkdir()
         with _patch_home(tmp_path):
-            ProjectInitializer.initialize(project, package_dir=fake_root)
+            _initialize(project, InitConfig(package_dir=fake_root))
         assert (project / CONFIG_DIR / ".checksums.json").exists()
 
 
@@ -492,11 +506,11 @@ class TestBuiltInHookSchema:
         assert d.background is True
 
     def test_registered_definition_uses_wire_type_field(self, tmp_path):
-        # End-to-end: after ``initialize_project`` the settings.json
+        # End-to-end: after ``ProjectInitializer.run`` the settings.json
         # entry must round-trip with the wire alias applied (``type``
         # present, ``kind`` absent).
         with _patch_home(tmp_path):
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
         settings = json.loads((tmp_path / CONFIG_DIR / "settings.json").read_text())
         for event_hooks in settings["hooks"].values():
             for entry in event_hooks:

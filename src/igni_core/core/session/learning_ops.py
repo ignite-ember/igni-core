@@ -1,9 +1,9 @@
 """Learning-machine coordinator for :class:`Session`.
 
 Extracted from :mod:`igni_core.core.session.core` — the
-``_learning`` field plus the four public methods that own the
+``_learning`` field plus the methods that own the
 learning-context injection / extraction flow (``inject_learnings``,
-``_inject_learnings``, ``extract_learnings``) plus the two
+``extract_learnings``) plus the two
 learning-machine accessors (``learning``, ``learning_machine``)
 migrate to one class here.
 

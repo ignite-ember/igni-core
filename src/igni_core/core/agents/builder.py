@@ -50,12 +50,8 @@ class AgentBuilder:
     # ── Test seams (class-level) ────────────────────────────────
     #
     # Three ClassVar slots that let tests substitute the three
-    # collaborator classes without patching module-level names on
-    # an external shim. Prefer ``patch.object(AgentBuilder, '_agent_cls', mock)``
-    # over ``patch("igni_core.core.pool.Agent", ...)``: the class
-    # attribute is the canonical seam; the module-level shim was
-    # only historically necessary because the free ``build_agent``
-    # looked up ``Agent`` via ``globals()``.
+    # collaborator classes without patching module-level names:
+    # ``patch.object(AgentBuilder, '_agent_cls', mock)``.
     #
     # ``_agent_cls`` stays ``None`` in prod so
     # :meth:`_resolve_agent_cls` performs the lazy Agno import at
@@ -191,6 +187,7 @@ class AgentBuilder:
                 base_dir=ctx.base_dir,
                 permissions=permissions,
                 broadcast=ctx.broadcast,
+                supervisor=ctx.supervisor,
             )
             tools = registry.resolve(definition.tools)
 

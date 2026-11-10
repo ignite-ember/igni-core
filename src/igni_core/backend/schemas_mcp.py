@@ -45,29 +45,29 @@ from igni_core.core.mcp.schemas import MCPPrompt, MCPResource
 
 if TYPE_CHECKING:
     from igni_core.core.mcp.client import MCPClientManager
+    from igni_core.core.session.mcp_ops import McpFailureCache
 
 
 class MCPToolToggleResult(BaseModel):
-    """Wire shape for :meth:`McpController.set_tool_enabled` —
-    the panel reads it back to confirm the row's new state without
-    needing a second RPC roundtrip."""
+    """Result of enabling or disabling one tool of an MCP server.
 
-    server: str
-    tool: str
-    enabled: bool
+    Echoes the tool's new state, so no second call is needed to
+    confirm it."""
+
+    server: str = Field(description="Name of the MCP server the tool belongs to.")
+    tool: str = Field(description="Name of the tool.")
+    enabled: bool = Field(description="The tool's state now: `true` if the agent may use it.")
 
 
 class MCPServerSummary(BaseModel):
-    """Cheap two-field ``(name, connected)`` row returned by
-    :meth:`McpController.servers`.
+    """An MCP server's name and whether it is connected.
 
-    Used when the panel just needs the connected-flag column
-    without paying for the tools / resources / prompts fetch
-    per row.
+    A cheap listing; use the server details call for tools,
+    resources and prompts.
     """
 
-    name: str
-    connected: bool
+    name: str = Field(description="The server's name, as configured.")
+    connected: bool = Field(description="`true` when igni is currently connected to the server.")
 
     @classmethod
     def from_manager(cls, mgr: MCPClientManager, name: str) -> MCPServerSummary:
@@ -76,38 +76,37 @@ class MCPServerSummary(BaseModel):
 
 
 class MCPServerSnapshot(BaseModel):
-    """Full expanded-row payload returned by
-    :meth:`McpController.server_details`.
+    """Full details of one configured MCP server: connection state,
+    tools, resources and prompts."""
 
-    Nine wire fields — preserved verbatim from the previous
-    raw-dict shape:
-
-    * ``name`` — server key from the config file.
-    * ``connected`` — currently in ``mgr.list_connected()``.
-    * ``transport`` — ``config.type`` (``stdio`` / ``sse``) or
-      ``"unknown"`` if no config was found.
-    * ``tool_names`` — every tool the server advertised at connect
-      time (including individually-disabled ones).
-    * ``tool_descriptions`` — ``{tool_name: description}``.
-    * ``tools_disabled`` — tools the user has toggled off.
-    * ``resources`` — MCP ``list_resources`` result (async fetch),
-      typed as :class:`MCPResource` for the wire.
-    * ``prompts`` — MCP ``list_prompts`` result (async fetch),
-      typed as :class:`MCPPrompt` for the wire.
-    * ``error`` — last connection error string, or ``""``.
-    * ``policy_blocked`` — managed policy denies this server.
-    """
-
-    name: str
-    connected: bool
-    transport: str
-    tool_names: list[str] = Field(default_factory=list)
-    tool_descriptions: dict[str, str] = Field(default_factory=dict)
-    tools_disabled: list[str] = Field(default_factory=list)
-    resources: list[MCPResource] = Field(default_factory=list)
-    prompts: list[MCPPrompt] = Field(default_factory=list)
-    error: str = ""
-    policy_blocked: bool = False
+    name: str = Field(description="The server's name, as configured.")
+    connected: bool = Field(description="`true` when igni is currently connected to the server.")
+    transport: str = Field(
+        description="How igni talks to the server, e.g. `stdio` or `sse`; `unknown` if it has no config."
+    )
+    tool_names: list[str] = Field(
+        default_factory=list,
+        description="Every tool the server offered when it connected, including disabled ones.",
+    )
+    tool_descriptions: dict[str, str] = Field(
+        default_factory=dict, description="Each tool's description, keyed by tool name."
+    )
+    tools_disabled: list[str] = Field(
+        default_factory=list,
+        description="Tools the user has turned off; the agent cannot use them.",
+    )
+    resources: list[MCPResource] = Field(
+        default_factory=list,
+        description="Resources the server offers; empty when it is not connected.",
+    )
+    prompts: list[MCPPrompt] = Field(
+        default_factory=list,
+        description="Prompts the server offers; empty when it is not connected.",
+    )
+    error: str = Field(default="", description="The last connection error; empty if none.")
+    policy_blocked: bool = Field(
+        default=False, description="`true` when an administrator policy forbids using this server."
+    )
 
     @classmethod
     async def from_manager(
@@ -115,7 +114,7 @@ class MCPServerSnapshot(BaseModel):
         mgr: MCPClientManager,
         name: str,
         *,
-        failures: dict[str, str] | None = None,
+        failures: McpFailureCache | None = None,
     ) -> MCPServerSnapshot:
         """Project one manager entry into the full panel snapshot.
 
@@ -124,8 +123,8 @@ class MCPServerSnapshot(BaseModel):
         connected servers. Disconnected servers skip both calls
         and get empty lists.
 
-        ``failures`` is the session-scoped ``{name: reason}``
-        cache built by
+        ``failures`` is the session-scoped :class:`McpFailureCache`
+        written by
         :class:`~igni_core.core.session.startup.mcp.McpInitPhase`
         (and the ``/mcp`` command). When omitted the ``error``
         field is empty — matches the pre-refactor "no side
@@ -143,6 +142,6 @@ class MCPServerSnapshot(BaseModel):
             tools_disabled=mgr.get_disabled_tools(name),
             resources=await mgr.get_resources(name) if connected else [],
             prompts=await mgr.get_prompts(name) if connected else [],
-            error=(failures or {}).get(name, ""),
+            error=failures.reason(name) if failures is not None else "",
             policy_blocked=mgr.is_policy_denied(name),
         )

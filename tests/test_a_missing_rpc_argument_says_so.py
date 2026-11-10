@@ -34,6 +34,7 @@ from typing import Any
 import pytest
 
 from igni_core.backend.message_dispatcher import MessageDispatcher
+from igni_core.protocol import messages as msg
 
 
 class _Transport:
@@ -46,10 +47,8 @@ class _Transport:
         self.sent.append(message)
 
 
-class _Request:
-    def __init__(self, method: str, args: dict) -> None:
-        self.method = method
-        self.args = args
+def _Request(method: str, args: dict) -> msg.RPCRequest:
+    return msg.RPCRequest(method=method, args=args)
 
 
 def _dispatcher(transport: _Transport, table: dict) -> MessageDispatcher:

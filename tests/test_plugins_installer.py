@@ -23,7 +23,6 @@ from igni_core.core.plugins.git import GitClient
 from igni_core.core.plugins.installer import (
     PluginError,
     PluginInstaller,
-    _looks_like_sha,
 )
 from igni_core.core.plugins.state import load_state
 
@@ -92,13 +91,13 @@ def _file_url(path: Path) -> str:
 
 def test_looks_like_sha() -> None:
     """Heuristic for clone-then-checkout vs --branch routing."""
-    assert _looks_like_sha("a1b2c3d")
-    assert _looks_like_sha("a" * 40)
-    assert not _looks_like_sha("main")
-    assert not _looks_like_sha("v1.0.0")
-    assert not _looks_like_sha("abc")  # too short
-    assert not _looks_like_sha("g" * 8)  # non-hex
-    assert not _looks_like_sha("a" * 41)  # too long
+    assert GitClient.looks_like_sha("a1b2c3d")
+    assert GitClient.looks_like_sha("a" * 40)
+    assert not GitClient.looks_like_sha("main")
+    assert not GitClient.looks_like_sha("v1.0.0")
+    assert not GitClient.looks_like_sha("abc")  # too short
+    assert not GitClient.looks_like_sha("g" * 8)  # non-hex
+    assert not GitClient.looks_like_sha("a" * 41)  # too long
 
 
 # ── Install ─────────────────────────────────────────────────────────
@@ -285,7 +284,7 @@ def test_install_with_ref_sha_uses_clone_then_checkout(tmp_path: Path) -> None:
     # Note: shallow clone (--depth 1) only includes HEAD, so we can't
     # check out arbitrary historical SHAs. Use the non-shallow path
     # by passing the initial SHA as ref — installer should detect SHA
-    # via ``_looks_like_sha`` and do clone (default-branch) +
+    # via ``GitClient.looks_like_sha`` and do clone (default-branch) +
     # checkout. With shallow clone this would fail, which is what
     # we'd want surfaced. For this test, use a tag instead since git
     # clone --branch handles tags fine and exercises the same SHA

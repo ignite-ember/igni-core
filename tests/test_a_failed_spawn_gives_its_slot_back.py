@@ -8,7 +8,7 @@ never handed back. ``SpawnBudget`` had ``try_reserve`` and ``reset``
 (teardown only) and no way to undo a single reservation.
 
 The failure that matters is the one the model actually produces:
-inventing an agent name. ``AgentPool.get`` raises ``KeyError`` for it and
+inventing an agent name. ``AgentPool.get`` finds nothing for it and
 ``AgentSpawn._build_agent`` turns that into an error string — DPO-4 in
 the tracker found a phantom ``researcher`` named on 79 of 79 rejected
 sides. Twenty of those retired the session's whole 20-agent budget
@@ -28,8 +28,14 @@ from typing import Any
 import pytest
 
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
-from igni_core.core.tools.orchestrate_events import SpawnDeps
-from igni_core.core.tools.orchestrate_spawn import AgentSpawn, TeamSpawn
+from igni_core.core.tools.orchestrate_spawn_agent import AgentSpawn
+from igni_core.core.tools.orchestrate_spawn_team import TeamSpawn
+from igni_core.core.tools.orchestrate_spawn_types import (
+    OrchestrateScope,
+    SpawnContext,
+    SpawnDeps,
+    SpawnWiring,
+)
 
 
 class _Pool:
@@ -39,10 +45,13 @@ class _Pool:
 
     def get(self, name: str) -> Any:
         if name != "reviewer":
-            raise KeyError(f"Agent '{name}' not found")
+            return None
         return SimpleNamespace(name=name)
 
-    def get_definition(self, name: str) -> Any:
+    def missing(self, name: str) -> str:
+        return f"Agent '{name}' not found"
+
+    def get_entry(self, name: str) -> Any:
         return None
 
 
@@ -55,40 +64,42 @@ def _settings() -> Any:
     )
 
 
-async def _unreached_streamer(*_a: Any, **_kw: Any) -> tuple[str, list[str]]:
+async def _unreached_streamer(context: Any) -> tuple[str, list[str]]:
     raise AssertionError("streamed a spawn whose build failed")
 
 
 def _deps(**overrides: Any) -> SpawnDeps:
-    """All four fields are required on ``SpawnDeps``. The defaults here
+    """All five fields are required on ``SpawnDeps``. The defaults here
     fail loudly if a build-error path ever reaches them."""
     return SpawnDeps(
         **{
             "agent_streamer": _unreached_streamer,
             "team_streamer": _unreached_streamer,
-            "team_factory": lambda **_kw: SimpleNamespace(),
-            "model_registry_factory": lambda _s: SimpleNamespace(get_model=lambda: None),
+            "team_factory": lambda _spec: SimpleNamespace(),
+            "model_registry_factory": lambda _settings: SimpleNamespace(get_model=lambda: None),
+            "nested_toolkit_factory": lambda _spec: SimpleNamespace(),
             **overrides,
         }
     )
 
 
-def _base_kwargs(budget: SpawnBudget, tmp_path: Path) -> dict[str, Any]:
-    return {
-        "pool": _Pool(),
-        "settings": _settings(),
-        "session_id": "s1",
-        "hook_executor": None,
-        "on_progress": None,
-        "event_appender": None,
-        "subagent_registry": None,
-        "hitl_coordinator": None,
-        "budget": budget,
-        "current_depth": 0,
-        "max_depth": 3,
-        "project_dir": tmp_path,
+def _context(budget: SpawnBudget, tmp_path: Path, **overrides: Any) -> SpawnContext:
+    """The context every spawn in this file is built from."""
+    kwargs: dict[str, Any] = {
+        "scope": OrchestrateScope(
+            pool=_Pool(),
+            settings=_settings(),
+            budget=budget,
+            current_depth=0,
+            max_depth=3,
+            project_dir=tmp_path,
+        ),
+        "wiring": SpawnWiring(session_id="s1", hook_executor=None),
         "deps": _deps(),
+        "task": "t",
     }
+    kwargs.update(overrides)
+    return SpawnContext(**kwargs)
 
 
 class TestTheBudgetIsGivenBack:
@@ -98,10 +109,9 @@ class TestTheBudgetIsGivenBack:
         ``budget.count`` was 1 here."""
         budget = SpawnBudget(max_agents=20)
         spawn = AgentSpawn(
+            context=_context(budget, tmp_path, task="find the retry logic"),
             agent_name="researcher",
-            task="find the retry logic",
             isolation="",
-            **_base_kwargs(budget, tmp_path),
         )
 
         result = await spawn.run()
@@ -118,10 +128,9 @@ class TestTheBudgetIsGivenBack:
         budget = SpawnBudget(max_agents=20)
         for _ in range(20):
             await AgentSpawn(
+                context=_context(budget, tmp_path),
                 agent_name="researcher",
-                task="t",
                 isolation="",
-                **_base_kwargs(budget, tmp_path),
             ).run()
 
         assert budget.count == 0
@@ -134,10 +143,9 @@ class TestTheBudgetIsGivenBack:
         had to come back — not one."""
         budget = SpawnBudget(max_agents=20)
         spawn = TeamSpawn(
+            context=_context(budget, tmp_path),
             names=["reviewer", "reviewer", "reviewer", "reviewer", "researcher"],
-            task="t",
             mode="coordinate",
-            **_base_kwargs(budget, tmp_path),
         )
 
         result = await spawn.run()
@@ -152,16 +160,13 @@ class TestTheBudgetIsGivenBack:
         unenforceable."""
         budget = SpawnBudget(max_agents=20)
 
-        async def _stream(*_a, **_kw):
+        async def _stream(_context: Any) -> tuple[str, list[str]]:
             return "done", []
 
-        kwargs = _base_kwargs(budget, tmp_path)
-        kwargs["deps"] = _deps(agent_streamer=_stream)
         spawn = AgentSpawn(
+            context=_context(budget, tmp_path, deps=_deps(agent_streamer=_stream)),
             agent_name="reviewer",
-            task="t",
             isolation="",
-            **kwargs,
         )
 
         result = await spawn.run()
@@ -177,10 +182,9 @@ class TestTheBudgetIsGivenBack:
         budget = SpawnBudget(max_agents=1)
         budget.try_reserve(1)
         spawn = AgentSpawn(
+            context=_context(budget, tmp_path),
             agent_name="researcher",
-            task="t",
             isolation="",
-            **_base_kwargs(budget, tmp_path),
         )
 
         result = await spawn.run()
@@ -209,20 +213,19 @@ class TestRelease:
         """``run`` reads ``_reserve_count`` once and gives that same
         number back. Calling it a second time on the release side would
         be correct today and wrong the moment a subclass let ``_build``
-        change what it depends on — here ``_build`` empties ``_names``
+        change what it depends on — here ``_build`` empties the names
         on its way to failing, so a recomputed release returns 0."""
         budget = SpawnBudget(max_agents=20)
 
         class _Forgetful(TeamSpawn):
             def _build(self) -> str | None:
-                self._names = []
+                self._state.names = []
                 return "Error: nope"
 
         spawn = _Forgetful(
+            context=_context(budget, tmp_path),
             names=["reviewer", "reviewer", "researcher"],
-            task="t",
             mode="coordinate",
-            **_base_kwargs(budget, tmp_path),
         )
 
         assert await spawn.run() == "Error: nope"

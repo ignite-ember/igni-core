@@ -1,7 +1,7 @@
 """`/ctx` has to be able to build its own view model.
 
-``ContextBreakdownView`` declares ``breakdown: ContextBreakdown``, but
-the type is imported under ``TYPE_CHECKING`` and the module uses
+``ContextBreakdownView`` once declared ``breakdown: ContextBreakdown``
+with the type imported under ``TYPE_CHECKING`` and the module uses
 ``from __future__ import annotations`` — so the annotation stayed a
 string and pydantic never had the class. Every attempt to construct the
 view raised:
@@ -28,7 +28,7 @@ def test_the_view_can_be_constructed():
     """The regression itself: this raised PydanticUserError."""
     view = ContextBreakdownView.from_domain(_breakdown())
 
-    assert view.breakdown.total == 120_000
+    assert view.total == 120_000
 
 
 def test_it_renders_a_command_result():

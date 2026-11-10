@@ -19,8 +19,12 @@ from typing import Any
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from igni_core.core.config.group_policy import GroupPolicyCache, GroupPolicyPack
-from igni_core.core.config.group_policy_signature import PACK_TYPE, PACK_USE, jwk_thumbprint
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.jwks import Jwk, Jwks
+from igni_core.core.config.group_policy.jws import PackClaims, PackHeader
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.verifier import AcceptedPack
 
 #: The ``api_url`` tests configure, and so the ``iss`` a pack must carry.
 ISSUER = "https://igni.example.invalid"
@@ -50,7 +54,7 @@ class ServerKey:
             "n": _b64_uint(numbers.n),
             "e": _b64_uint(numbers.e),
         }
-        jwk["kid"] = jwk_thumbprint(jwk)
+        jwk["kid"] = Jwk.model_validate(jwk).thumbprint()
         self.jwk = jwk
 
     @property
@@ -59,14 +63,19 @@ class ServerKey:
 
     @property
     def thumbprint(self) -> str:
-        return jwk_thumbprint(self.jwk)
+        return Jwk.model_validate(self.jwk).thumbprint()
 
     @property
     def jwks(self) -> dict[str, Any]:
         return {"keys": [dict(self.jwk)]}
 
+    @property
+    def key_set(self) -> Jwks:
+        """:attr:`jwks` as ``PortalClient.fetch_jwks`` returns it."""
+        return Jwks.model_validate(self.jwks)
+
     def sign_claims(self, claims: dict[str, Any], *, header: dict[str, Any] | None = None) -> str:
-        head = {"alg": "RS256", "kid": self.kid, "typ": PACK_TYPE, **(header or {})}
+        head = {"alg": "RS256", "kid": self.kid, "typ": PackHeader.TYPE, **(header or {})}
         signing_input = f"{_b64(json.dumps(head).encode())}.{_b64(json.dumps(claims).encode())}"
         signature = self._private.sign(signing_input.encode(), padding.PKCS1v15(), hashes.SHA256())
         return f"{signing_input}.{_b64(signature)}"
@@ -90,7 +99,7 @@ class ServerKey:
                 "org": org,
                 "iat": int(now),
                 "version": version if version is not None else int(now * 1000),
-                "token_use": PACK_USE,
+                "token_use": PackClaims.USE,
                 "policy": policy,
             }
         )
@@ -112,7 +121,7 @@ class ServerKey:
                 "org": org,
                 "iat": int(now),
                 "version": version if version is not None else int(now * 1000),
-                "token_use": PACK_USE,
+                "token_use": PackClaims.USE,
                 "policy": None,
                 "no_pack": True,
             }
@@ -158,12 +167,15 @@ def store(
 ) -> str:
     """Put ``pack`` in the cache the way a verified hydrate leaves it."""
     compact = key.sign(pack, version=version, **sign_kwargs)
-    cache = GroupPolicyCache(cache_dir=cache_dir)
+    cache = GroupPolicyCache(GroupPolicyLayout(root=cache_dir))
     cache.materialize(pack)
-    cache.store_signed(
-        compact,
-        jwks=jwks if jwks is not None else key.jwks,
-        version=version if version is not None else json.loads(_payload(compact))["version"],
+    cache.signed.store(
+        AcceptedPack(
+            pack=pack.model_copy(update={"signed_pack": compact}),
+            compact=compact,
+            jwks=Jwks.model_validate(jwks if jwks is not None else key.jwks),
+            version=version if version is not None else json.loads(_payload(compact))["version"],
+        )
     )
     return compact
 

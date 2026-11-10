@@ -183,4 +183,18 @@ class DirectoryWatch:
             os.close(fd)
 
 
-__all__ = ["DirectoryWatch", "FileWatch"]
+class DirectoryWatches:
+    """One :class:`DirectoryWatch` per directory, shared by the watches of its files."""
+
+    def __init__(self) -> None:
+        self._watches: dict[Path, DirectoryWatch] = {}
+
+    def of(self, directory: Path) -> DirectoryWatch:
+        """The one watch of ``directory``."""
+        watch = self._watches.get(directory)
+        if watch is None:
+            watch = self._watches[directory] = DirectoryWatch(directory)
+        return watch
+
+
+__all__ = ["DirectoryWatch", "DirectoryWatches", "FileWatch"]

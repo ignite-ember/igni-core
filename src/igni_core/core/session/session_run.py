@@ -73,7 +73,7 @@ class SessionRun(ABC):
             payload=SessionLifecyclePayload(
                 session_id=self._session.session_id,
                 resumed=bool(self._resume_session_id),
-            ).model_dump(),
+            ),
         )
 
     async def _fire_session_end(self) -> None:
@@ -83,7 +83,7 @@ class SessionRun(ABC):
             payload=SessionLifecyclePayload(
                 session_id=self._session.session_id,
                 resumed=bool(self._resume_session_id),
-            ).model_dump(),
+            ),
         )
 
     # ── Shared turn pipeline ─────────────────────────────────────
@@ -105,7 +105,8 @@ class SessionRun(ABC):
             display.print_info(f"Referenced: {', '.join(mentioned_files)}")
 
         resolver = MediaResolver(project_dir=session.project_dir)
-        message, resolved_files = resolver.resolve_text_references(message)
+        resolution = resolver.resolve_text_references(message)
+        message, resolved_files = resolution.text, resolution.paths
         if resolved_files:
             display.print_info(f"Resolved: {', '.join(resolved_files)}")
 

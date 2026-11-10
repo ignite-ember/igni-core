@@ -20,8 +20,11 @@ from igni_core.core.config.permission_eval import (
     PermissionEvaluator,
     ToolCategoryCatalog,
 )
-from igni_core.core.hooks.permission_pipeline import BypassGuardStage, ToolCallContext
+from igni_core.core.config.schemas.safety import BypassGuardConfig
+from igni_core.core.hooks.bypass_guard import BypassGuard
+from igni_core.core.hooks.bypass_judge import HarmScore
 from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
@@ -139,25 +142,39 @@ def test_a_tool_cannot_read_and_destroy() -> None:
 # ── Bypass's last check ───────────────────────────────────────────
 
 
-class RecordingGuard:
-    def __init__(self) -> None:
-        self.checked: list[str] = []
+class FlagEverything:
+    """A harm judge that flags every call it is asked about."""
 
-    async def check(self, tool_name: str, args: dict[str, Any], agent_path: list[str]) -> None:
-        self.checked.append(tool_name)
-        return None
+    async def score(self, text: str) -> HarmScore:
+        return HarmScore(probability=1.0, question="destructive")
+
+
+class RecordingAsker:
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    async def __call__(self, tool_name, args, reason, agent_path, *, follow_up=None) -> bool:
+        self.asked.append(tool_name)
+        return True
 
 
 @pytest.mark.asyncio
 async def test_bypass_waves_through_a_local_read_and_checks_the_rest(
-    registry: ToolHintsRegistry,
+    registry: ToolHintsRegistry, tmp_path: Path
 ) -> None:
     """As it does igni's own: local reads pass, everything else is looked at."""
-    guard = RecordingGuard()
-    stage = BypassGuardStage(guard, tool_hints=registry)
+    asker = RecordingAsker()
+    guard = BypassGuard(
+        config=BypassGuardConfig(),
+        project_dir=tmp_path,
+        in_bypass=lambda: True,
+        ask=asker,
+        tool_hints=registry,
+        judge=FlagEverything(),
+    )
     for name in TOOLS:
-        await stage.evaluate(ToolCallContext(name=name, func=None, args={}, agent=None))
-    assert sorted(guard.checked) == sorted(
+        await guard.check(name, {}, [])
+    assert sorted(asker.asked) == sorted(
         name for name in TOOLS if name != "mcp_ext:acme.a_local_read"
     )
 
@@ -181,8 +198,11 @@ class HintedMcp:
         }
         self._reported = reported
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return type("Ok", (), {"ok": True, "reason": ""})()
+        return MCPConnectResult(ok=True)
 
     async def disconnect_one(self, name: str) -> None:
         self.configs.pop(name, None)

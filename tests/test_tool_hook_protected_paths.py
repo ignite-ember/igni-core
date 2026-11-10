@@ -3,7 +3,7 @@
 import pytest
 
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.permission_pipeline import ProtectedPathStage
+from igni_core.core.hooks.permission.protected_path_stage import ProtectedPathStage
 from igni_core.core.hooks.tool_hook import ToolEventHook
 
 

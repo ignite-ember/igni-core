@@ -4,7 +4,9 @@ Its ``permissions.egress`` and ``permissions.workspace`` were enforced on
 its pages and on what igni told it; the process itself could open any
 socket and read any file the person can. Now it starts in an OS sandbox
 (:mod:`igni_core.extensions.sandbox`): Seatbelt on macOS, bubblewrap on
-Linux, with an egress proxy igni runs as the only way out.
+Linux, with an egress proxy igni runs as the only way out. Windows'
+AppContainer has its own file,
+``test_an_extension_process_is_confined_on_windows.py``.
 
 The macOS tests run the real sandbox and skip elsewhere; the Linux ones
 run real bubblewrap and skip where ``bwrap`` is missing or cannot make a
@@ -26,6 +28,10 @@ from pathlib import Path
 
 import pytest
 
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
+from igni_core.core.config.settings import Settings
 from igni_core.core.mcp.config import MCPServerConfig, MCPTransport
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.extensions.installer import ExtensionInstaller
@@ -38,10 +44,12 @@ from igni_core.extensions.sandbox import (
     EgressProxy,
     ExtensionSandbox,
     HostAllowList,
+    MechanismName,
     SandboxPlan,
     SandboxRefused,
     SandboxSettings,
 )
+from igni_core.extensions.sandbox import launcher as sandbox_launcher
 from igni_core.extensions.sandbox.bubblewrap import PROXY_PORT, Bubblewrap
 from igni_core.extensions.sandbox.seatbelt import Seatbelt
 
@@ -396,10 +404,25 @@ def test_require_sandbox_comes_from_managed_or_the_env_and_never_the_user(tmp_pa
     ).required
 
 
+def test_a_switch_is_the_value_the_settings_schema_says_however_it_is_written(tmp_path):
+    """``sandbox: "false"`` is ``false``: the block is read as the schema, not as raw text."""
+    managed = write_yaml(tmp_path / "managed.yaml", 'extensions:\n  sandbox: "false"\n')
+    settings = SandboxSettings.load(managed_path=lambda: managed, environ={})
+    assert not settings.enabled and settings.disabled_by == "managed"
+    required = write_yaml(tmp_path / "required.yaml", 'extensions:\n  require_sandbox: "true"\n')
+    assert SandboxSettings.load(managed_path=lambda: required, environ={}).required
+
+
+def test_a_block_that_does_not_validate_applies_nothing_at_all(tmp_path):
+    managed = write_yaml(
+        tmp_path / "managed.yaml", "extensions:\n  sandbox: false\n  require_sandbox: maybe\n"
+    )
+    settings = SandboxSettings.load(managed_path=lambda: managed, environ={})
+    assert settings.enabled and not settings.required
+
+
 def group_pack(extensions: dict):
     from datetime import UTC, datetime
-
-    from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
 
     return GroupPolicyPack(
         group_id="g1",
@@ -430,8 +453,6 @@ def test_a_verified_group_policy_may_require_the_sandbox_but_not_turn_it_off(tmp
 
 
 def test_a_group_policy_that_does_not_verify_requires_nothing(tmp_path):
-    from igni_core.core.config.group_policy import GroupPolicyUnavailable
-
     def unverified():
         raise GroupPolicyUnavailable("the pack on disk does not verify")
 
@@ -444,8 +465,6 @@ def test_a_group_policy_that_does_not_verify_requires_nothing(tmp_path):
 
 
 def test_the_backend_reads_the_group_policy_through_the_verifying_fetcher(monkeypatch):
-    from igni_core.core.config import group_policy
-
     seen = []
 
     class Fetcher:
@@ -454,8 +473,8 @@ def test_the_backend_reads_the_group_policy_through_the_verifying_fetcher(monkey
             seen.append(settings)
             return lambda: group_pack({"require_sandbox": True})
 
-    monkeypatch.setattr(group_policy, "CachedSettingsFetcher", Fetcher)
-    settings = object()
+    monkeypatch.setattr(sandbox_launcher, "CachedSettingsFetcher", Fetcher)
+    settings = Settings()
     sandbox = ExtensionSandbox.for_settings(settings)
     assert seen == [settings]
     assert sandbox.settings.required
@@ -487,8 +506,8 @@ def stdio_config(
 
 
 async def test_require_sandbox_refuses_to_start_where_there_is_none(tmp_path):
-    sandbox = ExtensionSandbox(settings=SandboxSettings(required=True), platform="win32")
-    with pytest.raises(SandboxRefused, match="require_sandbox.*not sandboxed on Windows"):
+    sandbox = ExtensionSandbox(settings=SandboxSettings(required=True), platform="sunos5")
+    with pytest.raises(SandboxRefused, match="require_sandbox.*no sandbox for sunos5"):
         await sandbox.confine(
             manifest(),
             stdio_config(),
@@ -501,7 +520,7 @@ async def test_require_sandbox_refuses_to_start_where_there_is_none(tmp_path):
 
 
 async def test_without_require_it_runs_unsandboxed_and_says_so(tmp_path, caplog):
-    sandbox = ExtensionSandbox(settings=SandboxSettings(), platform="win32")
+    sandbox = ExtensionSandbox(settings=SandboxSettings(), platform="sunos5")
     config = stdio_config()
     out = await sandbox.confine(
         manifest(),
@@ -515,9 +534,7 @@ async def test_without_require_it_runs_unsandboxed_and_says_so(tmp_path, caplog)
     assert out == config
     status = sandbox.status("acme.probe")
     assert status is not None and not status.confined
-    assert (
-        status.describe() == "not sandboxed: extension processes are not sandboxed on Windows yet"
-    )
+    assert status.describe() == "not sandboxed: no sandbox for sunos5"
     assert "runs UNSANDBOXED" in caplog.text
 
 
@@ -526,6 +543,9 @@ class _Mcp:
 
     def __init__(self) -> None:
         self.configs: dict[str, MCPServerConfig] = {}
+
+    def register_server(self, config: MCPServerConfig) -> None:
+        self.configs[config.name] = config
 
     async def connect(self, name):  # pragma: no cover — refused before
         raise AssertionError("a refused extension must not be started")
@@ -544,7 +564,7 @@ async def test_the_installer_records_a_refusal_as_FAILED_with_the_reason(tmp_pat
         rpc=ExtensionRpc(registry),
         mcp=_Mcp(),
         allow_development=True,
-        sandbox=ExtensionSandbox(settings=SandboxSettings(required=True), platform="win32"),
+        sandbox=ExtensionSandbox(settings=SandboxSettings(required=True), platform="sunos5"),
     )
     entry = await installer.install(bundle)
     assert entry.state is ExtensionState.FAILED
@@ -552,7 +572,7 @@ async def test_the_installer_records_a_refusal_as_FAILED_with_the_reason(tmp_pat
 
 
 async def test_an_endpoint_has_no_process_here_and_is_left_alone(tmp_path):
-    sandbox = ExtensionSandbox(settings=SandboxSettings(required=True), platform="win32")
+    sandbox = ExtensionSandbox(settings=SandboxSettings(required=True), platform="sunos5")
     config = MCPServerConfig(
         name="ext:x", type=MCPTransport.sse, url="https://x.test/sse", source="extension"
     )
@@ -672,8 +692,9 @@ async def test_on_macos_the_process_is_held_to_its_grants(tmp_path, upstream):
     sandbox = ExtensionSandbox(
         settings=SandboxSettings(), network=NetworkPolicy(), connect=upstream.connect
     )
-    if (await sandbox.mechanism())[0] != "seatbelt":
-        pytest.skip(f"sandbox-exec cannot confine a process here: {await sandbox.mechanism()}")
+    availability = await sandbox.availability()
+    if availability.name != MechanismName.SEATBELT:
+        pytest.skip(f"sandbox-exec cannot confine a process here: {availability.reason}")
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     # Two listeners in this process, which stands in for igni: one the
     # process is told about (as the host channel is), one it is not (as
@@ -733,7 +754,7 @@ async def test_on_macos_the_process_is_held_to_its_grants(tmp_path, upstream):
 @pytest.mark.skipif(not ON_MACOS, reason="Seatbelt is macOS")
 async def test_on_macos_a_read_only_workspace_cannot_be_written(tmp_path, upstream):
     sandbox = ExtensionSandbox(settings=SandboxSettings(), connect=upstream.connect)
-    if (await sandbox.mechanism())[0] != "seatbelt":
+    if (await sandbox.availability()).name != MechanismName.SEATBELT:
         pytest.skip("sandbox-exec cannot confine a process here")
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     try:
@@ -767,7 +788,7 @@ async def test_on_macos_the_process_cannot_hand_work_to_another_application(tmp_
     LaunchServices is not reachable.
     """
     sandbox = ExtensionSandbox(settings=SandboxSettings())
-    if (await sandbox.mechanism())[0] != "seatbelt":
+    if (await sandbox.availability()).name != MechanismName.SEATBELT:
         pytest.skip("sandbox-exec cannot confine a process here")
     target = (tmp_path / "reveal-me").resolve()
     target.mkdir()
@@ -847,7 +868,7 @@ async def test_on_macos_an_installed_extension_speaks_mcp_from_inside(tmp_path):
     from igni_core.core.mcp.client import MCPClientManager
 
     sandbox = ExtensionSandbox(settings=SandboxSettings())
-    if (await sandbox.mechanism())[0] != "seatbelt":
+    if (await sandbox.availability()).name != MechanismName.SEATBELT:
         pytest.skip("sandbox-exec cannot confine a process here")
     bundle = tmp_path / "bundle"
     bundle.mkdir()
@@ -927,9 +948,9 @@ def test_the_bwrap_command_hides_home_and_bridges_the_proxy_in(tmp_path):
 @pytest.mark.skipif(not ON_LINUX or shutil.which("bwrap") is None, reason="needs bwrap on Linux")
 async def test_on_linux_the_process_reaches_only_the_proxy(tmp_path, upstream):
     sandbox = ExtensionSandbox(settings=SandboxSettings(), connect=upstream.connect)
-    mechanism, why = await sandbox.mechanism()
-    if mechanism != "bubblewrap":
-        pytest.skip(f"bwrap cannot make a sandbox here: {why}")
+    availability = await sandbox.availability()
+    if availability.name != MechanismName.BUBBLEWRAP:
+        pytest.skip(f"bwrap cannot make a sandbox here: {availability.reason}")
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     try:
         wrapped, _, seen = await run_confined(

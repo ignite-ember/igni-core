@@ -7,18 +7,18 @@ and the protocol-based HITL flow.
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.backend.schemas_pause import PendingRequirement
-from igni_core.backend.server import BackendServer
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.tool_permissions import ToolPermissions
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.protocol.messages import Error
+from tests.backend_server_factory import make_backend
 
 # ── Permission check levels ──────────────────────────────────────
 
@@ -186,78 +186,69 @@ class TestBackendHITLResolution:
     @pytest.mark.asyncio
     async def test_resolve_confirm_calls_requirement(self):
         """Backend resolves a confirmed HITL requirement."""
-        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
-            server = BackendServer.__new__(BackendServer)
-            server._session = MagicMock()
-            server._session.main_team = MagicMock()
-            server._session.main_team.acontinue_run = AsyncMock(return_value=iter([]))
-            server._session.session_id = "test"
-            server._session.hook_executor.execute = AsyncMock(
-                return_value=MagicMock(should_continue=True, message="")
-            )
-            # Force the sub-agent coordinator to NOT claim this requirement,
-            # so the main-team resolve path runs and we can assert on it.
-            server._session.sub_agent_hitl.resolve = MagicMock(return_value=False)
-            server._hitl_store = PendingRequirementsStore()
-            server._hitl_tracer = HITLTracer(enabled=False)
-            server._processing = False
+        session = MagicMock()
+        session.main_team = MagicMock()
+        session.main_team.acontinue_run = AsyncMock(return_value=iter([]))
+        session.session_id = "test"
+        session.hook_executor.execute = AsyncMock(
+            return_value=MagicMock(should_continue=True, message="")
+        )
+        # Force the sub-agent coordinator to NOT claim this requirement,
+        # so the main-team resolve path runs and we can assert on it.
+        session.sub_agent_hitl.resolve = MagicMock(return_value=False)
+        hitl_store = PendingRequirementsStore()
+        server = make_backend(session, settings=MagicMock(), hitl_store=hitl_store)
 
-            # Store a mock requirement
-            req = MagicMock()
-            server._hitl_store.register("r1", PendingRequirement(req=req, run_id="run-1"))
+        # Store a mock requirement
+        req = MagicMock()
+        hitl_store.register("r1", PendingRequirement(req=req, run_id="run-1"))
 
-            # Resolve it
-            results = []
-            async for proto in server.resolve_hitl("r1", "confirm", "once"):
-                results.append(proto)
+        # Resolve it
+        results = []
+        async for proto in server.resolve_hitl("r1", "confirm", "once"):
+            results.append(proto)
 
-            req.confirm.assert_called_once()
+        req.confirm.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_resolve_reject_calls_requirement(self):
         """Backend resolves a rejected HITL requirement."""
-        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
-            server = BackendServer.__new__(BackendServer)
-            server._session = MagicMock()
-            server._session.main_team = MagicMock()
-            server._session.main_team.acontinue_run = AsyncMock(return_value=iter([]))
-            server._session.session_id = "test"
-            server._session.hook_executor.execute = AsyncMock(
-                return_value=MagicMock(should_continue=True, message="")
-            )
-            server._session.sub_agent_hitl.resolve = MagicMock(return_value=False)
-            server._hitl_store = PendingRequirementsStore()
-            server._hitl_tracer = HITLTracer(enabled=False)
+        session = MagicMock()
+        session.main_team = MagicMock()
+        session.main_team.acontinue_run = AsyncMock(return_value=iter([]))
+        session.session_id = "test"
+        session.hook_executor.execute = AsyncMock(
+            return_value=MagicMock(should_continue=True, message="")
+        )
+        session.sub_agent_hitl.resolve = MagicMock(return_value=False)
+        hitl_store = PendingRequirementsStore()
+        server = make_backend(session, settings=MagicMock(), hitl_store=hitl_store)
 
-            req = MagicMock()
-            req.tool_execution.tool_name = "run_shell_command"
-            server._hitl_store.register("r1", PendingRequirement(req=req, run_id="run-1"))
+        req = MagicMock()
+        req.tool_execution = SimpleNamespace(tool_name="run_shell_command", tool_args={})
+        hitl_store.register("r1", PendingRequirement(req=req, run_id="run-1"))
 
-            results = []
-            async for proto in server.resolve_hitl("r1", "reject"):
-                results.append(proto)
+        results = []
+        async for proto in server.resolve_hitl("r1", "reject"):
+            results.append(proto)
 
-            # The model reads the note as the tool's result. It is the trained
-            # refusal shape, naming the tool — never the bare "User denied",
-            # which the fine-tuning corpus does not contain once.
-            req.reject.assert_called_once_with(
-                note="Blocked: the person declined 'run_shell_command'."
-            )
+        # The model reads the note as the tool's result. It is the trained
+        # refusal shape, naming the tool — never the bare "User denied",
+        # which the fine-tuning corpus does not contain once.
+        req.reject.assert_called_once_with(note="Blocked: the person declined 'run_shell_command'.")
 
     @pytest.mark.asyncio
     async def test_resolve_unknown_requirement_returns_error(self):
         """Backend returns error for unknown requirement ID."""
-        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
-            server = BackendServer.__new__(BackendServer)
-            server._session = MagicMock()
-            server._session.sub_agent_hitl.resolve = MagicMock(return_value=False)
-            server._hitl_store = PendingRequirementsStore()
-            server._hitl_tracer = HITLTracer(enabled=False)
+        session = MagicMock()
+        session.sub_agent_hitl.resolve = MagicMock(return_value=False)
+        hitl_store = PendingRequirementsStore()
+        server = make_backend(session, settings=MagicMock(), hitl_store=hitl_store)
 
-            results = []
-            async for proto in server.resolve_hitl("nonexistent", "confirm"):
-                results.append(proto)
+        results = []
+        async for proto in server.resolve_hitl("nonexistent", "confirm"):
+            results.append(proto)
 
-            assert len(results) == 1
-            assert isinstance(results[0], Error)
-            assert "nonexistent" in results[0].text
+        assert len(results) == 1
+        assert isinstance(results[0], Error)
+        assert "nonexistent" in results[0].text

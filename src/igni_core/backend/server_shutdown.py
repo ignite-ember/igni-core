@@ -34,7 +34,6 @@ from igni_core.backend.schemas_lifecycle import (
     ShutdownResult,
 )
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.tools.shell import IgniShellTools
 
 if TYPE_CHECKING:
     from igni_core.core.session import Session
@@ -84,7 +83,7 @@ class SessionEndHookStep(ShutdownStep):
         payload = SessionEndPayload(session_id=session.session_id)
         await session.hook_executor.execute(
             event=HookEvent.SESSION_END.value,
-            payload=payload.model_dump(),
+            payload=payload,
         )
         result.mark_hook_fired()
 
@@ -95,7 +94,8 @@ class PoolCleanupStep(ShutdownStep):
     label: ClassVar[str] = "pool_cleanup"
 
     async def _run(self, session: Session, result: ShutdownResult) -> None:
-        session.pool.cleanup_ephemeral_if_auto(session.settings)
+        if session.settings.orchestration.auto_cleanup and session.pool.has_ephemeral:
+            session.pool.ephemeral.cleanup()
         result.mark_pool_cleaned()
 
 
@@ -122,18 +122,6 @@ class SchedulerStopStep(ShutdownStep):
         result.mark_scheduler_stopped()
 
 
-class ShellCleanupStep(ShutdownStep):
-    """Kill any orphan background processes left by shell tools."""
-
-    label: ClassVar[str] = "shell_cleanup"
-
-    async def _run(self, session: Session, result: ShutdownResult) -> None:
-        killed = IgniShellTools.cleanup()
-        result.record_shell_kills(killed)
-        if killed:
-            logger.info("Shutdown: killed %d background process(es)", killed)
-
-
 class ShutdownPipeline:
     """Ordered driver for a fixed set of :class:`ShutdownStep`.
 
@@ -158,7 +146,6 @@ class ShutdownPipeline:
         ]
         if scheduler_stop is not None:
             steps.append(SchedulerStopStep(scheduler_stop))
-        steps.append(ShellCleanupStep())
         self._steps: list[ShutdownStep] = steps
 
     async def run(self) -> ShutdownResult:
@@ -174,7 +161,6 @@ __all__ = [
     "PoolCleanupStep",
     "SchedulerStopStep",
     "SessionEndHookStep",
-    "ShellCleanupStep",
     "ShutdownPipeline",
     "ShutdownStep",
 ]

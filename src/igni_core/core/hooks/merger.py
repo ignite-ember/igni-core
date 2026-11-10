@@ -50,11 +50,7 @@ class HookResultMerger:
             self._should_continue = False
         if result.message:
             self._messages.append(result.message)
-        # ``result.permission_decision`` is typed as
-        # :class:`PermissionDecision` but tolerate a bare string
-        # from a raw-dict caller by round-tripping through
-        # :meth:`PermissionDecision.from_wire`.
-        pd = PermissionDecision.from_wire(result.permission_decision)
+        pd = result.permission_decision
         if self._rank(pd) > self._rank(self._decision):
             self._decision = pd
 

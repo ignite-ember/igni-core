@@ -165,6 +165,25 @@ class AgnoResponseAdapter:
 
     # ── Derived views ───────────────────────────────────────────────
 
+    def called_tool_names(self) -> set[str]:
+        """Names of every tool the run called.
+
+        Reads ``RunOutput.tools`` first. When that is empty, falls back
+        to the OpenAI-format ``tool_calls`` dicts Agno leaves on each
+        message (``{"function": {"name": ...}}``), Agno's wire shape.
+        """
+        tools = getattr(self._response, "tools", None) or []
+        names = {name for t in tools if (name := getattr(t, "tool_name", None))}
+        if names:
+            return names
+        for m in getattr(self._response, "messages", None) or []:
+            for tc in getattr(m, "tool_calls", None) or []:
+                fn = tc.get("function") if isinstance(tc, dict) else None
+                name = fn.get("name") if isinstance(fn, dict) else None
+                if name:
+                    names.add(name)
+        return names
+
     def tool_trace(self) -> list[ToolTraceEntry]:
         """Walk ``response.tools`` and build a serialisable trace.
 

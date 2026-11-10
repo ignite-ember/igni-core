@@ -2,24 +2,29 @@
 
 :class:`SessionPersistence` owns one instance each of the six
 coordinators built on top of a shared :class:`SessionDataService`
-and forwards the historic public methods (``list_sessions`` /
-``auto_name`` / ``rename`` / ``fork`` / ``get_name`` /
-``_get_name_raw`` / ``load_plan_decisions`` / ``load_todos`` /
-``load_event_log`` / ``save_event_log`` / ``save_todos`` /
-``save_plan_decisions``) so external callers (the 30+ ``session.
-persistence.<method>`` sites across the backend / CLI / tests)
-keep working unchanged.
+and forwards the public methods (``list_sessions`` / ``auto_name`` /
+``rename`` / ``title`` / ``fork`` / ``get_name`` / ``_get_name_raw`` /
+``load_plan_decisions`` / ``load_todos`` / ``load_event_log`` /
+``save_event_log`` / ``save_todos`` / ``save_plan_decisions``) to
+the store that owns each concern.
 
-The facade UNWRAPS the internal Pattern-3 envelopes
-(:class:`LoadResult` / :class:`PersistResult` / :class:`ForkResult`)
-back to the historic dict / list / None-return shapes at the
-public boundary. That gives us the Rule 1 / Pattern 3 win
-INTERNALLY without a mass caller migration in the same PR — a
-follow-up can flip the public API once the internal shape has
-stabilised. The one exception is :meth:`save_plan_decisions`,
-which re-raises on write failure so :class:`PlanCoordinator`'s
-persist-then-flip invariant path can honour the ``ok=False`` →
-"abort mode flip" contract.
+The facade is the API boundary, so the shapes that cross it are
+TYPED end to end (Rule 1) and FAILURES are REPORTED, not raised
+(Pattern 3):
+
+* loads return the typed model the caller needs — a
+  :class:`SessionListRow` list, a :class:`PlanDecisionsBlob`, a
+  ``list[TodoItemWire]``, a ``list[SessionEvent]``;
+* writes return the store's :class:`PersistResult` so a failed
+  write is visible to the caller instead of being swallowed;
+* :meth:`fork` returns the store's :class:`ForkResult` — the
+  caller decides what a failed fork means rather than the facade
+  raising on its behalf.
+
+There are no legacy ``dict`` shapes on this boundary: the stores
+own the wire coercion (they dump a model to the ``dict`` Agno's
+``session_data`` column stores) and the domain stays typed on the
+way in and out.
 
 Rule 6 (OOP): the god-class from the pre-refactor
 ``persistence.py`` dissolves into six ~30-70 LoC coordinators +
@@ -43,7 +48,11 @@ from igni_core.core.session.persistence.plan_decisions_store import (
     PlanDecisionsStore,
 )
 from igni_core.core.session.persistence.todos_store import TodoSnapshotStore
-from igni_core.core.session.schemas import PersistResult, SessionTitle
+from igni_core.core.session.schemas import (
+    ForkResult,
+    PersistResult,
+    SessionListRow,
+)
 from igni_core.core.tools.plan import PlanDecisionsBlob
 from igni_core.core.tools.todo import TodoItemWire
 
@@ -58,25 +67,16 @@ class SessionPersistence:
     event-log) and composes a shared :class:`SessionDataService`
     for the read/write chokepoint against ``session_data``.
 
-    Every historic public method is forwarded to the appropriate
-    store; the facade unwraps the internal envelopes to the
-    dict / list / ``None`` shapes callers used to see.
+    Every public method is forwarded to the appropriate store; the
+    typed models and the Pattern-3 envelopes the stores return
+    reach the caller unchanged.
     """
 
-    # Deprecated alias — pre-refactor code reached for the nested
-    # ``SessionPersistence.SessionTitle`` class via
-    # ``self.SessionTitle(...)``. Grep confirms no external caller
-    # currently uses it, but the alias is kept for one release
-    # cycle as a cheap safety net.
-    SessionTitle = SessionTitle
-
-    def __init__(self, db: Any, session_id: str) -> None:
-        # ``db: Any`` at the constructor boundary keeps the
-        # 30+ existing call sites (backend / CLI / tests that pass
-        # a ``MagicMock`` or the real ``AsyncSqliteDb``) working
-        # without an explicit protocol conformance check. The
-        # underlying :class:`AgnoSessionDb` protocol governs what
-        # each store actually calls into.
+    def __init__(self, db: AgnoSessionDb | None, session_id: str) -> None:
+        # ``db`` is the narrow :class:`AgnoSessionDb` protocol — the
+        # four coroutines the persistence layer actually calls into.
+        # ``None`` means persistence is disabled (headless CLI, tests
+        # without a DB); every store treats that as a no-op.
         self._db: AgnoSessionDb | None = db
         self._session_id = session_id
         self._data = SessionDataService(db, session_id)
@@ -119,17 +119,17 @@ class SessionPersistence:
 
     # ── Session listing ────────────────────────────────────────
 
-    async def list_sessions(self, limit: int | None = None) -> list[dict[str, Any]]:
+    async def list_sessions(self, limit: int | None = None) -> list[SessionListRow]:
         """List sessions from the Agno database.
 
-        Returns the historic ``list[dict]`` wire shape by dumping
-        each :class:`SessionListRow` at the facade boundary. On
-        DB failure the facade preserves the pre-refactor
-        "swallow-and-default-to-empty" contract.
+        Returns typed :class:`SessionListRow` models — the caller
+        reaches for named attributes instead of dict keys, and the
+        wire boundary (where a row becomes JSON) is the one place
+        that dumps. On DB failure the facade preserves the
+        pre-refactor "swallow-and-default-to-empty" contract.
         """
         result = await self._listing.list_sessions(limit=limit)
-        rows = result.value or []
-        return [row.model_dump() for row in rows]
+        return result.value or []
 
     # ── Session name ───────────────────────────────────────────
 
@@ -169,117 +169,92 @@ class SessionPersistence:
 
     # ── Fork ──────────────────────────────────────────────────
 
-    async def fork(self, name: str | None = None) -> str:
+    async def fork(self, name: str | None = None) -> ForkResult:
         """Clone the current session under a fresh ``session_id``.
 
-        Preserves the pre-refactor ``RuntimeError`` semantics on
-        failure so existing callers (`/fork` slash command,
-        :class:`ForkedSessionRebinder`) keep their
-        ``except`` branches valid. Successful returns yield the
-        8-char new session id.
+        Returns the forker's :class:`ForkResult` — ``ok=True`` with
+        the new 8-char ``new_session_id`` on success, ``ok=False``
+        with a diagnostic ``error`` otherwise. The caller decides
+        what a failed fork means (the ``/fork`` slash command turns
+        it into an error message; nothing else forks today).
         """
-        result = await self._forker.fork(name=name)
-        if not result.ok:
-            raise RuntimeError(result.error or "fork failed")
-        return result.new_session_id
+        return await self._forker.fork(name=name)
 
     # ── Plan decisions ─────────────────────────────────────────
 
-    async def load_plan_decisions(self) -> dict[str, str]:
+    async def load_plan_decisions(self) -> PlanDecisionsBlob:
         """Read the persisted ``{run_id: "approved"|"dismissed"}``
-        map. Empty dict on absence or DB failure — callers treat
-        absence as "no decision", the safe pending default.
+        map as a typed :class:`PlanDecisionsBlob`.
+
+        An empty blob means "no decision recorded" — the safe
+        pending default. A corrupt row is filtered by the blob's own
+        tolerant constructor, and a DB failure yields an empty blob
+        too, so a load never raises.
         """
         result = await self._plan_store.load()
-        blob = result.value
-        if blob is None:
-            return {}
-        return blob.model_dump(mode="json")["decisions"]
+        return result.value or PlanDecisionsBlob()
 
-    async def save_plan_decisions(self, decisions: PlanDecisionsBlob | dict[str, str]) -> None:
+    async def save_plan_decisions(self, blob: PlanDecisionsBlob) -> PersistResult:
         """Write the ``{run_id: decision}`` map to
         ``session_data['plan_decisions']``.
 
-        Accepts either the typed :class:`PlanDecisionsBlob`
-        (post-refactor caller shape from
-        :class:`PlanCoordinator`) or the raw ``dict[str, str]``
-        (legacy test fixture shape). Both materialise a
-        :class:`PlanDecisionsBlob` internally so the on-disk shape
-        stays a plain ``dict[str, str]``.
+        Takes the typed :class:`PlanDecisionsBlob` — the store
+        materialises the plain ``dict[str, str]`` on-disk shape
+        itself, so the on-disk contract stays where it belongs.
 
-        Re-raises on write failure so :class:`PlanCoordinator`
-        can honour the persist-then-flip invariant (approve path
-        aborts the mode flip if the write fails; dismiss path
-        swallows). Every other public method on this facade
-        swallows — plan decisions are the only case where the
-        caller must know the write actually landed.
+        Returns the store's :class:`PersistResult`. The
+        persist-then-flip invariant in :class:`PlanCoordinator` is
+        honoured by the caller keying on ``ok`` — the approve path
+        aborts the mode flip when the write did not land.
         """
-        if isinstance(decisions, PlanDecisionsBlob):
-            blob = decisions
-        else:
-            blob = PlanDecisionsBlob.from_raw(decisions)
-        result = await self._plan_store.save(blob)
-        if not result.ok:
-            raise RuntimeError(result.error or "save_plan_decisions failed")
+        return await self._plan_store.save(blob)
 
     # ── Todos ─────────────────────────────────────────────────
 
-    async def load_todos(self) -> list[dict]:
+    async def load_todos(self) -> list[TodoItemWire]:
         """Read the persisted todo snapshot for this session.
 
-        Returns the historic ``list[dict]`` shape (each entry
-        ``{content, status, activeForm}``) by dumping each
-        :class:`TodoItemWire` at the facade boundary. Malformed
-        rows drop silently at the store's coercion step.
+        Returns typed :class:`TodoItemWire` rows. Malformed rows
+        drop silently at the store's coercion step, so the list
+        always holds well-formed rows.
         """
         result = await self._todos_store.load()
-        wires = result.value or []
-        return [w.model_dump(by_alias=True) for w in wires]
+        return result.value or []
 
-    async def save_todos(self, todos: list[dict]) -> None:
+    async def save_todos(self, todos: list[TodoItemWire]) -> PersistResult:
         """Atomic-replace persisted todo snapshot.
 
-        Accepts the pre-refactor ``list[dict]`` shape from
-        :meth:`TodoTools._persist_state` / test fixtures.
-        Coercion via :meth:`TodoItemWire.coerce_snapshot` filters
-        malformed entries. Best-effort: DB write failures log and
-        return.
+        Takes typed :class:`TodoItemWire` rows — the store dumps
+        them at the SQL boundary. Returns the store's
+        :class:`PersistResult` so a caller that cares about a lost
+        write can see it; callers that don't are unaffected.
         """
-        wires = TodoItemWire.coerce_snapshot(todos)
-        await self._todos_store.save(wires)
+        return await self._todos_store.save(todos)
 
     # ── Event log ────────────────────────────────────────────
 
-    async def load_event_log(self) -> list[dict]:
+    async def load_event_log(self) -> list[SessionEvent]:
         """Read the persisted append-only event log.
 
-        Returns the historic ``list[dict]`` shape by dumping each
-        :class:`SessionEvent`. Every persisted entry has been
-        round-tripped through :meth:`SessionEvent.from_wire` — stale
-        rows drop silently at the store's coercion step, so the
-        output dicts come from one Pydantic definition (Rule 1).
+        Returns typed :class:`SessionEvent` entries — the same
+        union the in-memory log holds, so a caller reads named
+        attributes instead of dict keys. Every persisted entry has
+        been round-tripped through the store's adapter — stale rows
+        drop there, so the output comes from one Pydantic definition
+        (Rule 1).
         """
         result = await self._event_log_store.load()
-        events = result.value or []
-        return [e.model_dump() for e in events]
+        return result.value or []
 
-    async def save_event_log(self, event_log: list[dict] | list[Any]) -> None:
+    async def save_event_log(self, events: list[SessionEvent]) -> PersistResult:
         """Atomic-replace the session's event log.
 
-        Accepts either the historic ``list[dict]`` (from
-        :meth:`SessionEventLog.append` before this refactor
-        pass) OR a ``list[SessionEvent]`` (typed callers). The
-        facade coerces the mixed input to a homogenous
-        ``list[SessionEvent]`` before delegating to the store —
-        so the store's typed contract holds regardless of caller
-        shape.
+        Callers pass typed :class:`SessionEvent` entries; the store
+        dumps them to wire dicts at its own SQL boundary, so the
+        domain stays typed to the boundary (Rule 1).
+
+        The store's :class:`PersistResult` is returned as-is: a
+        failed write is reported, not raised, so the caller can
+        decide what a lost event means.
         """
-        events: list[SessionEvent] = []
-        for entry in event_log:
-            if isinstance(entry, SessionEvent):
-                events.append(entry)
-            elif isinstance(entry, dict):
-                evt = SessionEvent.from_wire(entry)
-                if evt is not None:
-                    events.append(evt)
-        await self._event_log_store.save(events)
+        return await self._event_log_store.save(events)

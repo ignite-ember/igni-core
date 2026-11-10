@@ -29,7 +29,32 @@ from pathlib import Path
 from agno.db.base import SessionType
 from agno.session.agent import AgentSession
 
+from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaEntry,
+    VisualizationDeltaPayload,
+    WorkflowEventEntry,
+)
 from igni_core.core.session.persistence import SessionPersistence
+from igni_core.core.tools.plan import PlanDecisionsBlob
+from igni_core.core.tools.todo import TodoItemWire
+
+
+def _card(spec_id: str) -> VisualizationDeltaPayload:
+    """A viz card, as a producer hands it to the log."""
+    return VisualizationDeltaPayload(spec_id=spec_id, spec_json="{}")
+
+
+def _workflow() -> WorkflowEventRecord:
+    """A workflow runtime record, as the workflow sink hands it."""
+    return WorkflowEventRecord(
+        workflow_run_id="w1",
+        name="run",
+        ts=1,
+        seq=1,
+        type="workflow_started",
+        payload={},
+    )
 
 
 def _make_db(tmp_path: Path):
@@ -52,10 +77,10 @@ class TestRealDbPlanDecisions:
         # DB; now it creates a minimal session row.
         db = _make_db(tmp_path)
         persistence = SessionPersistence(db=db, session_id="sess-new")
-        await persistence.save_plan_decisions({"run-1": "approved"})
+        await persistence.save_plan_decisions(PlanDecisionsBlob(decisions={"run-1": "approved"}))
 
         loaded = await persistence.load_plan_decisions()
-        assert loaded == {"run-1": "approved"}
+        assert loaded.decisions == {"run-1": "approved"}
 
     async def test_round_trip_updates_existing_row(self, tmp_path):
         # First write creates the row, second write updates it.
@@ -63,25 +88,27 @@ class TestRealDbPlanDecisions:
         # write would wipe out the first.
         db = _make_db(tmp_path)
         persistence = SessionPersistence(db=db, session_id="sess-upd")
-        await persistence.save_plan_decisions({"run-1": "approved"})
-        await persistence.save_plan_decisions({"run-1": "approved", "run-2": "dismissed"})
+        await persistence.save_plan_decisions(PlanDecisionsBlob(decisions={"run-1": "approved"}))
+        await persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-1": "approved", "run-2": "dismissed"})
+        )
         loaded = await persistence.load_plan_decisions()
-        assert loaded == {"run-1": "approved", "run-2": "dismissed"}
+        assert loaded.decisions == {"run-1": "approved", "run-2": "dismissed"}
 
     async def test_fresh_persistence_instance_sees_prior_write(self, tmp_path):
         # The actual restart scenario: write through one
         # ``SessionPersistence`` instance, throw it away, build a
         # new one against the same DB, read back. Without
-        # persistence this would return an empty dict — same as a
+        # persistence this would return an empty blob — same as a
         # fresh boot would have shown the user pre-fix.
         db = _make_db(tmp_path)
         writer = SessionPersistence(db=db, session_id="sess-restart")
-        await writer.save_plan_decisions({"run-x": "approved"})
+        await writer.save_plan_decisions(PlanDecisionsBlob(decisions={"run-x": "approved"}))
 
         # Imagine BE restart: new persistence layer instance.
         reader = SessionPersistence(db=db, session_id="sess-restart")
         loaded = await reader.load_plan_decisions()
-        assert loaded == {"run-x": "approved"}
+        assert loaded.decisions == {"run-x": "approved"}
 
     async def test_filters_invalid_entries_on_write(self, tmp_path):
         # The cleaning that already exists at the in-memory
@@ -91,9 +118,9 @@ class TestRealDbPlanDecisions:
         db = _make_db(tmp_path)
         persistence = SessionPersistence(db=db, session_id="sess-clean")
         await persistence.save_plan_decisions(
-            {"good": "approved", "bad": "maybe", 42: "approved"}  # type: ignore[dict-item]
+            PlanDecisionsBlob.from_raw({"good": "approved", "bad": "maybe", 42: "approved"})
         )
-        assert await persistence.load_plan_decisions() == {"good": "approved"}
+        assert (await persistence.load_plan_decisions()).decisions == {"good": "approved"}
 
 
 class TestRealDbTodos:
@@ -104,10 +131,10 @@ class TestRealDbTodos:
         # (rare but the fallback shouldn't be sloppy).
         db = _make_db(tmp_path)
         persistence = SessionPersistence(db=db, session_id="sess-todos-new")
-        await persistence.save_todos([{"content": "Task A", "status": "in_progress"}])
+        await persistence.save_todos([TodoItemWire(content="Task A", status="in_progress")])
 
         loaded = await persistence.load_todos()
-        assert loaded == [{"content": "Task A", "status": "in_progress", "activeForm": ""}]
+        assert loaded == [TodoItemWire(content="Task A", status="in_progress")]
 
     async def test_atomic_replace_via_real_db(self, tmp_path):
         # Each write replaces the snapshot. Without atomic
@@ -118,18 +145,18 @@ class TestRealDbTodos:
         persistence = SessionPersistence(db=db, session_id="sess-todos-replace")
         await persistence.save_todos(
             [
-                {"content": "A", "status": "in_progress"},
-                {"content": "B", "status": "pending"},
+                TodoItemWire(content="A", status="in_progress"),
+                TodoItemWire(content="B", status="pending"),
             ]
         )
         await persistence.save_todos(
             [
-                {"content": "A", "status": "completed"},
-                {"content": "B", "status": "pending"},
+                TodoItemWire(content="A", status="completed"),
+                TodoItemWire(content="B", status="pending"),
             ]
         )
         loaded = await persistence.load_todos()
-        statuses = {t["content"]: t["status"] for t in loaded}
+        statuses = {t.content: t.status for t in loaded}
         assert statuses == {"A": "completed", "B": "pending"}
 
     async def test_in_progress_survives_restart(self, tmp_path):
@@ -141,14 +168,14 @@ class TestRealDbTodos:
         writer = SessionPersistence(db=db, session_id="sess-todo-restart")
         await writer.save_todos(
             [
-                {"content": "Refactor _mode_step", "status": "in_progress"},
-                {"content": "Update tests", "status": "pending"},
+                TodoItemWire(content="Refactor _mode_step", status="in_progress"),
+                TodoItemWire(content="Update tests", status="pending"),
             ]
         )
 
         reader = SessionPersistence(db=db, session_id="sess-todo-restart")
         loaded = await reader.load_todos()
-        statuses = {t["content"]: t["status"] for t in loaded}
+        statuses = {t.content: t.status for t in loaded}
         assert statuses == {
             "Refactor _mode_step": "in_progress",
             "Update tests": "pending",
@@ -164,21 +191,21 @@ class TestRealDbCoExistence:
     async def test_plan_then_todos_both_survive(self, tmp_path):
         db = _make_db(tmp_path)
         persistence = SessionPersistence(db=db, session_id="sess-coexist-a")
-        await persistence.save_plan_decisions({"run-1": "approved"})
-        await persistence.save_todos([{"content": "Task A", "status": "in_progress"}])
-        assert await persistence.load_plan_decisions() == {"run-1": "approved"}
+        await persistence.save_plan_decisions(PlanDecisionsBlob(decisions={"run-1": "approved"}))
+        await persistence.save_todos([TodoItemWire(content="Task A", status="in_progress")])
+        assert (await persistence.load_plan_decisions()).decisions == {"run-1": "approved"}
         assert await persistence.load_todos() == [
-            {"content": "Task A", "status": "in_progress", "activeForm": ""}
+            TodoItemWire(content="Task A", status="in_progress")
         ]
 
     async def test_todos_then_plan_both_survive(self, tmp_path):
         db = _make_db(tmp_path)
         persistence = SessionPersistence(db=db, session_id="sess-coexist-b")
-        await persistence.save_todos([{"content": "Task A", "status": "in_progress"}])
-        await persistence.save_plan_decisions({"run-1": "approved"})
-        assert await persistence.load_plan_decisions() == {"run-1": "approved"}
+        await persistence.save_todos([TodoItemWire(content="Task A", status="in_progress")])
+        await persistence.save_plan_decisions(PlanDecisionsBlob(decisions={"run-1": "approved"}))
+        assert (await persistence.load_plan_decisions()).decisions == {"run-1": "approved"}
         assert await persistence.load_todos() == [
-            {"content": "Task A", "status": "in_progress", "activeForm": ""}
+            TodoItemWire(content="Task A", status="in_progress")
         ]
 
     async def test_does_not_clobber_unrelated_session_data(self, tmp_path):
@@ -200,7 +227,7 @@ class TestRealDbCoExistence:
         await db.upsert_session(seeded, deserialize=True)
 
         persistence = SessionPersistence(db=db, session_id="sess-merge")
-        await persistence.save_plan_decisions({"run-1": "approved"})
+        await persistence.save_plan_decisions(PlanDecisionsBlob(decisions={"run-1": "approved"}))
 
         # Read back the FULL session_data — our write merged,
         # didn't replace.
@@ -231,13 +258,12 @@ class TestRealDbEventLog:
     async def test_appends_and_reads_back(self, tmp_path):
         db = _make_db(tmp_path)
         persistence = SessionPersistence(db=db, session_id="sess-evlog")
-        entry = {
-            "seq": 1,
-            "run_id": "run-a",
-            "timestamp_ms": 1000,
-            "type": "visualization_delta",
-            "payload": {"spec_id": "s1", "json": "{}", "final": True},
-        }
+        entry = VisualizationDeltaEntry(
+            seq=1,
+            run_id="run-a",
+            timestamp_ms=1000,
+            payload=VisualizationDeltaPayload(spec_id="s1", spec_json="{}"),
+        )
         await persistence.save_event_log([entry])
         loaded = await persistence.load_event_log()
         assert loaded == [entry]
@@ -250,20 +276,18 @@ class TestRealDbEventLog:
         db = _make_db(tmp_path)
         writer = SessionPersistence(db=db, session_id="sess-evlog-restart")
         entries = [
-            {
-                "seq": 1,
-                "run_id": "run-1",
-                "timestamp_ms": 1000,
-                "type": "visualization_delta",
-                "payload": {"spec_id": "s1", "json": '{"root":"r"}', "final": True},
-            },
-            {
-                "seq": 2,
-                "run_id": "run-1",
-                "timestamp_ms": 1100,
-                "type": "visualization_delta",
-                "payload": {"spec_id": "s2", "json": '{"root":"q"}', "final": True},
-            },
+            VisualizationDeltaEntry(
+                seq=1,
+                run_id="run-1",
+                timestamp_ms=1000,
+                payload=VisualizationDeltaPayload(spec_id="s1", spec_json='{"root":"r"}'),
+            ),
+            VisualizationDeltaEntry(
+                seq=2,
+                run_id="run-1",
+                timestamp_ms=1100,
+                payload=VisualizationDeltaPayload(spec_id="s2", spec_json='{"root":"q"}'),
+            ),
         ]
         await writer.save_event_log(entries)
 
@@ -279,17 +303,17 @@ class TestRealDbEventLog:
         persistence = SessionPersistence(db=db, session_id="sess-evlog-order")
 
         await persistence.save_event_log(
-            [{"seq": 1, "run_id": "r1", "timestamp_ms": 1, "type": "x", "payload": {}}]
+            [VisualizationDeltaEntry(seq=1, run_id="r1", timestamp_ms=1, payload=_card("s1"))]
         )
         await persistence.save_event_log(
             [
-                {"seq": 1, "run_id": "r1", "timestamp_ms": 1, "type": "x", "payload": {}},
-                {"seq": 2, "run_id": "r1", "timestamp_ms": 2, "type": "y", "payload": {}},
+                VisualizationDeltaEntry(seq=1, run_id="r1", timestamp_ms=1, payload=_card("s1")),
+                WorkflowEventEntry(seq=2, run_id="r1", timestamp_ms=2, payload=_workflow()),
             ]
         )
 
         loaded = await persistence.load_event_log()
-        seqs = [e["seq"] for e in loaded]
+        seqs = [e.seq for e in loaded]
         assert seqs == [1, 2]
 
     async def test_coexists_with_todos_and_plan_decisions(self, tmp_path):
@@ -299,16 +323,14 @@ class TestRealDbEventLog:
         db = _make_db(tmp_path)
         persistence = SessionPersistence(db=db, session_id="sess-triple")
 
-        await persistence.save_todos([{"content": "A", "status": "pending"}])
-        await persistence.save_plan_decisions({"run-x": "approved"})
+        await persistence.save_todos([TodoItemWire(content="A", status="pending")])
+        await persistence.save_plan_decisions(PlanDecisionsBlob(decisions={"run-x": "approved"}))
         await persistence.save_event_log(
-            [{"seq": 1, "run_id": "run-x", "timestamp_ms": 1, "type": "t", "payload": {}}]
+            [VisualizationDeltaEntry(seq=1, run_id="run-x", timestamp_ms=1, payload=_card("s1"))]
         )
 
-        assert (await persistence.load_todos()) == [
-            {"content": "A", "status": "pending", "activeForm": ""}
-        ]
-        assert (await persistence.load_plan_decisions()) == {"run-x": "approved"}
+        assert (await persistence.load_todos()) == [TodoItemWire(content="A", status="pending")]
+        assert (await persistence.load_plan_decisions()).decisions == {"run-x": "approved"}
         assert len(await persistence.load_event_log()) == 1
 
     async def test_concurrent_writes_all_survive(self, tmp_path):
@@ -323,15 +345,13 @@ class TestRealDbEventLog:
         persistence = SessionPersistence(db=db, session_id="sess-race")
 
         await _asyncio.gather(
-            persistence.save_todos([{"content": "A", "status": "pending"}]),
-            persistence.save_plan_decisions({"r1": "approved"}),
+            persistence.save_todos([TodoItemWire(content="A", status="pending")]),
+            persistence.save_plan_decisions(PlanDecisionsBlob(decisions={"r1": "approved"})),
             persistence.save_event_log(
-                [{"seq": 1, "run_id": "r1", "timestamp_ms": 1, "type": "t", "payload": {}}]
+                [VisualizationDeltaEntry(seq=1, run_id="r1", timestamp_ms=1, payload=_card("s1"))]
             ),
         )
 
-        assert (await persistence.load_todos()) == [
-            {"content": "A", "status": "pending", "activeForm": ""}
-        ]
-        assert (await persistence.load_plan_decisions()) == {"r1": "approved"}
+        assert (await persistence.load_todos()) == [TodoItemWire(content="A", status="pending")]
+        assert (await persistence.load_plan_decisions()).decisions == {"r1": "approved"}
         assert len(await persistence.load_event_log()) == 1

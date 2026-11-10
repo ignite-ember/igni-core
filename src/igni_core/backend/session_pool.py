@@ -24,8 +24,9 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine, MutableSequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from igni_core.backend.schemas_rpc import SessionPoolConfig
 from igni_core.backend.schemas_sessions import (
     BackendLike,
     EvictedRuntimeReport,
@@ -39,6 +40,11 @@ from igni_core.backend.schemas_sessions import (
 # should import from :mod:`session_stamping_transport` directly.
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.core.activity import BusyKind, background
+from igni_core.protocol import messages as msg
+from igni_core.protocol.messages import Message
+
+if TYPE_CHECKING:
+    from igni_core.backend.rpc_router import RpcRouter
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +70,13 @@ class SessionRuntime:
         transport: TransportLike,
         known_ids: set[str] | None = None,
         last_used_at: float = 0.0,
+        router: RpcRouter | None = None,
     ) -> None:
         self.backend = backend
         self.rpc_table = rpc_table
+        # The router ``rpc_table`` was built from, closed with the
+        # runtime so the workflows it started do not outlive it.
+        self._router = router
         self.queue = queue
         self.transport = transport
         self.known_ids: set[str] = set(known_ids) if known_ids else set()
@@ -106,11 +116,13 @@ class SessionRuntime:
         return self.backend.session_id
 
     def is_busy(self) -> bool:
-        """True while a run is in flight on this runtime — the
-        eviction sweep spares busy runtimes so a mid-stream tool
-        call is never cancelled by teardown.
+        """True while a run or a workflow is in flight on this runtime —
+        the eviction sweep spares busy runtimes so a mid-stream tool
+        call or a running workflow is never cancelled by teardown.
         """
-        return bool(self.backend.processing)
+        if self.backend.processing:
+            return True
+        return self._router is not None and self._router.has_live_workflows()
 
     def is_idle_since(self, cutoff: float) -> bool:
         """``last_used_at < cutoff`` — the eviction sweep's
@@ -157,16 +169,44 @@ class SessionRuntime:
     # ── Lifetime ─────────────────────────────────────────────────
 
     async def shutdown_safely(self) -> ShutdownReport:
-        """Shut the backend down, capturing failures into a typed
+        """Close the router, then shut the backend down, capturing failures into a typed
         :class:`ShutdownReport` so the pool's evictor can surface
         real teardown bugs instead of DEBUG-swallowing them.
         """
         sid = self.backend.session_id
         try:
+            if self._router is not None:
+                await self._router.close()
             await self.backend.shutdown()
         except Exception as exc:
             return ShutdownReport(ok=False, session_id=sid, error=str(exc))
         return ShutdownReport(ok=True, session_id=sid)
+
+    async def replay_waiting_approvals(self, request_id: str = "") -> None:
+        """Show the session's approvals still waiting, to a window attaching.
+
+        After a reload the window has lost its dialog; after a backend
+        restart the approvals were read back from the database. Either
+        way the person sees the question again, and answering it resumes
+        the run. What the previous backend was continuing when it died
+        goes on now, where a window can see it.
+
+        With ``request_id`` (the attach that asked), every message sent
+        carries it and a ``stream_end`` of that id ends them, so the
+        client that attached can tell what its attach brought back.
+        """
+
+        def tagged(message: Message) -> Message:
+            return message.model_copy(update={"id": request_id}) if request_id else message
+
+        for paused in self.backend.controllers.hitl.waiting_messages():
+            await self.transport.send(tagged(paused))
+        async for proto in self.backend.controllers.hitl.resume_interrupted():
+            await self.transport.send(tagged(proto))
+        if request_id:
+            await self.transport.send(
+                msg.StreamEnd(id=request_id, session_id=self.backend.session_id)
+            )
 
     def spawn_auto_name(self, coro: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
         """Fire-and-forget task that survives until it completes.
@@ -186,7 +226,7 @@ class SessionRuntime:
 # Default: 30 minutes. Long enough that a user briefly switching to
 # another project doesn't lose warm state when they come back; short
 # enough that a forgotten BE doesn't hold every session it has ever
-# seen forever. Tunable via ``SessionPool(idle_timeout_seconds=...)``.
+# seen forever. Tunable via ``SessionPoolConfig.idle_timeout_seconds``.
 _DEFAULT_IDLE_TIMEOUT = 30 * 60
 
 
@@ -207,7 +247,7 @@ class SessionPool:
         default: SessionRuntime,
         factory: Callable[[str], Awaitable[SessionRuntime]],
         *,
-        idle_timeout_seconds: float = _DEFAULT_IDLE_TIMEOUT,
+        config: SessionPoolConfig | None = None,
         clock: Callable[[], float] | None = None,
     ) -> None:
         # ``clock`` is injectable so tests can fast-forward without
@@ -221,7 +261,8 @@ class SessionPool:
         default.touch(self._clock())
         self._runtimes: list[SessionRuntime] = [default]
         self._factory = factory
-        self._idle_timeout = idle_timeout_seconds
+        idle_timeout = config.idle_timeout_seconds if config is not None else None
+        self._idle_timeout = idle_timeout if idle_timeout is not None else _DEFAULT_IDLE_TIMEOUT
         # Serialises creation so two messages for the same not-yet-
         # loaded session don't resume it twice. Also held during
         # ``evict_idle`` so we never evict a runtime mid-resume.
@@ -265,7 +306,7 @@ class SessionPool:
             return rt
 
     async def evict_idle(self) -> EvictionReport:
-        """Drop runtimes idle longer than ``idle_timeout_seconds``.
+        """Drop runtimes idle longer than the configured idle timeout.
 
         The default runtime (index 0) is NEVER evicted — it serves
         empty-``session_id`` traffic (the TUI's default behaviour)

@@ -19,15 +19,19 @@ two are exported for isolated testing.
 from igni_core.core.session.compaction.context_breakdown_reporter import (
     ContextBreakdownReporter,
 )
+from igni_core.core.session.compaction.context_budget import ContextBudget
 from igni_core.core.session.compaction.coordinator import CompactionCoordinator
 from igni_core.core.session.compaction.fallback_summariser import (
     FallbackSummariser,
     TranscriptMessage,
 )
+from igni_core.core.session.compaction.team_session import TeamSessionSource
 
 __all__ = [
     "CompactionCoordinator",
     "ContextBreakdownReporter",
+    "ContextBudget",
     "FallbackSummariser",
+    "TeamSessionSource",
     "TranscriptMessage",
 ]

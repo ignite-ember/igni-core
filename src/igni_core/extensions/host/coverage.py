@@ -36,7 +36,8 @@ NOT_REACHABLE: tuple[Unreachable, ...] = (
         key="credentials",
         what="The person's igni session and any credential (`login`, "
         "`reload_cloud_credentials`, `clear_cloud_credentials`, `set_server`, "
-        "`discover_server` values, `cancel_login`)",
+        "`discover_server` values, `get_cloud_plan`, `cancel_login`, `vm_sign_in` and the "
+        "`vm_credential` push)",
         why="An extension never holds the session (service-identity §9). It can start "
         "or end the person's sign-in through `host.account`, but never read what it "
         "produces.",
@@ -86,6 +87,13 @@ NOT_REACHABLE: tuple[Unreachable, ...] = (
         "`revoke_approver_tokens`)",
         why="The person's decision, made in igni's own window: an extension that could "
         "mint the token could approve its own agent's calls (SECURITY §10).",
+    ),
+    Unreachable(
+        key="dead_channel",
+        what="The push channels nothing produces (`orchestrate_progress`, `scheduler_event`)",
+        why="No producer sends them: a run's progress goes on `orchestrate_event`, and a "
+        "scheduled task's outcome on `scheduler_completed` (the scheduler's own "
+        "`scheduler.event` is a broadcast, and it is in the model).",
     ),
 )
 
@@ -191,6 +199,7 @@ RPC: dict[RpcMethod, str] = {
 RPC_UNREACHABLE: dict[RpcMethod, str] = {
     RpcMethod.LOGIN: "credentials",
     RpcMethod.DISCOVER_SERVER: "credentials",
+    RpcMethod.GET_CLOUD_PLAN: "credentials",
     RpcMethod.SET_SERVER: "credentials",
     RpcMethod.RELOAD_CLOUD_CREDENTIALS: "credentials",
     RpcMethod.CLEAR_CLOUD_CREDENTIALS: "credentials",
@@ -290,8 +299,6 @@ BROADCAST_PARTS: dict[str, str] = {
 PUSH: dict[PushChannel, str] = {
     PushChannel.SCHEDULER_STARTED: "scheduler.event",
     PushChannel.SCHEDULER_COMPLETED: "scheduler.event",
-    PushChannel.SCHEDULER_EVENT: "scheduler.event",
-    PushChannel.ORCHESTRATE_PROGRESS: "chat.agent_event",
     PushChannel.ORCHESTRATE_EVENT: "chat.agent_event",
     PushChannel.LOGIN_STATUS: "account.changed",
     PushChannel.LOGIN_RESULT: "account.changed",
@@ -318,6 +325,7 @@ PUSH_UNREACHABLE: dict[PushChannel, str] = {
     PushChannel.OPEN_EXTERNAL: "channel",
     PushChannel.WINDOW_MODEL_CHANGED: "channel",
     PushChannel.WORKSPACE_TRUST_REQUIRED: "workspace_trust",
+    PushChannel.VM_CREDENTIAL: "credentials",
 }
 
 #: ``UNKNOWN`` is the enum's catch-all for a channel nobody listed,

@@ -31,14 +31,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from igni_core.backend.schemas_rpc import RunShellResult
 from igni_core.core.tools.managed_process import ManagedProcess
-from igni_core.core.tools.process_supervisor_locator import supervisors
-
-if TYPE_CHECKING:
-    from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 logger = logging.getLogger(__name__)
 
@@ -61,16 +57,16 @@ class CapturedShellRunner:
         self,
         project_dir: Path,
         *,
+        supervisor: ProcessSupervisor,
         timeout_seconds: int = 120,
         max_output_bytes: int = 100_000,
-        supervisor: ProcessSupervisor | None = None,
     ) -> None:
         self._project_dir = project_dir
         self._timeout_seconds = timeout_seconds
         self._max_output_bytes = max_output_bytes
-        # Defaults to the process-wide supervisor, which is the one the
-        # watcher reads. Injected in tests.
-        self._supervisor = supervisor or supervisors.default()
+        # The supervisor the backend process shares — the registry the
+        # watcher panel reads, so a ``$`` command shows up there.
+        self._supervisor = supervisor
 
     async def run(self, command: str) -> RunShellResult:
         command = command.strip()
@@ -112,6 +108,8 @@ class CapturedShellRunner:
             return RunShellResult(
                 output=f"{note}\n{tail}"[-self._max_output_bytes :],
                 exit_code=0,
+                pid=pid,
+                backgrounded=True,
             )
 
         await asyncio.sleep(_DRAIN_SECONDS)
@@ -127,4 +125,5 @@ class CapturedShellRunner:
         return RunShellResult(
             output=output[-self._max_output_bytes :],
             exit_code=exit_code,
+            pid=pid,
         )

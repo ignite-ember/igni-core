@@ -21,8 +21,10 @@ from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.core.config.schemas.safety import BypassGuardConfig
 from igni_core.core.hooks.bypass_explainer import CallExplainer, clean
-from igni_core.core.hooks.bypass_guard import BypassGuard, Verdict, explained
-from igni_core.core.session.core import Session
+from igni_core.core.hooks.bypass_guard import BypassGuard, Verdict
+from igni_core.core.hooks.bypass_judge import HarmScore
+from igni_core.core.mcp.hints import ToolHintsRegistry
+from igni_core.core.session.tool_approval import ToolCallApprovalChannel
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
 
@@ -44,7 +46,7 @@ class FakeExplainer:
 
 class NoJudge:
     async def score(self, text):
-        return 0.0, "destructive"
+        return HarmScore(probability=0.0, question="destructive")
 
 
 def _guard(project: Path, *, ask, explainer=None) -> BypassGuard:
@@ -53,6 +55,7 @@ def _guard(project: Path, *, ask, explainer=None) -> BypassGuard:
         project_dir=project,
         in_bypass=lambda: True,
         ask=ask,
+        tool_hints=ToolHintsRegistry(),
         judge=NoJudge(),
         explainer=explainer,
     )
@@ -77,7 +80,7 @@ class TestTheAnswer:
 
     def test_the_sentence_is_followed_by_what_stopped_the_call(self):
         rule = Verdict(needs_approval=True, reason="force-pushes, rewriting shared history")
-        assert explained(rule, _SENTENCE) == (
+        assert rule.explained(_SENTENCE) == (
             f"{_SENTENCE}. Bypass paused here because a safety rule matched "
             "(force-pushes, rewriting shared history)."
         )
@@ -85,10 +88,10 @@ class TestTheAnswer:
             needs_approval=True, reason="might delete or overwrite data", score=0.91, judged=True
         )
         assert "the safety model rated it 0.91 of 1 (might delete or overwrite data)" in (
-            explained(judged, "Deletes the build cache.")
+            judged.explained("Deletes the build cache.")
         )
         unchecked = Verdict(needs_approval=True, reason="could not be checked for safety")
-        assert explained(unchecked, "Runs a script.").endswith(
+        assert unchecked.explained("Runs a script.").endswith(
             "because the call could not be checked for safety."
         )
 
@@ -264,7 +267,9 @@ class TestTheCoordinator:
         coordinator.update_details(req_id, "better")
         assert req.details == "better"
         assert coordinator.new_arrival.is_set()
-        assert coordinator.take_detail_updates() == [(req_id, "better")]
+        assert [(u.requirement_id, u.details) for u in coordinator.take_detail_updates()] == [
+            (req_id, "better")
+        ]
         assert coordinator.take_detail_updates() == []
 
     def test_one_not_yet_shown_goes_out_with_the_new_text(self):
@@ -277,7 +282,7 @@ class TestTheCoordinator:
     def test_an_answered_question_is_left_alone(self):
         coordinator = SubAgentHITLCoordinator()
         req_id, req = self._pending(coordinator, surfaced=True)
-        coordinator.resolve(req_id, "confirm")
+        coordinator.resolve(req_id, msg.HITLAction.CONFIRM)
         coordinator.update_details(req_id, "better")
         assert req.details == "stock" and coordinator.take_detail_updates() == []
 
@@ -287,10 +292,12 @@ class TestTheCoordinator:
 
 async def _through_the_relay(tmp_path, explainer):
     """Run one guarded call through the real multiplexer; return what the UI was sent."""
-    session = SimpleNamespace(sub_agent_hitl=SubAgentHITLCoordinator(), project_dir=tmp_path)
+    session = SimpleNamespace(
+        sub_agent_hitl=SubAgentHITLCoordinator(), project_dir=tmp_path, permission_evaluator=None
+    )
     guard = _guard(
         tmp_path,
-        ask=lambda *a, **kw: Session._ask_about_tool_call(session, *a, **kw),
+        ask=ToolCallApprovalChannel(session.sub_agent_hitl).ask,
         explainer=explainer,
     )
     outcome = {}
@@ -366,23 +373,20 @@ def test_with_no_explanation_the_spinner_gives_way_to_the_plain_reason(tmp_path)
 def test_answering_first_stops_the_explainer(tmp_path):
     async def scenario():
         coordinator = SubAgentHITLCoordinator()
-        coordinator.listeners = 1
-        session = SimpleNamespace(sub_agent_hitl=coordinator)
+        coordinator.open_relay()
+        ask = ToolCallApprovalChannel(coordinator).ask
         started = asyncio.Event()
 
         async def follow_up():
             started.set()
             await asyncio.sleep(3600)
 
-        task = asyncio.create_task(
-            Session._ask_about_tool_call(
-                session, "bash", {"command": "x"}, "stock", [], follow_up=follow_up
-            )
-        )
+        task = asyncio.create_task(ask("bash", {"command": "x"}, "stock", [], follow_up=follow_up))
         await coordinator.new_arrival.wait()
-        [(req_id, _)] = coordinator.list_new_pending()
+        [handle] = coordinator.list_new_pending()
+        req_id = handle.requirement_id
         await started.wait()
-        coordinator.resolve(req_id, "reject")
+        coordinator.resolve(req_id, msg.HITLAction.REJECT)
         return await asyncio.wait_for(task, timeout=2)
 
     assert asyncio.run(scenario()) is False

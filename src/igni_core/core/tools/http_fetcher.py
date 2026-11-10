@@ -27,18 +27,20 @@ that finding.
 
 import logging
 import re
-from collections.abc import Callable
-from typing import Any
 
 import httpx
 
 from igni_core.core.activity.http import busy_call
-from igni_core.core.tools.web_schemas import FetchResult, HttpFetcherConfig
+from igni_core.core.broadcast_schema import BroadcastSink
+from igni_core.core.tools.web_schemas import (
+    FetchResult,
+    HttpFetcherConfig,
+    HttpRetryAttemptEvent,
+    HttpRetrySucceededEvent,
+)
 from igni_core.core.utils.http_retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
-
-BroadcastFn = Callable[[str, dict[str, Any]], None]
 
 
 class HttpFetcher:
@@ -66,7 +68,7 @@ class HttpFetcher:
     def __init__(
         self,
         config: HttpFetcherConfig | None = None,
-        broadcast: BroadcastFn | None = None,
+        broadcast: BroadcastSink | None = None,
     ) -> None:
         self._config = config or HttpFetcherConfig()
         self._broadcast = broadcast
@@ -160,25 +162,18 @@ class HttpFetcher:
         )
         if metadata.retried and self._broadcast:
             self._broadcast(
-                "http_retry_succeeded",
-                {
-                    "url": url,
-                    "attempt_count": metadata.attempt_count,
-                    "delay_seconds": metadata.final_delay_seconds,
-                },
+                HttpRetrySucceededEvent(
+                    url=url,
+                    attempt_count=metadata.attempt_count,
+                    delay_seconds=metadata.final_delay_seconds,
+                )
             )
         return response
 
     def _on_retry(self, attempt: int, delay: float) -> None:
         """Callback invoked on each retry attempt."""
         if self._broadcast:
-            self._broadcast(
-                "http_retry_attempt",
-                {
-                    "attempt": attempt,
-                    "delay_seconds": delay,
-                },
-            )
+            self._broadcast(HttpRetryAttemptEvent(attempt=attempt, delay_seconds=delay))
 
     @staticmethod
     def html_to_text(html: str) -> str:

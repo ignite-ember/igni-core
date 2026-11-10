@@ -4,14 +4,18 @@ On the desktop tasks live in ``~/.igni/projects/<project_hash>/state.db``;
 in the cloud in the shared database, filtered by the project's scope.
 Either way each project has its own scheduler queue — switching projects
 doesn't surface another project's pending ``/loop`` jobs.
+
+The store owns queries and nothing else: a row's own mapping to and
+from the domain task lives on
+:class:`~igni_core.core.scheduler.db_models.ScheduledTaskModel`, which
+knows its columns and the format they hold.
 """
 
 from __future__ import annotations
 
-import logging
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from sqlalchemy import Select, delete, func, select
 
@@ -20,9 +24,6 @@ from igni_core.core.db.database import Database
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.scheduler.db_models import ScheduledTaskModel
 from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
-from igni_core.core.scheduler.recurrence import Recurrence
-
-logger = logging.getLogger(__name__)
 
 
 class TaskStore:
@@ -42,7 +43,7 @@ class TaskStore:
 
     async def add(self, task: ScheduledTask) -> None:
         async with self._db.session() as session, session.begin():
-            row = _task_to_row(task)
+            row = ScheduledTaskModel.from_task(task)
             for column, value in self._db.scope.stamp().items():
                 setattr(row, column, value)
             session.add(row)
@@ -83,6 +84,25 @@ class TaskStore:
             row.error = error
             return True
 
+    async def cancel(self, task_id: str) -> TaskStatus | None:
+        """Mark a task cancelled, if it has not finished; its status before.
+
+        ``None`` for a task the store does not have. A task that already
+        completed, failed or was cancelled keeps its status, its result and
+        its error: cancelling it is not a write. The read and the write
+        share one transaction, as in :meth:`update_status`.
+        """
+        async with self._db.session() as session, session.begin():
+            row = (
+                await session.execute(self._select_one(task_id).with_for_update())
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            before = TaskStatus(row.status)
+            if before.is_active:
+                row.status = TaskStatus.cancelled.value
+            return before
+
     async def remove(self, task_id: str) -> bool:
         async with self._db.session() as session, session.begin():
             result = await session.execute(
@@ -106,7 +126,7 @@ class TaskStore:
                 .order_by(ScheduledTaskModel.scheduled_at)
             )
             rows = result.scalars().all()
-        return [_row_to_task(r) for r in rows]
+        return self._tasks(rows)
 
     async def next_pending_at(self) -> datetime | None:
         """When the earliest pending task is due, or ``None``."""
@@ -139,60 +159,29 @@ class TaskStore:
         async with self._db.session() as session:
             result = await session.execute(stmt)
             rows = result.scalars().all()
-        return [_row_to_task(r) for r in rows]
+        return self._tasks(rows)
 
     async def get(self, task_id: str) -> ScheduledTask | None:
+        """The task with this id, or ``None`` when there is no such row —
+        or when the row is one this build cannot read."""
         async with self._db.session() as session:
             row = (await session.execute(self._select_one(task_id))).scalar_one_or_none()
-        return _row_to_task(row) if row else None
+        return row.to_task() if row is not None else None
 
     def _select_one(self, task_id: str) -> Select[tuple[ScheduledTaskModel]]:
         return select(ScheduledTaskModel).where(
             self._db.scope.where(ScheduledTaskModel), ScheduledTaskModel.id == task_id
         )
 
+    def _tasks(self, rows: Sequence[ScheduledTaskModel]) -> list[ScheduledTask]:
+        """The tasks these rows hold, minus the ones that can't be read.
 
-def _task_to_row(task: ScheduledTask) -> ScheduledTaskModel:
-    return ScheduledTaskModel(
-        id=task.id,
-        description=task.description,
-        scheduled_at=task.scheduled_at,
-        created_at=task.created_at,
-        status=task.status.value,
-        result=task.result,
-        error=task.error,
-        recurrence=task.recurrence,
-    )
-
-
-def _canonical_recurrence(raw: str) -> str:
-    """Normalize a persisted recurrence that predates the canonical form.
-
-    Rows written before :class:`ScheduledTask` validated the field hold
-    user-facing phrases like ``daily`` / ``weekly`` — the model's own
-    docstring used to give those as examples. Constructing the model
-    from such a row raises ``ValidationError``, and that error escapes
-    ``get_due_tasks`` into the poll loop's catch-all, so a single legacy
-    row stopped *every* task in the project from running again. Convert
-    what parses, drop what does not, keep the loop alive.
-    """
-    if not raw or Recurrence.from_canonical(raw) is not None:
-        return raw
-    parsed = Recurrence.parse(raw)
-    if parsed is not None:
-        return parsed.recurrence.canonical()
-    logger.warning("Dropping unparseable recurrence %r — task becomes one-shot", raw)
-    return ""
-
-
-def _row_to_task(row: Any) -> ScheduledTask:
-    return ScheduledTask(
-        id=row.id,
-        description=row.description,
-        scheduled_at=row.scheduled_at,
-        created_at=row.created_at,
-        status=TaskStatus(row.status),
-        result=row.result or "",
-        error=row.error or "",
-        recurrence=_canonical_recurrence(row.recurrence or ""),
-    )
+        A row the domain refuses costs only itself: it is left out, so
+        one unreadable row cannot stop the runner's poll loop.
+        """
+        tasks: list[ScheduledTask] = []
+        for row in rows:
+            task = row.to_task()
+            if task is not None:
+                tasks.append(task)
+        return tasks

@@ -8,7 +8,7 @@ the organisation, who controls the server and writes the pack, so nothing the
 server does can be the control. This is the control, and it is the
 developer's: ``hooks.group`` in their own ``~/.igni/config.yaml`` or on their
 command line, which neither a project, the group policy nor the managed file
-can set (``DeveloperOnlyTier`` in ``core/config/merge_plan.py``).
+can set (``DeveloperOnlyTier`` in ``core/config/tiers/developer.py``).
 
 * ``run`` — the group's hooks run (the default, and the behaviour before this
   existed).
@@ -31,84 +31,51 @@ The developer's own hooks (user, project, their own plugins) are not affected.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import logging
-import os
-import tempfile
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-from igni_core.core.config.schemas.orchestration import GROUP_HOOK_MODES
+from pydantic import BaseModel
+
+from igni_core.core.config.schemas.orchestration import GROUP_HOOK_MODES, GroupHookMode
+from igni_core.core.hooks.group_hook_decisions import (
+    ForgetfulGroupHookDecisions,
+    GroupHookDecisions,
+    GroupHookDecisionStore,
+)
 from igni_core.core.hooks.schemas import HookDefinition
 
 logger = logging.getLogger(__name__)
 
 #: ``(name, details, reason, agent_path) -> True / False / None`` — the
-#: session's in-run approval channel (``Session._ask_about_tool_call``); ``None``
+#: session's in-run approval channel (``ToolCallApprovalChannel.ask``); ``None``
 #: means nobody can answer. The same shape as the permission pipeline's
 #: ``AskPerson``.
 AskAboutGroupHook = Callable[[str, dict[str, Any], str, list[str]], Awaitable[bool | None]]
 
-Decision = Literal["run", "refuse"]
-
 #: The name the approval dialog shows for a group hook.
 APPROVAL_NAME = "group_policy_hook"
 
+#: Why the dialog is asking, under the hook's details.
+APPROVAL_REASON = (
+    "Your organisation's group policy ships this hook. It runs on this "
+    "machine as you, outside the agent's permissions — --strict does not "
+    "cover it. Run it? (hooks.group: ask — your answer is kept until the "
+    "hook changes.)"
+)
 
-class GroupHookDecisions:
-    """The developer's answers about group hooks, by hook digest.
 
-    Kept in ``~/.igni/group-hook-decisions.json`` — the developer's directory,
-    which the group policy cache never writes to. Delete the file to be asked
-    again about every hook.
-    """
+class GroupHookApprovalDetails(BaseModel):
+    """What the approval dialog shows about the hook it asks about."""
 
-    FILENAME = "group-hook-decisions.json"
+    hook: str
+    type: str
+    event: str
+    source: str
 
-    def __init__(self, path: Path | None = None) -> None:
-        if path is None:
-            from igni_core.core.paths import home_config_dir
-
-            path = home_config_dir() / self.FILENAME
-        self.path = path
-
-    def _read(self) -> dict[str, Any]:
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return {}
-        except (OSError, ValueError) as exc:
-            logger.warning("Could not read %s (%s); asking again.", self.path, exc)
-            return {}
-        hooks = data.get("hooks") if isinstance(data, dict) else None
-        return hooks if isinstance(hooks, dict) else {}
-
-    def get(self, digest: str) -> Decision | None:
-        entry = self._read().get(digest)
-        decision = entry.get("decision") if isinstance(entry, dict) else None
-        return decision if decision in ("run", "refuse") else None
-
-    def set(self, digest: str, decision: Decision, hook: HookDefinition) -> None:
-        hooks = self._read()
-        hooks[digest] = {
-            "decision": decision,
-            "what": GroupHookGate.describe(hook),
-            "source": hook.group_source,
-            "decided_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        }
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".group-hooks-")
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump({"version": 1, "hooks": hooks}, f, indent=2, sort_keys=True)
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, self.path)
-        except OSError as exc:
-            # Not remembered means asked again next time — the safe side.
-            logger.warning("Could not record the answer in %s: %s", self.path, exc)
+    @classmethod
+    def of(cls, hook: HookDefinition, event: str) -> GroupHookApprovalDetails:
+        return cls(hook=hook.describe(), type=hook.type, event=event, source=hook.group_source)
 
 
 class GroupHookGate:
@@ -116,13 +83,13 @@ class GroupHookGate:
 
     def __init__(
         self,
-        mode: Callable[[], str] | str = "run",
+        mode: Callable[[], GroupHookMode] | GroupHookMode = "run",
         ask: AskAboutGroupHook | None = None,
-        decisions: GroupHookDecisions | None = None,
+        decisions: GroupHookDecisionStore | None = None,
     ) -> None:
         self._mode = mode if callable(mode) else (lambda: mode)
         self._ask = ask
-        self._decisions = decisions if decisions is not None else GroupHookDecisions()
+        self._decisions = decisions if decisions is not None else GroupHookDecisions.in_home()
         #: In-flight questions by digest, so two dispatches of one hook at
         #: once put one question to the person.
         self._asking: dict[str, asyncio.Future[bool]] = {}
@@ -135,30 +102,9 @@ class GroupHookGate:
         Every production path passes the session's gate; a path that forgot
         to must not be the one that runs the organisation's code unchecked.
         """
-        return cls(mode="refuse", decisions=_NoDecisions())
+        return cls(mode="refuse", decisions=ForgetfulGroupHookDecisions())
 
-    # ── reading a hook ─────────────────────────────────────────────
-
-    @staticmethod
-    def digest(hook: HookDefinition) -> str:
-        """A digest of everything the hook does — its version, for asking."""
-        content = json.dumps(hook.model_dump(mode="json"), sort_keys=True)
-        return hashlib.sha256(content.encode()).hexdigest()
-
-    @staticmethod
-    def describe(hook: HookDefinition) -> str:
-        """What the hook will do, in one line a person can judge."""
-        if hook.type == "command":
-            return hook.command
-        if hook.type == "http":
-            return f"POST {hook.url}"
-        if hook.type == "mcp_tool":
-            return f"MCP tool {hook.mcp_server}/{hook.mcp_tool}"
-        if hook.type == "prompt":
-            return f"Add to the conversation: {hook.text}"
-        return f"{hook.type} hook"
-
-    def mode(self) -> str:
+    def mode(self) -> GroupHookMode:
         mode = self._mode()
         # Anything unrecognised is read as the cautious middle.
         return mode if mode in GROUP_HOOK_MODES else "ask"
@@ -169,19 +115,22 @@ class GroupHookGate:
         """True when ``hook`` may run for ``event``. Not a group hook → True."""
         if not hook.from_group:
             return True
-        mode = self.mode()
-        if mode == "run":
-            return True
-        if mode == "refuse":
-            self._log_once(
-                hook,
-                "refuse",
-                "Not running the group policy's %s hook from %s (hooks.group: refuse): %s",
-                event,
-            )
-            return False
+        match self.mode():
+            case "run":
+                return True
+            case "refuse":
+                self._log_once(
+                    hook,
+                    "refuse",
+                    "Not running the group policy's %s hook from %s (hooks.group: refuse): %s",
+                    event,
+                )
+                return False
+            case "ask":
+                return await self._ask_once(hook, event)
 
-        digest = self.digest(hook)
+    async def _ask_once(self, hook: HookDefinition, event: str) -> bool:
+        digest = hook.digest()
         recorded = self._decisions.get(digest)
         if recorded is not None:
             if recorded == "refuse":
@@ -215,16 +164,8 @@ class GroupHookGate:
             try:
                 answer = await self._ask(
                     APPROVAL_NAME,
-                    {
-                        "hook": self.describe(hook),
-                        "type": hook.type,
-                        "event": event,
-                        "source": hook.group_source,
-                    },
-                    "Your organisation's group policy ships this hook. It runs on this "
-                    "machine as you, outside the agent's permissions — --strict does not "
-                    "cover it. Run it? (hooks.group: ask — your answer is kept until the "
-                    "hook changes.)",
+                    GroupHookApprovalDetails.of(hook, event).model_dump(),
+                    APPROVAL_REASON,
                     ["group policy hook"],
                 )
             except Exception as exc:  # fail closed
@@ -244,34 +185,21 @@ class GroupHookGate:
             "You %s the group policy's hook from %s: %s",
             "allowed" if answer else "declined",
             hook.group_source,
-            self.describe(hook),
+            hook.describe(),
         )
         return answer
 
     def _log_once(self, hook: HookDefinition, why: str, message: str, event: str) -> None:
-        mark = (self.digest(hook), why)
+        mark = (hook.digest(), why)
         if mark in self._logged:
             return
         self._logged.add(mark)
-        logger.warning(message, event, hook.group_source, self.describe(hook))
-
-
-class _NoDecisions(GroupHookDecisions):
-    """Remembers nothing — for :meth:`GroupHookGate.unwired`."""
-
-    def __init__(self) -> None:
-        self.path = Path(os.devnull)
-
-    def get(self, digest: str) -> Decision | None:
-        return None
-
-    def set(self, digest: str, decision: Decision, hook: HookDefinition) -> None:
-        return None
+        logger.warning(message, event, hook.group_source, hook.describe())
 
 
 __all__ = [
     "APPROVAL_NAME",
     "AskAboutGroupHook",
-    "GroupHookDecisions",
+    "GroupHookApprovalDetails",
     "GroupHookGate",
 ]

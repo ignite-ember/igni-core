@@ -19,16 +19,19 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from igni_core.backend.rpc_handlers.base import RpcHandlerContext
 from igni_core.backend.rpc_handlers.extensions import ExtensionsRpcHandler
+from igni_core.backend.schemas_extensions import SetExtensionSettingsArgs
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
+from igni_core.extensions.store import ExtensionStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -44,14 +47,21 @@ def bundle_at(tmp_path: Path) -> Path:
     return bundle
 
 
-def handler(extensions: ExtensionRpc | None, origins: ExtensionOrigins | None):
+def handler(
+    extensions: ExtensionRpc | None,
+    origins: ExtensionOrigins | None,
+    store: ExtensionStore | None = None,
+):
     ctx = RpcHandlerContext(
         backend=None,
-        transport=None,
+        file_completion=MagicMock(),
+        shell_runner=MagicMock(),
         login=None,  # type: ignore[arg-type]
         push=None,  # type: ignore[arg-type]
+        workflows=None,  # type: ignore[arg-type]
         extensions=extensions,
         origins=origins,
+        extension_store=store,
     )
     return ExtensionsRpcHandler(ctx)
 
@@ -62,6 +72,7 @@ class Wired:
         self.rpc = ExtensionRpc(self.registry)
         self.mcp = MCPClientManager(project_dir=tmp_path)
         self.origins = ExtensionOrigins()
+        self.store = ExtensionStore(tmp_path / "store")
         self.installer = ExtensionInstaller(
             registry=self.registry,
             rpc=self.rpc,
@@ -86,7 +97,7 @@ async def wired(tmp_path: Path):
 
 async def test_an_installed_extension_is_listed_with_what_it_takes_to_draw(wired, tmp_path):
     await wired.installer.install(bundle_at(tmp_path))
-    result = await handler(wired.rpc, wired.origins).list_extensions({})
+    result = await handler(wired.rpc, wired.origins, wired.store).list_extensions({})
 
     (summary,) = result.extensions
     assert summary.id == "acme.scanner"
@@ -108,7 +119,7 @@ async def test_the_manifest_itself_does_not_go_to_the_browser(wired, tmp_path):
     them in anything that logs a frame.
     """
     await wired.installer.install(bundle_at(tmp_path))
-    result = await handler(wired.rpc, wired.origins).list_extensions({})
+    result = await handler(wired.rpc, wired.origins, wired.store).list_extensions({})
 
     fields = set(result.extensions[0].model_dump())
     assert fields == {
@@ -177,7 +188,9 @@ async def test_a_broken_extension_is_listed_with_its_reason(wired, tmp_path):
     (bundle / "manifest.json").write_text(json.dumps(manifest))
     await wired.installer.install(bundle)
 
-    (summary,) = (await handler(wired.rpc, wired.origins).list_extensions({})).extensions
+    (summary,) = (
+        await handler(wired.rpc, wired.origins, wired.store).list_extensions({})
+    ).extensions
     assert summary.state == ExtensionState.FAILED.value
     assert summary.reason
 
@@ -196,7 +209,9 @@ async def test_an_extension_with_no_ui_has_no_origin(wired, tmp_path):
     (bundle / "manifest.json").write_text(json.dumps(manifest))
     await wired.installer.install(bundle)
 
-    (summary,) = (await handler(wired.rpc, wired.origins).list_extensions({})).extensions
+    (summary,) = (
+        await handler(wired.rpc, wired.origins, wired.store).list_extensions({})
+    ).extensions
     assert summary.state == ExtensionState.READY.value
     assert summary.origin == ""
     assert summary.pages == []
@@ -206,6 +221,43 @@ async def test_the_listing_is_stable(wired, tmp_path):
     """Sorted by id, so the sidebar does not reorder itself between
     calls."""
     await wired.installer.install(bundle_at(tmp_path))
-    first = await handler(wired.rpc, wired.origins).list_extensions({})
-    second = await handler(wired.rpc, wired.origins).list_extensions({})
+    first = await handler(wired.rpc, wired.origins, wired.store).list_extensions({})
+    second = await handler(wired.rpc, wired.origins, wired.store).list_extensions({})
     assert [e.id for e in first.extensions] == [e.id for e in second.extensions]
+
+
+async def test_settings_are_saved_and_the_whole_list_comes_back(wired, tmp_path):
+    await wired.installer.install(bundle_at(tmp_path))
+    result = await handler(wired.rpc, wired.origins, wired.store).set_extension_settings(
+        SetExtensionSettingsArgs(extension_id="acme.scanner", values={"failOn": "low"})
+    )
+
+    (summary,) = result.extensions
+    assert summary.values["failOn"] == "low"
+
+
+async def test_a_setting_the_manifest_does_not_allow_is_an_rpc_error(wired, tmp_path):
+    """The Extensions panel shows an error only when the call rejects."""
+    await wired.installer.install(bundle_at(tmp_path))
+    rpc = handler(wired.rpc, wired.origins, wired.store)
+    with pytest.raises(ValueError, match="backdoor"):
+        await rpc.set_extension_settings(
+            SetExtensionSettingsArgs(extension_id="acme.scanner", values={"backdoor": True})
+        )
+
+    (summary,) = (await rpc.list_extensions({})).extensions
+    assert "backdoor" not in summary.values
+
+
+async def test_settings_for_an_extension_not_installed_are_an_rpc_error(wired):
+    with pytest.raises(ValueError, match="acme.nobody"):
+        await handler(wired.rpc, wired.origins, wired.store).set_extension_settings(
+            SetExtensionSettingsArgs(extension_id="acme.nobody", values={})
+        )
+
+
+async def test_settings_without_extension_support_are_an_rpc_error():
+    with pytest.raises(ValueError, match="this backend has no extension support"):
+        await handler(None, None).set_extension_settings(
+            SetExtensionSettingsArgs(extension_id="acme.scanner", values={})
+        )

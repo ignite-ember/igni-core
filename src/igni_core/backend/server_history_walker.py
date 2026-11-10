@@ -26,8 +26,8 @@ from igni_core.backend.schemas_history import (
     ToolTurn,
     UserTurn,
 )
-from igni_core.protocol.agno_tool_formatter import default_registry
 from igni_core.protocol.tool_error_conventions import ToolResultErrorDetector
+from igni_core.protocol.tool_friendly_names import ToolFriendlyNames
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +179,7 @@ class RunWalker:
         self._out.append(
             ToolTurn(
                 tool_name=view.tool_name,
-                friendly_name=default_registry().friendly_name(view.tool_name),
+                friendly_name=ToolFriendlyNames.friendly_name(view.tool_name),
                 args=args_summary,
                 content=content,
                 is_error=view.tool_call_error,

@@ -8,11 +8,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
+from igni_core.backend.schemas_scheduler import TaskCompletedPayload, TaskCreatedPayload
 from igni_core.core.config.permission_eval import PermissionEvaluator
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.schemas import HookDefinition, HookResult
+from igni_core.core.hooks.schemas import HookDefinition, HookPayload, HookResult
 from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.utils.rules_index import RulesIndex
 
@@ -161,10 +163,10 @@ class _RecordingExecutor(HookExecutor):
     async def execute(
         self,
         event: str,
-        payload: dict[str, Any],
+        payload: BaseModel,
         target: str = "",
     ) -> HookResult:
-        self.calls.append((event, payload))
+        self.calls.append((event, HookPayload(body=payload).to_wire_dict()))
         return HookResult(should_continue=True)
 
 
@@ -256,11 +258,9 @@ async def test_task_created_and_completed_fire_via_scheduler_wrappers() -> None:
         _asyncio.create_task(
             executor.execute(
                 event=HookEvent.TASK_CREATED.value,
-                payload={
-                    "session_id": session_id,
-                    "task_id": task_id,
-                    "description": description,
-                },
+                payload=TaskCreatedPayload(
+                    session_id=session_id, task_id=task_id, description=description
+                ),
             )
         )
 
@@ -268,12 +268,12 @@ async def test_task_created_and_completed_fire_via_scheduler_wrappers() -> None:
         _asyncio.create_task(
             executor.execute(
                 event=HookEvent.TASK_COMPLETED.value,
-                payload={
-                    "session_id": session_id,
-                    "task_id": task_id,
-                    "description": description,
-                    "status": "completed" if success else "error",
-                },
+                payload=TaskCompletedPayload(
+                    session_id=session_id,
+                    task_id=task_id,
+                    description=description,
+                    status="completed" if success else "error",
+                ),
             )
         )
 

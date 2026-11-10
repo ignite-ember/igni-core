@@ -28,6 +28,8 @@ from igni_core.core.agents.schemas import (
     LoadReport,
 )
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.prompts.fragments import PromptFragments
+from igni_core.core.prompts.loader import PromptLoader
 
 if TYPE_CHECKING:
     from igni_core.core.config.settings import Settings
@@ -51,11 +53,13 @@ class AgentDefinitionLoader:
         project_dir: Path,
         restriction_policy: PluginRestrictionPolicy | None = None,
         group_dir: Path | None = None,
+        prompt_loader: PromptLoader | None = None,
     ) -> None:
         self._settings = settings
         self._project_dir = project_dir
         self._policy = restriction_policy
         self._group_dir = group_dir
+        self._prompt_loader = prompt_loader or PromptLoader(PromptFragments())
 
     def load(self) -> LoadReport:
         """Scan the five standard roots and return an aggregated
@@ -109,7 +113,7 @@ class AgentDefinitionLoader:
         ``namespace`` prefixes every loaded agent's ``name`` as
         ``<namespace>:<name>`` — used by the plugin loader, so a
         plugin's agents never take an igni agent's name. What an
-        extension does to an agent is :meth:`AgentPool.apply_prompt_contributions`.
+        extension does to an agent is :class:`AgentContributionApplier`.
         """
         report = LoadReport()
         if not path.exists():
@@ -121,7 +125,7 @@ class AgentDefinitionLoader:
 
         for md_file in sorted(path.glob("*.md")):
             try:
-                md = AgentMarkdownFile(md_file)
+                md = AgentMarkdownFile(md_file, prompt_loader=self._prompt_loader)
                 definition = md.parse()
                 if self._policy is not None:
                     raw_keys = md.raw_frontmatter_keys()

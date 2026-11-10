@@ -23,12 +23,24 @@ import re
 
 import pytest
 
-from igni_core.core.tools.process_supervisor_locator import supervisors
+from igni_core.core.tools.process_events import ProcessExitEvent
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.shell import IgniShellTools
 
 
 @pytest.fixture
-def collected_completions():
+def supervisor():
+    """The supervisor this test owns.
+
+    No module-level one is shared any more: the backend injects the
+    supervisor it shares, so a test builds its own and hands it to
+    the toolkit.
+    """
+    return ProcessSupervisor()
+
+
+@pytest.fixture
+def collected_completions(supervisor):
     """Record completions; auto-unsubscribe at test end.
 
     Subscribes directly on the supervisor's event bus — no
@@ -36,14 +48,14 @@ def collected_completions():
     anymore; ``ProcessEventBus.on/off`` is the sanctioned
     OOP entry point.
     """
-    seen: list[dict] = []
+    seen: list[ProcessExitEvent] = []
     seen_event = asyncio.Event()
 
-    def _cb(info: dict) -> None:
-        seen.append(info)
+    def _cb(event: ProcessExitEvent) -> None:
+        seen.append(event)
         seen_event.set()
 
-    bus = supervisors.default().registry.bus
+    bus = supervisor.registry.bus
     bus.on("exit", _cb)
     try:
         yield seen, seen_event
@@ -51,10 +63,28 @@ def collected_completions():
         bus.off("exit", _cb)
 
 
-async def _wait_for_finish(pid: int, timeout: float = 8.0) -> None:
-    """Poll the registry until the process is finished or timeout."""
-    registry = supervisors.default().registry
+@pytest.fixture
+def short_ttl(supervisor):
+    """Set the finished-process eviction TTL, then restore it.
 
+    The TTL is read fresh on every arm, so the registry's public
+    setter is enough to drive the window down — no reach into a
+    private attribute of the registry or of its eviction collaborator.
+    """
+    registry = supervisor.registry
+    previous = registry.ttl_seconds
+
+    def _set(seconds: float) -> None:
+        registry.set_ttl_seconds(seconds)
+
+    try:
+        yield _set
+    finally:
+        registry.set_ttl_seconds(previous)
+
+
+async def _wait_for_finish(registry, pid: int, timeout: float = 8.0) -> None:
+    """Poll the registry until the process is finished or timeout."""
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
         mp = registry.get(pid)
@@ -64,10 +94,10 @@ async def _wait_for_finish(pid: int, timeout: float = 8.0) -> None:
 
 
 @pytest.mark.asyncio
-async def test_background_process_emits_completion(tmp_path, collected_completions):
+async def test_background_process_emits_completion(tmp_path, supervisor, collected_completions):
     """A backgrounded ``echo`` should fire the subscriber once it exits."""
     seen, seen_event = collected_completions
-    tools = IgniShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path), supervisor=supervisor)
 
     out = await tools.run_shell_command(command="echo done", background=True)
     # Either landed as "exited immediately" (which still counts —
@@ -80,19 +110,19 @@ async def test_background_process_emits_completion(tmp_path, collected_completio
         pytest.fail("completion never fired")
 
     info = seen[0]
-    assert info["exit_code"] == 0
-    assert "echo" in info["cmd"]
-    assert info["duration_seconds"] >= 0
-    assert "done" in info["output_tail"]
+    assert info.exit_code == 0
+    assert "echo" in info.cmd
+    assert info.duration_seconds >= 0
+    assert "done" in info.output_tail
 
 
 @pytest.mark.asyncio
-async def test_foreground_process_does_not_emit(tmp_path, collected_completions):
+async def test_foreground_process_does_not_emit(tmp_path, supervisor, collected_completions):
     """A short foreground command (default ``background=False``)
     must NOT fire the completion subscriber. The agent already saw
     the result inline; a queue notification would be redundant noise."""
     seen, seen_event = collected_completions
-    tools = IgniShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path), supervisor=supervisor)
 
     await tools.run_shell_command(command="echo hi", timeout=5)
     # Give the loop a tick in case the reader task is still wrapping up.
@@ -101,7 +131,7 @@ async def test_foreground_process_does_not_emit(tmp_path, collected_completions)
 
 
 @pytest.mark.asyncio
-async def test_read_process_output_is_idempotent_after_finish(tmp_path):
+async def test_read_process_output_is_idempotent_after_finish(tmp_path, supervisor):
     """After a backgrounded process finishes, ``read_process_output``
     should keep returning the buffered output across repeated calls
     with different ``tail`` values.
@@ -111,7 +141,7 @@ async def test_read_process_output_is_idempotent_after_finish(tmp_path):
     which means the run reports a PID rather than "exited
     immediately" (which evicts the entry from the registry).
     """
-    tools = IgniShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path), supervisor=supervisor)
     out = await tools.run_shell_command(
         command="echo first_read_works; sleep 4",
         background=True,
@@ -120,7 +150,7 @@ async def test_read_process_output_is_idempotent_after_finish(tmp_path):
     assert m, f"no PID in run output: {out!r}"
     pid = int(m.group(1))
 
-    await _wait_for_finish(pid)
+    await _wait_for_finish(supervisor.registry, pid)
 
     first = await tools.read_process_output(pid, tail=100)
     assert "first_read_works" in first
@@ -136,7 +166,7 @@ async def test_read_process_output_is_idempotent_after_finish(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_finished_process_evicted_after_ttl(tmp_path, monkeypatch):
+async def test_finished_process_evicted_after_ttl(tmp_path, supervisor, short_ttl):
     """First ``read_process_output`` after a process has finished
     arms a TTL task; once it fires, the entry should be gone from
     the registry. Drives TTL down via
@@ -145,20 +175,17 @@ async def test_finished_process_evicted_after_ttl(tmp_path, monkeypatch):
 
     Post-split refactor: the TTL lives on the registry (which
     owns the eviction bookkeeping), not on the supervisor.
-    ``monkeypatch.setattr`` on the registry auto-restores after
-    the test.
     """
-    supervisor = supervisors.default()
     registry = supervisor.registry
-    monkeypatch.setattr(registry, "_ttl_seconds", 0.3, raising=True)
+    short_ttl(0.3)
 
-    tools = IgniShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path), supervisor=supervisor)
     out = await tools.run_shell_command(
         command="echo hi; sleep 4",
         background=True,
     )
     pid = int(re.search(r"PID (\d+)", out).group(1))
-    await _wait_for_finish(pid)
+    await _wait_for_finish(registry, pid)
 
     first = await tools.read_process_output(pid)
     assert "hi" in first
@@ -175,20 +202,19 @@ async def test_finished_process_evicted_after_ttl(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ttl_resets_on_subsequent_read(tmp_path, monkeypatch):
+async def test_ttl_resets_on_subsequent_read(tmp_path, supervisor, short_ttl):
     """A second read before the TTL expires should reset it, so an
     actively-engaged agent doesn't lose the buffer mid-iteration."""
-    supervisor = supervisors.default()
     registry = supervisor.registry
-    monkeypatch.setattr(registry, "_ttl_seconds", 0.4, raising=True)
+    short_ttl(0.4)
 
-    tools = IgniShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path), supervisor=supervisor)
     out = await tools.run_shell_command(
         command="echo hi; sleep 4",
         background=True,
     )
     pid = int(re.search(r"PID (\d+)", out).group(1))
-    await _wait_for_finish(pid)
+    await _wait_for_finish(registry, pid)
 
     await tools.read_process_output(pid)  # arms task (0.4s)
     await asyncio.sleep(0.25)  # part-way through
@@ -204,21 +230,21 @@ async def test_ttl_resets_on_subsequent_read(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_unsubscribe_stops_emissions(tmp_path):
+async def test_unsubscribe_stops_emissions(tmp_path, supervisor):
     """After ``bus.off("exit", cb)`` the callback must no longer be
     called — important for tests and for the BE's shutdown path so
     we don't leak into a process tree that's about to be killed
     anyway."""
-    seen: list[dict] = []
+    seen: list[ProcessExitEvent] = []
 
-    def _cb(info: dict) -> None:
-        seen.append(info)
+    def _cb(event: ProcessExitEvent) -> None:
+        seen.append(event)
 
-    bus = supervisors.default().registry.bus
+    bus = supervisor.registry.bus
     bus.on("exit", _cb)
     bus.off("exit", _cb)
 
-    tools = IgniShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path), supervisor=supervisor)
     await tools.run_shell_command(command="echo after_unsub", background=True)
 
     # Wait long enough for the reader task to finish.
@@ -227,14 +253,14 @@ async def test_unsubscribe_stops_emissions(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_run_shell_command_does_not_block_loop(tmp_path):
+async def test_run_shell_command_does_not_block_loop(tmp_path, supervisor):
     """The whole point of going async — while a shell tool is
     executing, the event loop must keep servicing other tasks. We
     verify by starting a slow shell call and a concurrent ticker;
     the ticker should advance during the shell wait. With the
     earlier sync impl, the ticker would freeze for the duration of
     the shell timeout."""
-    tools = IgniShellTools(base_dir=str(tmp_path))
+    tools = IgniShellTools(base_dir=str(tmp_path), supervisor=supervisor)
 
     ticks = 0
 

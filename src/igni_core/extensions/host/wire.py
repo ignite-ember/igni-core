@@ -7,17 +7,22 @@ protocol for whoever maintains an SDK.
 One request shape serves both channels — the process's loopback
 WebSocket and the page's bridge (forwarded as the ``host_model`` RPC) —
 so the host answers both through
-:meth:`~igni_core.extensions.host.model.HostModel.handle`.
+:meth:`~igni_core.extensions.host.model.HostModel.handle` — one
+request, and the :class:`~igni_core.extensions.host.caller.Caller` it
+comes from.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_serializer
+from pydantic_core import to_jsonable_python
 
 from igni_core.extensions.host.spec import ErrorCode
+from igni_core.extensions.principal import Principal
+from igni_core.protocol.json_value import WireJson
 
 #: Bumped only for a change to these messages that an SDK cannot
 #: ignore. The *model's* version is the schema's, sent in ``hello``.
@@ -25,53 +30,95 @@ PROTOCOL_VERSION = 1
 
 
 class Op(StrEnum):
+    """What a host-model request does.
+
+    * ``get``: read a property.
+    * ``set``: write a property.
+    * ``call``: call a method.
+    * ``subscribe`` / ``unsubscribe``: start or stop receiving signals.
+    * ``answer``: an extension process's answer to a hook event; a page
+      may not send it.
+    """
+
     GET = "get"
     SET = "set"
     CALL = "call"
     SUBSCRIBE = "subscribe"
     UNSUBSCRIBE = "unsubscribe"
-    #: The process's answer to a ``hook`` message. Not a page's to send.
     ANSWER = "answer"
 
 
 class Request(BaseModel):
-    """SDK → host."""
+    """A request from an extension to the host model: read, write or call one member, or subscribe to signals."""
 
     model_config = ConfigDict(extra="forbid")
 
-    #: Echoed on the reply. Chosen by the SDK; never interpreted.
-    id: int | str
-    op: Op
-    #: ``chat.processing`` for get/set, ``chat.post`` for call. Empty
-    #: for subscribe.
-    path: str = ""
-    #: A window id, for a per-window member addressed to a window other
-    #: than the active one (``host.windows.ui(id)``).
-    window: str | None = None
-    #: A session id, for a per-session member addressed to a session other
-    #: than the one on screen (``host.sessions.chat(id)``).
-    session: str | None = None
-    #: A method's parameters, by name.
-    params: dict[str, Any] = Field(default_factory=dict)
-    #: The value of a ``set``.
-    value: Any = None
-    #: Signal wire names, for subscribe and unsubscribe.
-    signals: list[str] = Field(default_factory=list)
+    id: int | str = Field(
+        description="Any id you choose; it is echoed on the reply and never interpreted."
+    )
+    op: Op = Field(description="What the request does.")
+    path: str = Field(
+        default="",
+        description=(
+            "The member it is about, e.g. `chat.processing` for `get`/`set` or `chat.post` "
+            "for `call`. Empty for `subscribe` and `unsubscribe`."
+        ),
+    )
+    window: str | None = Field(
+        default=None,
+        description=(
+            "A window id, to address a per-window member of a window other than the active "
+            "one (`host.windows.ui(id)`); null for the active window."
+        ),
+    )
+    session: str | None = Field(
+        default=None,
+        description=(
+            "A session id, to address a per-session member of a session other than the one "
+            "on screen (`host.sessions.chat(id)`); null for the one on screen."
+        ),
+    )
+    params: dict[str, WireJson] = Field(
+        default_factory=dict, description="For `call`: the method's parameters, by name."
+    )
+    value: WireJson = Field(default=None, description="For `set`: the value to write.")
+    signals: list[str] = Field(
+        default_factory=list,
+        description="For `subscribe` and `unsubscribe`: the signals' names, e.g. `chat.run_completed`.",
+    )
 
 
 class ErrorBody(BaseModel):
-    code: ErrorCode
-    message: str
+    """Why a host-model request was refused or failed."""
+
+    code: ErrorCode = Field(description="Why, as a word code can branch on.")
+    message: str = Field(description="What happened, as a sentence for the extension's author.")
 
 
 class Reply(BaseModel):
-    """Host → SDK: the answer to one request."""
+    """The host model's answer to one request."""
 
-    op: Literal["reply"] = "reply"
-    id: int | str
-    ok: bool
-    result: Any = None
-    error: ErrorBody | None = None
+    op: Literal["reply"] = Field(
+        default="reply", description="Always `reply`: what kind of message this is."
+    )
+    id: int | str = Field(description="The `id` of the request it answers.")
+    ok: bool = Field(
+        description="True when the request was answered; false when it was refused or failed."
+    )
+    result: WireJson = Field(
+        default=None, description="When `ok`: the value read or the method's result; null for none."
+    )
+    error: ErrorBody | None = Field(default=None, description="When not `ok`: why; null otherwise.")
+
+    @classmethod
+    def answered(cls, id: int | str, result: Any = None) -> Reply:
+        """The request was answered, with ``result``."""
+        return cls(id=id, ok=True, result=result)
+
+    @classmethod
+    def refused(cls, id: int | str, error: ErrorBody) -> Reply:
+        """The request was refused, or failed, for the reason ``error`` gives."""
+        return cls(id=id, ok=False, error=error)
 
 
 class SignalMessage(BaseModel):
@@ -81,6 +128,36 @@ class SignalMessage(BaseModel):
     #: The signal's wire name (``chat.run_completed``, ``session.switched``).
     signal: str
     value: Any = None
+
+
+class HookFrameValue(BaseModel):
+    """The value a hook frame carries: the event's value, and the host's own field.
+
+    Flat on the wire — the event's own fields, then
+    ``tool_manifest_name`` — as the protocol says, so an SDK sees one
+    object. The value itself is the event's own model: a deciding
+    event's value, or a told event's payload.
+    """
+
+    #: The event's value, as it is handed over.
+    body: BaseModel
+    #: The name the manifest gives the tool, when the value carries one.
+    tool_manifest_name: str | None = None
+    #: Whether the fields that are not set are left out: a told event says
+    #: what its payload has; a value the event decided on says all of it.
+    omit_none: bool = False
+
+    #: The fields the host adds beside the event's own: told to the
+    #: extension, and not the event's to change.
+    ADDED: ClassVar[frozenset[str]] = frozenset({"tool_manifest_name"})
+
+    @model_serializer(mode="plain")
+    def _wire(self) -> dict[str, Any]:
+        """The flat object the frame carries."""
+        wire = self.body.model_dump(mode="json", exclude_none=self.omit_none)
+        if self.tool_manifest_name is not None:
+            wire["tool_manifest_name"] = self.tool_manifest_name
+        return to_jsonable_python(wire, fallback=str)
 
 
 class HookMessage(BaseModel):
@@ -95,11 +172,11 @@ class HookMessage(BaseModel):
     id: str | None = None
     #: The hook event: ``PreToolUse``, ``PlanSubmit``, ``SessionStart``.
     event: str
-    value: Any = None
+    value: HookFrameValue | None = None
     #: Whom the event is for (``docs/EXTENSION_ROUTING_AND_CONCURRENCY.md``
     #: §6): ``{kind, id, org, group, session}``, the same shape a tool
     #: call carries in ``_meta["igni/principal"]``.
-    principal: dict[str, Any] | None = None
+    principal: Principal | None = None
 
 
 class Outcome(StrEnum):
@@ -124,7 +201,13 @@ class HookAnswer(BaseModel):
     reason: str = ""
     #: The changed value, for a modify: the whole value, as it was handed
     #: over, with only the fields the event lets it change changed.
-    value: Any = None
+    #:
+    #: Any JSON, not only an object: the wire carries what the
+    #: extension sent, and what an answer *means* is read elsewhere
+    #: (:mod:`igni_core.extensions.host.answers`). A change that is not
+    #: the event's shape is the extension's bug — it is refused as one,
+    #: and not counted as a silence.
+    value: JsonValue = None
 
 
 class Hello(BaseModel):
@@ -144,6 +227,7 @@ __all__ = [
     "ErrorBody",
     "Hello",
     "HookAnswer",
+    "HookFrameValue",
     "HookMessage",
     "Op",
     "Outcome",

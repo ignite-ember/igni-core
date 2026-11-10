@@ -28,24 +28,27 @@ tell somebody to run first.
 from __future__ import annotations
 
 import asyncio
-import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 
 import click
+from pydantic import ValidationError
 
 from igni_core.cli.ext_doctor import Findings, NameCheck, ProcessProbe
+from igni_core.cli.ext_manifest_check import ManifestCheck
 from igni_core.cli.ext_scaffold import Scaffold
-from igni_core.core.config.group_policy import CachedSettingsFetcher, GroupPolicyUnavailable
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
+from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
+from igni_core.core.config.settings import Settings
 from igni_core.core.network_policy import NetworkPolicy
-from igni_core.core.plugins.git import GitClient, GitError
-from igni_core.extensions.distribution import OneShotSync
-from igni_core.extensions.manifest import EXTENSION_ID, ExtensionManifest, Workspace
+from igni_core.core.plugins.git import GitClient
+from igni_core.extensions.bundle_source import BundleSource, BundleSourceError
+from igni_core.extensions.distribution.once import OneShotSync
+from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.profile import DEV_FLAG, DevelopmentFlag
-from igni_core.extensions.store import ExtensionStore, StoreError
+from igni_core.extensions.store import ExtensionStore
+from igni_core.extensions.store_errors import StoreError
 
 #: What this build of igni implements. An extension declares a range
 #: and this is what it is checked against — the only compatibility
@@ -103,116 +106,28 @@ def doctor(bundle: Path, no_start: bool, timeout: float) -> None:
     click.echo(f"  trust      {manifest.trust.value}")
     click.echo(f"  packaging  {manifest.packaging}")
 
-    # Two lists, because they are not the same question. A *problem*
-    # stops this working; a *note* is something to know. The
-    # distinction matters more than it looks: the first version
-    # reported an unsigned development bundle as a problem, so
-    # ``ext doctor`` failed on the output of ``ext init`` — teaching,
-    # as the very first thing an author sees, that the tooling
-    # contradicts itself. Development packaging *requires* unsigned.
-    problems: list[str] = []
-    notes: list[str] = []
-
-    if manifest.dev is not None:
-        notes.append(
-            "development packaging: it runs only as a development install, "
-            f"with {DEV_FLAG}=1. To reach anybody else, ship it from your "
-            "service with 'python' packaging."
-        )
-
-    if manifest.python is not None:
-        wheels = bundle / manifest.python.wheels
-        has_wheels = wheels.is_dir() and any(wheels.glob("*.whl"))
-        buildable = (bundle / "pyproject.toml").is_file() or (bundle / "setup.py").is_file()
-        if not has_wheels and not buildable:
-            problems.append(
-                f"python packaging with no wheelhouse at {manifest.python.wheels!r} "
-                "and nothing to build one from (no pyproject.toml or setup.py)"
-            )
-        elif not has_wheels:
-            notes.append(
-                f"no wheelhouse at {manifest.python.wheels!r}: a development install "
-                "builds one from this directory, network allowed. The bundle your "
-                "service uploads must carry it, because a machine installs from it "
-                "with no index."
-            )
-
-    if manifest.sidecar is not None:
-        problems.append(
-            f"packaged as a sidecar image ({manifest.sidecar.image}); igni "
-            "cannot start container images yet. Use 'python', 'endpoint' or 'dev'."
-        )
-
-    if manifest.contributes.pages and not (bundle / "ui").is_dir():
-        problems.append(
-            "contributes pages and the bundle has no 'ui' directory, so there is nothing to serve"
-        )
-
-    if manifest.endpoint is not None:
-        host_declared = manifest.permissions.egress
-        if not host_declared:
-            problems.append(
-                "has an endpoint and declares no egress, so igni will refuse to dial it"
-            )
-        # igni sets an environment for a process it starts, and an
-        # endpoint is somebody else's process. A grant that cannot be
-        # delivered is the failure this system keeps removing.
-        if manifest.permissions.workspace is not Workspace.NONE:
-            problems.append(
-                f"declares workspace: {manifest.permissions.workspace.value} and "
-                "is an endpoint, so the grant could never be delivered"
-            )
-        if manifest.permissions.secrets:
-            problems.append(
-                f"declares secrets {list(manifest.permissions.secrets)} and is an "
-                "endpoint, so they could never be delivered"
-            )
-
-    if manifest.runs_here:
-        notes.append(
-            "runs as a process on the machine igni is on, so it installs only on "
-            "a single-user backend. One process cannot serve a group: there is "
-            "one workspace and one resolution of each secret, and no answer to "
-            "whose."
-        )
-    if manifest.contributes.pages:
-        notes.append(
-            "contributes pages, which only a single-user backend shows — a frame "
-            "is hosted by the igni app beside the user."
-        )
-
-    if manifest.dev is not None:
-        command = Path(manifest.dev.command[0])
-        looks_local = command.parts and command.parts[0] in {".", ".."}
-        if looks_local and not (bundle / command).exists():
-            problems.append(f"its dev command {command} is not in the bundle")
-
-    # Reported rather than refused. A declared permission nobody
-    # enforces used to be this system's defining bug, so a grant that
-    # is wider than it looks is worth a line even when it is legal.
-    if any(grant == "*" for grant in manifest.permissions.rpc):
-        problems.append("permissions.rpc contains '*', which grants every method")
-
     findings = Findings()
+    ManifestCheck(manifest, bundle).check(findings)
     names = NameCheck(manifest)
     names.check(findings)
 
-    if notes:
+    if findings.notes:
         click.echo()
-        for note in notes:
+        for note in findings.notes:
             click.echo(f"  - {note}")
+    shown = len(findings.notes)
 
     click.echo()
     if no_start:
         click.echo("  process    not started (--no-start)")
-    elif problems or manifest.sidecar is not None:
+    elif findings.problems:
         click.echo("  process    not started: fix the problems below first")
     elif manifest.endpoint is not None:
         click.echo("  process    not started: an endpoint is somebody else's process")
     else:
         probe = asyncio.run(ProcessProbe(manifest, bundle, timeout=timeout).run())
         if probe.error is not None:
-            problems.append(f"starting it: {probe.error}")
+            findings.problems.append(f"starting it: {probe.error}")
         else:
             click.echo(f"  process    started it and asked for its tools: {len(probe.tools)}")
             if probe.tools:
@@ -222,153 +137,54 @@ def doctor(bundle: Path, no_start: bool, timeout: float) -> None:
                     click.echo(row)
             names.compare(probe.tools, findings)
 
-    problems.extend(findings.problems)
-    for note in findings.notes:
+    for note in findings.notes[shown:]:
         click.echo(f"  - {note}")
     if findings.warnings:
         click.echo()
         for warning in findings.warnings:
             click.echo(f"  ~ warning: {warning}")
 
-    if problems:
+    if findings.problems:
         click.echo()
-        for problem in problems:
+        for problem in findings.problems:
             click.echo(f"  ! {problem}")
         raise click.ClickException(
-            f"{len(problems)} problem(s) found — it will not install as it is"
+            f"{len(findings.problems)} problem(s) found — it will not install as it is"
         )
 
     click.echo()
     click.echo("  no problems found")
 
 
-#: What we treat as a repository rather than a directory. Checked
-#: before the filesystem, so a relative path that happens to contain
-#: a colon is still a path and a URL that happens to exist on disk
-#: is still a URL.
-#:
-#: ``file://`` is here on purpose: it is how an air-gapped
-#: deployment installs from a mirror it already has, and it is what
-#: makes the clone path testable without a network.
-_REPOSITORY = ("http://", "https://", "git@", "ssh://", "git://", "file://")
+def _settings() -> Settings:
+    """The deployment's settings, group policy included, as ``igni -m`` loads them.
 
-
-def _looks_like_sha(ref: str) -> bool:
-    """Whether ``ref`` is a commit rather than a branch or a tag.
-
-    Errs towards "branch": a seven-to-forty-character hex string is
-    a commit, and anything else is passed to ``git clone --branch``,
-    which is where a wrong guess produces a clear error rather than
-    a silent default-branch checkout.
+    Neither pass touches the network, so an organisation that turns
+    ``air_gapped`` on through its group policy has it apply here too.
     """
-    if not 7 <= len(ref) <= 40:
-        return False
-    return all(c in "0123456789abcdefABCDEF" for c in ref)
-
-
-def _settings() -> Any:
-    """The deployment's settings.
-
-    Loaded the way ``igni -m`` loads them — local configuration first
-    to find the data directory, then again with the group policy cached
-    there — so an organisation that turns ``air_gapped`` on through its
-    group policy has it apply here too. Neither pass touches the network.
-    """
-    local_only = load_settings()
     try:
-        return load_settings(group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only))
+        return PolicySettingsLoader().load()
     except GroupPolicyUnavailable as exc:
         raise click.ClickException(str(exc)) from exc
 
 
-def _network_policy() -> NetworkPolicy:
-    """The deployment's network policy, from its settings."""
-    return NetworkPolicy.from_settings(_settings())
-
-
 @contextmanager
-def _bundle_from(
-    source: str,
-    *,
-    ref: str | None,
-    subdir: str | None,
-    network: NetworkPolicy | None = None,
-) -> Iterator[Path]:
-    """A bundle directory, cloning first when ``source`` is a repo.
-
-    The clone goes to a temporary directory and is deleted on the
-    way out: the store keeps its own copy, so a second one under
-    ``~/.igni`` would be a stale checkout nobody updates and
-    everybody finds.
-
-    Under ``air_gapped`` a repository outside the network is refused
-    before git starts, so no connection is attempted. ``network`` is
-    the deployment's policy; without one every repository is allowed.
-    """
-    if source.startswith("@"):
-        raise click.ClickException(
-            f"{source} looks like a marketplace reference, and extensions have "
-            "no marketplace. They arrive from their services through igni "
-            "server when you are signed in; a development install takes a "
-            "directory or a repository URL."
-        )
-
-    if not source.startswith(_REPOSITORY):
-        bundle = Path(source)
-        if not bundle.is_dir():
-            raise click.ClickException(
-                f"{source} is not a directory, and does not look like a repository URL either."
-            )
-        if ref or subdir:
-            raise click.ClickException(
-                f"--ref and --subdir are for installing from a repository; {source} is a directory."
-            )
-        yield bundle
+def _bundle(source: BundleSource, network: NetworkPolicy) -> Iterator[Path]:
+    """The bundle ``source`` names, saying what was cloned when it is a repository."""
+    if not source.is_repository:
+        yield source.directory()
         return
-
-    network = network or NetworkPolicy()
-    if not network.allows(source):
-        raise click.ClickException(
-            f"{network.refusal(source, what='the repository')} Or clone it "
-            "somewhere this machine can read and install from that directory."
-        )
-
-    git = GitClient()
-    if not git.is_available():
-        raise click.ClickException(
-            "git is not on PATH, so a repository cannot be cloned. Clone it "
-            "yourself and pass the directory."
-        )
-    with tempfile.TemporaryDirectory(prefix="igni-ext-") as tmp:
-        checkout = Path(tmp) / "bundle"
-        click.echo(f"cloning {source}{f' at {ref}' if ref else ''} …")
-        try:
-            # A commit cannot be given to ``git clone --branch`` on
-            # older gits, so a SHA is cloned-then-checked-out — the
-            # same split ``PluginInstaller`` makes, because ``--ref``
-            # takes whatever a person would think to type.
-            sha = _looks_like_sha(ref) if ref else False
-            # A shallow clone holds only the tip, so checking out an
-            # older commit fails with "unable to read tree" — which
-            # reads like a corrupt repository rather than like the
-            # depth it is. Full history only when a commit was
-            # asked for; a branch, a tag and "latest" stay shallow.
-            git.clone(source, checkout, ref=None if sha else ref, shallow=not sha)
-            if ref and sha:
-                git.checkout(checkout, ref)
-            commit = git.current_sha(checkout)
-        except GitError as exc:
-            raise click.ClickException(f"cloning {source} failed: {exc}") from exc
-
-        # What was taken, as a fact rather than as advice. Whether to
-        # pin is the installer's call: "the latest" is a legitimate
-        # answer, and this is the commit it meant today.
-        click.echo(f"  at {commit}")
-
-        bundle = checkout / subdir if subdir else checkout
-        if not bundle.is_dir():
-            raise click.ClickException(f"{subdir!r} is not a directory in {source}.")
-        yield bundle
+    at_ref = f" at {source.ref}" if source.ref else ""
+    with source.clone(
+        network,
+        GitClient(),
+        on_start=lambda: click.echo(f"cloning {source.source}{at_ref} …"),
+    ) as checkout:
+        # What was taken, as a fact rather than as advice. Whether to pin is
+        # the installer's call: "the latest" is a legitimate answer, and this
+        # is the commit it meant today.
+        click.echo(f"  at {checkout.commit}")
+        yield checkout.bundle
 
 
 @ext.command("install")
@@ -422,12 +238,13 @@ def install(
             "from their services through igni server when you are signed in."
         )
     store = _store(root)
-    with _bundle_from(source, ref=ref, subdir=subdir, network=_network_policy()) as bundle:
-        try:
+    network = NetworkPolicy.from_settings(_settings())
+    try:
+        with _bundle(BundleSource(source, ref=ref, subdir=subdir), network) as bundle:
             manifest = store.read(bundle)
             target = store.add(bundle, replace=replace)
-        except StoreError as exc:
-            raise click.ClickException(str(exc)) from exc
+    except (BundleSourceError, StoreError) as exc:
+        raise click.ClickException(str(exc)) from exc
 
     click.echo(f"installed {manifest.display_name} ({manifest.id}) to {target} for development")
     _echo_grants(manifest)
@@ -498,12 +315,12 @@ def sync(root: str | None, timeout: float) -> None:
     if report.skipped is not None:
         raise click.ClickException(f"nothing was synced: {report.skipped}")
 
-    group = store.group()
+    group = store.listing.group()
     who = f" (group {group.label})" if group is not None and group.label else ""
     click.echo(f"synced with {syncer.api_url}{who}")
     rows: list[tuple[str, str]] = []
     for extension_id in report.installed:
-        record = store.distribution_of(extension_id)
+        record = store.provenance.of(extension_id)
         source = f" {record.version} from {record.service_url}" if record else ""
         rows.append(("installed", f"{extension_id}{source}"))
     rows += [("unchanged", extension_id) for extension_id in report.unchanged]
@@ -552,7 +369,7 @@ def list_installed(root: str | None) -> None:
         except StoreError as exc:
             click.echo(f"{bundle.name:<28} unreadable — {exc}")
             continue
-        record = store.distribution_of(manifest.id)
+        record = store.provenance.of(manifest.id)
         source = f"from {record.service_url}" if record is not None else "development install"
         click.echo(f"{manifest.id:<28} {manifest.version:<10} {source}")
 
@@ -569,7 +386,7 @@ def remove(extension_id: str, root: str | None) -> None:
     """
     store = _store(root)
     try:
-        distributed = store.distribution_of(extension_id)
+        distributed = store.provenance.of(extension_id)
         removed = store.remove(extension_id)
     except StoreError as exc:
         raise click.ClickException(str(exc)) from exc
@@ -621,13 +438,16 @@ def init(directory: Path, extension_id: str | None, shape: str) -> None:
         raise click.ClickException(f"{directory} is not empty")
 
     scaffold = Scaffold(directory, extension_id)
-    if not EXTENSION_ID.match(scaffold.id):
+    try:
+        written = scaffold.write_service() if shape == "service" else scaffold.write_dev()
+    except ValidationError as error:
+        # The manifest is built before anything is written, and the id
+        # is the only thing in it the author chose.
         raise click.ClickException(
             f"{scaffold.id!r} is not a usable extension id: give one with --id, "
-            "reverse-DNS and lower case, e.g. --id acme.tickets"
-        )
-
-    written = scaffold.write_service() if shape == "service" else scaffold.write_dev()
+            "reverse-DNS, lower case and without hyphens, e.g. --id acme.tickets\n"
+            f"{error}"
+        ) from error
 
     click.echo(f"created {directory} ({scaffold.id})")
     for name in written:

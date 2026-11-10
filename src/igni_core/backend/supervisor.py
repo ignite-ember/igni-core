@@ -159,6 +159,27 @@ class BackendSupervisor:
         self._evictor_task: asyncio.Task[None] | None = None
         self._lockfile: Lockfile | None = None
 
+    @classmethod
+    def started(
+        cls,
+        *,
+        transport: Any,
+        loop: asyncio.AbstractEventLoop,
+        project_dir: Path,
+        backend: Any,
+    ) -> BackendSupervisor:
+        """A supervisor already watching: signals, the parent, the transport.
+
+        ``backend`` is the shutdown target until the pool exists
+        (:meth:`set_backend_fallback`).
+        """
+        supervisor = cls(transport=transport, loop=loop, project_dir=project_dir)
+        supervisor.set_backend_fallback(backend)
+        supervisor.install_signal_handlers()
+        supervisor.start_parent_watchdog()
+        supervisor.start_transport_close_watcher()
+        return supervisor
+
     # ── State access ─────────────────────────────────────────────
 
     @property
@@ -319,6 +340,15 @@ class BackendSupervisor:
         elif self._backend is not None:
             with contextlib.suppress(Exception):
                 await self._backend.shutdown()
+
+        # Background processes are igni's, not one session's: every
+        # session's window lists and stops them. They end with igni, once
+        # every session is down — never when one session is.
+        if self._backend is not None:
+            with contextlib.suppress(Exception):
+                killed = self._backend.supervisor.registry.kill_all()
+                if killed:
+                    logger.info("Shutdown: killed %d background process(es)", killed)
 
         with contextlib.suppress(Exception):
             await self._transport.close()

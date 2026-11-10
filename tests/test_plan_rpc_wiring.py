@@ -3,7 +3,7 @@
 The fixture-FE Playwright suite proves the FE puts the right
 envelope on the wire. The unit suite proves ``Session.approve_plan``
 does the right thing once called. This file pins the missing
-middle: that the dispatch lambdas in ``_build_rpc_table`` route
+middle: that the dispatch lambdas in ``RpcRouter.build_table`` route
 the wire envelope to the right ``Session`` method with ``run_id``
 extracted from ``args`` correctly.
 
@@ -17,8 +17,8 @@ The kind of bug this guards against:
 * Pool runtime's RPC table closing over the boot ``backend``
   instead of the per-runtime ``rt_backend`` — pool sessions
   would silently route ``approve_plan`` to the wrong session.
-* ``BackendServer.startup`` forgetting to call
-  ``_rehydrate_plan_decisions`` — silent loss of persisted
+* ``LifecycleController.startup`` forgetting to call
+  ``RehydrateController.plan_decisions`` — silent loss of persisted
   decisions on restart, the original bug.
 
 None of these would surface without these tests; ``validate_rpc_table``
@@ -31,33 +31,33 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-from igni_core.backend.__main__ import _build_rpc_table
-from igni_core.backend.server import BackendServer
-from igni_core.core.tools.plan import PlanStore
-from igni_core.core.tools.todo import TodoStore
+from igni_core.backend.server_lifecycle import LifecycleController
+from igni_core.backend.server_rehydrate import RehydrateController
+from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.todo import TodoItemWire, TodoStore
 from igni_core.protocol.rpc import RpcMethod
+from tests.rpc_tables import rpc_table_for
 
 
 def _make_backend_with_recording_session() -> tuple[MagicMock, MagicMock]:
-    """Construct a backend stub whose ``approve_plan`` /
-    ``dismiss_plan`` public methods are :class:`AsyncMock` so the
-    test can introspect call args. The RPC router now calls the
-    public ``backend.approve_plan(run_id=...)`` — replacing the
-    old ``backend._session.approve_plan(...)`` reach-in."""
+    """Construct a backend stub whose session's ``approve_plan`` /
+    ``dismiss_plan`` are :class:`AsyncMock` so the test can introspect
+    call args. The RPC handler calls ``backend.session.approve_plan``."""
     backend = MagicMock()
-    backend.approve_plan = AsyncMock(
+    backend.session.approve_plan = AsyncMock(
         return_value={"run_id": "R", "decision": "approved", "mode_status": ""}
     )
-    backend.dismiss_plan = AsyncMock(
+    backend.session.dismiss_plan = AsyncMock(
         return_value={"run_id": "R", "decision": "dismissed", "mode_status": ""}
     )
-    return backend, backend
+    return backend, backend.session
 
 
 class TestApprovePlanRouting:
     async def test_lambda_calls_session_approve_plan_with_run_id(self):
         backend, session = _make_backend_with_recording_session()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
 
         result = table[RpcMethod.APPROVE_PLAN]({"run_id": "R-123"})
         # Lambdas return the coroutine — await it to drive the call.
@@ -72,7 +72,7 @@ class TestApprovePlanRouting:
         # dispatch must coerce so ``Session.approve_plan`` gets
         # the type it asserts on.
         backend, session = _make_backend_with_recording_session()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
 
         result = table[RpcMethod.APPROVE_PLAN]({"run_id": 42})
         await result if asyncio.iscoroutine(result) else result
@@ -86,7 +86,7 @@ class TestApprovePlanRouting:
         # this so a refactor doesn't silently turn the empty
         # default into ``None`` and break the assertion order.
         backend, session = _make_backend_with_recording_session()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
 
         result = table[RpcMethod.APPROVE_PLAN]({})
         await result if asyncio.iscoroutine(result) else result
@@ -97,7 +97,7 @@ class TestApprovePlanRouting:
 class TestDismissPlanRouting:
     async def test_lambda_calls_session_dismiss_plan_with_run_id(self):
         backend, session = _make_backend_with_recording_session()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
 
         result = table[RpcMethod.DISMISS_PLAN]({"run_id": "R-789"})
         out = await result if asyncio.iscoroutine(result) else result
@@ -112,7 +112,7 @@ class TestDismissPlanRouting:
         # approve) but break this one. Catches the wrong-method
         # bug specifically.
         backend, session = _make_backend_with_recording_session()
-        table = _build_rpc_table(backend, MagicMock(), {})
+        table = rpc_table_for(backend, MagicMock())
 
         result = table[RpcMethod.DISMISS_PLAN]({"run_id": "R-xyz"})
         await result if asyncio.iscoroutine(result) else result
@@ -122,7 +122,7 @@ class TestDismissPlanRouting:
 
 
 class TestPoolRuntimeRouting:
-    """Pool sessions get their own ``_build_rpc_table`` call with
+    """Pool sessions get their own ``RpcRouter.build_table`` call with
     ``rt_backend`` — pinning that the lambda closure binds to that
     backend, not the boot one. The bug shape: a refactor changes
     ``backend`` (closure capture) to ``self.backend`` (attribute
@@ -138,10 +138,10 @@ class TestPoolRuntimeRouting:
         # session only. Constructing the boot table proves the
         # two builders don't share mutable state, which is the
         # closure-isolation behaviour we want to pin.
-        _build_rpc_table(boot_backend, MagicMock(), {})
+        rpc_table_for(boot_backend, MagicMock())
         # Pool table — separate instance built against the
         # runtime's backend.
-        pool_table = _build_rpc_table(pool_backend, MagicMock(), {})
+        pool_table = rpc_table_for(pool_backend, MagicMock())
 
         # Fire ``approve_plan`` against the POOL table only.
         result = pool_table[RpcMethod.APPROVE_PLAN]({"run_id": "pool-run"})
@@ -159,8 +159,8 @@ class TestPoolRuntimeRouting:
         boot_backend, boot_session = _make_backend_with_recording_session()
         pool_backend, pool_session = _make_backend_with_recording_session()
 
-        boot_table = _build_rpc_table(boot_backend, MagicMock(), {})
-        _ = _build_rpc_table(pool_backend, MagicMock(), {})
+        boot_table = rpc_table_for(boot_backend, MagicMock())
+        _ = rpc_table_for(pool_backend, MagicMock())
 
         result = boot_table[RpcMethod.APPROVE_PLAN]({"run_id": "boot-run"})
         await result if asyncio.iscoroutine(result) else result
@@ -169,87 +169,81 @@ class TestPoolRuntimeRouting:
         pool_session.approve_plan.assert_not_called()
 
 
-# ── Startup wires _rehydrate_plan_decisions ──────────────────
+# ── Startup wires RehydrateController.plan_decisions ─────────
+
+
+def _lifecycle(session: SimpleNamespace) -> LifecycleController:
+    """A :class:`LifecycleController` whose plan-decision and todo
+    rehydrate steps are real; every other startup step is stubbed so
+    the session only needs what those two read."""
+    rehydrate = RehydrateController(session, ProcessSupervisor())  # type: ignore[arg-type]
+    rehydrate.plan_store = AsyncMock()  # type: ignore[method-assign]
+    rehydrate.event_log = AsyncMock()  # type: ignore[method-assign]
+    rehydrate.orphan_processes = AsyncMock()  # type: ignore[method-assign]
+    lifecycle = LifecycleController(
+        session=session,  # type: ignore[arg-type]
+        pending_store=None,
+        runs=None,
+        rehydrate=rehydrate,
+    )
+    lifecycle.detect_interrupted_run = AsyncMock()  # type: ignore[method-assign]
+    return lifecycle
 
 
 class TestStartupRehydratesPlanDecisions:
-    """``BackendServer.startup`` must call ``_rehydrate_plan_decisions``
-    or persisted approvals silently vanish on restart — the
-    original "I've never approved it" bug shape. The unit tests
-    pin the rehydrate method's behaviour; this pins that startup
-    actually calls it.
+    """``LifecycleController.startup`` must call
+    ``RehydrateController.plan_decisions`` or persisted approvals
+    silently vanish on restart — the original "I've never approved
+    it" bug shape. The unit tests pin the rehydrate method's
+    behaviour; this pins that startup actually calls it.
     """
 
     async def test_startup_calls_rehydrate_plan_decisions(self):
-        server = BackendServer.__new__(BackendServer)
-        # Stub everything startup touches besides our target.
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             load_persisted_loop_state=AsyncMock(),
             plan_store=PlanStore(),
-            todo_store=SimpleNamespace(set=lambda items: None),
+            todo_store=TodoStore(),
             persistence=SimpleNamespace(
-                load_plan_decisions=AsyncMock(return_value={"r1": "approved"}),
+                load_plan_decisions=AsyncMock(
+                    return_value=PlanDecisionsBlob(decisions={"r1": "approved"})
+                ),
                 load_todos=AsyncMock(return_value=[]),
             ),
         )
-        server._detect_interrupted_run = AsyncMock()
-        server._rehydrate_plan_store = AsyncMock()
-        # Startup also fires event_log + orphan_processes rehydrate
-        # steps — stub them so partial-init tests don't need to
-        # provide ``session.project_dir`` / ``restore_event_log``.
-        server._rehydrate_event_log = AsyncMock()
-        server._rehydrate_orphan_processes = AsyncMock()
 
-        await server.startup()
+        await _lifecycle(session).startup()
 
         # After startup the decision is in the store — proves
         # the rehydrate ran AND the persistence path was
         # exercised.
-        assert server._session.plan_store.decisions == {"r1": "approved"}
+        assert session.plan_store.decisions == {"r1": "approved"}
 
     async def test_startup_calls_rehydrate_todos(self):
         # Same shape for todos — todo execution state must
         # survive restart, which means startup has to load it.
-        server = BackendServer.__new__(BackendServer)
         todo_store = TodoStore()
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             load_persisted_loop_state=AsyncMock(),
             plan_store=PlanStore(),
             todo_store=todo_store,
             persistence=SimpleNamespace(
-                load_plan_decisions=AsyncMock(return_value={}),
+                load_plan_decisions=AsyncMock(return_value=PlanDecisionsBlob()),
                 load_todos=AsyncMock(
-                    return_value=[
-                        {
-                            "content": "Task A",
-                            "status": "in_progress",
-                            "activeForm": "",
-                        }
-                    ]
+                    return_value=[TodoItemWire(content="Task A", status="in_progress")]
                 ),
             ),
         )
-        server._detect_interrupted_run = AsyncMock()
-        server._rehydrate_plan_store = AsyncMock()
-        # Startup also fires event_log + orphan_processes rehydrate
-        # steps — stub them so partial-init tests don't need to
-        # provide ``session.project_dir`` / ``restore_event_log``.
-        server._rehydrate_event_log = AsyncMock()
-        server._rehydrate_orphan_processes = AsyncMock()
 
-        await server.startup()
+        await _lifecycle(session).startup()
 
-        assert todo_store.snapshot() == [
-            {"content": "Task A", "status": "in_progress", "activeForm": ""}
-        ]
+        assert todo_store.items == [TodoItemWire(content="Task A", status="in_progress")]
 
     async def test_startup_survives_persistence_failure(self):
         # If ``load_plan_decisions`` raises (DB corruption,
         # I/O blip), startup must NOT crash. The user lands in
         # a session that pretends no decisions were ever made
         # — degraded but functional, same as a fresh boot.
-        server = BackendServer.__new__(BackendServer)
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             load_persisted_loop_state=AsyncMock(),
             plan_store=PlanStore(),
             todo_store=TodoStore(),
@@ -258,18 +252,11 @@ class TestStartupRehydratesPlanDecisions:
                 load_todos=AsyncMock(return_value=[]),
             ),
         )
-        server._detect_interrupted_run = AsyncMock()
-        server._rehydrate_plan_store = AsyncMock()
-        # Startup also fires event_log + orphan_processes rehydrate
-        # steps — stub them so partial-init tests don't need to
-        # provide ``session.project_dir`` / ``restore_event_log``.
-        server._rehydrate_event_log = AsyncMock()
-        server._rehydrate_orphan_processes = AsyncMock()
 
         # Must not raise — the whole point of best-effort
         # persistence is graceful degradation on restart.
-        await server.startup()
+        await _lifecycle(session).startup()
 
         # Empty decisions — load failed, fall back to "nothing
         # recorded yet".
-        assert server._session.plan_store.decisions == {}
+        assert session.plan_store.decisions == {}

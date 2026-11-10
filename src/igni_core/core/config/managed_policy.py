@@ -28,7 +28,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from igni_core.core.config.config_io import YamlSource
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import managed_policy_dir
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ class ManagedPolicySource:
         strict subset of YAML). Returns ``None`` on unknown platforms
         — the loader treats that as "no managed tier."
         """
-        placed = Layers.current().managed_settings_path()
+        placed = layers.current().managed_settings_path()
         if placed is not None:
             return placed
         root = managed_policy_dir()

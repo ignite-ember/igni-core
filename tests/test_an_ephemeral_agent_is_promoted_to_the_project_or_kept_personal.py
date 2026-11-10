@@ -29,6 +29,7 @@ from igni_core.core.agents import AgentPool
 from igni_core.core.agents.schemas import AgentPriority
 from igni_core.core.init.project_initializer import ProjectInitializer
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.workspace_trust import process_trust
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 
@@ -49,22 +50,22 @@ def repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
-    ProjectInitializer(project_dir=repo, home_igni=tmp_path / "home" / CONFIG_DIR).run()
+    ProjectInitializer(
+        project_dir=repo, trust=process_trust(), home_igni=tmp_path / "home" / CONFIG_DIR
+    ).run()
     return repo
 
 
 @pytest.fixture
 def session(repo: Path, settings):
     with patch("igni_core.core.agents.builder.AgentBuilder.build", return_value=MagicMock()):
-        pool = AgentPool()
-        pool._settings = settings
-        pool._base_dir = str(repo)
+        pool = AgentPool(settings=settings, project_dir=repo)
         pool.init_ephemeral(repo)
         yield SimpleNamespace(pool=pool, project_dir=repo)
 
 
 def _create(session, name: str) -> None:
-    session.pool.register_ephemeral(name=name, description="d", system_prompt="p")
+    session.pool.ephemeral.register(name=name, description="d", system_prompt="p")
 
 
 async def test_create_then_promote_for_the_project(session, repo: Path):
@@ -97,7 +98,7 @@ async def test_create_then_keep_it_personal(session, repo: Path):
     assert not (repo / CONFIG_DIR / "agents.tmp" / "mine.md").exists()
     assert not any("mine.md" in path for path in _visible(repo))
     assert session.pool.get_entry("mine").priority is AgentPriority.PROJECT_LOCAL
-    assert not session.pool.is_ephemeral(session.pool.get_entry("mine").definition)
+    assert not session.pool.ephemeral.owns(session.pool.get_entry("mine").definition)
 
 
 async def test_discard_removes_it(session, repo: Path):
@@ -120,7 +121,7 @@ async def test_promote_does_not_replace_an_agent_already_there(session, repo: Pa
     existing.write_text("the team's\n")
     _create_named_file = repo / CONFIG_DIR / "agents.tmp" / "reviewer.md"
     # Ephemeral of the same file name, registered under another name.
-    session.pool.register_ephemeral(name="reviewer2", description="d", system_prompt="p")
+    session.pool.ephemeral.register(name="reviewer2", description="d", system_prompt="p")
     (repo / CONFIG_DIR / "agents.tmp" / "reviewer2.md").rename(_create_named_file)
     session.pool.get_entry("reviewer2").definition.source_path = _create_named_file
 

@@ -44,18 +44,19 @@ from websockets.asyncio.client import connect
 
 from igni_core.backend.activity import Activity, ActivityState, SessionActivity
 from igni_core.backend.app import BackendApp
+from igni_core.backend.schemas_lifecycle import BackendLaunch
+from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.config.schemas.storage_and_paths import StorageConfig
-from igni_core.core.config.settings import load_settings
-from igni_core.core.db.engine import cache
+from igni_core.core.config.settings_loader import SettingsLoader
+from igni_core.core.db.engine import engines
 from igni_core.core.db.engine_registry import EngineRegistry
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.db.scope import Tenant, tenancy
 from igni_core.core.db.urls import DatabaseUrl
 from igni_core.core.layer import BackendHooks, Layer
 from igni_core.core.session.pending_messages import PendingMessageStore
-from igni_core.extensions.host.broadcasts import BroadcastSignals
-from igni_core.extensions.host.model import HostState
+from igni_core.extensions.host.activity import ActivityWatch
 from igni_core.notifications.stream import NotificationStreamFollower
 from igni_core.protocol import messages as msg
 from igni_core.transport.websocket import WebSocketServerTransport
@@ -131,6 +132,13 @@ def test_the_files_are_on_run_igni_unless_moved():
 def test_the_desktop_has_no_guest_contract():
     assert type(Layer().backend()) is BackendHooks
     assert isinstance(CloudLayer().backend(), CloudGuest)
+
+
+def test_the_guest_tells_the_layers_credentials_who_keeps_the_token():
+    layer = CloudLayer()
+    guest = layer.backend()
+    assert isinstance(guest, CloudGuest)
+    assert guest.tokens is layer.credentials(), "one instance, not process-wide state"
 
 
 def test_an_atomic_write_leaves_only_the_file(tmp_path: Path):
@@ -262,31 +270,28 @@ async def test_it_follows_activity_changed_and_is_removed_when_igni_stops(tmp_pa
 
 def test_activity_changed_reaches_a_listener():
     class Backend:
-        value: dict[str, Any] = {"state": "idle"}
+        value = Activity.of([])
 
-        def activity(self) -> dict[str, Any]:
+        def activity(self) -> Activity:
             return self.value
 
-    class Model:
-        def __init__(self) -> None:
-            self.state = HostState()
-            self.backend = Backend()
-            self.emitted: list[str] = []
+    backend = Backend()
+    emitted: list[str] = []
 
-        def emit(self, wire: str, value: Any = None, **_: Any) -> list[str]:
-            self.emitted.append(wire)
-            return []
+    def emit(wire: str, value: Any = None, **_: Any) -> list[str]:
+        emitted.append(wire)
+        return []
 
-    model = Model()
-    signals = BroadcastSignals(model)  # type: ignore[arg-type]
-    heard: list[dict[str, Any]] = []
-    signals.on_activity(heard.append)
-    signals.activity_moved()
-    signals.activity_moved()
-    model.backend.value = {"state": "running"}
-    signals.activity_moved()
-    assert heard == [{"state": "idle"}, {"state": "running"}]
-    assert model.emitted == ["app.activity_changed", "app.activity_changed"]
+    watch = ActivityWatch(backend.activity, emit)
+    heard: list[Activity] = []
+    watch.listen(heard.append)
+    watch.moved()
+    watch.moved()
+    running = SessionActivity(session_id="s1", state=ActivityState.RUNNING)
+    backend.value = Activity.of([running])
+    watch.moved()
+    assert [a.state for a in heard] == [ActivityState.IDLE, ActivityState.RUNNING]
+    assert emitted == ["app.activity_changed", "app.activity_changed"]
 
 
 # ── producer.env ──────────────────────────────────────────────────
@@ -410,7 +415,7 @@ async def test_an_igni_started_before_its_producer_binds_when_producer_env_appea
     guest.starting()
     # Engines other tests opened on the run's database go, so that "no
     # engine on it" below means this igni opened none.
-    cache.dispose_all()
+    engines.dispose_sync()
     transport = WebSocketServerTransport(port=0)
     await transport.start()
     try:
@@ -428,7 +433,7 @@ async def test_an_igni_started_before_its_producer_binds_when_producer_env_appea
             assert answer["type"] == "rpc_response" and answer["id"] == "r1"
             assert "not bound" in answer["error"]
             assert not binding.done()
-            assert database_url.url not in cache.registry._sync_engines, "no database yet"
+            assert database_url.url not in engines._sync_engines, "no database yet"
 
             _hand_over(run_dir, database_url.url)
             assert await asyncio.wait_for(binding, timeout=5) is True
@@ -437,7 +442,7 @@ async def test_an_igni_started_before_its_producer_binds_when_producer_env_appea
 
             # The backend's boot from here on, as ``BackendApp.run`` does it.
             assert os.environ[StorageConfig.DATABASE_URL_ENV] == database_url.url
-            settings = load_settings(project_dir=tmp_path)
+            settings = SettingsLoader.load(project_dir=tmp_path)
             assert settings.storage.database_url == database_url.url
             tenancy.use(lambda: guest.tenant)
             database = StorageLocator.from_settings(settings).project_database(tmp_path)
@@ -471,24 +476,18 @@ async def test_the_backend_loads_nothing_of_a_producer_before_it_is_bound(
     (run_dir / "ready").write_text("left by an igni that exited\n")
     seen: dict[str, Any] = {}
 
-    def load_settings_now(_self: BackendApp) -> Any:
+    def load_settings_now(_self: BackendSettingsLoader) -> Any:
         seen["database_url"] = os.environ.get(StorageConfig.DATABASE_URL_ENV)
         seen["cwd"] = Path(os.getcwd()).resolve()
         raise Booted
 
-    monkeypatch.setattr(BackendApp, "_load_settings_with_group_policy", load_settings_now)
-    app = BackendApp(
-        socket_path=None,
-        ws_port=0,
-        project_dir=project,
-        resume_session_id=None,
-        additional_dirs=None,
-    )
-    assert isinstance(app._guest, CloudGuest)
+    monkeypatch.setattr(BackendSettingsLoader, "load", load_settings_now)
+    app = BackendApp(BackendLaunch(ws_port=0, project_dir=project))
+    assert isinstance(app.guest, CloudGuest)
     run = asyncio.create_task(app.run())
     try:
         for _ in range(500):
-            if app._transport is not None:
+            if app.transport is not None:
                 break
             await asyncio.sleep(0.01)
         assert (run_dir / "ready").read_text().strip() == str(os.getpid())
@@ -498,8 +497,8 @@ async def test_the_backend_loads_nothing_of_a_producer_before_it_is_bound(
         with pytest.raises(Booted):
             await asyncio.wait_for(run, timeout=5)
     finally:
-        if app._transport is not None:
-            await app._transport.close()
+        if app.transport is not None:
+            await app.transport.close()
     assert seen == {"database_url": f"sqlite:///{tmp_path / 'shared.db'}", "cwd": project.resolve()}
     assert not (run_dir / "ready").exists(), "an igni that stopped is not ready"
 
@@ -684,7 +683,7 @@ async def test_serving_keeps_the_file_and_reconnects_after_a_restore(run_dir: Pa
     async def reset_pools() -> None:
         calls.append("pools")
 
-    monkeypatch.setattr(cache, "reset_pools", reset_pools)
+    monkeypatch.setattr(engines, "reset_pools", reset_pools)
 
     async def reseeded(_self: ProcessEntropy, _restored: Any) -> None:
         calls.append("entropy")
@@ -697,18 +696,23 @@ async def test_serving_keeps_the_file_and_reconnects_after_a_restore(run_dir: Pa
 
     class Model:
         def __init__(self) -> None:
-            self.backend = self
-            self.broadcasts = self
+            self.services = types.SimpleNamespace(backend=self, activity_watch=self)
             self.listeners: list[Any] = []
 
-        def activity(self) -> dict[str, Any]:
-            return Activity.of([]).model_dump(mode="json")
+        def activity(self) -> Activity:
+            return Activity.of([])
 
-        def on_activity(self, listener: Any) -> None:
+        def listen(self, listener: Any) -> None:
             self.listeners.append(listener)
 
     class Transport:
-        inner = type("Inner", (), {"client_count": 3})()
+        client_count = 3
+
+        def observe(self, _observer: Any) -> None:
+            pass
+
+        def watch_connections(self, _watcher: Any) -> None:
+            pass
 
     model = Model()
     guest.serving(model=model, transport=Transport(), notifications=Notifications())
@@ -751,26 +755,31 @@ async def test_bound_before_any_sign_in_says_so_to_the_windows_and_the_node_agen
     sent: list[Any] = []
 
     class Transport:
-        inner = type("Inner", (), {"client_count": 1})()
+        client_count = 1
 
         async def send(self, message: Any) -> None:
             sent.append(message)
 
+        def observe(self, _observer: Any) -> None:
+            pass
+
+        def watch_connections(self, _watcher: Any) -> None:
+            pass
+
     class Model:
         def __init__(self) -> None:
-            self.backend = self
-            self.broadcasts = self
+            self.services = types.SimpleNamespace(backend=self, activity_watch=self)
 
-        def activity(self) -> dict[str, Any]:
-            return Activity.of([]).model_dump(mode="json")
+        def activity(self) -> Activity:
+            return Activity.of([])
 
-        def on_activity(self, listener: Any) -> None:
+        def listen(self, listener: Any) -> None:
             pass
 
     guest.serving(model=Model(), transport=Transport(), api_url=lambda: "https://igni.test")
     try:
         for _ in range(100):
-            if guest.credentials and guest.credentials.state.value == "needs_sign_in" and sent:
+            if guest.credential.state() == "needs_sign_in" and sent:
                 break
             await asyncio.sleep(0.01)
         written = json.loads((run_dir / "activity.json").read_text())

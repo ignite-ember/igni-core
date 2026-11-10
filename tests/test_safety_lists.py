@@ -8,11 +8,9 @@ isolation so a future refactor of the pipeline can't silently drift
 them.
 """
 
-from igni_core.core.hooks.permission_pipeline import (
-    BlockedCommandStage,
-    ProtectedPathStage,
-    ToolCallContext,
-)
+from igni_core.core.hooks.permission.blocked_command_stage import BlockedCommandStage
+from igni_core.core.hooks.permission.context import ToolCallContext
+from igni_core.core.hooks.permission.protected_path_stage import ProtectedPathStage
 
 
 class TestProtectedPathStageCheckSync:

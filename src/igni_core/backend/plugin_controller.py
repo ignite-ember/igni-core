@@ -22,19 +22,21 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from igni_core.backend.plugin_directory_scanner import PluginDirectoryScanner
 from igni_core.backend.plugin_schemas import (
     PluginContents,
     PluginPreviewKey,
     PluginPreviewSource,
 )
 
-# Module-attribute imports (not ``from ... import ClassName``) so
-# tests patching ``installer.PluginInstaller`` / ``state.save_state``
-# at the source module take effect on our call sites.
+# The installer and the plugin state are imported as *modules* (not
+# ``from ... import ClassName``) so tests patching
+# ``installer.PluginInstaller`` / ``state.save_state`` at the source
+# module take effect on our call sites.
 from igni_core.core.plugins import installer as _plugin_installer
-from igni_core.core.plugins import marketplaces as _plugin_marketplaces
 from igni_core.core.plugins import state as _plugin_state
 from igni_core.core.plugins.git import GitClient, GitError
+from igni_core.core.plugins.marketplace_store import MarketplaceRegistryStore
 from igni_core.core.plugins.models import PluginInfo
 from igni_core.core.plugins.source_policy import PluginSourcePolicy
 from igni_core.protocol import messages as msg
@@ -45,7 +47,7 @@ if TYPE_CHECKING:
 
 class PluginController:
     """Plugin lifecycle: preview / list / toggle / install / update /
-    remove. Composed onto :class:`BackendServer` as ``self.plugins``.
+    remove. Built once per session in :class:`ControllerRegistry`.
     """
 
     def __init__(self, session: Session) -> None:
@@ -100,7 +102,7 @@ class PluginController:
                     f"Cloned repo has no '{subdir}' subdirectory — "
                     "the marketplace entry may be stale."
                 )
-            result = PluginContents.from_directory(scan_root, name=source)
+            result = PluginDirectoryScanner(scan_root, name=source).scan()
             # Don't leak the throwaway temp path — surface the
             # source the user knows about instead. Echo the subdir
             # form so the FE display matches the catalog entry.
@@ -156,6 +158,16 @@ class PluginController:
             )
             for p in loader.list_plugins()
         ]
+
+    def contents(self, name: str) -> PluginContents:
+        """Detailed inventory of one installed plugin."""
+        plugin = next(
+            (p for p in self._session.plugin_loader.list_plugins() if p.name == name),
+            None,
+        )
+        if plugin is None:
+            return PluginContents(error=f"Plugin '{name}' not found")
+        return PluginDirectoryScanner(plugin.root_path, name=name).scan()
 
     # ── Enable / disable toggle ────────────────────────────────────
 
@@ -214,7 +226,7 @@ class PluginController:
 
     # ── Install / update / remove ──────────────────────────────────
 
-    def install(
+    async def install(
         self,
         ref: str,
         install_ref: str | None = None,
@@ -226,42 +238,14 @@ class PluginController:
         refs may carry a default ``branch`` in the catalog; honored
         only when ``install_ref`` is omitted so explicit user choice
         wins.
+
+        The clone runs in a worker thread — on the event loop it held up
+        every session — and the session reloads its plugins on the loop.
         """
-        data_dir = self._session.settings.storage.data_dir
-        installer = _plugin_installer.PluginInstaller(
-            data_dir=data_dir,
-            source_policy=PluginSourcePolicy.from_settings(self._session.settings),
-        )
-        if not installer.is_git_available():
-            return msg.Info(text="git not found on PATH. Install git and retry.")
-
-        url = ref
-        subdir: str | None = None
-        if ref.startswith("@"):
-            resolved = _plugin_marketplaces.resolve_install_ref(ref, data_dir=data_dir)
-            if resolved is None:
-                return msg.Info(
-                    text=f"Could not resolve '{ref}'. Run "
-                    "/plugin marketplace list to see registered "
-                    "marketplaces, or use a git URL."
-                )
-            resolved_source, _mkt_entry = resolved
-            url = resolved_source.url
-            subdir = resolved_source.subdir
-            if install_ref is None:
-                install_ref = resolved_source.ref
-
-        policy = PluginSourcePolicy.from_settings(self._session.settings)
-        if not policy.allows(url):
-            return msg.Info(text=policy.refusal(url))
-
-        try:
-            manifest = installer.install(url, ref=install_ref, subdir=subdir)
-        except GitError as e:
-            return msg.Info(text=f"git error: {e}")
-        except _plugin_installer.PluginError as e:
-            return msg.Info(text=str(e))
-
+        fetched = await asyncio.to_thread(self._fetch_install, ref, install_ref)
+        if isinstance(fetched, msg.Info):
+            return fetched
+        manifest = fetched
         version = f" v{manifest.version}" if manifest.version else ""
         # Hot-reload — pull the new plugin's skills / agents / hooks /
         # MCP configs / custom tools into the running session so the
@@ -279,12 +263,62 @@ class PluginController:
             )
         )
 
-    def update(
+    def _fetch_install(
+        self, ref: str, install_ref: str | None
+    ) -> _plugin_installer.PluginManifest | msg.Info:
+        """Resolve and clone the plugin; its manifest, or the refusal to show."""
+        data_dir = self._session.settings.storage.data_dir
+        installer = _plugin_installer.PluginInstaller(
+            data_dir=data_dir,
+            source_policy=PluginSourcePolicy.from_settings(self._session.settings),
+        )
+        if not installer.is_git_available():
+            return msg.Info(text="git not found on PATH. Install git and retry.")
+
+        url = ref
+        subdir: str | None = None
+        if ref.startswith("@"):
+            resolved = MarketplaceRegistryStore(data_dir).resolve_install_ref(ref)
+            if resolved is None:
+                return msg.Info(
+                    text=f"Could not resolve '{ref}'. Run "
+                    "/plugin marketplace list to see registered "
+                    "marketplaces, or use a git URL."
+                )
+            resolved_source, _mkt_entry = resolved
+            url = resolved_source.url
+            subdir = resolved_source.subdir
+            if install_ref is None:
+                install_ref = resolved_source.ref
+
+        policy = PluginSourcePolicy.from_settings(self._session.settings)
+        if not policy.allows(url):
+            return msg.Info(text=policy.refusal(url))
+
+        try:
+            return installer.install(url, ref=install_ref, subdir=subdir)
+        except GitError as e:
+            return msg.Info(text=f"git error: {e}")
+        except _plugin_installer.PluginError as e:
+            return msg.Info(text=str(e))
+
+    async def update(
         self,
         name: str,
         install_ref: str | None = None,
     ) -> msg.Info:
-        """Fetch + reset to ``install_ref`` (default: origin's HEAD)."""
+        """Fetch + reset to ``install_ref`` (default: origin's HEAD); the
+        fetch in a worker thread, the reload on the loop."""
+        fetched = await asyncio.to_thread(self._fetch_update, name, install_ref)
+        if isinstance(fetched, msg.Info):
+            return fetched
+        # Hot-reload so the updated plugin's contents replace the
+        # old ones in the live session.
+        self._session.reload_plugins()
+        return msg.Info(text=f"Updated '{name}' to {fetched[:12]}. Active now.")
+
+    def _fetch_update(self, name: str, install_ref: str | None) -> str | msg.Info:
+        """The plugin moved to ``install_ref``: its new commit, or the refusal."""
         installer = _plugin_installer.PluginInstaller(
             data_dir=self._session.settings.storage.data_dir,
             source_policy=PluginSourcePolicy.from_settings(self._session.settings),
@@ -292,23 +326,19 @@ class PluginController:
         if not installer.is_git_available():
             return msg.Info(text="git not found on PATH.")
         try:
-            new_sha = installer.update(name, ref=install_ref)
+            return installer.update(name, ref=install_ref)
         except GitError as e:
             return msg.Info(text=f"git error: {e}")
         except _plugin_installer.PluginError as e:
             return msg.Info(text=str(e))
-        # Hot-reload so the updated plugin's contents replace the
-        # old ones in the live session.
-        self._session.reload_plugins()
-        return msg.Info(text=f"Updated '{name}' to {new_sha[:12]}. Active now.")
 
-    def remove(self, name: str) -> msg.Info:
-        """Delete the plugin directory and clear its pin."""
+    async def remove(self, name: str) -> msg.Info:
+        """Delete the plugin directory (in a worker thread) and clear its pin."""
         installer = _plugin_installer.PluginInstaller(
             data_dir=self._session.settings.storage.data_dir,
         )
         try:
-            installer.remove(name)
+            await asyncio.to_thread(installer.remove, name)
         except _plugin_installer.PluginError as e:
             return msg.Info(text=str(e))
         # Hot-reload so the removed plugin's skills/agents/hooks

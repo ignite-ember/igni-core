@@ -72,16 +72,13 @@ from igni_core.core.contributed_commands import ContributedCommands
 from igni_core.core.contributed_commands import (
     contributed_commands as default_commands,
 )
-from igni_core.core.prompts import load_prompt
-from igni_core.core.prompts.contributions import (
-    PromptContributions,
+from igni_core.core.prompts.contribution_models import (
     PromptEdit,
     PromptOverride,
-    prompt_contributions,
 )
+from igni_core.core.prompts.contributions import PromptContributions, TableChange
 from igni_core.core.prompts.document import FRONTMATTER, PromptDocument, PromptTarget
-from igni_core.core.prompts.fragments import PromptFragments
-from igni_core.core.prompts.fragments import fragments as default_fragments
+from igni_core.core.prompts.loader import PromptLoader
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.impact import (
     Claim,
@@ -92,7 +89,7 @@ from igni_core.extensions.impact import (
     ResolvedImpact,
     SwitchedOff,
 )
-from igni_core.extensions.installer import SERVER_PREFIX
+from igni_core.extensions.install_service import SERVER_PREFIX
 from igni_core.extensions.manifest import ExtensionManifest, FragmentSource
 from igni_core.extensions.registry import (
     ExtensionRegistry,
@@ -119,10 +116,10 @@ class ExtensionContributions:
         plugins_dir: Path | None = None,
         priority: Callable[[], list[str]] | None = None,
         igni_commands: IgniCommands | None = None,
-        fragments: PromptFragments | None = None,
-        prompts: PromptContributions | None = None,
+        prompt_loader: PromptLoader,
+        prompts: PromptContributions,
         commands: ContributedCommands | None = None,
-        hooks: ExtensionHooks | None = None,
+        hooks: ExtensionHooks,
     ) -> None:
         """
         Args:
@@ -139,6 +136,11 @@ class ExtensionContributions:
                 collisions, and edits apply and extensions' hooks run in it.
             igni_commands: igni's own slash commands. An extension
                 declaring one has it switched off, and is told why.
+            prompt_loader: igni's prompt files, and the table of
+                anchors an extension fills. The same instance every
+                session of the deployment reads.
+            hooks: The extensions' hooks, whose priority the
+                super admin's order settles.
         """
         self._registry = registry
         self._rpc = rpc
@@ -146,10 +148,13 @@ class ExtensionContributions:
         self._plugins_dir = plugins_dir
         self._priority = priority or (lambda: [])
         self._igni_commands = igni_commands or IgniCommands()
-        self._fragments = fragments if fragments is not None else default_fragments
-        self._prompts = prompts if prompts is not None else prompt_contributions
+        self._prompt_loader = prompt_loader
+        # The table of anchors an extension fills: the loader's, so the
+        # text it supplies reaches the prompts the loader reads.
+        self._fragments = prompt_loader.fragments
+        self._prompts = prompts
         self._commands = commands if commands is not None else default_commands
-        self._hooks = hooks if hooks is not None else ExtensionHooks.shared()
+        self._hooks = hooks
         self._resolved = ResolvedImpact()
         #: ``{extension_id: [what it declared and igni would not take]}``
         #: — an override whose text does not have the sections it says.
@@ -187,7 +192,7 @@ class ExtensionContributions:
         self._resolved = ImpactResolver(
             impacts, priority, reserved=self._igni_commands.claims()
         ).resolve()
-        self._prompts.set_priority(priority)
+        _report_watch_failures(self._prompts.set_priority(priority))
         self._hooks.set_priority(priority)
         self._publish()
         for collision in self._resolved.collisions:
@@ -261,7 +266,7 @@ class ExtensionContributions:
 
     def _withdraw_live(self, extension_id: str) -> None:
         self._fragments.remove_owner(extension_id)
-        self._prompts.remove_owner(extension_id)
+        _report_watch_failures(self._prompts.remove_owner(extension_id))
         self._commands.remove_owner(extension_id)
 
     def _schedule(self, entry: InstalledExtension) -> None:
@@ -308,8 +313,8 @@ class ExtensionContributions:
             if text is None:
                 continue
             refusal = self._fragments.register(fragment.anchor, manifest.id, _supplier(text))
-            if refusal is not None:
-                logger.warning("extension %s: %s", manifest.id, refusal)
+            if not refusal.ok:
+                logger.warning("extension %s: %s", manifest.id, refusal.reason)
 
     async def _apply_prompt(self, manifest: ExtensionManifest) -> None:
         prompt = manifest.contributes.prompt
@@ -363,12 +368,13 @@ class ExtensionContributions:
                     "extension %s: %s refused — %s", manifest.id, entry.claim, entry.reason
                 )
             self._publish()
-        self._prompts.set_owner(
-            manifest.id, manifest.display_name, overrides=overrides, edits=edits
+        _report_watch_failures(
+            self._prompts.set_owner(
+                manifest.id, manifest.display_name, overrides=overrides, edits=edits
+            )
         )
 
-    @staticmethod
-    def _sections_mismatch(target: str, text: str, declared: list[str]) -> str | None:
+    def _sections_mismatch(self, target: str, text: str, declared: list[str]) -> str | None:
         """Why an override's text is not the sections it declares, or ``None`` when it is.
 
         Other extensions' edits — and a super admin's view of which
@@ -376,7 +382,7 @@ class ExtensionContributions:
         """
         agent = PromptTarget.parse(target).agent is not None
         if target == "main":
-            text = text.replace("{{PERSISTING}}", load_prompt("persisting"))
+            text = text.replace("{{PERSISTING}}", self._prompt_loader.load("persisting"))
         try:
             found = PromptDocument(text, agent=agent).sections()
         except ValueError as exc:
@@ -527,11 +533,11 @@ class ExtensionConditionReceiver:
         self,
         *,
         registry: ExtensionRegistry,
-        prompts: PromptContributions | None = None,
+        prompts: PromptContributions,
         refetch: Callable[[str], None] | None = None,
     ) -> None:
         self._registry = registry
-        self._prompts = prompts if prompts is not None else prompt_contributions
+        self._prompts = prompts
         self._refetch = refetch
 
     def __call__(self, server: str, params: dict[str, Any]) -> None:
@@ -548,10 +554,27 @@ class ExtensionConditionReceiver:
         except ValidationError as exc:
             logger.warning("%s from %s refused: %s", self.METHOD, extension_id, exc)
             return
-        if notice.conditions and self._prompts.hold(extension_id, notice.conditions):
-            logger.info("extension %s: conditions now %s", extension_id, notice.conditions)
+        if notice.conditions:
+            change = self._prompts.hold(extension_id, notice.conditions)
+            if change.changed:
+                logger.info("extension %s: conditions now %s", extension_id, notice.conditions)
+            _report_watch_failures(change)
         if notice.refresh and self._refetch is not None:
             self._refetch(extension_id)
+
+
+def _report_watch_failures(change: TableChange) -> None:
+    """Say which watchers failed, so a stale prompt is not silent.
+
+    The table reports a failing watcher back to whoever changed it;
+    this is where that is said out loud, with the consequence.
+    """
+    for failure in change.failures:
+        logger.warning(
+            "a prompt watcher failed: %s — %s; the agents may not have been rebuilt",
+            failure.watcher,
+            failure.error,
+        )
 
 
 def _supplier(text: str) -> Callable[[], str]:

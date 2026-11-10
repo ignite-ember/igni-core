@@ -7,13 +7,23 @@ start + persist, remove + persist_remove + cancel eviction, arm
 eviction task, emit line, emit completion) sat on
 :class:`ProcessSupervisor` operating on the registry from outside.
 
-This module gives that behaviour a home. Constructor takes the
-three collaborators the coordination logic needs (bus, log store,
-persistence store) plus a TTL knob; the fire-and-forget scheduler
-lives on the registry so ``_persist_*`` don't have to be
-re-implemented at every subsystem that hits the same pattern.
+This module gives that behaviour a home. The registry is the
+coordinator; the concerns it coordinates live in collaborators it
+holds rather than in fields of its own:
 
-Public collaborators the supervisor still needs (bus, log_store,
+* :class:`~igni_core.core.tools.process_eviction.ProcessEviction` —
+  the finished-process TTL and the per-pid eviction tasks.
+* :class:`~igni_core.core.tools.process_persistence.ProcessPersistenceWriter`
+  — the fire-and-forget writes of the registry's rows to the store.
+* :class:`~igni_core.core.tools.process_registry_schemas.RegistryCollaborators`
+  — the event bus, the on-disk log store and the sleep blocker.
+
+The processes themselves are held as
+:class:`~igni_core.core.tools.process_registry_schemas.TrackedProcess`
+— the contract the live, orphaned and finished kinds all satisfy —
+so the public API says what it holds instead of saying ``Any``.
+
+Public collaborators the supervisor still needs (bus, log store,
 persistence configuration) are exposed as attributes / methods so
 the small handful of sync-import call sites can reach them via
 ``supervisor.registry.bus`` etc.
@@ -24,32 +34,34 @@ Threading model:
   async tools and the sync ``cancel_foreground`` path.
 * :class:`ProcessEventBus` (owned as ``self.bus``) is also
   sync-lock guarded.
-* Eviction task handles live on the registry as a
-  ``dict[int, asyncio.Task]`` keyed by pid — previously reached
-  in via a private attr on :class:`ManagedProcess`, which broke
-  encapsulation the audit called out.
+* Eviction task handles live on the registry's
+  :class:`~igni_core.core.tools.process_eviction.ProcessEviction` —
+  previously reached in via a private attr on
+  :class:`ManagedProcess`, which broke encapsulation the audit
+  called out.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
 import time
-from typing import Any
 
-from igni_core.core.activity import background
-from igni_core.core.tools.async_fire_and_forget import AsyncFireAndForget
-from igni_core.core.tools.managed_process import process_group_of
 from igni_core.core.tools.process_bus import ProcessEventBus
 from igni_core.core.tools.process_events import (
     ProcessExitEvent,
     ProcessLineEvent,
     ProcessStartEvent,
 )
+from igni_core.core.tools.process_eviction import ProcessEviction
 from igni_core.core.tools.process_log import ProcessLogStore
-from igni_core.core.tools.process_store import (
-    BackgroundProcessRow,
+from igni_core.core.tools.process_persistence import ProcessPersistenceWriter
+from igni_core.core.tools.process_registry_schemas import (
+    BackgroundProcessPersistence,
+    KnownProcess,
+    RegistryCollaborators,
+    RunningProcess,
+    TrackedProcess,
 )
 from igni_core.core.tools.sleep_blocker import SleepBlocker
 
@@ -63,12 +75,11 @@ DEFAULT_FINISHED_PROCESS_TTL_SECONDS = 600.0
 class ProcessRegistry:
     """Owning collaborator for every backgrounded shell process.
 
-    Holds the pid → ``ManagedProcess`` (or ``OrphanProcess``) map,
-    the per-pid eviction task handles, the event bus, the on-disk
-    log store, and the optional persistence store. Announce /
-    deregister / completion methods co-locate the emit + persist
-    steps with the registry mutation so callers can't accidentally
-    skip half the lifecycle.
+    Holds the pid → process map, the event bus, the on-disk log
+    store, and the optional persistence store. Announce / deregister /
+    completion methods co-locate the emit + persist steps with the
+    registry mutation so callers can't accidentally skip half the
+    lifecycle.
 
     Constructor collaborators are all optional so tests can build
     a bare ``ProcessRegistry()`` and get sensible defaults (fresh
@@ -82,37 +93,46 @@ class ProcessRegistry:
         self,
         bus: ProcessEventBus | None = None,
         log_store: ProcessLogStore | None = None,
-        persistence: Any | None = None,
+        persistence: BackgroundProcessPersistence | None = None,
         ttl_seconds: float = DEFAULT_FINISHED_PROCESS_TTL_SECONDS,
         sleep_blocker: SleepBlocker | None = None,
     ) -> None:
-        self._processes: dict[int, Any] = {}
-        self._eviction_tasks: dict[int, asyncio.Task[Any]] = {}
+        self._processes: dict[int, TrackedProcess] = {}
         self._lock = threading.Lock()
-        self.bus: ProcessEventBus = bus or ProcessEventBus()
-        self.log_store: ProcessLogStore = log_store or ProcessLogStore(None)
-        self._persistence: Any | None = persistence
-        self._ttl_seconds: float = ttl_seconds
-        self._scheduler = AsyncFireAndForget()
-        # Held while at least one background process is tracked, so a
-        # long build is not lost to the machine idle-sleeping under it.
-        # See the module docstring for what this cannot do (a closed
-        # lid sleeps the machine regardless).
-        self._sleep_blocker = sleep_blocker if sleep_blocker is not None else SleepBlocker()
+        self._collaborators = RegistryCollaborators(
+            bus=bus or ProcessEventBus(),
+            log_store=log_store or ProcessLogStore(None),
+            sleep_blocker=sleep_blocker if sleep_blocker is not None else SleepBlocker(),
+        )
+        self._eviction = ProcessEviction(ttl_seconds)
+        self._persistence = ProcessPersistenceWriter(persistence)
+
+    # ── Collaborators ───────────────────────────────────────────
+
+    @property
+    def bus(self) -> ProcessEventBus:
+        """The event bus the registry announces on."""
+        return self._collaborators.bus
+
+    @property
+    def log_store(self) -> ProcessLogStore:
+        """The per-pid on-disk log store."""
+        return self._collaborators.log_store
 
     # ── Persistence wiring ──────────────────────────────────────
 
-    def attach_persistence(self, store: Any | None) -> None:
-        """Point this registry at a :class:`BackgroundProcessStore`
+    def attach_persistence(self, store: BackgroundProcessPersistence | None) -> None:
+        """Point this registry at a
+        :class:`~igni_core.core.tools.process_store.BackgroundProcessStore`
         (or ``None`` to unwire for test isolation). Called from
         :meth:`~igni_core.core.tools.orphan_rehydrator.OrphanRehydrator.run`
         during BE startup once the DB is live."""
-        self._persistence = store
+        self._persistence.attach(store)
 
     @property
-    def persistence(self) -> Any | None:
+    def persistence(self) -> BackgroundProcessPersistence | None:
         """Currently-attached persistence store, or ``None``."""
-        return self._persistence
+        return self._persistence.store
 
     # ── TTL knob ────────────────────────────────────────────────
 
@@ -120,16 +140,16 @@ class ProcessRegistry:
         """Override the finished-process eviction TTL. Value is
         read fresh on every :meth:`arm_eviction` call so the
         change takes effect on subsequent arms."""
-        self._ttl_seconds = seconds
+        self._eviction.set_ttl_seconds(seconds)
 
     @property
     def ttl_seconds(self) -> float:
         """Current finished-process eviction TTL."""
-        return self._ttl_seconds
+        return self._eviction.ttl_seconds
 
     # ── Add / remove ────────────────────────────────────────────
 
-    def add(self, mp: Any) -> int:
+    def add(self, mp: TrackedProcess) -> int:
         """Add ``mp`` to the pid map WITHOUT firing subscribers or
         persisting.
 
@@ -146,7 +166,7 @@ class ProcessRegistry:
             self._processes[pid] = mp
         return pid
 
-    def announce_start(self, mp: Any) -> None:
+    def announce_start(self, mp: TrackedProcess) -> None:
         """Emit the ``start`` event AND persist the DB row.
 
         Called from the two paths that surface a process to the
@@ -156,14 +176,13 @@ class ProcessRegistry:
         pushes; the DB row is load-bearing for cross-restart
         tracking).
         """
-        self._persist_add(mp.proc.pid, mp.cmd)
+        self._persistence.record_start(mp.proc.pid, mp.cmd)
         # Paired with the release in ``emit_completion``. Taken here
         # rather than in ``add`` because this is the point at which the
         # process is something the agent is waiting on, not merely a
         # pid that exists.
-        self._sleep_blocker.acquire()
+        self._collaborators.sleep_blocker.acquire()
         self.bus.emit(
-            "start",
             ProcessStartEvent(pid=mp.proc.pid, cmd=mp.cmd, started_at=time.time()),
         )
 
@@ -174,14 +193,12 @@ class ProcessRegistry:
 
         Idempotent: extra calls no-op.
         """
-        self._persist_remove(pid)
+        self._persistence.forget(pid)
         with self._lock:
             self._processes.pop(pid, None)
-            task = self._eviction_tasks.pop(pid, None)
-        if task is not None and not task.done():
-            task.cancel()
+        self._eviction.cancel(pid)
 
-    def record_finished(self, mp: Any) -> None:
+    def record_finished(self, mp: TrackedProcess) -> None:
         """Persist the ending of a process that was never announced.
 
         ``emit_completion`` is gated on ``was_backgrounded`` — the exit
@@ -194,30 +211,26 @@ class ProcessRegistry:
         No bus event, deliberately. Nobody is waiting on a foreground
         command they already have the output of.
         """
-        self._persist_finish(mp)
+        self._persistence.record_end(mp)
         self.arm_eviction(mp)
 
-    def emit_completion(self, mp: Any) -> None:
-        """Fire ``exit`` subscribers AND delete the persisted row.
+    def emit_completion(self, mp: TrackedProcess) -> None:
+        """Fire ``exit`` subscribers AND record the ending.
+
         Called from the reader task once stdout closes.
 
-        Prunes the persisted row BEFORE the FE-facing subscribers
-        fire: otherwise a BE restart between exit and the FE
-        seeing the ``process_exited`` push would leave a dead pid
-        in the store, surfacing as an orphan that's already gone.
+        Records the ending rather than deleting the row: the table is
+        a history now, and "what ran here and how did it go" is the
+        question the watcher asks after a restart.
         """
-        # Record the ending rather than deleting the row: the table is
-        # a history now, and "what ran here and how did it go" is the
-        # question the watcher asks after a restart.
-        self._persist_finish(mp)
-        self._sleep_blocker.release()
+        self._persistence.record_end(mp)
+        self._collaborators.sleep_blocker.release()
         self.bus.emit(
-            "exit",
             ProcessExitEvent(
                 pid=mp.proc.pid,
                 cmd=mp.cmd,
                 exit_code=mp.proc.returncode,
-                duration_seconds=time.monotonic() - mp.started_at,
+                duration_seconds=mp.elapsed(),
                 output_tail=mp.read(tail=40),
             ),
         )
@@ -226,30 +239,30 @@ class ProcessRegistry:
         """Notify ``line`` subscribers. Hot path — the bus
         snapshots the subscriber list under its own lock, so this
         stays contention-free at the callsite."""
-        self.bus.emit("line", ProcessLineEvent(pid=pid, line=line))
+        self.bus.emit(ProcessLineEvent(pid=pid, line=line))
 
     # ── Query ───────────────────────────────────────────────────
 
-    def get(self, pid: int) -> Any | None:
+    def get(self, pid: int) -> TrackedProcess | None:
         with self._lock:
             return self._processes.get(pid)
 
-    def all_running(self) -> list[tuple[int, str, float]]:
-        """Return ``(pid, cmd, elapsed_seconds)`` for every running
-        process. Uses polymorphic ``mp.elapsed()`` — both
+    def all_running(self) -> list[RunningProcess]:
+        """Every running process, with how long it has been up.
+
+        Uses polymorphic ``mp.elapsed()`` — both
         :class:`ManagedProcess` (monotonic) and
         :class:`~igni_core.core.tools.orphan_process.OrphanProcess`
         (epoch) implement it, no duck-check needed here."""
         with self._lock:
-            result: list[tuple[int, str, float]] = []
-            for pid, mp in self._processes.items():
-                if mp.is_running():
-                    result.append((pid, mp.cmd, mp.elapsed()))
-            return result
+            return [
+                RunningProcess(pid=pid, cmd=mp.cmd, elapsed_seconds=mp.elapsed())
+                for pid, mp in self._processes.items()
+                if mp.is_running()
+            ]
 
-    def all_known(self) -> list[tuple[int, str, float, bool, int | None]]:
-        """``(pid, cmd, elapsed, is_running, exit_code)`` for everything
-        the registry holds — finished processes included.
+    def all_known(self) -> list[KnownProcess]:
+        """Every process the registry holds — finished ones included.
 
         :meth:`all_running` answers "what is running now", which is the
         wrong question for the watcher: a command that failed four
@@ -259,11 +272,17 @@ class ProcessRegistry:
         expires, so this is bounded by that rather than unbounded.
         """
         with self._lock:
-            rows: list[tuple[int, str, float, bool, int | None]] = []
+            rows: list[KnownProcess] = []
             for pid, mp in self._processes.items():
                 running = mp.is_running()
                 rows.append(
-                    (pid, mp.cmd, mp.elapsed(), running, None if running else mp.returncode())
+                    KnownProcess(
+                        pid=pid,
+                        cmd=mp.cmd,
+                        elapsed_seconds=mp.elapsed(),
+                        is_running=running,
+                        exit_code=None if running else mp.returncode(),
+                    )
                 )
             return rows
 
@@ -272,11 +291,7 @@ class ProcessRegistry:
         isolation helper."""
         with self._lock:
             self._processes.clear()
-            tasks = list(self._eviction_tasks.values())
-            self._eviction_tasks.clear()
-        for task in tasks:
-            if not task.done():
-                task.cancel()
+        self._eviction.cancel_all()
 
     def kill_all(self) -> int:
         """Kill all tracked processes synchronously. Returns count
@@ -290,156 +305,37 @@ class ProcessRegistry:
                     mp.kill()
                     count += 1
             self._processes.clear()
-            tasks = list(self._eviction_tasks.values())
-            self._eviction_tasks.clear()
-        for task in tasks:
-            if not task.done():
-                task.cancel()
+        self._eviction.cancel_all()
         return count
 
     # ── Eviction ────────────────────────────────────────────────
 
-    def arm_eviction(self, mp: Any) -> None:
+    def arm_eviction(self, mp: TrackedProcess) -> None:
         """Arm/refresh the async eviction task for a finished
         process. Called from ``read_process_output`` whenever the
         agent reads a finished process; cancels any existing task
         first so the TTL resets to "10 min after the *most recent*
         read", not "10 min after the first read"."""
         pid = mp.proc.pid
+        self._eviction.arm(pid, lambda: self._expire(pid, mp))
+
+    def _expire(self, pid: int, mp: TrackedProcess) -> None:
+        """Drop a finished process whose TTL has run out.
+
+        Skipped if the pid now holds a different process — a reused
+        pid must not evict the process that took its place.
+        """
         with self._lock:
-            existing = self._eviction_tasks.get(pid)
-        if existing is not None and not existing.done():
-            existing.cancel()
-
-        # Read TTL fresh so ``set_ttl_seconds`` calls made between
-        # the previous arm and this one take effect.
-        ttl = self._ttl_seconds
-
-        async def _evict() -> None:
-            try:
-                await asyncio.sleep(ttl)
-            except asyncio.CancelledError:
+            current = self._processes.get(pid)
+            if current is not mp:
                 return
-            with self._lock:
-                current = self._processes.get(pid)
-                should_evict = current is mp
-                if should_evict:
-                    self._processes.pop(pid, None)
-                    self._eviction_tasks.pop(pid, None)
-            if should_evict:
-                logger.debug("evicted process pid=%d after TTL", pid)
-                # Per-pid log file follows the same TTL — the
-                # agent's in-memory buffer and the on-disk tail-
-                # able copy should go away together. Skipped if
-                # the registry row was already swapped (pid reuse
-                # edge case).
-                self.log_store.cleanup(pid)
-
-        task = background.daemon(_evict(), name=f"process-evict-{pid}")
-        with self._lock:
-            self._eviction_tasks[pid] = task
-
-    # ── Persistence internals ───────────────────────────────────
-
-    def _persist_add(self, pid: int, cmd: str) -> None:
-        """Fire-and-forget upsert. See :class:`AsyncFireAndForget`
-        for the "why this checks the loop first" story.
-
-        ``store.upsert`` returns a typed
-        :class:`~igni_core.core.tools.process_store_schemas.UpsertResult`
-        so a DB failure at the fire-and-forget boundary logs a
-        typed reason instead of getting swallowed by the
-        scheduler's default exception handler.
-        """
-        store = self._persistence
-        if store is None:
-            return
-        # ``os.getpgid`` does not exist on Windows, so the inline
-        # ``try: os.getpgid(pid) except (ProcessLookupError, OSError)``
-        # that used to live here raised AttributeError straight out of
-        # ``announce_start`` and took the whole background spawn with
-        # it. ``process_group_of`` asks for the name and returns None
-        # where there are no process groups; the orphan-recovery row
-        # then carries ``pgid=None``, which is the honest value.
-        pgid = process_group_of(pid)
-        # Row stamps its own ``started_at`` — the former
-        # module-level ``now_epoch`` helper moved onto the model
-        # with :meth:`BackgroundProcessRow.new`.
-        row = BackgroundProcessRow.new(pid=pid, cmd=cmd, pgid=pgid)
-        self._scheduler.schedule(self._await_upsert(store, row))
-
-    def _persist_remove(self, pid: int) -> None:
-        """Fire-and-forget delete. Same semantics as
-        :meth:`_persist_add`."""
-        store = self._persistence
-        if store is None:
-            return
-        self._scheduler.schedule(self._await_remove(store, pid))
-
-    def _persist_finish(self, mp: Any) -> None:
-        """Fire-and-forget "this is how it ended".
-
-        Replaces :meth:`_persist_remove` on the completion path. The
-        row stays; it gains an exit code and a timestamp, which is what
-        makes the table survivable as history rather than a list of
-        what happens to be alive.
-        """
-        store = self._persistence
-        if store is None:
-            return
-        pid = mp.proc.pid
-        finish = getattr(store, "finish", None)
-        if finish is None:
-            # An older store predating history — fall back to the
-            # previous behaviour rather than losing the row's removal.
-            self._persist_remove(pid)
-            return
-        self._scheduler.schedule(self._await_finish(store, mp))
-
-    async def _await_finish(self, store: Any, mp: Any) -> None:
-        """Await ``store.finish`` and log a DEBUG reason on failure.
-
-        Builds the fallback row here, where the command and the start
-        time are still to hand. ``ManagedProcess.started_at`` is
-        monotonic, so it is converted back to wall-clock — the DB is
-        read by a later process for which this process's monotonic
-        clock means nothing.
-        """
-        pid = mp.proc.pid
-        started_monotonic = getattr(mp, "started_at", None)
-        started_epoch = (
-            int(time.time() - (time.monotonic() - started_monotonic))
-            if isinstance(started_monotonic, (int, float))
-            else int(time.time())
-        )
-        row = BackgroundProcessRow(
-            pid=pid,
-            cmd=getattr(mp, "cmd", ""),
-            pgid=None,
-            started_at=started_epoch,
-        )
-        result = await store.finish(pid, mp.proc.returncode, row=row)
-        if not getattr(result, "ok", True):
-            logger.debug("persist_finish pid=%s failed: %s", pid, getattr(result, "reason", ""))
-
-    async def _await_upsert(self, store: Any, row: BackgroundProcessRow) -> None:
-        """Await ``store.upsert`` and log a DEBUG reason on
-        failure. Wraps the coroutine so the scheduler surfaces a
-        clean coroutine (not a bare unawaited return) and the
-        typed :class:`UpsertResult.reason` still gets logged.
-        """
-        result = await store.upsert(row)
-        if not getattr(result, "ok", True):
-            reason = getattr(result, "reason", "")
-            logger.debug("persist_add failed: %s", reason)
-
-    async def _await_remove(self, store: Any, pid: int) -> None:
-        """Await ``store.remove`` and log a DEBUG reason on
-        failure. Same shape as :meth:`_await_upsert`."""
-        result = await store.remove(pid)
-        if not getattr(result, "ok", True):
-            reason = getattr(result, "reason", "")
-            logger.debug("persist_remove pid=%s failed: %s", pid, reason)
+            self._processes.pop(pid, None)
+        self._eviction.forget(pid)
+        logger.debug("evicted process pid=%d after TTL", pid)
+        # Per-pid log file follows the same TTL — the agent's
+        # in-memory buffer and the on-disk tail-able copy should go
+        # away together.
+        self.log_store.cleanup(pid)
 
     # ── Test / reset helpers ────────────────────────────────────
 
@@ -449,4 +345,4 @@ class ProcessRegistry:
         BE never calls this."""
         self.bus.reset()
         self.clear()
-        self._persistence = None
+        self._persistence.detach()

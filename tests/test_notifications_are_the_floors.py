@@ -19,7 +19,7 @@ import pytest
 
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_handlers.base import RpcHandlerContext
-from igni_core.backend.rpc_handlers.notifications import NotificationsRpcHandler
+from igni_core.backend.rpc_handlers.notifications import MarkReadArgs, NotificationsRpcHandler
 from igni_core.extensions.service_token import IgniSession
 from igni_core.notifications.center import NotificationCenter
 from igni_core.notifications.local_store import LocalNotificationStore
@@ -28,6 +28,7 @@ from igni_core.notifications.schemas import (
     MarkReadRequest,
     NotificationCounts,
     NotificationOrigin,
+    NotificationsChanged,
     NotificationTarget,
 )
 from igni_core.notifications.server_client import (
@@ -37,6 +38,7 @@ from igni_core.notifications.server_client import (
 )
 from igni_core.protocol.rpc import RpcMethod
 from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.push import PushNotification
 from tests.notification_helpers import (
     API_URL,
     SESSION,
@@ -64,15 +66,17 @@ class Floor:
         self.center = NotificationCenter(
             server=signed_in(**kwargs),
             local=self.store,
-            announce=self.announced.append,
+            announce=lambda change: self.announced.append(change.counts),
             transport=self.server.transport,
         )
         self.handler = NotificationsRpcHandler(
             RpcHandlerContext(
                 backend=None,
-                transport=None,
+                file_completion=MagicMock(),
+                shell_runner=MagicMock(),
                 login=MagicMock(),
                 push=MagicMock(),
+                workflows=MagicMock(),
                 notifications=self.center,
             )
         )
@@ -265,7 +269,7 @@ async def test_marking_ids_splits_them_between_the_two(tmp_path, rows):
     kept = floor.center.keep_local("acme.scanner", local_notice())
     assert kept is not None
 
-    result = await floor.handler.notifications_mark_read({"ids": [kept.id, "s-new"]})
+    result = await floor.handler.notifications_mark_read(MarkReadArgs(ids=[kept.id, "s-new"]))
 
     assert floor.server.read_bodies == [{"ids": ["s-new"]}]
     assert floor.store.counts().unread == 0
@@ -277,7 +281,7 @@ async def test_marking_a_source_marks_it_on_both(tmp_path, rows):
     floor = Floor(tmp_path, rows)
     floor.center.keep_local("igni.artifacts", local_notice())
 
-    result = await floor.handler.notifications_mark_read({"source": "igni.artifacts"})
+    result = await floor.handler.notifications_mark_read(MarkReadArgs(source="igni.artifacts"))
 
     assert floor.server.read_bodies == [{"source": "igni.artifacts"}]
     assert result.counts.unread == 0
@@ -287,7 +291,7 @@ async def test_marking_everything(tmp_path, rows):
     floor = Floor(tmp_path, rows)
     floor.center.keep_local("acme.scanner", local_notice())
 
-    result = await floor.handler.notifications_mark_read({})
+    result = await floor.handler.notifications_mark_read(MarkReadArgs())
 
     assert floor.server.read_bodies == [{}]
     assert result.counts.unread == 0
@@ -298,7 +302,7 @@ async def test_a_server_that_cannot_mark_says_so(tmp_path, rows):
     await floor.center.refresh()
     floor.server.status = 500
 
-    result = await floor.handler.notifications_mark_read({"ids": ["s-new"]})
+    result = await floor.handler.notifications_mark_read(MarkReadArgs(ids=["s-new"]))
 
     assert "500" in result.server_error
     assert result.counts.unread == 2
@@ -308,23 +312,35 @@ async def test_a_server_that_cannot_mark_says_so(tmp_path, rows):
 
 
 def test_the_counts_reach_the_client_on_their_own_channel():
-    sent: list[tuple[str, dict]] = []
+    sent: list[PushNotification] = []
     bridge = PushNotificationBridge(transport=MagicMock(), loop=None, queue=[])
-    bridge._schedule_push = lambda channel, payload: sent.append((channel, payload))  # type: ignore[method-assign]
+    bridge._schedule_push = lambda push: sent.append(push)  # type: ignore[method-assign]
 
-    bridge.notifications_changed(NotificationCounts(unread=2, by_source={"igni.artifacts": 2}))
-
-    assert sent == [
-        (
-            PushChannel.NOTIFICATIONS_CHANGED,
-            {"counts": {"unread": 2, "by_source": {"igni.artifacts": 2}}},
+    bridge.notifications_changed(
+        NotificationsChanged(
+            counts=NotificationCounts(unread=2, by_source={"igni.artifacts": 2}),
+            cause="marked_read",
         )
-    ]
+    )
+
+    assert len(sent) == 1
+    assert sent[0].channel == PushChannel.NOTIFICATIONS_CHANGED
+    assert sent[0].payload == {
+        "counts": {"unread": 2, "by_source": {"igni.artifacts": 2}},
+        "cause": "marked_read",
+    }
 
 
 def test_the_three_rpcs_are_the_handlers():
     handler = NotificationsRpcHandler(
-        RpcHandlerContext(backend=None, transport=None, login=MagicMock(), push=MagicMock())
+        RpcHandlerContext(
+            backend=None,
+            file_completion=MagicMock(),
+            shell_runner=MagicMock(),
+            login=MagicMock(),
+            push=MagicMock(),
+            workflows=MagicMock(),
+        )
     )
 
     assert set(handler.methods()) == {
@@ -336,7 +352,14 @@ def test_the_three_rpcs_are_the_handlers():
 
 async def test_a_backend_without_a_center_answers_empty():
     handler = NotificationsRpcHandler(
-        RpcHandlerContext(backend=None, transport=None, login=MagicMock(), push=MagicMock())
+        RpcHandlerContext(
+            backend=None,
+            file_completion=MagicMock(),
+            shell_runner=MagicMock(),
+            login=MagicMock(),
+            push=MagicMock(),
+            workflows=MagicMock(),
+        )
     )
 
     assert (await handler.notifications_list({})).notifications == []

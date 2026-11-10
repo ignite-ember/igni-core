@@ -56,9 +56,13 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import BaseModel, Field
 
-from igni_core.core.config.group_policy import GroupPolicyEntry, GroupPolicyPack
+from igni_core.core.config.cli_overrides import CliOverrides
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.schemas.telemetry import OtlpConfig, TelemetryConfig
-from igni_core.core.config.settings import Settings, SettingsLoader, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.observability import OtelRuntime, OtlpTarget
 from igni_core.core.observability.pipeline import OtelSinks
 from igni_core.core.paths import CONFIG_DIR
@@ -287,7 +291,7 @@ def write_user_config(home: Path, model_url: str, extra: str = "") -> None:
 def managed_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str) -> None:
     managed = tmp_path / "managed-settings.yaml"
     managed.write_text(text)
-    monkeypatch.setattr(SettingsLoader, "platform_managed_settings_path", lambda: managed)
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", lambda: managed)
 
 
 def collector_block(url: str, *, capture_content: bool = False) -> str:
@@ -346,7 +350,7 @@ class TestNothingIsSetUpWithoutACollector:
         with ToolCallingModel(REPLY) as model:
             write_user_config(Path.home(), model.url)
             with EgressGuard(network=InternalNetwork(), watch_subprocesses=True).watching() as log:
-                await one_turn(load_settings(project_dir=project), project)
+                await one_turn(SettingsLoader.load(project_dir=project), project)
         assert not log.attempts, log.report()
         assert OtelRuntime.current() is None
 
@@ -369,19 +373,19 @@ class TestOnlyTheOrganisationNamesTheCollector:
             collector_block("http://repo-chosen.example:4318", capture_content=True)
         )
 
-        otlp = load_settings(project_dir=project).telemetry.otlp
+        otlp = SettingsLoader.load(project_dir=project).telemetry.otlp
 
         assert otlp.endpoint == ""
         assert otlp.capture_content is False
         assert "telemetry may be set only in the managed-settings file" in caplog.text
 
-    def test_the_command_line_cannot_name_it_either(self, project):
-        cli = {"telemetry": {"otlp": {"endpoint": "http://cli-chosen.example:4318"}}}
-        assert load_settings(project_dir=project, cli_overrides=cli).telemetry.otlp.endpoint == ""
+    def test_the_command_line_cannot_name_it_either(self):
+        """The CLI's overrides are typed, and no flag names a collector."""
+        assert not any("telemetry" in name or "otlp" in name for name in CliOverrides.model_fields)
 
     def test_the_managed_file_names_it(self, project, tmp_path, monkeypatch):
         managed_file(tmp_path, monkeypatch, collector_block("http://otel.acme.internal:4318"))
-        otlp = load_settings(project_dir=project).telemetry.otlp
+        otlp = SettingsLoader.load(project_dir=project).telemetry.otlp
 
         assert otlp.endpoint == "http://otel.acme.internal:4318"
         assert otlp.headers == {"authorization": "Bearer collector-token"}
@@ -403,7 +407,7 @@ class TestOnlyTheOrganisationNamesTheCollector:
                 )
             ],
         )
-        settings = load_settings(project_dir=project, group_policy_fetcher=lambda: pack)
+        settings = SettingsLoader.load(project_dir=project, group_policy_fetcher=lambda: pack)
         assert settings.telemetry.otlp.endpoint == "http://otel.acme.internal:4318"
 
     def test_the_environment_names_it(self, monkeypatch):
@@ -427,7 +431,7 @@ class TestOnlyTheOrganisationNamesTheCollector:
         managed_file(tmp_path, monkeypatch, collector_block("http://otel.acme.internal:4318"))
         monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://elsewhere.example:4318")
 
-        otlp = load_settings(project_dir=project).telemetry.otlp
+        otlp = SettingsLoader.load(project_dir=project).telemetry.otlp
         assert otlp.endpoint == "http://otel.acme.internal:4318"
 
 
@@ -507,7 +511,7 @@ async def exported_turn(
         managed_file(
             tmp_path, monkeypatch, collector_block(collector.url, capture_content=capture_content)
         )
-        settings = load_settings(project_dir=project)
+        settings = SettingsLoader.load(project_dir=project)
         assert OtelRuntime.start(settings).ok
         response = await one_turn(settings, project)
         OtelRuntime.stop()

@@ -7,10 +7,10 @@ Three layers covered:
 * ``_apply_plugin_restrictions`` — the pure helper that strips
   restricted fields and warns on detected restricted frontmatter
   keys.
-* ``AgentPool._load_directory(plugin_restricted=True)`` — the
-  loader path that applies the helper, plus a regression test
-  that ``plugin_restricted=False`` (the default for user / project
-  agents) keeps existing behaviour.
+* ``AgentPool.load_plugin_directory`` — the loader path that
+  applies the helper, plus a regression test that
+  ``AgentPool.load_directory`` (user / project agents) keeps
+  existing behaviour.
 * ``OrchestrateTools.spawn_agent`` — the spawn path that honours
   ``force_isolation`` even when the caller didn't request it.
 """
@@ -18,6 +18,7 @@ Three layers covered:
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -28,7 +29,13 @@ from igni_core.core.agents import (
     AgentPool,
     PluginRestrictionPolicy,
 )
+from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.tools.orchestrate import OrchestrateTools
+
+
+def _prompt_loader() -> PromptLoader:
+    """igni's own prompt files, with no extension-supplied anchors."""
+    return PromptLoader(PromptFragments())
 
 
 def _apply_plugin_restrictions(
@@ -46,7 +53,7 @@ def _raw_frontmatter_keys(path: Path) -> set:
     """Local test helper — replaces the deleted free function on
     ``core/pool.py``. Delegates to
     :meth:`AgentMarkdownFile.raw_frontmatter_keys`."""
-    return AgentMarkdownFile(path).raw_frontmatter_keys()
+    return AgentMarkdownFile(path, prompt_loader=_prompt_loader()).raw_frontmatter_keys()
 
 
 @pytest.fixture
@@ -62,10 +69,8 @@ def captured_pool_warnings(monkeypatch):
     regardless of what other test code did to the global logger
     config.
 
-    Patches ``plugin_policy.logger`` directly (the canonical
-    emitter) rather than the ``core/pool.py`` shim's re-bound
-    ``logger`` — both are the same singleton but the canonical
-    path is grep-friendly for future maintainers.
+    Patches ``plugin_policy.logger`` directly — the emitter
+    :class:`PluginRestrictionPolicy` writes through.
     """
     from igni_core.core.agents import plugin_policy as _plugin_policy_mod
 
@@ -177,17 +182,10 @@ class TestRawFrontmatterKeys:
         assert _raw_frontmatter_keys(f) == set()
 
 
-# ── AgentPool._load_directory(plugin_restricted=True) ──────
+# ── AgentPool plugin-restricted load ──────
 
 
 class TestAgentPoolPluginRestrictedLoad:
-    def _make_pool(self) -> AgentPool:
-        # Bypass the full constructor — for these tests we only
-        # need ``_load_directory`` to populate ``_definitions``.
-        pool = AgentPool.__new__(AgentPool)
-        pool._definitions = {}
-        return pool
-
     def test_plugin_agent_mcp_servers_stripped(self, tmp_path, captured_pool_warnings):
         """End-to-end: a plugin agent declaring mcp_servers gets
         them stripped at load time."""
@@ -196,14 +194,14 @@ class TestAgentPoolPluginRestrictedLoad:
             "bad",
             extra_frontmatter="mcp_servers:\n  - smuggled\n",
         )
-        pool = self._make_pool()
-        pool._load_directory(
+        pool = AgentPool()
+        pool.load_plugin_directory(
             tmp_path,
             priority=1,
             namespace="evil-plugin",
-            plugin_restricted=True,
+            restriction_policy=PluginRestrictionPolicy.strict(),
         )
-        defn = pool._definitions["evil-plugin:bad"][0]
+        defn = pool.get_entry("evil-plugin:bad").definition
         assert defn.mcp_servers == []
         assert defn.force_isolation == "worktree"
         # And the warning fired — visible in logs for audit.
@@ -219,30 +217,32 @@ class TestAgentPoolPluginRestrictedLoad:
             "p",
             extra_frontmatter='hooks:\n  PreToolUse:\n    - command: "echo"\n',
         )
-        pool = self._make_pool()
-        pool._load_directory(
+        pool = AgentPool()
+        pool.load_plugin_directory(
             tmp_path,
             priority=1,
             namespace="plug",
-            plugin_restricted=True,
+            restriction_policy=PluginRestrictionPolicy.strict(),
         )
-        defn = pool._definitions["plug:p"][0]
+        defn = pool.get_entry("plug:p").definition
         assert defn.force_isolation == "worktree"
         joined = " ".join(captured_pool_warnings)
         assert "hooks" in joined
 
-    def test_non_plugin_load_preserves_mcp_servers(self, tmp_path, captured_pool_warnings):
-        """The default ``plugin_restricted=False`` path (user /
-        project agents) must NOT strip mcp_servers — only plugin
-        agents get the security envelope."""
+    def test_non_plugin_load_preserves_mcp_servers(
+        self, tmp_path, settings, captured_pool_warnings
+    ):
+        """The ``load_directory`` path (user / project agents) must
+        NOT strip mcp_servers — only plugin agents get the security
+        envelope."""
         _write_agent(
             tmp_path,
             "userp",
             extra_frontmatter="mcp_servers:\n  - my-server\n",
         )
-        pool = self._make_pool()
-        pool._load_directory(tmp_path, priority=1)
-        defn = pool._definitions["userp"][0]
+        pool = AgentPool(settings=settings)
+        pool.load_directory(tmp_path, priority=1)
+        defn = pool.get_entry("userp").definition
         assert defn.mcp_servers == ["my-server"]
         assert defn.force_isolation is None
         # And NO warning fires for user / project agents.
@@ -271,8 +271,6 @@ def _mock_stream(content: str):
 
 
 def _mock_pool_with_definition(definition: AgentDefinition):
-    from igni_core.core.tools.orchestrate_budget import SpawnBudget
-
     pool = MagicMock()
     agent = MagicMock()
     agent.arun = MagicMock(return_value=_mock_stream("ok"))
@@ -282,8 +280,7 @@ def _mock_pool_with_definition(definition: AgentDefinition):
     agent.aget_last_run_output = AsyncMock(return_value=run_output)
     agent.tools = []
     pool.get.return_value = agent
-    pool.get_definition.return_value = definition
-    pool.spawn_budget.return_value = SpawnBudget(20)
+    pool.get_entry.return_value = SimpleNamespace(definition=definition)
     return pool
 
 

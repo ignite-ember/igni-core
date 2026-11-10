@@ -1,138 +1,44 @@
 """igni's backend, as the host object model reaches it.
 
-Two pieces, both thin:
-
-* :class:`ObservedTransport` wraps the backend's root transport, once.
-  Everything igni sends any window passes through it, so the host model
-  sees every broadcast on its way out and turns it into signals; and an
-  action the host sends on an extension's behalf whose answer belongs to
-  the extension (a slash command it ran) is taken back here instead of
-  being shown in the windows.
-* :class:`OrchestratorHostBackend` implements
-  :class:`~igni_core.extensions.host.backend.HostBackend` over the
-  session pool: an RPC is the handler the window would have reached, an
-  action is dispatched as the window's would be, an attach is the
-  window's attach — refused where the window's is.
+:class:`OrchestratorHostBackend` implements
+:class:`~igni_core.extensions.host.backend.HostBackend` over the session
+pool: an RPC is the handler the window would have reached, an action is
+dispatched as the window's would be, an attach is the window's attach —
+refused where the window's is. Everything it sends goes out through the
+:class:`~igni_core.backend.observed_transport.ObservedTransport`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
-import threading
 import uuid
-from collections import OrderedDict
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from igni_core.backend.activity import Activity
-from igni_core.backend.message_dispatcher import _serialize
+from igni_core.backend.observed_transport import ObservedTransport
+from igni_core.backend.rpc_result import RpcResult
 from igni_core.backend.rpc_router import POOL_LEVEL_RPCS
+from igni_core.backend.schemas_pool import AttachRefused, ExtensionPost
 from igni_core.backend.service_event_delivery import PoolSession
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.core.activity import ActivityRegistry, background
-from igni_core.core.approvals.events import approval_events
-from igni_core.core.hooks.extension_gate import ExtensionHookGate
+from igni_core.core.session.client_state import ClientStateStore
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaDraft,
+    VisualizationDeltaPayload,
+)
 from igni_core.core.session.schemas import PersistResult
-from igni_core.extensions.host.broadcasts import BroadcastSignals
-from igni_core.extensions.host.hooks import ExtensionHooks
-from igni_core.extensions.host.model import HostModel
-from igni_core.extensions.registry import ExtensionRegistry
+from igni_core.extensions.host.attachments import ChatAttachments
+from igni_core.extensions.host.broadcasts.views import ViewShown
+from igni_core.extensions.host.values import SessionAttached
 from igni_core.extensions.service_events import UnattendedPost
-from igni_core.extensions.store import ExtensionStore
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 
-logger = logging.getLogger(__name__)
-
 #: Ids the host gives actions whose answer it takes back.
 HOST_ID_PREFIX = "host-"
-
-
-class ObservedTransport:
-    """The root transport, with observers on the way out."""
-
-    def __init__(self, inner: Any) -> None:
-        self._inner = inner
-        self._observers: list[Callable[[msg.Message], None]] = []
-        self._waiting: dict[str, asyncio.Future[msg.Message]] = {}
-
-    @property
-    def inner(self) -> Any:
-        return self._inner
-
-    def observe(self, observer: Callable[[msg.Message], None]) -> None:
-        self._observers.append(observer)
-
-    def expect(self, message_id: str) -> asyncio.Future[msg.Message]:
-        """The next message sent with ``message_id`` comes here, not to the windows."""
-        future: asyncio.Future[msg.Message] = asyncio.get_running_loop().create_future()
-        self._waiting[message_id] = future
-        return future
-
-    def forget(self, message_id: str) -> None:
-        self._waiting.pop(message_id, None)
-
-    async def send(self, message: msg.Message) -> None:
-        if message.id and message.id in self._waiting:
-            future = self._waiting.pop(message.id)
-            if not future.done():
-                future.set_result(message)
-            return
-        for observer in list(self._observers):
-            try:
-                observer(message)
-            except Exception:
-                logger.exception("an outbound observer failed on %s", message.type)
-        await self._inner.send(message)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._inner, name)
-
-
-class RpcWatch:
-    """Which window RPCs are in flight, so a success can be signalled.
-
-    "Every write is a signal": a window's write through an RPC broadcasts
-    nothing of its own, so the host learns it succeeded from the reply
-    going out and tells
-    :meth:`~igni_core.extensions.host.broadcasts.BroadcastSignals.after_rpc`.
-    """
-
-    LIMIT = 1000
-
-    def __init__(self, after: Callable[[RpcMethod, dict[str, Any], str, Any], None]) -> None:
-        self._after = after
-        self._pending: OrderedDict[str, tuple[RpcMethod, dict[str, Any], str]] = OrderedDict()
-
-    def inbound(self, message: Any) -> None:
-        if not isinstance(message, msg.RPCRequest) or not message.id:
-            return
-        try:
-            method = RpcMethod(message.method)
-        except ValueError:
-            return
-        if method in POOL_LEVEL_RPCS:
-            return
-        self._pending[message.id] = (method, dict(message.args or {}), message.session_id)
-        while len(self._pending) > self.LIMIT:
-            self._pending.popitem(last=False)
-
-    def outbound(self, message: msg.Message) -> None:
-        if not message.id or message.id not in self._pending:
-            return
-        method, args, session_id = self._pending.pop(message.id)
-        if isinstance(message, msg.RPCResponse):
-            if message.error:
-                return
-            result = message.result
-        else:
-            if message.type == "error":
-                return
-            result = message.model_dump()
-        self._after(method, args, session_id or message.session_id, result)
 
 
 class OrchestratorHostBackend:
@@ -144,12 +50,14 @@ class OrchestratorHostBackend:
         orchestrator: SessionOrchestrator,
         transport: ObservedTransport,
         project_dir: Path,
-        client_state: Any,
+        client_state: ClientStateStore,
+        activities: ActivityRegistry,
     ) -> None:
         self._orchestrator = orchestrator
         self._transport = transport
         self.project_dir = project_dir
         self.client_state = client_state
+        self._activities = activities
         self._tasks: set[asyncio.Task[None]] = set()
 
     def default_session(self) -> str:
@@ -166,7 +74,7 @@ class OrchestratorHostBackend:
         result = handler(dict(args))
         if asyncio.iscoroutine(result) or asyncio.isfuture(result):
             result = await result
-        return _serialize(result)
+        return RpcResult.serialize(result)
 
     async def act(self, message: msg.Message, *, session_id: str) -> None:
         self._orchestrator.spawn_dispatch(message.model_copy(update={"session_id": session_id}))
@@ -184,9 +92,12 @@ class OrchestratorHostBackend:
         finally:
             self._transport.forget(message_id)
 
-    async def attach(self, session_id: str, project_dir: str | None) -> dict[str, str]:
+    async def attach(self, session_id: str, project_dir: str | None) -> SessionAttached:
+        """The window's attach; refused as :class:`HostBackend` says, with ``ValueError``."""
         result = await self._orchestrator.attach(session_id, project_dir)
-        return {"session_id": result.session_id, "project_dir": result.project_dir}
+        if isinstance(result, AttachRefused):
+            raise ValueError(result.reason)
+        return SessionAttached(session_id=result.session_id, project_dir=result.project_dir)
 
     async def post(
         self,
@@ -194,15 +105,17 @@ class OrchestratorHostBackend:
         session_id: str,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments,
         queued: bool,
     ) -> None:
         await self._orchestrator.post_from_extension(
-            session_id=session_id,
-            extension_id=extension_id,
-            text=text,
-            media=media,
-            queued=queued,
+            ExtensionPost(
+                session_id=session_id,
+                extension_id=extension_id,
+                text=text,
+                media=media,
+                queued=queued,
+            )
         )
 
     async def deliver(
@@ -211,7 +124,7 @@ class OrchestratorHostBackend:
         session_id: str,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments,
     ) -> UnattendedPost:
         return await PoolSession(self._orchestrator, session_id).deliver(
             extension_id=extension_id, text=text, media=media
@@ -220,47 +133,40 @@ class OrchestratorHostBackend:
     async def title(self, *, session_id: str, title: str) -> PersistResult:
         return await PoolSession(self._orchestrator, session_id).title(title)
 
-    async def show_view(self, *, session_id: str, payload: dict[str, Any], run_id: str) -> None:
+    async def show_view(
+        self, *, session_id: str, payload: VisualizationDeltaPayload, run_id: str
+    ) -> None:
         runtime = await self._orchestrator.pool.get_or_create(session_id)
         await runtime.transport.send(
-            msg.PushNotification(channel="orchestrate_event", payload=payload)
+            msg.PushNotification(
+                channel="orchestrate_event", payload=payload.model_dump(by_alias=True)
+            )
         )
-        record = getattr(runtime.backend, "record_event", None)
-        if record is not None:
-            await record("visualization_delta", payload, run_id)
+        await runtime.backend.record_event(VisualizationDeltaDraft(payload=payload, run_id=run_id))
 
-    def views(self, session_id: str) -> list[dict[str, Any]]:
+    def views(self, session_id: str) -> list[ViewShown]:
         runtime = self._orchestrator.pool.find(session_id)
         if runtime is None:
             return []
-        events = getattr(runtime.backend, "session_events", None)
-        if events is None:
-            return []
-        latest: dict[str, dict[str, Any]] = {}
-        for event in events("visualization_delta"):
-            payload = dict(event.payload or {})
-            if not payload.get("final", True) or not payload.get("spec_id"):
+        latest: dict[str, ViewShown] = {}
+        for event in runtime.backend.session_events("visualization_delta"):
+            payload = event.payload
+            if not isinstance(payload, VisualizationDeltaPayload):
                 continue
-            latest[str(payload["spec_id"])] = BroadcastSignals.view(session_id, payload)
+            if not payload.final or not payload.spec_id:
+                continue
+            latest[payload.spec_id] = ViewShown.shown(session_id, payload)
         return list(latest.values())
 
-    def activity(self) -> dict[str, Any]:
-        return self.activity_model().model_dump(mode="json")
-
-    def activity_model(self) -> Activity:
-        sessions = []
-        for runtime in self._orchestrator.pool.runtimes:
-            probe = getattr(runtime.backend, "activity", None)
-            if probe is not None:
-                sessions.append(probe())
-        return Activity.now(sessions, ActivityRegistry.shared())
+    def activity(self) -> Activity:
+        sessions = [runtime.backend.activity() for runtime in self._orchestrator.pool.runtimes]
+        return Activity.now(sessions, self._activities)
 
     def waiting_approvals(self, session_id: str) -> list[msg.Message]:
         runtime = self._orchestrator.pool.find(session_id)
-        hitl = getattr(runtime.backend, "hitl", None) if runtime is not None else None
-        if hitl is None:
+        if runtime is None:
             return []
-        return list(hitl.waiting_messages())
+        return list(runtime.backend.controllers.hitl.waiting_messages())
 
     def project_dir_of(self, session_id: str) -> Path:
         runtime = self._orchestrator.pool.find(session_id)
@@ -276,100 +182,4 @@ class OrchestratorHostBackend:
             task.add_done_callback(self._tasks.discard)
 
 
-class ActivityNudge:
-    """Tells the host model to look at the activity again when the registry moves.
-
-    A lease can be taken or let go on any thread; the model is the
-    loop's. Several moves before the loop gets round to it are one look.
-    """
-
-    def __init__(self, model: HostModel, loop: asyncio.AbstractEventLoop) -> None:
-        self._model = model
-        self._loop = loop
-        self._pending = False
-        self._lock = threading.Lock()
-
-    def __call__(self) -> None:
-        with self._lock:
-            if self._pending:
-                return
-            self._pending = True
-        with contextlib.suppress(RuntimeError):
-            self._loop.call_soon_threadsafe(self._look)
-
-    def _look(self) -> None:
-        with self._lock:
-            self._pending = False
-        self._model.broadcasts.activity_moved()
-
-
-class HostModelWiring:
-    """The host model over a session pool, told everything it listens to.
-
-    One place for the wiring so the backend and its tests build the
-    same thing: four taps — every outbound message, every window RPC
-    (to signal writes), every registry change, and the workspace poll —
-    and the window connections closing.
-    """
-
-    @staticmethod
-    def build(
-        *,
-        orchestrator: SessionOrchestrator,
-        transport: ObservedTransport,
-        registry: ExtensionRegistry,
-        project_dir: Path,
-        store: ExtensionStore | None = None,
-        notifications: Any = None,
-        notices: Any = None,
-        workspace_signals: Any = None,
-        strict: bool = False,
-    ) -> HostModel:
-        backend = OrchestratorHostBackend(
-            orchestrator=orchestrator,
-            transport=transport,
-            project_dir=project_dir,
-            client_state=orchestrator.client_state,
-        )
-        model = HostModel(
-            backend=backend,
-            registry=registry,
-            store=store,
-            notifications=notifications,
-            notices=notices,
-            strict=strict,
-        )
-        orchestrator.attach_host_model(model)
-        # igni's hook events reach the extensions that hook them.
-        ExtensionHookGate.install(ExtensionHooks.wire(registry))
-        transport.observe(model.outbound)
-        watch = RpcWatch(model.broadcasts.after_rpc)
-        orchestrator.watch_inbound(watch.inbound)
-        transport.observe(watch.outbound)
-        registry.watch(model.extension_changed)
-        # An app following approvals through the API is told of every
-        # one that appears or goes away, wherever it was answered.
-        approval_events.watch(model.broadcasts.approval_changed)
-        if workspace_signals is not None:
-            workspace_signals.attach_model(model)
-        # Busy leases and wakes move the activity too (``core/activity``).
-        with contextlib.suppress(RuntimeError):
-            ActivityRegistry.shared().watch(ActivityNudge(model, asyncio.get_running_loop()))
-        watch_connections = getattr(transport.inner, "watch_connections", None)
-        if watch_connections is not None:
-
-            def closed(event: str, connection_id: str) -> None:
-                if event == "detached":
-                    model.connection_closed(connection_id)
-
-            watch_connections(closed)
-        return model
-
-
-__all__ = [
-    "HOST_ID_PREFIX",
-    "HostModelWiring",
-    "ObservedTransport",
-    "OrchestratorHostBackend",
-    "RpcWatch",
-]
+__all__ = ["HOST_ID_PREFIX", "OrchestratorHostBackend"]

@@ -90,7 +90,7 @@ class TestPostingWhereNobodyIsLooking:
         # showing another one do not draw.
         assert all(m.session_id == "s-2" for m in rig.windows.of(msg.RunStarted))
         assert rig.model is not None
-        assert rig.model.windows.session(window) == "boot"
+        assert rig.model.services.windows.session(window) == "boot"
         moved = [p for p in await rig.window_pushes(window) if p["field"] == "session"]
         assert moved == moved_before, "no window was moved"
 
@@ -152,7 +152,7 @@ class TestPostingWhereNobodyIsLooking:
         await rig.settle()
 
         assert other.runtime.queue[-1].endswith("later\n</extension-message>")
-        kept = [e.payload["spec_id"] for e in other.session_events("visualization_delta")]
+        kept = [e.payload.spec_id for e in other.session_events("visualization_delta")]
         assert kept == [view_id, view_id]
         assert rig.session.session_events("visualization_delta") == []
         assert [v["view_id"] for v in ok(await rig.ask(ext, "get", "chat.views.list"))] == []
@@ -164,7 +164,7 @@ class TestPostingWhereNobodyIsLooking:
 
         assert ok(await rig.ask(ext, "get", "chat.session_id", session="s-2")) == "s-2"
         messages = ok(await rig.ask(ext, "get", "chat.messages", session="s-2"))
-        assert messages == [{"role": "user", "content": "an earlier turn"}]
+        assert [(m["role"], m["content"]) for m in messages] == [("user", "an earlier turn")]
         assert ok(await rig.ask(ext, "get", "chat.messages")) == [], "host.chat is unchanged"
 
     async def test_a_session_in_the_list_but_not_loaded_is_reached(self, rig: HostRig) -> None:

@@ -16,7 +16,7 @@ coroutine:
   chain. Subclasses implement :meth:`handle` and return ``True``
   when they consumed the line. Replaces the five-way
   ``if/continue`` fall-through with polymorphism, mirroring
-  ``commands.py``'s ``_ACTION_HANDLERS`` dispatch style.
+  ``commands.py``'s per-action renderer table.
 * :class:`_QuitHandler` / :class:`_SlashCommandHandler` /
   :class:`_MessageHandler` — the three concrete handlers, evaluated
   in that order. ``_MessageHandler`` is the fall-through and must
@@ -53,7 +53,7 @@ from igni_core.core.session.commands import InteractiveCommandDispatcher
 from igni_core.core.session.schemas import InteractiveBanner
 from igni_core.core.session.session_run import SessionRun
 from igni_core.core.utils.tips import get_tip
-from igni_core.core.utils.update_checker import check_for_update
+from igni_core.core.utils.update_checker import UpdateChecker
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +210,8 @@ class InteractiveSessionLoop(SessionRun):
     async def _shutdown(self) -> None:
         """Cleanup ephemeral agents, emit SessionEnd."""
         session = self._session
-        if session.settings.orchestration.auto_cleanup:
-            removed = session.pool.cleanup_ephemeral()
+        if session.settings.orchestration.auto_cleanup and session.pool.has_ephemeral:
+            removed = session.pool.ephemeral.cleanup()
             if removed:
                 session.display.print_info(f"Cleaned up {removed} ephemeral agent(s).")
         await self._fire_session_end()
@@ -262,12 +262,12 @@ class InteractiveSessionLoop(SessionRun):
     async def _check_update(self) -> str | None:
         """Return the update warning message when one exists.
 
-        ``check_for_update`` is documented to never raise —
-        it returns an :class:`UpdateInfo` with an ``error``
-        field on failure — so we inspect that field explicitly
-        instead of wrapping the call in a ``try/except: pass``.
+        :meth:`UpdateChecker.check` never raises — it returns an
+        :class:`UpdateInfo` with an ``error`` field on failure — so we
+        inspect that field explicitly instead of wrapping the call in a
+        ``try/except: pass``.
         """
-        update_info = await check_for_update()
+        update_info = await UpdateChecker().check()
         if update_info.error:
             logger.debug("Update check failed: %s", update_info.error)
             return None
@@ -283,7 +283,7 @@ class InteractiveSessionLoop(SessionRun):
             version=__version__,
             tip=get_tip(session.settings, session.project_dir),
             update_message=await self._check_update(),
-            agent_names=list(session.pool.agent_names),
+            agent_names=sorted(d.name for d in session.pool.list_agents()),
             skill_names=[s.name for s in session.skill_pool.list_skills()],
             hook_count=sum(len(v) for v in session.hooks_map.values()),
             session_id=session.session_id,

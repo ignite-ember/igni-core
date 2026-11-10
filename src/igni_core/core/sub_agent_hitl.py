@@ -25,140 +25,96 @@ answered. The ``spawn_agent`` call that was waiting on one died with the
 backend, so nothing resumes on the answer — its parent run is surfaced
 as interrupted, like any run a restart cut off — but the person is not
 left with a question nobody can take.
+
+The coordinator itself only orchestrates; each part of the flow lives
+in its own module under :mod:`igni_core.core.hitl`:
+
+* :attr:`pending` — the questions waiting for a person.
+* :attr:`ledger` — the approvals' durable side (the journal).
+* :attr:`turns` — the finished calls' results a continued turn needs.
+* :attr:`relay` — who is relaying questions to a person right now.
+
+The coordinator stays the one thing the rest of the code talks to:
+every question, relay and turn is reached through its methods, and
+each of them hands straight over to the part that owns the state.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import time
 import uuid
 from collections.abc import Callable
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from agno.run.requirement import RunRequirement
 
 from igni_core.core.approvals.declined import declined_note
-from igni_core.core.approvals.journal import ApprovalJournal, ApprovalOrigin, SpawnLink
-from igni_core.core.layer import Layers
-from igni_core.core.paths import DEFAULT_DATA_DIR
-from igni_core.core.tools.spawn_context import SpawnCalls, SpawnDeadline
+from igni_core.core.approvals.journal import ApprovalJournal
+from igni_core.core.approvals.records import SpawnLink
+from igni_core.core.hitl.ledger import ApprovalLedger
+from igni_core.core.hitl.models import (
+    DetailUpdate,
+    HitlRequirement,
+    PendingEntry,
+    PendingHandle,
+    RestoredRun,
+)
+from igni_core.core.hitl.registry import PendingRegistry
+from igni_core.core.hitl.relay import RelayCounter
+from igni_core.core.hitl.trace import HitlTrace
+from igni_core.core.hitl.turns import TurnLedger
+from igni_core.core.tools.spawn_context import SpawnDeadline
 from igni_core.protocol import messages as msg
-from igni_core.protocol.agno_tool_formatter import default_registry
 
-if TYPE_CHECKING:
-    from agno.run.base import RunRequirement
-
-
-class _PendingEntry(BaseModel):
-    """One in-flight sub-agent HITL requirement.
-
-    Rule 1 compliance — was a ``@dataclass`` before. Uses
-    ``arbitrary_types_allowed`` because ``requirement`` is Agno's
-    ``RunRequirement`` (dynamic) and ``event`` is an
-    :class:`asyncio.Event` (not a Pydantic type). Mutable — the
-    ``surfaced`` flag flips once and the event resolves once, both
-    inside the coordinator's own methods.
-    """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    requirement: Any  # RunRequirement
-    run_id: str
-    # Chain of agents that produced this requirement, parent → leaf.
-    # ``["architect"]`` for a tool the architect specialist requested;
-    # ``["architect", "reviewer"]`` if the architect spawned a reviewer
-    # that then asked for permission. Surfaced to the FE so the dialog
-    # can show *which* specialist is asking, not just the tool name.
-    agent_path: list[str] = Field(default_factory=list)
-    surfaced: bool = False  # True once forwarded to FE via list_new_pending
-    event: asyncio.Event = Field(default_factory=asyncio.Event)
-
-
-class RestoredRun(BaseModel):
-    """A sub-agent run read back after a restart, all its approvals answered."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    run_id: str
-    requirements: list[Any]
-    link: SpawnLink | None = None
+#: Where the coordinator's own pushes are recorded, whatever the layer
+#: keeps in its logs.
+_LLM_LOGGER = logging.getLogger("igni_core.llm_calls")
 
 
 class SubAgentHITLCoordinator:
     """Per-session registry of sub-agent HITL requirements.
 
-    See module docstring for the full flow.
+    See the module docstring for the full flow.
     """
 
     def __init__(self) -> None:
-        self._pending: dict[str, _PendingEntry] = {}
-        # Set whenever a NEW requirement arrives. Backend awaits this to
-        # know when to forward to FE without busy-polling.
-        self.new_arrival = asyncio.Event()
-        #: ``(req_id, details)`` for questions already on screen whose
-        #: explanation improved — relayed by the same drain as new ones.
-        self._detail_updates: list[tuple[str, str]] = []
-        #: Forwarders currently relaying requirements to a person. Zero
-        #: means a requirement pushed now would wait for ever — headless
-        #: ``-p``, CI — so a caller that needs a yes must refuse instead.
-        self.listeners = 0
-        self._journal: ApprovalJournal | None = None
-        self._session_id: Callable[[], str] = lambda: ""
-        #: Requests read back after a restart: nothing waits on them.
-        self._restored: set[str] = set()
-        #: Requests a stream handler is blocked on right now.
-        self._awaited: set[str] = set()
-        #: Finished calls' results by run, for the runs a spawn of theirs
-        #: may yet wait under (:meth:`tool_finished`); bounded.
-        self._turns: dict[str, dict[str, str]] = {}
-        #: Runs with a spawn waiting under them: their results are written.
-        self._linked_runs: set[str] = set()
-        #: Spawn links a previous backend left with no approval waiting:
-        #: their run was being continued when it died.
-        self._interrupted: list[SpawnLink] = []
+        self.pending = PendingRegistry()
+        self.turns = TurnLedger()
+        self.ledger = ApprovalLedger(self.turns)
+        self.relay = RelayCounter()
+        self._trace = HitlTrace()
+
+    @property
+    def new_arrival(self) -> asyncio.Event:
+        """Set when something the frontend has not seen arrives — a new
+        question, or a better explanation for one it has."""
+        return self.pending.new_arrival
 
     # ── Durability ────────────────────────────────────────────────
 
     def attach_journal(self, journal: ApprovalJournal, session_id: Callable[[], str]) -> None:
         """Write requests through to ``journal`` from now on."""
-        self._journal = journal
-        self._session_id = session_id
+        self.ledger.attach(journal, session_id)
 
     def restore(self, session_id: str) -> int:
         """Bring back what ``session_id`` left waiting; returns how many."""
-        if self._journal is None:
-            return 0
-        restored = 0
-        waiting = self._journal.waiting(session_id)
-        asked = {s.run_id for s in waiting if s.origin is ApprovalOrigin.SUB_AGENT}
-        self._interrupted = [
-            link for link in self._journal.spawns(session_id) if link.run_id not in asked
-        ]
-        for stored in waiting:
-            if stored.origin is not ApprovalOrigin.SUB_AGENT:
-                continue
+        restored = self.ledger.restore(session_id)
+        for stored in restored:
             if stored.request is not None and stored.request.details:
                 stored.requirement.details = stored.request.details  # type: ignore[attr-defined]
             # Already "surfaced": it reaches a window by
             # :meth:`waiting_requests`, when one attaches.
-            self._pending[stored.requirement_id] = _PendingEntry(
-                requirement=stored.requirement,
-                run_id=stored.run_id,
-                agent_path=stored.agent_path,
-                surfaced=True,
+            self.pending.add(
+                stored.requirement_id,
+                PendingEntry(
+                    requirement=stored.requirement,
+                    run_id=stored.run_id,
+                    agent_path=stored.agent_path,
+                    surfaced=True,
+                ),
             )
-            self._restored.add(stored.requirement_id)
-            restored += 1
-        return restored
-
-    @property
-    def waiting_count(self) -> int:
-        """Sub-agent runs blocked on a person right now — each one's
-        spawn is doing nothing but wait (``BackendServer.activity``)."""
-        return sum(1 for req_id in self._awaited if not self._pending[req_id].event.is_set())
+            self.pending.mark_restored(stored.requirement_id)
+        return len(restored)
 
     def take_ready_restored(self) -> list[RestoredRun]:
         """Restored runs every one of whose approvals is now answered.
@@ -166,137 +122,62 @@ class SubAgentHITLCoordinator:
         Each is returned once, with its requirements as decided and the
         link the journal kept, for :class:`ColdSpawnResume` to continue.
         """
-        by_run: dict[str, list[str]] = {}
-        for req_id in self._restored:
-            by_run.setdefault(self._pending[req_id].run_id, []).append(req_id)
-        ready: list[RestoredRun] = []
-        for run_id, req_ids in by_run.items():
-            if not all(self._pending[r].event.is_set() for r in req_ids):
-                continue
-            requirements = [self._pending.pop(r).requirement for r in req_ids]
-            self._restored.difference_update(req_ids)
-            link = self._journal.spawn(run_id) if self._journal is not None else None
-            ready.append(RestoredRun(run_id=run_id, requirements=requirements, link=link))
+        ready = self.pending.take_ready()
+        for run in ready:
+            link = self.ledger.spawn_link(run.run_id)
+            if link is not None:
+                run.link = link
         return ready
 
     def take_interrupted(self) -> list[SpawnLink]:
         """Links whose answered run was still being continued when the
         previous backend died — each returned once."""
-        interrupted, self._interrupted = self._interrupted, []
-        return interrupted
+        return self.ledger.take_interrupted()
 
     def forget_spawn(self, run_id: str) -> None:
-        if self._journal is not None:
-            self._journal.forget_spawn(run_id)
+        """The run is over: its spawn link is of no use to anybody."""
+        self.ledger.forget_spawn(run_id)
 
-    def request_for(self, req_id: str) -> msg.HITLRequest | None:
-        """The request a window is shown for ``req_id``."""
-        entry = self._pending.get(req_id)
-        if entry is None:
-            return None
-        req = entry.requirement
-        tool_exec = getattr(req, "tool_execution", None)
-        raw_name = str(getattr(tool_exec, "tool_name", "") if tool_exec else "")
-        return msg.HITLRequest(
-            requirement_id=req_id,
-            tool_name=raw_name,
-            friendly_name=default_registry().friendly_name(raw_name),
-            tool_args=dict(getattr(tool_exec, "tool_args", {}) if tool_exec else {}),
-            agent_path=list(entry.agent_path),
-            details=str(getattr(req, "details", "") or ""),
-            details_pending=bool(getattr(req, "details_pending", False)),
-        )
+    # ── Questions ─────────────────────────────────────────────────
 
     def waiting_requests(self) -> list[msg.RunPaused]:
         """One ``RunPaused`` per sub-agent run with requests not yet
         answered — what a window attaching to the session is shown."""
-        by_run: dict[str, list[msg.HITLRequest]] = {}
-        for req_id, entry in self._pending.items():
-            if entry.event.is_set():
-                continue
-            request = self.request_for(req_id)
-            if request is not None:
-                by_run.setdefault(entry.run_id, []).append(request)
-        return [msg.RunPaused(run_id=run_id, requirements=reqs) for run_id, reqs in by_run.items()]
+        return self.pending.waiting_requests()
 
-    def _trace_file(self, run_id: str, agent_path: list[str] | None) -> None:
-        try:
-            with open(
-                Path(os.path.expanduser(f"{DEFAULT_DATA_DIR}/hitl_trace.log")), "a"
-            ) as trace_f:
-                trace_f.write(
-                    f"{time.strftime('%H:%M:%S')} pid={os.getpid()} "
-                    f"coord.push_requirement: coord_id={id(self)} run_id={run_id} path={agent_path}\n"
-                )
-        except Exception:  # noqa: S110 — a debug trace; its failure must not reach the run
-            pass
+    @property
+    def waiting_count(self) -> int:
+        """Sub-agent runs blocked on a person right now — each one's
+        spawn is doing nothing but wait."""
+        return self.pending.waiting_count
 
-    def _write(self, req_id: str) -> None:
-        if self._journal is None:
-            return
-        entry = self._pending[req_id]
-        self._journal.record(
-            requirement_id=req_id,
-            session_id=self._session_id(),
-            run_id=entry.run_id,
-            origin=ApprovalOrigin.SUB_AGENT,
-            requirement=entry.requirement,
-            request=self.request_for(req_id),
-        )
+    def has_unresolved(self) -> bool:
+        """Whether any question is still unanswered."""
+        return self.pending.has_unresolved
 
-    #: Runs whose finished calls are remembered in memory at once.
-    TURNS_KEPT = 64
+    def request_for(self, req_id: str) -> msg.HITLRequest | None:
+        """The request a window is shown for ``req_id``."""
+        return self.pending.request_for(req_id)
 
-    def tool_finished(self, run_id: str, tool_call_id: str, result: str) -> None:
-        """A call of ``run_id`` finished (``core/hooks/turn_results.py``).
+    def list_new_pending(self) -> list[PendingHandle]:
+        """The questions not yet surfaced to the frontend; mark them shown.
 
-        Kept for the turn a spawn of that run may be waiting in; written
-        to the journal once a spawn of the run waits on a person, so a
-        restart can continue the turn with every call's result.
+        Called by the backend run loop. Idempotent across calls — once a
+        question is surfaced it will not be returned again.
         """
-        turn = self._turns.setdefault(run_id, {})
-        turn[tool_call_id] = result
-        while len(self._turns) > self.TURNS_KEPT:
-            self._turns.pop(next(iter(self._turns)))
-        if self._journal is not None and run_id in self._linked_runs:
-            self._journal.record_turn_result(run_id, tool_call_id, result)
+        return self.pending.take_unsurfaced()
 
-    def turn_results(self, run_id: str) -> dict[str, str]:
-        return self._journal.turn_results(run_id) if self._journal is not None else {}
+    def take_detail_updates(self) -> list[DetailUpdate]:
+        """The explanations for still-open questions; each returned once."""
+        return self.pending.take_updates()
 
-    def forget_turn(self, run_id: str) -> None:
-        self._linked_runs.discard(run_id)
-        self._turns.pop(run_id, None)
-        if self._journal is not None:
-            self._journal.forget_turn(run_id)
-
-    def _link(self, run_id: str, session_id: str, agent_path: list[str]) -> None:
-        parents = SpawnCalls.current()
-        if self._journal is None or not parents or not session_id or not agent_path:
-            return
-        for parent in parents:
-            if parent.run_id in self._linked_runs:
-                continue
-            self._linked_runs.add(parent.run_id)
-            for call_id, result in self._turns.get(parent.run_id, {}).items():
-                self._journal.record_turn_result(parent.run_id, call_id, result)
-        self._journal.record_spawn(
-            SpawnLink(
-                run_id=run_id,
-                session_id=self._session_id(),
-                agent_session_id=session_id,
-                agent_name=agent_path[-1],
-                parents=parents,
-            )
-        )
-
-    def _forget(self, req_id: str) -> None:
-        if self._journal is not None:
-            self._journal.forget(req_id)
+    def hand_back(self, entries: list[PendingHandle]) -> None:
+        """Return taken-but-unshown questions for the next relay to surface."""
+        self.pending.hand_back(entries)
 
     async def push_requirement(
         self,
-        req: RunRequirement,
+        req: RunRequirement | HitlRequirement,
         run_id: str,
         agent_path: list[str] | None = None,
         session_id: str = "",
@@ -307,48 +188,23 @@ class SubAgentHITLCoordinator:
         calls waiting above it (:class:`SpawnCalls`) it is what a backend
         that starts cold needs to continue the run.
         """
-        logging.getLogger("igni_core.llm_calls").info(
+        path = list(agent_path or [])
+        _LLM_LOGGER.info(
             "coord.push_requirement: id_self=%s run_id=%s path=%s",
             id(self),
             run_id,
-            agent_path,
+            path,
         )
-        # Direct trace — see backend/server.py for why we bypass logging.
-        # A layer that keeps no log files gets the record instead.
-        if not Layers.current().log_files():
-            logging.getLogger("igni_core.hitl_trace").info(
-                "coord.push_requirement: coord_id=%s run_id=%s path=%s",
-                id(self),
-                run_id,
-                agent_path,
-            )
-        else:
-            self._trace_file(run_id, agent_path)
-        req_id = str(uuid.uuid4())[:8]
-        self._pending[req_id] = _PendingEntry(
-            requirement=req,
-            run_id=run_id,
-            agent_path=list(agent_path or []),
+        self._trace.record(
+            f"coord.push_requirement: coord_id={id(self)} run_id={run_id} path={path}"
         )
-        self._write(req_id)
-        self._link(run_id, session_id, list(agent_path or []))
-        self.new_arrival.set()
-        return req_id
-
-    def list_new_pending(self) -> list[tuple[str, _PendingEntry]]:
-        """Return entries not yet surfaced to FE; mark them as surfaced.
-
-        Called by the backend run loop. Idempotent across calls — once
-        an entry is surfaced it won't be returned again.
-        """
-        out: list[tuple[str, _PendingEntry]] = []
-        for req_id, entry in self._pending.items():
-            if not entry.surfaced and not entry.event.is_set():
-                entry.surfaced = True
-                out.append((req_id, entry))
-        # The arrival event is one-shot — caller resets after consuming.
-        self.new_arrival.clear()
-        return out
+        requirement_id = str(uuid.uuid4())[:8]
+        entry = PendingEntry(requirement=req, run_id=run_id, agent_path=path)
+        self.pending.add(requirement_id, entry)
+        self.ledger.record(requirement_id, entry)
+        self.ledger.record_spawn(run_id, session_id, path)
+        self.pending.new_arrival.set()
+        return requirement_id
 
     def update_details(self, req_id: str, details: str) -> None:
         """Set why a pending question is being asked, on screen too.
@@ -357,40 +213,29 @@ class SubAgentHITLCoordinator:
         surfaced: queued for the relay to send as an update. Answered or
         gone: nothing to do.
         """
-        entry = self._pending.get(req_id)
+        entry = self.pending.entry(req_id)
         if entry is None or entry.event.is_set():
             return
-        entry.requirement.details = details
-        if hasattr(entry.requirement, "details_pending"):
-            entry.requirement.details_pending = False
-        if self._journal is not None:
-            request = self.request_for(req_id)
-            if request is not None:
-                self._journal.update_request(req_id, request)
+        entry.explain(details)
+        self.ledger.update_request(req_id, entry.request(req_id))
         if entry.surfaced:
-            self._detail_updates.append((req_id, details))
-            self.new_arrival.set()
+            self.pending.queue_update(DetailUpdate(requirement_id=req_id, details=details))
+            self.pending.new_arrival.set()
 
-    def take_detail_updates(self) -> list[tuple[str, str]]:
-        """Updates for still-open questions; each is returned once."""
-        updates = [
-            (req_id, details)
-            for req_id, details in self._detail_updates
-            if req_id in self._pending and not self._pending[req_id].event.is_set()
-        ]
-        self._detail_updates.clear()
-        return updates
-
-    def has_unresolved(self) -> bool:
-        return any(not e.event.is_set() for e in self._pending.values())
-
-    def resolve(self, req_id: str, action: str) -> bool:
+    def resolve(self, req_id: str, action: msg.HITLAction | str) -> bool:
         """Called from :meth:`HitlController.resolve_batch`. Returns
-        True if handled here."""
-        entry = self._pending.get(req_id)
+        True if handled here.
+
+        ``action`` is the person's decision — ``confirm`` or ``reject``.
+        It travels on the wire as a plain string, so it is read as
+        :class:`msg.HITLAction` here: a member stays itself, and any
+        other string becomes the action it names (``unknown`` for a
+        string that names none).
+        """
+        entry = self.pending.entry(req_id)
         if entry is None:
             return False
-        if action == "confirm":
+        if msg.HITLAction(action).is_confirm():
             entry.requirement.confirm()
         else:
             tool_execution = getattr(entry.requirement, "tool_execution", None)
@@ -402,25 +247,64 @@ class SubAgentHITLCoordinator:
         # restored request stays until its run is continued
         # (:meth:`take_ready_restored`): nothing in this process waits
         # on it.
-        self._forget(req_id)
+        self.ledger.forget(req_id)
         return True
 
-    async def wait_resolved(self, req_id: str) -> RunRequirement:
+    async def wait_resolved(self, req_id: str) -> RunRequirement | HitlRequirement:
         """Called from the sub-agent stream handler. Blocks until user resolves."""
-        entry = self._pending[req_id]
-        self._awaited.add(req_id)
+        entry = self.pending.entry(req_id)
+        if entry is None:
+            raise KeyError(req_id)
+        self.pending.mark_awaited(req_id, True)
         try:
             # However long the person takes: approvals do not expire.
             with SpawnDeadline.waiting_on_person():
                 await entry.event.wait()
         finally:
-            self._awaited.discard(req_id)
+            self.pending.mark_awaited(req_id, False)
         return entry.requirement
 
     def cleanup(self, req_id: str) -> None:
         """Drop the entry once spawn_agent has resumed past it."""
-        self._pending.pop(req_id, None)
+        self.pending.remove(req_id)
         # The spawn link stays until the run's stream ends: a restart
         # while the answered run is still being continued must find it
         # (:meth:`take_interrupted`).
-        self._forget(req_id)
+        self.ledger.forget(req_id)
+
+    # ── Relays ────────────────────────────────────────────────────
+
+    def open_relay(self) -> None:
+        """A forwarder starts relaying questions to a person."""
+        self.relay.open()
+
+    def close_relay(self) -> None:
+        """A forwarder opened with :meth:`open_relay` has stopped."""
+        self.relay.close()
+
+    @property
+    def has_relay(self) -> bool:
+        """Whether a requirement pushed now would reach a person."""
+        return self.relay.has_relay
+
+    # ── Turns ──────────────────────────────────────────────────────
+
+    def tool_finished(self, run_id: str, tool_call_id: str, result: str) -> None:
+        """A call of ``run_id`` finished (``core/hooks/turn_results.py``).
+
+        Kept for the turn a spawn of that run may be waiting in; written
+        to the journal once a spawn of the run waits on a person, so a
+        restart can continue the turn with every call's result.
+        """
+        self.turns.tool_finished(run_id, tool_call_id, result)
+
+    def turn_results(self, run_id: str) -> dict[str, str]:
+        """The stored results of ``run_id``'s finished calls."""
+        return self.turns.results(run_id)
+
+    def forget_turn(self, run_id: str) -> None:
+        """``run_id`` is over: its results are of no use to anybody."""
+        self.turns.forget(run_id)
+
+
+__all__ = ["SubAgentHITLCoordinator"]

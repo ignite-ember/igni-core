@@ -23,38 +23,38 @@ Other properties callers should know about:
   and any local process can reach ``127.0.0.1``. A foreign ``Origin``
   is refused, and when the launcher gave a per-launch token every
   connection must offer it (see :mod:`igni_core.transport.ws_auth`).
+* **A chunk trace, on request.** With ``IGNI_CHUNK_TRACE=1`` every
+  chunk the transport broadcasts leaves a line in
+  ``~/.igni/chunk_trace.log``, so an operator can see whether the
+  backend streams every chunk (see
+  :mod:`igni_core.transport.chunk_trace`).
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
-import os
 import uuid
 from collections.abc import AsyncIterator, Callable
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from websockets.asyncio.server import serve
 
-from igni_core.core.layer import Layers
-from igni_core.core.paths import CONFIG_DIR
-from igni_core.protocol.messages import Message, Welcome
 from igni_core.protocol.registry import MessageRegistry
+from igni_core.protocol.schemas.be_events import ContentDelta
+from igni_core.protocol.schemas.envelope import Message
+from igni_core.protocol.schemas.fe_actions import StreamEnd
+from igni_core.protocol.schemas.mirroring import Welcome
 from igni_core.transport._ws_client import MirroredClient, SendResult
 from igni_core.transport.base import ListeningTransport
-
-# Re-exported so the historical ``from igni_core.transport.websocket
-# import CompositeTransport`` import path used by tests and callers
-# keeps working after CompositeTransport moved to its own module.
-from igni_core.transport.composite import CompositeTransport
+from igni_core.transport.chunk_trace import ChunkTrace
 from igni_core.transport.ws_auth import HandshakeGuard, Standing
 
 if TYPE_CHECKING:
     from websockets.asyncio.server import Server, ServerConnection
+    from websockets.http11 import Request
 
-__all__ = ["CompositeTransport", "WebSocketServerTransport"]
+__all__ = ["WebSocketServerTransport"]
 
 logger = logging.getLogger(__name__)
 
@@ -71,51 +71,6 @@ _MAX_FRAME_BYTES = 64 * 1024 * 1024
 _BROADCAST_SEND_TIMEOUT = 2.0
 
 
-# ── Dedicated chunk trace handler ─────────────────────────────────
-# The BE's normal ``--debug`` path configures root logging in
-# :mod:`igni_core.backend.__main__`, but several downstream imports
-# (httpx, litellm, …) reset root handlers between startup and the
-# first :meth:`send` call, which silently drops our
-# ``logger.debug`` calls. To make the chunk trace reliable we attach
-# a *dedicated* file handler to this module's logger the first time
-# it's imported, gated on ``IGNI_CHUNK_TRACE=1`` so non-debug runs
-# don't pay the cost. The handler writes to
-# ``~/.igni/chunk_trace.log`` (overridable via IGNI_CHUNK_TRACE_LOG)
-# and bypasses root propagation entirely — the file is the only sink.
-if os.environ.get("IGNI_CHUNK_TRACE") == "1" and not any(
-    getattr(h, "_ember_chunk_trace", False) for h in logger.handlers
-):
-    _trace_path = Path(
-        os.environ.get("IGNI_CHUNK_TRACE_LOG") or (Path.home() / CONFIG_DIR / "chunk_trace.log")
-    )
-
-    class _FlushingFileHandler(logging.FileHandler):
-        """Line-buffer after each emit so a ``tail -f`` shows chunks
-        the moment they leave the BE. Default FileHandler is
-        block-buffered on disk files, which hid 43 chunks behind
-        ~4 KB of buffering on macOS until enough traffic arrived
-        to fill the buffer."""
-
-        def emit(self, record):  # noqa: D401 - stdlib override
-            super().emit(record)
-            self.flush()
-
-    _trace_handler: logging.Handler
-    if not Layers.current().log_files():
-        # A layer that keeps no log files (the cloud's): its handler.
-        _trace_handler = Layers.current().log_handler()
-    else:
-        _trace_path.parent.mkdir(parents=True, exist_ok=True)
-        _trace_handler = _FlushingFileHandler(str(_trace_path), mode="a")
-        _trace_handler.setFormatter(
-            logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-        )
-    _trace_handler._ember_chunk_trace = True  # type: ignore[attr-defined]
-    logger.addHandler(_trace_handler)
-    logger.setLevel(logging.DEBUG)
-    logger.debug("chunk_trace handler attached at %s", _trace_path)
-
-
 class WebSocketServerTransport(ListeningTransport):
     """BE-side transport: loopback WS server, N mirrored clients."""
 
@@ -126,13 +81,19 @@ class WebSocketServerTransport(ListeningTransport):
         broadcast_send_timeout: float = _BROADCAST_SEND_TIMEOUT,
         registry: MessageRegistry | None = None,
         token: str | None = None,
+        chunk_trace: ChunkTrace | None = None,
     ):
         self._host = host
         # Origin always; the token too when the launcher gave one.
         self._guard = HandshakeGuard(token)
         self._port = port
         self._broadcast_send_timeout = broadcast_send_timeout
-        self._registry = registry or MessageRegistry.default()
+        self._registry = registry if registry is not None else MessageRegistry()
+        # The operator's chunk trace. Off unless IGNI_CHUNK_TRACE=1; a
+        # caller with its own trace (a test) hands one in.
+        self._chunk_trace = (
+            chunk_trace if chunk_trace is not None else ChunkTrace.from_environment()
+        )
         # Set by ``start()`` to the awaited ``serve(...)`` result.
         self._server: Server | None = None
         # client_id → live client wrapper. Insertion order preserved so
@@ -141,9 +102,9 @@ class WebSocketServerTransport(ListeningTransport):
         # client_id → what that connection may do, from its handshake.
         self._standings: dict[str, Standing] = {}
         # Monotonic per-stream event sequence. Increments on every
-        # ``send()``; resets to 0 on ``stream_end`` so the next turn
-        # starts fresh from 1. See :meth:`send` for the FE dedup
-        # contract.
+        # broadcast; resets to 0 on ``stream_end`` so the next turn
+        # starts fresh from 1. See :meth:`_stamp_sequence` for the FE
+        # dedup contract.
         self._event_seq: int = 0
         self._closed = False
         self._connected = asyncio.Event()
@@ -212,8 +173,10 @@ class WebSocketServerTransport(ListeningTransport):
             if self._standings.get(client_id) is Standing.APPROVER
         ]
         for client in approvers:
-            with contextlib.suppress(Exception):
+            try:
                 await client.conn.close(code=1008, reason="approver token revoked")
+            except Exception as exc:
+                logger.info("approver %s did not close cleanly: %s", client.id, exc)
         return revoked
 
     async def wait_for_connection(self, timeout: float | None = 30.0) -> None:
@@ -241,12 +204,30 @@ class WebSocketServerTransport(ListeningTransport):
     CONTROL_VALUE = "control"
 
     @classmethod
-    def is_control(cls, conn: Any) -> bool:
-        request = getattr(conn, "request", None)
-        headers = getattr(request, "headers", None)
-        if headers is None:
+    def _is_control(cls, conn: ServerConnection) -> bool:
+        """Whether this connection is the platform's own control stream.
+
+        The marker is on the connection's handshake request, never on a
+        message: a client cannot claim to be the platform. A connection
+        with no request (never one that got this far) is not control.
+        """
+        request = conn.request
+        if request is None:
             return False
-        return str(headers.get(cls.CONTROL_HEADER, "")).strip().lower() == cls.CONTROL_VALUE
+        value = request.headers.get(cls.CONTROL_HEADER) or ""
+        return value.strip().lower() == cls.CONTROL_VALUE
+
+    def _standing_of(self, conn: ServerConnection) -> Standing:
+        """What a connection may do, decided by the token it offered.
+
+        The handshake admitted the connection, so the guard has an
+        answer for it; a connection with no request at all (never one
+        that got this far) is a program, which approves nothing.
+        """
+        request: Request | None = conn.request
+        if request is None:
+            return Standing.PROGRAM
+        return self._guard.standing(request) or Standing.PROGRAM
 
     def watch_connections(self, watcher: Callable[[str, str], None]) -> None:
         """Be told ``("attached" | "detached", client_id)`` for every view.
@@ -269,14 +250,9 @@ class WebSocketServerTransport(ListeningTransport):
         client = MirroredClient(client_id=client_id, conn=conn)
         self._conns[client_id] = client
         self._connected.set()
-        control = self.is_control(conn)
+        control = self._is_control(conn)
         # Decided by the token offered at the handshake, which let it in.
-        request = getattr(conn, "request", None)
-        standing = (
-            (self._guard.standing(request) or Standing.PROGRAM)
-            if request is not None
-            else Standing.PROGRAM
-        )
+        standing = self._standing_of(conn)
         self._standings[client_id] = standing
         try:
             # Tell the client who it is so it can recognise its own
@@ -329,6 +305,24 @@ class WebSocketServerTransport(ListeningTransport):
             logger.debug("WS send to %s failed (%s)", client_id, result.reason)
             self._conns.pop(client_id, None)
 
+    def _stamp_sequence(self, message: Message) -> Message:
+        """Stamp the message with the stream's next sequence number.
+
+        A per-stream monotonic ``event_seq`` lets the FE dedup events
+        that arrive twice (e.g. when two WebSocket clients are attached
+        due to a StrictMode double-mount of IgniClient) AND preserves
+        the ordering across duplicates — the FE keys dedup on
+        (id, event_seq) and the sequence itself is the canonical order
+        of events in the stream. A ``stream_end`` resets the counter so
+        the next turn starts fresh from 1.
+        """
+        if not message.event_seq:
+            self._event_seq += 1
+            message = message.model_copy(update={"event_seq": self._event_seq})
+        if isinstance(message, StreamEnd):
+            self._event_seq = 0
+        return message
+
     async def send(self, message: Message) -> None:
         """Broadcast to every attached client concurrently; drop dead /
         stalled connections. A message addressed to one connection
@@ -349,49 +343,12 @@ class WebSocketServerTransport(ListeningTransport):
         if message.to_client:
             await self._send_to(message.to_client, message)
             return
-        # Stamp a per-stream monotonic ``event_seq`` so the FE can
-        # dedup events that arrive twice (e.g. when two WebSocket
-        # clients are attached due to a StrictMode double-mount of
-        # IgniClient) AND so the ordering is preserved across
-        # duplicates — the FE keys dedup on (id, event_seq) and the
-        # sequence itself is the canonical order of events in the
-        # stream. ``stream_end`` resets the counter so a new turn
-        # starts fresh from 1.
-        if not message.event_seq:
-            self._event_seq += 1
-            message = message.model_copy(update={"event_seq": self._event_seq})
-        if message.type == "stream_end":
-            self._event_seq = 0
-        # DEBUG-only chunk trace — enabled when an operator raises the
-        # log level to DEBUG to verify the BE is actually streaming
-        # every chunk (vs coalescing or dropping under back-pressure).
-        if message.type == "content_delta":
-            text = getattr(message, "text", "") or ""
-            # Bypass ``logger.debug``: a downstream library (suspect
-            # litellm / agno) calls ``logging.disable(DEBUG)``
-            # globally after startup, which leaves ``isEnabledFor``
-            # returning False even though our level is DEBUG. Emit
-            # the record directly to the chunk-trace handler instead
-            # so chunks actually land in the trace log.
-            chunk_msg = (
-                f"[chunk tx] seq={message.event_seq} "
-                f"len={len(text)} "
-                f"thinking={getattr(message, 'is_thinking', False)} "
-                f"preview={text[:40]!r}"
-            )
-            for h in logger.handlers:
-                if getattr(h, "_ember_chunk_trace", False):
-                    record = logging.LogRecord(
-                        name=logger.name,
-                        level=logging.DEBUG,
-                        pathname=__file__,
-                        lineno=0,
-                        msg=chunk_msg,
-                        args=(),
-                        exc_info=None,
-                    )
-                    h.emit(record)
-                    h.flush()
+        message = self._stamp_sequence(message)
+        if isinstance(message, ContentDelta):
+            # The operator's chunk trace: one line per chunk that
+            # leaves, so a person can see whether the backend streams
+            # every chunk or coalesces or drops them.
+            self._chunk_trace.record(message)
         payload = message.model_dump_json()
 
         results: list[SendResult] = await asyncio.gather(
@@ -430,8 +387,7 @@ class WebSocketServerTransport(ListeningTransport):
         self._closed = True
         await self._inbox.put(None)
         for client in list(self._conns.values()):
-            with contextlib.suppress(Exception):
-                await client.close()
+            await client.close()
         self._conns.clear()
         if self._server is not None:
             self._server.close()

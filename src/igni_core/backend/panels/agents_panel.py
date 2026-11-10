@@ -2,8 +2,7 @@
 
 Owns the agents-panel concern: snapshot the pool for the panel
 UI, plus the promote/discard mutators for ephemeral agents.
-Uses the public :meth:`AgentPool.is_ephemeral` method (no more
-``pool._ephemeral_dir`` reach-in) and returns typed
+Uses :meth:`EphemeralAgentStore.owns` to tag ephemerals and returns typed
 :class:`PromoteEphemeralResult` / :class:`DiscardEphemeralResult`
 objects rather than overloaded ``msg.Info`` toasts.
 """
@@ -31,8 +30,9 @@ class AgentsPanelController:
     def snapshot(self) -> list[AgentInfo]:
         """Snapshot of every loaded agent for the panel UI."""
         pool = self._session.pool
-        unknown = self._session.unknown_agent_tools()
+        unknown = self._session.agent_tool_check.by_agent()
         results: list[AgentInfo] = []
+        store = pool.ephemeral if pool.has_ephemeral else None
         for defn in pool.list_agents():
             results.append(
                 AgentInfo(
@@ -46,7 +46,7 @@ class AgentsPanelController:
                     tags=list(defn.tags),
                     system_prompt=defn.system_prompt,
                     source_path=str(defn.source_path) if defn.source_path else "",
-                    is_ephemeral=pool.is_ephemeral(defn),
+                    is_ephemeral=store is not None and store.owns(defn),
                     unknown_tools=unknown.get(defn.name, []),
                 )
             )
@@ -59,15 +59,15 @@ class AgentsPanelController:
         ``"personal"`` (``.igni/agents.local/``, yours only).
         """
         try:
-            dest = self._session.pool.promote_ephemeral(name, self._session.project_dir, target)
-        except (KeyError, ValueError, RuntimeError) as e:
+            dest = self._session.pool.ephemeral.promote(name, self._session.project_dir, target)
+        except (ValueError, RuntimeError) as e:
             return PromoteEphemeralResult(ok=False, name=name, reason=str(e))
         return PromoteEphemeralResult(ok=True, name=name, dest=str(dest))
 
     def discard(self, name: str) -> DiscardEphemeralResult:
         """Delete an ephemeral agent (called from the panel)."""
         try:
-            self._session.pool.discard_ephemeral(name)
-        except (KeyError, ValueError, RuntimeError) as e:
+            self._session.pool.ephemeral.discard(name)
+        except (ValueError, RuntimeError) as e:
             return DiscardEphemeralResult(ok=False, name=name, reason=str(e))
         return DiscardEphemeralResult(ok=True, name=name)

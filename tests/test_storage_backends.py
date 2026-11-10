@@ -30,10 +30,10 @@ from click.testing import CliRunner
 from sqlalchemy.engine import make_url
 
 from igni_core.cli.migrate import migrate
-from igni_core.core.approvals import journal as approval_journal  # noqa: F401 — its tables
+from igni_core.core.approvals import tables as approval_tables  # noqa: F401 — its tables
 from igni_core.core.db.base import Base
 from igni_core.core.db.database import Database
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.db.schema import HEAD_REVISION, SchemaRevision
 from igni_core.core.db.scope import NoTenantError, StorageScope, Tenant, tenancy
@@ -81,7 +81,7 @@ PREPARED_BY_THE_DIALECT = frozenset({"producer_roles"})
 def test_alembic_builds_the_schema_the_models_describe(database_url: DatabaseUrl):
     Database(database_url)
     assert SchemaRevision.of(database_url) == HEAD_REVISION
-    with cache.get_engine(database_url).connect() as connection:
+    with engines.get_engine(database_url).connect() as connection:
         context = MigrationContext.configure(
             connection,
             opts={
@@ -217,9 +217,9 @@ def test_client_state_is_scoped(database_url: DatabaseUrl):
     ClientStateStore(mine).set_value("window", "draft", "one")
     ClientStateStore(mine).set_value("window", "draft", "two")
     ClientStateStore(theirs).set_value("window", "draft", "theirs")
-    assert ClientStateStore(mine).get_for_client("window") == {"draft": "two"}
+    assert ClientStateStore(mine).get_for_client("window").values == {"draft": "two"}
     ClientStateStore(theirs).delete_value("window", "draft")
-    assert ClientStateStore(mine).get_for_client("window") == {"draft": "two"}
+    assert ClientStateStore(mine).get_for_client("window").values == {"draft": "two"}
 
 
 def test_local_notifications_are_scoped_and_once_per_event(database_url: DatabaseUrl):

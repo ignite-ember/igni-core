@@ -146,7 +146,7 @@ class TestUnixSocketDeserialization:
         for cls in types:
             original = cls()
             json_line = original.model_dump_json()
-            restored = MessageRegistry.default().deserialize(json_line)
+            restored = MessageRegistry().deserialize(json_line)
             assert restored is not None, f"Failed to deserialize {cls.__name__}"
             assert restored.type == original.type
 
@@ -166,7 +166,7 @@ class TestUnixSocketDeserialization:
         for cls in types:
             original = cls()
             json_line = original.model_dump_json()
-            restored = MessageRegistry.default().deserialize(json_line)
+            restored = MessageRegistry().deserialize(json_line)
             assert restored is not None, f"Failed to deserialize {cls.__name__}"
 
 

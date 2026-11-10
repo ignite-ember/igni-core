@@ -4,7 +4,7 @@
 and the cloud all start: build the transport, load settings with the
 group's policy, build the session, wire some thirty collaborators, print
 the ready line, serve, and tear it all down in a ``finally``. Its own
-tests used to stop at ``_start_extensions``; the process itself was only
+tests used to stop at starting the extensions; the process itself was only
 ever run as a subprocess by the browser suite, which no Python coverage
 sees and which says nothing more specific than "the page loaded".
 
@@ -29,13 +29,18 @@ from pathlib import Path
 import pytest
 from websockets.asyncio.client import connect
 
-from igni_core.backend import app as app_mod
-from igni_core.backend.app import BackendApp, TransportBuilder
+from igni_core.backend.app import BackendApp
 from igni_core.backend.lockfile import Lockfile
+from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.backend.schemas_rpc import LifecyclePhase
-from igni_core.core.config.group_policy import GroupPolicyGate, GroupPolicyUnavailable
+from igni_core.backend.settings_loader import BackendSettingsLoader
+from igni_core.backend.transport_builder import TransportBuilder
+from igni_core.core.config.group_policy import policy_settings
+from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.protocol import messages as msg
-from igni_core.transport.websocket import CompositeTransport, WebSocketServerTransport
+from igni_core.transport.composite import CompositeTransport
+from igni_core.transport.websocket import WebSocketServerTransport
 
 POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="the loop's signal handlers")
 
@@ -60,15 +65,6 @@ async def _until(predicate, timeout: float = 30) -> None:
         await asyncio.sleep(0.02)
 
 
-def _ws_port(app: BackendApp) -> int | None:
-    ws = app._transport_builder.ws_transport
-    if ws is None or app._orchestrator is None or app._supervisor is None:
-        return None
-    if app._supervisor.phase is not LifecyclePhase.RUNNING:
-        return None
-    return ws.port
-
-
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch) -> Path:
     (tmp_path / ".igni").mkdir()
@@ -78,19 +74,13 @@ def project(tmp_path: Path, monkeypatch) -> Path:
 
 @POSIX_ONLY
 async def test_a_window_connects_is_served_and_its_shutdown_stops_the_backend(project, capsys):
-    app = BackendApp(
-        socket_path=None,
-        ws_port=0,
-        project_dir=project,
-        resume_session_id=None,
-        additional_dirs=None,
-    )
+    app = BackendApp(BackendLaunch(ws_port=0, project_dir=project))
     with _signal_handlers_restored():
         running = asyncio.create_task(app.run())
         try:
-            await _until(lambda: _ws_port(app) is not None or running.done())
+            await _until(lambda: app.serving_port is not None or running.done())
             assert not running.done(), running.exception()
-            port = _ws_port(app)
+            port = app.serving_port
 
             ready = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
             assert ready == {
@@ -108,10 +98,11 @@ async def test_a_window_connects_is_served_and_its_shutdown_stops_the_backend(pr
                 await asyncio.wait_for(running, 30)
         finally:
             if not running.done():
-                app._supervisor.request_shutdown()
+                app.request_shutdown()
                 await asyncio.wait_for(running, 30)
 
-    assert app._supervisor.phase is LifecyclePhase.STOPPED
+    assert app.supervisor is not None
+    assert app.supervisor.phase is LifecyclePhase.STOPPED
     assert Lockfile(project).read() is None
 
 
@@ -123,24 +114,19 @@ async def test_a_signal_stops_a_backend_nobody_ever_connected_to(project, capsys
     only closes the transport — which does not wake that wait. So the
     process kept running for nobody, teardown never ran, and the discovery
     lockfile stayed behind. This hung until the fix in
-    ``BackendApp._wait_for_a_window``.
+    ``FirstWindow.arrives``.
     """
-    app = BackendApp(
-        socket_path=None,
-        ws_port=0,
-        project_dir=project,
-        resume_session_id=None,
-        additional_dirs=None,
-    )
+    app = BackendApp(BackendLaunch(ws_port=0, project_dir=project))
     with _signal_handlers_restored():
         running = asyncio.create_task(app.run())
-        await _until(lambda: _ws_port(app) is not None or running.done())
+        await _until(lambda: app.serving_port is not None or running.done())
         assert not running.done(), running.exception()
 
-        app._supervisor.request_shutdown()
+        app.request_shutdown()
         await asyncio.wait_for(running, 30)
 
-    assert app._supervisor.phase is LifecyclePhase.STOPPED
+    assert app.supervisor is not None
+    assert app.supervisor.phase is LifecyclePhase.STOPPED
     assert Lockfile(project).read() is None
 
 
@@ -178,25 +164,16 @@ async def test_both_flags_mirror_one_session_to_both_transports(tmp_path):
 
 def test_a_required_policy_that_cannot_be_had_closes_the_gate_but_boots(project, monkeypatch):
     """The person can still sign in — which is how a pack is fetched."""
-    local = app_mod.load_settings(project_dir=project)
+    local = policy_settings.SettingsLoader.load(project_dir=project)
 
-    def _unavailable(*args, **kwargs):
+    def _unavailable(cls, *args, **kwargs):
         if kwargs.get("group_policy_fetcher") is not None:
             raise GroupPolicyUnavailable("no verified pack")
         return local
 
-    monkeypatch.setattr(app_mod, "load_settings", _unavailable)
-    app = BackendApp(
-        socket_path=None,
-        ws_port=0,
-        project_dir=project,
-        resume_session_id=None,
-        additional_dirs=None,
-    )
-    try:
-        settings = app._load_settings_with_group_policy()
+    monkeypatch.setattr(policy_settings.SettingsLoader, "load", classmethod(_unavailable))
+    gate = RunGate()
+    settings = BackendSettingsLoader(project, gate).load()
 
-        assert settings is local
-        assert GroupPolicyGate.reason() == "no verified pack"
-    finally:
-        GroupPolicyGate.reset()
+    assert settings is local
+    assert gate.reason == "no verified pack"

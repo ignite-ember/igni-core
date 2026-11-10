@@ -52,6 +52,7 @@ from igni_core.core.db.database import Database
 from igni_core.core.db.providers import SharedStorages
 from igni_core.core.db.urls import DatabaseUrl
 from igni_core.core.hooks.turn_results import TurnResultHook
+from igni_core.core.session.schemas import PermissionModeSwitch
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
@@ -406,6 +407,7 @@ class Backend:
                     settings=settings,
                     session_id=SESSION,
                     hitl_coordinator=self.coordinator,
+                    budget=self.pool.budget,
                 ),
                 *(extra_tools or []),
             ]
@@ -427,7 +429,7 @@ class Backend:
             pool=self.pool,
             permission_evaluator=None,
             hook_executor=FakeHooks(),
-            set_permission_mode=lambda mode: mode,
+            set_permission_mode=lambda mode: PermissionModeSwitch(text=mode),
         )
         self.hitl = HitlController(self.session, self.store, stream_factory=self.collect)
 
@@ -460,13 +462,13 @@ class FakePool:
         self._coordinator = coordinator
         self._settings = settings
         self._thorough = thorough
-        self._budget = SpawnBudget(max_agents=10)
+        self.budget = SpawnBudget(max_agents=10)
 
     @property
     def db(self) -> Any:
         return self._db
 
-    def get(self, name: str) -> Agent:
+    def get(self, name: str) -> Agent | None:
         if name == "writer":
             return Agent(
                 name="writer",
@@ -495,18 +497,19 @@ class FakePool:
                         session_id=SESSION,
                         hitl_coordinator=self._coordinator,
                         current_depth=1,
+                        budget=self.budget,
                     ),
                     _publish_tool(self._side),
                 ],
                 db=self._db,
             )
-        raise KeyError(name)
-
-    def get_definition(self, name: str) -> Any:
         return None
 
-    def spawn_budget(self, session_id: str) -> SpawnBudget:
-        return self._budget
+    def missing(self, name: str) -> str:
+        return f"Agent '{name}' not found"
+
+    def get_entry(self, name: str) -> Any:
+        return None
 
 
 async def _stored_run(db: Any, run_id: str) -> Any:
@@ -583,7 +586,7 @@ async def test_a_sub_agents_approval_is_answered_after_a_cold_restart(
     main_run = await _stored_run(after.agno_db, after.collect.events[-1].run_id)
     assert main_run.status == RunStatus.completed
     assert after.hitl.waiting_messages() == []
-    assert ApprovalJournal(store.state()).spawn(paused.run_id) is None
+    assert ApprovalJournal(store.state()).spawns.get(paused.run_id) is None
 
     running.cancel()
     del dead
@@ -622,7 +625,7 @@ async def test_a_spawn_waits_for_its_approval_as_long_as_the_person_takes(
         run_in_progress=True,
         waiting_approvals=1,
         blocked_spawns=backend.coordinator.waiting_count,
-        active_subagent_runs=len(tools.subagent_registry),
+        active_subagent_runs=len(tools.wiring.sinks.subagent_registry),
     )
     assert activity.state is ActivityState.WAITING
 
@@ -841,7 +844,7 @@ async def test_a_turn_shared_with_other_calls_continues_complete_after_a_restart
     assert side.calls.count("stall started") == 1, "the interrupted call is not run again"
     assert side.calls.count("note hi") == 1
     main_run_id = after.collect.events[-1].run_id
-    assert ApprovalJournal(store.state()).turn_results(main_run_id) == {}, "forgotten once used"
+    assert ApprovalJournal(store.state()).turns.of_run(main_run_id) == {}, "forgotten once used"
 
     running.cancel()
     del dead

@@ -9,7 +9,7 @@ context delivered once.
 
 The root-level ``igni.md`` / ``CLAUDE.md`` are NOT part of this
 index. Those are already loaded into the system prompt at session
-init via ``load_project_context`` — they form the unconditional
+init via ``RulesContextLoader.load_all`` — they form the unconditional
 baseline. This index handles only the subdirectory tier: rules that
 should kick in *if* the agent works in that area, and stay quiet
 otherwise.

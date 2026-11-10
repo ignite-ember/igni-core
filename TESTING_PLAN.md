@@ -74,13 +74,13 @@ Plus `test_permission_eval.py::test_scoped_deny_survives_bypass_permissions` + `
 
 ## Slash commands (rows 19, 20, 21, 27) ✅ VERIFIED
 
-**Status:** Pinned by 131 automated tests across 7 files + a contract test in `clients/web/src/components/Composer.test.ts` that the FE autocomplete menu lists every BE handler.
+**Status:** Pinned by 131 automated tests across 7 files + a contract test in `clients/web/src/chat/slashCommands.test.ts` that the FE autocomplete menu lists every BE handler.
 
 **19. Markdown-authored commands** — `tests/test_markdown_commands.py` (29 tests: frontmatter parsing, discovery in `.igni/commands/` + `.claude/commands/` across project + user tiers, project-overrides-user collisions, igni-beats-claude at same tier) + `tests/test_handle_markdown_command.py` (12 tests: dispatch integration, `$ARGUMENTS` rendering, exception fall-through, cross-tool toggle).
 
 **20. `slash_commands` RPC** — `tests/test_slash_commands_rpc.py` (12 tests). Asserts the RPC returns built-ins + markdown commands + user-invocable skills in one response, honours the cross-tool toggle for `.claude/` markdown commands, excludes non-user-invocable skills.
 
-**21. Built-in slash command catalog** — `tests/test_commands.py` (12 tests on dispatch routing — known / unknown / help / config / clear / mcp / model / etc.) + `tests/test_slash_command_edges.py` (per-command edge cases) + `tests/test_plugins_slash_commands.py` (`/plugin enable|disable|...` subcommand semantics). **FE menu parity**: `clients/web/src/components/Composer.test.ts::ships every BE command handler in the autocomplete menu` enumerates ALL 31 non-alias BE handlers and asserts each appears in `BUILTIN_COMMANDS` — silent drift becomes a failing test.
+**21. Built-in slash command catalog** — `tests/test_commands.py` (12 tests on dispatch routing — known / unknown / help / config / clear / mcp / model / etc.) + `tests/test_slash_command_edges.py` (per-command edge cases) + `tests/test_plugins_slash_commands.py` (`/plugin enable|disable|...` subcommand semantics). **FE menu parity**: `clients/web/src/chat/slashCommands.test.ts::ships every BE command handler in the autocomplete menu` enumerates ALL 31 non-alias BE handlers and asserts each appears in `BUILTIN_COMMANDS` — silent drift becomes a failing test.
 
 **27. SlashCommand re-entrant tool** — `tests/test_slash_command_tool.py` (12 tests). Pins the agent-facing tool: blocked commands (`/quit`, `/exit`) refused case-insensitively + with args, missing leading slash inferred, empty/whitespace returns error, `/help <topic>` returns the topic markdown.
 

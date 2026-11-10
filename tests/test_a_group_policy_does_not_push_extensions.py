@@ -20,11 +20,10 @@ from pathlib import Path
 
 import pytest
 
-from igni_core.core.config.group_policy import (
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyPack,
-)
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 
 
 def pack_with(*entries: GroupPolicyEntry) -> GroupPolicyPack:
@@ -49,7 +48,7 @@ def extension_entry(name: str, url: str) -> GroupPolicyEntry:
 
 @pytest.fixture
 def cache(tmp_path: Path) -> GroupPolicyCache:
-    return GroupPolicyCache(cache_dir=tmp_path / "group-policy")
+    return GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
 
 
 def test_an_extension_entry_stages_nothing(cache, tmp_path, monkeypatch, caplog):

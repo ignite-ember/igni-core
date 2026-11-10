@@ -30,6 +30,7 @@ import logging
 from typing import Any
 
 from igni_core.protocol import messages as msg
+from igni_core.protocol.agno_compat import RunProducer
 from igni_core.protocol.agno_taxonomy import (
     CONTENT_EVENTS,
     MODEL_COMPLETED_EVENTS,
@@ -236,13 +237,13 @@ class RunStartedHandler(EventHandler):
     event_types = RUN_STARTED_EVENTS
 
     def build(self, event: Any) -> msg.Message | None:
-        name = getattr(event, "agent_name", None) or getattr(event, "team_name", None) or ""
+        producer = RunProducer.from_agno(event)
         run_id = getattr(event, "run_id", None) or ""
-        if not (name and run_id):
+        if not (producer.name and run_id):
             return None
         header = msg.RunHeader.from_event(event)
         return msg.RunStarted(
-            agent_name=str(name),
+            agent_name=producer.name,
             run_id=str(run_id),
             parent_run_id=header.parent_run_id,
             model=str(getattr(event, "model", "") or ""),

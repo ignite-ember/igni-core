@@ -14,9 +14,9 @@ Skills lose to markdown-file names on collision because the user
 explicitly imported the skill, whereas markdown files are best-effort
 drop-ins.
 
-``discover_markdown_commands`` is imported here, not in the markdown
-dispatcher, so tests can patch it at
-``igni_core.backend.command_handler.discover_markdown_commands``.
+The markdown tier's discovery is a constructor argument
+(:attr:`CommandHandler.discover`), so a test can hand the handler a
+stub instead of patching a module-level symbol.
 """
 
 from __future__ import annotations
@@ -31,13 +31,12 @@ from igni_core.backend.builtin_command_registry import (
 )
 from igni_core.backend.command_result import CommandResult
 from igni_core.backend.markdown_command_dispatcher import (
+    DiscoverMarkdownCommands,
     MarkdownCommandDispatcher,
 )
 from igni_core.backend.skill_command_dispatcher import SkillCommandDispatcher
 from igni_core.core.contributed_commands import contributed_commands
-from igni_core.core.utils.markdown_commands import (  # noqa: F401 — mock.patch target
-    discover_markdown_commands,
-)
+from igni_core.core.utils.markdown_commands import MarkdownCommand
 from igni_core.protocol.messages import (  # noqa: F401 — public re-export
     CommandAction,
     CommandResultKind,
@@ -58,18 +57,23 @@ class CommandHandler:
 
     _REGISTRY: ClassVar[BuiltinCommandRegistry] = BUILTIN_REGISTRY
 
-    def __init__(self, session: Session):
+    def __init__(
+        self,
+        session: Session,
+        *,
+        discover: DiscoverMarkdownCommands | None = None,
+    ) -> None:
+        """Compose the tiers.
+
+        ``discover`` is the markdown tier's discovery callable. It
+        defaults to :meth:`MarkdownCommand.discover`; a test hands
+        in a stub instead of patching a module-level symbol, which
+        is the same thing the dependency injection is for.
+        """
         self._session = session
-        # Inject the module-level ``discover_markdown_commands``
-        # symbol (re-exported above as a mock.patch target) into
-        # the markdown dispatcher. Capturing the binding here means
-        # tests that patch ``command_handler.discover_markdown_commands``
-        # BEFORE constructing the handler land the patch on the
-        # injected callable. Tests that build the handler first
-        # must construct it INSIDE the patch block.
         self._markdown_dispatcher = MarkdownCommandDispatcher(
             session,
-            discover_markdown_commands,
+            discover if discover is not None else MarkdownCommand.discover,
         )
         self._skill_dispatcher = SkillCommandDispatcher(session)
 

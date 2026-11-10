@@ -6,7 +6,7 @@ Covers three surfaces that all read/write the same Session fields:
      status, dispatched through ``CommandHandler``.
   2. **Agent tool** — ``loop_start`` / ``loop_stop`` / ``loop_status``
      on ``LoopTools``, called by the LLM in plain conversation.
-  3. **RPC iteration counter** — ``BackendServer.pop_pending_loop_iteration``
+  3. **RPC iteration counter** — ``LoopController.pop_pending_iteration`` (backend)
      and ``cancel_pending_loop``, called by the FE run controller
      after each turn to fire the next iteration or cancel the loop.
 
@@ -23,8 +23,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from igni_core.backend import server_loop
 from igni_core.backend.command_handler import CommandHandler
-from igni_core.backend.server import BackendServer
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.loop.limits import LOOP_DEFAULT_MAX_ITERATIONS, LOOP_HARD_CAP
 from igni_core.core.loop.models import LoopState
 from igni_core.core.loop.store import LoopProgressStore
@@ -488,7 +489,7 @@ async def test_slash_and_tool_share_session_state():
     assert result.kind == "info"
 
 
-# ── RPC iteration counter (BackendServer) ───────────────────────────
+# ── RPC iteration counter (backend LoopController) ───────────────────────────
 #
 # These methods are what the FE run controller calls after each turn
 # to fire the next iteration or cancel the loop. They mutate Session
@@ -497,28 +498,15 @@ async def test_slash_and_tool_share_session_state():
 # "consume it tick by tick".
 
 
-class _FakeBackend:
-    """Stand-in for ``BackendServer`` that only carries ``_session``.
-
-    The real backend pulls in the scheduler, RPC plumbing, hooks, and
-    so on. We only need the two ``loop``-related methods, which read
-    ``self._session`` and mutate its loop fields — duck-typed access
-    is enough.
-    """
-
-    def __init__(self, session: SimpleNamespace) -> None:
-        self._session = session
-
-    # Bind the actual methods so any change in the real BackendServer
-    # is exercised here too.
-    pop_pending_loop_iteration = BackendServer.pop_pending_loop_iteration
-    cancel_pending_loop = BackendServer.cancel_pending_loop
+def _pump(session: SimpleNamespace) -> server_loop.LoopController:
+    """The backend's ``/loop`` pump over a duck-typed session."""
+    return server_loop.LoopController(session=session, settings=None, gate=RunGate())
 
 
 @pytest.mark.asyncio
 async def test_pop_iteration_returns_none_when_no_loop():
-    backend = _FakeBackend(_fake_session())
-    assert await backend.pop_pending_loop_iteration() is None
+    backend = _pump(_fake_session())
+    assert await backend.pop_pending_iteration() is None
 
 
 @pytest.mark.asyncio
@@ -530,9 +518,9 @@ async def test_pop_iteration_returns_descriptor_and_decrements():
     # Explicit cap → wrapper carries ``total="3"`` and termination
     # happens at the cap rather than auto-extending.
     sess.loop_cap_explicit = True
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
-    desc = await backend.pop_pending_loop_iteration()
+    desc = await backend.pop_pending_iteration()
 
     # The descriptor's prompt is wrapped with the autonomous-loop
     # meta instruction (so the agent doesn't ask the user between
@@ -559,15 +547,15 @@ async def test_pop_iteration_full_lifecycle_to_cap():
     sess.pending_loop_prompt = "tick"
     sess.loop_iterations_remaining = 3
     sess.loop_cap_explicit = True  # Termination at cap, not auto-extend.
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
     # 3 successful pops, each decrementing remaining and incrementing
     # the index in lockstep. Prompt is wrapped with the
     # autonomous-loop meta on each iteration; the original "tick"
     # body is preserved verbatim inside.
-    d1 = await backend.pop_pending_loop_iteration()
-    d2 = await backend.pop_pending_loop_iteration()
-    d3 = await backend.pop_pending_loop_iteration()
+    d1 = await backend.pop_pending_iteration()
+    d2 = await backend.pop_pending_iteration()
+    d3 = await backend.pop_pending_iteration()
     assert (d1.iteration, d1.remaining) == (1, 2)
     assert (d2.iteration, d2.remaining) == (2, 1)
     assert (d3.iteration, d3.remaining) == (3, 0)
@@ -576,7 +564,7 @@ async def test_pop_iteration_full_lifecycle_to_cap():
         assert f'<loop-iteration index="{n}" total="3">' in d.prompt
 
     # 4th pop hits the cap — returns the completion marker and clears.
-    d4 = await backend.pop_pending_loop_iteration()
+    d4 = await backend.pop_pending_iteration()
     assert d4.completed is True
     assert d4.total_iterations == 3
     assert sess.pending_loop_prompt is None
@@ -584,7 +572,7 @@ async def test_pop_iteration_full_lifecycle_to_cap():
 
     # 5th pop: state is cleared, so we get None (the FE renders
     # nothing — no double "Loop completed" message).
-    assert await backend.pop_pending_loop_iteration() is None
+    assert await backend.pop_pending_iteration() is None
 
 
 @pytest.mark.asyncio
@@ -596,25 +584,25 @@ async def test_pop_iteration_completion_marker_only_fires_once():
     sess.pending_loop_prompt = "x"
     sess.loop_iterations_remaining = 1
     sess.loop_cap_explicit = True  # Terminate at cap.
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
     # First pop = iteration 1 descriptor.
-    first = await backend.pop_pending_loop_iteration()
+    first = await backend.pop_pending_iteration()
     assert first is not None
     assert first.iteration == 1
     # Second pop = completion marker (cap exhausted).
-    second = await backend.pop_pending_loop_iteration()
+    second = await backend.pop_pending_iteration()
     assert second is not None
     assert second.completed is True
     # Third pop = nothing.
-    assert await backend.pop_pending_loop_iteration() is None
-    assert await backend.pop_pending_loop_iteration() is None
+    assert await backend.pop_pending_iteration() is None
+    assert await backend.pop_pending_iteration() is None
 
 
 @pytest.mark.asyncio
 async def test_cancel_pending_loop_returns_false_when_idle():
-    backend = _FakeBackend(_fake_session())
-    assert await backend.cancel_pending_loop() is False
+    backend = _pump(_fake_session())
+    assert await backend.cancel_pending() is False
 
 
 @pytest.mark.asyncio
@@ -623,9 +611,9 @@ async def test_cancel_pending_loop_clears_state_and_returns_true():
     sess.pending_loop_prompt = "ongoing"
     sess.loop_iteration_index = 2
     sess.loop_iterations_remaining = 8
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
-    assert await backend.cancel_pending_loop() is True
+    assert await backend.cancel_pending() is True
     assert sess.pending_loop_prompt is None
     assert sess.loop_iterations_remaining == 0
 
@@ -640,7 +628,7 @@ async def test_full_flow_command_arms_rpc_drains_cap_terminates():
     over with state cleared."""
     sess = _fake_session()
     handler = CommandHandler(sess)
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
     # 1. Slash command arms the loop. The returned content is the
     # wrapped iteration-1 prompt; iteration 1 is in flight via
@@ -657,7 +645,7 @@ async def test_full_flow_command_arms_rpc_drains_cap_terminates():
 
     # 2. The continuation RPC fires iteration 2 (1 was already
     # booked by ``immediate=True``). After this, remaining=0.
-    d2 = await backend.pop_pending_loop_iteration()
+    d2 = await backend.pop_pending_iteration()
     assert "ping" in d2.prompt
     assert '<loop-iteration index="2" total="2">' in d2.prompt
     assert d2.iteration == 2
@@ -665,14 +653,14 @@ async def test_full_flow_command_arms_rpc_drains_cap_terminates():
 
     # 3. Next RPC tick — cap exhausted, returns the completion
     # marker (so the FE renders the summary) and clears state.
-    completion = await backend.pop_pending_loop_iteration()
+    completion = await backend.pop_pending_iteration()
     assert completion is not None
     assert completion.completed is True
     assert completion.total_iterations == 2
     assert sess.pending_loop_prompt is None
 
     # 4. A subsequent tick returns None — completion is one-shot.
-    assert await backend.pop_pending_loop_iteration() is None
+    assert await backend.pop_pending_iteration() is None
 
     # 5. After cap, ``/loop`` status reports no active loop again so
     # a fresh ``/loop`` can be started without "already active" error.
@@ -695,20 +683,20 @@ async def test_user_input_cancellation_via_rpc():
     skipped one tick."""
     sess = _fake_session()
     handler = CommandHandler(sess)
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
     await handler.handle("/loop 5 keep going")
     # Slash command already booked iteration 1 (immediate=True).
     assert sess.loop_iteration_index == 1
     # The next continuation pop produces iteration 2.
-    desc = await backend.pop_pending_loop_iteration()
+    desc = await backend.pop_pending_iteration()
     assert desc is not None and desc.iteration == 2
 
     # User types something else → FE invokes cancel.
-    assert await backend.cancel_pending_loop() is True
+    assert await backend.cancel_pending() is True
 
     # No more iterations.
-    assert await backend.pop_pending_loop_iteration() is None
+    assert await backend.pop_pending_iteration() is None
     assert sess.pending_loop_prompt is None
 
 
@@ -725,11 +713,11 @@ async def test_cancel_skips_paused_loop():
     sess.loop_iteration_index = 4
     sess.loop_iterations_remaining = 6
     sess.loop_paused = True
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
     # ``cancel_pending_loop`` is what ``process_message`` calls on
     # every non-/loop input. For a paused loop it must be a no-op.
-    cancelled = await backend.cancel_pending_loop()
+    cancelled = await backend.cancel_pending()
     assert cancelled is False
     assert sess.pending_loop_prompt == "interrupted work"
     assert sess.loop_paused is True
@@ -917,9 +905,9 @@ async def test_implicit_cap_auto_extends_at_cap_hit() -> None:
     sess.loop_iteration_index = 3
     sess.loop_iterations_remaining = 0  # cap exhausted
     sess.loop_cap_explicit = False
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
-    desc = await backend.pop_pending_loop_iteration()
+    desc = await backend.pop_pending_iteration()
 
     assert desc is not None
     assert desc.completed is False
@@ -939,9 +927,9 @@ async def test_explicit_cap_terminates_at_cap_hit() -> None:
     sess.loop_iteration_index = 3
     sess.loop_iterations_remaining = 0
     sess.loop_cap_explicit = True
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
-    desc = await backend.pop_pending_loop_iteration()
+    desc = await backend.pop_pending_iteration()
 
     assert desc.completed is True
     assert desc.total_iterations == 3
@@ -960,9 +948,9 @@ async def test_implicit_cap_pauses_at_hard_cap() -> None:
     sess.loop_iteration_index = LOOP_HARD_CAP
     sess.loop_iterations_remaining = 0
     sess.loop_cap_explicit = False
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
-    desc = await backend.pop_pending_loop_iteration()
+    desc = await backend.pop_pending_iteration()
 
     assert desc.safety_cap_paused is True
     assert desc.iteration == LOOP_HARD_CAP
@@ -984,9 +972,9 @@ async def test_paused_loop_short_circuits_advance() -> None:
     sess.loop_iteration_index = 5
     sess.loop_iterations_remaining = 25
     sess.loop_paused = True
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
-    desc = await backend.pop_pending_loop_iteration()
+    desc = await backend.pop_pending_iteration()
     assert desc is None
     # Counters untouched.
     assert sess.loop_iteration_index == 5
@@ -1023,9 +1011,9 @@ async def test_implicit_cap_descriptor_omits_total_attr() -> None:
     sess.loop_iteration_index = 0
     sess.loop_iterations_remaining = LOOP_DEFAULT_MAX_ITERATIONS
     sess.loop_cap_explicit = False
-    backend = _FakeBackend(sess)
+    backend = _pump(sess)
 
-    desc = await backend.pop_pending_loop_iteration()
+    desc = await backend.pop_pending_iteration()
     assert desc is not None
     assert '<loop-iteration index="1">' in desc.prompt
     assert "total=" not in desc.prompt

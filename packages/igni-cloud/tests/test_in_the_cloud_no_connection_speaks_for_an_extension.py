@@ -15,7 +15,7 @@ from typing import Any
 
 from igni_cloud.layer import CloudLayer
 
-from igni_core.core.layer import Layer, Layers
+from igni_core.core.layer import Layer, layers
 from igni_core.protocol import messages as msg
 from tests.host_model_helpers import HostRig
 
@@ -32,7 +32,7 @@ def test_the_cloud_layer_lets_no_connection_speak_for_an_extension():
 
 
 async def test_a_page_s_calls_are_refused_before_any_handler(tmp_path: Path, monkeypatch):
-    Layers.install(NoPagesHere())
+    layers.install(NoPagesHere())
     rig = await HostRig(tmp_path).start()
     reached: list[str] = []
     try:

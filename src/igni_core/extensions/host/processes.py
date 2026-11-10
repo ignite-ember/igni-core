@@ -14,6 +14,12 @@ process is refused, and nothing outside igni's children can be stopped
 from here. :meth:`ExtensionProcesses.kill` ends the group. POSIX only:
 on Windows the claim is ignored, and a restart reconnects without
 ending the old process.
+
+The groups are one instance, owned by whoever built the deployment's
+extensions (:class:`~igni_core.backend.extensions_runtime.ExtensionsRuntime`):
+the channel that hears the claim and the health monitor that ends the
+group are two halves of one answer, and they have to be looking at the
+same set of groups.
 """
 
 from __future__ import annotations
@@ -24,7 +30,6 @@ import logging
 import os
 import signal
 import sys
-from typing import ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -35,20 +40,8 @@ PROCESS_GROUP_HEADER = "X-Igni-Process-Group"
 class ExtensionProcesses:
     """Each extension's process group, as its process claimed and igni checked."""
 
-    _shared: ClassVar[ExtensionProcesses | None] = None
-
     def __init__(self) -> None:
         self._groups: dict[str, int] = {}
-
-    @classmethod
-    def shared(cls) -> ExtensionProcesses:
-        if cls._shared is None:
-            cls._shared = cls()
-        return cls._shared
-
-    @classmethod
-    def reset_shared(cls) -> None:
-        cls._shared = None
 
     def group_of(self, extension_id: str) -> int | None:
         return self._groups.get(extension_id)

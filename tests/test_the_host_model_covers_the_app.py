@@ -23,7 +23,9 @@ from igni_core.extensions.events import HostTopic
 from igni_core.extensions.host import coverage
 from igni_core.extensions.host.definition import HOST_SCHEMA
 from igni_core.extensions.host.members import ALL_MEMBERS
+from igni_core.extensions.host.members.tag import MemberKey, MemberTag
 from igni_core.extensions.host.spec import MethodSpec, PropertySpec, SignalSpec
+from igni_core.extensions.host.wire import Op
 from igni_core.protocol.rpc import RpcMethod
 from igni_core.protocol.schemas import be_events, fe_actions, mirroring
 from igni_core.protocol.schemas.enums import PushChannel
@@ -156,34 +158,33 @@ class TestEveryMemberIsAnsweredOrSaysWhy:
         premature: list[str] = []
         for spec in HOST_SCHEMA.objects:
             prefix = f"{spec.path}." if spec.path else ""
-            keys: list[tuple[tuple[str, str], int]] = []
+            keys: list[tuple[MemberKey, int]] = []
             for prop in spec.properties:
-                keys.append((("get", f"{prefix}{prop.name}"), prop.stage))
+                keys.append((MemberKey(op=Op.GET, path=f"{prefix}{prop.name}"), prop.stage))
                 if prop.writable:
-                    keys.append((("set", f"{prefix}{prop.name}"), prop.stage))
+                    keys.append((MemberKey(op=Op.SET, path=f"{prefix}{prop.name}"), prop.stage))
             for method in spec.methods:
-                keys.append((("call", f"{prefix}{method.name}"), method.stage))
+                keys.append((MemberKey(op=Op.CALL, path=f"{prefix}{method.name}"), method.stage))
             for key, stage in keys:
                 if stage == 1 and key not in built:
-                    missing.append(f"{key[0]} {key[1]}")
+                    missing.append(f"{key.op.value} {key.path}")
                 if stage == 2 and key in built:
-                    premature.append(f"{key[0]} {key[1]}")
+                    premature.append(f"{key.op.value} {key.path}")
         assert not missing, f"stage-1 members with no implementation: {missing}"
         assert not premature, f"stage-2 members implemented without being marked built: {premature}"
 
     def test_nothing_is_implemented_that_the_schema_does_not_define(self) -> None:
         for members_class in ALL_MEMBERS:
             for name in dir(members_class):
-                key = getattr(getattr(members_class, name, None), "_host_member", None)
+                key = MemberTag.of(getattr(members_class, name, None))
                 if key is None:
                     continue
-                op, path = key
-                spec, member = HOST_SCHEMA.resolve(path)
-                if op == "call":
+                spec, member = HOST_SCHEMA.resolve(key.path)
+                if key.op is Op.CALL:
                     assert isinstance(member, MethodSpec), key
                 else:
                     assert isinstance(member, PropertySpec), key
-                    if op == "set":
+                    if key.op is Op.SET:
                         assert member.writable, key
 
     def test_every_object_permission_is_declared(self) -> None:

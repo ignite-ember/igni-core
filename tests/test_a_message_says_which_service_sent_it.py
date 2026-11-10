@@ -34,7 +34,9 @@ async def rig(tmp_path: Path):
 def watching(rig: HostRig, extension_id: str) -> Sink:
     sink = Sink()
     assert rig.model is not None
-    rig.model.bus.subscribe(rig.model.bus.attach(extension_id, sink), ["chat.message_added"])
+    rig.model.services.bus.subscribe(
+        rig.model.services.bus.attach(extension_id, sink), ["chat.message_added"]
+    )
     return sink
 
 

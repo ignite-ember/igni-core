@@ -274,8 +274,9 @@ def test_apply_to_mcp_skips_disabled(tmp_path: Path) -> None:
 
 
 def test_collect_tool_dirs_returns_only_plugins_with_tools(tmp_path: Path) -> None:
-    """``collect_tool_dirs`` returns ``(plugin_name, tools_dir)`` for
-    enabled plugins that bundle a ``tools/`` directory. Plugins
+    """``collect_tool_dirs`` returns one
+    :class:`~igni_core.core.tools.custom_loader_schemas.PluginToolDir`
+    per enabled plugin that bundles a ``tools/`` directory. Plugins
     without tools are filtered out so the consumer (custom_loader)
     doesn't have to re-stat."""
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
@@ -288,7 +289,7 @@ def test_collect_tool_dirs_returns_only_plugins_with_tools(tmp_path: Path) -> No
         loader.load_all(project_dir=tmp_path / "proj")
 
     dirs = loader.collect_tool_dirs()
-    names = [name for name, _ in dirs]
+    names = [entry.plugin_name for entry in dirs]
     assert "withtools" in names
     assert "withouttools" not in names
 
@@ -303,7 +304,7 @@ def test_collect_tool_dirs_skips_disabled(tmp_path: Path) -> None:
         loader.load_all(project_dir=tmp_path / "proj")
 
     dirs = loader.collect_tool_dirs(disabled={"off"})
-    names = [name for name, _ in dirs]
+    names = [entry.plugin_name for entry in dirs]
     assert names == ["on"]
 
 
@@ -311,9 +312,9 @@ def test_apply_to_agents_namespaces_loaded_agents(tmp_path: Path) -> None:
     """Symmetric to ``test_apply_to_skills_namespaces_loaded_skills``
     but for agents. A plugin named ``foo`` whose ``agents/demo.md``
     carries ``name: demo`` lands in the AgentPool as ``foo:demo``."""
+    from igni_core.core.agents import AgentPool
     from igni_core.core.config.settings import Settings
     from igni_core.core.plugins.loader import PluginLoader
-    from igni_core.core.pool import AgentPool
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     plugin_dir = user_ember / "foo"
@@ -345,9 +346,9 @@ def test_apply_to_agents_honors_disabled(tmp_path: Path) -> None:
     """Symmetric to the skills-disabled test: a disabled plugin's
     agents never make it into the AgentPool, but the plugin itself
     is still discoverable for the panel."""
+    from igni_core.core.agents import AgentPool
     from igni_core.core.config.settings import Settings
     from igni_core.core.plugins.loader import PluginLoader
-    from igni_core.core.pool import AgentPool
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     for plugin_name in ("off", "on"):
@@ -379,7 +380,8 @@ def test_load_custom_tools_namespaces_plugin_toolkits(tmp_path: Path) -> None:
     """End-to-end: a plugin's ``tools/<file>.py`` becomes a toolkit named
     ``custom_<plugin>_<file>``. The prefix prevents collisions with
     same-named user files in ``~/.igni/tools/``."""
-    from igni_core.core.tools.custom_loader import load_custom_tools
+    from igni_core.core.tools.custom_loader import CustomToolLoader
+    from igni_core.core.workspace_trust import process_trust
 
     user_ember = tmp_path / "home" / CONFIG_DIR / "plugins"
     _write_plugin_with_tools(user_ember, "mp", "demo")
@@ -388,10 +390,10 @@ def test_load_custom_tools_namespaces_plugin_toolkits(tmp_path: Path) -> None:
         loader = PluginLoader()
         loader.load_all(project_dir=tmp_path / "proj")
         plugin_dirs = loader.collect_tool_dirs()
-        toolkits = load_custom_tools(
+        result = CustomToolLoader(trust=process_trust()).discover(
             project_dir=tmp_path / "proj",
             plugin_tool_dirs=plugin_dirs,
         )
 
-    names = [t.name for t in toolkits]
+    names = [t.name for t in result.toolkits]
     assert "custom_mp_demo" in names

@@ -42,6 +42,7 @@ from websockets.asyncio.client import connect
 
 from igni_core.backend.app import BackendApp
 from igni_core.backend.logging_setup import configure_logging
+from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.core.config.managed_policy import ManagedPolicySource
 
 
@@ -141,13 +142,7 @@ class WarmBaseMeasurement:
         return f"{part(b'{}')}.{part(json.dumps(claims).encode())}.sig"
 
     async def run(self) -> dict[str, Any]:
-        app = BackendApp(
-            socket_path=None,
-            ws_port=0,
-            project_dir=self.project,
-            resume_session_id=None,
-            additional_dirs=None,
-        )
+        app = BackendApp(BackendLaunch(ws_port=0, project_dir=self.project))
         started = time.perf_counter()
         task = asyncio.create_task(app.run())
         while not (self.run_dir / "ready").exists():
@@ -155,7 +150,9 @@ class WarmBaseMeasurement:
         ready_at = time.perf_counter()
         rss_ready = self.rss_mb()
         modules_at_ready = set(sys.modules)
-        port = app._transport_builder.ws_transport.port
+        # Listening, not serving yet: a warm base serves once it is bound.
+        assert app.transport is not None
+        port = app.transport.inner.port
         (self.run_dir / "token").write_text(self.token())
         (self.run_dir / "producer.env.tmp").write_text(
             f"IGNI_ACCESS_TOKEN_FILE={self.run_dir / 'token'}\nIGNI_ORG=org-acme\n"
@@ -173,7 +170,7 @@ class WarmBaseMeasurement:
                 last = json.loads(await asyncio.wait_for(window.recv(), timeout=60)).get("type")
             turn_done_at = time.perf_counter()
         imported_after = sorted(set(sys.modules) - modules_at_ready)
-        app._supervisor.request_shutdown()  # type: ignore[union-attr]
+        app.request_shutdown()
         try:
             await asyncio.wait_for(task, timeout=10)
         except Exception:

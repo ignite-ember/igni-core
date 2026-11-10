@@ -35,9 +35,11 @@ from websockets.http11 import Request as HttpRequest
 from websockets.http11 import Response as HttpResponse
 
 from igni_core.core.activity import BusyKind, background
+from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.host.processes import PROCESS_GROUP_HEADER, ExtensionProcesses
+from igni_core.extensions.host.signals import Subscriber
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.wire import (
     ErrorBody,
@@ -91,12 +93,12 @@ class HostChannel:
         model: HostModel,
         *,
         host: str = LOOPBACK,
-        hooks: ExtensionHooks | None = None,
-        processes: ExtensionProcesses | None = None,
+        hooks: ExtensionHooks,
+        processes: ExtensionProcesses,
     ) -> None:
         self._model = model
-        self._hooks = hooks if hooks is not None else ExtensionHooks.shared()
-        self._processes = processes if processes is not None else ExtensionProcesses.shared()
+        self._hooks = hooks
+        self._processes = processes
         self._host = host
         self._port = 0
         self._server: Server | None = None
@@ -195,12 +197,14 @@ class HostChannel:
             return
         self._connections.setdefault(extension_id, set()).add(connection)
         sink = _SocketSink()
-        subscriber = self._model.bus.attach(extension_id, sink)
-        grants = self._model.grants_for(extension_id)
+        subscriber = self._model.services.bus.attach(extension_id, sink)
+        grants = self._model.services.extensions.grants_for(extension_id)
         hello = Hello(
-            schema_version=self._model.schema.version,
+            schema_version=self._model.services.host_schema.version,
             extension_id=extension_id,
-            granted=grants.granted(self._model.schema.permission_names()) if grants else [],
+            granted=grants.granted(self._model.services.host_schema.permission_names())
+            if grants
+            else [],
         )
         writer = background.daemon(
             self._write(connection, sink), name=f"host-channel-{extension_id}"
@@ -226,7 +230,7 @@ class HostChannel:
             logger.debug("host channel: %s's connection ended: %s", extension_id, exc)
         finally:
             self._hooks.disconnect(extension_id, sink.send)
-            self._model.bus.detach(subscriber)
+            self._model.services.bus.detach(subscriber)
             self._connections.get(extension_id, set()).discard(connection)
             for task in pending:
                 task.cancel()
@@ -235,7 +239,7 @@ class HostChannel:
                 await writer
 
     async def _answer(
-        self, extension_id: str, subscriber: Any, sink: _SocketSink, raw: str | bytes
+        self, extension_id: str, subscriber: Subscriber, sink: _SocketSink, raw: str | bytes
     ) -> None:
         data: Any = None
         try:
@@ -243,16 +247,15 @@ class HostChannel:
             request = Request.model_validate(data)
         except (ValueError, ValidationError) as exc:
             request_id = data.get("id", 0) if isinstance(data, dict) else 0
-            reply = Reply(
-                id=request_id,
-                ok=False,
-                error=ErrorBody(code=ErrorCode.INVALID, message=f"not a host-model request: {exc}"),
+            reply = Reply.refused(
+                request_id,
+                ErrorBody(code=ErrorCode.INVALID, message=f"not a host-model request: {exc}"),
             )
         else:
             if request.op is Op.ANSWER:
                 reply = self._answered(extension_id, request)
             else:
-                reply = await self._model.handle(extension_id, request, subscriber=subscriber)
+                reply = await self._model.handle(request, Caller.process(extension_id, subscriber))
         with contextlib.suppress(asyncio.QueueFull):
             sink.queue.put_nowait(reply.model_dump_json())
 
@@ -261,22 +264,19 @@ class HostChannel:
         try:
             answer = HookAnswer.model_validate(request.params)
         except ValidationError as exc:
-            return Reply(
-                id=request.id,
-                ok=False,
-                error=ErrorBody(code=ErrorCode.INVALID, message=f"not an answer: {exc}"),
+            return Reply.refused(
+                request.id, ErrorBody(code=ErrorCode.INVALID, message=f"not an answer: {exc}")
             )
         if not self._hooks.answered(extension_id, answer):
-            return Reply(
-                id=request.id,
-                ok=False,
-                error=ErrorBody(
+            return Reply.refused(
+                request.id,
+                ErrorBody(
                     code=ErrorCode.NOT_FOUND,
                     message=f"nothing waits on {answer.hook!r} from this extension; "
                     "it was answered already, or ran out of time",
                 ),
             )
-        return Reply(id=request.id, ok=True)
+        return Reply.answered(request.id)
 
     @staticmethod
     async def _write(connection: ServerConnection, sink: _SocketSink) -> None:

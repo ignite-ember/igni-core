@@ -6,7 +6,7 @@ Extracted out of two spots in the old ``server_run.py``:
   run when the hook says ``should_continue=False``).
 * The ``Stop`` fire after the natural end-of-run.
 
-Consolidates the ``hook_executor.execute(event=..., payload={...})``
+Consolidates the ``hook_executor.execute(event=..., payload=...)``
 + ``.should_continue`` + ``.message`` handling behind typed
 :class:`HookGateResult` return values so the RunController body
 reads as ``result = await self._hooks.fire_user_prompt_submit(...)``.
@@ -21,11 +21,8 @@ from igni_core.backend.schemas_run import (
 )
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.extension_gate import (
-    ExtensionHookGate,
-    StopValue,
-    UserPromptSubmitValue,
-)
+from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.hooks.extension_values import StopValue, UserPromptSubmitValue
 
 
 class RunHookGate:
@@ -53,14 +50,13 @@ class RunHookGate:
             extensions that hook ``UserPromptSubmit`` changed it. They
             are asked first; the configured hooks see what they left.
         """
-        verdict = await ExtensionHookGate.ask(
-            UserPromptSubmitValue(session_id=self._session_id, message=text),
-            HookEvent.USER_PROMPT_SUBMIT,
+        verdict = await extension_hook_gate.ask(
+            UserPromptSubmitValue(session_id=self._session_id, message=text)
         )
         if not verdict.allowed:
             return HookGateResult(should_continue=False, block_message=verdict.reason)
-        text = str(verdict.value.get("message", text))
-        payload = UserPromptSubmitPayload(message=text, session_id=self._session_id).model_dump()
+        text = verdict.value.message
+        payload = UserPromptSubmitPayload(message=text, session_id=self._session_id)
         hook_result = await self._hook_executor.execute(
             event=HookEvent.USER_PROMPT_SUBMIT.value,
             payload=payload,
@@ -88,12 +84,10 @@ class RunHookGate:
             behavior). An extension that hooks ``Stop`` and rejects is
             a block with its reason, the same way.
         """
-        verdict = await ExtensionHookGate.ask(
-            StopValue(session_id=self._session_id), HookEvent.STOP
-        )
+        verdict = await extension_hook_gate.ask(StopValue(session_id=self._session_id))
         if not verdict.allowed:
             return HookGateResult(should_continue=False, block_message=verdict.reason)
-        payload = StopHookPayload(session_id=self._session_id).model_dump()
+        payload = StopHookPayload(session_id=self._session_id)
         hook_result = await self._hook_executor.execute(
             event=HookEvent.STOP.value,
             payload=payload,

@@ -30,7 +30,7 @@ Housed here:
   :meth:`Session.reload_plugins` (previously inline in
   ``core.py``).
 * :class:`McpServerStatus` — typed row for
-  :meth:`Session.get_mcp_status` (replaces raw
+  :meth:`McpLifecycleCoordinator.status` (replaces raw
   ``list[tuple[str, bool]]``).
 * :class:`StopHookPayload` / :class:`StopFailureHookPayload` /
   :class:`UserPromptSubmitHookPayload` /
@@ -38,10 +38,7 @@ Housed here:
   :class:`PostCompactHookPayload` /
   :class:`SessionLifecyclePayload` — typed builders for the
   hook events emitted by Session's message / compaction /
-  interactive paths. The wider :class:`HookExecutor` still
-  accepts ``dict``; callers ``.model_dump()`` at emit time
-  so the boundary is a partial win until the executor
-  adopts the union too.
+  interactive paths, handed to :class:`HookExecutor` as they are.
 * :class:`ContextBreakdown` — token accounting for ``/ctx``
   (moved out of the old ``compact_ops`` module so it lives
   next to its sibling hook payloads).
@@ -65,22 +62,17 @@ Housed here:
   ``plan_ops.py``) for the same reason as the loop schemas —
   it's the wire shape crossed by every plan-decision RPC and
   the schemas-home rule applies (Rule 1).
-* :class:`PlanDecidedBroadcast` — typed payload for the
-  ``plan_decided`` broadcast channel emitted after a plan is
-  approved / dismissed. Kept alongside
+* :class:`PlanDecidedEvent` — the ``plan_decided`` broadcast
+  emitted after a plan is approved / dismissed. Kept alongside
   :class:`PlanDecisionResult` because both cross the same RPC
   surface with the same run_id / decision pair.
-* :class:`OutputStyleChangedBroadcast` — typed payload for the
-  ``output_style_changed`` broadcast channel emitted by
-  :meth:`RuntimeModeCoordinator.set_output_style` when the user
-  flips the active output style at runtime. Rule 1 / Pattern 2:
-  emit sites call :meth:`model_dump` instead of hand-rolling
-  the payload dict.
-* :class:`PermissionModeChangedBroadcast` — typed payload for
-  the ``permission_mode_changed`` broadcast channel emitted by
-  :meth:`RuntimeModeCoordinator.set_permission_mode`. Fields
-  carry :class:`PermissionMode` enums; emit sites dump with
-  ``mode="json"`` so the wire keeps its string shape.
+* :class:`OutputStyleChangedEvent` — the ``output_style_changed``
+  broadcast emitted by :meth:`RuntimeModeCoordinator.set_output_style`.
+* :class:`PermissionModeChangedEvent` — the
+  ``permission_mode_changed`` broadcast emitted by
+  :meth:`RuntimeModeCoordinator.set_permission_mode`.
+* :class:`PermissionModeSwitch` — typed result of
+  :meth:`RuntimeModeCoordinator.set_permission_mode`.
 * :class:`McpClientBundle` — typed wrapper around the
   ``name → client`` mapping crossing into
   :meth:`AgentPool.build_agents`. Replaces the raw
@@ -99,6 +91,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.tools.plan import PlanDecision
 
@@ -285,16 +278,15 @@ class PluginReloadCounts(BaseModel):
     hooks: int
 
 
+# Typed row for McpLifecycleCoordinator.status (replaces a raw
+# ``(name, connected)`` tuple).
 class McpServerStatus(BaseModel):
-    """Typed row for :meth:`Session.get_mcp_status`.
+    """Connection state of one configured MCP server."""
 
-    Replaces the raw ``(name, connected)`` tuple so consumers
-    (backend RPC, TUI panel) reach for named attributes instead
-    of positional indexing.
-    """
-
-    name: str
-    connected: bool
+    name: str = Field(description="Name of the MCP server as configured.")
+    connected: bool = Field(
+        description="True when igni currently has a live connection to the server."
+    )
 
 
 # ── Hook payloads ────────────────────────────────────────────
@@ -302,8 +294,7 @@ class McpServerStatus(BaseModel):
 # The five hook events emitted by Session's message /
 # compaction paths. Each carries the minimum context a
 # subscriber needs to react (``session_id`` + the event-
-# specific fields). Callers ``.model_dump()`` at the executor
-# boundary; the executor accepts ``dict``.
+# specific fields). Handed to the executor as they are.
 
 
 class UserPromptSubmitHookPayload(BaseModel):
@@ -385,22 +376,22 @@ class PostCompactHookPayload(BaseModel):
 # ``session.schemas.*`` import path.
 
 
+# Construct via from_totals so the floor-clamp invariant lives on the
+# model, not scattered at every call site.
 class ContextBreakdown(BaseModel):
-    """Per-component token breakdown of the current context.
+    """Token breakdown of the current context window.
 
-    ``total = runs + floor`` (``floor`` clamped to ``0`` in case
-    of tokenizer inconsistency where ``runs`` > ``total``).
-    Consumed by the ``/ctx`` slash command to explain the
-    irreducible portion ``/compact`` cannot shrink.
-
-    Construct via :meth:`from_totals` so the floor-clamp
-    invariant lives on the model, not scattered at every call
-    site.
+    ``total = runs + floor``. ``floor`` is the part that compacting the
+    conversation (``/compact``) cannot shrink, such as the system prompt
+    and tool definitions.
     """
 
-    total: int
-    runs: int
-    floor: int
+    total: int = Field(description="Total tokens currently in the context.")
+    runs: int = Field(description="Tokens taken by the conversation history (previous runs).")
+    floor: int = Field(
+        description="Tokens that are always present regardless of history (system prompt, "
+        "tool definitions and so on); never negative."
+    )
 
     @classmethod
     def from_totals(cls, total: int, runs: int) -> ContextBreakdown:
@@ -474,8 +465,7 @@ class SessionLifecyclePayload(BaseModel):
     et al.: the minimum context a subscriber needs to react
     (``session_id`` plus the ``resumed`` flag so analytics /
     hook subscribers can distinguish fresh from resumed
-    sessions). Callers ``.model_dump()`` at the executor
-    boundary, which still accepts ``dict``.
+    sessions). Handed to :meth:`HookExecutor.execute` as is.
     """
 
     session_id: str
@@ -558,41 +548,70 @@ class LoopPhase(str, Enum):
     PAUSED = "paused"
 
 
+# Returned by LoopController.advance_loop. Flat shape (rather than a
+# tagged union) so the JSON payload stays the same; a model-level
+# validator enforces that each ``kind`` only carries its own fields.
+# Build via the three named classmethods.
 class LoopAdvance(BaseModel):
-    """Wire shape for :meth:`LoopController.advance_loop`.
+    """What happened when a repeating prompt loop moved to its next iteration.
 
-    Three effective variants, discriminated by ``kind``:
+    ``kind`` says which of three outcomes this is; only the fields
+    belonging to that outcome are set, the rest keep their defaults:
 
-    * ``kind="completed"`` — explicit cap hit; ``total_iterations``
-      carries the final count.
-    * ``kind="safety_paused"`` — implicit loop hit ``LOOP_HARD_CAP``;
-      ``iteration`` carries the count reached.
-    * ``kind="step"`` — normal advance: ``prompt`` /
-      ``display_prompt`` / ``iteration`` / ``remaining`` /
-      ``cap_explicit`` populated. ``auto_extended`` flags the
-      one-shot iteration right after the implicit safety net rolled
-      over.
-
-    Flat shape (rather than a tagged union) so wire consumers keep
-    the same JSON payload; a model-level validator enforces that
-    each ``kind`` only carries its own fields. Build via the three
-    named classmethods — they are the only spellings
-    :class:`LoopController` uses.
+    * ``completed`` - the loop reached the iteration count the user asked
+      for and has ended; ``total_iterations`` holds that count.
+    * ``safety_paused`` - a loop with no explicit count reached igni's
+      safety limit and paused instead of ending; ``iteration`` holds the
+      count reached.
+    * ``step`` - a normal next iteration: ``prompt``, ``display_prompt``,
+      ``iteration``, ``remaining`` and ``cap_explicit`` are set.
     """
 
-    kind: Literal["completed", "safety_paused", "step"] = "step"
+    kind: Literal["completed", "safety_paused", "step"] = Field(
+        default="step",
+        description="Which outcome this is: `completed` (loop finished its requested "
+        "count), `safety_paused` (an open-ended loop hit the safety limit and paused) or "
+        "`step` (a normal next iteration).",
+    )
     # Completion fields.
-    completed: bool = False
-    total_iterations: int = 0
+    completed: bool = Field(default=False, description="True when `kind` is `completed`.")
+    total_iterations: int = Field(
+        default=0,
+        description="Number of iterations the loop ran. Set only when `kind` is `completed`.",
+    )
     # Safety-cap fields.
-    safety_cap_paused: bool = False
+    safety_cap_paused: bool = Field(
+        default=False, description="True when `kind` is `safety_paused`."
+    )
     # Step fields.
-    prompt: str = ""
-    display_prompt: str = ""
-    iteration: int = 0
-    remaining: int = 0
-    cap_explicit: bool = False
-    auto_extended: bool = False
+    prompt: str = Field(
+        default="",
+        description="Full text sent to the agent for this iteration, including igni's loop "
+        "instructions. Set only when `kind` is `step`.",
+    )
+    display_prompt: str = Field(
+        default="",
+        description="The user's own prompt text, for showing in the chat. Set only when "
+        "`kind` is `step`.",
+    )
+    iteration: int = Field(
+        default=0,
+        description="1-based number of the iteration about to run (`step`), or the number "
+        "reached when the loop paused (`safety_paused`).",
+    )
+    remaining: int = Field(
+        default=0, description="Iterations left after this one. Set only when `kind` is `step`."
+    )
+    cap_explicit: bool = Field(
+        default=False,
+        description="True when the user gave an explicit iteration count; false for an "
+        "open-ended loop that runs until stopped or the safety limit.",
+    )
+    auto_extended: bool = Field(
+        default=False,
+        description="True on the first iteration after an open-ended loop was resumed past "
+        "the safety limit.",
+    )
 
     @model_validator(mode="after")
     def _enforce_kind_invariants(self) -> LoopAdvance:
@@ -674,86 +693,83 @@ class LoopAdvance(BaseModel):
 # import path.
 
 
+# Result of PlanCoordinator.approve / PlanCoordinator.dismiss.
 class PlanDecisionResult(BaseModel):
-    """Pattern-3 envelope for :meth:`PlanCoordinator.approve` /
-    :meth:`PlanCoordinator.dismiss`.
+    """Outcome of approving or dismissing a plan the agent proposed."""
 
-    Surfaced to the FE via the ``APPROVE_PLAN`` / ``DISMISS_PLAN``
-    RPCs; the transport serializer auto-converts via
-    :meth:`model_dump` so the wire keeps its dict shape.
+    run_id: str = Field(
+        description="Run in which the agent submitted the plan; identifies which plan was decided."
+    )
+    decision: PlanDecision = Field(description="The decision recorded: `approved` or `dismissed`.")
+    mode_status: str = Field(
+        default="",
+        description="One-line summary of the permission-mode change the decision caused "
+        "(for example `mode → default` on approval). Empty when the mode did not change.",
+    )
+    ok: bool = Field(
+        default=True,
+        description="True when the decision was recorded; false when it could not be "
+        "(for example an unknown run or a storage failure).",
+    )
+    error: str | None = Field(
+        default=None, description="Why the decision was not recorded. Null when `ok` is true."
+    )
 
-    Fields:
 
-    * ``run_id`` — the run in which ``exit_plan_mode`` was
-      called; identifies the specific plan the user decided on.
-    * ``decision`` — the :class:`PlanDecision` StrEnum value the
-      user chose (``"approved"`` / ``"dismissed"``). StrEnum
-      dumps as its ``.value`` on the wire so existing consumers
-      keying on ``"approved"`` / ``"dismissed"`` are unaffected.
-    * ``mode_status`` — human-readable one-line summary of any
-      permission-mode change triggered by the decision (empty
-      for dismiss; ``"mode → default"``-shaped for approve).
-    * ``ok`` — ``True`` on success; ``False`` when the
-      coordinator refused the record (empty run_id, missing
-      plan_store, missing persistence, or DB failure on the
-      flip path). Callers key on this to surface an inline
-      error to the FE.
-    * ``error`` — human-readable error string when ``ok=False``;
-      ``None`` on success.
+class PlanDecidedEvent(BroadcastEvent):
+    """A plan the agent proposed was approved or dismissed.
+
+    Clients use it to move the plan card from pending to its final
+    state."""
+
+    channel: Literal["plan_decided"] = "plan_decided"
+    run_id: str = Field(description="Run in which the agent submitted the plan.")
+    decision: PlanDecision = Field(description="The decision recorded: `approved` or `dismissed`.")
+
+
+# Emitted by RuntimeModeCoordinator.set_output_style after the swap.
+class OutputStyleChangedEvent(BroadcastEvent):
+    """The session's output style changed.
+
+    Lets a client update whatever shows the active style without
+    polling."""
+
+    channel: Literal["output_style_changed"] = "output_style_changed"
+    style: str = Field(description="Name of the output style now in effect.")
+    previous: str = Field(description="Name of the output style in effect before the change.")
+
+
+# Emitted by RuntimeModeCoordinator.set_permission_mode after the live
+# PermissionEvaluator mode flip.
+class PermissionModeChangedEvent(BroadcastEvent):
+    """The session's permission mode was switched."""
+
+    channel: Literal["permission_mode_changed"] = "permission_mode_changed"
+    kind: Literal["switched"] = Field(
+        default="switched",
+        description="Always `switched`: the mode was changed directly, as opposed to the "
+        "agent entering plan mode on its own (reported with kind `plan_mode_entered`).",
+    )
+    mode: PermissionMode = Field(description="Permission mode now in effect.")
+    previous: PermissionMode = Field(description="Permission mode in effect before the switch.")
+
+
+class PermissionModeSwitch(BaseModel):
+    """What :meth:`RuntimeModeCoordinator.set_permission_mode` did.
+
+    * ``refused`` — the switch was not made: an unknown mode, or one the
+      organisation's mode policy forbids. ``text`` says why, in the words
+      ``/accept`` shows the person.
+    * ``changed`` — the mode is now different from what it was (``False``
+      for a refusal and for a switch to the mode already in force).
+    * ``text`` — the one-line status for the person.
     """
 
-    run_id: str
-    decision: PlanDecision
-    mode_status: str = ""
-    ok: bool = True
-    error: str | None = None
+    model_config = ConfigDict(frozen=True)
 
-
-class PlanDecidedBroadcast(BaseModel):
-    """Typed payload for the ``plan_decided`` broadcast channel.
-
-    The FE listens on this channel to flip the plan card from
-    pending to approved/dismissed. Modelled as a Pydantic
-    schema so the emit site calls :meth:`model_dump` instead of
-    hand-rolling the payload dict (Rule 1 / Pattern 2).
-    """
-
-    run_id: str
-    decision: PlanDecision
-
-
-class OutputStyleChangedBroadcast(BaseModel):
-    """Typed payload for the ``output_style_changed`` broadcast
-    channel.
-
-    Emitted by :meth:`RuntimeModeCoordinator.set_output_style`
-    after the active style has been swapped and the main team's
-    ``instructions`` list has been hot-patched. The FE consumes
-    it to refresh the status chip that shows the active style
-    without polling. Modelled as a Pydantic schema so the emit
-    site calls :meth:`model_dump` instead of hand-rolling the
-    payload dict (Rule 1 / Pattern 2).
-    """
-
-    style: str
-    previous: str
-
-
-class PermissionModeChangedBroadcast(BaseModel):
-    """Typed payload for the ``permission_mode_changed`` broadcast
-    channel.
-
-    Emitted by :meth:`RuntimeModeCoordinator.set_permission_mode`
-    after the live :class:`PermissionEvaluator` mode flip. Fields
-    carry :class:`PermissionMode` enums; emit sites dump with
-    ``mode="json"`` so the wire keeps its historic string shape
-    (mirrors the :class:`PlanDecidedBroadcast` / :class:`PlanDecision`
-    precedent). Rule 1 / Pattern 2: the emit site calls
-    :meth:`model_dump` instead of hand-rolling the payload dict.
-    """
-
-    mode: PermissionMode
-    previous: PermissionMode
+    refused: bool = False
+    changed: bool = False
+    text: str
 
 
 # ── MCP startup schemas ─────────────────────────────────────
@@ -831,32 +847,31 @@ class MessageMedia(BaseModel):
         return out
 
 
+# Returned by McpInitPhase.ensure (forwarded by
+# SessionStartupCoordinator.ensure_mcp) so RPC callers get the connect
+# outcome without scraping logs.
 class McpInitResult(BaseModel):
-    """Pattern-3 envelope returned by :meth:`McpInitPhase.ensure`
-    (forwarded by :meth:`SessionStartupCoordinator.ensure_mcp`).
+    """Outcome of connecting the session's configured MCP servers."""
 
-    Callers used to grep the log stream to know how many servers
-    connected on first-message init. The envelope surfaces the
-    same information at the return-value boundary so RPC clients
-    (``BackendServer.ensure_mcp`` / ``McpController.ensure``) can
-    project it back to the FE without side-channel scraping.
-
-    Fields:
-
-    * ``connected`` — sorted names of servers that came online.
-    * ``failed`` — mapping ``name → error string`` for each server
-      whose ``connect`` returned ``None``.
-    * ``rebuilt`` — ``True`` iff the agent pool + main team were
-      rebuilt with at least one live client (matches the pre-
-      refactor log line "agents + main team rebuilt").
-    * ``skipped_reason`` — set when :meth:`ensure` short-circuited
-      before reaching the connect loop. ``None`` when a connect
-      pass was actually executed.
-    """
-
-    connected: list[str] = Field(default_factory=list)
-    failed: dict[str, str] = Field(default_factory=dict)
-    rebuilt: bool = False
+    connected: list[str] = Field(
+        default_factory=list, description="Names of the servers that connected, sorted."
+    )
+    failed: dict[str, str] = Field(
+        default_factory=dict,
+        description="Servers that failed to connect, mapped to the error for each.",
+    )
+    rebuilt: bool = Field(
+        default=False,
+        description="True when the session's agents were rebuilt so they can use the newly "
+        "connected servers' tools.",
+    )
     skipped_reason: (
         Literal["already_initialized", "no_configured_servers", "no_clients_connected"] | None
-    ) = None
+    ) = Field(
+        default=None,
+        description="Why no connection attempt was made, or why nothing changed: "
+        "`already_initialized` (servers were connected earlier in the session), "
+        "`no_configured_servers` (no MCP servers are configured) or `no_clients_connected` "
+        "(every server failed, so the agents were not rebuilt). Null when a connection "
+        "pass ran and at least one server connected.",
+    )

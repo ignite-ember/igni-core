@@ -26,6 +26,7 @@ from igni_cloud.db.producer_data import AdminCannotSeeRows, ProducerData
 from igni_cloud.db.rls import AGNO_SCHEMA, ProducerRoles
 from igni_cloud.guest.binding import ProducerEnv
 from igni_cloud.producer import ProducerIncarnation, ProducerRef, UnknownProducer
+from igni_cloud.storage.agno_table_cache import AgnoTableCache
 from igni_cloud.storage.attachments import LargeObjectAttachments
 from igni_cloud.storage.scoped_agno import ScopedAsyncPostgresDb
 from sqlalchemy import create_engine, text
@@ -34,7 +35,7 @@ from sqlalchemy.exc import OperationalError
 
 from igni_core.cli.migrate import SchemaMigration
 from igni_core.core.db.database import Database
-from igni_core.core.db.engine import cache
+from igni_core.core.db.engine import engines
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.db.scope import StorageScope, Tenant
 from igni_core.core.db.urls import DatabaseUrl
@@ -101,7 +102,8 @@ class Incarnation:
     def agno(self) -> ScopedAsyncPostgresDb:
         return ScopedAsyncPostgresDb(
             scope=self.scope,
-            db_engine=cache.get_async_engine(self.url),
+            tables=AgnoTableCache(),
+            db_engine=engines.get_async_engine(self.url),
             session_table=StorageManager.SESSION_TABLE,
             memory_table=StorageManager.MEMORY_TABLE,
             create_schema=False,
@@ -125,7 +127,7 @@ class Incarnation:
             return await self.agno().get_session("s1", SessionType.AGENT)
 
         return {
-            "theme": ClientStateStore(self.db()).get_for_client("window").get("theme"),
+            "theme": ClientStateStore(self.db()).get_for_client("window").values.get("theme"),
             "pending": [m.text for m in PendingMessageStore(self.db()).list_pending("s1")],
             "session": asyncio.run(session()) is not None,
         }

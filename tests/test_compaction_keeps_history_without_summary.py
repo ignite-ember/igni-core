@@ -23,8 +23,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from igni_core.core.hooks.schemas import HookResult
-from igni_core.core.session.compaction import CompactionCoordinator
 from igni_core.core.session.compaction import coordinator as coordinator_mod
+from tests.session_coordinators import compaction_over
 
 
 def _runs_db() -> MagicMock:
@@ -84,7 +84,7 @@ class TestBothSummarisersEmpty:
     async def test_runs_are_not_dropped(self, no_structured_summary):
         agno = _conversation()
         s = _session_stub(agno)
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         coord._fallback.summarise = AsyncMock(return_value="")
 
         result = await coord.compact()
@@ -99,7 +99,7 @@ class TestBothSummarisersEmpty:
         # ``compact_if_needed`` returning True makes the backend push a
         # ``SessionCleared`` to the FE. Nothing was cleared.
         s = _session_stub(_conversation())
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         coord._fallback.summarise = AsyncMock(return_value="")
 
         assert await coord.compact_if_needed(input_tokens=9000, context_window=10_000) is False
@@ -113,7 +113,7 @@ class TestBothSummarisersEmpty:
         monkeypatch.setattr(coordinator_mod, "SessionSummaryManager", _RaisingSummaryManager)
         agno = _conversation()
         s = _session_stub(agno)
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         coord._fallback.summarise = AsyncMock(return_value="")
 
         result = await coord.force_compact()
@@ -136,7 +136,7 @@ class TestStaleSummary:
         # them silently.
         agno = _conversation(summary=SimpleNamespace(summary="what happened before"))
         s = _session_stub(agno)
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         coord._fallback.summarise = AsyncMock(return_value="")
 
         result = await coord.compact()
@@ -152,7 +152,7 @@ class TestSummaryProduced:
         # compaction goes through exactly as before.
         agno = _conversation()
         s = _session_stub(agno)
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         coord._fallback.summarise = AsyncMock(return_value="a recap of the session")
 
         result = await coord.compact()
@@ -171,7 +171,7 @@ class TestSummaryProduced:
         s = _session_stub(_conversation())
         s.main_team.asave_session = AsyncMock(side_effect=RuntimeError("db is locked"))
         s.main_team.db = _runs_db()
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         coord._fallback.summarise = AsyncMock(return_value="a recap")
 
         result = await coord.compact()

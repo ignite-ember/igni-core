@@ -25,7 +25,7 @@ from igni_core.core.data_paths import global_db_path, state_db_path
 from igni_core.core.db.database import Database
 from igni_core.core.db.scope import StorageScope, tenancy
 from igni_core.core.db.urls import DatabaseUrl
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
 
@@ -33,9 +33,9 @@ class StorageLocator:
     """Turns ``storage.database_url`` and ``storage.data_dir`` into databases."""
 
     def __init__(self, *, database_url: str | None, data_dir: str | Path) -> None:
-        if not database_url and Layers.current().requires_database():
+        if not database_url and layers.current().requires_database():
             raise RuntimeError(
-                f"the {Layers.current().name} layer keeps igni's state in a database: "
+                f"the {layers.current().name} layer keeps igni's state in a database: "
                 "set IGNI_DATABASE_URL"
             )
         self._database_url = DatabaseUrl.parse(database_url) if database_url else None

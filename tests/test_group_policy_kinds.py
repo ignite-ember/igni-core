@@ -21,11 +21,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from igni_core.core.config.group_policy import (
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyPack,
-)
+from igni_core.backend.workflow_discovery import WorkflowDiscovery
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.paths import CONFIG_DIR
 
 
@@ -50,7 +50,7 @@ def _entry(kind: str, name: str, content: str, **extra) -> GroupPolicyEntry:
 
 @pytest.fixture
 def cache(tmp_path: Path) -> GroupPolicyCache:
-    return GroupPolicyCache(cache_dir=tmp_path / "group-policy")
+    return GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "group-policy"))
 
 
 class TestWhereEachKindLands:
@@ -59,21 +59,21 @@ class TestWhereEachKindLands:
     def test_an_agent_is_a_markdown_file(self, cache: GroupPolicyCache):
         cache.materialize(_pack(_entry("agents", "reviewer", "---\nname: reviewer\n---\nBody.")))
 
-        assert (cache.dir_for("agents") / "reviewer.md").is_file()
+        assert (cache.layout.dir_for("agents") / "reviewer.md").is_file()
 
     def test_a_skill_is_a_directory_with_skill_md_in_it(self, cache: GroupPolicyCache):
         """Not ``skills/deploy.md`` — the loader walks directories and
         reads SKILL.md from each."""
         cache.materialize(_pack(_entry("skills", "deploy", "---\nname: deploy\n---\nSteps.")))
 
-        assert (cache.dir_for("skills") / "deploy" / "SKILL.md").is_file()
+        assert (cache.layout.dir_for("skills") / "deploy" / "SKILL.md").is_file()
 
     def test_a_command_is_a_markdown_file(self, cache: GroupPolicyCache):
         cache.materialize(
             _pack(_entry("commands", "ship", "---\ndescription: Ship it\n---\nDo it."))
         )
 
-        assert (cache.dir_for("commands") / "ship.md").is_file()
+        assert (cache.layout.dir_for("commands") / "ship.md").is_file()
 
     def test_a_workflow_is_an_es_module(self, cache: GroupPolicyCache):
         """`.mjs`, because it is run by Node, not read as text."""
@@ -88,35 +88,37 @@ class TestWhereEachKindLands:
             )
         )
 
-        assert (cache.dir_for("workflows") / "review.mjs").is_file()
+        assert (cache.layout.dir_for("workflows") / "review.mjs").is_file()
 
     def test_a_rule_is_a_markdown_file(self, cache: GroupPolicyCache):
         cache.materialize(
             _pack(_entry("rules", "style", "---\npaths: ['**/*.py']\n---\nUse tabs."))
         )
 
-        assert (cache.dir_for("rules") / "style.md").is_file()
+        assert (cache.layout.dir_for("rules") / "style.md").is_file()
 
     def test_an_output_style_is_a_markdown_file(self, cache: GroupPolicyCache):
         cache.materialize(
             _pack(_entry("output-styles", "terse", "---\nname: terse\n---\nBe brief."))
         )
 
-        assert (cache.dir_for("output-styles") / "terse.md").is_file()
+        assert (cache.layout.dir_for("output-styles") / "terse.md").is_file()
 
     def test_a_tool_is_a_python_file(self, cache: GroupPolicyCache):
         cache.materialize(
             _pack(_entry("tools", "lookup", "def lookup():\n    pass\n", content_type="python"))
         )
 
-        assert (cache.dir_for("tools") / "lookup.py").is_file()
+        assert (cache.layout.dir_for("tools") / "lookup.py").is_file()
 
     def test_an_mcp_server_is_wrapped_in_its_envelope(self, cache: GroupPolicyCache):
         cache.materialize(
             _pack(_entry("mcps", "github", '{"command": "gh-mcp"}', content_type="json"))
         )
 
-        blob = json.loads((cache.dir_for("mcps") / "github.json").read_text(encoding="utf-8"))
+        blob = json.loads(
+            (cache.layout.dir_for("mcps") / "github.json").read_text(encoding="utf-8")
+        )
         assert blob["mcpServers"]["github"]["command"] == "gh-mcp"
 
 
@@ -138,7 +140,9 @@ class TestHooks:
             )
         )
 
-        blob = json.loads((cache.dir_for("hooks") / "settings.json").read_text(encoding="utf-8"))
+        blob = json.loads(
+            (cache.layout.dir_for("hooks") / "settings.json").read_text(encoding="utf-8")
+        )
         assert blob["hooks"]["PreToolUse"][0]["command"] == "guard.sh"
 
     def test_a_bare_declaration_names_its_event(self, cache: GroupPolicyCache):
@@ -153,7 +157,9 @@ class TestHooks:
             )
         )
 
-        blob = json.loads((cache.dir_for("hooks") / "settings.json").read_text(encoding="utf-8"))
+        blob = json.loads(
+            (cache.layout.dir_for("hooks") / "settings.json").read_text(encoding="utf-8")
+        )
         assert blob["hooks"]["PreToolUse"][0]["command"] == "guard.sh"
 
     def test_two_hooks_on_one_event_both_survive(self, cache: GroupPolicyCache):
@@ -176,7 +182,9 @@ class TestHooks:
             )
         )
 
-        blob = json.loads((cache.dir_for("hooks") / "settings.json").read_text(encoding="utf-8"))
+        blob = json.loads(
+            (cache.layout.dir_for("hooks") / "settings.json").read_text(encoding="utf-8")
+        )
         assert {h["command"] for h in blob["hooks"]["PreToolUse"]} == {"a.sh", "b.sh"}
 
     def test_one_that_names_no_event_is_skipped_not_crashed(self, cache: GroupPolicyCache):
@@ -184,7 +192,7 @@ class TestHooks:
             _pack(_entry("hooks", "nameless", json.dumps({"command": "x.sh"}), content_type="json"))
         )
 
-        assert not (cache.dir_for("hooks") / "settings.json").exists()
+        assert not (cache.layout.dir_for("hooks") / "settings.json").exists()
 
     def test_the_file_goes_when_the_last_hook_does(self, cache: GroupPolicyCache):
         cache.materialize(
@@ -199,7 +207,7 @@ class TestHooks:
         )
         cache.materialize(_pack())
 
-        assert not (cache.dir_for("hooks") / "settings.json").exists()
+        assert not (cache.layout.dir_for("hooks") / "settings.json").exists()
 
 
 class TestTheLoadersFindThem:
@@ -218,7 +226,7 @@ class TestTheLoadersFindThem:
             )
         )
         pool = SkillPool()
-        pool.load_directory(cache.dir_for("skills"))
+        pool.load_directory(cache.layout.dir_for("skills"))
 
         assert pool.get("deploy") is not None
 
@@ -237,7 +245,7 @@ class TestTheLoadersFindThem:
         (project / CONFIG_DIR).mkdir(parents=True)
 
         found = MarkdownCommand.discover(
-            project, read_claude=False, group_dir=cache.dir_for("commands")
+            project, read_claude=False, group_dir=cache.layout.dir_for("commands")
         )
 
         assert "ship" in found
@@ -256,14 +264,12 @@ class TestTheLoadersFindThem:
         (project / CONFIG_DIR).mkdir(parents=True)
 
         styles = discover_output_styles(
-            project, read_claude=False, group_dir=cache.dir_for("output-styles")
+            project, read_claude=False, group_dir=cache.layout.dir_for("output-styles")
         )
 
         assert "terse" in styles
 
     def test_a_workflow_is_discovered(self, cache: GroupPolicyCache, tmp_path: Path):
-        from igni_core.backend.workflow_runner import WorkflowDiscovery
-
         cache.materialize(
             _pack(
                 _entry(
@@ -276,24 +282,31 @@ class TestTheLoadersFindThem:
         )
         project = tmp_path / "proj"
         (project / CONFIG_DIR).mkdir(parents=True)
-        discovery = WorkflowDiscovery(project_dir=project, group_dir=cache.dir_for("workflows"))
+        discovery = WorkflowDiscovery.for_project(
+            project_dir=project, group_dir=cache.layout.dir_for("workflows")
+        )
 
-        assert [p.stem for p in discovery._iter_paths()] == ["review"]
+        assert [p.stem for p in discovery.paths()] == ["review"]
 
     def test_a_tool_is_scanned(self, cache: GroupPolicyCache, tmp_path: Path):
         from igni_core.core.tools.custom_loader import CustomToolLoader
+        from igni_core.core.workspace_trust import process_trust
 
         cache.materialize(
             _pack(_entry("tools", "noop", "# nothing to register\n", content_type="python"))
         )
-        result = CustomToolLoader().discover(
+        result = CustomToolLoader(trust=process_trust()).discover(
             tmp_path / "proj",
-            group_tools_dir=cache.dir_for("tools"),
+            group_tools_dir=cache.layout.dir_for("tools"),
         )
 
         # It defines no toolkit, so what matters is that the file was
         # read rather than skipped as a missing directory.
         assert not result.failed
+        group_dir = cache.layout.dir_for("tools")
+        assert group_dir not in [
+            skip.path for skip in result.skipped if skip.reason == "not_a_directory"
+        ]
 
     def test_a_hook_loads(self, cache: GroupPolicyCache, tmp_path: Path):
         from igni_core.core.hooks.loader import HookLoader
@@ -313,7 +326,7 @@ class TestTheLoadersFindThem:
         result = HookLoader(
             tmp_path / "proj",
             cross_tool_support=False,
-            group_dir=cache.dir_for("hooks"),
+            group_dir=cache.layout.dir_for("hooks"),
         ).load()
 
         assert result.registry.for_event("PreToolUse")
@@ -326,7 +339,9 @@ class TestTheLoadersFindThem:
         )
         project = tmp_path / "proj"
         (project / CONFIG_DIR).mkdir(parents=True)
-        index = RulesIndex(project, read_claude_md=False, group_rules_dir=cache.dir_for("rules"))
+        index = RulesIndex(
+            project, read_claude_md=False, group_rules_dir=cache.layout.dir_for("rules")
+        )
 
         assert index.consume_path(project / "app" / "main.py")
 
@@ -336,31 +351,41 @@ class TestWhatTheGroupStopsShipping:
         cache.materialize(_pack(_entry("commands", "ship", "---\ndescription: d\n---\nGo.")))
         cache.materialize(_pack())
 
-        assert not (cache.dir_for("commands") / "ship.md").exists()
+        assert not (cache.layout.dir_for("commands") / "ship.md").exists()
 
     def test_a_dropped_skill_takes_its_directory(self, cache: GroupPolicyCache):
         cache.materialize(_pack(_entry("skills", "deploy", "---\nname: deploy\n---\nSteps.")))
         cache.materialize(_pack())
 
-        assert not (cache.dir_for("skills") / "deploy").exists()
+        assert not (cache.layout.dir_for("skills") / "deploy").exists()
 
     def test_a_disabled_entry_is_not_written(self, cache: GroupPolicyCache):
         cache.materialize(
             _pack(_entry("commands", "ship", "---\ndescription: d\n---\nGo.", enabled=False))
         )
 
-        assert not (cache.dir_for("commands") / "ship.md").exists()
+        assert not (cache.layout.dir_for("commands") / "ship.md").exists()
 
 
-def test_the_session_knows_where_each_kind_lives(tmp_path: Path):
+def test_the_layout_knows_where_each_kind_lives(tmp_path: Path):
     """One method answers it, so eight loaders cannot disagree."""
-    from igni_core.core.session.core import Session
+    layout = GroupPolicyLayout.for_data_dir(tmp_path)
 
-    session = Session.__new__(Session)
-    session._group_policy_dir = tmp_path / "group-policy"
+    assert layout.dir_for("skills") == tmp_path / "group-policy" / "skills"
+    assert layout.dir_for("workflows") == tmp_path / "group-policy" / "workflows"
 
-    assert session.group_dir_for("skills") == tmp_path / "group-policy" / "skills"
-    assert session.group_dir_for("workflows") == tmp_path / "group-policy" / "workflows"
+
+def test_a_kind_ships_only_when_its_directory_has_something(tmp_path: Path):
+    layout = GroupPolicyLayout.for_data_dir(tmp_path)
+    assert layout.ships("skills") is False
+    assert layout.shipped_dir("skills") is None
+
+    layout.ensure_dir("skills")
+    assert layout.shipped_dir("skills") is None
+
+    (layout.dir_for("skills") / "x.md").write_text("x", encoding="utf-8")
+    assert layout.ships("skills") is True
+    assert layout.shipped_dir("skills") == layout.dir_for("skills")
 
 
 class TestWhatIgniShipsStandsDown:
@@ -413,7 +438,7 @@ class TestTheManagerGetsTheGroupDirectory:
         project = tmp_path / "proj"
         project.mkdir()
 
-        manager = MCPClientManager(project, group_mcps_dir=cache.dir_for("mcps"))
+        manager = MCPClientManager(project, group_mcps_dir=cache.layout.dir_for("mcps"))
 
         assert "case-law" in manager.configs
         assert manager.configs["case-law"].command == "case-law-mcp"
@@ -468,7 +493,7 @@ class TestBeingMovedToAnotherGroup:
         cache.materialize(self._group("legal"))
 
         for kind in ("agents", "skills", "commands", "rules", "workflows", "mcps", "tools"):
-            names = {p.stem.replace(".md", "") for p in cache.dir_for(kind).iterdir()}
+            names = {p.stem.replace(".md", "") for p in cache.layout.dir_for(kind).iterdir()}
             assert not any(n.startswith("eng-") for n in names), (
                 f"{kind} kept the old group's entry"
             )
@@ -498,7 +523,9 @@ class TestBeingMovedToAnotherGroup:
             )
         )
 
-        blob = json.loads((cache.dir_for("hooks") / "settings.json").read_text(encoding="utf-8"))
+        blob = json.loads(
+            (cache.layout.dir_for("hooks") / "settings.json").read_text(encoding="utf-8")
+        )
         commands = {h["command"] for h in blob["hooks"]["PreToolUse"]}
         assert commands == {"legal.sh"}
 
@@ -540,13 +567,13 @@ class TestBeingMovedToAnotherGroup:
         eng = self._group("eng")
         eng.etag = '"eng"'
         cache.materialize(eng)
-        assert cache.stored_etag() == '"eng"'
+        assert cache.meta.stored_etag() == '"eng"'
 
         legal = self._group("legal")
         legal.etag = '"legal"'
         cache.materialize(legal)
 
-        assert cache.stored_etag() == '"legal"'
+        assert cache.meta.stored_etag() == '"legal"'
 
 
 class TestScriptsAndTheHooksThatRunThem:
@@ -595,7 +622,7 @@ class TestScriptsAndTheHooksThatRunThem:
                 _entry("hooks", "pre-pr-review", hook, content_type="json"),
             )
         )
-        settings = json.loads((cache.dir_for("hooks") / "settings.json").read_text())
+        settings = json.loads((cache.layout.dir_for("hooks") / "settings.json").read_text())
         command = settings["hooks"]["PreToolUse"][0]["command"]
 
         assert "{group_scripts}" not in command
@@ -611,7 +638,7 @@ class TestScriptsAndTheHooksThatRunThem:
             {"event": "PreToolUse", "type": "command", "command": "/opt/acme/check --staged"}
         )
         cache.materialize(_pack(_entry("hooks", "h", hook, content_type="json")))
-        settings = json.loads((cache.dir_for("hooks") / "settings.json").read_text())
+        settings = json.loads((cache.layout.dir_for("hooks") / "settings.json").read_text())
         assert settings["hooks"]["PreToolUse"][0]["command"] == "/opt/acme/check --staged"
 
     def test_expansion_reaches_a_nested_hooks_block(self, cache: GroupPolicyCache):
@@ -630,7 +657,7 @@ class TestScriptsAndTheHooksThatRunThem:
                 _entry("hooks", "h", hook, content_type="json"),
             )
         )
-        settings = json.loads((cache.dir_for("hooks") / "settings.json").read_text())
+        settings = json.loads((cache.layout.dir_for("hooks") / "settings.json").read_text())
         assert str(cache.scripts_dir) in settings["hooks"]["Stop"][0]["command"]
 
     def test_a_removed_script_is_pruned(self, cache: GroupPolicyCache):

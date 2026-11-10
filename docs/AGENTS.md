@@ -87,7 +87,7 @@ You are an expert code analyst...
 | `name` | string | yes | Unique identifier for this agent |
 | `description` | string | yes | What this agent does — the Orchestrator reads this to decide when to use it |
 | `tools` | string/list | no | Comma-separated string or YAML list. Uses Claude Code tool names (`Read`, `Write`, `Edit`, `Bash`, etc.) |
-| `model` | string | no | Model ID (`MiniMax-M2.7`, `MiniMax-M2.7-highspeed`) or any Agno-supported model. Defaults to config default |
+| `model` | string | no | Model ID (`MiniMax-M2.7`, or any other id your igni server's catalogue offers) or any Agno-supported model. Defaults to config default |
 | `color` | string | no | UI color for this agent (`yellow`, `red`, `green`, `blue`, etc.) |
 
 **igni extensions** (ignored by Claude Code if the file is used there):
@@ -269,7 +269,7 @@ class Orchestrator:
     async def handle(self, message: str, context: ConversationContext) -> Response:
         # Step 1: Analyze the task and decide on a team
         plan: TeamPlan = await self.planner.arun(
-            f"Agent pool:\n{self.pool.describe()}\n\n"
+            f"Agent pool:\n{agent_catalog(self.pool.list_agents())}\n\n"
             f"Conversation context:\n{context.summary()}\n\n"
             f"User message: {message}"
         )

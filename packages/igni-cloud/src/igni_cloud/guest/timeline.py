@@ -46,6 +46,8 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
 
+from igni_core.core.log_fields import LogFields
+
 logger = logging.getLogger(__name__)
 
 
@@ -209,7 +211,7 @@ class ResumeTimeline:
             self._deadline.cancel()
         logger.info(
             "resume timeline",
-            extra={"fields": {"timeline": self.record.model_dump(mode="json")}},
+            extra=LogFields.of(timeline=self.record).extra(),
         )
 
     @classmethod

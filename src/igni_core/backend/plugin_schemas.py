@@ -9,10 +9,9 @@
   :class:`PluginToolInfo` — per-item wire entries inside
   :class:`PluginContents`.
 * :class:`PluginContents` — plugin-inventory wire shape returned by
-  the plugin-details and marketplace-preview RPCs. Owns its own
-  construction via :meth:`PluginContents.from_directory` (which
-  delegates to :class:`PluginDirectoryScanner`) and
-  :meth:`PluginContents.error_result`.
+  the plugin-details and marketplace-preview RPCs, built from a
+  directory by :class:`PluginDirectoryScanner`; error payloads come
+  from :meth:`PluginContents.error_result`.
 * :class:`MarketplaceRefreshFailure` /
   :class:`MarketplaceRefreshResult` — typed result of a bulk
   refresh, letting the orchestration and message-rendering halves
@@ -39,7 +38,6 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -60,13 +58,17 @@ class PluginPreviewKey(BaseModel):
 
 
 class PluginPreviewSource(BaseModel):
-    """Structured form of the marketplace's ``"<url> [<subdir>]"``
-    display string — parses back to (url, subdir) and formats back
-    out. Single source of truth for the round-trip.
+    """Where a previewed plugin comes from: a git repository and,
+    optionally, a folder inside it.
+
+    Displayed as ``"<url> [<subdir>]"``.
     """
 
-    url: str
-    subdir: str = ""
+    url: str = Field(description="The plugin's git repository URL.")
+    subdir: str = Field(
+        default="",
+        description="Folder inside the repository that holds the plugin; empty for the root.",
+    )
 
     # Display format: ``"<url> [<subdir>]"`` — the space between URL
     # and bracket is required. ``ClassVar`` so pydantic doesn't
@@ -94,102 +96,81 @@ class PluginPreviewSource(BaseModel):
 
 
 class PluginSkillInfo(BaseModel):
-    """One skill entry in :attr:`PluginContents.skills`."""
+    """A skill the plugin provides."""
 
-    name: str
-    description: str = ""
+    name: str = Field(description="The skill's name.")
+    description: str = Field(default="", description="What the skill does; may be empty.")
 
 
 class PluginAgentInfo(BaseModel):
-    """One agent entry in :attr:`PluginContents.agents`."""
+    """An agent the plugin provides."""
 
-    name: str
-    description: str = ""
+    name: str = Field(description="The agent's name.")
+    description: str = Field(default="", description="What the agent does; may be empty.")
 
 
 class PluginHookInfo(BaseModel):
-    """One hook-event entry in :attr:`PluginContents.hooks`.
-    ``count`` is the number of handlers registered for the
-    event."""
+    """Hooks the plugin registers for one event."""
 
-    event: str
-    count: int
+    event: str = Field(description="The hook event, e.g. `PreToolUse` or `Stop`.")
+    count: int = Field(description="Number of hook handlers the plugin registers for the event.")
 
 
 class PluginMCPServerInfo(BaseModel):
-    """One MCP-server entry in :attr:`PluginContents.mcp_servers`."""
+    """An MCP server the plugin provides."""
 
-    name: str
-    transport: str
-    command: str
+    name: str = Field(description="The server's name.")
+    transport: str = Field(description="How igni talks to the server, e.g. `stdio` or `sse`.")
+    command: str = Field(
+        description="The command that starts the server (or its URL); may be empty."
+    )
 
 
 class PluginToolInfo(BaseModel):
-    """One custom-tool entry in :attr:`PluginContents.tools`."""
+    """A custom tool the plugin provides."""
 
-    name: str
+    name: str = Field(description="The tool's name.")
 
 
 class PluginContents(BaseModel):
-    """Wire shape returned by :meth:`PluginContents.from_directory`
-    (and the
-    :meth:`igni_core.backend.plugin_controller.PluginController.preview`
-    marketplace-preview path that unwraps a clone into the same
-    shape).
+    """What a plugin contains: its skills, agents, hooks, MCP servers,
+    tools and README.
 
-    ``error`` is populated when the caller failed to construct
-    the payload (plugin not found, git clone failed, etc.) — in
-    that case the collection fields stay empty and the FE renders
-    the error card.
+    Describes an installed plugin, or one previewed from a marketplace
+    before installing. When ``error`` is set, the lists are empty."""
 
-    ``preview_source`` carries the structured ``(url, subdir)`` for
-    preview payloads coming from the marketplace card so the FE can
-    reconstruct the display without regex-parsing ``root_path``.
-    Only populated by the preview path — the installed-plugin path
-    leaves it ``None``."""
-
-    name: str = ""
-    root_path: str = ""
-    skills: list[PluginSkillInfo] = []
-    agents: list[PluginAgentInfo] = []
-    hooks: list[PluginHookInfo] = []
-    mcp_servers: list[PluginMCPServerInfo] = []
-    tools: list[PluginToolInfo] = []
-    readme: str = ""
-    error: str = ""
-    preview_source: PluginPreviewSource | None = None
+    # Built by PluginDirectoryScanner.scan, and by PluginController.preview
+    # for marketplace previews (which unwraps a clone into the same shape).
+    name: str = Field(default="", description="The plugin's name.")
+    root_path: str = Field(default="", description="Folder the plugin was read from.")
+    skills: list[PluginSkillInfo] = Field(default=[], description="Skills the plugin provides.")
+    agents: list[PluginAgentInfo] = Field(default=[], description="Agents the plugin provides.")
+    hooks: list[PluginHookInfo] = Field(
+        default=[], description="Hooks the plugin registers, per event."
+    )
+    mcp_servers: list[PluginMCPServerInfo] = Field(
+        default=[], description="MCP servers the plugin provides."
+    )
+    tools: list[PluginToolInfo] = Field(default=[], description="Custom tools the plugin provides.")
+    readme: str = Field(
+        default="", description="The plugin's README (Markdown); empty if it has none."
+    )
+    error: str = Field(
+        default="",
+        description=(
+            "Why the plugin could not be read (not found, git clone failed, ...); empty on success."
+        ),
+    )
+    preview_source: PluginPreviewSource | None = Field(
+        default=None,
+        description="Where a previewed plugin comes from; `null` for an installed plugin.",
+    )
 
     @classmethod
     def error_result(cls, message: str) -> PluginContents:
         """Construct an error-only :class:`PluginContents` — used
         at every error branch of the preview path."""
         return cls(error=message)
-
-    @classmethod
-    def from_directory(cls, root: Path, name: str) -> PluginContents:
-        """Walk *root* and build the bundled-contents inventory:
-        skills, agents, hooks, MCP servers, custom tools, plus a
-        README excerpt.
-
-        Shared between :meth:`BackendServer.get_plugin_contents`
-        (installed plugins) and :meth:`PluginController.preview`
-        (uninstalled catalog entries, scanned from a shallow clone).
-        Pure on the filesystem — no plugin loader / session state
-        needed.
-
-        Delegates to :class:`PluginDirectoryScanner` via a lazy
-        import — ``plugin_directory_scanner`` imports back from this
-        module for the item schemas, so the import happens inside
-        this classmethod body to break the cycle.
-        """
-        # Lazy import: plugin_directory_scanner.py imports the item
-        # schemas from THIS module. Deferring the import to call-time
-        # keeps the module-load graph acyclic.
-        from igni_core.backend.plugin_directory_scanner import (
-            PluginDirectoryScanner,
-        )
-
-        return PluginDirectoryScanner(root, name).scan()
 
 
 # ── Marketplace refresh result ──────────────────────────────────────
@@ -203,8 +184,9 @@ class MarketplaceRefreshFailure(BaseModel):
 
 
 class MarketplaceRefreshResult(BaseModel):
-    """Typed result of a bulk :meth:`MarketplaceController.refresh` —
-    keeps orchestration and message rendering independently testable.
+    """Typed result of a bulk marketplace refresh
+    (:class:`~igni_core.backend.cmd_plugin.bulk_refresh.BulkRefreshRunner`)
+    — keeps orchestration and message rendering independently testable.
     """
 
     ok: list[str] = Field(default_factory=list)
@@ -214,6 +196,17 @@ class MarketplaceRefreshResult(BaseModel):
         """True when neither success nor failure entries exist — the
         registry had no marketplaces to refresh."""
         return not self.ok and not self.failed
+
+    def summary_line(self) -> str:
+        """One-line outcome for the marketplace panel: counts of ok and
+        failed refreshes, each failure named with its reason."""
+        if self.is_empty():
+            return "No marketplaces to refresh."
+        line = f"Refreshed {len(self.ok)} ok"
+        if self.failed:
+            failures = ", ".join(f"{f.name} ({f.reason})" for f in self.failed)
+            line += f"; {len(self.failed)} failed: {failures}"
+        return line
 
     def to_markdown(self) -> str:
         """Render the bulk-refresh outcome as the markdown surface the

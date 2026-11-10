@@ -27,17 +27,11 @@ from pathlib import Path
 
 from igni_core.core.config.tool_names import wire_name
 from igni_core.core.mcp.naming import tool_name_prefix
+from igni_core.extensions.install_service import server_name
 from igni_core.extensions.manifest import ExtensionManifest
 
 #: How many lines of a process's stderr a failure quotes.
 STDERR_LINES = 12
-
-
-def server_name(extension_id: str) -> str:
-    """The MCP server name igni registers an extension under."""
-    from igni_core.extensions.installer import server_name as installer_server_name
-
-    return installer_server_name(extension_id)
 
 
 @dataclass
@@ -75,7 +69,7 @@ class NameCheck:
         page = f"ext.{self._id}."
         for grant in self._manifest.permissions.rpc:
             if grant == "*":
-                continue  # a problem of its own, reported by doctor
+                continue  # a problem of its own, reported by ManifestCheck
             if not grant.startswith(page):
                 findings.warnings.append(
                     f"permissions.rpc grants {grant!r}, outside this extension's "

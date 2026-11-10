@@ -10,7 +10,7 @@ table the receive loop calls through.
 from __future__ import annotations
 
 from igni_core.backend.rpc_handlers.auth import AuthRpcHandler
-from igni_core.backend.rpc_handlers.base import RpcHandler, RpcHandlerContext, rpc
+from igni_core.backend.rpc_handlers.base import RpcHandler, RpcHandlerContext
 from igni_core.backend.rpc_handlers.extensions import ExtensionsRpcHandler
 from igni_core.backend.rpc_handlers.hooks import HooksRpcHandler
 from igni_core.backend.rpc_handlers.loop import LoopRpcHandler
@@ -21,6 +21,8 @@ from igni_core.backend.rpc_handlers.panels import PanelRpcHandler
 from igni_core.backend.rpc_handlers.plan import PlanRpcHandler
 from igni_core.backend.rpc_handlers.plugins import PluginsRpcHandler
 from igni_core.backend.rpc_handlers.pool_guard import (
+    PAGE_RPCS,
+    PLATFORM_RPCS,
     POOL_LEVEL_RPCS,
     PoolGuardRpcHandler,
 )
@@ -32,6 +34,8 @@ from igni_core.backend.rpc_handlers.workflows import WorkflowsRpcHandler
 from igni_core.backend.rpc_handlers.workspace_trust import WorkspaceTrustRpcHandler
 
 __all__ = [
+    "PAGE_RPCS",
+    "PLATFORM_RPCS",
     "POOL_LEVEL_RPCS",
     "AuthRpcHandler",
     "ExtensionsRpcHandler",
@@ -52,5 +56,4 @@ __all__ = [
     "SkillsRpcHandler",
     "WorkflowsRpcHandler",
     "WorkspaceTrustRpcHandler",
-    "rpc",
 ]

@@ -10,15 +10,12 @@ concern.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from agno.models.message import Message as AgnoMessage
 
+from igni_core.core.session.compaction.team_session import TeamSessionSource
 from igni_core.core.session.schemas import ContextBreakdown
 from igni_core.core.session.token_estimate import TokenEstimate
-
-if TYPE_CHECKING:
-    from igni_core.core.session.core import Session
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +30,8 @@ class ContextBreakdownReporter:
     supplies the two totals.
     """
 
-    def __init__(self, session: Session) -> None:
-        self._session = session
+    def __init__(self, source: TeamSessionSource) -> None:
+        self._source = source
 
     async def report(self) -> ContextBreakdown:
         """Return per-component token counts for the current context.
@@ -54,12 +51,8 @@ class ContextBreakdownReporter:
         ``/ctx`` card renders a well-formed empty state instead of
         erroring out.
         """
-        session = self._session
         try:
-            agno_session = await session.main_team.aget_session(
-                session_id=session.session_id,
-                user_id=session.user_id,
-            )
+            agno_session = await self._source.load()
         except Exception:
             return ContextBreakdown.from_totals(total=0, runs=0)
         if agno_session is None:

@@ -28,7 +28,8 @@ from mcp.types import JSONRPCNotification
 
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.notification_tap import McpNotificationRouter
-from igni_core.extensions.installer import ExtensionInstaller, server_name
+from igni_core.extensions.install_service import server_name
+from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
@@ -87,7 +88,7 @@ class Floor:
         self.center = NotificationCenter(
             server=signed_in(),
             local=self.store,
-            announce=self.announced.append,
+            announce=lambda change: self.announced.append(change.counts),
             transport=self.server.transport,
         )
         self.receiver = ExtensionNoticeReceiver(registry=self.registry, sink=self.center)
@@ -346,7 +347,10 @@ async def test_a_real_extension_process_notifies_the_host(tmp_path):
     store = LocalNotificationStore(tmp_path / "notifications.db")
     announced: list[NotificationCounts] = []
     center = NotificationCenter(
-        server=signed_in(), local=store, announce=announced.append, transport=server.transport
+        server=signed_in(),
+        local=store,
+        announce=lambda change: announced.append(change.counts),
+        transport=server.transport,
     )
     mcp.notifications.handle(
         ExtensionNoticeReceiver.METHOD,

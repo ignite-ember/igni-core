@@ -9,13 +9,13 @@ that session's runtime, resuming the session when it is not live. Its
 tests so far reached single handlers through ``__new__``; the routing,
 the attach rules and the pool's set-up had none.
 
-These build the orchestrator through its constructor with the real
-:class:`SessionPool`, :class:`SessionDirectoryStore` (SQLite under
-``tmp_path``), :class:`RpcRouter`, :class:`PushNotificationBridge` and
-:class:`MessageDispatcher`. The seam is the session's backend: a
+These build the orchestrator through :meth:`SessionOrchestrator.start`
+with the real :class:`SessionPool`, :class:`SessionDirectoryStore` (SQLite
+under ``tmp_path``), :class:`RpcRouter`, :class:`PushNotificationBridge`
+and :class:`MessageDispatcher`. The seam is the session's backend: a
 :class:`BackendServer` boots a model team, so a small recording backend
 stands in for it — the boot one passed in, and pooled ones made where
-:meth:`_create_runtime` makes them.
+:meth:`SessionRuntimeFactory.create` makes them.
 
 Pinned:
 
@@ -39,18 +39,29 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
 from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.pool_rpcs import HostModelRpcs, ServiceEventRpc, VmSignInRpc
+from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
+from igni_core.backend.rpc_handlers.pool_guard import PLATFORM_RPCS, POOL_LEVEL_RPCS
 from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.schemas_pool import AttachRefused, ExtensionPost, ProjectDirs
 from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
+from igni_core.core.broadcast_schema import BroadcastSink
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.settings import Settings
-from igni_core.extensions.host.windows import WindowModelError
+from igni_core.core.layer import layers
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
+from igni_core.extensions.host.window_errors import WindowModelError
 from igni_core.extensions.service_events import DeliveryReceipt
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
@@ -75,10 +86,17 @@ class _Backend:
     def __init__(self, session_id: str, project_dir: Path, waiting: list[Any] | None = None):
         self.session_id = session_id
         self.project_dir = project_dir
+        # The supervisor the backend process shares — the RPC router
+        # reads it to build the shell runner.
+        self.supervisor = ProcessSupervisor()
+        # Whether this backend process may run agent sessions. The real
+        # ``BackendServer`` carries one; the RPC router reads it to build
+        # the workflow runner. This one is open, so a run starts.
+        self.gate = RunGate()
         self.processing = False
         self.runtime: Any = None
         self.message_queue: list[str] = []
-        self.hitl = _Hitl(waiting or [])
+        self.controllers = SimpleNamespace(hitl=_Hitl(waiting or []))
         self.reloads = 0
         self.broadcasts: list[Any] = []
         self.handled: list[str] = []
@@ -90,8 +108,8 @@ class _Backend:
     def wire_queue_hook(self, queue: Any) -> None:
         self.queue_hook = queue
 
-    def register_broadcast(self, callback: Any) -> None:
-        self.broadcasts.append(callback)
+    def register_broadcast(self, subscriber: BroadcastSink) -> None:
+        self.broadcasts.append(subscriber)
 
     def reload_agents(self) -> None:
         self.reloads += 1
@@ -135,8 +153,19 @@ class _Pooled(_Backend):
         project_dir: Path,
         resume_session_id: str,
         additional_dirs: Any,
+        contributions: Any = None,
+        prompt_loader: Any = None,
+        supervisors: SupervisorLocator | None = None,
+        gate: RunGate | None = None,
     ) -> None:
         super().__init__(resume_session_id, project_dir)
+        # The resumed session's processes land on the supervisor the
+        # backend process shares — the one the pool wiring carries.
+        if supervisors is not None:
+            self.supervisor = supervisors.supervisor
+        # So do its runs ask the gate of the backend process.
+        if gate is not None:
+            self.gate = gate
         _Pooled.made.append(self)
 
 
@@ -153,14 +182,44 @@ class _Transport:
             yield m
 
 
-class _HostModel:
-    def handle_window(self, request: Any) -> Any:
+class _WindowAnswer(BaseModel):
+    window: str
+    op: str
+
+
+class _PageAnswer(BaseModel):
+    caller: str
+    args: dict[str, Any]
+
+
+class _WindowRpc:
+    def handle(self, request: Any) -> _WindowAnswer:
         if request.field == "nope":
             raise WindowModelError("no field 'nope'")
-        return {"window": request.window, "op": request.op}
+        return _WindowAnswer(window=request.window, op=request.op)
 
-    async def handle_page(self, caller: str, args: dict) -> Any:
-        return {"caller": caller, "args": args}
+
+class _Windows:
+    @property
+    def registry(self) -> _Windows:
+        return self
+
+    def by_connection(self, connection_id: str) -> str | None:
+        return None
+
+
+class _HostServices:
+    def __init__(self) -> None:
+        self.window_rpc = _WindowRpc()
+        self.windows = _Windows()
+
+
+class _HostModel:
+    def __init__(self) -> None:
+        self.services = _HostServices()
+
+    async def handle_page(self, caller: str, args: dict) -> _PageAnswer:
+        return _PageAnswer(caller=caller, args=args)
 
 
 class _Inbox:
@@ -173,14 +232,19 @@ class _Inbox:
 
 
 class _Credential(BaseModel):
-    signed_in: bool
-    organisation: str | None
+    """The VM's credential state, as a layer's credential keeper answers it."""
+
+    state: str
+    message: str = ""
+
+
+class _PooledRuntimes(SessionRuntimeFactory):
+    server_cls = _Pooled  # type: ignore[assignment]
 
 
 @pytest.fixture(autouse=True)
-def _pooled_backends(monkeypatch):
+def _pooled_backends():
     _Pooled.made = []
-    monkeypatch.setattr("igni_core.backend.server.BackendServer", _Pooled)
 
 
 def _orchestrator(
@@ -194,20 +258,22 @@ def _orchestrator(
     queue: list[str] = []
     push = PushNotificationBridge(transport=transport, loop=None, queue=queue)
     login = LoginCoordinator(backend=backend, push_bridge=push)
-    router = RpcRouter(backend=backend, transport=transport, login=login, push=push)
-    orchestrator = SessionOrchestrator(
-        backend=backend,
-        transport=transport,
+    router = RpcRouter(backend=backend, login=login, push=push)
+    orchestrator = SessionOrchestrator.start(
+        boot=BootRuntime(
+            backend=backend, rpc_table=router.build_table(), router=router, queue=queue
+        ),
+        wiring=PoolWiring(
+            transport=transport,
+            push_bridge=push,
+            login=login,
+            supervisors=SupervisorLocator(backend.supervisor),
+            gate=backend.gate,
+        ),
         settings=settings,
-        project_dir=project,
-        additional_dirs=None,
-        rpc_router=router,
-        rpc_table=router.build_table(),
-        push_bridge=push,
-        login=login,
-        queue=queue,
+        dirs=ProjectDirs(project_dir=project),
+        factory=_PooledRuntimes,
     )
-    orchestrator.setup_pool()
     return orchestrator, backend, transport
 
 
@@ -225,13 +291,6 @@ async def test_the_boot_session_is_the_pool_s_default(tmp_path):
     assert backend.runtime is orchestrator.pool.default
     assert orchestrator.client_state is not None
     assert orchestrator.extensions is not None
-
-
-def test_nothing_is_reloaded_before_there_is_a_pool(tmp_path):
-    orchestrator = SessionOrchestrator.__new__(SessionOrchestrator)
-    orchestrator._pool = None
-
-    orchestrator.refresh_agents()
 
 
 async def test_refreshing_agents_rebuilds_every_live_session(tmp_path):
@@ -291,8 +350,9 @@ async def test_a_session_whose_directory_is_gone_resumes_in_the_backend_s_own(tm
     later, _, _ = _orchestrator(tmp_path)
     gone.rmdir()
 
-    with pytest.raises(ValueError, match="different project"):
-        await later.attach("old", None)
+    refused = await later.attach("old", None)
+    assert isinstance(refused, AttachRefused)
+    assert "different project" in refused.reason
     result = await later.pool.get_or_create("old")
 
     assert result.backend.project_dir == backend.project_dir
@@ -316,12 +376,16 @@ async def test_attaching_shows_the_session_s_waiting_approvals_again(tmp_path):
 
     await orchestrator.dispatch(_rpc(RpcMethod.ATTACH_SESSION, "a", session_id="boot"))
 
-    reply, paused, resumed = transport.sent
+    reply, paused, resumed, end = transport.sent
     assert reply.result == {"session_id": "boot", "project_dir": str(tmp_path / "project")}
     assert paused.run_id == "r-1"
     assert resumed.text == "resuming r-1"
     # Through the session's stamped transport: the window knows whose it is.
     assert paused.session_id == "boot"
+    # Each carries the attach's id, and a stream_end of it ends them: the
+    # client that attached can tell what its attach brought back.
+    assert [m.id for m in (paused, resumed, end)] == ["a", "a", "a"]
+    assert isinstance(end, msg.StreamEnd)
 
 
 # ── Routing ───────────────────────────────────────────────────────
@@ -372,7 +436,7 @@ async def test_an_extension_s_message_reaches_its_session_now_or_queued(tmp_path
     (pooled,) = _Pooled.made
 
     await orchestrator.post_from_extension(
-        session_id="s-3", extension_id="acme", text="later", media=None, queued=True
+        ExtensionPost(session_id="s-3", extension_id="acme", text="later", media=None, queued=True)
     )
 
     # The session's own queue — the next turn of *that* session reads it.
@@ -387,7 +451,9 @@ async def test_an_extension_s_message_now_runs_a_turn_in_its_session(tmp_path):
     (pooled,) = _Pooled.made
 
     await orchestrator.post_from_extension(
-        session_id="s-4", extension_id="acme", text="ticket closed", media=None, queued=False
+        ExtensionPost(
+            session_id="s-4", extension_id="acme", text="ticket closed", media=None, queued=False
+        )
     )
     for _ in range(100):
         if transport.sent and transport.sent[-1].type == "stream_end":
@@ -417,7 +483,7 @@ async def test_the_window_model_answers_and_refuses_with_the_reason(tmp_path):
     orchestrator, _, transport = _orchestrator(tmp_path)
 
     await orchestrator.dispatch(_rpc(RpcMethod.WINDOW_MODEL, "0", op="hydrate", window="w"))
-    orchestrator.attach_host_model(_HostModel())
+    orchestrator.mount(HostModelRpcs(_HostModel()))
     await orchestrator.dispatch(_rpc(RpcMethod.WINDOW_MODEL, "1", op="hydrate", window="w"))
     await orchestrator.dispatch(
         _rpc(RpcMethod.WINDOW_MODEL, "2", op="write", window="w", field="nope")
@@ -433,15 +499,17 @@ async def test_the_window_model_answers_and_refuses_with_the_reason(tmp_path):
 
 async def test_the_host_model_answers_only_an_extension_s_page(tmp_path):
     orchestrator, _, transport = _orchestrator(tmp_path)
-    orchestrator.attach_host_model(_HostModel())
+    orchestrator.mount(HostModelRpcs(_HostModel()))
     orchestrator.extensions.registry.install(manifest("acme.reviewer"))
 
     await orchestrator.dispatch(_rpc(RpcMethod.HOST_MODEL, "1", path="host.sessions"))
-    await orchestrator.dispatch(_rpc(RpcMethod.HOST_MODEL, "2", caller="acme.reviewer", path="x"))
+    await orchestrator.dispatch(
+        _rpc(RpcMethod.HOST_MODEL, "2", caller="acme.reviewer", op="get", path="x")
+    )
 
     refused, answered = transport.sent
     assert refused.error == "host_model: only an extension's page reaches the host model"
-    assert answered.result == {"caller": "acme.reviewer", "args": {"path": "x"}}
+    assert answered.result == {"caller": "acme.reviewer", "args": {"op": "get", "path": "x"}}
 
 
 async def test_nothing_speaks_for_an_extension_that_is_not_installed(tmp_path):
@@ -449,7 +517,7 @@ async def test_nothing_speaks_for_an_extension_that_is_not_installed(tmp_path):
     # is refused before any handler hears it.
     orchestrator, _, transport = _orchestrator(tmp_path)
     host_model = _HostModel()
-    orchestrator.attach_host_model(host_model)
+    orchestrator.mount(HostModelRpcs(host_model))
 
     await orchestrator.dispatch(_rpc(RpcMethod.HOST_MODEL, "2", caller="nobody", path="x"))
 
@@ -473,7 +541,7 @@ async def test_the_platform_s_events_are_delivered_and_acknowledged(tmp_path):
 
     await orchestrator.dispatch(_rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "0", events=[event]))
     inbox = _Inbox()
-    orchestrator.attach_event_inbox(inbox)
+    orchestrator.mount(ServiceEventRpc(inbox))
     await orchestrator.dispatch(_rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "1", events=[event]))
     await orchestrator.dispatch(_rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "2", events=[{"x": 1}]))
 
@@ -490,10 +558,10 @@ async def test_the_vm_signs_in_with_the_person_s_session(tmp_path):
 
     async def sign_in(token: str, organisation: str | None) -> _Credential:
         calls.append((token, organisation))
-        return _Credential(signed_in=True, organisation=organisation)
+        return _Credential(state="ready", message=organisation or "")
 
     await orchestrator.dispatch(_rpc(RpcMethod.VM_SIGN_IN, "0", session_token="tok"))
-    orchestrator.attach_vm_sign_in(sign_in)
+    orchestrator.mount(VmSignInRpc(sign_in))
     await orchestrator.dispatch(_rpc(RpcMethod.VM_SIGN_IN, "1", session_token=""))
     await orchestrator.dispatch(
         _rpc(RpcMethod.VM_SIGN_IN, "2", session_token="tok", organisation="acme")
@@ -505,8 +573,8 @@ async def test_the_vm_signs_in_with_the_person_s_session(tmp_path):
     no_keeper, no_token, with_org, bad_org = transport.sent
     assert "a producer's VM takes the person's session_token" in no_keeper.error
     assert no_token.error == no_keeper.error
-    assert with_org.result == {"signed_in": True, "organisation": "acme"}
-    assert bad_org.result == {"signed_in": True, "organisation": None}
+    assert with_org.result == {"state": "ready", "message": "acme"}
+    assert bad_org.result == {"state": "ready", "message": ""}
     assert calls == [("tok", "acme"), ("tok", None)]
 
 
@@ -519,10 +587,8 @@ async def test_a_layer_can_take_platform_calls_from_its_control_connection_only(
     tmp_path, monkeypatch
 ):
     orchestrator, _, transport = _orchestrator(tmp_path)
-    orchestrator.attach_event_inbox(_Inbox())
-    monkeypatch.setattr(
-        "igni_core.core.layer.Layers.current", classmethod(lambda cls: _ControlOnly())
-    )
+    orchestrator.mount(ServiceEventRpc(_Inbox()))
+    monkeypatch.setattr(layers, "current", lambda: _ControlOnly())
 
     await orchestrator.dispatch(_rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "w", events=[]))
     control = _rpc(RpcMethod.DELIVER_SERVICE_EVENTS, "c", events=[])
@@ -532,6 +598,18 @@ async def test_a_layer_can_take_platform_calls_from_its_control_connection_only(
     from_window, from_control = transport.sent
     assert from_window.error == "deliver_service_events: only on the platform's control connection"
     assert from_control.result["acknowledge"] == []
+
+
+def test_the_platform_s_calls_are_checked_before_any_pool_call_is_answered():
+    # Admission refuses a platform call from the wrong connection before the
+    # pool's table is consulted; that is the order it always had only while
+    # none of these is a platform call.
+    assert PLATFORM_RPCS <= POOL_LEVEL_RPCS
+    assert not PLATFORM_RPCS & {
+        RpcMethod.ATTACH_SESSION,
+        RpcMethod.HOST_MODEL,
+        RpcMethod.EXTENSION_SERVICE_TOKEN,
+    }
 
 
 # ── Lifetime ──────────────────────────────────────────────────────
@@ -572,3 +650,21 @@ async def test_serve_stops_once_shutdown_is_set(tmp_path):
     await orchestrator.serve(stop)
 
     assert backend.handled == []
+
+
+async def test_a_pool_level_call_that_breaks_is_answered_with_its_error(tmp_path):
+    """A pool-level call that raised used to reach the crash boundary: no
+    answer for the caller, who waited out its timeout, and "session routing
+    failed" for every window. It is answered, to the caller, with the error."""
+    orchestrator, _, transport = _orchestrator(tmp_path)
+
+    async def sign_in(token: str, organisation: str | None) -> _Credential:
+        raise OSError("disk full")
+
+    orchestrator.mount(VmSignInRpc(sign_in))
+    await orchestrator.dispatch(_rpc(RpcMethod.VM_SIGN_IN, "b1", session_token="tok"))
+
+    (answer,) = transport.sent
+    assert isinstance(answer, msg.RPCResponse)
+    assert answer.id == "b1"
+    assert answer.error == "vm_sign_in: disk full"

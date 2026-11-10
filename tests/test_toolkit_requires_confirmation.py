@@ -24,6 +24,7 @@ The fix iterates BOTH registries. This test locks that in.
 from __future__ import annotations
 
 from igni_core.core.tools.edit import IgniEditTools
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.shell import IgniShellTools
 
 
@@ -31,7 +32,10 @@ class TestShellToolkitConfirmation:
     def test_run_shell_command_has_requires_confirmation_flag(self) -> None:
         # ``run_shell_command`` is async — used to be routed to
         # ``async_functions`` and skipped by the confirm-loop.
-        toolkit = IgniShellTools(requires_confirmation_tools=["run_shell_command"])
+        toolkit = IgniShellTools(
+            requires_confirmation_tools=["run_shell_command"],
+            supervisor=ProcessSupervisor(),
+        )
         # Find the tool wherever it landed (sync or async
         # registry — both are valid Agno storage).
         by_name: dict[str, object] = {}
@@ -50,7 +54,10 @@ class TestShellToolkitConfirmation:
         # ``stop_process`` is listed in the toolkit's confirm set
         # from ``registry.py::_make_bash``; ensure the same fix
         # covers it (also async, would have hit the same bug).
-        toolkit = IgniShellTools(requires_confirmation_tools=["run_shell_command", "stop_process"])
+        toolkit = IgniShellTools(
+            requires_confirmation_tools=["run_shell_command", "stop_process"],
+            supervisor=ProcessSupervisor(),
+        )
         by_name: dict[str, object] = {}
         by_name.update(toolkit.functions)
         by_name.update(toolkit.async_functions)
@@ -60,7 +67,10 @@ class TestShellToolkitConfirmation:
         # Sanity: tools not in the confirm list stay
         # unconfirmed. The bug fix must not accidentally flag
         # EVERY async tool.
-        toolkit = IgniShellTools(requires_confirmation_tools=["run_shell_command"])
+        toolkit = IgniShellTools(
+            requires_confirmation_tools=["run_shell_command"],
+            supervisor=ProcessSupervisor(),
+        )
         by_name: dict[str, object] = {}
         by_name.update(toolkit.functions)
         by_name.update(toolkit.async_functions)

@@ -1,25 +1,28 @@
 """Tests for tips and update checker."""
 
+import asyncio
 import json
 import time
+from importlib.metadata import PackageNotFoundError
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
-from igni_core.core.config.settings import (
-    GuardrailsConfig,
-    PermissionsConfig,
-    Settings,
-)
+from igni_core.core.config.schemas import GuardrailsConfig, PermissionsConfig
+from igni_core.core.config.settings import Settings
 from igni_core.core.paths import CONFIG_DIR, PROJECT_CONTEXT_FILE
 from igni_core.core.utils.tips import CONTEXTUAL_TIPS, GENERAL_TIPS, get_tip, random_tip
 from igni_core.core.utils.update_checker import (
+    PackageMetadata,
     UpdateCache,
     UpdateCacheEntry,
+    UpdateChecker,
     UpdateError,
     UpdateInfo,
     Version,
-    check_for_update,
+    default_cache_path,
 )
 
 # ── Tips ────────────────────────────────────────────────────────────
@@ -190,10 +193,10 @@ class TestCache:
         assert result is None
 
 
-# ── check_for_update ────────────────────────────────────────────────
+# ── the check ──────────────────────────────────────────────────────
 
 
-class TestCheckForUpdate:
+class TestUpdateCheckerCheck:
     @staticmethod
     def _make_mock_client(response_data):
         """Create a mock httpx.AsyncClient that returns the given JSON."""
@@ -207,51 +210,106 @@ class TestCheckForUpdate:
         mock_client.get = AsyncMock(return_value=mock_response)
         return mock_client
 
+    @staticmethod
+    def _checker(tmp_path, **kwargs):
+        """A checker with its cache in the tmp dir and settings of its own."""
+        return UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+            **kwargs,
+        )
+
     @pytest.mark.asyncio
     async def test_no_update(self, tmp_path):
-        cache_file = tmp_path / ".update-check"
         mock_client = self._make_mock_client({"info": {"version": "0.1.0"}})
         with (
-            patch("igni_core.core.utils.update_checker.CACHE_FILE", cache_file),
             patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
             patch(
                 "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
             ),
         ):
-            info = await check_for_update()
+            info = await self._checker(tmp_path).check()
             assert info.available is False
+            assert info.current_version == "0.1.0"
+            assert info.error is None
 
     @pytest.mark.asyncio
     async def test_update_available(self, tmp_path):
-        cache_file = tmp_path / ".update-check"
         mock_client = self._make_mock_client({"info": {"version": "0.2.0"}})
         with (
-            patch("igni_core.core.utils.update_checker.CACHE_FILE", cache_file),
             patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
             patch(
                 "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
             ),
         ):
-            info = await check_for_update()
+            info = await self._checker(tmp_path).check()
             assert info.available is True
             assert info.latest_version == "0.2.0"
+            assert info.current_version == "0.1.0"
+
+    @pytest.mark.asyncio
+    async def test_the_download_url_is_pypis_own_when_it_names_one(self, tmp_path):
+        mock_client = self._make_mock_client(
+            {"info": {"version": "0.2.0", "project_url": "https://pypi.example/project"}}
+        )
+        with (
+            patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
+            patch(
+                "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
+            ),
+        ):
+            info = await self._checker(tmp_path).check()
+            assert info.download_url == "https://pypi.example/project"
+
+    @pytest.mark.asyncio
+    async def test_the_download_url_falls_back_to_the_installed_package(self, tmp_path):
+        """PyPI does not always name a project URL; the installed
+        distribution's own page is the fallback."""
+        mock_client = self._make_mock_client({"info": {"version": "0.2.0"}})
+        checker = self._checker(
+            tmp_path,
+            package=PackageMetadata(name="igni-probe", project_url="https://example.test/probe"),
+        )
+        with (
+            patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
+            patch(
+                "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
+            ),
+        ):
+            info = await checker.check()
+            assert info.download_url == "https://example.test/probe"
+
+    @pytest.mark.asyncio
+    async def test_a_check_that_asked_pypi_caches_the_answer(self, tmp_path):
+        """The next session reads the answer off the disk instead of
+        asking PyPI again."""
+        mock_client = self._make_mock_client({"info": {"version": "0.2.0"}})
+        with (
+            patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
+            patch(
+                "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
+            ),
+        ):
+            await self._checker(tmp_path).check()
+
+        cached = UpdateCache(tmp_path / ".update-check").read(ttl=86400)
+        assert cached is not None
+        assert cached.latest_version == "0.2.0"
 
     @pytest.mark.asyncio
     async def test_network_error(self, tmp_path):
-        cache_file = tmp_path / ".update-check"
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(side_effect=Exception("timeout"))
 
         with (
-            patch("igni_core.core.utils.update_checker.CACHE_FILE", cache_file),
             patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
             patch(
                 "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
             ),
         ):
-            info = await check_for_update()
+            info = await self._checker(tmp_path).check()
             assert info.available is False
             assert info.error is not None
 
@@ -266,16 +324,250 @@ class TestCheckForUpdate:
         }
         cache_file.write_text(json.dumps(cached_data))
 
-        mock_settings = MagicMock()
-        mock_settings.update_check_ttl = 86400  # 24h — cache will be fresh
-        # A bare MagicMock attribute is truthy, which would read as air-gapped.
-        mock_settings.air_gapped = False
-
-        with (
-            patch("igni_core.core.utils.update_checker.CACHE_FILE", cache_file),
-            patch("igni_core.core.utils.update_checker.__version__", "0.1.0"),
-        ):
+        with patch("igni_core.core.utils.update_checker.__version__", "0.1.0"):
             # Should NOT hit the network — cache is fresh
-            info = await check_for_update(settings=mock_settings)
+            info = await self._checker(tmp_path).check()
             assert info.available is True
             assert info.latest_version == "0.3.0"
+
+
+class TestUpdateCheckerBoundaries:
+    """The checker's own edges: the switch that turns it off, the
+    package it asks about, and the promise that it never raises."""
+
+    @pytest.mark.asyncio
+    async def test_a_ttl_of_zero_turns_the_check_off(self, tmp_path):
+        checker = UpdateChecker(
+            settings=Settings(update_check_ttl=0, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+        )
+        with patch("igni_core.core.utils.update_checker.httpx.AsyncClient") as client:
+            info = await checker.check()
+        assert client.called is False
+        assert info.available is False
+        assert info.error is None
+
+    @pytest.mark.asyncio
+    async def test_an_air_gapped_install_asks_nobody(self, tmp_path):
+        checker = UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=True),
+            cache_path=tmp_path / ".update-check",
+        )
+        with patch("igni_core.core.utils.update_checker.httpx.AsyncClient") as client:
+            info = await checker.check()
+        assert client.called is False
+        assert info.available is False
+
+    @pytest.mark.asyncio
+    async def test_the_package_asked_about_is_the_one_installed(self, tmp_path):
+        checker = UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+            package=PackageMetadata(name="igni-core", project_url="https://example.test"),
+        )
+        assert checker.package.name == "igni-core"
+
+    @pytest.mark.asyncio
+    async def test_a_failure_the_check_does_not_know_comes_back_as_unknown(self, tmp_path):
+        """A bug inside the check is reported, not raised: the callers
+        of the banner and the RPC treat a raised check as a crash."""
+        checker = UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+        )
+        with patch.object(
+            UpdateChecker,
+            "_from_pypi",
+            side_effect=RuntimeError("something broke"),
+        ):
+            info = await checker.check()
+        assert info.error is UpdateError.UNKNOWN
+        assert "something broke" in (info.error_detail or "")
+
+    @pytest.mark.asyncio
+    async def test_a_distribution_that_is_not_installed_is_reported_not_raised(self, tmp_path):
+        """The check reads the installed distribution's metadata to know
+        which project to ask about. A distribution that is not installed
+        makes that probe raise — and the check's promise is that it never
+        raises, so the failure comes back as a typed error instead."""
+        checker = UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+        )
+        with (
+            patch.object(
+                PackageMetadata,
+                "load",
+                side_effect=PackageNotFoundError("igni-core"),
+            ),
+            patch("igni_core.core.utils.update_checker.httpx.AsyncClient") as client,
+        ):
+            info = await checker.check()
+        assert client.called is False
+        assert info.available is False
+        assert info.error is UpdateError.UNKNOWN
+        assert "igni-core" in (info.error_detail or "")
+
+    @pytest.mark.asyncio
+    async def test_a_cancellation_is_not_a_failed_check(self, tmp_path):
+        checker = UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+        )
+        with (
+            patch.object(UpdateChecker, "_from_pypi", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await checker.check()
+
+    @pytest.mark.asyncio
+    async def test_a_cached_version_that_is_not_newer_says_nothing_is_newer(self, tmp_path):
+        cache_file = tmp_path / ".update-check"
+        cache_file.write_text(json.dumps({"latest_version": "0.0.1", "checked_at": time.time()}))
+        checker = UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+        )
+        with patch("igni_core.core.utils.update_checker.__version__", "0.1.0"):
+            info = await checker.check()
+            assert info.available is False
+            assert info.error is None
+
+
+class TestUpdateCheckerPyPIFailures:
+    """PyPI can fail four ways. Each has its own answer, so the
+    caller can tell a rate limit from a dead network."""
+
+    @staticmethod
+    def _client(response_data=None, *, raises=None, json_raises=None, status_raises=None):
+        """A mock httpx client whose ``get`` behaves as asked."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock(side_effect=status_raises)
+        mock_response.json.side_effect = json_raises
+        mock_response.json.return_value = response_data
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=raises, return_value=mock_response)
+        return mock_client
+
+    @staticmethod
+    def _checker(tmp_path, **kwargs):
+        return UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+            **kwargs,
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_http_status_error_is_reported_as_such(self, tmp_path):
+        request = httpx.Request("GET", "https://pypi.org/pypi/igni-core/json")
+        status = httpx.HTTPStatusError(
+            "server said no",
+            request=request,
+            response=httpx.Response(503, request=request),
+        )
+        mock_client = self._client(status_raises=status)
+        with patch(
+            "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
+        ):
+            info = await self._checker(tmp_path).check()
+        assert info.error is UpdateError.HTTP_STATUS
+        assert "server said no" in (info.error_detail or "")
+
+    @pytest.mark.asyncio
+    async def test_a_network_failure_is_reported_as_a_network_failure(self, tmp_path):
+        mock_client = self._client(raises=httpx.ReadTimeout("timeout"))
+        with patch(
+            "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
+        ):
+            info = await self._checker(tmp_path).check()
+        assert info.error is UpdateError.NETWORK
+        assert info.available is False
+
+    @pytest.mark.asyncio
+    async def test_a_body_that_is_not_json_is_reported_as_a_parse_failure(self, tmp_path):
+        mock_client = self._client(json_raises=ValueError("not json"))
+        with patch(
+            "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
+        ):
+            info = await self._checker(tmp_path).check()
+        assert info.error is UpdateError.PARSE
+
+    @pytest.mark.asyncio
+    async def test_a_body_of_the_wrong_shape_is_reported_as_a_parse_failure(self, tmp_path):
+        """PyPI's envelope has an ``info`` object. If that ever comes
+        back as something else, the answer is a parse failure — not
+        a crash out of the check."""
+        mock_client = self._client({"info": "not an object"})
+        with patch(
+            "igni_core.core.utils.update_checker.httpx.AsyncClient", return_value=mock_client
+        ):
+            info = await self._checker(tmp_path).check()
+        assert info.error is UpdateError.PARSE
+
+
+class TestUpdateCacheFailures:
+    """A broken cache is a cache miss, not a broken check."""
+
+    def test_a_cache_file_that_cannot_be_read_is_a_miss(self, tmp_path):
+        # A directory where a file is expected: the read fails.
+        assert UpdateCache(tmp_path).read(ttl=60) is None
+
+    def test_a_cache_file_that_cannot_be_parsed_is_a_miss(self, tmp_path):
+        path = tmp_path / ".update-check"
+        path.write_text("this is not json")
+        assert UpdateCache(path).read(ttl=60) is None
+
+    def test_a_cache_that_cannot_be_written_is_swallowed(self, tmp_path):
+        """A full disk or a read-only home must not break the check."""
+        UpdateCache(tmp_path).write(UpdateCacheEntry(latest_version="9.9.9"))
+
+    def test_a_written_entry_is_fresh_however_old_it_was(self, tmp_path):
+        """The TTL is measured from when the entry was written, not
+        from when it was built — otherwise an entry built long ago
+        and written now is born stale."""
+        path = tmp_path / ".update-check"
+        UpdateCache(path).write(
+            UpdateCacheEntry(latest_version="9.9.9", checked_at=time.time() - 10_000)
+        )
+        entry = UpdateCache(path).read(ttl=60)
+        assert entry is not None
+        assert entry.latest_version == "9.9.9"
+
+
+class TestUpdateCheckerPackage:
+    """The installed package is probed once, when it is asked for."""
+
+    def test_the_default_cache_path_is_in_the_config_directory(self):
+        assert default_cache_path() == Path.home() / CONFIG_DIR / ".update-check"
+
+    def test_the_package_is_probed_only_when_it_is_asked_for(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        calls: list[str] = []
+
+        def _load(cls: type[PackageMetadata]) -> PackageMetadata:
+            calls.append(cls.__name__)
+            return PackageMetadata(name="igni-probe", project_url="https://example.test/probe")
+
+        monkeypatch.setattr(PackageMetadata, "load", classmethod(_load))
+
+        checker = UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+        )
+        assert calls == []
+
+        assert checker.package.name == "igni-probe"
+        assert checker.package.name == "igni-probe"
+        assert calls == ["PackageMetadata"]
+
+    def test_an_injected_package_is_the_one_asked_about(self, tmp_path):
+        checker = UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+            package=PackageMetadata(name="igni-probe-package"),
+        )
+        assert checker.package.name == "igni-probe-package"

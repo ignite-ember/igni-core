@@ -21,14 +21,18 @@ from pathlib import Path
 import pytest
 
 from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.prompts import PromptFragments, PromptLoader
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.extensions.contributions import ExtensionContributions
+from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.impact import ExtensionImpact, IgniCommands, ImpactResolver
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry
+from tests.siblings import IGNI_SERVER
 
 REPO = Path(__file__).resolve().parents[1]
 LISTED = REPO / "docs" / "igni-commands.json"
-SERVER_COPY = REPO.parent / "igni__server" / "app" / "services" / "identity" / "igni_commands.json"
+SERVER_COPY = IGNI_SERVER / "app" / "services" / "identity" / "igni_commands.json"
 
 MANIFEST = {
     "id": "acme.tidy",
@@ -49,7 +53,7 @@ def test_the_list_is_what_the_dispatcher_answers():
     assert IgniCommands.load(LISTED) == IgniCommands.of(CommandHandler.builtin_names())
 
 
-@pytest.mark.skipif(not SERVER_COPY.is_file(), reason="no igni__server checkout beside this one")
+@pytest.mark.skipif(not SERVER_COPY.is_file(), reason=f"no igni-server checkout at {IGNI_SERVER}")
 def test_igni_servers_copy_is_the_same():
     assert IgniCommands.load(SERVER_COPY) == IgniCommands.load(LISTED)
 
@@ -74,6 +78,9 @@ def test_the_host_applies_it_without_a_decision():
         registry=registry,
         rpc=None,
         igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
+        prompt_loader=PromptLoader(PromptFragments()),
+        prompts=PromptContributions(),
+        hooks=ExtensionHooks(registry=registry),
     )
     registry.install(ExtensionManifest.model_validate(MANIFEST))
     contributions.resolve()

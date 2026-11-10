@@ -1,23 +1,16 @@
-"""A group's ``settings`` entries can reach ``Settings`` through the facade.
+"""A group's ``settings`` entries reach ``Settings`` through ``SettingsLoader.load``.
 
 ``GroupPolicyTier`` merges a pack's ``settings`` entries between the CLI and
-the managed-policy file. ``SettingsLoader.load`` has taken a
-``group_policy_fetcher`` since the tier was written — but ``load_settings``,
-the facade every production caller uses, dropped the argument on the floor. So
-even a caller that *wanted* org policy applied had no way to ask for it.
+the managed-policy file, from the ``group_policy_fetcher`` the caller passes.
 
-The first class below pins that seam. Before that fix
-``load_settings(group_policy_fetcher=...)`` raised ``TypeError: load_settings()
-got an unexpected keyword argument``.
-
-The rest pins the other half — that *production* uses it. For a long time
+The first class below pins that seam. The rest pins the other half — that *production* uses it. For a long time
 nothing did, and nothing could: ``GroupPolicyCache.materialize`` never wrote
 ``kind == "settings"`` entries to disk, so between one process and the next
 there was nothing for a fetcher to read. Now the cache persists the pack as
 igni server signed it (``pack.jws``), ``CachedSettingsFetcher`` verifies and
 reads it, and both
-entry points that build a real ``Settings`` — ``BackendApp.run`` and
-``load_settings_from_options`` — construct one. The end-to-end claim being
+entry points that build a real ``Settings`` — ``BackendSettingsLoader.load`` and
+``CliSettingsLoader`` — construct one. The end-to-end claim being
 tested is the one an admin makes: publish ``{"learning": {"enabled": false}}``
 and the session comes up with learning off.
 
@@ -34,14 +27,16 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from igni_core.core.config.group_policy import (
-    CachedSettingsFetcher,
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyPack,
-    PackTrust,
-)
-from igni_core.core.config.settings import load_settings
+from igni_core.backend.settings_loader import BackendSettingsLoader
+from igni_core.core.config.cli_overrides import CliOverrides, PermissionOverrides
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
+from igni_core.core.config.group_policy.trust import PackTrust
+from igni_core.core.config.settings_loader import SettingsLoader
 from tests.group_policy_signing import ISSUER, sign_in, store
 
 
@@ -67,7 +62,7 @@ class TestTheFacadeCarriesTheFetcher:
         """An admin turning learning off for a group."""
         pack = _pack({"learning": {"enabled": False}})
 
-        settings = load_settings(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
+        settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=lambda: pack)
 
         assert settings.learning.enabled is False
 
@@ -76,8 +71,8 @@ class TestTheFacadeCarriesTheFetcher:
         org policy — and the facade has to preserve it, not just the plan."""
         pack = _pack({"permissions": {"shell_execute": "deny"}})
 
-        settings = load_settings(
-            cli_overrides={"permissions": {"shell_execute": "allow"}},
+        settings = SettingsLoader.load(
+            cli_overrides=CliOverrides(permissions=PermissionOverrides(shell_execute="allow")),
             project_dir=tmp_path,
             group_policy_fetcher=lambda: pack,
         )
@@ -89,8 +84,8 @@ class TestTheFacadeCarriesTheFetcher:
         facade rather than by constructing the plan by hand."""
         pack = _pack({"permissions": {"shell_execute": "allow"}})
 
-        settings = load_settings(
-            cli_overrides={"permissions": {"shell_execute": "deny"}},
+        settings = SettingsLoader.load(
+            cli_overrides=CliOverrides(permissions=PermissionOverrides(shell_execute="deny")),
             project_dir=tmp_path,
             group_policy_fetcher=lambda: pack,
         )
@@ -98,14 +93,14 @@ class TestTheFacadeCarriesTheFetcher:
         assert settings.permissions.shell_execute == "deny"
 
     def test_no_group_changes_nothing(self, tmp_path: Path):
-        assert load_settings(
+        assert SettingsLoader.load(
             project_dir=tmp_path, group_policy_fetcher=lambda: None
         ).learning.enabled
 
     def test_a_disabled_entry_is_ignored(self, tmp_path: Path):
         pack = _pack({"learning": {"enabled": False}}, enabled=False)
 
-        assert load_settings(
+        assert SettingsLoader.load(
             project_dir=tmp_path, group_policy_fetcher=lambda: pack
         ).learning.enabled
 
@@ -155,7 +150,7 @@ def _publish(payload: dict, *, group_name: str = "Platform", version: int | None
 
 def _fetcher() -> CachedSettingsFetcher:
     """Built the way production builds it: from the local-only settings."""
-    return CachedSettingsFetcher.for_settings(load_settings())
+    return CachedSettingsFetcher.for_settings(SettingsLoader.load())
 
 
 class TestTheCachedFetcher:
@@ -165,7 +160,7 @@ class TestTheCachedFetcher:
         """SWP-23, end to end: the published policy reaches ``Settings``."""
         _publish({"learning": {"enabled": False}})
 
-        settings = load_settings(project_dir=tmp_path, group_policy_fetcher=_fetcher())
+        settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=_fetcher())
 
         assert settings.learning.enabled is False
 
@@ -196,7 +191,7 @@ class TestTheCachedFetcher:
         fetcher = _fetcher()
         first = fetcher()
 
-        (cache_dir / GroupPolicyCache.SIGNED_PACK_FILE).unlink()
+        (cache_dir / GroupPolicyLayout.SIGNED_PACK_FILE).unlink()
 
         assert fetcher() is first
 
@@ -206,7 +201,7 @@ class TestTheCachedFetcher:
         _publish({"learning": {"enabled": False}}, version=1)
         _publish({}, version=2)
 
-        settings = load_settings(project_dir=tmp_path, group_policy_fetcher=_fetcher())
+        settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=_fetcher())
 
         assert settings.learning.enabled is True
 
@@ -215,7 +210,7 @@ class TestTheCachedFetcher:
         would be a second thing to forge."""
         cache_dir = _publish({"learning": {"enabled": False}})
 
-        assert not (cache_dir / GroupPolicyCache.SETTINGS_FILE).exists()
+        assert not (cache_dir / GroupPolicyLayout.LEGACY_SETTINGS_FILE).exists()
 
 
 class TestItDegradesInsteadOfFailing:
@@ -226,30 +221,32 @@ class TestItDegradesInsteadOfFailing:
         fetcher = _fetcher()
 
         assert fetcher() is None
-        assert load_settings(project_dir=tmp_path, group_policy_fetcher=fetcher).learning.enabled
+        assert SettingsLoader.load(
+            project_dir=tmp_path, group_policy_fetcher=fetcher
+        ).learning.enabled
 
     def test_a_data_directory_that_does_not_exist(self, tmp_path: Path):
-        fetcher = CachedSettingsFetcher(tmp_path / "nowhere")
+        fetcher = CachedSettingsFetcher(GroupPolicyCache.for_data_dir(tmp_path / "nowhere"))
 
         assert fetcher() is None
-        assert load_settings(project_dir=tmp_path, group_policy_fetcher=fetcher)
+        assert SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=fetcher)
 
     def test_a_truncated_pack_is_reported_not_raised(self, tmp_path: Path, caplog):
         """A crash mid-write leaves half a JWS. Settings still load, without
         the policy, and the log says the pack was ignored."""
         cache_dir = _publish({"learning": {"enabled": False}})
-        path = cache_dir / GroupPolicyCache.SIGNED_PACK_FILE
+        path = cache_dir / GroupPolicyLayout.SIGNED_PACK_FILE
         path.write_text(path.read_text()[:40], encoding="utf-8")
 
         with caplog.at_level(logging.WARNING, logger="igni_core.core.config.group_policy"):
-            settings = load_settings(project_dir=tmp_path, group_policy_fetcher=_fetcher())
+            settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=_fetcher())
 
         assert settings.learning.enabled is True
         assert any("ignored" in r.getMessage() for r in caplog.records)
 
     def test_a_cache_holding_a_list_is_not_a_policy(self, tmp_path: Path):
         cache_dir = _publish({"learning": {"enabled": False}})
-        (cache_dir / GroupPolicyCache.SIGNED_PACK_FILE).write_text("[1, 2, 3]", encoding="utf-8")
+        (cache_dir / GroupPolicyLayout.SIGNED_PACK_FILE).write_text("[1, 2, 3]", encoding="utf-8")
 
         assert _fetcher()() is None
 
@@ -259,7 +256,7 @@ class TestItDegradesInsteadOfFailing:
         cache_dir = _publish({"learning": {"enabled": False}})
         (cache_dir / "pack_meta.json").unlink()
 
-        settings = load_settings(project_dir=tmp_path, group_policy_fetcher=_fetcher())
+        settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=_fetcher())
 
         assert settings.learning.enabled is False
 
@@ -270,7 +267,7 @@ class TestItDegradesInsteadOfFailing:
             encoding="utf-8",
         )
 
-        settings = load_settings(project_dir=tmp_path, group_policy_fetcher=_fetcher())
+        settings = SettingsLoader.load(project_dir=tmp_path, group_policy_fetcher=_fetcher())
 
         assert settings.learning.enabled is False
 
@@ -279,65 +276,52 @@ class TestItDegradesInsteadOfFailing:
         hands back an object. Better the default directory than a coerced
         path nobody writes to."""
         _publish({"learning": {"enabled": False}})
-        trust = PackTrust.from_settings(load_settings())
+        trust = PackTrust.from_settings(SettingsLoader.load())
 
-        assert CachedSettingsFetcher(object(), trust=trust)() is not None
+        assert CachedSettingsFetcher(GroupPolicyCache.for_data_dir(object()), trust)() is not None
 
 
 class TestTheEntryPointsBuildOne:
     """The decision this fix had to make: *where* the fetcher is built."""
 
     def test_the_backend_applies_group_policy_at_boot(self, tmp_path: Path):
-        """``BackendApp`` — the process that owns the session, holds the
+        """The backend — the process that owns the session, holds the
         token, and starts once. This is the settings object handed to
         ``BackendServer`` and to every runtime in the pool."""
-        from igni_core.backend.app import BackendApp
-
         _publish({"learning": {"enabled": False}})
-        app = BackendApp(
-            socket_path=None,
-            ws_port=None,
-            project_dir=tmp_path,
-            resume_session_id=None,
-            additional_dirs=None,
-        )
 
-        assert app._load_settings_with_group_policy().learning.enabled is False
+        assert (
+            BackendSettingsLoader(project_dir=tmp_path, gate=RunGate()).load().learning.enabled
+            is False
+        )
 
     def test_the_backend_still_boots_without_a_policy(self, tmp_path: Path):
-        from igni_core.backend.app import BackendApp
-
-        app = BackendApp(
-            socket_path=None,
-            ws_port=None,
-            project_dir=tmp_path,
-            resume_session_id=None,
-            additional_dirs=None,
+        assert (
+            BackendSettingsLoader(project_dir=tmp_path, gate=RunGate()).load().learning.enabled
+            is True
         )
-
-        assert app._load_settings_with_group_policy().learning.enabled is True
 
     def test_the_cli_applies_group_policy_too(self):
         """``igni -m`` runs a real session in this process, so a policy that
         held in the app and not on the command line would be half-enforced."""
-        from igni_core.cli.invocation import load_settings_from_options
         from igni_core.cli.options import CliOptions
+        from igni_core.cli.run_settings import CliSettingsLoader
 
         _publish({"learning": {"enabled": False}})
 
-        assert load_settings_from_options(CliOptions()).learning.enabled is False
+        assert CliSettingsLoader(CliOptions()).load().learning.enabled is False
 
     def test_a_group_still_cannot_loosen_what_the_cli_denied(self):
         """The ratchet holds through the production path, not just the
         hand-built plan — this is the combination an operator relies on."""
-        from igni_core.cli.invocation import load_settings_from_options
         from igni_core.cli.options import CliOptions
+        from igni_core.cli.run_settings import CliSettingsLoader
         from igni_core.core.config.permission_eval import PermissionDecision
         from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 
         _publish({"permissions": {"shell_execute": "allow", "read_only": False}})
 
-        settings = load_settings_from_options(CliOptions(read_only=True))
+        settings = CliSettingsLoader(CliOptions(read_only=True)).load()
         evaluator = PermissionEvaluator.from_permissions(settings.permissions)
 
         assert settings.permissions.read_only is True

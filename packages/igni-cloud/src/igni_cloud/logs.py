@@ -4,7 +4,8 @@ In the cloud (:class:`igni_cloud.layer.CloudLayer`) nothing writes a log
 file: the node collects the VM's standard output. Every logger that
 writes a file on the desktop writes here instead, one JSON object per
 line — ``ts``, ``level``, ``logger``, ``message``, and whatever
-structured ``fields`` a record carries (the audit log's entries, say).
+structured :class:`~igni_core.core.log_fields.LogFields` a record
+carries (the audit log's entries, say).
 
 Written by a thread of its own, never by the code that logs: in a VM
 standard output is the serial console, where each byte is a trap to the
@@ -33,27 +34,53 @@ import queue
 import sys
 import threading
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import ClassVar
+
+from pydantic import BaseModel, ConfigDict
+
+from igni_core.core.log_fields import LogFields
+
+
+class LogLine(BaseModel):
+    """One record as its line: who logged what, when, and the fields it carries."""
+
+    model_config = ConfigDict(frozen=True)
+
+    #: ISO 8601, ``+00:00``: the record's own time, not the writer's.
+    ts: str
+    level: str
+    logger: str
+    message: str
+    fields: LogFields | None = None
+    exception: str | None = None
+
+    def to_json(self) -> str:
+        """The line: ``ts``, ``level``, ``logger``, ``message``, then each
+        field section as a key of its own, then ``exception`` if there was one."""
+        line = self.model_dump(mode="json", include={"ts", "level", "logger", "message"})
+        if self.fields is not None:
+            line.update(self.fields.sections)
+        if self.exception is not None:
+            line["exception"] = self.exception
+        return json.dumps(line, default=str)
 
 
 class JsonLineFormatter(logging.Formatter):
     """One JSON object per record."""
 
     def format(self, record: logging.LogRecord) -> str:
-        line: dict[str, Any] = {
-            "ts": datetime.fromtimestamp(record.created, UTC).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-        }
-        fields = getattr(record, "fields", None)
-        if isinstance(fields, dict):
-            line.update(fields)
         if record.exc_info:
-            line["exception"] = self.formatException(record.exc_info)
-        elif record.exc_text:
-            line["exception"] = record.exc_text
-        return json.dumps(line, default=str)
+            exception: str | None = self.formatException(record.exc_info)
+        else:
+            exception = record.exc_text or None
+        return LogLine(
+            ts=datetime.fromtimestamp(record.created, UTC).isoformat(),
+            level=record.levelname,
+            logger=record.name,
+            message=record.getMessage(),
+            fields=LogFields.carried_by(record),
+            exception=exception,
+        ).to_json()
 
 
 class QueuedRecords(logging.handlers.QueueHandler):
@@ -100,63 +127,65 @@ class QueuedRecords(logging.handlers.QueueHandler):
 
 
 class StdoutLog:
-    """The process's one standard-output handler, and the loggers it serves."""
+    """A standard-output handler, and the loggers it serves.
 
-    _lock: ClassVar[threading.Lock] = threading.Lock()
-    _handler: ClassVar[QueuedRecords | None] = None
-    _queue: ClassVar[queue.Queue[logging.LogRecord] | None] = None
-    _writer: ClassVar[logging.handlers.QueueListener | None] = None
+    The cloud layer holds the process's one (:class:`igni_cloud.layer.CloudLayer`)
+    and hands it to the guest contract, which holds the writer after a restore.
+    """
 
-    @classmethod
-    def handler(cls) -> logging.Handler:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._handler: QueuedRecords | None = None
+        self._queue: queue.Queue[logging.LogRecord] | None = None
+        self._writer: logging.handlers.QueueListener | None = None
+
+    def handler(self) -> logging.Handler:
         """What loggers get: a handler that queues; a thread writes the line."""
-        with cls._lock:
-            if cls._handler is None:
+        with self._lock:
+            if self._handler is None:
                 stream = logging.StreamHandler(sys.stdout)
                 stream.setFormatter(JsonLineFormatter())
                 records: queue.Queue[logging.LogRecord] = queue.Queue()
                 writer = logging.handlers.QueueListener(records, stream)
                 writer.start()
-                cls._queue, cls._writer = records, writer
-                cls._handler = QueuedRecords(records)
-            return cls._handler
+                self._queue, self._writer = records, writer
+                self._handler = QueuedRecords(records)
+                # What was logged last is written before the process ends.
+                atexit.register(self.reset)
+            return self._handler
 
-    @classmethod
-    def hold(cls) -> None:
+    def hold(self) -> None:
         """Queue nothing for the writer until :meth:`release` (after a restore's first answer)."""
-        if cls._handler is not None:
-            cls._handler.hold_writer()
+        if self._handler is not None:
+            self._handler.hold_writer()
 
-    @classmethod
-    def release(cls) -> None:
+    def release(self) -> None:
         """Let the writer have what was held."""
-        if cls._handler is not None:
-            cls._handler.wake_writer()
+        if self._handler is not None:
+            self._handler.wake_writer()
 
-    @classmethod
-    def flush(cls) -> None:
+    def flush(self) -> None:
         """Until every record queued so far is written."""
-        records = cls._queue
+        records = self._queue
         if records is not None:
             records.join()
 
-    @classmethod
-    def reset(cls) -> None:
+    def reset(self) -> None:
         """Write what is queued and forget the handler, so the next one
         writes to the current ``sys.stdout`` (tests capture it)."""
-        with cls._lock:
-            if cls._handler is not None:
-                cls._handler.wake_writer()
-            writer = cls._writer
-            cls._handler = cls._queue = cls._writer = None
+        with self._lock:
+            if self._handler is not None:
+                self._handler.wake_writer()
+            writer = self._writer
+            self._handler = self._queue = self._writer = None
         if writer is not None:
+            atexit.unregister(self.reset)
             writer.stop()
 
-    @classmethod
-    def attach(cls, name: str, level: int = logging.INFO) -> logging.Logger:
+    def attach(self, name: str, level: int = logging.INFO) -> logging.Logger:
         """Send ``name``'s records to standard output (once)."""
         target = logging.getLogger(name)
-        handler = cls.handler()
+        handler = self.handler()
         if handler not in target.handlers:
             target.addHandler(handler)
         if target.level == logging.NOTSET or target.level > level:
@@ -164,8 +193,4 @@ class StdoutLog:
         return target
 
 
-# What was logged last is written before the process ends.
-atexit.register(StdoutLog.reset)
-
-
-__all__ = ["JsonLineFormatter", "QueuedRecords", "StdoutLog"]
+__all__ = ["JsonLineFormatter", "LogLine", "QueuedRecords", "StdoutLog"]

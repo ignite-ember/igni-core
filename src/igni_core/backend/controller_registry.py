@@ -1,31 +1,18 @@
-"""Central registry for every ``BackendServer`` sub-controller.
-
-Extracted from :mod:`igni_core.backend.server` — the previous
-composition-root file carried 17 near-identical lazy-init
-``@property`` blocks (one per controller, ~15 LoC each) with a
-uniform ``getattr(self, '_ctrl', None) or construct`` shape.
-That's a class-shaped concern hiding as a copy-paste in
-``BackendServer``.
-
-The refactor:
+"""Builds every ``BackendServer`` sub-controller, once, eagerly.
 
 * :class:`Controllers` — a plain attribute-holder class with one
-  slot per controller (mcp / hitl / context / auth / …). Built
-  eagerly by :meth:`ControllerRegistry.build`.
-* :class:`ControllerRegistry` — the builder. Constructs the full
-  :class:`Controllers` bag for a production ``BackendServer`` and
-  exposes :meth:`for_partial_init` — the ONE tolerance path for
-  ``__new__``-bypass test fixtures. Any controller whose
-  constructor tolerates missing state (``ContextController``,
-  ``LoopController``, …) is still built; the tests get identical
-  behaviour without every property re-implementing the
-  ``getattr`` guard.
+  slot per controller (mcp / hitl / context / auth / …).
+* :class:`ControllerRegistry` — the builder. Wires each controller
+  to its collaborators (other controllers, stores, the message
+  queue) directly; no controller holds a reference back to
+  ``BackendServer``.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.backend.hitl_controller import HitlController
 from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.marketplace_controller import MarketplaceController
@@ -48,12 +35,19 @@ from igni_core.backend.server_search import SearchController
 from igni_core.backend.server_sessions import SessionsController
 from igni_core.backend.team_wiring import TeamWiring
 from igni_core.backend.visualization_action_bus import VisualizationActionBus
+from igni_core.core.auth.discovery import ServerDiscovery
+from igni_core.core.auth.portal_client import PortalClient
+from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.meta import PackMetaStore
+from igni_core.core.config.models import ModelRegistry
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 if TYPE_CHECKING:
-    from igni_core.backend.server import BackendServer
     from igni_core.core.config.settings import Settings
     from igni_core.core.session import Session
     from igni_core.core.session.pending_messages import PendingMessageStore
+    from igni_core.core.session.queued_messages import DurableMessageQueue
     from igni_core.core.session.session_preferences import SessionPreferencesStore
 
 
@@ -75,6 +69,7 @@ class Controllers:
         hitl: HitlController,
         context: ContextController,
         auth: AuthController,
+        group_policy: GroupPolicySync,
         files: FilesController,
         search: SearchController,
         panels: PanelsController,
@@ -96,6 +91,7 @@ class Controllers:
         self.hitl = hitl
         self.context = context
         self.auth = auth
+        self.group_policy = group_policy
         self.files = files
         self.search = search
         self.panels = panels
@@ -115,34 +111,40 @@ class Controllers:
 
 
 class ControllerRegistry:
-    """Builds the :class:`Controllers` bag for a ``BackendServer``.
-
-    Production path uses :meth:`build`; the test-bypass path uses
-    :meth:`for_partial_init` — a single classmethod replaces the
-    17 duplicated ``getattr`` guards that used to live on
-    ``BackendServer``'s @property blocks.
-    """
+    """Builds the :class:`Controllers` bag for a ``BackendServer``."""
 
     @classmethod
     def build(
         cls,
-        backend: BackendServer,
+        *,
         session: Session,
         settings: Settings,
         hitl_store: PendingRequirementsStore,
         pending_store: PendingMessageStore,
         session_prefs: SessionPreferencesStore,
         user_config_store: Any,
-        hitl_tracer: HITLTracer,
+        hitl_tracer: HITLTracer | None,
+        message_queue: DurableMessageQueue | None,
+        supervisor: ProcessSupervisor,
+        gate: RunGate,
     ) -> Controllers:
-        """Full production wiring — every controller built eagerly."""
+        """Full production wiring — every controller built eagerly.
+
+        ``supervisor`` is the supervisor the backend process shares —
+        the registry the watcher panel reads and the foreground slot
+        the cancel path kills. It is injected rather than looked up,
+        so every controller of one backend process talks to the same
+        one. ``gate`` is injected for the same reason: it is the one
+        gate of the process, and every controller that starts an agent
+        run asks it before it starts one.
+        """
         # ── Foundation controllers (session-only deps) ──────────────
         mcp = McpController(session)
         files = FilesController(session)
         search = SearchController(session)
         panels = PanelsController(session)
-        processes = ProcessesController()
-        rehydrate = RehydrateController(session)
+        processes = ProcessesController(supervisor)
+        rehydrate = RehydrateController(session, supervisor)
         plan_snapshots = PlanSnapshotBuilder(session)
         viz_actions = VisualizationActionBus(session)
         team_wiring = TeamWiring(session)
@@ -158,9 +160,12 @@ class ControllerRegistry:
 
         # RunController owns the run pipeline (lock, task, checkpoint).
         runs = RunController(
-            backend=backend,
             session=session,
             pending_store=pending_store,
+            message_queue=message_queue,
+            stream_factory=hitl.stream_with_subagent,
+            supervisor=supervisor,
+            gate=gate,
         )
 
         # Context needs pending_store for the crash-survival RPC.
@@ -168,57 +173,64 @@ class ControllerRegistry:
             session=session,
             settings=settings,
             pending_store=pending_store,
+            models=ModelRegistry(settings),
+            pack_meta=PackMetaStore(GroupPolicyLayout.for_data_dir(settings.storage.data_dir)),
         )
 
-        # Sessions needs a chat-history provider — call through the
-        # backend's public wire method so the wire dumping continues
-        # to happen at the same boundary.
+        chat_history = ChatHistoryRebuilder(session=session)
         sessions = SessionsController(
             session=session,
-            chat_history_provider=backend.get_chat_history,
+            chat_history_provider=chat_history.rebuild,
         )
 
-        # Auth needs a status provider — call through the backend's
-        # public wire method (context.get_status behind the facade).
+        # One portal client, shared: sign-in and the group-policy fetch
+        # must talk to the same server. ``portal_url`` is passed through
+        # rather than left to the derivation, which only rewrites host
+        # labels and so cannot express a portal that differs from the API
+        # by port; empty keeps the derivation.
+        portal = PortalClient(api_url=settings.api_url, portal_url=settings.portal_url or None)
+        group_policy = GroupPolicySync(session=session, settings=settings, portal=portal)
         auth = AuthController(
             session=session,
             settings=settings,
-            status_provider=backend.get_status,
+            status_provider=context.get_status,
+            portal=portal,
+            group_policy=group_policy,
+            user_config_store=user_config_store,
+            server_discovery=ServerDiscovery(),
         )
+        # Cold start: refresh from a stored token and start the timer.
+        group_policy.start()
 
         # Loop reads settings for the pump.
         loop = LoopController(
             session=session,
             settings=settings,
+            as_run=runs.run_unstreamed,
+            gate=gate,
         )
 
-        # Lifecycle composes multiple concerns (rehydrate + runs +
-        # scheduler + backend).
         lifecycle = LifecycleController(
             session=session,
             pending_store=pending_store,
             runs=runs,
             rehydrate=rehydrate,
             scheduler_stop=loop.scheduler.stop,
-            backend=backend,
+            message_queue=message_queue,
         )
 
-        # ModelSwitcher used to inline-import UserConfigStore inside
-        # its property. That import is now hoisted to the bootstrap
-        # so the class boundary carries the dependency explicitly.
         model_switcher = ModelSwitcher(
             session=session,
             session_prefs=session_prefs,
             user_config_store=user_config_store,
         )
 
-        chat_history = ChatHistoryRebuilder(session=session)
-
         return Controllers(
             mcp=mcp,
             hitl=hitl,
             context=context,
             auth=auth,
+            group_policy=group_policy,
             files=files,
             search=search,
             panels=panels,

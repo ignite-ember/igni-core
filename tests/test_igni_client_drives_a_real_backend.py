@@ -29,7 +29,7 @@ from agno.models.message import Message
 from agno.models.response import ModelResponse
 
 from igni_core.backend.app import BackendApp
-from igni_core.backend.schemas_rpc import LifecyclePhase
+from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.core.config.models import ModelRegistry
 from tests.siblings import IGNI_SDK, needs_sdk, skip_module_without_sdk
 
@@ -130,17 +130,6 @@ async def _until(predicate, timeout: float = 30) -> None:
         await asyncio.sleep(0.02)
 
 
-def _serving(app: BackendApp) -> bool:
-    ws = app._transport_builder.ws_transport
-    supervisor = app._supervisor
-    return (
-        ws is not None
-        and app._orchestrator is not None
-        and supervisor is not None
-        and supervisor.phase is LifecyclePhase.RUNNING
-    )
-
-
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch) -> Path:
     (tmp_path / ".igni").mkdir()
@@ -153,17 +142,11 @@ def project(tmp_path: Path, monkeypatch) -> Path:
 
 @POSIX_ONLY
 async def test_igni_client_drives_a_session_on_the_real_backend(project: Path) -> None:
-    app = BackendApp(
-        socket_path=None,
-        ws_port=0,
-        project_dir=project,
-        resume_session_id=None,
-        additional_dirs=None,
-    )
+    app = BackendApp(BackendLaunch(ws_port=0, project_dir=project))
     with _signal_handlers_restored():
         running = asyncio.create_task(app.run())
         try:
-            await _until(lambda: _serving(app) or running.done())
+            await _until(lambda: app.serving_port is not None or running.done())
             assert not running.done(), running.exception()
 
             async with IgniClient(Local(project_dir=project)) as igni:
@@ -205,12 +188,12 @@ async def test_igni_client_drives_a_session_on_the_real_backend(project: Path) -
                 # The rest of the surface, as igni answers it.
                 listed = await igni.sessions.list()
                 assert session.id in [entry.session_id for entry in listed]
-                catalogue = await igni.models.list()
-                assert isinstance(catalogue.models, dict)
-                assert isinstance(await igni.rpc("get_session_id"), str)
+                catalogue = await session.models.list()
+                assert isinstance(catalogue.registry, dict)
+                assert isinstance(await session.current_id(), str)
         finally:
             if not running.done():
-                app._supervisor.request_shutdown()
+                app.request_shutdown()
                 await asyncio.wait_for(running, 30)
 
 
@@ -225,38 +208,31 @@ async def _approve_the_file(igni: IgniClient) -> None:
 async def test_a_program_approves_only_with_the_token_the_window_made(project: Path) -> None:
     # Started as the desktop app starts it: with a launch secret, which only
     # igni's window holds. The lockfile carries a program's token instead.
-    app = BackendApp(
-        socket_path=None,
-        ws_port=0,
-        project_dir=project,
-        resume_session_id=None,
-        additional_dirs=None,
-        ws_token="the-launch-secret",
-    )
+    app = BackendApp(BackendLaunch(ws_port=0, project_dir=project, ws_token="the-launch-secret"))
     with _signal_handlers_restored():
         running = asyncio.create_task(app.run())
         try:
-            await _until(lambda: _serving(app) or running.done())
+            await _until(lambda: app.serving_port is not None or running.done())
             assert not running.done(), running.exception()
-            ws = app._transport_builder.ws_transport
-            assert ws is not None
+            port = app.serving_port
+            assert port is not None
 
             # Through the lockfile — as the agent could — it runs, but approves nothing.
             async with IgniClient(Local(project_dir=project)) as igni:
                 with pytest.raises(NotAllowed, match="approver token"):
                     await _approve_the_file(igni)
                 with pytest.raises(Exception, match="only igni's window"):
-                    await igni.rpc("mint_approver_token")
+                    await igni.approvers.mint_token()
             assert not (project / "done.txt").exists()
 
             # igni's window makes an approver token; with it, the program approves.
-            window = Local(url=f"ws://127.0.0.1:{ws.port}", token="the-launch-secret")
+            window = Local(url=f"ws://127.0.0.1:{port}", token="the-launch-secret")
             async with IgniClient(window) as igni:
-                token = (await igni.rpc("mint_approver_token"))["token"]
+                token = (await igni.approvers.mint_token()).token
             async with IgniClient(Local(project_dir=project, approver_token=token)) as igni:
                 await _approve_the_file(igni)
             assert (project / "done.txt").exists()
         finally:
             if not running.done():
-                app._supervisor.request_shutdown()
+                app.request_shutdown()
                 await asyncio.wait_for(running, 30)

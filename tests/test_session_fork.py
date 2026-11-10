@@ -17,6 +17,7 @@ import pytest
 
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.core.session.persistence import SessionPersistence
+from igni_core.core.session.schemas import ForkResult
 from igni_core.protocol.messages import CommandAction
 
 
@@ -59,18 +60,24 @@ def _make_source_session(
 
 class TestPersistenceFork:
     @pytest.mark.asyncio
-    async def test_raises_when_no_db(self):
+    async def test_reports_unavailable_when_no_db(self):
+        """No DB is an expected failure, not a programming error —
+        the forker reports it in the envelope instead of raising."""
         p = SessionPersistence(db=None, session_id="s1")
-        with pytest.raises(RuntimeError, match="unavailable"):
-            await p.fork()
+        result = await p.fork()
+        assert result.ok is False
+        assert "unavailable" in (result.error or "")
+        assert result.new_session_id == ""
 
     @pytest.mark.asyncio
-    async def test_raises_when_source_missing(self):
+    async def test_reports_source_missing(self):
         db = MagicMock()
         db.get_session = AsyncMock(return_value=None)
         p = SessionPersistence(db=db, session_id="ghost")
-        with pytest.raises(RuntimeError, match="source session not found"):
-            await p.fork()
+        result = await p.fork()
+        assert result.ok is False
+        assert "source session not found" in (result.error or "")
+        assert result.new_session_id == ""
 
     @pytest.mark.asyncio
     async def test_returns_short_8char_id(self):
@@ -82,7 +89,9 @@ class TestPersistenceFork:
         db = _db()
         db.get_session = AsyncMock(return_value=source)
         p = SessionPersistence(db=db, session_id="source01")
-        new_id = await p.fork()
+        result = await p.fork()
+        assert result.ok is True
+        new_id = result.new_session_id
         assert isinstance(new_id, str)
         assert len(new_id) == 8
 
@@ -95,7 +104,8 @@ class TestPersistenceFork:
         db = _db()
         db.get_session = AsyncMock(return_value=source)
         p = SessionPersistence(db=db, session_id="source01")
-        new_id = await p.fork()
+        result = await p.fork()
+        new_id = result.new_session_id
 
         db.upsert_session.assert_awaited_once()
         upserted = db.upsert_session.call_args[0][0]
@@ -187,7 +197,9 @@ class TestForkSlashCommand:
         session.main_team.session_id = "source01"
         session.persistence = MagicMock()
         session.persistence.session_id = "source01"
-        session.persistence.fork = AsyncMock(return_value=fork_result)
+        session.persistence.fork = AsyncMock(
+            return_value=ForkResult(ok=True, new_session_id=fork_result)
+        )
         return session
 
     @pytest.mark.asyncio
@@ -221,7 +233,7 @@ class TestForkSlashCommand:
         await handler.handle("/fork My Project Branch")
         # fork() called with the name.
         session.persistence.fork.assert_awaited_once_with(name="My Project Branch")
-        assert session.session_named is True
+        session.identity.set_named.assert_called_once_with(True)
 
     @pytest.mark.asyncio
     async def test_fork_without_name_flags_session_named_false(self):
@@ -231,14 +243,14 @@ class TestForkSlashCommand:
         handler = CommandHandler(session)
         await handler.handle("/fork")
         session.persistence.fork.assert_awaited_once_with(name=None)
-        assert session.session_named is False
+        session.identity.set_named.assert_called_once_with(False)
 
     @pytest.mark.asyncio
     async def test_fork_failure_returns_error(self):
-        """Persistence-layer raise → error CommandResult; session
+        """Persistence-layer failure → error CommandResult; session
         state must NOT be mutated."""
         session = self._session()
-        session.persistence.fork = AsyncMock(side_effect=RuntimeError("db gone"))
+        session.persistence.fork = AsyncMock(return_value=ForkResult(ok=False, error="db gone"))
         handler = CommandHandler(session)
         result = await handler.handle("/fork")
         assert "Fork failed" in result.content

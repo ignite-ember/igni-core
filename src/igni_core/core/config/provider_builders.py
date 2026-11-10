@@ -24,6 +24,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import httpx
+from agno.models.base import Model
 
 from igni_core.core.activity import BusyKind
 from igni_core.core.activity.http import BusyAsyncClient
@@ -52,7 +53,7 @@ class ProviderClientBuilder(ABC):
         cloud_token: str | None,
         llm_logger: LlmCallLogger,
         cloud_auth: CloudTokenAuth | None = None,
-    ) -> Any:
+    ) -> Model:
         """Return a live Agno model instance for ``entry``.
 
         ``cloud_auth``, when given, puts igni server's current token on
@@ -205,7 +206,7 @@ class GeminiBuilder(ProviderClientBuilder):
         cloud_token: str | None,
         llm_logger: LlmCallLogger,
         cloud_auth: CloudTokenAuth | None = None,
-    ) -> Any:
+    ) -> Model:
         # Gemini's SDK takes a key, not an httpx client: no live token.
         _ = cloud_auth
         if self._gemini_cls is None:
@@ -298,7 +299,7 @@ class AnthropicBuilder(ProviderClientBuilder):
         cloud_token: str | None,
         llm_logger: LlmCallLogger,
         cloud_auth: CloudTokenAuth | None = None,
-    ) -> Any:
+    ) -> Model:
         if self._claude_cls is None:
             raise RuntimeError(
                 "Anthropic provider requested but the anthropic SDK is not installed. "

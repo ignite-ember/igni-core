@@ -319,7 +319,6 @@ def test_an_unconfigured_session_start_clones_no_marketplace(tmp_path):
 
     from igni_core.core.config.schemas import StorageConfig
     from igni_core.core.config.settings import Settings
-    from igni_core.core.session.core import Session
     from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
 
     started: list[list[str]] = []
@@ -330,10 +329,8 @@ def test_an_unconfigured_session_start_clones_no_marketplace(tmp_path):
 
     settings = Settings(storage=StorageConfig(data_dir=str(tmp_path / "data")))
     assert settings.air_gapped is False
-    session = Session.__new__(Session)
-    session.settings = settings
     with patch("igni_core.core.plugins.git.subprocess.run", no_git):
-        asyncio.run(MarketplaceWarmupPhase(session)._refresh_all())
+        asyncio.run(MarketplaceWarmupPhase(settings_ref=lambda: settings)._refresh_all())
 
     assert started == []
 
@@ -380,8 +377,8 @@ def test_bypass_lets_the_web_through_unasked(tmp_path):
 
     What Bypass keeps: an explicit ``deny`` wins over it, and its guard still
     turns a fetch carrying what looks like a secret back into a prompt."""
-    import igni_core.cli as cli_module
     from igni_core.cli.options import CliOptions
+    from igni_core.cli.run_settings import CliSettingsLoader
     from igni_core.core.config.permission_eval import (
         PermissionDecision,
         PermissionEvaluator,
@@ -391,7 +388,7 @@ def test_bypass_lets_the_web_through_unasked(tmp_path):
     from igni_core.core.hooks.bypass_guard import READ_ONLY_TOOLS
     from igni_core.core.hooks.bypass_rules import flag_url
 
-    perms = cli_module.load_settings_from_options(CliOptions(auto_approve=True)).permissions
+    perms = CliSettingsLoader(CliOptions(auto_approve=True)).load().permissions
     assert perms.mode == "bypassPermissions"
     # The defaults still say ask; Bypass is what lets them through.
     assert (perms.web_search, perms.web_fetch) == ("ask", "ask")
@@ -400,12 +397,12 @@ def test_bypass_lets_the_web_through_unasked(tmp_path):
     assert not registry.needs_confirmation("WebSearch")
     assert not registry.needs_confirmation("WebFetch")
 
-    cat_deny, cat_ask, cat_allow = perms.category_rules()
+    category = perms.category_rules()
     evaluator = PermissionEvaluator.from_strings(
         mode=perms.mode,
-        deny=[*perms.deny, *cat_deny],
-        ask=[*perms.ask, *cat_ask, "WebSearch", "WebFetch"],
-        allow=[*perms.allow, *cat_allow],
+        deny=[*perms.deny, *category.deny],
+        ask=[*perms.ask, *category.ask, "WebSearch", "WebFetch"],
+        allow=[*perms.allow, *category.allow],
     )
     for tool, args in (
         ("web_search", {"query": "igni"}),

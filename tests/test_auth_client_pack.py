@@ -3,7 +3,7 @@
 Drives the real :class:`PortalClient` (no in-process mocking of
 ``httpx.AsyncClient``) against an in-memory HTTP server stub via
 ``httpx.MockTransport``. The stub mimics the igni server
-``/v1/portal/me/group`` and ``/v1/portal/me/group/pack`` endpoints.
+``/v1/portal/me/group/pack`` endpoint.
 
 Why MockTransport and not an in-process test server:
   * catches URL path / header mismatches that free-function mocks miss
@@ -25,6 +25,9 @@ import httpx
 import pytest
 
 from igni_core.core.auth.portal_client import PortalClient
+from igni_core.core.config.group_policy.answers import PACK_UNCHANGED
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.refresher import PackRefresher
 
 # ── helpers ────────────────────────────────────────────────────────────
 
@@ -73,14 +76,6 @@ def _sample_pack_body() -> dict:
                 "source_subdir": None,
             },
         ],
-    }
-
-
-def _sample_summary_body() -> dict:
-    return {
-        "id": "g-1",
-        "org_id": "org-1",
-        "name": "Engineering",
     }
 
 
@@ -421,57 +416,6 @@ async def test_fetch_group_pack_rejects_unexpected_field(monkeypatch):
     )
 
 
-# ── get_my_group_summary ──────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_get_my_group_summary_happy_path(monkeypatch):
-    """Bearer in header, URL correct, summary dict returned."""
-    captured: dict[str, object] = {}
-
-    def handler(req: httpx.Request) -> httpx.Response:
-        captured["url"] = str(req.url)
-        captured["auth"] = req.headers.get("Authorization")
-        return httpx.Response(200, json=_sample_summary_body())
-
-    portal, patched = _stub_client(handler)
-    monkeypatch.setattr("httpx.AsyncClient", patched)
-
-    summary = await portal.get_my_group_summary(token="t-2")
-    assert summary is not None
-    assert summary == _sample_summary_body()
-    assert captured["url"] == "https://api.example.invalid/v1/portal/me/group"
-    assert captured["auth"] == "Bearer t-2"
-
-
-@pytest.mark.asyncio
-async def test_get_my_group_summary_returns_none_on_404(monkeypatch):
-    """No group → BE returns 404 → client returns None (not {})"""
-
-    def handler(req: httpx.Request) -> httpx.Response:
-        return httpx.Response(404)
-
-    portal, patched = _stub_client(handler)
-    monkeypatch.setattr("httpx.AsyncClient", patched)
-
-    summary = await portal.get_my_group_summary(token="t-2")
-    assert summary is None
-
-
-@pytest.mark.asyncio
-async def test_get_my_group_summary_returns_none_on_null_body(monkeypatch):
-    """BE returns 200 with JSON `null` → client returns None."""
-
-    def handler(req: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text="null")
-
-    portal, patched = _stub_client(handler)
-    monkeypatch.setattr("httpx.AsyncClient", patched)
-
-    summary = await portal.get_my_group_summary(token="t-2")
-    assert summary is None
-
-
 # ── URL construction ──────────────────────────────────────────────────
 
 
@@ -492,18 +436,14 @@ async def test_fetch_urls_strip_trailing_slash(monkeypatch):
         kwargs.setdefault("transport", transport)
         return real_async(*args, **kwargs)
 
-    import pytest as _pt  # noqa
-
     monkeypatch.setattr("httpx.AsyncClient", patched)
 
     await portal.fetch_group_pack(token="t-x")
-    await portal.get_my_group_summary(token="t-x")
 
-    assert seen[0] == "https://api.example.invalid/v1/portal/me/group/pack"
-    assert seen[1] == "https://api.example.invalid/v1/portal/me/group"
+    assert seen == ["https://api.example.invalid/v1/portal/me/group/pack"]
 
 
-# ── end-to-end: pack → cache → read_pack_meta ────────────────────────
+# ── end-to-end: pack → cache → meta.load ──────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -511,7 +451,6 @@ async def test_full_e2e_pack_to_cache(tmp_path, monkeypatch):
     """Round-trip: stub igni server → PortalClient → GroupPolicyCache.materialize →
     the on-disk cache contains the materialized agents + MCP envelopes + meta.
     """
-    from igni_core.core.config.group_policy import GroupPolicyCache, refresh
 
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_sample_pack_body())
@@ -519,19 +458,17 @@ async def test_full_e2e_pack_to_cache(tmp_path, monkeypatch):
     portal, patched = _stub_client(handler)
     monkeypatch.setattr("httpx.AsyncClient", patched)
 
-    refreshed = await refresh(
-        token="t-e2e",
-        fetch=portal.fetch_group_pack,
-        data_dir=tmp_path,
+    result = await PackRefresher(GroupPolicyCache.for_data_dir(tmp_path)).refresh_if_stale(
+        "t-e2e", portal.fetch_group_pack
     )
-    assert refreshed is True
+    assert result.ok
 
     # Read the cache back as the loaders would
-    cache = GroupPolicyCache(cache_dir=tmp_path / "group-policy", data_dir=tmp_path)
-    meta = cache.read_pack_meta()
+    cache = GroupPolicyCache.for_data_dir(tmp_path)
+    meta = cache.meta.load()
     assert meta is not None
-    assert meta["group_id"] == "g-1"
-    assert meta["entry_count"] == 2
+    assert meta.group_id == "g-1"
+    assert meta.entry_count == 2
 
     # Agent file is on disk exactly as the loader would consume it.
     agent_path = cache.agents_dir / "code-reviewer.md"
@@ -540,7 +477,7 @@ async def test_full_e2e_pack_to_cache(tmp_path, monkeypatch):
     assert "code-reviewer" in body
 
     # MCP envelope is on disk exactly as MCPConfigLoader would read it.
-    mcp_path = cache.mcps_dir / "github.json"
+    mcp_path = cache.layout.dir_for("mcps") / "github.json"
     assert mcp_path.exists()
     blob = json.loads(mcp_path.read_text(encoding="utf-8"))
     assert "mcpServers" in blob
@@ -591,8 +528,6 @@ async def test_a_304_answers_unchanged_not_none(monkeypatch):
     """``None`` means "I could not tell you" and leaves the cache alone;
     this means "I checked, you are current". Conflating them would make
     a failed request look like a confirmation."""
-    from igni_core.core.config.group_policy import PACK_UNCHANGED
-
     portal, patched = _stub_client(lambda req: httpx.Response(304))
     monkeypatch.setattr("httpx.AsyncClient", patched)
 

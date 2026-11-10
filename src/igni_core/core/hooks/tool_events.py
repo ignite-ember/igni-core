@@ -4,10 +4,8 @@ previously lived inline in :mod:`igni_core.core.hooks.tool_hook`.
 
 Each payload is a subclass of :class:`ToolHookEventPayload` and
 carries only the fields it actually needs — the model type IS the
-contract. :meth:`ToolHookEventPayload.to_wire_dict` collapses the
-typed instance back to the ``dict[str, Any]`` shape the
-:class:`HookExecutor` still accepts at its public boundary, so
-no callsite downstream of ``_fire`` has to move.
+contract. :class:`HookExecutor` takes the typed instance as it is
+and its handlers put it on the wire.
 
 Wire keys — pinned by ``tests/test_hook_events_new.py``:
 
@@ -21,8 +19,8 @@ Wire keys — pinned by ``tests/test_hook_events_new.py``:
 The ``session_id`` field is deliberately declared on the base
 model with a ``""`` default. :class:`HookFirer` injects the
 session_id at the seam so per-payload constructors don't have to
-plumb it, but the field exists so ``.to_wire_dict()`` includes
-the key the tests read directly.
+plumb it, but the field exists so the wire form includes the key
+the tests read directly.
 """
 
 from __future__ import annotations
@@ -37,25 +35,16 @@ from igni_core.core.hooks.payload_sanitizer import PayloadSanitizer
 class ToolHookEventPayload(BaseModel):
     """Shared base for every ``ToolEventHook``-emitted payload.
 
-    ``extra='allow'`` matches the tolerance of the underlying
-    :class:`HookPayload` in ``schemas.py``: hook receivers built
-    for a slightly-older schema still parse newer payloads.
+    ``extra='allow'`` lets a payload carry a field ahead of its
+    model, so hook receivers see it on the wire.
     """
 
     model_config = ConfigDict(extra="allow")
 
     session_id: str = ""
     """Populated by :class:`HookFirer` at the wire boundary — kept
-    as a field so ``.to_wire_dict()`` emits the key regardless of
+    as a field so the wire form carries the key regardless of
     caller-side plumbing."""
-
-    def to_wire_dict(self) -> dict[str, Any]:
-        """Return the dict form the :class:`HookExecutor` expects.
-
-        ``exclude_none=False`` on purpose: hook receivers do
-        ``payload.get("error", "")`` and expect the key to exist.
-        """
-        return self.model_dump(mode="json", by_alias=False)
 
 
 class PreToolUsePayload(ToolHookEventPayload):

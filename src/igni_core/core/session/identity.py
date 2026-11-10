@@ -73,6 +73,14 @@ class SessionIdentity:
         """
         self._session_named = True
 
+    def set_named(self, named: bool) -> None:
+        """Say whether the person named this session.
+
+        ``/fork`` sets it from whether a name was given: a fork without
+        one is auto-named after its first run like a new session.
+        """
+        self._session_named = named
+
     def rotate(self, new_id: str) -> None:
         """Propagate ``new_id`` to every component that holds the
         active session id.

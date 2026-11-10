@@ -14,41 +14,29 @@ and log-swallowing behaviour lives in one place.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from igni_core.core.session.schemas import McpInitResult
 from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
 from igni_core.core.session.startup.mcp import McpInitPhase
 
-if TYPE_CHECKING:
-    from igni_core.core.session.core import Session
-
 
 class SessionStartupCoordinator:
-    """Composes the four session-startup phases behind Session's
+    """Composes the session-startup phases behind Session's
     boot-time public surface.
 
-    Constructor instantiates one of each phase; ``self.mcp`` is
-    the sole owner of the once-per-session ``_initialized`` flag
-    (Rule AP3 fixed — one write site).
-
-    Session's existing ``_mcp_initialized`` property continues to
-    work: it reads / writes ``coordinator.mcp_initialized``, which
-    routes to ``self.mcp.initialized``.
+    Both phases are injected, already built from the collaborators they
+    read; ``self.mcp`` is the sole owner of the once-per-session
+    ``_initialized`` flag (Rule AP3 fixed — one write site).
     """
 
-    def __init__(self, session: Session) -> None:
-        self._session = session
-        self.marketplace = MarketplaceWarmupPhase(session)
-        self.mcp = McpInitPhase(session)
+    def __init__(self, marketplace: MarketplaceWarmupPhase, mcp: McpInitPhase) -> None:
+        self.marketplace = marketplace
+        self.mcp = mcp
 
     # ── MCP init flag proxies (Session compat) ────────────────
 
     @property
     def mcp_initialized(self) -> bool:
-        """Route to :attr:`McpInitPhase.initialized` — the single
-        owner. Session's ``_mcp_initialized`` compat property reads
-        through this."""
+        """Route to :attr:`McpInitPhase.initialized` — the single owner."""
         return self.mcp.initialized
 
     @mcp_initialized.setter

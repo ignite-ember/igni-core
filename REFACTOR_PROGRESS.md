@@ -78,6 +78,196 @@ that will become D if untouched). B-tier addressed on-demand.
 
 Free-form record of what happened each iteration. Newest at the top.
 
+### Iteration 277 — `core/session/client_state.py`: the store tells, it does not swallow
+
+**Target:** `src/igni_core/core/session/client_state.py` (audit grade **C** —
+"KV store that swallows every database error at debug level, including on
+writes").
+
+**Audit findings, all still applying before this iteration:**
+- `get_for_client` swallowed any `Exception` and returned `{}`.
+- `set_value` swallowed any `Exception` at DEBUG, so a write was lost
+  silently, with no result to the caller.
+- `delete_value` likewise swallowed every error.
+
+**Changes:**
+- The store answers with a result (Pattern 3): `ClientStateResult` for a
+  write, `ClientStateRead` for a read, and a `ClientStateStoreProtocol` that
+  names what a store must offer. A read that failed comes back as
+  `ok=False`, never as an empty state — an empty state reads as "this client
+  has stored nothing", and the caller would go on to write over what is
+  really there.
+- **What a client is shown is a sentence about the store** — `READ_FAILED`,
+  `WRITE_FAILED`, `DELETE_FAILED` — never the driver's own words. A SQLAlchemy
+  message can carry SQL, a file name and a user, and it went on the wire
+  verbatim; the traceback stays in the log.
+- `extensions/host/windows.py`: a state that could not be read or written
+  raises `WindowStateError`, so the window is told instead of showing a state
+  that was never saved. `extensions/host/members/app.py` turns a failed
+  `app.state.*` into a FAILED refusal, and `extensions/host/members/ui.py`
+  turns a failed read into the same.
+- `backend/pool_rpcs/host_model.py`: the pool carries a state failure as a
+  refusal the window can show, rather than as an exception.
+- **The blast radius was kept narrow.** A window's state that cannot be read
+  is the window's problem, not a reason to refuse every extension call:
+  `extensions/host/call_scope.py` degrades to the default session (and logs
+  the failure) instead of taking the whole extension surface down with it.
+  The state that was *asked for* is still refused where it was asked for.
+- `backend/headless_extensions.py`: `NoWindowState` became `RunState`, a
+  store that keeps what it is given for the length of the run. It answered
+  `ok=True` for writes that never happened, so `ok` meant one thing in the
+  database store and another in this one; the two shared one protocol.
+
+**Review findings closed in this iteration:**
+- The test named for the write failure drove a store whose *read* also failed,
+  so the write branch was never reached: a window writes its state by reading
+  it first. There is now a store that reads and one that does not, and each
+  failure is reached on its own path.
+- The new catch in the pool RPC path had no test: the window's own path over
+  the pool — a write that failed, and a read that failed — is now driven end
+  to end.
+
+**A review finding that was checked and not followed:** the review called the
+`if TYPE_CHECKING:` move in `extensions/host/backend.py` "unrelated churn,
+justified by a cycle that does not exist", and said it removed `ViewShown` as
+a runtime attribute. The cycle is real: `backend.py` → `broadcasts/__init__.py`
+→ `router.py` → `services.py` → `backend.py`, and `import
+igni_core.extensions.host.backend` on its own fails at the committed head with
+`ImportError: cannot import name 'HostBackend' from partially initialized
+module`. The move stays, with its comment corrected to say what is actually
+true, and `tests/test_the_host_backend_can_be_imported_first.py` locks it: the
+module must import on its own. `ViewShown` is only ever a type here — the
+annotation of `views()` — so the checker is the only one who needs it, and
+`from __future__ import annotations` keeps it off the wire at runtime.
+
+**Behaviour:** changed on purpose, which is what the finding asked for. A
+failed state operation is now reported to its caller instead of swallowed; a
+failed one no longer reads as an empty state or a write that happened.
+
+**Tests:** `tests/test_a_failed_state_write_is_told.py` (13 tests): the store
+answers, the window is told on both the read and the write path, the pool
+carries the failure, the extension is told, the headless store keeps what it
+is given, and the driver's words never reach the caller.
+`tests/test_the_host_backend_can_be_imported_first.py` (1 test) keeps the
+backend protocol importable on its own. `ruff check`,
+`ruff format --check` and `mypy src/igni_core/` clean.
+
+**Grade change:** `core/session/client_state.py` **C → B+**. The three
+findings that made it a C are closed, and the store now tells its caller what
+happened.
+
+### Iteration 276 — `core/queue_hook.py`: delete the backward-compat shim
+
+**Target:** `src/igni_core/core/queue_hook.py` (audit grade **C** — "deprecation
+shim module with a legacy factory function").
+
+**Audit findings, all still applying before this iteration:**
+- The whole module existed only as a backward-compat re-export "for one
+  release", with no concrete removal ticket.
+- It emitted a :class:`DeprecationWarning` as an *import* side effect.
+- `create_queue_hook` was a deprecated free-function wrapper over
+  :class:`~igni_core.core.hooks.queue.bridge.QueueBridge`.
+
+**Changes:**
+- **Deleted** `src/igni_core/core/queue_hook.py` (74 lines). The behaviour it
+  re-exported already lives in the `core/hooks/queue/` package
+  (`bridge.py`, `injector.py`, `persister.py`, `buffer.py`, `schemas.py`,
+  `agno_adapter.py`); that package exports every name the shim did, plus
+  `AgnoCallableAdapter`, `TakenMessage` and `TakesMessages`.
+- No caller had to move: production code already imported
+  `igni_core.core.hooks.queue` (`backend/team_wiring.py`,
+  `core/hooks/untrusted.py`), and the shim had no importer anywhere in
+  `src/`, `packages/` or `tests/`.
+- `core/hooks/queue/bridge.py` / `schemas.py`: their docstrings pointed at the
+  deleted `queue_hook.py` as "what it used to be"; they now state what the
+  classes own.
+- **Tests:** `tests/test_queue_hook.py` no longer carries its own copy of the
+  retired free function (a local `create_queue_hook` helper) or the
+  `QueueInjectorHook = _make_injector` alias that shadowed the real class.
+  Every test now builds a :class:`QueueBridge` and uses `bridge.injector` /
+  `bridge.persister`; the buffer is filled through the public
+  `bridge.buffer` instead of reaching into `injector._buffer`.
+
+**Behaviour:** unchanged. The injector still drains the queue after each tool
+call and the persister still writes the drained items as user-role history —
+those classes were never touched. What changed is only the *import path*: the
+module that carried the deprecation warning and the deprecated factory is
+gone, so importing the queue hooks no longer warns and no longer offers a
+second, legacy way to build them.
+
+**Tests:** 23 queue-hook tests pass (1 skipped — the live-LLM test needs
+`IGNI_TEST_LLM_API_KEY`), plus the queued-message restart suite (10 pass, 10
+skipped). `ruff check`, `ruff format --check` and `mypy src/igni_core/` clean.
+
+**Grade change:** `core/queue_hook.py` **C → deleted**. Its behaviour now lives
+on `core/hooks/queue/`, which the audit grades separately.
+
+### Iteration 275 — `core/plugins/marketplaces.py`: delete the backward-compat façade
+
+**Target:** `src/igni_core/core/plugins/marketplaces.py` (audit grade **C** —
+"whole module is a deprecated backward-compat façade kept alive for test
+monkey-patching").
+
+**Audit findings, all still applying before this iteration:**
+- `_MarketplaceModuleAdapter` existed only so ~50
+  `patch("...marketplaces.<name>")` sites kept resolving (its own
+  docstring said so).
+- `_ADAPTER` was a module-level singleton whose bound methods were
+  published as the module's public functions.
+- `fetch_catalog` kept the legacy raise-on-error contract on top of
+  the Result API.
+- The file's own TODO said to delete it — and it was still exported
+  from `plugins/__init__.py`.
+
+**Changes:**
+- **Deleted** `src/igni_core/core/plugins/marketplaces.py` (213 lines).
+  The behaviour it re-exported already lives in
+  `core/plugins/marketplace_store.py`; the schemas live in
+  `core/plugins/models.py`.
+- `core/plugins/__init__.py`: the seven re-exported free functions
+  and their `__all__` entries are gone. The package now exports
+  `MarketplaceRegistryStore` (behaviour) and the `models` schemas
+  (shape) — no façade.
+- `backend/plugin_controller.py`: `@`-ref resolution now goes through
+  `MarketplaceRegistryStore(data_dir).resolve_install_ref(ref)` — the
+  same store `cmd_plugin/gateway.py` already drives.
+- `core/session/startup/marketplace.py`: the warmup phase takes an
+  injected `store_for` factory and drives `store.load()` / `store.add()`
+  / `store.refresh()`. The "tests patch `marketplaces.load_registry`"
+  seam is gone — the phase's collaborator is handed in.
+- `core/plugins/marketplace_store.py`: `DEFAULT_MARKETPLACES` is a
+  tuple (a module-level list any importer could mutate is module
+  state); `MarketplaceRefreshOutcome` moved up beside
+  `CatalogFetchResult` so both Pattern-3 result models sit together;
+  the dead `arbitrary_types_allowed` config dropped.
+- **Tests:** `tests/test_plugins_marketplaces.py` rewritten against the
+  store API — the free functions became store methods, and the
+  raise-on-error assertions became Result assertions (`result.ok` /
+  `result.unwrap()`). `test_plugins_backend.py` and
+  `test_plugins_slash_commands.py` patch
+  `MarketplaceRegistryStore.resolve_install_ref` instead of the deleted
+  module's function. `test_an_air_gapped_install_makes_no_outbound_call.py`
+  reads the registry through the store.
+- `docs/PLUGINS.md`: the registry link points at `marketplace_store.py`.
+
+**Behaviour:** preserved. `add` / `refresh` still raise on a failed
+fetch (the gateway catches `ValueError`), `fetch_catalog` still
+returns the typed `CatalogFetchResult`, `resolve_install_ref` still
+returns the same `(ResolvedSource, MarketplacePluginEntry)` tuple. The
+one contract change is the *test* surface: `fetch_catalog` no longer
+raises on its own — the Result is the contract, and the fail-fast
+callers unwrap it.
+
+**Tests:** 412 plugin / marketplace / air-gap / phones-home tests pass
+(1 skipped — git-gated), `test_session_startup.py` +
+`test_plugins_session_integration.py` + `test_backend_server.py` green.
+`ruff check`, `ruff format --check` and `mypy` clean on every touched
+file.
+
+**Grade change:** `core/plugins/marketplaces.py` **C → deleted**. Its
+behaviour now lives on `MarketplaceRegistryStore`, which the audit
+graded separately.
+
 ### Iteration 274 — Python-side audit milestone: no plain B/C/D remain
 
 **Milestone reached at iter 273:** every Python file in the

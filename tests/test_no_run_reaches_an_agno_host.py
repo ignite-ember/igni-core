@@ -27,8 +27,8 @@ import pytest
 from agno.agent import Agent
 from agno.models.openai.like import OpenAILike
 
-from igni_core.cli.invocation import load_settings_from_options
 from igni_core.cli.options import CliOptions
+from igni_core.cli.run_settings import CliSettingsLoader
 from igni_core.core.agents.schemas import AgentConstructorArgs
 from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.paths import CONFIG_DIR
@@ -76,7 +76,7 @@ async def igni_turn(project_dir: Path, *, air_gapped: bool) -> tuple[str, Egress
     """One message through igni's own session, as the app sends it."""
     with StubModel(REPLY) as stub:
         write_config(Path.home(), stub.url, air_gapped=air_gapped)
-        settings = load_settings_from_options(CliOptions(no_web=True))
+        settings = CliSettingsLoader(CliOptions(no_web=True)).load()
         # What BackendApp and the CLI do once settings are loaded.
         AgnoTelemetry.enforce(os.environ, air_gapped=settings.air_gapped)
         with EgressGuard(network=InternalNetwork()).watching() as log:

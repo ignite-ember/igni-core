@@ -135,6 +135,25 @@ class LoadCredentialsResult(BaseModel):
     error: str = ""
 
 
+class SignedInSession(BaseModel):
+    """Who is signed in here, as far as a group pack is concerned.
+
+    Decoded, not verified: the token is checked by igni server on every
+    call, and here it only names *whose* pack may be applied. A person who
+    edits it to name somebody else still needs a pack igni server signed
+    for that somebody. Every field is ``None`` when nobody is signed in.
+    """
+
+    model_config = {"frozen": True}
+
+    #: The token's ``sub`` — the pack's ``sub`` must match it.
+    subject: str | None = None
+    #: The token's ``org``, when it names one — the pack's ``org`` must match it.
+    org: str | None = None
+    #: The stored session token, for the one live fetch ``required`` allows.
+    token: str | None = None
+
+
 class JwtClaims(BaseModel):
     """Typed shape for the JWT payload we care about.
 

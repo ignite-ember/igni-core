@@ -3,14 +3,29 @@
 Covers: first-run initialization, audit log entries, CLAUDE.md loading.
 """
 
+from pathlib import Path
 from unittest.mock import patch
 
 from igni_core.core.config.settings import Settings
-from igni_core.core.init import initialize_project
+from igni_core.core.init import InitConfig, ProjectInitializer
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.utils.audit import AuditEntry, AuditLogger
-from igni_core.core.utils.context import load_project_context
+from igni_core.core.utils.context import RulesContextLoader
 from igni_core.core.utils.update_checker import UpdateInfo
+from igni_core.core.workspace_trust import process_trust
+
+
+def _initialize(project_dir: Path, config: InitConfig | None = None) -> bool:
+    """Run the initializer under the suite's trust service; ``True`` on first run."""
+    return (
+        ProjectInitializer(
+            project_dir=project_dir,
+            trust=process_trust(),
+            config=config or InitConfig(),
+        )
+        .run()
+        .first_run
+    )
 
 
 class TestFirstRunOnboarding:
@@ -19,22 +34,22 @@ class TestFirstRunOnboarding:
     def test_creates_ember_dir(self, tmp_path):
         with patch("pathlib.Path.home", return_value=tmp_path / "home"):
             (tmp_path / "home" / CONFIG_DIR).mkdir(parents=True, exist_ok=True)
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
 
         assert (tmp_path / CONFIG_DIR).exists()
 
     def test_creates_marker_file(self, tmp_path):
         with patch("pathlib.Path.home", return_value=tmp_path / "home"):
             (tmp_path / "home" / CONFIG_DIR).mkdir(parents=True, exist_ok=True)
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
 
         assert (tmp_path / CONFIG_DIR / ".initialized").exists()
 
     def test_second_run_no_reinit(self, tmp_path):
         with patch("pathlib.Path.home", return_value=tmp_path / "home"):
             (tmp_path / "home" / CONFIG_DIR).mkdir(parents=True, exist_ok=True)
-            first = initialize_project(tmp_path)
-            second = initialize_project(tmp_path)
+            first = _initialize(tmp_path)
+            second = _initialize(tmp_path)
 
         assert first is True
         assert second is False
@@ -42,7 +57,7 @@ class TestFirstRunOnboarding:
     def test_copies_agents(self, tmp_path):
         with patch("pathlib.Path.home", return_value=tmp_path / "home"):
             (tmp_path / "home" / CONFIG_DIR).mkdir(parents=True, exist_ok=True)
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
 
         agents_dir = tmp_path / CONFIG_DIR / "agents"
         if agents_dir.exists():
@@ -51,7 +66,7 @@ class TestFirstRunOnboarding:
     def test_copies_skills(self, tmp_path):
         with patch("pathlib.Path.home", return_value=tmp_path / "home"):
             (tmp_path / "home" / CONFIG_DIR).mkdir(parents=True, exist_ok=True)
-            initialize_project(tmp_path)
+            _initialize(tmp_path)
 
         skills_dir = tmp_path / CONFIG_DIR / "skills"
         if skills_dir.exists():
@@ -86,13 +101,13 @@ class TestCrossToolSupport:
     def test_loads_claude_md_when_enabled(self, tmp_path):
         (tmp_path / "CLAUDE.md").write_text("# Claude rules\nBe helpful.")
 
-        context = load_project_context(tmp_path, "ember.md", read_claude_md=True)
+        context = RulesContextLoader(project_dir=tmp_path, read_claude_md=True).load_all().render()
         assert "Claude rules" in (context or "")
 
     def test_ignores_claude_md_when_disabled(self, tmp_path):
         (tmp_path / "CLAUDE.md").write_text("# Claude rules")
 
-        context = load_project_context(tmp_path, "ember.md", read_claude_md=False)
+        context = RulesContextLoader(project_dir=tmp_path, read_claude_md=False).load_all().render()
         assert "Claude rules" not in (context or "")
 
 

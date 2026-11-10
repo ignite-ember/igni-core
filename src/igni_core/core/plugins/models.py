@@ -304,6 +304,11 @@ class MarketplaceEntry(BaseModel):
     #: the official marketplace, the old default's auto-registration (B29).
     added_by: Literal["user", "default"] | None = None
 
+    @property
+    def plugin_count(self) -> int:
+        """Plugins in the cached catalog; 0 before the first fetch."""
+        return len(self.cached.plugins) if self.cached else 0
+
     def mark_fetched(self, catalog: MarketplaceCatalog) -> None:
         """Overwrite ``cached`` with a fresh catalog and stamp
         ``last_fetched`` to now-UTC (ISO-8601, seconds precision).
@@ -449,38 +454,63 @@ class InstallRef(BaseModel):
 # display-only.
 
 
+# Emitted by BackendServer.get_plugin_details for the plugins panel.
 class PluginInfo(BaseModel):
-    """Wire format for one installed plugin — emitted by
-    :meth:`BackendServer.get_plugin_details`, consumed by the
-    plugins panel."""
+    """One installed plugin, with what it bundles and whether it is enabled."""
 
-    name: str
-    version: str = ""
-    description: str = ""
-    source_root: str = ""
-    path: str = ""
-    enabled: bool = True
-    has_skills: bool = False
-    has_agents: bool = False
-    has_hooks: bool = False
-    has_mcp: bool = False
-    has_tools: bool = False
-    has_lsp: bool = False
-    has_monitors: bool = False
-    # ``True`` for plugins installed at the managed (sysadmin)
-    # tier — surfaced so the panel can lock the disable toggle.
-    managed: bool = False
-    pin: str = ""
+    name: str = Field(description="Plugin name from its manifest.")
+    version: str = Field(
+        default="", description="Version from the plugin's manifest. Empty when not given."
+    )
+    description: str = Field(default="", description="What the plugin does. Empty when not given.")
+    source_root: str = Field(
+        default="",
+        description="Where the plugin was found: `user-claude` (~/.claude/plugins), `user-igni` "
+        "(~/.igni/plugins), `project-claude` (the project's .claude/plugins), `project-igni` "
+        "(the project's .igni/plugins), `group-policy-igni` (installed by the organization's "
+        "policy), `managed-claude` or `managed-igni` (installed by a system administrator).",
+    )
+    path: str = Field(default="", description="Directory the plugin is installed in.")
+    enabled: bool = Field(
+        default=True, description="True when the plugin is active in this session."
+    )
+    has_skills: bool = Field(default=False, description="True when the plugin bundles skills.")
+    has_agents: bool = Field(default=False, description="True when the plugin bundles agents.")
+    has_hooks: bool = Field(default=False, description="True when the plugin bundles hooks.")
+    has_mcp: bool = Field(
+        default=False, description="True when the plugin bundles MCP server configurations."
+    )
+    has_tools: bool = Field(default=False, description="True when the plugin bundles tools.")
+    has_lsp: bool = Field(
+        default=False, description="True when the plugin bundles language-server configurations."
+    )
+    has_monitors: bool = Field(default=False, description="True when the plugin bundles monitors.")
+    managed: bool = Field(
+        default=False,
+        description="True when a system administrator installed the plugin; it is always "
+        "enabled and cannot be disabled by the user.",
+    )
+    pin: str = Field(
+        default="", description="Git commit the plugin is pinned to. Empty when it is not pinned."
+    )
 
 
 class MarketplacePluginInfo(BaseModel):
-    """Wire format for one plugin entry inside a marketplace catalog."""
+    """One plugin listed in a marketplace's catalog, available to install."""
 
-    name: str
-    source: str
-    description: str = ""
-    version: str = ""
-    branch: str = ""
+    name: str = Field(description="Plugin name; install it as `@<marketplace>/<name>`.")
+    source: str = Field(
+        description="Where the plugin is fetched from: a git URL, followed by `[<subdirectory>]` "
+        "when the plugin lives in a subdirectory of that repository."
+    )
+    description: str = Field(default="", description="What the plugin does. Empty when not given.")
+    version: str = Field(
+        default="", description="Version listed in the catalog. Empty when not given."
+    )
+    branch: str = Field(
+        default="",
+        description="Git branch to install from. Empty for the repository's default branch.",
+    )
 
     @classmethod
     def from_catalog_entry(
@@ -516,10 +546,26 @@ class MarketplacePluginInfo(BaseModel):
 
 
 class MarketplaceInfo(BaseModel):
-    """Wire format for one registered marketplace — registry-level
-    metadata plus the cached catalog at the time of the last fetch."""
+    """A plugin marketplace registered with igni, with its catalog as of the last fetch."""
 
-    name: str
-    url: str
-    last_fetched: str = ""
-    plugins: list[MarketplacePluginInfo] = []
+    name: str = Field(description="Marketplace name.")
+    url: str = Field(description="Git URL the marketplace catalog is fetched from.")
+    last_fetched: str = Field(
+        default="",
+        description="When the catalog was last fetched, as an ISO 8601 UTC timestamp. Empty if never.",
+    )
+    plugins: list[MarketplacePluginInfo] = Field(
+        default=[], description="Plugins in the catalog. Empty until the catalog has been fetched."
+    )
+
+    @classmethod
+    def from_entry(cls, entry: MarketplaceEntry) -> MarketplaceInfo:
+        """Project a registry entry and its cached catalog into the
+        panel's display shape."""
+        plugins = entry.cached.plugins if entry.cached else []
+        return cls(
+            name=entry.name,
+            url=entry.url,
+            last_fetched=entry.last_fetched or "",
+            plugins=[MarketplacePluginInfo.from_catalog_entry(p, entry.url) for p in plugins],
+        )

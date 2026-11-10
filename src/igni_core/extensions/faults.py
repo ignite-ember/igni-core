@@ -19,15 +19,26 @@ alike — is marked **faulty** (``InstalledExtension.faulty``):
 The first answer after that clears the mark. An answer is anything the
 process said — a tool that reports an error has answered; a call that
 timed out, or whose process went away, has not.
+
+**The count belongs to the installed set.** One counter for the
+extensions in a registry — reached through
+:attr:`~igni_core.extensions.registry.ExtensionRegistry.faults` — so
+that a hook that times out and a tool call that times out count
+against the same extension, and so that two registries never share
+one extension's failures.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
-from igni_core.extensions.registry import ExtensionRegistry
+if TYPE_CHECKING:
+    # The registry owns the counter and is what it counts; naming it
+    # here at runtime would close a circle (registry → faults →
+    # registry). The name is a type, and only the checker needs it.
+    from igni_core.extensions.registry import ExtensionRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -36,32 +47,24 @@ OnFaulty = Callable[[str, str], None]
 
 
 class ExtensionFaults:
-    """Counts each extension's failures in a row, and marks it faulty at the limit."""
+    """Counts each extension's failures in a row, and marks it faulty at the limit.
+
+    The counter is per installed set: the registry it is given is the
+    one whose extensions it counts, and whose ``faulty`` mark it sets
+    and clears. Whoever counts failures — the hooks and the extension
+    RPC — reaches the same one through that registry
+    (:attr:`~igni_core.extensions.registry.ExtensionRegistry.faults`);
+    a second counter over the same registry would count one
+    extension's failures apart from the rest.
+    """
 
     #: Timeouts or crashes in a row that make an extension faulty.
     LIMIT: ClassVar[int] = 3
 
-    _shared: ClassVar[ExtensionFaults | None] = None
-
-    def __init__(self, registry: ExtensionRegistry | None = None) -> None:
+    def __init__(self, registry: ExtensionRegistry) -> None:
         self._registry = registry
         self._in_a_row: dict[str, int] = {}
         self._watchers: list[OnFaulty] = []
-
-    @classmethod
-    def shared(cls) -> ExtensionFaults:
-        """The process's faults: one count per extension, whoever called it."""
-        if cls._shared is None:
-            cls._shared = cls()
-        return cls._shared
-
-    @classmethod
-    def reset_shared(cls) -> None:
-        """Forget the process's faults. For tests."""
-        cls._shared = None
-
-    def attach(self, registry: ExtensionRegistry) -> None:
-        self._registry = registry
 
     def on_faulty(self, watcher: OnFaulty) -> None:
         """Be told when an extension becomes faulty — to restart it, and to tell the person."""
@@ -81,9 +84,7 @@ class ExtensionFaults:
             f"(the last, {what}). igni is restarting it."
         )
         logger.warning("%s", reason)
-        registry = self._registry
-        if registry is not None:
-            registry.set_faulty(extension_id, reason)
+        self._registry.set_faulty(extension_id, reason)
         for watcher in list(self._watchers):
             try:
                 watcher(extension_id, reason)
@@ -93,16 +94,14 @@ class ExtensionFaults:
     def answered(self, extension_id: str) -> None:
         """It answered. The count starts again, and a faulty mark clears."""
         self._in_a_row.pop(extension_id, None)
-        registry = self._registry
-        if registry is not None and self.faulty(extension_id):
+        if self.faulty(extension_id):
             logger.info("%s is answering again", extension_id)
-            registry.set_faulty(extension_id, "")
+            self._registry.set_faulty(extension_id, "")
 
     # ── What callers ask ──────────────────────────────────────────
 
     def faulty(self, extension_id: str) -> bool:
-        registry = self._registry
-        entry = registry.get(extension_id) if registry is not None else None
+        entry = self._registry.get(extension_id)
         return entry is not None and bool(entry.faulty)
 
     def not_responding(self, extension_id: str) -> str:
@@ -110,8 +109,7 @@ class ExtensionFaults:
         return f"{self._name(extension_id)} isn't responding."
 
     def _name(self, extension_id: str) -> str:
-        registry = self._registry
-        entry = registry.get(extension_id) if registry is not None else None
+        entry = self._registry.get(extension_id)
         return entry.manifest.display_name if entry is not None else extension_id
 
 

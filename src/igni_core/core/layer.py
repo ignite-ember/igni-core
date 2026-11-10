@@ -20,8 +20,9 @@ otherwise:
   the person's service events itself (:meth:`Layer.fetches_own_events`);
 * what a backend does around its boot and serving (:meth:`Layer.backend`).
 
-**Choosing one.** :class:`Layers` reads ``IGNI_PROFILE`` — here and
-nowhere else — once, the first time any seam is asked. Unset (or
+**Choosing one.** :data:`layers`, the process's :class:`Layers`, reads
+``IGNI_PROFILE`` — here and nowhere else — once, the first time any seam
+is asked. Unset (or
 ``desktop``), the core's own :class:`Layer`; any other name is the entry
 point of that name in the ``igni.layers`` group, which a layer's package
 declares (``igni-cloud`` declares ``cloud``). An entry point and not an
@@ -43,11 +44,18 @@ import os
 import threading
 from importlib.metadata import entry_points
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from igni_core.backend.observed_transport import ObservedTransport
+    from igni_core.backend.session_orchestrator import SessionOrchestrator
     from igni_core.core.auth.credentials import CredentialSource
+    from igni_core.core.db.scope import Tenant
     from igni_core.core.mcp.approval import McpApprovalPolicy
+    from igni_core.extensions.host.model import HostModel
+    from igni_core.notifications.center import NotificationCenter
 
 logger = logging.getLogger(__name__)
 
@@ -55,22 +63,25 @@ logger = logging.getLogger(__name__)
 class BackendHooks:
     """What a layer does around a backend's boot and serving. The desktop does nothing.
 
-    Called by :class:`~igni_core.backend.app.BackendApp`, in order:
+    Called by :class:`~igni_core.backend.app.BackendApp` (its ``_listen``,
+    ``_assemble`` and ``run``), in order:
     :meth:`starting`, :meth:`listening` once the transport listens,
     :meth:`bind` before any settings or database are opened,
     :meth:`serving` once the backend serves, :meth:`stop` at exit.
     """
 
-    #: Whose rows a shared database holds, if the layer decides it.
-    tenant: Any = None
+    @property
+    def tenant(self) -> Tenant | None:
+        """Whose rows a shared database holds, if the layer decides it."""
+        return None
 
     def starting(self) -> None:
         pass
 
-    async def listening(self, transport: Any) -> None:
+    async def listening(self, transport: ObservedTransport) -> None:
         """The transport listens; nothing is bound or opened yet."""
 
-    async def bind(self, transport: Any) -> bool:
+    async def bind(self, transport: ObservedTransport) -> bool:
         """Wait for whatever the layer needs before igni may open its state.
 
         ``True`` when something was bound — the backend then changes into
@@ -81,14 +92,16 @@ class BackendHooks:
     def serving(
         self,
         *,
-        model: Any,
-        transport: Any,
-        orchestrator: Any,
-        notifications: Any = None,
-        on_rebind: Any = None,
-        api_url: Any = None,
+        model: HostModel,
+        transport: ObservedTransport,
+        orchestrator: SessionOrchestrator,
+        notifications: NotificationCenter,
+        on_rebind: Callable[[], None],
+        api_url: Callable[[], str | None],
     ) -> None:
-        pass
+        """The backend serves: its host model, transport, pool-level RPC mount and
+        notification centre are up; ``on_rebind`` asks it to shut down, and
+        ``api_url`` says igni server's URL as configured now."""
 
     async def stop(self) -> None:
         pass
@@ -160,58 +173,58 @@ class UnknownLayer(RuntimeError):
 
 
 class Layers:
-    """The process's layer: chosen once, from ``IGNI_PROFILE``."""
+    """The process's layer: chosen once, from ``IGNI_PROFILE``, the first time it is asked."""
 
     #: The one setting that chooses it.
     ENV: ClassVar[str] = "IGNI_PROFILE"
     #: Where a layer's package declares it.
     GROUP: ClassVar[str] = "igni.layers"
 
-    _lock: ClassVar[threading.Lock] = threading.Lock()
-    _current: ClassVar[Layer | None] = None
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._current: Layer | None = None
 
-    @classmethod
-    def current(cls) -> Layer:
-        layer = cls._current
+    def current(self) -> Layer:
+        layer = self._current
         if layer is not None:
             return layer
-        with cls._lock:
-            if cls._current is None:
-                cls._current = cls._load()
-            return cls._current
+        with self._lock:
+            if self._current is None:
+                self._current = self._load()
+            return self._current
 
-    @classmethod
-    def install(cls, layer: Layer) -> None:
+    def install(self, layer: Layer) -> None:
         """Use ``layer`` from now on (a layer's own tests do)."""
-        with cls._lock:
-            cls._current = layer
+        with self._lock:
+            self._current = layer
 
-    @classmethod
-    def reset(cls) -> None:
+    def reset(self) -> None:
         """Choose again on the next ask (tests)."""
-        with cls._lock:
-            cls._current = None
+        with self._lock:
+            self._current = None
 
-    @classmethod
-    def requested(cls) -> str:
-        return os.environ.get(cls.ENV, "").strip().lower() or Layer.name
+    def requested(self) -> str:
+        return os.environ.get(self.ENV, "").strip().lower() or Layer.name
 
-    @classmethod
-    def _load(cls) -> Layer:
-        name = cls.requested()
+    def _load(self) -> Layer:
+        name = self.requested()
         if name == Layer.name:
             return Layer()
-        found = [ep for ep in entry_points(group=cls.GROUP) if ep.name == name]
+        found = [ep for ep in entry_points(group=self.GROUP) if ep.name == name]
         if not found:
             raise UnknownLayer(
-                f"{cls.ENV}={name!r}: no installed package declares that layer "
-                f"(entry point group {cls.GROUP!r}); install it, or unset {cls.ENV}"
+                f"{self.ENV}={name!r}: no installed package declares that layer "
+                f"(entry point group {self.GROUP!r}); install it, or unset {self.ENV}"
             )
         layer = found[0].load()()
         if not isinstance(layer, Layer):
-            raise UnknownLayer(f"{cls.ENV}={name!r}: {found[0].value} is not a Layer")
+            raise UnknownLayer(f"{self.ENV}={name!r}: {found[0].value} is not a Layer")
         logger.info("running with the %s layer", name)
         return layer
 
 
-__all__ = ["BackendHooks", "Layer", "Layers", "UnknownLayer"]
+#: The process's one :class:`Layers`; every seam asks it.
+layers = Layers()
+
+
+__all__ = ["BackendHooks", "Layer", "Layers", "UnknownLayer", "layers"]

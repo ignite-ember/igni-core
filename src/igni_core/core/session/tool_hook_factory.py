@@ -1,25 +1,13 @@
 """Tool-event hook factory + permission-evaluator owner.
 
-Extracted from :mod:`igni_core.core.session.core` — the
-``_create_tool_event_hook`` helper (and the inline
-:class:`PermissionEvaluator` construction it did as a side effect)
-graduates to a dedicated class here.
+Owns two invariants:
 
-Owns the two invariants previously scattered across
-``Session._create_tool_event_hook`` + a bare
-``self.permission_evaluator = ...`` write:
-
-* The evaluator is built from ``settings.permissions.*`` and
-  cached — every ``create()`` call reuses the same instance so
-  the mode flip performed by :class:`RuntimeModeCoordinator`
-  survives hook rebuilds.
-* The :class:`ToolEventHook` is composed with the cached
-  evaluator plus the current :class:`HookExecutor` /
-  ``session_id`` (both looked up lazily so the factory tolerates
-  the executor being rebuilt by ``reload_hooks``).
-
-Rule 6 (oop_offender #12): a factory class replaces the two
-sprawled operations on the Session god-class.
+* The evaluator is built from ``settings.permissions.*`` and cached —
+  every ``create()`` call reuses the same instance so the mode flip
+  performed by :class:`RuntimeModeCoordinator` survives hook rebuilds.
+* The :class:`ToolEventHook` is composed with the cached evaluator plus
+  the session's current :class:`HookExecutor` (read from
+  :class:`SessionHooks` on every build) and ``session_id``.
 """
 
 from __future__ import annotations
@@ -29,20 +17,23 @@ from pathlib import Path
 from typing import Any
 
 from igni_core.core.config.permission_eval import PermissionEvaluator
+from igni_core.core.config.permission_eval.schemas import PermissionMode
 from igni_core.core.config.settings import Settings
-from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.bypass_explainer import CallExplainer
+from igni_core.core.hooks.bypass_guard import Ask, BypassGuard
+from igni_core.core.hooks.permission.evaluator_stage import AskPerson
 from igni_core.core.hooks.tool_hook import ToolEventHook
+from igni_core.core.mcp.hints import ToolHintsRegistry
+from igni_core.core.session.hooks import SessionHooks
 from igni_core.core.utils.rules_index import RulesIndex
 
 
 class ToolEventHookFactory:
-    """Factory + owner of the :class:`ToolEventHook` used by the
-    main team's ``tool_hooks`` list.
+    """Factory + owner of the :class:`ToolEventHook` used by the main
+    team's ``tool_hooks`` list.
 
-    One instance is composed by :class:`Session` at construction
-    time; subsequent ``reload_hooks`` calls reuse it so the
-    :class:`PermissionEvaluator` cache persists across the
-    hook-executor rebuild.
+    Replaced on every plugin reload; the session seeds the replacement
+    with the previous evaluator so a mode the person chose survives.
     """
 
     def __init__(
@@ -50,58 +41,69 @@ class ToolEventHookFactory:
         settings: Settings,
         rules_index: RulesIndex,
         project_dir: Path,
-        hook_executor_ref: Callable[[], HookExecutor],
+        hooks: SessionHooks,
         session_id_ref: Callable[[], str],
         permission_evaluator: PermissionEvaluator | None = None,
     ) -> None:
         self._settings = settings
         self._rules_index = rules_index
         self._project_dir = project_dir
-        self._hook_executor_ref = hook_executor_ref
+        self._hooks = hooks
         self._session_id_ref = session_id_ref
-        # Seed for the paths that replace the whole factory (plugin
-        # hot-reload rebuilds it to pick up the new hook executor).
-        # Without this the replacement starts with an empty cache and
-        # rebuilds the evaluator from ``settings.permissions.mode`` —
-        # silently dropping a user out of plan mode, i.e. out of "do not
-        # touch my tree", because they installed a plugin.
+        # Without the seed a replacement factory rebuilds the evaluator from
+        # ``settings.permissions.mode`` — dropping a person out of plan mode
+        # because they installed a plugin.
         self._permission_evaluator: PermissionEvaluator | None = permission_evaluator
         #: Bypass mode's last check; set by the session once it can ask.
-        self.bypass_guard: Any = None
+        self.bypass_guard: BypassGuard | None = None
         #: The session's in-run approval channel, for a call the evaluator
         #: wants asked about that was built without an approval pause.
-        self.ask_person: Any = None
+        self.ask_person: AskPerson | None = None
 
     @property
     def permission_evaluator(self) -> PermissionEvaluator:
-        """Return the cached :class:`PermissionEvaluator`, building
-        one on first access.
-
-        Exposed as a property so :class:`Session` can forward its
-        legacy ``session.permission_evaluator`` attribute without
-        needing to know when the evaluator was constructed.
-        """
+        """The cached evaluator, built from the ``permissions`` block on
+        first access (explicit lists, per-category levels, ``--read-only``)."""
         if self._permission_evaluator is None:
-            # Built from the ``permissions`` block: the explicit lists, the
-            # per-category levels behind them (documented in SECURITY.md as
-            # igni's permission model, and read by nothing until they were
-            # wired here — see tests/test_permission_categories_are_live.py),
-            # and ``--read-only``.
             self._permission_evaluator = PermissionEvaluator.from_permissions(
                 self._settings.permissions
             )
         return self._permission_evaluator
 
-    def create(self) -> ToolEventHook:
-        """Build a fresh :class:`ToolEventHook` bound to the current
-        hook executor / session id / cached evaluator.
+    @property
+    def in_bypass(self) -> bool:
+        """Whether the live evaluator is in Bypass mode, read per call."""
+        return self.permission_evaluator.mode is PermissionMode.BYPASS_PERMISSIONS
 
-        Called on every ``reload_hooks`` so the tool_hooks list
-        picks up new event definitions; the cached evaluator is
-        preserved intentionally (mode flips must survive reload).
+    def build_bypass_guard(
+        self, ask: Ask, model_ref: Callable[[], Any], tool_hints: ToolHintsRegistry
+    ) -> BypassGuard:
+        """Bypass mode's last check, asking through ``ask``.
+
+        ``model_ref`` is called per explanation, so the session's current
+        model explains the call even after its settings are replaced.
         """
+        config = self._settings.safety.bypass_guard
+        return BypassGuard(
+            config=config,
+            project_dir=self._project_dir,
+            in_bypass=lambda: self.in_bypass,
+            ask=ask,
+            tool_hints=tool_hints,
+            explainer=(
+                CallExplainer(
+                    model_ref, project_dir=self._project_dir, timeout=config.explain_timeout
+                )
+                if config.explain
+                else None
+            ),
+        )
+
+    def create(self) -> ToolEventHook:
+        """A fresh :class:`ToolEventHook` bound to the current executor,
+        session id and cached evaluator."""
         return ToolEventHook(
-            executor=self._hook_executor_ref(),
+            executor=self._hooks.executor,
             session_id=self._session_id_ref(),
             protected_paths=self._settings.safety.protected_paths,
             blocked_commands=self._settings.safety.blocked_commands,
@@ -111,14 +113,3 @@ class ToolEventHookFactory:
             bypass_guard=self.bypass_guard,
             ask_person=self.ask_person,
         )
-
-    def evaluator_for_session(self, session: Any) -> PermissionEvaluator:
-        """Compat wrapper for :class:`Session` — build the
-        evaluator AND write it onto ``session.permission_evaluator``
-        so legacy callers that reach for the attribute keep
-        working. Returns the same instance :attr:`permission_evaluator`
-        returns.
-        """
-        evaluator = self.permission_evaluator
-        session.permission_evaluator = evaluator
-        return evaluator

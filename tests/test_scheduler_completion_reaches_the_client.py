@@ -32,7 +32,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
-from igni_core.backend.schemas_push import SchedulerCompletedPayload
+from igni_core.protocol.schemas.push_payloads import SchedulerCompletedPayload
 
 
 @pytest.fixture

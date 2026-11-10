@@ -161,6 +161,15 @@ class TestTaskStore:
         assert retrieved.status == TaskStatus.pending
 
     @pytest.mark.asyncio
+    async def test_add_and_get_keeps_the_recurrence(self, store):
+        """A recurring task survives the round trip through the row."""
+        await store.add(self._make_task(recurrence="every 2 hours"))
+        retrieved = await store.get("test123")
+        assert retrieved is not None
+        assert retrieved.recurrence == "every 2 hours"
+        assert retrieved.recurrence_obj is not None
+
+    @pytest.mark.asyncio
     async def test_get_missing(self, store):
         assert await store.get("nonexistent") is None
 

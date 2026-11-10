@@ -1,7 +1,7 @@
 """The 6-step evaluation pipeline.
 
 Kept as a lean dataclass — the class holds live rule lists that
-:mod:`igni_core.backend.hitl_controller` mutates at runtime, and
+:meth:`PermissionEvaluator.remember` extends at runtime, and
 :mod:`igni_core.core.session.state_ops` reassigns
 :attr:`PermissionEvaluator.mode` after a slash-command switches
 posture. Pydantic frozen model isn't the right fit for that call
@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from igni_core.core.config.permission_eval.catalog import BashCommand, ToolCategoryCatalog
 from igni_core.core.config.permission_eval.pipe_filters import is_pipe_filter
@@ -183,15 +183,47 @@ class PermissionEvaluator:
         dropped; deny still runs first, so a category set to ``deny`` is not
         reopened by a specific allow.
         """
-        cat_deny, cat_ask, cat_allow = perms.category_rules()
+        category = perms.category_rules()
         evaluator = cls.from_strings(
             mode=perms.mode,
-            deny=[*perms.deny, *cat_deny],
-            ask=[*perms.ask, *cat_ask],
-            allow=[*perms.allow, *cat_allow],
+            deny=[*perms.deny, *category.deny],
+            ask=[*perms.ask, *category.ask],
+            allow=[*perms.allow, *category.allow],
         )
         evaluator.read_only = perms.read_only
         return evaluator
+
+    def adopt(self, fresh: PermissionEvaluator, previous_default: str) -> None:
+        """Take ``fresh``'s rules, keeping this instance and the person's mode.
+
+        The lists are replaced in place, because the hook pipeline holds
+        references to them. ``read_only`` is only ever tightened, and the
+        mode follows the new default only when the person never moved off
+        ``previous_default``.
+        """
+        self.deny[:] = fresh.deny
+        self.ask[:] = fresh.ask
+        self.allow[:] = fresh.allow
+        self.read_only = self.read_only or fresh.read_only
+        if self.mode.value == previous_default and fresh.mode.value != previous_default:
+            self.set_mode(fresh.mode)
+
+    def remember(self, rule: PermissionRule, *, deny: bool) -> None:
+        """Add a rule the person has just chosen in an approval dialog.
+
+        Appended in place (the hook pipeline holds these lists), once: a
+        rule already present is not added again. Takes effect on the
+        very next tool call, without waiting for a settings reload.
+        """
+        self.remember_at(rule, "deny" if deny else "allow")
+
+    def remember_at(self, rule: PermissionRule, level: Literal["allow", "ask", "deny"]) -> None:
+        """Add a rule saved at ``level`` — an approval dialog's choice, or a
+        rule saved through ``save_permission_rule``. Appended in place, once;
+        takes effect on the very next tool call."""
+        target = {"allow": self.allow, "ask": self.ask, "deny": self.deny}[level]
+        if rule not in target:
+            target.append(rule)
 
     # ── Pipeline entry points ─────────────────────────────────────
 

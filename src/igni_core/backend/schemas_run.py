@@ -13,18 +13,19 @@ Consumers:
   ``is_active`` is what the FE's "processing?" question maps to.
 * :class:`MediaAttachments` — the ``media`` argument to
   ``run_message`` used to be ``dict[str, Any]``; now a typed model.
-  Moved down to :mod:`igni_core.core.utils.media_schemas` so
-  :class:`~igni_core.core.utils.media.MediaResolver` can produce
-  it directly (previously ``core/utils`` returned a raw dict and
-  ``backend`` validated it — a layer inversion). Re-exported from
-  here for wire-compat with pre-refactor importers.
+  It lives in :mod:`igni_core.core.utils.media_schemas` so
+  :class:`~igni_core.core.utils.media.MediaResolver` can produce it
+  directly (previously ``core/utils`` returned a raw dict and
+  ``backend`` validated it — a layer inversion). This module
+  imports it because :class:`PromptBuildResult` annotates it; every
+  other importer reads it from ``core.utils.media_schemas``.
 * :class:`UserPromptSubmitPayload` / :class:`StopHookPayload` — the
   hook fire payloads. Consumers include both the RunController
   natural-end path and :meth:`HitlController.resolve_batch` after
   ``acontinue_run`` finishes.
 * :class:`ModelConfig` — one entry in ``settings.models.registry``.
-  The registry is still ``dict[str, dict]`` on disk but we validate
-  the row-shape at the point of use in RunController.
+  Built from the typed registry row at the point of use in
+  RunController.
 * :class:`HttpClientCloseResult` — the previously-swallowed
   ``except Exception`` in ``close_model_http_client`` becomes a
   typed Result.
@@ -41,8 +42,9 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Re-export so ``from igni_core.backend.schemas_run import MediaAttachments``
-# still works after the media schema moved down into ``core/utils``.
+# ``PromptBuildResult`` annotates the media bundle, so this module
+# needs the class itself. Everyone else imports it from
+# ``igni_core.core.utils.media_schemas`` — the one home for it.
 from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.protocol import messages as msg
 
@@ -50,7 +52,6 @@ __all__ = [
     "CancelAgentRunResult",
     "HookGateResult",
     "HttpClientCloseResult",
-    "MediaAttachments",
     "ModelConfig",
     "PromptBuildResult",
     "RunPhase",
@@ -90,9 +91,8 @@ class UserPromptSubmitPayload(BaseModel):
     """Payload dict for ``UserPromptSubmit`` hook fires.
 
     Replaces the ``{"message": text, "session_id": ...}`` dict
-    literal in the old ``run_message_locked``. Consumers still see a
-    plain dict at the hook-executor interface (``.model_dump()`` at
-    the boundary)."""
+    literal in the old ``run_message_locked``; handed to the hook
+    executor as it is."""
 
     message: str
     session_id: str
@@ -111,11 +111,9 @@ class StopHookPayload(BaseModel):
 class ModelConfig(BaseModel):
     """One row of ``settings.models.registry``.
 
-    The registry is still ``dict[str, dict[str, Any]]`` on disk (see
-    :class:`igni_core.core.config.settings.ModelsConfig`), but we
-    validate the row-shape at the RunController boundary so the
-    ``.vision`` check is a real attribute lookup rather than
-    ``.get('vision', False)``. ``extra='allow'`` preserves any
+    Validated from the row's typed
+    :class:`igni_core.core.config.model_entry.ModelRegistryEntry` at
+    the RunController boundary. ``extra='allow'`` preserves any
     provider-specific keys we haven't named."""
 
     model_config = ConfigDict(extra="allow")
@@ -136,14 +134,27 @@ class HttpClientCloseResult(BaseModel):
     reason: str = ""
 
 
-class CancelAgentRunResult(BaseModel):
-    """Wire shape for :meth:`RunCoordinator.cancel_agent_run` —
-    the FE renders a toast on ``ok=False`` so ``error``
-    differentiates the unknown-run-id case from a live cancel
-    error."""
+class CancelRunResult(BaseModel):
+    """Result of cancelling the current turn: whether one was running."""
 
-    ok: bool
-    error: str = ""
+    cancelled: bool = Field(
+        description=(
+            "`true` when a turn was running and is being stopped: its stream "
+            "ends with an `info` and a `stream_end`. `false` when nothing was running."
+        )
+    )
+
+
+class CancelAgentRunResult(BaseModel):
+    """Result of cancelling one background agent run."""
+
+    ok: bool = Field(description="`true` when the agent run was found and cancelled.")
+    error: str = Field(
+        default="",
+        description=(
+            "Why the cancel failed, e.g. the run id is unknown; empty when `ok` is `true`."
+        ),
+    )
 
 
 class HookGateResult(BaseModel):

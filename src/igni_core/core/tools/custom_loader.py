@@ -50,9 +50,11 @@ from igni_core.core.tools.custom_loader_schemas import (
     DiscoveryResult,
     FailedFile,
     LoadedFile,
+    PluginToolDir,
     SkippedFile,
     ToolSource,
 )
+from igni_core.core.workspace_trust import WorkspaceTrust
 
 # Re-export the schemas so external callers with
 # ``from igni_core.core.tools.custom_loader import DiscoveryResult``
@@ -63,9 +65,9 @@ __all__ = [
     "DiscoveryResult",
     "FailedFile",
     "LoadedFile",
+    "PluginToolDir",
     "SkippedFile",
     "ToolSource",
-    "load_custom_tools",
 ]
 
 logger = logging.getLogger(__name__)
@@ -98,6 +100,11 @@ class CustomToolLoader:
     and returns a :class:`DiscoveryResult` with the built toolkits
     alongside diagnostic lists of loaded / skipped / failed files.
 
+    The trust service is a collaborator, not something the loader
+    reaches for: it is handed in at construction, so whoever builds
+    the loader decides which process-wide trust service answers (or
+    which instance a test hands it).
+
     See the module docstring for the security model — this class
     executes arbitrary Python from the user's
     ``.igni/tools/`` dirs without sandboxing. The trust boundary
@@ -111,7 +118,11 @@ class CustomToolLoader:
     fresh view construct a new :class:`CustomToolLoader`.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, trust: WorkspaceTrust) -> None:
+        #: The trust service that decides whether a folder's own tools
+        #: may run. Injected, so the loader never reaches for a
+        #: process-wide instance on its own.
+        self._trust = trust
         # Track every module name we installed on ``sys.modules`` so
         # a future plugin-reload flow can call :meth:`unload` to
         # drop them. NOT auto-invoked at the end of :meth:`discover`
@@ -127,7 +138,7 @@ class CustomToolLoader:
         self,
         project_dir: Path | None = None,
         *,
-        plugin_tool_dirs: list[tuple[str, Path]] | None = None,
+        plugin_tool_dirs: list[PluginToolDir] | None = None,
         group_tools_dir: Path | None = None,
     ) -> DiscoveryResult:
         """Discover custom tools from ``.igni/tools/`` directories.
@@ -160,9 +171,7 @@ class CustomToolLoader:
         # A folder's own tools are imported — run — only once the person
         # trusts the folder (``core/workspace_trust``). Opening a repository
         # must not be enough to execute its ``.igni/tools/*.py``.
-        from igni_core.core.workspace_trust import WorkspaceTrust
-
-        if WorkspaceTrust.shared().is_trusted(project_dir, what="tools (.igni/tools)"):
+        if self._trust.is_trusted(project_dir, what="tools (.igni/tools)"):
             sources.append(
                 ToolSource(name_prefix="custom", tools_dir=project_dir / CONFIG_DIR / "tools")
             )
@@ -170,11 +179,11 @@ class CustomToolLoader:
         # sources, so a tool the group ships wins its name.
         if group_tools_dir is not None:
             sources.append(ToolSource(name_prefix="custom", tools_dir=group_tools_dir))
-        for plugin_name, tools_dir in plugin_tool_dirs or []:
+        for plugin in plugin_tool_dirs or []:
             sources.append(
                 ToolSource(
-                    name_prefix=f"custom_{plugin_name}",
-                    tools_dir=tools_dir,
+                    name_prefix=f"custom_{plugin.plugin_name}",
+                    tools_dir=plugin.tools_dir,
                 )
             )
 
@@ -274,7 +283,7 @@ class CustomToolLoader:
         returns ``None``. On success returns the list of
         discovered :class:`Function` instances (possibly empty).
         """
-        module_name = f"ember_custom_tools.{file_path.stem}"
+        module_name = f"igni_custom_tools.{file_path.stem}"
 
         spec = importlib.util.spec_from_file_location(module_name, file_path)
         if spec is None or spec.loader is None:
@@ -317,40 +326,3 @@ class CustomToolLoader:
                 functions.append(obj)
 
         return functions
-
-
-def load_custom_tools(
-    project_dir: Path | None = None,
-    *,
-    plugin_tool_dirs: list[tuple[str, Path]] | None = None,
-    group_tools_dir: Path | None = None,
-) -> list[Toolkit]:
-    """Back-compat shim — returns a plain ``list[Toolkit]``.
-
-    Existing callers (:mod:`registry`, :mod:`tools_builder`) rely
-    on this exact return shape:
-
-    * :meth:`ToolRegistry.load_custom_tools` returns the value
-      unchanged as ``list[Toolkit]``.
-    * :meth:`ToolkitAssembler.custom` wraps the value in
-      ``list(loaded)`` — passing a :class:`DiscoveryResult`
-      Pydantic model here would silently iterate the model's
-      *fields* (``["toolkits", "loaded", "skipped", "failed"]``)
-      instead of the toolkits, breaking tools_builder at runtime.
-
-    New callers should prefer
-    :meth:`CustomToolLoader.discover` for the structured result
-    shape (loaded / skipped / failed).
-    """
-    loader = CustomToolLoader()
-    result = loader.discover(
-        project_dir,
-        plugin_tool_dirs=plugin_tool_dirs,
-        group_tools_dir=group_tools_dir,
-    )
-    # Explicit ``list(...)`` guards the caller contract: if a
-    # future refactor changes :attr:`DiscoveryResult.toolkits` to
-    # a non-list sequence, the shim still hands back a plain
-    # ``list[Toolkit]`` so ``tools_builder.py:custom()``'s
-    # ``list(loaded)`` doesn't degrade.
-    return list(result.toolkits)

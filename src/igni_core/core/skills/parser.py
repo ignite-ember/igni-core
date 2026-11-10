@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Ordered alternation: the indexed form must be tried before the bare
 # one, and ``\d+`` must be greedy. See :func:`_substitute_arguments`.
@@ -69,27 +69,38 @@ class SkillDefinition(BaseModel):
         return text
 
 
+# Emitted by BackendServer.get_skill_details for the skills panel. A
+# JSON-friendly subset of SkillDefinition: ``source_dir`` is a str and
+# ``body`` is sent in full so the panel can clip it for preview.
 class SkillInfo(BaseModel):
-    """Wire format for one skill — emitted by
-    :meth:`BackendServer.get_skill_details`, consumed by the skills
-    panel.
+    """One skill available in the session, as shown in the skills panel."""
 
-    JSON-friendly subset of :class:`SkillDefinition`: ``source_dir``
-    widened to ``str`` (Path doesn't round-trip), ``body`` is sent
-    in full so the panel can head-clip for preview without an extra
-    RPC. No ``render`` method — wire models are read-only.
-    """
-
-    name: str
-    description: str = ""
-    version: str = "0.1.0"
-    category: str = "development"
-    argument_hint: str = ""
-    context: str = "inline"
-    agent: str = ""
-    user_invocable: bool = True
-    body: str = ""
-    source_dir: str = ""
+    name: str = Field(description="Skill name, used to invoke it (e.g. `/deploy`).")
+    description: str = Field(default="", description="What the skill does. Empty when not given.")
+    version: str = Field(default="0.1.0", description="Version declared by the skill.")
+    category: str = Field(default="development", description="Category the skill is grouped under.")
+    argument_hint: str = Field(
+        default="",
+        description="Hint shown for the arguments the skill expects. Empty when it takes none.",
+    )
+    context: str = Field(
+        default="inline",
+        description="How the skill runs: `inline` (on the default skills agent) or `fork` "
+        "(on the agent named in `agent`).",
+    )
+    agent: str = Field(
+        default="", description="Agent the skill runs on when `context` is `fork`. Empty otherwise."
+    )
+    user_invocable: bool = Field(
+        default=True, description="True when the user can invoke the skill directly."
+    )
+    body: str = Field(
+        default="", description="Full instruction text of the skill (its SKILL.md body)."
+    )
+    source_dir: str = Field(
+        default="",
+        description="Directory the skill was loaded from. Empty when not loaded from disk.",
+    )
 
 
 def _as_str(value: object) -> str:

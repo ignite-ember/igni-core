@@ -3,7 +3,7 @@
 An extension's backend logic runs in every mode; only its UI needs an
 app to load into. A headless run is one session, one message, no
 window — so it starts the extensions installed on this machine the way
-the app does (:meth:`~igni_core.backend.app.BackendApp._start_extensions`,
+the app does (:meth:`~igni_core.backend.extension_startup.ExtensionStartup.start`,
 without the distribution sync), and their tools, hooks and prompt
 contributions apply to it. Without this a policy extension's
 ``PreToolUse`` hook could be stepped around by running igni with ``-m``.
@@ -23,20 +23,28 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from igni_core.backend.activity import Activity
 from igni_core.backend.command_handler import CommandHandler
-from igni_core.core.hooks.extension_gate import ExtensionHookGate
+from igni_core.core.config.settings import Settings
+from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.plugins.installer import PluginInstaller
+from igni_core.core.session.client_state import ClientStateRead, ClientStateResult
+from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.contributions import ExtensionContributions
-from igni_core.extensions.distribution import OneShotSync
+from igni_core.extensions.distribution.once import OneShotSync
+from igni_core.extensions.host.attachments import ChatAttachments
+from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
+from igni_core.extensions.host.model_config import HostModelConfig
+from igni_core.extensions.host.processes import ExtensionProcesses
 from igni_core.extensions.host.spec import ErrorCode
+from igni_core.extensions.host.values import SessionAttached
 from igni_core.extensions.impact import IgniCommands
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.launcher import ExtensionLauncher
@@ -56,20 +64,40 @@ from igni_core.extensions.store import ExtensionStore
 from igni_core.protocol.messages import Message
 from igni_core.protocol.rpc import RpcMethod
 
+if TYPE_CHECKING:
+    from igni_core.extensions.sandbox import ExtensionSandbox
+
 logger = logging.getLogger(__name__)
 
 
-class NoWindowState:
-    """What windows remember, in a run that has none: nothing."""
+class RunState:
+    """What windows remember, in a run that has none: a scratchpad.
 
-    def get_for_client(self, client_id: str) -> dict[str, str]:
-        return {}
+    A headless run has no window, so nothing reads this state back
+    after the run ends — but it is kept for the length of the run, so
+    that a write which worked is a write which worked, exactly as in
+    the database store this one stands in for. The store answers with
+    a result either way, and its ``ok`` means one thing in both.
+    """
 
-    def set_value(self, client_id: str, key: str, value: str) -> None:
-        return None
+    def __init__(self) -> None:
+        self._values: dict[tuple[str, str], str] = {}
 
-    def delete_value(self, client_id: str, key: str) -> None:
-        return None
+    def get_for_client(self, client_id: str) -> ClientStateRead:
+        return ClientStateRead(
+            ok=True,
+            values={
+                key: value for (client, key), value in self._values.items() if client == client_id
+            },
+        )
+
+    def set_value(self, client_id: str, key: str, value: str) -> ClientStateResult:
+        self._values[(client_id, key)] = value
+        return ClientStateResult(ok=True)
+
+    def delete_value(self, client_id: str, key: str) -> ClientStateResult:
+        self._values.pop((client_id, key), None)
+        return ClientStateResult(ok=True)
 
 
 class HeadlessHostBackend:
@@ -77,7 +105,7 @@ class HeadlessHostBackend:
 
     def __init__(self, project_dir: Path, session_id: str) -> None:
         self.project_dir = project_dir
-        self.client_state = NoWindowState()
+        self.client_state = RunState()
         self._session_id = session_id
 
     @staticmethod
@@ -99,7 +127,7 @@ class HeadlessHostBackend:
     async def ask(self, message: Message, *, session_id: str, timeout: float = 120.0) -> Message:
         raise self._refused(type(message).__name__)
 
-    async def attach(self, session_id: str, project_dir: str | None) -> dict[str, str]:
+    async def attach(self, session_id: str, project_dir: str | None) -> SessionAttached:
         raise self._refused("attach_session")
 
     async def post(
@@ -108,7 +136,7 @@ class HeadlessHostBackend:
         session_id: str,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments,
         queued: bool,
     ) -> None:
         raise self._refused("chat.post")
@@ -119,22 +147,24 @@ class HeadlessHostBackend:
         session_id: str,
         extension_id: str,
         text: str,
-        media: dict[str, str] | None,
+        media: ChatAttachments,
     ) -> UnattendedPost:
         raise self._refused("chat.post")
 
     async def title(self, *, session_id: str, title: str) -> PersistResult:
         raise self._refused("sessions.create")
 
-    async def show_view(self, *, session_id: str, payload: dict[str, Any], run_id: str) -> None:
+    async def show_view(
+        self, *, session_id: str, payload: VisualizationDeltaPayload, run_id: str
+    ) -> None:
         raise self._refused("chat.show")
 
-    def views(self, session_id: str) -> list[dict[str, Any]]:
+    def views(self, session_id: str) -> list[ViewShown]:
         return []
 
-    def activity(self) -> dict[str, Any]:
+    def activity(self) -> Activity:
         # A headless run is its own process; nothing here suspends it.
-        return Activity.of([]).model_dump(mode="json")
+        return Activity.of([])
 
     def waiting_approvals(self, session_id: str) -> list[Message]:
         # Headless runs ask nobody: nothing waits on a person.
@@ -174,22 +204,27 @@ class HeadlessExtensions:
             return
         rpc = ExtensionRpc(self._registry)
         plugins_dir = PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir
+        hooks = ExtensionHooks(registry=self._registry)
         contributions = ExtensionContributions(
             registry=self._registry,
             rpc=rpc,
             plugins_dir=plugins_dir,
-            priority=store.priority,
+            priority=store.listing.priority,
             igni_commands=IgniCommands.of(CommandHandler.builtin_names()),
+            prompt_loader=session.prompt_loader,
+            prompts=session.prompt_contributions,
+            hooks=hooks,
         )
         contributions.attach()
-        model = HostModel(
-            backend=HeadlessHostBackend(Path(session.project_dir), str(session.session_id)),
-            registry=self._registry,
-            store=store,
+        model = HostModel.build(
+            HostModelConfig(
+                backend=HeadlessHostBackend(Path(session.project_dir), str(session.session_id)),
+                registry=self._registry,
+                store=store,
+            )
         )
-        self._channel = HostChannel(model)
-        hooks = ExtensionHooks.wire(self._registry)
-        ExtensionHookGate.install(hooks)
+        self._channel = HostChannel(model, hooks=hooks, processes=ExtensionProcesses())
+        extension_hook_gate.install(hooks)
         person = SignedInPerson(settings.auth.credentials_file, store)
         session.mcp_manager.extension_request_meta = person.meta
         hooks.set_principal(person)
@@ -233,7 +268,7 @@ class HeadlessExtensions:
                 logger.warning("extension %s is %s: %s", extension_id, entry.state, entry.reason)
         session.reload_group_agents()
 
-    async def _sync(self, store: ExtensionStore, settings: Any) -> None:
+    async def _sync(self, store: ExtensionStore, settings: Settings) -> None:
         """Bring the store in step with igni server first, bounded.
 
         The app's backend syncs once a window attaches; a headless run
@@ -254,7 +289,7 @@ class HeadlessExtensions:
             )
 
     @staticmethod
-    def _sandbox(settings: Any) -> Any:
+    def _sandbox(settings: Settings) -> ExtensionSandbox:
         """The OS sandbox every extension process here starts in.
 
         Imported here rather than at the top: this module is reached
@@ -269,9 +304,9 @@ class HeadlessExtensions:
         """Stop the extensions' processes, and take their hooks out of the gate."""
         if self._channel is None:
             return
-        ExtensionHookGate.install(None)
+        extension_hook_gate.install(None)
         await self._session.mcp_manager.disconnect_all()
         await self._channel.stop()
 
 
-__all__ = ["HeadlessExtensions", "HeadlessHostBackend", "NoWindowState"]
+__all__ = ["HeadlessExtensions", "HeadlessHostBackend", "RunState"]

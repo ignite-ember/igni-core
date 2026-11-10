@@ -13,17 +13,25 @@ the service sent it, and no extension code is involved.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from igni_core.protocol.json_value import WireJson
 
 
 class ItemKind(StrEnum):
+    """What kind of item a service sent.
+
+    * ``event``: for the extension's own code to handle; nothing is posted.
+    * ``message``: a message posted to a chat, for the agent.
+    * ``chat``: opens a chat with a title; may carry its first message.
+    * ``action``: acts on a chat: show a view, rename it, or cancel its run.
+    """
+
     EVENT = "event"
     MESSAGE = "message"
-    #: Opens the thread's chat with a title; may carry its first message.
     CHAT = "chat"
-    #: Acts on a thread's chat: show a view, rename it, cancel its run.
     ACTION = "action"
 
 
@@ -32,23 +40,39 @@ class ItemAttachment(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    attachment_id: str
-    filename: str
-    content_type: str = "application/octet-stream"
-    size: int = 0
-    sha256: str = ""
+    attachment_id: str = Field(description="The attachment's id.")
+    filename: str = Field(description="The file's name.")
+    content_type: str = Field(
+        default="application/octet-stream", description="The file's media type."
+    )
+    size: int = Field(default=0, description="The file's size, in bytes.")
+    sha256: str = Field(
+        default="", description="The file's SHA-256 hash, in hex; empty when not given."
+    )
 
 
 class ChatAction(BaseModel):
-    """An ``action`` item's operation on its thread's chat."""
+    """What an ``action`` item does to its chat."""
 
     model_config = ConfigDict(extra="ignore")
 
-    op: Literal["show", "rename", "cancel"]
-    #: ``show``: a json-render spec — shown in the chat, never sent to the model.
-    view: dict[str, Any] | None = None
-    #: ``rename``: the chat's new title; ``show``: the view's title.
-    title: str | None = None
+    op: Literal["show", "rename", "cancel"] = Field(
+        description=(
+            "`show`: show a view in the chat. `rename`: rename the chat. `cancel`: cancel "
+            "the chat's run."
+        )
+    )
+    view: dict[str, WireJson] | None = Field(
+        default=None,
+        description=(
+            "For `show`: the view, as a json-render spec. Shown in the chat, never sent to "
+            "the model."
+        ),
+    )
+    title: str | None = Field(
+        default=None,
+        description="For `rename`: the chat's new title. For `show`: the view's title.",
+    )
 
 
 __all__ = ["ChatAction", "ItemAttachment", "ItemKind"]

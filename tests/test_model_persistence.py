@@ -101,6 +101,17 @@ class TestSaveDefaultModel:
         cfg = yaml.safe_load((cfg_dir / "config.yaml").read_text())
         assert cfg["models"] == {"default": "MiniMax-M2.7"}
 
+    def test_reports_a_save_that_did_not_land(self, tmp_path):
+        """A config path that can't be written comes back ``False``
+        instead of raising, so the switch can tell the user."""
+        blocker = tmp_path / "not-a-dir"
+        blocker.write_text("")
+
+        assert UserConfigStore(blocker / "config.yaml").set_default_model("m") is False
+
+    def test_reports_a_save_that_landed(self, tmp_path):
+        assert UserConfigStore(tmp_path / "config.yaml").set_default_model("m") is True
+
 
 class TestSessionPreferencesStore:
     """Per-session model preference round-trips through SQLite."""
@@ -108,7 +119,7 @@ class TestSessionPreferencesStore:
     def test_set_then_get_returns_model(self, tmp_path):
         """Basic upsert + read."""
         store = SessionPreferencesStore(tmp_path / "state.db")
-        store.set_model("sess-a", "MiniMax-M2.7")
+        assert store.set_model("sess-a", "MiniMax-M2.7") is True
         assert store.get_model("sess-a") == "MiniMax-M2.7"
 
     def test_get_unknown_session_returns_none(self, tmp_path):

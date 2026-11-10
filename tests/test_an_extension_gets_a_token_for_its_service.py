@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -20,7 +21,9 @@ import pytest
 
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.schemas_rpc import LoginResult
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.python_env import PythonEnvironments
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
@@ -36,7 +39,7 @@ from igni_core.extensions.service_token import (
     ServiceTokenExchange,
     TokenExchangeFailed,
 )
-from igni_core.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.store import ExtensionStore
 from tests.extension_distribution_helpers import API_URL, SESSION, FakeIgni, build_wheel, manifest
 
 NOTES = "https://notes.example.com"
@@ -285,8 +288,11 @@ class StubMcp:
     def __init__(self) -> None:
         self.configs: dict[str, Any] = {}
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return type("Ok", (), {"ok": True, "reason": ""})()
+        return MCPConnectResult(ok=True)
 
     async def disconnect_one(self, name: str) -> None:
         self.configs.pop(name, None)
@@ -433,7 +439,7 @@ async def test_a_distributed_python_extension_fetches_its_token(tmp_path, endpoi
 # ── Sign-in brings the extensions ──────────────────────────────────
 
 
-class FakeBackend:
+class FakeAuth:
     def __init__(self, ok: bool) -> None:
         self.ok = ok
 
@@ -444,11 +450,16 @@ class FakeBackend:
         return None
 
 
+class FakeBackend:
+    def __init__(self, ok: bool) -> None:
+        self.controllers = SimpleNamespace(auth=FakeAuth(ok))
+
+
 class FakePush:
-    async def on_login_status(self, text: str) -> None:
+    async def on_login_status(self, text: str, flow_id: str = "") -> None:
         return None
 
-    async def on_login_result(self, *, success: bool, result: str) -> None:
+    async def on_login_result(self, *, success: bool, result: str, flow_id: str = "") -> None:
         return None
 
 

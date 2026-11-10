@@ -7,7 +7,7 @@ Covers two surfaces:
     URL) so the BE catches the mistake before it ever reaches the
     installer.
 
-  * :class:`GroupPolicyCache._materialize_plugin` — runtime behavior.
+  * :class:`PluginInstallCoordinator.install` — runtime behavior.
     With a stub installer, plugin entries with a source route through
     ``installer.install(url, ref=, subdir=)``. Entries without a
     source still write YAML to the legacy path. Failures are logged
@@ -28,12 +28,13 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from igni_core.core.config import group_policy as gp_mod
-from igni_core.core.config.group_policy import (
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyPack,
-)
+from igni_core.core.config.group_policy import plugins as plugins_mod
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
+from igni_core.core.config.group_policy.refresher import PackRefresher, RefreshStatus
+from igni_core.core.plugins.git import GitError
 from igni_core.core.plugins.loader import PluginLoader
 
 # ── Pydantic surface ──────────────────────────────────────────
@@ -134,11 +135,21 @@ class TestGroupPolicyEntrySourceFields:
 
 
 class _StubInstaller:
-    """Captures install() calls for assertion."""
+    """Captures install() calls for assertion.
+
+    Implements the two seams the pack uses besides ``install``: it is scoped
+    to the pack's directory, and it has no user-tier install to hand over.
+    """
 
     def __init__(self, *, raises: Exception | None = None) -> None:
         self.calls: list[dict] = []
         self._raises = raises
+
+    def scoped_to(self, plugins_dir: Path) -> _StubInstaller:
+        return self
+
+    def release_installed_from(self, url: str) -> list[Path]:
+        return []
 
     def install(
         self,
@@ -146,6 +157,7 @@ class _StubInstaller:
         *,
         ref: str | None = None,
         subdir: str | None = None,
+        directory_name: str | None = None,
     ):
         self.calls.append({"url": url, "ref": ref, "subdir": subdir})
         if self._raises is not None:
@@ -167,11 +179,7 @@ class TestGroupPolicyCacheMaterializePlugin:
     def test_source_url_calls_installer_with_args(self, tmp_path: Path):
         cache_dir = tmp_path / "gp"
         installer = _StubInstaller()
-        cache = GroupPolicyCache(
-            cache_dir=cache_dir,
-            installer=installer,
-            data_dir=tmp_path,
-        )
+        cache = GroupPolicyCache(GroupPolicyLayout(root=cache_dir), installer=installer)
 
         pack = _pack_with(
             [
@@ -201,11 +209,7 @@ class TestGroupPolicyCacheMaterializePlugin:
 
     def test_url_only_invokes_installer_without_ref_or_subdir(self, tmp_path: Path):
         installer = _StubInstaller()
-        cache = GroupPolicyCache(
-            cache_dir=tmp_path / "gp",
-            installer=installer,
-            data_dir=tmp_path,
-        )
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"), installer=installer)
 
         pack = _pack_with(
             [
@@ -227,11 +231,7 @@ class TestGroupPolicyCacheMaterializePlugin:
 
     def test_no_source_writes_legacy_yaml_fallback(self, tmp_path: Path):
         installer = _StubInstaller()
-        cache = GroupPolicyCache(
-            cache_dir=tmp_path / "gp",
-            installer=installer,
-            data_dir=tmp_path,
-        )
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"), installer=installer)
 
         pack = _pack_with(
             [
@@ -257,11 +257,7 @@ class TestGroupPolicyCacheMaterializePlugin:
         disk.
         """
         installer = _StubInstaller()
-        cache = GroupPolicyCache(
-            cache_dir=tmp_path / "gp",
-            installer=installer,
-            data_dir=tmp_path,
-        )
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"), installer=installer)
 
         pack = _pack_with(
             [
@@ -282,13 +278,9 @@ class TestGroupPolicyCacheMaterializePlugin:
     def test_installer_failure_is_swallowed(self, tmp_path: Path):
         """One bad plugin must not abort the rest of the pack."""
         installer = _StubInstaller(
-            raises=Exception("network unreachable"),
+            raises=GitError("network unreachable"),
         )
-        cache = GroupPolicyCache(
-            cache_dir=tmp_path / "gp",
-            installer=installer,
-            data_dir=tmp_path,
-        )
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"), installer=installer)
 
         pack = _pack_with(
             [
@@ -324,11 +316,7 @@ class TestGroupPolicyCacheMaterializePlugin:
         full suite runs (mirrors the rationale in
         ``test_codeindex_filters.py``).
         """
-        cache = GroupPolicyCache(
-            cache_dir=tmp_path / "gp",
-            installer=None,
-            data_dir=tmp_path,
-        )
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"), installer=None)
 
         pack = _pack_with(
             [
@@ -342,7 +330,7 @@ class TestGroupPolicyCacheMaterializePlugin:
             ]
         )
 
-        with patch.object(gp_mod.logger, "warning") as mock_warning:
+        with patch.object(plugins_mod.logger, "warning") as mock_warning:
             cache.materialize(pack)
 
         assert mock_warning.called, "expected a warning about missing installer"
@@ -360,11 +348,7 @@ class TestGroupPolicyCacheMaterializePlugin:
         kind=plugins.
         """
         installer = _StubInstaller()
-        cache = GroupPolicyCache(
-            cache_dir=tmp_path / "gp",
-            installer=installer,
-            data_dir=tmp_path,
-        )
+        cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path / "gp"), installer=installer)
 
         pack = _pack_with(
             [
@@ -459,7 +443,7 @@ class TestPluginLoaderGroupPolicyRoot:
 
 
 # ---------------------------------------------------------------------------
-# Cache hydration (refresh_if_stale + module-level refresh helper)
+# Cache hydration (PackRefresher.refresh_if_stale)
 # ---------------------------------------------------------------------------
 
 
@@ -483,37 +467,37 @@ def _make_pack(*, fetched_at: datetime) -> GroupPolicyPack:
 @pytest.mark.asyncio
 async def test_refresh_if_stale_skips_when_cache_is_fresh(tmp_path: Path):
     """A 60-second-old cache does NOT trigger a fetch."""
-    cache = GroupPolicyCache(cache_dir=tmp_path)
+    cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
     cache.materialize(_make_pack(fetched_at=datetime.now(timezone.utc).replace(microsecond=0)))
 
     fetch_called = False
 
-    async def _fetch(token: str):
+    async def _fetch(token: str, etag: str | None):
         nonlocal fetch_called
         fetch_called = True
         return None
 
-    refreshed = await cache.refresh_if_stale(token="t-1", fetch=_fetch)
-    assert refreshed is False
+    result = await PackRefresher(cache).refresh_if_stale("t-1", _fetch)
+    assert result.status is RefreshStatus.fresh
     assert fetch_called is False
 
 
 @pytest.mark.asyncio
 async def test_refresh_if_stale_fetches_when_meta_missing(tmp_path: Path):
     """Empty cache directory → fetch + materialize."""
-    cache = GroupPolicyCache(cache_dir=tmp_path)
+    cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
     pack = _make_pack(fetched_at=datetime.now(timezone.utc))
 
-    async def _fetch(token: str):
+    async def _fetch(token: str, etag: str | None):
         assert token == "t-2"
         return pack
 
-    refreshed = await cache.refresh_if_stale(token="t-2", fetch=_fetch)
-    assert refreshed is True
+    result = await PackRefresher(cache).refresh_if_stale("t-2", _fetch)
+    assert result.ok
     # Cache now populated
-    meta = cache.read_pack_meta()
+    meta = cache.meta.load()
     assert meta is not None
-    assert meta["group_id"] == "g-test"
+    assert meta.group_id == "g-test"
     # And the agent file is on disk
     assert (cache.agents_dir / "code-reviewer.md").exists()
 
@@ -521,23 +505,21 @@ async def test_refresh_if_stale_fetches_when_meta_missing(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_refresh_if_stale_fetches_when_cache_is_stale(tmp_path: Path):
     """A 600-second-old cache (> 5 min TTL) DOES trigger a fetch."""
-    cache = GroupPolicyCache(cache_dir=tmp_path)
+    cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
     old = datetime.now(timezone.utc) - timedelta(seconds=600)
     cache.materialize(_make_pack(fetched_at=old))
 
     new_pack = _make_pack(fetched_at=datetime.now(timezone.utc).replace(microsecond=0))
 
-    async def _fetch(token: str):
+    async def _fetch(token: str, etag: str | None):
         return new_pack
 
-    refreshed = await cache.refresh_if_stale(token="t-3", fetch=_fetch)
-    assert refreshed is True
+    result = await PackRefresher(cache).refresh_if_stale("t-3", _fetch)
+    assert result.ok
     # Pack meta must be re-stamped with the fresh fetched_at
-    meta = cache.read_pack_meta()
+    meta = cache.meta.load()
     assert meta is not None
-    # Compare as parsed datetimes to avoid second-level granularity
-    fresh = datetime.fromisoformat(meta["fetched_at"])
-    assert fresh > old
+    assert meta.fetched_at > old
 
 
 @pytest.mark.asyncio
@@ -545,45 +527,38 @@ async def test_refresh_if_stale_returns_false_when_fetch_returns_none(
     tmp_path: Path,
 ):
     """Network/server failure → no disk write, no crash."""
-    cache = GroupPolicyCache(cache_dir=tmp_path)
+    cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
 
-    async def _fetch(token: str):
+    async def _fetch(token: str, etag: str | None):
         return None
 
-    refreshed = await cache.refresh_if_stale(token="t-4", fetch=_fetch)
-    # Pack was None — disk untouched, return False ("no update").
-    assert refreshed is False
-    assert cache.read_pack_meta() is None
+    result = await PackRefresher(cache).refresh_if_stale("t-4", _fetch)
+    # Pack was None — disk untouched, no update.
+    assert result.status is RefreshStatus.no_answer
+    assert cache.meta.load() is None
 
 
 @pytest.mark.asyncio
 async def test_refresh_if_stale_treats_empty_token_as_noop(tmp_path: Path):
     """An empty bearer must not call fetch."""
-    cache = GroupPolicyCache(cache_dir=tmp_path)
+    cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
 
-    async def _fetch(token: str):
+    async def _fetch(token: str, etag: str | None):
         raise AssertionError("fetch should not be called")
 
-    refreshed = await cache.refresh_if_stale(token="", fetch=_fetch)
-    assert refreshed is False
+    result = await PackRefresher(cache).refresh_if_stale("", _fetch)
+    assert result.status is RefreshStatus.no_token
 
 
 @pytest.mark.asyncio
-async def test_module_level_refresh_helper(tmp_path: Path):
-    """The top-level ``refresh`` constructs a one-shot cache."""
-    from igni_core.core.config.group_policy import refresh
-
+async def test_a_cache_for_a_data_dir_lands_under_it(tmp_path: Path):
+    """``for_data_dir`` derives ``<data_dir>/group-policy`` — the one derivation."""
     pack = _make_pack(fetched_at=datetime.now(timezone.utc))
 
-    async def _fetch(token: str):
+    async def _fetch(token: str, etag: str | None):
         return pack
 
-    refreshed = await refresh(
-        token="t-5",
-        fetch=_fetch,
-        data_dir=tmp_path,
-    )
-    assert refreshed is True
-    # Default cache_dir derives from data_dir/group-policy
+    cache = GroupPolicyCache.for_data_dir(tmp_path)
+    assert (await PackRefresher(cache).refresh_if_stale("t-5", _fetch)).ok
     on_disk = tmp_path / "group-policy" / "agents" / "code-reviewer.md"
     assert on_disk.exists()

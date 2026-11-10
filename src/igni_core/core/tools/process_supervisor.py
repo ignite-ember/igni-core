@@ -12,12 +12,15 @@ concerns now live in four collaborating classes:
 * :class:`~igni_core.core.tools.tool_result.LLMResultBuffer`
   — head/tail truncation of tool result strings (was
   ``_MAX_RESULT_CHARS`` + free ``_truncate``).
-* :class:`~igni_core.core.tools.async_fire_and_forget.AsyncFireAndForget`
-  — the "schedule on the running loop or drop the coro" helper
-  the persistence hooks share.
-* :class:`~igni_core.core.tools.process_supervisor_locator.SupervisorRegistry`
-  — instance-based process-wide locator; the module-level
-  ``_default_supervisor`` slot is gone.
+* :class:`~igni_core.core.tools.process_supervisor_locator.SupervisorLocator`
+  — the injected handle on the supervisor one backend process
+  shares; the module-level ``_default_supervisor`` slot is gone.
+
+The registry owns the rest: the event bus, the log store, the
+persistence writer (and the
+:class:`~igni_core.core.tools.async_fire_and_forget.AsyncFireAndForget`
+scheduler it uses for fire-and-forget row writes), and the
+eviction timers.
 
 What's LEFT here is only the composition root — how a supervisor
 holds a registry, owns the foreground slot, exposes the two
@@ -57,14 +60,11 @@ from igni_core.core.tools.process_registry import (
 )
 from igni_core.core.tools.tool_result import LLMResultBuffer
 
-# Re-export ProcessRegistry for backwards compatibility — the class
-# moved to :mod:`process_registry` in the OOP split, but callers
-# that ``from igni_core.core.tools.process_supervisor import
-# ProcessRegistry`` should keep working.
+# The registry lives in :mod:`process_registry` — it is imported here
+# because this module composes it, not because callers may reach
+# through this one to get it. Import it from its own module.
 __all__ = [
-    "DEFAULT_FINISHED_PROCESS_TTL_SECONDS",
     "NO_OUTPUT_PLACEHOLDER",
-    "ProcessRegistry",
     "ProcessSupervisor",
 ]
 
@@ -91,10 +91,10 @@ class ProcessSupervisor:
     / ``self.registry.remove(pid)`` rather than reaching for
     private state.
 
-    Constructor args are optional so both the module-level locator
-    and fresh test instances build the same way; tests SHOULD
-    build a fresh one (or call :meth:`reset`) so state doesn't
-    leak across the suite.
+    Constructor args are optional so both the backend's injected
+    locator and fresh test instances build the same way; tests
+    SHOULD build a fresh one (or call :meth:`reset`) so state
+    doesn't leak across the suite.
     """
 
     #: How to see more of a finished foreground command's cut output.

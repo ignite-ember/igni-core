@@ -9,7 +9,7 @@ The two pure surfaces worth pinning:
     the user sees when a tool fires) but easy to introduce
     silently — wrong arg key, missed truncation, leaked markdown.
 
-  * :attr:`ToolCallFormatterRegistry.friendly_names` (formerly the
+  * :meth:`ToolFriendlyNames.all_names` (formerly the
     module-level ``TOOL_NAMES`` dict) — friendly-name map that
     turns ``run_shell_command`` into ``Bash`` etc. The TUI shows
     the friendly name; if a tool drops out of the map the header
@@ -20,11 +20,12 @@ The two pure surfaces worth pinning:
 from __future__ import annotations
 
 from igni_core.protocol.agno_tool_formatter import AgnoToolEventFormatter
+from igni_core.protocol.tool_friendly_names import ToolFriendlyNames
 
 # Shared coordinator + friendly-name view — one instance per test
 # module is enough since neither has mutable per-call state.
 _formatter = AgnoToolEventFormatter()
-TOOL_NAMES = _formatter.registry.friendly_names
+TOOL_NAMES = ToolFriendlyNames.all_names()
 
 
 def format_tool_args(tool_args, tool_name: str = ""):

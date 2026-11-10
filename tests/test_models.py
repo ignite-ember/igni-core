@@ -2,16 +2,14 @@
 
 import pytest
 
+from igni_core.core.config.context_window import DEFAULT_CONTEXT_WINDOW, ContextWindowResolver
 from igni_core.core.config.model_entry import ModelRegistryEntry
-from igni_core.core.config.models import (
-    DEFAULT_CONTEXT_WINDOW,
-    ContextWindowResolver,
-    ModelRegistry,
-)
+from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.null_model import NoModelConfigured
-from igni_core.core.config.permissions import AllowlistPattern
 from igni_core.core.config.provider_builders import ProviderClientBuilder
-from igni_core.core.config.settings import ModelsConfig, Settings, load_settings
+from igni_core.core.config.schemas import ModelsConfig
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 
 
 @pytest.fixture
@@ -23,15 +21,15 @@ def registry():
     simulates that discovery step by injecting a known entry so
     tests can exercise the resolver without a real cloud
     connection."""
-    settings = load_settings()
-    settings.models.registry["MiniMax-M2.7"] = {
-        "provider": "openai_like",
-        "model_id": "MiniMaxAI/MiniMax-M2.7",
-        "url": "https://api.ignite-ember.sh/v1",
-        "api_key": "cloud_token",
-        "context_window": 204_800,
-        "vision": False,
-    }
+    settings = SettingsLoader.load()
+    settings.models.registry["MiniMax-M2.7"] = ModelRegistryEntry(
+        provider="openai_like",
+        model_id="MiniMaxAI/MiniMax-M2.7",
+        url="https://api.ignite-ember.sh/v1",
+        api_key="cloud_token",
+        context_window=204_800,
+        vision=False,
+    )
     settings.models.default = "MiniMax-M2.7"
     return ModelRegistry(settings)
 
@@ -123,13 +121,6 @@ class TestModelRegistry:
 
         registry.register_provider("fake", FakeBuilder())
         assert registry._catalog.has("fake")
-
-    def test_generate_pattern_command(self):
-        # New API: pattern derivation lives on ``AllowlistPattern``.
-        # ``PermissionGuard._generate_pattern`` is kept as a shim
-        # covered by test_permissions.py::test_generate_pattern.
-        assert AllowlistPattern.from_value("npm test").pattern == "npm *"
-        assert AllowlistPattern.from_value("pytest tests/").pattern == "pytest *"
 
     def test_get_context_window_from_registry(self, registry):
         ctx = registry.get_context_window("MiniMax-M2.7")

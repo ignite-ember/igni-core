@@ -16,11 +16,16 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import TYPE_CHECKING
+
+from agno.run.agent import BaseAgentRunEvent, RunOutput
+from agno.run.team import BaseTeamRunEvent, TeamRunOutput
 
 from igni_core.backend.hitl_tracer import HITLTracer
+from igni_core.backend.inline_think_splitter import InlineThinkSplitter
 from igni_core.backend.pause_handler import PauseHandler
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.backend.schemas_hitl import PausedRun
 from igni_core.backend.schemas_pause import (
     MuxDone,
     MuxError,
@@ -30,21 +35,18 @@ from igni_core.backend.schemas_pause import (
     TeamStreamEvent,
 )
 from igni_core.core.activity import background
-from igni_core.core.text_tags import (
-    INITIAL_STATE,
-    ThinkParseState,
-    split_inline_think_tags,
-)
+from igni_core.core.hitl.models import PendingHandle
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
 from igni_core.protocol.agno_taxonomy import (
     RUN_COMPLETED_EVENTS,
     RUN_ERROR_EVENTS,
     RUN_PAUSED_EVENTS,
 )
-from igni_core.protocol.agno_tool_formatter import default_registry
 from igni_core.protocol.serializer import serialize_event
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from igni_core.core.session import Session
 
 _LLM_LOGGER = logging.getLogger("igni_core.llm_calls")
 
@@ -84,7 +86,7 @@ class HITLStreamMultiplexer:
 
     def __init__(
         self,
-        session: Any,
+        session: Session,
         store: PendingRequirementsStore,
         pause_handler: PauseHandler,
         tracer: HITLTracer,
@@ -99,17 +101,14 @@ class HITLStreamMultiplexer:
         self._store = store
         self._pause_handler = pause_handler
         self._tracer = tracer
-        # Per-run parser state for inline ``<think>`` tag parsing (see
-        # :func:`igni_core.core.text_tags.split_inline_think_tags`).
-        # Some providers emit inline ``<think>`` tags inside their
-        # visible content stream; a block routinely spans many events,
-        # so this holds both the "currently inside an open block" flag
-        # and any trailing partial-tag fragment across events. Reset on
-        # ``run_end`` so a stray partial / open block from a cancelled
-        # run never bleeds into the next run.
-        self._inline_think_state: dict[str, ThinkParseState] = {}
+        self._think_splitter = InlineThinkSplitter()
+        # This stream's relay task and queue, while :meth:`stream` runs —
+        # kept so a nested resume can stand the relay down
+        # (:meth:`_hand_relay_to_nested`).
+        self._sub_task: asyncio.Task[None] | None = None
+        self._queue: asyncio.Queue[MuxEvent] | None = None
 
-    async def stream(self, team_stream: AsyncIterator[Any]) -> AsyncIterator[msg.Message]:
+    async def stream(self, team_stream: AsyncIterator[object]) -> AsyncIterator[msg.Message]:
         """Drive the multiplexer for one team stream lifecycle."""
         sub_hitl = self._session.sub_agent_hitl
         agno_queue: asyncio.Queue[MuxEvent] = asyncio.Queue()
@@ -118,23 +117,21 @@ class HITLStreamMultiplexer:
 
         # Hold the team-drain reference so the task isn't GC'd
         # mid-run (asyncio only weakly references background
-        # tasks). We deliberately don't cancel it in ``finally`` —
-        # the team's stream may still have a paused tool we want to
-        # drive to completion via ``resolve_hitl``; it naturally
-        # exits when the team's stream ends or errors.
+        # tasks). It is not cancelled in ``finally`` — the team's stream
+        # may still have a paused tool we want to drive to completion
+        # via ``resolve_hitl``; it naturally exits when the team's
+        # stream ends or errors. A cancelled run cancels it (below).
         # Counted before either task exists. The team task starts first,
         # and a tool call that asks for approval at once would otherwise
         # look for a relay that has not been scheduled yet, find none, and
         # be refused as "nobody to ask" — a race the model's thinking time
         # usually hides and a fast tool call does not.
-        sub_hitl.listeners = getattr(sub_hitl, "listeners", 0) + 1
+        sub_hitl.open_relay()
         # Part of a run, which its session accounts for.
         team_task = background.daemon(self._drain_team(team_stream, agno_queue), name="hitl-team")
         sub_task = background.daemon(
             self._drain_subagent_hitl(sub_hitl, agno_queue), name="hitl-subagents"
         )
-        # Kept so a nested resume can stand this relay down — see
-        # :meth:`_hand_relay_to_nested`.
         self._sub_task, self._queue = sub_task, agno_queue
 
         try:
@@ -148,16 +145,17 @@ class HITLStreamMultiplexer:
                     # message.
                     raise event.exc
                 if isinstance(event, SubagentPause):
-                    rp = self.build_subagent_paused(event.entries)
                     _LLM_LOGGER.info(
                         "subagent_hitl: yielding RunPaused to FE with %d req(s)",
                         len(event.entries),
                     )
-                    yield rp
+                    yield event.run_paused()
                     continue
                 if isinstance(event, SubagentDetails):
-                    for requirement_id, details in event.updates:
-                        yield msg.RequirementDetails(requirement_id=requirement_id, details=details)
+                    for update in event.updates:
+                        yield msg.RequirementDetails(
+                            requirement_id=update.requirement_id, details=update.details
+                        )
                     continue
                 # ``TeamStreamEvent`` — the common path.
                 async for m in self._forward_team_event(event.event):
@@ -165,9 +163,13 @@ class HITLStreamMultiplexer:
                 if self._team_stream_should_stop(event.event):
                     return
         except asyncio.CancelledError:
+            # The run was cancelled (``cancel_run``): the team's own run
+            # stops too. Left draining, it went on running tools — and
+            # pushing what they did — after the person had stopped it.
             # Never swallow cancellation — the ``run_message`` outer
             # ``except asyncio.CancelledError`` (in server.py)
             # needs to fire so the user sees "Run cancelled".
+            team_task.cancel()
             raise
         except asyncio.TimeoutError:
             yield msg.Error(text="Request timed out — the model took too long to respond.")
@@ -178,9 +180,9 @@ class HITLStreamMultiplexer:
             # sees a message rather than a stranded stream.
             yield msg.Error(text=str(e))
         finally:
-            sub_hitl.listeners = getattr(sub_hitl, "listeners", 1) - 1
+            sub_hitl.close_relay()
             sub_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
+            with contextlib.suppress(asyncio.CancelledError):
                 await sub_task
             # Retain the team_task reference until the ``finally``
             # returns so the GC comment above holds.
@@ -190,7 +192,7 @@ class HITLStreamMultiplexer:
 
     async def _drain_team(
         self,
-        team_stream: AsyncIterator[Any],
+        team_stream: AsyncIterator[object],
         queue: asyncio.Queue[MuxEvent],
     ) -> None:
         """Pull events off the team's Agno stream into the queue."""
@@ -202,8 +204,15 @@ class HITLStreamMultiplexer:
         finally:
             await queue.put(MuxDone())
 
-    async def _drain_subagent_hitl(self, sub_hitl: Any, queue: asyncio.Queue[MuxEvent]) -> None:
-        """Pump sub-agent coordinator pauses into the queue."""
+    async def _drain_subagent_hitl(
+        self, sub_hitl: SubAgentHITLCoordinator, queue: asyncio.Queue[MuxEvent]
+    ) -> None:
+        """Pump sub-agent coordinator pauses into the queue.
+
+        A coordinator failure goes on the queue as a :class:`MuxError`,
+        so the stream ends in an ``Error`` the FE shows rather than a
+        relay that silently stopped.
+        """
         self._tracer.trace(f"_stream_mux: drain STARTED (coord_id={id(sub_hitl)})")
         try:
             while True:
@@ -212,40 +221,40 @@ class HITLStreamMultiplexer:
                 self._tracer.trace(f"_stream_mux: drain woke, {len(entries)} entries")
                 if entries:
                     await queue.put(SubagentPause(entries=entries))
-                    self._tracer.trace(f"_stream_mux: drain enqueued {[rid for rid, _ in entries]}")
-                take_updates = getattr(sub_hitl, "take_detail_updates", None)
-                updates = take_updates() if take_updates else []
+                    self._tracer.trace(
+                        f"_stream_mux: drain enqueued {[h.requirement_id for h in entries]}"
+                    )
+                updates = sub_hitl.take_detail_updates()
                 if updates:
                     await queue.put(SubagentDetails(updates=updates))
         except asyncio.CancelledError:
             self._tracer.trace("_stream_mux: drain cancelled")
             return
+        except Exception as e:
+            await queue.put(MuxError(exc=e))
 
     # ── Team event dispatch ────────────────────────────────────────
 
-    async def _forward_team_event(self, event: Any) -> AsyncIterator[msg.Message]:
+    async def _forward_team_event(self, event: object) -> AsyncIterator[msg.Message]:
         """Route one team event through the pause / cleanup / serialize path."""
         if isinstance(event, RUN_PAUSED_EVENTS):
             async for m in self._handle_paused(event):
                 yield m
             return
 
+        run_id = _run_id_of(event)
         run_finished = isinstance(event, RUN_COMPLETED_EVENTS + RUN_ERROR_EVENTS)
-        if run_finished:
-            finished_run_id = getattr(event, "run_id", None)
-            if finished_run_id:
-                # Sweep stale pending reqs for the finished run —
-                # ``resolve_hitl_batch`` already pops the entries it
-                # resolves; this catches the "user closed the UI
-                # mid-pause and the run later wrapped up" path.
-                self._store.sweep_run(finished_run_id)
+        if run_finished and run_id:
+            # Sweep stale pending reqs for the finished run —
+            # ``resolve_hitl_batch`` already pops the entries it
+            # resolves; this catches the "user closed the UI
+            # mid-pause and the run later wrapped up" path.
+            self._store.sweep_run(run_id)
+            self._think_splitter.end_run(run_id)
 
-        # ``serialized`` name distinct from a hypothetical outer
-        # ``proto`` binding so mypy doesn't complain about widening
-        # a Message binding to Message | None.
         serialized = serialize_event(event)
         if serialized is not None:
-            async for split_msg in self._split_inline_think_tags(event, serialized):
+            for split_msg in self._think_splitter.split(serialized, run_id):
                 yield split_msg
 
         if run_finished:
@@ -253,14 +262,10 @@ class HITLStreamMultiplexer:
             # queued by ``exit_plan_mode``). The push fires AFTER
             # the run's content has flushed so the PlanCard lands
             # at the bottom of the agent's reply, not mid-stream.
-            # ``finished_run_id`` is stamped onto each payload so
-            # the FE can key approve/dismiss RPCs by run_id.
-            # ``broadcast_bus`` is a Session construction invariant
-            # — no defensive ``getattr`` fallback required.
-            try:
-                self._session.broadcast_bus.drain_post_run(run_id=getattr(event, "run_id", None))
-            except Exception as exc:
-                logger.debug("post-run broadcast drain raised: %s", exc)
+            # ``run_id`` is stamped onto each payload so the FE can
+            # key approve/dismiss RPCs by run_id. The bus contains
+            # its subscribers' failures itself.
+            self._session.broadcast_bus.drain_post_run(run_id=run_id)
 
     def _hand_relay_to_nested(self) -> None:
         """Stand this stream's relay down before a nested resume stream starts.
@@ -277,32 +282,32 @@ class HITLStreamMultiplexer:
         Anything already taken is handed back unsurfaced, so the nested
         stream's relay picks it up.
         """
-        sub_task = getattr(self, "_sub_task", None)
-        queue = getattr(self, "_queue", None)
-        if sub_task is not None:
-            sub_task.cancel()
+        coordinator = self._session.sub_agent_hitl
+        if self._sub_task is not None:
+            self._sub_task.cancel()
+        queue = self._queue
         if queue is None:
             return
         handed_back = False
+        unshown: list[PendingHandle] = []
         kept: list[MuxEvent] = []
         while not queue.empty():
             event = queue.get_nowait()
             if isinstance(event, SubagentPause):
-                for _req_id, entry in event.entries:
-                    entry.surfaced = False
+                unshown.extend(event.entries)
                 handed_back = True
             elif isinstance(event, SubagentDetails):
-                for req_id, details in event.updates:
-                    self._session.sub_agent_hitl.update_details(req_id, details)
+                for update in event.updates:
+                    coordinator.update_details(update.requirement_id, update.details)
                 handed_back = True
             else:
                 kept.append(event)
         for event in kept:
             queue.put_nowait(event)
         if handed_back:
-            self._session.sub_agent_hitl.new_arrival.set()
+            coordinator.hand_back(unshown)
 
-    async def _handle_paused(self, event: Any) -> AsyncIterator[msg.Message]:
+    async def _handle_paused(self, event: PausedRun) -> AsyncIterator[msg.Message]:
         """Route a paused team event through the evaluator and
         either resume or forward to the FE."""
         result = self._pause_handler.handle(event)
@@ -349,155 +354,15 @@ class HITLStreamMultiplexer:
         # happen but don't strand the stream.
         return
 
-    def _team_stream_should_stop(self, event: Any) -> bool:
+    def _team_stream_should_stop(self, event: object) -> bool:
         """The paused-event branch is expected to terminate the
         outer loop after the pause is forwarded/resumed. Everything
         else keeps the stream going."""
         return isinstance(event, RUN_PAUSED_EVENTS)
 
-    # ── Inline `` tag parsing ──────────────────────────────────────
 
-    async def _split_inline_think_tags(
-        self,
-        event: Any,
-        message: msg.Message,
-    ) -> AsyncIterator[msg.Message]:
-        """Run ``split_inline_think_tags`` on a serialized message
-        (typically ``ContentDelta``), yielding the split segments as
-        freshly-built ``ContentDelta`` messages on the wire.
-
-        Why this lives here, not in :class:`EventHandler.build`:
-        handlers must remain stateless so a single Agno event can be
-        tested without a session-shaped collaborator. Carry state is
-        per-stream and per-run — the multiplexer's natural
-        jurisdiction. The serializer stays exactly as it was.
-
-        Carry state for ``run_id`` is preserved across calls and
-        cleared on ``run_end`` (so a partial from a cancelled run
-        doesn't bleed into the next one).
-        """
-        # Only ContentDelta carries inline-tag-text through Agno
-        # ``RunContentEvent`` events; every other message type is
-        # passed straight through.
-        if message.type != "content_delta":
-            yield message
-            return
-
-        # Native reasoning deltas (from ``ReasoningContentHandler``)
-        # already arrive tagged ``is_thinking=True`` with any literal
-        # ``…`` wrapper stripped. The inline-tag parser is only
-        # for *visible* content that carries literal tags — running it
-        # on already-classified reasoning would reclassify tag-free
-        # reasoning text as ``is_thinking=False`` and dump the whole
-        # thinking stream into the visible bubble (the "all goes as
-        # std" bug). Pass reasoning through untouched.
-        if message.is_thinking:
-            yield message
-            return
-
-        # Run-level bookkeeping: drop the parser state when a run ends
-        # so a stray partial tag or unclosed block from a cancelled run
-        # can't leak into the next run.
-        event_type = getattr(event, "type", None) or ""
-        run_id = getattr(message, "id", "") or getattr(event, "run_id", "")
-        if run_id and event_type in ("run_completed", "run_error"):
-            self._inline_think_state.pop(run_id, None)
-            yield message
-            return
-        if not run_id:
-            run_id = "_unknown_"
-
-        state = self._inline_think_state.get(run_id, INITIAL_STATE)
-        segments, next_state = split_inline_think_tags(state, message.text)
-        self._inline_think_state[run_id] = next_state
-
-        # No split needed — pass the original message through
-        # unchanged. Don't rebuild a new instance unless we actually
-        # have multi-segment to emit, so that the chat's identity-
-        # based memoisation (ChatItem text + id) is preserved on the
-        # happy path.
-        #
-        # The text must match too, not just the role: when a ``</think>``
-        # splits across events (``…</thi`` then ``nk>…``), the parser
-        # strips the tag remainder and returns a single visible segment
-        # whose role equals the original — but whose TEXT has the ``nk>``
-        # peeled off. Yielding the original ``message`` here would leak
-        # that ``nk>`` into the visible bubble. Compare text as well so
-        # the fast path only fires when nothing actually changed.
-        if (
-            len(segments) == 1
-            and segments[0][1] == message.is_thinking
-            and segments[0][0] == message.text
-        ):
-            yield message
-            return
-
-        for idx, (text, is_thinking) in enumerate(segments):
-            if not text:
-                continue
-            if idx == 0 and is_thinking == message.is_thinking and text == message.text:
-                # First segment is byte-identical to the original —
-                # emit it verbatim so the chat's identity memoisation
-                # sees the exact same ``Message`` instance the prior
-                # (un-split) handler would have. Guarded on ``text ==
-                # message.text`` so a segment with a stripped tag
-                # remainder (e.g. a split ``</think>``) is rebuilt with
-                # the cleaned text below rather than leaking the tag.
-                # ``message.event_seq`` is whatever the prior transport
-                # left on it (usually 0); passing it through is safe
-                # because the ``WebSocketServerTransport.send`` path
-                # bumps and stamps the counter on the broadcast step
-                # regardless.
-                yield message
-                continue
-            yield msg.ContentDelta(
-                type="content_delta",
-                text=text,
-                is_thinking=is_thinking,
-                id=message.id,
-                session_id=message.session_id,
-                event_seq=0,  # transport stamps on broadcast
-            )
-
-    # ── Static helpers ────────────────────────────────────────────
-
-    @staticmethod
-    def build_subagent_paused(entries: list) -> msg.Message:
-        """Wrap a batch of sub-agent coordinator entries in a
-        ``RunPaused``.
-
-        The FE renders the confirmation dialog only when it sees
-        ``RunPaused``; bare ``HITLRequest`` falls through. Sub-
-        agent pauses match the FE's expected shape so the same
-        dialog flow applies. Resolution still routes through the
-        coordinator (not the main team's ``acontinue_run``) — see
-        :meth:`HitlController.resolve_single`.
-        """
-        requirements = []
-        registry = default_registry()
-        for req_id, entry in entries:
-            req = entry.requirement
-            tool_exec = getattr(req, "tool_execution", None)
-            raw_name = str(getattr(tool_exec, "tool_name", "") if tool_exec else "")
-            requirements.append(
-                msg.HITLRequest(
-                    requirement_id=req_id,
-                    tool_name=raw_name,
-                    friendly_name=registry.friendly_name(raw_name),
-                    tool_args=dict(getattr(tool_exec, "tool_args", {}) if tool_exec else {}),
-                    agent_path=list(getattr(entry, "agent_path", []) or []),
-                    # Why the call is being put to the person, when the
-                    # requirement says — the Bypass guard always does.
-                    details=str(getattr(req, "details", "") or ""),
-                    details_pending=bool(getattr(req, "details_pending", False)),
-                )
-            )
-        # ``run_id`` here is the sub-agent's id; the FE doesn't
-        # currently use it for sub-agent pauses (it routes through
-        # ``resolve_hitl`` which picks the coordinator path), but
-        # we forward it for logs.
-        sub_run_id = entries[0][1].run_id if entries else ""
-        return msg.RunPaused(run_id=sub_run_id, requirements=requirements)
-
-    # Legacy alias — internal call site uses the public name.
-    _build_subagent_paused = build_subagent_paused
+def _run_id_of(event: object) -> str | None:
+    """The run an Agno stream event belongs to, if it names one."""
+    if isinstance(event, (BaseAgentRunEvent, BaseTeamRunEvent, RunOutput, TeamRunOutput)):
+        return event.run_id
+    return None

@@ -4,7 +4,7 @@ The warmup families under this sub-package (marketplace,
 MCP) all share a boot-time
 contract:
 
-* they hold a reference to the owning :class:`Session`,
+* each is handed only the collaborators it reads, never the session,
 * the background variants must no-op cleanly when no event
   loop is running yet (``asyncio.get_running_loop`` raises),
 * transient failures are logged and swallowed so session
@@ -21,12 +21,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Coroutine
-from typing import TYPE_CHECKING
 
 from igni_core.core.activity import background
-
-if TYPE_CHECKING:
-    from igni_core.core.session.core import Session
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +30,9 @@ logger = logging.getLogger(__name__)
 class SessionStartupPhase:
     """Shared behaviour for every session-startup phase.
 
-    Constructor stores the owning session reference (some session
-    attributes — ``main_team``, ``pool`` — are reassigned mid-
-    session, so subclasses read through ``self.session`` at call
-    time rather than caching sub-attributes).
+    Subclasses take their own collaborators in their constructors;
+    anything the session reassigns mid-session (``pool``, ``settings``)
+    arrives as a zero-arg callable read at call time.
 
     Subclasses inherit two helpers:
 
@@ -50,14 +45,6 @@ class SessionStartupPhase:
       failed, continuing" logging so every catch-and-continue
       inside a warmup body reads the same shape.
     """
-
-    def __init__(self, session: Session) -> None:
-        self._session = session
-
-    @property
-    def session(self) -> Session:
-        """Return the owning :class:`Session`."""
-        return self._session
 
     def _schedule_on_loop(
         self, coro_factory: Callable[[], Coroutine[object, object, None]]

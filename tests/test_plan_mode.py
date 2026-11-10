@@ -17,21 +17,42 @@ Three layers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.command_handler import CommandHandler
-from igni_core.backend.server import BackendServer
+from igni_core.backend.plan_snapshot_builder import PlanSnapshotBuilder
 from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
-from igni_core.core.prompts.contributions import EditOp, PromptEdit, prompt_contributions
+from igni_core.core.prompts.contribution_models import EditOp, PromptEdit
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.session.broadcast import BroadcastBus as _BroadcastBus
 from igni_core.core.session.core import Session
+from igni_core.core.session.schemas import PermissionModeSwitch, PersistResult
 from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.plan import PlanStore, PlanTool
-from igni_core.core.tools.todo import TodoItem, TodoStore, TodoTools
+from igni_core.core.tools.todo import TodoItemWire, TodoStore, TodoTools
 from igni_core.protocol.rpc import RpcMethod
+from tests.backend_server_factory import make_backend
+from tests.rpc_tables import rpc_table_for
+from tests.session_coordinators import plan_session, wire_coordinators
+
+
+class _RefusingMode:
+    """A mode coordinator whose flip is refused.
+
+    The plan tool asks the session to switch to plan mode and the
+    session asks its mode coordinator. This one says no, the way a
+    policy that forbids the mode would.
+    """
+
+    def set_permission_mode(self, mode: str) -> PermissionModeSwitch:
+        return PermissionModeSwitch(
+            refused=True,
+            text="Error: your organisation does not allow plan mode.",
+        )
+
 
 # ── PlanStore ─────────────────────────────────────────────
 
@@ -79,8 +100,7 @@ class TestPlanStore:
 class TestPlanTool:
     @pytest.mark.asyncio
     async def test_exit_plan_mode_records_plan(self):
-        session = MagicMock()
-        session.plan_store = PlanStore()
+        session = plan_session()
         tool = PlanTool(session)
         result = await tool.exit_plan_mode("Run tests, then refactor.")
         assert "Plan submitted" in result
@@ -92,17 +112,14 @@ class TestPlanTool:
         plan mode on its own — the user controls that via
         ``/plan``. Verified by confirming the tool doesn't
         touch the permission evaluator."""
-        session = MagicMock()
-        session.plan_store = PlanStore()
-        session.permission_evaluator = PermissionEvaluator.from_strings(mode="plan")
+        session = plan_session(permission_evaluator=PermissionEvaluator.from_strings(mode="plan"))
         tool = PlanTool(session)
         await tool.exit_plan_mode("plan body")
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     @pytest.mark.asyncio
     async def test_exit_plan_mode_rejects_empty_plan(self):
-        session = MagicMock()
-        session.plan_store = PlanStore()
+        session = plan_session()
         tool = PlanTool(session)
         result = await tool.exit_plan_mode("   ")
         assert "Error" in result
@@ -114,8 +131,7 @@ class TestPlanTool:
         """The reply explicitly tells the agent NOT to continue
         executing — otherwise the model often plows ahead in the
         same turn, defeating the point of plan mode."""
-        session = MagicMock()
-        session.plan_store = PlanStore()
+        session = plan_session()
         tool = PlanTool(session)
         result = await tool.exit_plan_mode("plan body")
         assert "stop" in result.lower() or "do not continue" in result.lower()
@@ -125,9 +141,7 @@ class TestPlanTool:
         """When the agent passes ``tasks=[...]`` alongside the
         plan, the same call populates the TodoStore so the
         PlanCard can render a live checklist next to the prose."""
-        session = MagicMock()
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
+        session = plan_session()
         tool = PlanTool(session)
         result = await tool.exit_plan_mode(
             "## Refactor\n\nSteps inside.",
@@ -147,10 +161,8 @@ class TestPlanTool:
     async def test_exit_plan_mode_without_tasks_leaves_todo_store_alone(self):
         """Tasks are optional — submitting a prose-only plan
         must not blast the TodoStore."""
-        session = MagicMock()
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
-        session.todo_store.set([TodoItem("Pre-existing", "in_progress", "")])
+        session = plan_session()
+        session.todo_store.set([TodoItemWire(content="Pre-existing", status="in_progress")])
         tool = PlanTool(session)
         await tool.exit_plan_mode("just prose, no enumerable steps")
         # Original todos untouched.
@@ -163,12 +175,10 @@ class TestPlanTool:
         structured tasks alongside the plan markdown so the FE
         seeds the PlanCard checklist on first render."""
         # Real session stand-in to exercise the broadcast.
-        session = Session.__new__(Session)
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
-        session.broadcast_bus = _BroadcastBus()
+        session = plan_session()
+        wire_coordinators(session)
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = PlanTool(session)
         await tool.exit_plan_mode(
             "plan",
@@ -189,9 +199,7 @@ class TestPlanTool:
         """Malformed task rows are dropped (so the rest still
         applies) and the errors come back in the reply so the
         agent can correct the next call."""
-        session = MagicMock()
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
+        session = plan_session()
         tool = PlanTool(session)
         result = await tool.exit_plan_mode(
             "plan",
@@ -206,9 +214,14 @@ class TestPlanTool:
 
 
 @pytest.fixture
-def plan_mode_text():
-    """An extension adding to plan mode's prompt for the length of one test."""
-    prompt_contributions.set_owner(
+def plan_mode_text() -> PromptContributions:
+    """An extension adding to plan mode's prompt, in a table of its own.
+
+    The table is the session's: whoever wires the session decides
+    which contributions it reads, so a test says which ones.
+    """
+    contributions = PromptContributions()
+    contributions.set_owner(
         "acme.code",
         "Code",
         edits=[
@@ -220,11 +233,9 @@ def plan_mode_text():
             )
         ],
     )
-    yield
-    prompt_contributions.remove_owner("acme.code")
+    return contributions
 
 
-@pytest.mark.usefixtures("plan_mode_text")
 class TestTheFloorJudgesNoPlan:
     """igni records the plan it is given and the person judges it.
 
@@ -234,26 +245,26 @@ class TestTheFloorJudgesNoPlan:
     an extension changes plan mode is the extension's to say.
     """
 
-    def _session(self):
-        session = Session.__new__(Session)
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
-        session.broadcast_bus = _BroadcastBus()
-        session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
-        session.main_team = None  # no spawn target, enter_plan_mode falls through
+    def _session(self, contributions: PromptContributions):
+        session = plan_session(
+            permission_evaluator=PermissionEvaluator.from_strings(mode="default"),
+            main_team=None,  # no spawn target, enter_plan_mode falls through
+        )
+        session._contributions = contributions
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
-    async def test_a_plan_citing_no_files_is_submitted(self):
-        session = self._session()
+    async def test_a_plan_citing_no_files_is_submitted(self, plan_mode_text):
+        session = self._session(plan_mode_text)
         tool = PlanTool(session)
         result = await tool.exit_plan_mode("Refactor the auth thing. It will be great.")
         assert "Plan submitted" in result
         assert session.plan_store.latest == "Refactor the auth thing. It will be great."
 
     @pytest.mark.asyncio
-    async def test_entering_plan_mode_names_no_extension(self):
-        session = self._session()
+    async def test_entering_plan_mode_names_no_extension(self, plan_mode_text):
+        session = self._session(plan_mode_text)
         tool = PlanTool(session)
         result = await tool.enter_plan_mode("new task")
         assert "codeindex" not in result.lower().replace(" ", "")
@@ -265,11 +276,10 @@ class TestEnterPlanModeSpawnsResearcher:
     its report."""
 
     def _session(self):
-        session = Session.__new__(Session)
-        session.plan_store = PlanStore()
-        session.todo_store = TodoStore()
-        session.broadcast_bus = _BroadcastBus()
-        session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
+        session = plan_session(
+            permission_evaluator=PermissionEvaluator.from_strings(mode="default")
+        )
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -303,7 +313,7 @@ class TestEnterPlanModeSpawnsResearcher:
         fake_orch.spawn_agent = AsyncMock(
             return_value="## Codebase Findings\nFound stuff in `src/x.py`",
         )
-        fake_orch.pool.get.return_value = MagicMock()  # registered
+        fake_orch.pool.get_entry.return_value = MagicMock()  # registered
         team = MagicMock()
         team.tools = [fake_orch]
         session.main_team = team
@@ -341,8 +351,13 @@ class TestTodoWriteBroadcastsState:
         session = Session.__new__(Session)
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
+        # ``todo_write`` flushes the rows to the persistence layer.
+        session.persistence = SimpleNamespace(
+            save_todos=AsyncMock(return_value=PersistResult(ok=True))
+        )
+        wire_coordinators(session)
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = TodoTools(session)
         await tool.todo_write(
             [
@@ -363,8 +378,13 @@ class TestTodoWriteBroadcastsState:
         session = Session.__new__(Session)
         session.todo_store = TodoStore()
         session.broadcast_bus = _BroadcastBus()
+        # ``todo_write`` flushes the rows to the persistence layer.
+        session.persistence = SimpleNamespace(
+            save_todos=AsyncMock(return_value=PersistResult(ok=True))
+        )
+        wire_coordinators(session)
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = TodoTools(session)
         await tool.todo_write([])
         evt = next(p for ch, p in captured if ch == "todos_updated")
@@ -380,10 +400,10 @@ class TestEnterPlanMode:
         """Build a stand-in session that has a real evaluator +
         the real ``set_permission_mode`` bound. ``PlanTool`` calls
         ``set_permission_mode`` and ``broadcast`` on the session."""
-        session = Session.__new__(Session)
-        session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
-        session.broadcast_bus = _BroadcastBus()
-        session.plan_store = PlanStore()
+        session = plan_session(
+            permission_evaluator=PermissionEvaluator.from_strings(mode="default")
+        )
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -413,7 +433,7 @@ class TestEnterPlanMode:
         guessing who triggered it."""
         session = self._session_with_real_set_mode()
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         tool = PlanTool(session)
         await tool.enter_plan_mode("refactor sweep")
         # set_permission_mode fires the basic flip; enter_plan_mode
@@ -435,15 +455,17 @@ class TestEnterPlanMode:
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     @pytest.mark.asyncio
-    async def test_enter_plan_mode_no_session_set_mode_returns_error(self):
-        """Defensive: a session stand-in without
-        ``set_permission_mode`` doesn't crash the tool — it
-        returns an error string for the agent."""
-        session = MagicMock(spec=["plan_store"])
-        session.plan_store = PlanStore()
+    async def test_enter_plan_mode_reports_a_refused_flip(self):
+        """The mode flip can be refused — the mode coordinator says
+        no. The agent is told why instead of being told it entered
+        plan mode, and nothing is broadcast."""
+        session = self._session_with_real_set_mode()
+        session.mode = _RefusingMode()
         tool = PlanTool(session)
         result = await tool.enter_plan_mode("x")
         assert "Error" in result
+        assert "does not allow plan mode" in result
+        assert "Entered plan mode" not in result
 
     @pytest.mark.asyncio
     async def test_enter_then_exit_keeps_mode_in_plan(self):
@@ -466,23 +488,24 @@ class TestSetPermissionMode:
         session = Session.__new__(Session)
         session.broadcast_bus = _BroadcastBus()
         session.permission_evaluator = PermissionEvaluator.from_strings(mode=initial)
+        wire_coordinators(session)
         return session
 
     def test_flips_mode_to_plan(self):
         session = self._session_with_evaluator("default")
-        msg = session.set_permission_mode("plan")
+        msg = session.set_permission_mode("plan").text
         assert "default" in msg and "plan" in msg
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     def test_idempotent_when_already_in_mode(self):
         session = self._session_with_evaluator("plan")
-        msg = session.set_permission_mode("plan")
+        msg = session.set_permission_mode("plan").text
         assert "already" in msg.lower()
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     def test_rejects_unknown_mode(self):
         session = self._session_with_evaluator()
-        msg = session.set_permission_mode("turbo")
+        msg = session.set_permission_mode("turbo").text
         assert "Error" in msg
         # Mode unchanged.
         assert session.permission_evaluator.mode is PermissionMode.DEFAULT
@@ -494,6 +517,7 @@ class TestSetPermissionMode:
         # correctly raises rather than pretending to work.
         session = Session.__new__(Session)
         session.broadcast_bus = _BroadcastBus()
+        wire_coordinators(session)
         with pytest.raises(AttributeError):
             session.set_permission_mode("plan")
 
@@ -506,8 +530,7 @@ class TestPlanSlashCommand:
         session = Session.__new__(Session)
         session.broadcast_bus = _BroadcastBus()
         session.permission_evaluator = PermissionEvaluator.from_strings(mode=initial_mode)
-        # Bind ``set_permission_mode`` since we constructed via
-        # __new__ without running __init__.
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -570,17 +593,17 @@ class TestPlanSlashCommand:
 
     @pytest.mark.asyncio
     async def test_entering_plan_arms_research_nudge(self):
-        # The slash command sets ``_plan_research_armed`` so the
+        # The slash command arms the research nudge so the
         # UserMessage handler can prepend a ``<system-context>``
         # nudge on the next turn — telling the agent to call
         # ``enter_plan_mode(task=...)`` first. Without this, the
         # agent has no signal that the user (not the agent) just
         # entered plan mode and skips the researcher.
         session = self._make_session("default")
-        assert getattr(session, "_plan_research_armed", False) is False
+        assert session.plan.research_armed is False
         handler = CommandHandler(session)
         await handler.handle("/plan")
-        assert session._plan_research_armed is True
+        assert session.plan.research_armed is True
 
     @pytest.mark.asyncio
     async def test_re_entering_plan_does_not_re_arm(self):
@@ -589,12 +612,12 @@ class TestPlanSlashCommand:
         # cause a wasted researcher run on the next user message
         # (the researcher already ran the first time).
         session = self._make_session("plan")
-        session._plan_research_armed = False  # explicitly disarmed
+        session.plan.arm_research(False)  # explicitly disarmed
         handler = CommandHandler(session)
         await handler.handle("/plan on")
         # Still in plan mode AND still not armed.
         assert session.permission_evaluator.mode is PermissionMode.PLAN
-        assert session._plan_research_armed is False
+        assert session.plan.research_armed is False
 
     @pytest.mark.asyncio
     async def test_leaving_plan_disarms_pending_nudge(self):
@@ -605,9 +628,9 @@ class TestPlanSlashCommand:
         session = self._make_session("default")
         handler = CommandHandler(session)
         await handler.handle("/plan")
-        assert session._plan_research_armed is True
+        assert session.plan.research_armed is True
         await handler.handle("/plan off")
-        assert session._plan_research_armed is False
+        assert session.plan.research_armed is False
 
     @pytest.mark.asyncio
     async def test_status_command_does_not_change_armed_flag(self):
@@ -615,10 +638,10 @@ class TestPlanSlashCommand:
         # current mode without flipping anything and must not
         # arm/disarm the researcher nudge either.
         session = self._make_session("plan")
-        session._plan_research_armed = True
+        session.plan.arm_research(True)
         handler = CommandHandler(session)
         await handler.handle("/plan status")
-        assert session._plan_research_armed is True
+        assert session.plan.research_armed is True
 
 
 class TestAcceptSlashCommand:
@@ -629,6 +652,7 @@ class TestAcceptSlashCommand:
         session = Session.__new__(Session)
         session.permission_evaluator = PermissionEvaluator.from_strings(mode=initial_mode)
         session.broadcast_bus = _BroadcastBus()
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -696,7 +720,7 @@ class TestAcceptSlashCommand:
         plumbing as ``/plan``."""
         session = self._make_session("default")
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         handler = CommandHandler(session)
         await handler.handle("/accept on")
         modes = [p for ch, p in captured if ch == "permission_mode_changed"]
@@ -714,6 +738,7 @@ class TestBypassSlashCommand:
         session = Session.__new__(Session)
         session.permission_evaluator = PermissionEvaluator.from_strings(mode=initial_mode)
         session.broadcast_bus = _BroadcastBus()
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -780,7 +805,7 @@ class TestBypassSlashCommand:
         override and lock in the new state."""
         session = self._make_session("default")
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         handler = CommandHandler(session)
         await handler.handle("/bypass on")
         modes = [p for ch, p in captured if ch == "permission_mode_changed"]
@@ -805,10 +830,8 @@ class TestGetLatestPlanRpc:
         # in test_plan_rehydrate.py for the new semantics.
         session = MagicMock(spec=["plan_store", "todo_store"])
         session.plan_store = PlanStore()
-        session.todo_store = None
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
-        snap = backend.get_latest_plan()
+        session.todo_store = TodoStore()
+        snap = PlanSnapshotBuilder(session).latest()
         assert snap.latest == ""
         assert snap.history == []
         assert snap.tasks == []
@@ -818,35 +841,21 @@ class TestGetLatestPlanRpc:
     def test_returns_latest_and_history(self):
         session = MagicMock()
         session.plan_store = PlanStore()
+        session.todo_store = TodoStore()
         session.plan_store.set_plan("first plan")
         session.plan_store.set_plan("second plan")
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
-        snap = backend.get_latest_plan()
+        snap = PlanSnapshotBuilder(session).latest()
         assert snap.latest == "second plan"
         assert snap.history == ["first plan"]
-
-    def test_no_plan_store_does_not_crash(self):
-        """Defensive: legacy / partially-initialised sessions
-        without a ``plan_store`` attribute must return empty
-        rather than crash."""
-        session = MagicMock(spec=[])  # no attributes
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
-        snap = backend.get_latest_plan()
-        assert snap.latest == ""
-        assert snap.history == []
-        assert snap.tasks == []
-        assert snap.state == ""
 
     def test_dispatch_table_routes_get_latest_plan(self):
         session = MagicMock()
         session.plan_store = PlanStore()
+        session.todo_store = TodoStore()
         session.plan_store.set_plan("test plan")
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session, settings=MagicMock())
 
-        table = _build_rpc_table(backend, transport=MagicMock(), login_state={})
+        table = rpc_table_for(backend, transport=MagicMock())
         handler = table.get(RpcMethod.GET_LATEST_PLAN)
         assert handler is not None
         result = handler({})
@@ -862,10 +871,10 @@ class TestPlanModeLifecycle:
         """Enter plan mode via ``/plan``, submit a plan via the
         tool, then exit via ``/plan``. Verifies the three pieces
         work as one workflow."""
-        session = Session.__new__(Session)
-        session.broadcast_bus = _BroadcastBus()
-        session.permission_evaluator = PermissionEvaluator.from_strings(mode="default")
-        session.plan_store = PlanStore()
+        session = plan_session(
+            permission_evaluator=PermissionEvaluator.from_strings(mode="default")
+        )
+        wire_coordinators(session)
         handler = CommandHandler(session)
 
         await handler.handle("/plan")

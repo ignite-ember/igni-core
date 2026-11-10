@@ -31,12 +31,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from websockets.asyncio.client import connect
 
+from igni_core.extensions.host.wire import Reply
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
+from igni_core.transport.composite import CompositeTransport
 from igni_core.transport.in_process import InProcessTransport
-from igni_core.transport.websocket import CompositeTransport, WebSocketServerTransport
+from igni_core.transport.websocket import WebSocketServerTransport
 from tests.host_model_helpers import HostRig
 
 # ── The transport ─────────────────────────────────────────────────
@@ -192,14 +195,29 @@ async def test_an_extension_call_s_answer_reaches_only_the_window_that_asked(tmp
         await rig.stop()
 
 
-async def test_igni_s_own_calls_are_still_broadcast(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("method", "args"),
+    [
+        (RpcMethod.GET_SESSION_ID, {}),
+        (RpcMethod.READ_FILE, {"path": "notes.txt"}),
+        (RpcMethod.RUN_SHELL, {"command": "echo secret"}),
+        # Answered with a message, not an ``rpc_response``.
+        (RpcMethod.GET_STATUS, {}),
+    ],
+)
+async def test_igni_s_own_calls_are_answered_only_to_the_connection_that_asked(
+    tmp_path: Path, method: RpcMethod, args: dict[str, Any]
+):
+    """A file's contents or a shell command's output, broadcast, reached
+    every client attached — another window, a program with the lockfile's
+    token. An answer goes to the connection that asked."""
     rig = await HostRig(tmp_path).start()
     try:
         assert rig.orchestrator is not None
 
-        await rig.orchestrator.dispatch(_from("ws-a", RpcMethod.GET_SESSION_ID))
+        await rig.orchestrator.dispatch(_from("ws-a", method, **args))
 
-        assert _answer(rig, "get_session_id-ws-a").to_client == ""
+        assert _answer(rig, f"{method.value}-ws-a").to_client == "ws-a"
     finally:
         await rig.stop()
 
@@ -270,8 +288,8 @@ async def test_a_window_s_connection_is_the_one_it_spoke_on(tmp_path: Path):
             _from("ws-a", RpcMethod.WINDOW_MODEL, op="hydrate", window="w-1", connection_id="ws-x")
         )
 
-        assert rig.model.windows.by_connection("ws-a") == "w-1"
-        assert rig.model.windows.by_connection("ws-x") is None
+        assert rig.model.services.windows.registry.by_connection("ws-a") == "w-1"
+        assert rig.model.services.windows.registry.by_connection("ws-x") is None
     finally:
         await rig.stop()
 
@@ -287,7 +305,7 @@ async def test_a_page_s_home_window_is_the_window_framing_it(tmp_path: Path, mon
         seen: list[dict[str, Any]] = []
         real = rig.model.handle_page
 
-        async def recording(caller: str, args: dict[str, Any]) -> Any:
+        async def recording(caller: str, args: dict[str, Any]) -> Reply:
             seen.append(dict(args))
             return await real(caller, args)
 

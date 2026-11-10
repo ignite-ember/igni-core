@@ -32,10 +32,10 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
-from igni_core.core.auth.schemas import JwtClaims, LoadCredentialsResult
-from igni_core.core.layer import Layers
+from igni_core.core.auth.schemas import JwtClaims, LoadCredentialsResult, SignedInSession
+from igni_core.core.layer import layers
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,16 @@ class Credentials(BaseModel):
             created_at=now.isoformat(),
             expires_at=expires.isoformat(),
         )
+
+    @classmethod
+    def for_token(cls, token: str, email: str) -> Credentials:
+        """Credentials expiring when the JWT does — or at the
+        :meth:`new` default when it carries no ``exp``."""
+        claims = JwtClaims.decode(token)
+        if claims is None or not claims.exp:
+            return cls.new(token, email)
+        now = datetime.now(timezone.utc).timestamp()
+        return cls.new(token, email, ttl=max(int(claims.exp - now), 0))
 
     def is_expired(self) -> bool:
         """True when the stored ``expires_at`` is at or before now.
@@ -166,7 +176,7 @@ class CredentialsStore:
         :meth:`Credentials.new` — this method does not do any
         datetime bookkeeping on its own.
         """
-        source = Layers.current().credentials()
+        source = layers.current().credentials()
         if source is not None:
             source.save(creds)
             return
@@ -191,7 +201,7 @@ class CredentialsStore:
         Expiry is *not* reported here — call :meth:`Credentials
         .is_expired` on the returned ``creds`` value.
         """
-        source = Layers.current().credentials()
+        source = layers.current().credentials()
         if source is not None:
             return source.load()
         fp = self._path
@@ -214,15 +224,37 @@ class CredentialsStore:
             return LoadCredentialsResult(ok=False, reason="schema_mismatch", error=str(exc))
         return LoadCredentialsResult(ok=True, creds=creds)
 
+    def signed_in_session(self) -> SignedInSession:
+        """Who the stored session is for — empty when nobody is signed in.
+
+        The claims are decoded, not verified; see :class:`SignedInSession`.
+        """
+        try:
+            loaded = self.load()
+        except OSError as exc:
+            logger.debug("could not read the signed-in session (%s)", exc)
+            return SignedInSession()
+        if not loaded.ok or loaded.creds is None:
+            return SignedInSession()
+        token = loaded.creds.access_token
+        try:
+            claims = JwtClaims.decode(token)
+        except ValidationError as exc:
+            logger.debug("the signed-in session's claims are unreadable (%s)", exc)
+            claims = None
+        if claims is None:
+            return SignedInSession(token=token)
+        return SignedInSession(subject=claims.sub, org=claims.org, token=token)
+
     async def ready(self) -> None:
         """Until the token :meth:`load` gives may be sent (the layer's source says; a file always may)."""
-        source = Layers.current().credentials()
+        source = layers.current().credentials()
         if source is not None:
             await source.ready()
 
     def clear(self) -> None:
         """Delete the credential file if it exists (no-op otherwise)."""
-        source = Layers.current().credentials()
+        source = layers.current().credentials()
         if source is not None:
             source.clear()
             return

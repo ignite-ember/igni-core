@@ -31,6 +31,20 @@ class GitClient:
     def __init__(self, *, timeout: float = 60.0) -> None:
         self._timeout = timeout
 
+    @staticmethod
+    def looks_like_sha(ref: str) -> bool:
+        """Whether ``ref`` is a commit rather than a branch or a tag.
+
+        Decides between ``git clone --branch`` (branches and tags only) and
+        clone-then-checkout. Errs towards "branch": seven to forty hex
+        characters are a commit, and anything else goes to ``--branch``,
+        where a wrong guess produces git's own clear error rather than a
+        silent default-branch checkout.
+        """
+        if not 7 <= len(ref) <= 40:
+            return False
+        return all(c in "0123456789abcdefABCDEF" for c in ref)
+
     # ── Availability ────────────────────────────────────────────────
 
     def is_available(self) -> bool:

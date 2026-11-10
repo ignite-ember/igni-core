@@ -4,7 +4,7 @@ Same architectural smell as the plan-decisions bug: before this
 fix, ``todo_write`` only mutated the in-memory ``TodoStore`` and
 broadcast ``todos_updated``. The status flips (pending →
 in_progress → completed) reached the FE for the live session
-but were lost on restart — ``_rehydrate_plan_store`` re-seeded
+but were lost on restart — ``RehydrateController.plan_store`` re-seeded
 from the plan's original ``exit_plan_mode(tasks=...)`` args
 (everything pending), erasing all execution progress.
 
@@ -14,7 +14,7 @@ tests pin the contract end to end:
 
 * ``TodoTools.todo_write`` calls ``SessionPersistence.save_todos``
   with the post-set snapshot.
-* ``_rehydrate_todos`` overwrites the plan-args seed when a
+* ``RehydrateController.todos`` overwrites the plan-args seed when a
   snapshot exists.
 * Headline regression: agent flips task A → in_progress, BE
   restarts, FE sees in_progress (NOT pending) on the restored
@@ -25,26 +25,33 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from igni_core.backend.server import BackendServer
-from igni_core.core.tools.todo import TodoStore, TodoTools, _coerce_items
+from igni_core.backend.server_rehydrate import RehydrateController
+from igni_core.core.session.schemas import PersistResult
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.todo import TodoItemInput, TodoItemWire, TodoStore, TodoTools
 
 
 class _CapturingPersistence:
-    """Captures save_todos / load_todos without touching disk."""
+    """Captures save_todos / load_todos without touching disk.
 
-    def __init__(self, prefill: list[dict] | None = None) -> None:
-        self.saved: list[list[dict]] = []
+    Takes and returns the typed :class:`TodoItemWire` rows the real
+    persistence layer crosses the boundary with; a failed save comes
+    back as a :class:`PersistResult` with ``ok=False``."""
+
+    def __init__(self, prefill: list[TodoItemWire] | None = None) -> None:
+        self.saved: list[list[TodoItemWire]] = []
         self._prefill = list(prefill or [])
         self.fail_save = False
         self.fail_load = False
 
-    async def save_todos(self, todos: list[dict]) -> None:
+    async def save_todos(self, todos: list[TodoItemWire]) -> PersistResult:
         if self.fail_save:
-            raise RuntimeError("simulated DB outage")
+            return PersistResult(ok=False, error="simulated DB outage")
         # Snapshot each call so the test can see history.
-        self.saved.append([dict(t) for t in todos])
+        self.saved.append(list(todos))
+        return PersistResult(ok=True)
 
-    async def load_todos(self) -> list[dict]:
+    async def load_todos(self) -> list[TodoItemWire]:
         if self.fail_load:
             raise RuntimeError("simulated DB outage")
         return list(self._prefill)
@@ -56,7 +63,7 @@ def _build_session_with_todo_tools() -> tuple[object, TodoTools, _CapturingPersi
     session = SimpleNamespace(
         todo_store=TodoStore(),
         persistence=_CapturingPersistence(),
-        broadcast=lambda channel, payload: None,
+        broadcast=lambda event: None,
     )
     tools = TodoTools.__new__(TodoTools)
     tools._session = session  # type: ignore[attr-defined]
@@ -77,8 +84,8 @@ class TestTodoWritePersists:
         )
         assert persistence.saved == [
             [
-                {"content": "Task A", "status": "pending", "activeForm": ""},
-                {"content": "Task B", "status": "in_progress", "activeForm": ""},
+                TodoItemWire(content="Task A", status="pending"),
+                TodoItemWire(content="Task B", status="in_progress"),
             ]
         ]
 
@@ -101,9 +108,7 @@ class TestTodoWritePersists:
         persistence.fail_save = True
         reply = await tools.todo_write([{"content": "Task A", "status": "completed"}])
         # In-memory state is correct.
-        assert session.todo_store.snapshot() == [
-            {"content": "Task A", "status": "completed", "activeForm": ""}
-        ]
+        assert session.todo_store.items == [TodoItemWire(content="Task A", status="completed")]
         # Reply still confirms (no exception propagated).
         assert "1 todos" in reply
 
@@ -120,12 +125,12 @@ class TestTodoWritePersists:
         )
         # Last persisted call has both items, A flipped.
         assert persistence.saved[-1] == [
-            {"content": "A", "status": "in_progress", "activeForm": ""},
-            {"content": "B", "status": "pending", "activeForm": ""},
+            TodoItemWire(content="A", status="in_progress"),
+            TodoItemWire(content="B", status="pending"),
         ]
 
 
-# ── _rehydrate_todos ─────────────────────────────────────────
+# ── RehydrateController.todos ─────────────────────────────────────────
 
 
 class TestRehydrateTodos:
@@ -135,32 +140,32 @@ class TestRehydrateTodos:
         # state). A snapshot with task A flipped to in_progress
         # is the real execution state — rehydration must prefer
         # it.
-        server = BackendServer.__new__(BackendServer)
         store = TodoStore()
-        # Pre-seed as if ``_rehydrate_plan_store`` already ran.
-        seed_items, _ = _coerce_items(
-            [
-                {"content": "Task A", "status": "pending"},
-                {"content": "Task B", "status": "pending"},
-            ]
+        # Pre-seed as if ``RehydrateController.plan_store`` already ran.
+        store.set(
+            TodoItemInput.validate_batch(
+                [
+                    {"content": "Task A", "status": "pending"},
+                    {"content": "Task B", "status": "pending"},
+                ]
+            ).items
         )
-        store.set(seed_items)
 
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             todo_store=store,
             persistence=_CapturingPersistence(
                 prefill=[
-                    {"content": "Task A", "status": "in_progress", "activeForm": ""},
-                    {"content": "Task B", "status": "pending", "activeForm": ""},
+                    TodoItemWire(content="Task A", status="in_progress"),
+                    TodoItemWire(content="Task B", status="pending"),
                 ]
             ),
         )
 
-        await server._rehydrate_todos()
+        await RehydrateController(session, ProcessSupervisor()).todos()
 
-        assert store.snapshot() == [
-            {"content": "Task A", "status": "in_progress", "activeForm": ""},
-            {"content": "Task B", "status": "pending", "activeForm": ""},
+        assert store.items == [
+            TodoItemWire(content="Task A", status="in_progress"),
+            TodoItemWire(content="Task B", status="pending"),
         ], (
             "Bug regression: BE restart erased execution progress. "
             "The snapshot in session_data is the authoritative state "
@@ -173,49 +178,42 @@ class TestRehydrateTodos:
         # _rehydrate_plan_store seeded. Otherwise a fresh plan
         # submission with tasks would render with an empty
         # checklist.
-        server = BackendServer.__new__(BackendServer)
         store = TodoStore()
-        seed_items, _ = _coerce_items([{"content": "Task A", "status": "pending"}])
-        store.set(seed_items)
+        store.set(TodoItemInput.validate_batch([{"content": "Task A", "status": "pending"}]).items)
 
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             todo_store=store,
             persistence=_CapturingPersistence(prefill=[]),
         )
 
-        await server._rehydrate_todos()
+        await RehydrateController(session, ProcessSupervisor()).todos()
 
-        assert store.snapshot() == [{"content": "Task A", "status": "pending", "activeForm": ""}]
+        assert store.items == [TodoItemWire(content="Task A", status="pending")]
 
     async def test_load_failure_preserves_seed(self) -> None:
         # DB blip on restart → fall back to the plan-args seed
         # rather than crash the boot.
-        server = BackendServer.__new__(BackendServer)
         store = TodoStore()
-        seed_items, _ = _coerce_items([{"content": "Task A", "status": "pending"}])
-        store.set(seed_items)
+        store.set(TodoItemInput.validate_batch([{"content": "Task A", "status": "pending"}]).items)
 
-        persistence = _CapturingPersistence(
-            prefill=[{"content": "X", "status": "completed", "activeForm": ""}]
-        )
+        persistence = _CapturingPersistence(prefill=[TodoItemWire(content="X", status="completed")])
         persistence.fail_load = True
-        server._session = SimpleNamespace(todo_store=store, persistence=persistence)
+        session = SimpleNamespace(todo_store=store, persistence=persistence)
 
-        await server._rehydrate_todos()  # must not raise
+        await RehydrateController(session, ProcessSupervisor()).todos()  # must not raise
 
         # Original seed intact — no partial overwrite.
-        assert store.snapshot() == [{"content": "Task A", "status": "pending", "activeForm": ""}]
+        assert store.items == [TodoItemWire(content="Task A", status="pending")]
 
     async def test_missing_persistence_is_noop(self) -> None:
         # Test sessions / headless callers may build a session
         # without a persistence layer. Rehydrate must skip
         # cleanly, leaving any prior seed in place.
-        server = BackendServer.__new__(BackendServer)
         store = TodoStore()
-        server._session = SimpleNamespace(todo_store=store, persistence=None)
+        session = SimpleNamespace(todo_store=store, persistence=None)
 
-        await server._rehydrate_todos()
-        assert store.snapshot() == []
+        await RehydrateController(session, ProcessSupervisor()).todos()
+        assert store.items == []
 
 
 # ── End-to-end: live flip → restart → restored state ─────────
@@ -245,32 +243,32 @@ class TestEndToEndRestartSurvives:
         persisted_blob = live_persistence.saved[-1]
 
         # Step 3: simulate restart. Fresh session, fresh store.
-        # ``_rehydrate_plan_store`` would normally re-seed from
+        # ``RehydrateController.plan_store`` would normally re-seed from
         # the plan's original args (everything pending) — we
         # simulate that step by pre-seeding the store the same
         # way.
         restarted_store = TodoStore()
-        plan_args_seed, _ = _coerce_items(
-            [
-                {"content": "Task A", "status": "pending"},
-                {"content": "Task B", "status": "pending"},
-            ]
+        restarted_store.set(
+            TodoItemInput.validate_batch(
+                [
+                    {"content": "Task A", "status": "pending"},
+                    {"content": "Task B", "status": "pending"},
+                ]
+            ).items
         )
-        restarted_store.set(plan_args_seed)
 
-        # ``_rehydrate_todos`` then loads the persisted snapshot.
+        # ``RehydrateController.todos`` then loads the persisted snapshot.
         restarted_persistence = _CapturingPersistence(prefill=persisted_blob)
-        server = BackendServer.__new__(BackendServer)
-        server._session = SimpleNamespace(
+        session = SimpleNamespace(
             todo_store=restarted_store,
             persistence=restarted_persistence,
         )
-        await server._rehydrate_todos()
+        await RehydrateController(session, ProcessSupervisor()).todos()
 
         # Step 4: restored state matches the live state at restart.
-        assert restarted_store.snapshot() == [
-            {"content": "Task A", "status": "in_progress", "activeForm": ""},
-            {"content": "Task B", "status": "pending", "activeForm": ""},
+        assert restarted_store.items == [
+            TodoItemWire(content="Task A", status="in_progress"),
+            TodoItemWire(content="Task B", status="pending"),
         ], (
             "End-to-end regression: live in_progress flip didn't survive "
             "restart. The whole point of persisting on every todo_write "

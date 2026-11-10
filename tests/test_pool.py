@@ -12,6 +12,7 @@ in place of module-level patch decorators.
 from unittest.mock import MagicMock, patch
 
 import pytest
+from agno.tools.mcp import MCPTools
 
 from igni_core.core.agents import (
     AgentBuildContext,
@@ -22,6 +23,13 @@ from igni_core.core.agents import (
     AgentPriority,
 )
 from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.prompts import PromptFragments, PromptLoader
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+
+
+def _prompt_loader() -> PromptLoader:
+    """igni's own prompt files, with no extension-supplied anchors."""
+    return PromptLoader(PromptFragments())
 
 
 def parse_agent_file(path):
@@ -29,7 +37,7 @@ def parse_agent_file(path):
     replacement. Kept as a thin wrapper so the parser tests read
     naturally; the canonical entry-point is
     :meth:`AgentMarkdownFile.parse`."""
-    return AgentMarkdownFile(path).parse()
+    return AgentMarkdownFile(path, prompt_loader=_prompt_loader()).parse()
 
 
 class TestAgentParser:
@@ -135,7 +143,7 @@ class TestAgentParser:
 class TestAgentPool:
     def test_empty_pool(self):
         pool = AgentPool()
-        assert pool.agent_names == []
+        assert pool.list_agents() == []
         assert pool.list_agents() == []
 
     def test_load_directory(self, tmp_path, settings):
@@ -147,9 +155,9 @@ class TestAgentPool:
             "---\nname: beta\ndescription: Agent Beta\n---\nBeta prompt\n"
         )
 
-        pool = AgentPool()
-        pool.load_directory(tmp_path, priority=0, settings=settings)
-        assert sorted(pool.agent_names) == ["alpha", "beta"]
+        pool = AgentPool(settings=settings)
+        pool.load_directory(tmp_path, priority=0)
+        assert sorted(d.name for d in pool.list_agents()) == ["alpha", "beta"]
 
     def test_priority_override(self, tmp_path, settings):
         low_dir = tmp_path / "low"
@@ -164,11 +172,11 @@ class TestAgentPool:
             "---\nname: shared\ndescription: High priority\n---\nHigh\n"
         )
 
-        pool = AgentPool()
-        pool.load_directory(low_dir, priority=0, settings=settings)
-        pool.load_directory(high_dir, priority=3, settings=settings)
+        pool = AgentPool(settings=settings)
+        pool.load_directory(low_dir, priority=0)
+        pool.load_directory(high_dir, priority=3)
 
-        defn = pool.get_definition("shared")
+        defn = pool.get_entry("shared").definition
         assert defn.description == "High priority"
 
     def test_lower_priority_does_not_override(self, tmp_path, settings):
@@ -180,41 +188,30 @@ class TestAgentPool:
         low_dir.mkdir()
         (low_dir / "agent.md").write_text("---\nname: shared\ndescription: Low second\n---\n")
 
-        pool = AgentPool()
-        pool.load_directory(high_dir, priority=3, settings=settings)
-        pool.load_directory(low_dir, priority=0, settings=settings)
+        pool = AgentPool(settings=settings)
+        pool.load_directory(high_dir, priority=3)
+        pool.load_directory(low_dir, priority=0)
 
-        defn = pool.get_definition("shared")
+        defn = pool.get_entry("shared").definition
         assert defn.description == "High first"
 
-    def test_get_unknown_raises(self, settings):
+    def test_get_unknown_is_none(self, settings):
         pool = AgentPool()
-        with pytest.raises(KeyError, match="Agent not found"):
-            pool.get("nonexistent")
+        assert pool.get("nonexistent") is None
+        assert pool.missing("nonexistent").startswith("Agent 'nonexistent' not found")
 
     def test_load_skips_bad_files(self, tmp_path, settings):
         (tmp_path / "good.md").write_text("---\nname: good\ndescription: Works\n---\n")
         (tmp_path / "bad.md").write_text("no frontmatter here")
 
-        pool = AgentPool()
-        pool.load_directory(tmp_path, priority=0, settings=settings)
-        assert pool.agent_names == ["good"]
+        pool = AgentPool(settings=settings)
+        pool.load_directory(tmp_path, priority=0)
+        assert [d.name for d in pool.list_agents()] == ["good"]
 
     def test_load_nonexistent_directory(self, tmp_path, settings):
-        pool = AgentPool()
-        pool.load_directory(tmp_path / "nope", priority=0, settings=settings)
-        assert pool.agent_names == []
-
-    def test_describe(self, tmp_path, settings):
-        (tmp_path / "agent.md").write_text(
-            "---\nname: alpha\ndescription: Does things\ntools: Read, Grep\ntags: search\n---\n"
-        )
-        pool = AgentPool()
-        pool.load_directory(tmp_path, priority=0, settings=settings)
-        desc = pool.describe()
-        assert "alpha" in desc
-        assert "Does things" in desc
-        assert "Read" in desc
+        pool = AgentPool(settings=settings)
+        pool.load_directory(tmp_path / "nope", priority=0)
+        assert pool.list_agents() == []
 
 
 class TestAgentResolutionOrder:
@@ -249,28 +246,28 @@ class TestAgentResolutionOrder:
         self._write_agent(home / CONFIG_DIR / "agents", "shared", "ember-user")
         self._write_agent(home / ".claude" / "agents", "shared", "claude-user")
         pool = self._load(monkeypatch, home, project, settings)
-        assert pool.get_definition("shared").description == "ember-user"
+        assert pool.get_entry("shared").definition.description == "ember-user"
 
     def test_project_local_beats_project_claude(self, tmp_path, monkeypatch, settings):
         home, project = self._build_layout(tmp_path)
         self._write_agent(project / CONFIG_DIR / "agents.local", "shared", "ember-local")
         self._write_agent(project / ".claude" / "agents", "shared", "claude-project")
         pool = self._load(monkeypatch, home, project, settings)
-        assert pool.get_definition("shared").description == "ember-local"
+        assert pool.get_entry("shared").definition.description == "ember-local"
 
     def test_project_ember_beats_project_claude(self, tmp_path, monkeypatch, settings):
         home, project = self._build_layout(tmp_path)
         self._write_agent(project / CONFIG_DIR / "agents", "shared", "ember-project")
         self._write_agent(project / ".claude" / "agents", "shared", "claude-project")
         pool = self._load(monkeypatch, home, project, settings)
-        assert pool.get_definition("shared").description == "ember-project"
+        assert pool.get_entry("shared").definition.description == "ember-project"
 
     def test_project_beats_user(self, tmp_path, monkeypatch, settings):
         home, project = self._build_layout(tmp_path)
         self._write_agent(home / CONFIG_DIR / "agents", "shared", "ember-user")
         self._write_agent(project / CONFIG_DIR / "agents", "shared", "ember-project")
         pool = self._load(monkeypatch, home, project, settings)
-        assert pool.get_definition("shared").description == "ember-project"
+        assert pool.get_entry("shared").definition.description == "ember-project"
 
     def test_project_claude_beats_user_ember(self, tmp_path, monkeypatch, settings):
         """Cross-scope: a project's Claude agents override the user's
@@ -279,7 +276,7 @@ class TestAgentResolutionOrder:
         self._write_agent(home / CONFIG_DIR / "agents", "shared", "ember-user")
         self._write_agent(project / ".claude" / "agents", "shared", "claude-project")
         pool = self._load(monkeypatch, home, project, settings)
-        assert pool.get_definition("shared").description == "claude-project"
+        assert pool.get_entry("shared").definition.description == "claude-project"
 
     def test_full_chain_yields_project_ember(self, tmp_path, monkeypatch, settings):
         home, project = self._build_layout(tmp_path)
@@ -289,14 +286,13 @@ class TestAgentResolutionOrder:
         self._write_agent(project / CONFIG_DIR / "agents.local", "shared", "ember-local")
         self._write_agent(project / CONFIG_DIR / "agents", "shared", "ember-project")
         pool = self._load(monkeypatch, home, project, settings)
-        assert pool.get_definition("shared").description == "ember-project"
+        assert pool.get_entry("shared").definition.description == "ember-project"
 
     def test_claude_skipped_when_cross_tool_disabled(self, tmp_path, monkeypatch, settings):
         home, project = self._build_layout(tmp_path)
         self._write_agent(project / ".claude" / "agents", "claude-only", "claude")
         pool = self._load(monkeypatch, home, project, settings, cross_tool=False)
-        with pytest.raises(KeyError):
-            pool.get_definition("claude-only")
+        assert pool.get_entry("claude-only") is None
 
     def test_priority_constants_are_ordered(self):
         assert AgentPriority.USER_CLAUDE < AgentPriority.USER_EMBER
@@ -321,7 +317,7 @@ class TestBuildAgentMCPFiltering:
         settings,
         *,
         base_dir: str | None = None,
-        mcp_clients: dict | None = None,
+        mcp_clients: dict[str, MCPTools] | None = None,
     ):
         """One :class:`AgentBuilder` call using the current class
         attribute mocks. Returned so each test can assert on the
@@ -330,6 +326,7 @@ class TestBuildAgentMCPFiltering:
             settings=settings,
             base_dir=base_dir,
             mcp_clients=mcp_clients,
+            supervisor=ProcessSupervisor(),
         )
         AgentBuilder(context).build(defn)
 
@@ -348,8 +345,8 @@ class TestBuildAgentMCPFiltering:
             tools=["Read"],
             mcp_servers=[],
         )
-        pg_client = MagicMock()
-        redis_client = MagicMock()
+        pg_client = MagicMock(spec=MCPTools)
+        redis_client = MagicMock(spec=MCPTools)
         mcp_clients = {"postgres": pg_client, "redis": redis_client}
 
         self._build(defn, settings, mcp_clients=mcp_clients)
@@ -372,8 +369,8 @@ class TestBuildAgentMCPFiltering:
             tools=["Read"],
             mcp_servers=["postgres"],
         )
-        pg_client = MagicMock()
-        redis_client = MagicMock()
+        pg_client = MagicMock(spec=MCPTools)
+        redis_client = MagicMock(spec=MCPTools)
         mcp_clients = {"postgres": pg_client, "redis": redis_client}
 
         self._build(defn, settings, mcp_clients=mcp_clients)
@@ -396,7 +393,7 @@ class TestBuildAgentMCPFiltering:
             tools=["Read"],
             mcp_servers=["postgres"],
         )
-        mcp_clients = {"postgres": MagicMock(), "redis": MagicMock()}
+        mcp_clients = {"postgres": MagicMock(spec=MCPTools), "redis": MagicMock(spec=MCPTools)}
 
         self._build(defn, settings, base_dir="/tmp", mcp_clients=mcp_clients)
         kwargs = mock_agent_cls.call_args[1]

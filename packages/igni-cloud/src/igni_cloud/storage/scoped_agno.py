@@ -10,14 +10,11 @@ each write is stamped with it and each read and delete is filtered by
 it, whatever the caller passed. Like :class:`StorageScope` for igni's own
 tables, it is the one place the filter lives.
 
-A session's primary key is its ``session_id`` alone, and Agno's upsert
-conflicts on it. So the scope is also part of the key the database
-holds: a session is stored as ``<org>/<producer>/<project>#<id>``
-(:meth:`ScopedAsyncPostgresDb.stored_id`) and handed back with the
-plain id. Two producers' sessions with the same id are two rows, kept
-apart by the database's primary key rather than by the ids being random.
-Agno's table and its columns are unchanged — a wrapper, not a fork of
-its schema — so Agno's own migrations still apply.
+A session is also stored under a key that carries the scope
+(:class:`~igni_cloud.storage.scoped_session_ids.ScopedSessionIds`) and
+handed back with the plain id. Agno's table and its columns are
+unchanged — a wrapper, not a fork of its schema — so Agno's own
+migrations still apply.
 
 Agno's other tables — metrics, evals, knowledge, traces, spans,
 schedules, approvals — are not scoped. igni does not write them.
@@ -26,30 +23,24 @@ schedules, approvals — are not scoped. igni does not write them.
 from __future__ import annotations
 
 import copy
-import threading
 from typing import Any, ClassVar
 
 from agno.db.base import SessionType
 from agno.db.postgres import AsyncPostgresDb
 from agno.db.schemas.memory import UserMemory
+from agno.run.base import RunStatus
 from agno.session import Session
 from sqlalchemy import Table, select
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from igni_cloud.storage.agno_table_cache import AgnoTableCache, AgnoTableKey
+from igni_cloud.storage.scoped_session_ids import AgnoRow, AgnoRun, ScopedSessionIds
 from igni_core.core.db.scope import StorageScope
 
 
 class ScopedAsyncPostgresDb(AsyncPostgresDb):
     """:class:`AsyncPostgresDb` that reads and writes one scope's rows."""
 
-    def __init__(self, *, scope: StorageScope, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self._scoped_user_id = scope.agno_user_id
-
-    # ── Tables ────────────────────────────────────────────────────
-
-    #: Tables found, per database, schema, kind and name — for the process.
-    _tables: ClassVar[dict[tuple[str, str, str, str], Table]] = {}
-    _tables_lock: ClassVar[threading.Lock] = threading.Lock()
     #: Agno's name attribute for each kind of table igni uses.
     _NAME_ATTRIBUTES: ClassVar[dict[str, str]] = {
         "sessions": "session_table_name",
@@ -59,68 +50,62 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
         "learnings": "learnings_table_name",
     }
 
-    async def _get_table(
-        self, table_type: str, create_table_if_not_found: bool | None = False
-    ) -> Any:
-        """Agno's table, looked up once per process instead of on every query.
-
-        Agno checks that a table exists, that its columns are right and
-        reflects it on *every* call — three round trips before each
-        query, which after a restore are three on a fresh connection.
-        The schema is fixed while igni runs (``igni migrate`` made it,
-        as the admin role), so a table once found is kept. One not found
-        is asked again: it may be made later.
-        """
-        attribute = self._NAME_ATTRIBUTES.get(table_type)
-        if attribute is None:
-            return await super()._get_table(table_type, create_table_if_not_found)
-        key = (
-            self.db_engine.url.render_as_string(hide_password=True),
-            self.db_schema or "",
-            table_type,
-            str(getattr(self, attribute, "")),
+    def __init__(
+        self,
+        *,
+        scope: StorageScope,
+        tables: AgnoTableCache,
+        db_engine: AsyncEngine,
+        session_table: str,
+        memory_table: str,
+        create_schema: bool = True,
+    ) -> None:
+        super().__init__(
+            db_engine=db_engine,
+            session_table=session_table,
+            memory_table=memory_table,
+            create_schema=create_schema,
         )
-        with self._tables_lock:
-            known = self._tables.get(key)
-        if known is not None:
-            return known
-        table = await super()._get_table(table_type, create_table_if_not_found)
-        if table is not None:
-            with self._tables_lock:
-                self._tables[key] = table
-        return table
+        self._scoped_user_id = scope.agno_user_id
+        self._session_ids = ScopedSessionIds(self._scoped_user_id)
+        self._tables = tables
 
     @property
     def scoped_user_id(self) -> str:
         return self._scoped_user_id
 
-    # ── Sessions ──────────────────────────────────────────────────
-
-    @property
-    def key_prefix(self) -> str:
-        return f"{self._scoped_user_id}#"
-
     def stored_id(self, session_id: str) -> str:
         """The key a session is stored under: the scope, then the id."""
-        return f"{self.key_prefix}{session_id}"
+        return self._session_ids.stored(session_id)
 
-    def _plain(self, found: Any) -> Any:
-        """What Agno read back, with the scope taken off every session id."""
-        if found is None:
-            return None
-        if isinstance(found, tuple):
-            return tuple(self._plain(item) for item in found)
-        if isinstance(found, list):
-            return [self._plain(item) for item in found]
-        if isinstance(found, dict):
-            session_id = found.get("session_id")
-            if isinstance(session_id, str):
-                return {**found, "session_id": session_id.removeprefix(self.key_prefix)}
-            return found
-        session_id = getattr(found, "session_id", None)
-        if isinstance(session_id, str):
-            found.session_id = session_id.removeprefix(self.key_prefix)
-        return found
+    # ── Tables ────────────────────────────────────────────────────
+
+    async def _get_table(
+        self, table_type: str, create_table_if_not_found: bool | None = False
+    ) -> Table | None:
+        """Agno's table, from :class:`AgnoTableCache` once found.
+
+        Agno has no public hook for its table lookup, so this overrides
+        the private one it calls before every query.
+        """
+        attribute = self._NAME_ATTRIBUTES.get(table_type)
+        if attribute is None:
+            return await super()._get_table(table_type, create_table_if_not_found)
+        key = AgnoTableKey(
+            database=self.db_engine.url.render_as_string(hide_password=True),
+            schema=self.db_schema or "",
+            table_type=table_type,
+            name=str(getattr(self, attribute, "")),
+        )
+        known = self._tables.get(key)
+        if known is not None:
+            return known
+        table = await super()._get_table(table_type, create_table_if_not_found)
+        if table is not None:
+            self._tables.remember(key, table)
+        return table
+
+    # ── Sessions ──────────────────────────────────────────────────
 
     async def delete_session(self, session_id: str, user_id: str | None = None) -> bool:
         return await super().delete_session(
@@ -139,8 +124,8 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
         user_id: str | None = None,
         deserialize: bool | None = True,
         runs_limit: int | None = None,
-    ) -> Any:
-        return self._plain(
+    ) -> Session | AgnoRow | None:
+        return self._session_ids.plain_found_session(
             await super().get_session(
                 self.stored_id(session_id),
                 session_type=session_type,
@@ -165,24 +150,25 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
         deserialize: bool | None = True,
         include_runs: bool = True,
         filter_expr: dict[str, Any] | None = None,
-    ) -> Any:
-        return self._plain(
-            await super().get_sessions(
-                session_type=session_type,
-                user_id=self._scoped_user_id,
-                component_id=component_id,
-                session_name=session_name,
-                start_timestamp=start_timestamp,
-                end_timestamp=end_timestamp,
-                limit=limit,
-                page=page,
-                sort_by=sort_by,
-                sort_order=sort_order,
-                deserialize=deserialize,
-                include_runs=include_runs,
-                filter_expr=filter_expr,
-            )
+    ) -> list[Session] | tuple[list[AgnoRow], int]:
+        found = await super().get_sessions(
+            session_type=session_type,
+            user_id=self._scoped_user_id,
+            component_id=component_id,
+            session_name=session_name,
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
+            limit=limit,
+            page=page,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            deserialize=deserialize,
+            include_runs=include_runs,
+            filter_expr=filter_expr,
         )
+        if isinstance(found, tuple):
+            return self._session_ids.plain_rows_page(found)
+        return [self._session_ids.plain_session(session) for session in found]
 
     async def rename_session(
         self,
@@ -191,8 +177,8 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
         session_name: str,
         user_id: str | None = None,
         deserialize: bool | None = True,
-    ) -> Any:
-        return self._plain(
+    ) -> Session | AgnoRow | None:
+        return self._session_ids.plain_found_session(
             await super().rename_session(
                 self.stored_id(session_id),
                 session_type,
@@ -202,12 +188,16 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
             )
         )
 
-    async def upsert_session(self, session: Session, deserialize: bool | None = True) -> Any:
+    async def upsert_session(
+        self, session: Session, deserialize: bool | None = True
+    ) -> Session | AgnoRow | None:
         # A copy: the caller's session keeps its plain id.
         stored = copy.copy(session)
         stored.session_id = self.stored_id(session.session_id)
         stored.user_id = self._scoped_user_id
-        return self._plain(await super().upsert_session(stored, deserialize=deserialize))
+        return self._session_ids.plain_found_session(
+            await super().upsert_session(stored, deserialize=deserialize)
+        )
 
     # ── Runs ──────────────────────────────────────────────────────
     #
@@ -219,7 +209,7 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
 
     async def upsert_run(
         self,
-        run: Any,
+        run: AgnoRun | AgnoRow,
         session_id: str,
         user_id: str | None = None,
         run_index: int | None = None,
@@ -238,33 +228,38 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
         agent_id: str | None = None,
         team_id: str | None = None,
         workflow_id: str | None = None,
-        status: Any = None,
+        status: RunStatus | None = None,
         limit: int | None = None,
         page: int | None = None,
         sort_by: str | None = None,
         sort_order: str | None = None,
         deserialize: bool | None = True,
-    ) -> Any:
-        return self._plain(
-            await super().get_runs(
-                session_id=self.stored_id(session_id) if session_id is not None else None,
-                user_id=self._scoped_user_id,
-                agent_id=agent_id,
-                team_id=team_id,
-                workflow_id=workflow_id,
-                status=status,
-                limit=limit,
-                page=page,
-                sort_by=sort_by,
-                sort_order=sort_order,
-                deserialize=deserialize,
-            )
+    ) -> list[AgnoRun] | tuple[list[AgnoRow], int]:
+        found = await super().get_runs(
+            session_id=self.stored_id(session_id) if session_id is not None else None,
+            user_id=self._scoped_user_id,
+            agent_id=agent_id,
+            team_id=team_id,
+            workflow_id=workflow_id,
+            status=status,
+            limit=limit,
+            page=page,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            deserialize=deserialize,
         )
+        if isinstance(found, tuple):
+            return self._session_ids.plain_rows_page(found)
+        return [self._session_ids.plain_run(run) for run in found]
 
-    async def get_run(self, run_id: str, deserialize: bool | None = True) -> Any:
+    async def get_run(
+        self, run_id: str, deserialize: bool | None = True
+    ) -> AgnoRun | AgnoRow | None:
         if not await self._owned([run_id]):
             return None
-        return self._plain(await super().get_run(run_id, deserialize=deserialize))
+        return self._session_ids.plain_found_run(
+            await super().get_run(run_id, deserialize=deserialize)
+        )
 
     async def cancel_pending_run(
         self,
@@ -310,8 +305,8 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
 
     # ── Memories ──────────────────────────────────────────────────
 
-    async def delete_user_memory(self, memory_id: str, user_id: str | None = None) -> Any:
-        return await super().delete_user_memory(memory_id, user_id=self._scoped_user_id)
+    async def delete_user_memory(self, memory_id: str, user_id: str | None = None) -> None:
+        await super().delete_user_memory(memory_id, user_id=self._scoped_user_id)
 
     async def delete_user_memories(self, memory_ids: list[str], user_id: str | None = None) -> None:
         await super().delete_user_memories(memory_ids, user_id=self._scoped_user_id)
@@ -324,7 +319,7 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
         memory_id: str,
         deserialize: bool | None = True,
         user_id: str | None = None,
-    ) -> Any:
+    ) -> UserMemory | AgnoRow | None:
         return await super().get_user_memory(
             memory_id, deserialize=deserialize, user_id=self._scoped_user_id
         )
@@ -341,7 +336,7 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
         sort_by: str | None = None,
         sort_order: str | None = None,
         deserialize: bool | None = True,
-    ) -> Any:
+    ) -> list[UserMemory] | tuple[list[AgnoRow], int]:
         return await super().get_user_memories(
             user_id=self._scoped_user_id,
             agent_id=agent_id,
@@ -357,42 +352,132 @@ class ScopedAsyncPostgresDb(AsyncPostgresDb):
 
     async def get_user_memory_stats(
         self, limit: int | None = None, page: int | None = None, user_id: str | None = None
-    ) -> Any:
+    ) -> tuple[list[AgnoRow], int]:
         return await super().get_user_memory_stats(
             limit=limit, page=page, user_id=self._scoped_user_id
         )
 
-    async def upsert_user_memory(self, memory: UserMemory, deserialize: bool | None = True) -> Any:
+    async def upsert_user_memory(
+        self, memory: UserMemory, deserialize: bool | None = True
+    ) -> UserMemory | AgnoRow | None:
         memory.user_id = self._scoped_user_id
         return await super().upsert_user_memory(memory, deserialize=deserialize)
 
     async def clear_memories(self) -> None:
         """Only this scope's: Agno's clears the whole table."""
         memories = await super().get_user_memories(user_id=self._scoped_user_id)
-        ids = [m.memory_id for m in memories if getattr(m, "memory_id", None)]  # type: ignore[union-attr]
+        ids = [m.memory_id for m in memories if isinstance(m, UserMemory) and m.memory_id]
         if ids:
             await super().delete_user_memories(ids, user_id=self._scoped_user_id)
 
     # ── Learnings ─────────────────────────────────────────────────
 
-    async def get_learning(self, learning_type: str, **kwargs: Any) -> Any:
-        kwargs["user_id"] = self._scoped_user_id
-        return await super().get_learning(learning_type, **kwargs)
+    async def get_learning(
+        self,
+        learning_type: str,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        team_id: str | None = None,
+        session_id: str | None = None,
+        namespace: str | None = None,
+        entity_id: str | None = None,
+        entity_type: str | None = None,
+    ) -> AgnoRow | None:
+        return await super().get_learning(
+            learning_type,
+            user_id=self._scoped_user_id,
+            agent_id=agent_id,
+            team_id=team_id,
+            session_id=session_id,
+            namespace=namespace,
+            entity_id=entity_id,
+            entity_type=entity_type,
+        )
 
     async def upsert_learning(
-        self, id: str, learning_type: str, content: dict[str, Any], **kwargs: Any
+        self,
+        id: str,
+        learning_type: str,
+        content: dict[str, Any],
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        team_id: str | None = None,
+        session_id: str | None = None,
+        namespace: str | None = None,
+        entity_id: str | None = None,
+        entity_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
-        kwargs["user_id"] = self._scoped_user_id
-        await super().upsert_learning(id, learning_type, content, **kwargs)
+        await super().upsert_learning(
+            id,
+            learning_type,
+            content,
+            user_id=self._scoped_user_id,
+            agent_id=agent_id,
+            team_id=team_id,
+            session_id=session_id,
+            namespace=namespace,
+            entity_id=entity_id,
+            entity_type=entity_type,
+            metadata=metadata,
+        )
 
-    async def get_learnings(self, learning_type: str | None = None, **kwargs: Any) -> Any:
-        kwargs["user_id"] = self._scoped_user_id
-        return await super().get_learnings(learning_type, **kwargs)
+    async def get_learnings(
+        self,
+        learning_type: str | None = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        team_id: str | None = None,
+        session_id: str | None = None,
+        namespace: str | None = None,
+        entity_id: str | None = None,
+        entity_type: str | None = None,
+        limit: int | None = None,
+    ) -> list[AgnoRow]:
+        return await super().get_learnings(
+            learning_type,
+            user_id=self._scoped_user_id,
+            agent_id=agent_id,
+            team_id=team_id,
+            session_id=session_id,
+            namespace=namespace,
+            entity_id=entity_id,
+            entity_type=entity_type,
+            limit=limit,
+        )
 
-    async def list_learnings(self, learning_type: str | None = None, **kwargs: Any) -> Any:
-        kwargs["user_id"] = self._scoped_user_id
-        kwargs["include_global"] = False
-        return await super().list_learnings(learning_type, **kwargs)
+    async def list_learnings(
+        self,
+        learning_type: str | None = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        team_id: str | None = None,
+        session_id: str | None = None,
+        namespace: str | None = None,
+        entity_id: str | None = None,
+        entity_type: str | None = None,
+        include_global: bool = False,
+        limit: int = 100,
+        page: int = 1,
+        sort_by: str | None = None,
+        sort_order: str | None = None,
+    ) -> tuple[list[AgnoRow], int]:
+        """This scope's only: ``include_global`` is never honoured."""
+        return await super().list_learnings(
+            learning_type,
+            user_id=self._scoped_user_id,
+            agent_id=agent_id,
+            team_id=team_id,
+            session_id=session_id,
+            namespace=namespace,
+            entity_id=entity_id,
+            entity_type=entity_type,
+            include_global=False,
+            limit=limit,
+            page=page,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
 
 
 __all__ = ["ScopedAsyncPostgresDb"]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -147,6 +149,25 @@ class HookDefinition(BaseModel):
         self._group_source = str(source) or "group policy"
         return self
 
+    def describe(self) -> str:
+        """What the hook will do, in one line a person can judge."""
+        match self.type:
+            case "command":
+                return self.command
+            case "http":
+                return f"POST {self.url}"
+            case "mcp_tool":
+                return f"MCP tool {self.mcp_server}/{self.mcp_tool}"
+            case "prompt":
+                return f"Add to the conversation: {self.text}"
+            case _:
+                return f"{self.type} hook"
+
+    def digest(self) -> str:
+        """A digest of everything the hook does — its version, for asking about it."""
+        content = json.dumps(self.model_dump(mode="json"), sort_keys=True)
+        return hashlib.sha256(content.encode()).hexdigest()
+
     def matches(self, target: str) -> bool:
         """Whether this hook fires for ``target``.
 
@@ -155,16 +176,6 @@ class HookDefinition(BaseModel):
         pattern semantics (exact / regex / pipe-list).
         """
         return HookMatcher(self.matcher).matches(target)
-
-    @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> HookDefinition:
-        """Validate a raw settings-file dict into a :class:`HookDefinition`.
-
-        Thin wrapper over :meth:`model_validate` — kept as an explicit
-        classmethod so callers spell out the intent (parsing wire /
-        settings input) at the seam.
-        """
-        return cls.model_validate(raw)
 
     @classmethod
     def from_wire(cls, raw: dict[str, Any]) -> HookDefinition:
@@ -195,8 +206,8 @@ class SafetyCheckResult(BaseModel):
     """Result of a synchronous safety-list check on a single tool call.
 
     Pattern 3 Result-style return for the pure predicate seam
-    on :class:`~igni_core.core.hooks.permission_pipeline.ProtectedPathStage`
-    and :class:`~igni_core.core.hooks.permission_pipeline.BlockedCommandStage`.
+    on :class:`~igni_core.core.hooks.permission.protected_path_stage.ProtectedPathStage`
+    and :class:`~igni_core.core.hooks.permission.blocked_command_stage.BlockedCommandStage`.
     Their async ``evaluate`` composes ``check_sync`` (pure) with
     logging + :class:`StageOutcome` translation on the outside.
 
@@ -266,14 +277,7 @@ class HookResult(BaseModel):
 
     should_continue: bool = True
     message: str = ""
-    permission_decision: str = ""
-
-
-# Alias for downstream code that discriminates between
-# ``HookDefinition`` (concrete flat model) and the "base" type
-# used for type hints on collections. Both resolve to the same
-# class today; the alias is retained for import compatibility.
-HookDefinitionBase = HookDefinition
+    permission_decision: PermissionDecision = PermissionDecision.NONE
 
 
 HookLoadWarningKind = Literal[
@@ -314,91 +318,19 @@ class HookLoadWarning(BaseModel):
         return cls(source=str(path), kind=kind, detail=detail)
 
 
-class HookLoadResult(BaseModel):
-    """Outcome of a :meth:`HookLoader.load` (or plugin-hooks) call.
+class HookPayload(BaseModel):
+    """The payload an event fires with, as the hook handlers send it.
 
-    Pairs the populated :class:`HookRegistry` with any structured
-    warnings that surfaced during parsing. Callers unwrap
-    ``.registry`` to attach the hooks to a session and log
-    ``.warnings`` through whatever channel is appropriate.
-
-    ``registry`` is typed as :class:`Any` (rather than
-    :class:`HookRegistry`) so tests that swap the loader out with
-    a :class:`unittest.mock.MagicMock` don't trip on Pydantic's
-    strict isinstance check. Production callers still get the
-    real class — the field's docstring here is the source of
-    truth for the intended type.
+    ``body`` is the event's own typed model (``PreToolUsePayload``,
+    ``StopHookPayload``, ``TaskCreatedPayload``, ...): the producer's
+    model is the contract, and this wrapper only gives every handler
+    one way to put it on the wire.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True)
 
-    # ``registry`` is a :class:`HookRegistry` in practice; typed
-    # as ``Any`` to accept MagicMock instances in the test suite
-    # (Pydantic's isinstance validation is strict even under
-    # ``arbitrary_types_allowed=True``).
-    registry: Any
-    warnings: list[HookLoadWarning] = Field(default_factory=list)
-
-    def merge(self, other: HookLoadResult) -> HookLoadResult:
-        """Fold *other* into this result and return a fresh instance.
-
-        The two registries share the SAME underlying dict — plugin
-        loads mutate the settings-load registry in place — so this
-        method's job is really just to concatenate warning lists.
-        The returned :class:`HookLoadResult` references the shared
-        registry so downstream mutation on either side stays
-        visible.
-        """
-        return HookLoadResult(
-            registry=self.registry,
-            warnings=[*self.warnings, *other.warnings],
-        )
-
-
-class HookPayloadBase(BaseModel):
-    """Base for typed per-event payloads.
-
-    ``PreToolUsePayload``, ``PostToolUsePayload``, etc. will subclass
-    this once the per-event payload migration lands. Today it exists
-    as a common isinstance root so :meth:`HookExecutor.execute` can
-    accept both typed subclasses and the permissive
-    :class:`GenericHookPayload` shim.
-    """
-
-    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
-
-
-class GenericHookPayload(HookPayloadBase):
-    """Permissive payload wrapper for callers that still pass raw dicts.
-
-    ``extra="allow"`` accepts arbitrary caller-supplied fields so the
-    executor can dump the payload back to a dict for wire dispatch
-    without losing information.
-    """
-
-    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
-
-
-class HookPayload(GenericHookPayload):
-    """Legacy alias for :class:`GenericHookPayload`.
-
-    Exposes :meth:`coerce` — the entry point every handler uses to
-    accept either a raw dict, a :class:`HookPayloadBase` subclass,
-    or an existing :class:`HookPayload`.
-    """
-
-    @classmethod
-    def coerce(cls, raw: HookPayloadBase | dict[str, Any]) -> HookPayload:
-        """Coerce a dict or typed payload into a :class:`HookPayload`.
-
-        Typed payloads pass through as-is (their fields survive via
-        ``extra="allow"``). Raw dicts are validated into a permissive
-        payload so downstream handlers get a uniform shape.
-        """
-        if isinstance(raw, HookPayloadBase):
-            return cls.model_validate(raw.model_dump())
-        return cls.model_validate(raw)
+    body: BaseModel
 
     def to_wire_dict(self) -> dict[str, Any]:
-        """Dump back to a plain dict for wire dispatch."""
-        return self.model_dump(exclude_none=True)
+        """The body as JSON-ready data, unset (``None``) fields left out."""
+        return self.body.model_dump(mode="json", exclude_none=True)

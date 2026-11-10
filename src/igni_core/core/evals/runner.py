@@ -29,9 +29,10 @@ import logging
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from agno.agent import Agent
+from agno.models.base import Model
 
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.schemas.llm_behavior import EvalsConfig
@@ -90,7 +91,7 @@ class CaseRunner:
         self,
         case: EvalCase,
         agent: Agent,
-        judge_model: Any | None = None,
+        judge_model: Model | None = None,
         session_id: str | None = None,
         work_dir: Path | None = None,
         catalog: ToolNameCatalog | None = None,
@@ -278,7 +279,7 @@ class SuiteRunner:
     async def _run_cases(
         self,
         agent: Agent,
-        judge_model: Any | None,
+        judge_model: Model | None,
         work_dir: Path,
         suite_result: SuiteResult,
     ) -> None:
@@ -326,16 +327,19 @@ class SuiteRunner:
         and returns ``None`` — the caller treats that as "suite done".
         """
         try:
-            return self._pool.get(self._suite.agent)
-        except (KeyError, ValueError) as exc:
+            agent = self._pool.get(self._suite.agent)
+            reason = self._pool.missing(self._suite.agent) if agent is None else ""
+        except ValueError as exc:
+            agent, reason = None, str(exc)
+        if agent is None:
             for case in self._suite.cases:
                 suite_result.case_results.append(
                     CaseResult(
                         case=case,
-                        error=f"agent '{self._suite.agent}' not found: {exc}",
+                        error=f"agent '{self._suite.agent}' not found: {reason}",
                     )
                 )
-            return None
+        return agent
 
     def _resolve_fixtures_root(self) -> Path:
         """Look in ``evals/fixtures/`` first (committed datasets shipped
@@ -346,7 +350,7 @@ class SuiteRunner:
         user = self._project_dir / CONFIG_DIR / "evals"
         return builtin if builtin.is_dir() else user
 
-    def _lookup_judge_model(self) -> Any | None:
+    def _lookup_judge_model(self) -> Model | None:
         """Load the configured judge model, or ``None`` if unavailable."""
         try:
             registry = ModelRegistry(self._settings)

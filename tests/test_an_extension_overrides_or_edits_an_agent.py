@@ -17,16 +17,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from igni_core.core.agents.contributions import AgentContributionApplier
 from igni_core.core.agents.loader import AgentDefinitionLoader
 from igni_core.core.agents.pool import AgentPool
 from igni_core.core.agents.schemas import AgentPriority
 from igni_core.core.config.settings import Settings
-from igni_core.core.prompts.contributions import (
+from igni_core.core.prompts import PromptFragments, PromptLoader
+from igni_core.core.prompts.contribution_models import (
     EditOp,
-    PromptContributions,
     PromptEdit,
     PromptOverride,
 )
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.document import Position
 
 PROJECT_S = (
@@ -45,7 +47,9 @@ def _agent(path: Path, text: str) -> Path:
 def _pool(project: Path, contributions: PromptContributions) -> AgentPool:
     pool = AgentPool()
     pool.load_definitions(Settings(), project)
-    pool.apply_prompt_contributions(contributions)
+    AgentContributionApplier(contributions, prompt_loader=PromptLoader(PromptFragments())).apply_to(
+        pool
+    )
     return pool
 
 
@@ -80,15 +84,15 @@ class TestAnOverride:
     def test_it_defines_an_agent_igni_does_not_have(self, tmp_path):
         contributions = PromptContributions()
         _override(contributions, "---\nname: x\ndescription: d\n---\n\nacme's\n")
-        assert _pool(tmp_path, contributions).has_definition("explorer")
+        assert _pool(tmp_path, contributions).get_entry("explorer") is not None
 
     def test_under_a_condition_only_while_it_holds(self, tmp_path):
         contributions = PromptContributions()
         _override(contributions, "---\nname: x\ndescription: d\n---\n\nbody\n", when="covered")
-        assert not _pool(tmp_path, contributions).has_definition("explorer")
+        assert _pool(tmp_path, contributions).get_entry("explorer") is None
 
         contributions.hold("acme.scan", {"covered": True})
-        assert _pool(tmp_path, contributions).has_definition("explorer")
+        assert _pool(tmp_path, contributions).get_entry("explorer") is not None
 
     def test_it_gets_the_plugin_security_envelope(self, tmp_path):
         """The header is the extension's; a plugin's agent may not grant

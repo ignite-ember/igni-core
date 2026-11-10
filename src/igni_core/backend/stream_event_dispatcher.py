@@ -69,7 +69,7 @@ class StreamEventDispatcher:
             return
         if not event.input_tokens:
             return
-        self._session.latch_input_tokens(event.input_tokens)
+        self._session.context_budget.latch(event.input_tokens)
 
     async def _on_tool_boundary(self, team: Team) -> None:
         """Fire an incremental session checkpoint after each tool

@@ -31,10 +31,17 @@ from pathlib import Path
 
 import pytest
 
-from igni_core.core.prompts import load_prompt
-from igni_core.core.prompts.contributions import EditOp, PromptContributions, PromptEdit
+from igni_core.core.prompts import PromptFragments, PromptLoader
+from igni_core.core.prompts.contribution_models import EditOp, PromptEdit
+from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.session.agent_builder.prompt_builder import PromptBuilder
 from igni_core.extensions.manifest import ExtensionManifest
+
+
+def _prompt_loader() -> PromptLoader:
+    """igni's own prompt files, with no extension-supplied anchors."""
+    return PromptLoader(PromptFragments())
+
 
 #: Who supplies the project-documents text in these tests. Not a real
 #: extension: igni's prompts name no extension, so neither does this.
@@ -96,7 +103,7 @@ def _build(*, knowledge: bool, user_memory: bool = True) -> str:
         user_memory_available=user_memory,
         agent_catalog="- researcher: reads things",
         skill_descriptions="",
-        prompt_loader=load_prompt,
+        prompt_loader=_prompt_loader(),
     ).render()
 
 
@@ -169,7 +176,7 @@ class TestTheResolverFailsLoudly:
             user_memory_available=user_memory,
             agent_catalog="",
             skill_descriptions="",
-            prompt_loader=load_prompt,
+            prompt_loader=_prompt_loader(),
         )
 
     def test_an_unclosed_span_raises(self):
@@ -337,7 +344,7 @@ def test_the_document_extensions_text_lands_where_igni_s_would_have_been():
         user_memory_available=True,
         agent_catalog="",
         skill_descriptions="",
-        prompt_loader=load_prompt,
+        prompt_loader=_prompt_loader(),
     ).render()
 
     assert 'spawn_agent("archivist"' in prompt

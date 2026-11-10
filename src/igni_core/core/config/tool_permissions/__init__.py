@@ -1,9 +1,9 @@
 """Tool permission settings — Claude Code-style allow/ask/deny with argument rules.
 
 Package facade. Re-exports the OOP collaborators so external callers
-(``core.pool``, ``core.tools.registry``, ``core.agents.builder``,
+(``core.tools.registry``, ``core.agents.builder``,
 ``core.session.core``, ``core.session.agent_builder.tools_builder``,
-``backend.server``, ``backend.schemas_hitl``, ``backend.hitl_controller``,
+``backend.server``, ``backend.schemas_hitl``, ``backend.hitl_permissions``,
 plus the test suite) continue to import from
 ``igni_core.core.config.tool_permissions`` unchanged.
 

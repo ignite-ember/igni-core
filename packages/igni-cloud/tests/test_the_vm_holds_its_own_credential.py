@@ -27,6 +27,7 @@ from igni_cloud.guest.credential import (
 from igni_cloud.guest.files import AtomicFile
 from igni_cloud.guest.resume import NextAnswer, RestoreWatch
 
+from igni_core.backend.pool_rpcs import VmSignInRpc
 from igni_core.core.auth.http_auth import CloudTokenAuth
 from igni_core.protocol import messages as msg
 from tests.host_model_helpers import HostRig
@@ -326,12 +327,15 @@ async def test_one_client_for_every_exchange(tmp_path: Path):
 def kept(monkeypatch: pytest.MonkeyPatch, cloud_layer: Any) -> Any:
     """The cloud layer reads the keeper's token file; the keeper is forgotten after."""
 
-    def keep(vm: Vm) -> None:
+    source: EnvironmentCredentials = cloud_layer.credentials()
+
+    def keep(vm: Vm) -> EnvironmentCredentials:
         monkeypatch.setenv(EnvironmentCredentials.TOKEN_FILE_ENV, str(vm.token))
-        EnvironmentCredentials.kept_by(vm.keeper)
+        source.kept_by(vm.keeper)
+        return source
 
     yield keep
-    EnvironmentCredentials.kept_by(None)
+    source.kept_by(None)
 
 
 async def _paused_past_the_renewal(vm: Vm, clock: WallClock) -> None:
@@ -363,13 +367,13 @@ async def test_a_renewal_due_during_a_pause_waits_for_the_first_answer(tmp_path:
 async def test_a_token_with_life_left_waits_for_the_burst_too(tmp_path: Path, kept: Any):
     clock, wake = WallClock(), Wake()
     vm = Vm(tmp_path, clock=clock, wake=wake)
-    kept(vm)
+    source = kept(vm)
     await vm.keeper.sign_in(SESSION)
     vm.keeper._arm(0.05)
     clock.now += 30.0  # overdue by the wall clock, the token still good
     await asyncio.sleep(0.1)
     assert wake.waiting.is_set() and wake.burst is True
-    assert EnvironmentCredentials.token() == "token-1", "still handed out meanwhile"
+    assert source.token() == "token-1", "still handed out meanwhile"
     wake.through.set()
     await vm.keeper.stop()
 
@@ -391,13 +395,13 @@ async def test_a_timer_on_time_renews_at_once(tmp_path: Path):
 async def test_an_expired_token_is_never_handed_out(tmp_path: Path, kept: Any):
     clock, wake = WallClock(), Wake()
     vm = Vm(tmp_path, clock=clock, wake=wake)
-    kept(vm)
+    source = kept(vm)
     await vm.keeper.sign_in(SESSION)
-    assert EnvironmentCredentials.token() == "token-1"
+    assert source.token() == "token-1"
     clock.now += 900.0 - VmCredentials.SEND_MARGIN_SECONDS + 1  # about to expire
     assert vm.token.read_text() == "token-1", "still in the file"
-    assert EnvironmentCredentials.token() == "", "but not handed out"
-    assert not EnvironmentCredentials().load().ok
+    assert source.token() == "", "but not handed out"
+    assert not source.load().ok
     await vm.keeper.stop()
 
 
@@ -431,13 +435,13 @@ async def test_a_call_before_the_renewal_renews_at_once_and_only_once(tmp_path: 
 async def test_calls_during_a_renewal_wait_for_it(tmp_path: Path, kept: Any):
     clock = WallClock()
     vm = Vm(tmp_path, clock=clock)
-    kept(vm)
+    source = kept(vm)
     await vm.keeper.sign_in(SESSION)
     clock.now += 1000.0
-    await asyncio.gather(*(EnvironmentCredentials().ready() for _ in range(5)))
+    await asyncio.gather(*(source.ready() for _ in range(5)))
     assert vm.igni.most_at_once == 1
     assert len(vm.igni.grants) == 2, "one renewal for all five"
-    assert EnvironmentCredentials.token() == "token-2"
+    assert source.token() == "token-2"
     await vm.keeper.stop()
 
 
@@ -474,7 +478,7 @@ async def test_the_gateway_hands_the_session_over_the_rpc(tmp_path: Path):
 
     try:
         assert rig.orchestrator is not None
-        rig.orchestrator.attach_vm_sign_in(sign_in)
+        rig.orchestrator.mount(VmSignInRpc(sign_in))
         await rig.orchestrator.dispatch(
             msg.RPCRequest(
                 id="s1", method="vm_sign_in", args={"session_token": SESSION, "organisation": "o"}

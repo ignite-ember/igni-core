@@ -26,7 +26,8 @@ from __future__ import annotations
 import pytest
 
 from igni_core.core.config.permission_eval import PermissionEvaluator
-from igni_core.core.config.schemas.permissions import PermissionsConfig
+from igni_core.core.config.schemas.permissions import CategoryRules, PermissionsConfig
+from igni_core.core.hooks.permission.denial import Denial
 
 
 def _decide(perms: PermissionsConfig, tool: str, args: dict) -> str:
@@ -58,7 +59,7 @@ class TestDefaultsStayOutOfTheWay:
     """A default install must behave exactly as it did before the wiring."""
 
     def test_a_default_config_emits_no_rules(self):
-        assert PermissionsConfig().category_rules() == ([], [], [])
+        assert PermissionsConfig().category_rules() == CategoryRules()
 
     def test_strict_does_not_gain_web_access(self):
         """The regression this design exists to avoid.
@@ -113,11 +114,11 @@ class TestReadOnlyIsAWall:
 
     def test_reads_run_and_writes_are_denied(self):
         from igni_core.cli.options import CliOptions
-        from igni_core.core.config.models import CliOverrides
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.cli_overrides import CliOverrides
+        from igni_core.core.config.settings_loader import SettingsLoader
 
-        payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
-        perms = load_settings(cli_overrides=payload).permissions
+        payload = CliOverrides.from_options(CliOptions(read_only=True))
+        perms = SettingsLoader.load(cli_overrides=payload).permissions
 
         assert _decide(perms, "run_shell_command", {"command": "cat setup.py"}) == "ALLOW"
         assert _decide(perms, "run_shell_command", {"command": "git checkout -- ."}) == "DENY"
@@ -132,12 +133,12 @@ class TestReadOnlyIsAWall:
         extension it is, only what the tool says it is.
         """
         from igni_core.cli.options import CliOptions
-        from igni_core.core.config.models import CliOverrides
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.cli_overrides import CliOverrides
+        from igni_core.core.config.settings_loader import SettingsLoader
         from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
 
-        payload = CliOverrides.from_options(CliOptions(read_only=True)).to_settings_payload()
-        perms = load_settings(cli_overrides=payload).permissions
+        payload = CliOverrides.from_options(CliOptions(read_only=True))
+        perms = SettingsLoader.load(cli_overrides=payload).permissions
         registry = ToolHintsRegistry.shared()
         registry.declare(
             "ext:acme.index",
@@ -161,9 +162,7 @@ class TestReadOnlyIsAWall:
         with no stated way forward, and a model given no alternative retries the
         same call in a new costume. It names no extension: igni does not know
         which tools an installed extension gives the session."""
-        from igni_core.core.hooks.permission_pipeline import _denial_message
-
-        message = _denial_message("run_shell_command")
+        message = Denial("run_shell_command").policy_message(tool_is_off_entirely=True)
 
         assert "another of your tools" in message
         assert "rather than retrying" in message
@@ -171,9 +170,10 @@ class TestReadOnlyIsAWall:
 
     def test_an_ordinary_denial_stays_terse(self):
         """Only the case that strands the model gets the extra paragraph."""
-        from igni_core.core.hooks.permission_pipeline import _denial_message
-
-        assert _denial_message("edit_file") == "Blocked: permission policy denied 'edit_file'."
+        assert (
+            Denial("edit_file").policy_message(tool_is_off_entirely=True)
+            == "Blocked: permission policy denied 'edit_file'."
+        )
 
 
 class TestTheUnreadCategoriesAreDocumentedAsUnread:

@@ -1,14 +1,18 @@
 """``PermissionsConfig`` — the ``permissions`` block of ``Settings``.
 
-Extracted from :mod:`igni_core.core.config.settings`. Pure data
-schema — no methods.
+Besides the fields it holds what each per-category level governs, and turns
+the levels into evaluator rules (:meth:`PermissionsConfig.category_rules`).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, ClassVar
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+
+from igni_core.core.config.permission_eval.schemas import PermissionMode
+from igni_core.core.config.permissions.schemas import PermissionLevel
 
 if TYPE_CHECKING:
     from igni_core.core.config.permission_eval.mode_policy import ModePolicy
@@ -38,34 +42,49 @@ def _shell_rules(*commands: str) -> tuple[str, ...]:
     return tuple(rules)
 
 
+class CategoryRules(BaseModel):
+    """The per-category levels as rule strings, one list per level."""
+
+    deny: list[str] = Field(default_factory=list)
+    ask: list[str] = Field(default_factory=list)
+    allow: list[str] = Field(default_factory=list)
+
+    def add(self, level: PermissionLevel, rules: Iterable[str]) -> None:
+        """Append ``rules`` to the list for ``level``."""
+        match level:
+            case "deny":
+                self.deny.extend(rules)
+            case "ask":
+                self.ask.extend(rules)
+            case "allow":
+                self.allow.extend(rules)
+
+
 class PermissionsConfig(BaseModel):
-    # Per-category levels. This comment used to say they were "interpreted by
-    # the older ``PermissionGuard``" — they were not, because nothing ever
-    # constructed one. They are honoured now via :meth:`category_rules`, which
-    # turns any level differing from its default into rules for the live
-    # ``PermissionEvaluator``.
-    #
-    # ``file_read`` and ``shell_restricted`` remain unread, and deliberately so:
-    # see the note on ``CATEGORY_FUNCTIONS``.
-    file_read: str = "allow"
-    file_write: str = "ask"
-    shell_execute: str = "ask"
-    shell_restricted: str = "allow"
+    """The ``permissions`` block: per-category levels, mode and rule lists."""
+
+    model_config = ConfigDict(use_enum_values=True, validate_assignment=True)
+
+    # Per-category levels, honoured through :meth:`category_rules`.
+    # ``file_read`` and ``shell_restricted`` are not read: see the note on
+    # ``CATEGORY_FUNCTIONS``.
+    file_read: PermissionLevel = "allow"
+    file_write: PermissionLevel = "ask"
+    shell_execute: PermissionLevel = "ask"
+    shell_restricted: PermissionLevel = "allow"
     # The web asks by default: a search or fetch the model decides on is
     # a request out of the customer's network, and none leaves without a
     # person's yes unless the config says ``allow``. ``air_gapped`` denies
     # both and builds neither toolkit.
-    web_search: str = "ask"
-    web_fetch: str = "ask"
-    git_push: str = "ask"
-    git_destructive: str = "ask"
-    # Claude Code-style permission system (mirrors
-    # ``settings.json``'s ``permissions`` block). ``mode`` is one
-    # of ``default`` / ``dontAsk`` / ``acceptEdits`` /
-    # ``bypassPermissions`` / ``plan``. ``deny`` / ``ask`` /
-    # ``allow`` are lists of ``Tool`` or ``Tool(pattern)`` strings
-    # (e.g. ``"Bash(rm *)"``, ``"Read(./.env)"``).
-    mode: str = "default"
+    web_search: PermissionLevel = "ask"
+    web_fetch: PermissionLevel = "ask"
+    git_push: PermissionLevel = "ask"
+    git_destructive: PermissionLevel = "ask"
+    # Claude Code-style permission system (mirrors ``settings.json``'s
+    # ``permissions`` block). ``deny`` / ``ask`` / ``allow`` are lists of
+    # ``Tool`` or ``Tool(pattern)`` strings (e.g. ``"Bash(rm *)"``,
+    # ``"Read(./.env)"``). ``mode`` is stored as its plain string value.
+    mode: PermissionMode = Field(default=PermissionMode.DEFAULT, validate_default=True)
     #: ``false`` forbids ``bypassPermissions`` outright — by flag, by
     #: ``/bypass``, by a tool. Honoured only from the managed-settings file
     #: or the group policy: the loader reads those two tiers on their own
@@ -88,11 +107,8 @@ class PermissionsConfig(BaseModel):
     allow: list[str] = Field(default_factory=list)
 
     #: ``safety.require_confirmation``, copied here by ``Settings`` so
-    #: :meth:`category_rules` can emit it. The list lives in the ``safety``
-    #: block — where MIGRATION.md tells arrivals from Claude Code to put what
-    #: used to be ``"ask": ["Bash(git push *)"]`` — but the only thing that
-    #: reads permission rules is the evaluator built from *this* block, so the
-    #: list had to reach it or keep meaning nothing.
+    #: :meth:`category_rules` can emit it: the evaluator built from this
+    #: block is the only reader of permission rules.
     #:
     #: ``exclude=True`` matters: ``Settings.default_dict()`` seeds the merge
     #: accumulator, so a field carrying the eight shipped defaults would bake
@@ -103,7 +119,7 @@ class PermissionsConfig(BaseModel):
     #: What the managed settings and group policy say about modes, recorded by
     #: ``SettingsLoader.load`` from those two tiers alone. Private so no config
     #: file can write it; ``None`` means no policy was read (tests, tooling).
-    _mode_policy: Any = PrivateAttr(default=None)
+    _mode_policy: ModePolicy | None = PrivateAttr(default=None)
 
     #: Permission fields the managed settings or the group policy set,
     #: recorded by ``SettingsLoader.load``. These are final: a lower tier —
@@ -127,15 +143,12 @@ class PermissionsConfig(BaseModel):
         self._mode_policy = policy
 
     #: What each per-category level governs, as permission-rule strings.
-    #: Function-name categories use the registry's own names rather than a
-    #: hand-written list, so a renamed function does not quietly drop out of
-    #: its category — the failure this whole mapping exists to end.
+    #: Function-name categories use the registry's own names, so a renamed
+    #: function does not quietly drop out of its category.
     #:
     #: The two git rows are argument patterns rather than function names,
-    #: because there is no git *tool* to name (see ``_shell_rules``). They were
-    #: the two categories PRD-21 left unwired, and the two most likely to be
-    #: set deliberately: ``--auto-approve`` sets both to ``allow`` and
-    #: ``--strict`` sets both to ``deny``, and until now neither did anything.
+    #: because there is no git *tool* to name (see ``_shell_rules``).
+    #: ``--auto-approve`` sets both to ``allow`` and ``--strict`` to ``deny``.
     #:
     #: ``file_read`` and ``shell_restricted`` are deliberately absent. igni has
     #: no read tool (a file is read through ``run_shell_command``), so a
@@ -174,87 +187,48 @@ class PermissionsConfig(BaseModel):
         ),
     }
 
-    def category_rules(self) -> tuple[list[str], list[str], list[str]]:
-        """The per-category levels, as ``(deny, ask, allow)`` rule strings.
+    def category_rules(self) -> CategoryRules:
+        """The per-category levels as ``deny`` / ``ask`` / ``allow`` rule strings.
 
-        These levels are documented in ``SECURITY.md``, ``CONFIGURATION.md`` and
-        ``QUICKSTART.md`` as igni's permission model, and until now nothing read
-        them. They were interpreted by ``PermissionGuard``, which was never
-        constructed anywhere in the codebase — so ``shell_execute: "deny"`` in a
-        config file, or from ``--read-only``, had no effect at all.
+        Emitted as ordinary rules, appended after the explicit lists so nothing
+        explicit is displaced. The evaluator runs deny first, so a category set
+        to ``deny`` is not reopened by a matching allow rule.
 
-        Emitted as ordinary rules so they flow through the same pipeline as the
-        ``deny``/``ask``/``allow`` lists, appended after them so nothing
-        explicit is displaced. Ordering does not grant exceptions, though: the
-        evaluator treats deny as its safety floor and runs it first, so a
-        category set to ``deny`` is not reopened by a matching allow rule.
-
-        **Only categories someone actually set are emitted.** The schema
-        defaults are left inert on purpose, and the reason is not caution for
-        its own sake: ``web_search`` and ``web_fetch`` defaulted to ``"allow"``
-        then, so emitting defaults would have handed the model an explicit allow
-        rule for the web under ``--strict`` — loosening a safety flag as a side
-        effect of making config work. Every category's default is ``"ask"`` or
-        unread now, which is already what an unmatched tool does, so emitting
-        them would only add ``PERMISSION_REQUEST`` hook traffic.
+        Only a level that differs from its schema default is emitted, or one
+        the organisation set (:attr:`final_fields`), which is emitted even at
+        its default so a lower tier's ``allow: [Bash]`` meets its ask rule.
+        Compared against the default rather than ``model_fields_set`` because
+        the settings loader populates every field. Every default is ``ask`` or
+        unread, which is what an unmatched tool does already, so emitting
+        defaults would only add ``PERMISSION_REQUEST`` hook traffic.
 
         ``safety.require_confirmation`` rides along in the ask bucket — see
-        :meth:`_confirmation_ask_rules` for why it is here and what it does not
-        promise.
-
-        The effect is that a default install behaves exactly as before, and a
-        config or flag that says ``deny`` finally means it.
+        :meth:`_confirmation_ask_rules`.
         """
-        deny: list[str] = []
-        ask: list[str] = []
-        allow: list[str] = []
-        bucket = {"deny": deny, "ask": ask, "allow": allow}
+        rules = CategoryRules()
         for category, functions in self.CATEGORY_FUNCTIONS.items():
-            value = getattr(self, category, None)
-            # Compared against the field default rather than ``model_fields_set``:
-            # the settings loader populates every field, so "was it set" is true
-            # for all of them and would have emitted ``web_search: allow`` under
-            # ``--strict``, handing the web back to a flag whose whole job is to
-            # take it away. Measured, not assumed — the probe showed exactly that
-            # before this line changed.
-            #
-            # Except a level the organisation set: managed and group values are
-            # final, so ``shell_execute: ask`` from them is emitted even though
-            # it is the default — otherwise a project's ``allow: [Bash]`` met no
-            # ask rule and won.
-            if value is None or (
-                value == type(self).model_fields[category].default
-                and category not in self._final_fields
-            ):
+            level: PermissionLevel = getattr(self, category)
+            is_default = level == type(self).model_fields[category].default
+            if is_default and category not in self._final_fields:
                 continue
-            target = bucket.get(value)
-            if target is None:
-                continue
-            target.extend(functions)
-        ask.extend(self._confirmation_ask_rules())
-        return deny, ask, allow
+            rules.add(level, functions)
+        rules.ask.extend(self._confirmation_ask_rules())
+        return rules
 
     def _confirmation_ask_rules(self) -> list[str]:
         """``safety.require_confirmation`` as ask rules, or nothing in ``dontAsk``.
 
-        MIGRATION.md tells someone arriving from Claude Code that this list is
-        where ``"ask": ["Bash(git push *)"]`` goes. It was read by no code in
-        ``src``, so following the migration guide moved a working ask rule into
-        a field that did nothing — including for ``git push --force``,
-        ``terraform apply`` and ``kubectl delete``. These rules are exactly the
-        ask rules the user would otherwise have hand-written, and no more: an
-        ask rule loses to the mode step, so ``/bypass`` still bypasses this.
-        That is the pipeline's documented contract, not a gap opened here.
+        These are exactly the ask rules the user would otherwise have
+        hand-written: an ask rule loses to the mode step, so ``/bypass`` still
+        bypasses them.
 
-        Nothing is emitted in ``dontAsk``, and that is the one place this
-        differs from a hand-written rule. An ask rule there is not a prompt,
-        it is a pass — the evaluator stage fires ``PERMISSION_REQUEST`` and
-        continues — while an *unmatched* tool in ``dontAsk`` is denied at step
-        6. Since the shipped list is non-empty by default, emitting it would
-        have turned ``terraform apply`` and ``kubectl delete`` from denied into
-        allowed on every ``--strict`` and headless run. With nobody there to
-        confirm, "requires confirmation" reads as "no", not "yes".
+        Nothing is emitted in ``dontAsk``. An ask rule there is a pass (the
+        evaluator fires ``PERMISSION_REQUEST`` and continues) while an
+        unmatched tool is denied, so emitting the list would turn
+        ``terraform apply`` from denied into allowed on every ``--strict`` and
+        headless run. With nobody there to confirm, "requires confirmation"
+        reads as "no".
         """
-        if self.mode == "dontAsk":
+        if self.mode == PermissionMode.DONT_ASK:
             return []
         return list(_shell_rules(*self.confirm_commands))

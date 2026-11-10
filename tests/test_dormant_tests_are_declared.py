@@ -42,6 +42,12 @@ DECLARED_GATES: dict[str, str] = {
         "they skip without one locally. CI checks igni-app out, and under CI "
         "they fail rather than skip."
     ),
+    "IGNI_SERVER_DIR": (
+        "Where igni-server is checked out (tests/siblings.py). The tests that "
+        "compare igni server's copy of igni's command list, prompt targets and "
+        "extension cases against igni's own need it; they skip without one. "
+        "CI does not check the server out, so they skip there too."
+    ),
     "CI": (
         "Not a way to switch tests off but the opposite: set by every CI "
         "runner, it makes the tests that need igni-sdk or igni-app fail "
@@ -63,7 +69,10 @@ DECLARED_GATES: dict[str, str] = {
     "ANTHROPIC_API_KEY": (
         "One live call to Anthropic's API through `provider: anthropic` "
         "(tests/test_anthropic_live.py), which costs money per run. Not "
-        "in CI; the provider's other tests run against a local stub."
+        "in CI; the provider's other tests run against a local stub. The "
+        "key has to be Anthropic's own (it starts with `sk-ant-`): the "
+        "one Claude Code exports is for its own gateway and is refused "
+        "with a 401."
     ),
     "IGNI_TEST_DATABASE_URL": (
         "A PostgreSQL server the storage tests may create and drop "

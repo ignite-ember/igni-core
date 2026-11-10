@@ -44,15 +44,13 @@ def _hooks(*installed: str) -> ExtensionHooks:
     registry = ExtensionRegistry()
     for extension_id in installed:
         registry.install(manifest(extension_id))
-    hooks = ExtensionHooks()
-    hooks.attach(registry)
-    return hooks
+    return ExtensionHooks(registry=registry)
 
 
 async def test_an_extension_not_installed_here_is_not_waited_for() -> None:
     started = time.perf_counter()
     with pytest.raises(HookFailure, match="not installed"):
-        await _hooks().ask_one("acme.indexer", "ServiceEvent", {}, timeout=30)
+        await _hooks().ask_one("acme.indexer", "ServiceEvent", _event(), timeout=30)
     assert time.perf_counter() - started < 0.1
 
 
@@ -60,7 +58,7 @@ async def test_one_installed_but_not_connected_is_waited_for_briefly() -> None:
     started = time.perf_counter()
     with pytest.raises(HookFailure, match="not connected"):
         await _hooks("acme.indexer").ask_one(
-            "acme.indexer", "ServiceEvent", {}, timeout=30, connect_timeout=0.1
+            "acme.indexer", "ServiceEvent", _event(), timeout=30, connect_timeout=0.1
         )
     assert time.perf_counter() - started < 1
 

@@ -21,7 +21,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.backend.schemas_workflows import WorkflowRunRequest
 from igni_core.backend.workflow_runner import WorkflowRunner
+from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.session.event_log_schema import SessionEventAppendResult
 
 pytestmark = pytest.mark.skipif(
     shutil.which("node") is None,
@@ -47,23 +50,23 @@ return { ok: true }
     )
 
     push = MagicMock()
-    push._schedule_push = MagicMock()
     session = MagicMock()
     session.id = "sess_smoke"
-    session.append_event = AsyncMock()
+    session.append_event = AsyncMock(return_value=SessionEventAppendResult(persisted=True))
     # main_team is unused here (no agent() calls in the workflow).
     session.main_team = MagicMock()
 
-    runner = WorkflowRunner(project_dir=tmp_path, push=push)
-    run_id = await runner.run(name="smoke", args={}, session=session)
+    runner = WorkflowRunner.for_project(project_dir=tmp_path, push=push, gate=RunGate())
+    result = await runner.run(request=WorkflowRunRequest(name="smoke"), session=session)
+    run_id = result.workflow_run_id
     assert run_id.startswith("wf_")
-    assert run_id in runner._runs
+    assert runner.is_live(run_id)
 
     # Poll until the run is unregistered (the await_completion
     # task does that on natural exit). Each await iteration
     # yields to the loop so the runner's tasks make progress.
     for _ in range(200):
-        if run_id not in runner._runs:
+        if not runner.is_live(run_id):
             break
         await asyncio.sleep(0.05)
     else:
@@ -73,13 +76,13 @@ return { ok: true }
     # workflow_completed. We assert >=4 because the log event is
     # a "capture for diagnostics" path that the reducer ignores.
     assert session.append_event.await_count >= 4
-    types = [c.args[1]["type"] for c in session.append_event.await_args_list]
+    types = [c.args[0].payload.type for c in session.append_event.await_args_list]
     assert "workflow_started" in types
     assert "phase_started" in types
     assert "phase_completed" in types
     assert "workflow_completed" in types
 
     # The push side fired the same number of times.
-    assert push._schedule_push.call_count == session.append_event.await_count
+    assert push.workflow_event.call_count == session.append_event.await_count
     # Run is no longer tracked (await_completion unregisters).
-    assert run_id not in runner._runs
+    assert not runner.is_live(run_id)

@@ -21,11 +21,11 @@ import pytest
 
 from igni_core.core.hooks.schemas import HookResult
 from igni_core.core.session.compaction import (
-    CompactionCoordinator,
     FallbackSummariser,
     TranscriptMessage,
 )
 from igni_core.core.session.schemas import CompactResult, ContextBreakdown
+from tests.session_coordinators import compaction_over
 
 
 def _runs_db() -> MagicMock:
@@ -61,7 +61,7 @@ class TestCompactIfNeeded:
         # Auto-compaction only fires at 80% usage. Below that, we
         # let the model chew through the context normally.
         s = _bare_session()
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         assert await coord.compact_if_needed(input_tokens=1000, context_window=10_000) is False
         s.hook_executor.execute.assert_not_called()
 
@@ -74,7 +74,7 @@ class TestCompactIfNeeded:
                 session_id="sess-1", runs=[SimpleNamespace()], summary=None
             )
         )
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         # A summary has to land for the pass to complete: since the
         # conversation is only dropped when something replaces it,
         # ``compact_if_needed`` reports True on the cleared history,
@@ -89,7 +89,7 @@ class TestCompactIfNeeded:
         # A plugin can veto the compaction — critical escape hatch
         # for e.g. an "unsaved changes" guard.
         s = _bare_session(hook_result=HookResult(should_continue=False, message="blocked"))
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         result = await coord.compact_if_needed(input_tokens=9000, context_window=10_000)
         assert result is False
         # ``compact()`` never called → aget_session count is 0
@@ -99,7 +99,7 @@ class TestCompactIfNeeded:
     @pytest.mark.asyncio
     async def test_zero_context_window_is_noop(self):
         s = _bare_session()
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         assert await coord.compact_if_needed(input_tokens=1000, context_window=0) is False
 
     @pytest.mark.asyncio
@@ -111,7 +111,7 @@ class TestCompactIfNeeded:
                 session_id="sess-1", runs=[SimpleNamespace()], summary=None
             )
         )
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         # PostCompact is the "history was cleared" signal, so it only
         # fires on a pass that actually cleared it — give the pass a
         # summary to trade the runs for.
@@ -128,7 +128,7 @@ class TestForceCompact:
         # No runs on the session → no history to summarise.
         empty_session = SimpleNamespace(session_id="sess-1", runs=[], summary=None)
         s = _bare_session(agno_session=empty_session)
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         result = await coord.force_compact()
         assert isinstance(result, CompactResult)
         assert result.ok is False
@@ -145,7 +145,7 @@ class TestForceCompact:
             agno_session=agno,
             hook_result=HookResult(should_continue=False, message="unsaved changes"),
         )
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         result = await coord.force_compact()
         assert isinstance(result, CompactResult)
         assert result.ok is False
@@ -158,7 +158,7 @@ class TestContextBreakdown:
     async def test_no_session_returns_zeros(self):
         # Fresh session, never persisted — no history yet.
         s = _bare_session(agno_session=None)
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         result = await coord.context_breakdown()
         assert result.total == 0
         assert result.runs == 0
@@ -176,7 +176,7 @@ class TestContextBreakdown:
         agno.runs = [SimpleNamespace(messages=[user, answer])]
         agno.get_messages = MagicMock(return_value=[_message("system", "s" * 40), user, answer])
         s = _bare_session(agno_session=agno)
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         result = await coord.context_breakdown()
         assert result.total == 550  # 450 read + 100 written, as the server counted
         assert result.runs == 200  # 800 characters / 4
@@ -191,7 +191,7 @@ class TestContextBreakdown:
         agno.runs = [SimpleNamespace(messages=[answer])]
         agno.get_messages = MagicMock(return_value=[answer])
         s = _bare_session(agno_session=agno)
-        coord = CompactionCoordinator(s)
+        coord = compaction_over(s)
         result = await coord.context_breakdown()
         assert result.floor == 0
 
@@ -232,7 +232,7 @@ class TestFallbackSummariser:
         # No runs → no transcript → no model call.
         session = self._stub_session(aresponse_return=SimpleNamespace(content="x"))
         agno = SimpleNamespace(session_id="sess-1", runs=[])
-        summ = FallbackSummariser(session)
+        summ = FallbackSummariser(lambda: session.main_team.model)
         out = await summ.summarise(agno)
         assert out == ""
         session.main_team.model.aresponse.assert_not_called()
@@ -254,7 +254,7 @@ class TestFallbackSummariser:
                 )
             ]
         )
-        summ = FallbackSummariser(session)
+        summ = FallbackSummariser(lambda: session.main_team.model)
         out = await summ.summarise(agno)
         assert "<think>" not in out
         assert "Final answer." in out
@@ -265,7 +265,7 @@ class TestFallbackSummariser:
         agno = SimpleNamespace(
             runs=[SimpleNamespace(messages=[SimpleNamespace(role="user", content="hi")])]
         )
-        summ = FallbackSummariser(session)
+        summ = FallbackSummariser(lambda: session.main_team.model)
         assert await summ.summarise(agno) == ""
 
     @pytest.mark.asyncio
@@ -274,7 +274,7 @@ class TestFallbackSummariser:
         agno = SimpleNamespace(
             runs=[SimpleNamespace(messages=[SimpleNamespace(role="user", content="hi")])]
         )
-        summ = FallbackSummariser(session)
+        summ = FallbackSummariser(lambda: session.main_team.model)
         assert await summ.summarise(agno) == ""
 
 

@@ -35,7 +35,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from typing import Any
 
 from agno.models.message import Message as AgnoMessage
 from agno.session.agent import AgentSession
@@ -43,9 +44,6 @@ from agno.session.team import TeamSession
 from pydantic import BaseModel
 
 AgnoSession = AgentSession | TeamSession
-
-if TYPE_CHECKING:
-    from igni_core.core.session.core import Session
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +99,8 @@ class FallbackSummariser:
     _TRANSCRIPT_MSG_CAP = 800
     _TRANSCRIPT_TAIL = 60
 
-    def __init__(self, session: Session) -> None:
-        self._session = session
+    def __init__(self, model_ref: Callable[[], Any]) -> None:
+        self._model_ref = model_ref
 
     async def summarise(self, agno_session: AgnoSession) -> str:
         """Return a free-text summary of ``agno_session``'s runs.
@@ -116,7 +114,7 @@ class FallbackSummariser:
             return ""
 
         prompt = self._build_prompt(transcript)
-        model = self._session.main_team.model
+        model = self._model_ref()
         try:
             resp = await model.aresponse(messages=[AgnoMessage(role="user", content=prompt)])
         except Exception as e:

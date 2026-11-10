@@ -25,15 +25,17 @@ checking at every call site.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 from agno.session.summary import SessionSummary, SessionSummaryManager
 
 from igni_core.core.hooks.events import HookEvent
+from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.session.compaction.context_breakdown_reporter import (
     ContextBreakdownReporter,
 )
 from igni_core.core.session.compaction.fallback_summariser import FallbackSummariser
+from igni_core.core.session.compaction.team_session import TeamSessionSource
 from igni_core.core.session.persistence.run_history import RunHistory
 from igni_core.core.session.schemas import (
     CompactResult,
@@ -42,9 +44,6 @@ from igni_core.core.session.schemas import (
     PreCompactHookPayload,
 )
 
-if TYPE_CHECKING:
-    from igni_core.core.session.core import Session
-
 logger = logging.getLogger(__name__)
 
 
@@ -52,20 +51,27 @@ class CompactionCoordinator:
     """Owns compaction (auto + manual) plus the context-breakdown
     reporter.
 
-    Constructor holds a reference to the session so it can read
-    the live ``main_team`` (reassigned by :meth:`compact`,
-    plugin-reload, MCP-rebuild) at call time. The compaction
-    path itself calls :meth:`Session.rebuild_main_team` —
-    rebuilding from scratch is the only reliable way to clear
-    Agno's in-memory message cache.
+    Handed a :class:`TeamSessionSource` (the live ``main_team``,
+    reassigned by :meth:`compact`, plugin-reload and MCP-rebuild, is
+    read through it at call time), the hook executor, and
+    ``rebuild_team`` — rebuilding from scratch is the only reliable
+    way to clear Agno's in-memory message cache.
     """
 
     _COMPACT_THRESHOLD = 0.8
 
-    def __init__(self, session: Session) -> None:
-        self._session = session
-        self._fallback = FallbackSummariser(session)
-        self._reporter = ContextBreakdownReporter(session)
+    def __init__(
+        self,
+        source: TeamSessionSource,
+        hook_executor_ref: Callable[[], HookExecutor],
+        rebuild_team: Callable[[], None],
+    ) -> None:
+        self._source = source
+        # A callable: a hook reload builds a new executor.
+        self._hook_executor_ref = hook_executor_ref
+        self._rebuild_team = rebuild_team
+        self._fallback = FallbackSummariser(lambda: source.team.model)
+        self._reporter = ContextBreakdownReporter(source)
 
     async def compact(self) -> CompactResult:
         """Generate a summary of the conversation, then clear old runs.
@@ -88,11 +94,7 @@ class CompactionCoordinator:
         ``history_cleared`` says whether the runs actually left the
         DB, which is what callers must mirror.
         """
-        session = self._session
-        agno_session = await session.main_team.aget_session(
-            session_id=session.session_id,
-            user_id=session.user_id,
-        )
+        agno_session = await self._source.load()
         if agno_session is None:
             logger.warning("No session found to compact")
             return CompactResult(
@@ -109,7 +111,7 @@ class CompactionCoordinator:
 
         summariser_error: str | None = None
         try:
-            ssm = SessionSummaryManager(model=session.main_team.model)
+            ssm = SessionSummaryManager(model=self._source.team.model)
             await ssm.acreate_session_summary(session=agno_session)
             logger.info("Session summary generated")
         except Exception as e:
@@ -163,7 +165,7 @@ class CompactionCoordinator:
         try:
             # Agno 3 saves a session's row apart from its runs; the runs
             # are cleared from their own table (``run_history``).
-            await RunHistory.save_for(session.main_team, agno_session)
+            await RunHistory.save_for(self._source.team, agno_session)
             logger.info("Session runs cleared from DB")
         except Exception as e:
             # The DB still holds the runs, and the rebuilt agent reloads
@@ -174,7 +176,7 @@ class CompactionCoordinator:
             logger.warning("Failed to save session: %s", e)
 
         # Rebuild main agent through the public seam.
-        session.rebuild_main_team()
+        self._rebuild_team()
         logger.info("Compacted: summary injected, agent rebuilt")
 
         return CompactResult(
@@ -192,7 +194,6 @@ class CompactionCoordinator:
         summary is generated and old turns are dropped. Returns
         ``True`` if compaction was applied.
         """
-        session = self._session
         if context_window <= 0 or input_tokens <= 0:
             return False
 
@@ -205,13 +206,13 @@ class CompactionCoordinator:
         # compaction (the auto trigger respects it; the user can
         # always retry manually).
         pre_payload = PreCompactHookPayload(
-            session_id=session.session_id,
+            session_id=self._source.session_id,
             scope="auto",
             tokens_before=input_tokens,
         )
-        pre = await session.hook_executor.execute(
+        pre = await self._hook_executor_ref().execute(
             event=HookEvent.PRE_COMPACT.value,
-            payload=pre_payload.model_dump(),
+            payload=pre_payload,
         )
         if not pre.should_continue:
             logger.info("Auto-compact cancelled by PreCompact hook: %s", pre.message)
@@ -232,13 +233,13 @@ class CompactionCoordinator:
         logger.info("Auto-compacted at %.0f%% context usage", usage * 100)
         # PostCompact hook — observation only; can't undo at this point.
         post_payload = PostCompactHookPayload(
-            session_id=session.session_id,
+            session_id=self._source.session_id,
             scope="auto",
             tokens_before=input_tokens,
         )
-        await session.hook_executor.execute(
+        await self._hook_executor_ref().execute(
             event=HookEvent.POST_COMPACT.value,
-            payload=post_payload.model_dump(),
+            payload=post_payload,
         )
         return True
 
@@ -251,13 +252,9 @@ class CompactionCoordinator:
         the failure branches), and ``error`` carries the
         underlying summariser exception when the pass failed.
         """
-        session = self._session
         # Check if there's anything to compact.
         try:
-            agno_session = await session.main_team.aget_session(
-                session_id=session.session_id,
-                user_id=session.user_id,
-            )
+            agno_session = await self._source.load()
             if agno_session is None or not agno_session.runs:
                 return CompactResult(
                     ok=False,
@@ -271,13 +268,13 @@ class CompactionCoordinator:
         # decision: the user invoked the command but a plugin can still
         # veto (e.g. an unsaved-changes guard).
         pre_payload = PreCompactHookPayload(
-            session_id=session.session_id,
+            session_id=self._source.session_id,
             scope="manual",
             tokens_before=0,
         )
-        pre = await session.hook_executor.execute(
+        pre = await self._hook_executor_ref().execute(
             event=HookEvent.PRE_COMPACT.value,
-            payload=pre_payload.model_dump(),
+            payload=pre_payload,
         )
         if not pre.should_continue:
             return CompactResult(
@@ -316,10 +313,7 @@ class CompactionCoordinator:
         # Retrieve the generated summary from DB.
         summary = ""
         try:
-            agno_session = await session.main_team.aget_session(
-                session_id=session.session_id,
-                user_id=session.user_id,
-            )
+            agno_session = await self._source.load()
             if agno_session and agno_session.summary:
                 summary = agno_session.summary.summary or ""
         except Exception as exc:
@@ -341,14 +335,14 @@ class CompactionCoordinator:
         # observers still need the history-cleared signal. (The pass that
         # cleared nothing returned above, before this point.)
         post_payload = PostCompactHookPayload(
-            session_id=session.session_id,
+            session_id=self._source.session_id,
             scope="manual",
             tokens_before=0,
             summary_chars=len(summary),
         )
-        await session.hook_executor.execute(
+        await self._hook_executor_ref().execute(
             event=HookEvent.POST_COMPACT.value,
-            payload=post_payload.model_dump(),
+            payload=post_payload,
         )
         return CompactResult(
             ok=ok, status=status, summary=summary, error=error, history_cleared=True

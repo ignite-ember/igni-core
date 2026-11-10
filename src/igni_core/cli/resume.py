@@ -67,4 +67,4 @@ class ResumeResolver:
 
         if not sessions:
             return ResumeLookup()
-        return ResumeLookup(session_id=sessions[0]["session_id"])
+        return ResumeLookup(session_id=sessions[0].session_id)

@@ -6,9 +6,8 @@ from collections.abc import Iterator
 
 import pytest
 from igni_cloud.layer import CloudLayer
-from igni_cloud.logs import StdoutLog
 
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from tests.conftest import (  # noqa: F401 - fixtures, registered by being here
     _a_fresh_activity_registry,
     _desktop_storage,
@@ -23,8 +22,7 @@ from tests.conftest import (  # noqa: F401 - fixtures, registered by being here
 def cloud_layer() -> Iterator[CloudLayer]:
     """The cloud layer installed, as ``IGNI_PROFILE=cloud`` would install it."""
     layer = CloudLayer()
-    StdoutLog.reset()
-    Layers.install(layer)
+    layers.install(layer)
     yield layer
-    Layers.reset()
-    StdoutLog.reset()
+    layers.reset()
+    layer.logs.reset()

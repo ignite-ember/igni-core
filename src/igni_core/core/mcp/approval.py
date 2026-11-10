@@ -9,7 +9,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.prompt import Confirm
 
-from igni_core.core.layer import Layers
+from igni_core.core.layer import layers
 from igni_core.core.paths import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class MCPApprovalManager:
         policy: McpApprovalPolicy | None = None,
     ) -> None:
         self._path = approval_path or (Path.home() / CONFIG_DIR / "mcp-approved.json")
-        self._policy = policy if policy is not None else Layers.current().mcp_approvals()
+        self._policy = policy if policy is not None else layers.current().mcp_approvals()
         self._approved: dict[str, list[str]] = {} if self._policy is not None else self._load()
 
     # ------------------------------------------------------------------

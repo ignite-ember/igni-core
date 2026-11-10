@@ -30,6 +30,8 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
 
+from igni_core.core.tools.spawn_args import SpawnArgs, TurnToolCall
+
 
 class ParentCall(BaseModel):
     """A tool call waiting for a spawned agent's answer."""
@@ -79,15 +81,29 @@ class ParentCall(BaseModel):
             messages=[m.to_dict() for m in messages],
         )
 
-    def turn(self) -> list[dict[str, Any]]:
-        """The tool calls of the assistant turn that made this call, in order."""
+    @property
+    def spawn_args(self) -> SpawnArgs:
+        """The call's arguments, read as a spawn's."""
+        return SpawnArgs.model_validate(self.tool_args)
+
+    @property
+    def is_team_spawn(self) -> bool:
+        """A ``spawn_team`` call that ran a team (a one-name team runs a plain spawn)."""
+        return self.tool_name == "spawn_team" and len(self.spawn_args.team_names) > 1
+
+    def turn(self) -> list[TurnToolCall]:
+        """The tool calls of the assistant turn that made this call, in order.
+
+        Just this call when its assistant message is not among
+        :attr:`messages`.
+        """
         for message in reversed(self.messages):
             calls = message.get("tool_calls") or []
             if message.get("role") == "assistant" and any(
                 c.get("id") == self.tool_call_id for c in calls
             ):
-                return list(calls)
-        return []
+                return [TurnToolCall.from_wire(c) for c in calls]
+        return [TurnToolCall(id=self.tool_call_id, name=self.tool_name)]
 
     @staticmethod
     def find_call(messages: list[Any], tool_name: str, tool_args: dict[str, Any]) -> str | None:

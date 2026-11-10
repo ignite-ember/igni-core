@@ -1,75 +1,51 @@
-"""Typed schema for the session broadcast bus.
+"""Typed events for the session broadcast bus.
 
-Sibling to :mod:`event_log_schema` — one shape per subsystem,
-one file per shape. :class:`BroadcastEvent` is the wire shape
-:class:`igni_core.core.session.broadcast.BroadcastBus` fans out
-to callbacks.
-
-Uses a stdlib ``@dataclass`` (not a Pydantic model) so the
-``payload: dict[str, Any]`` field survives ``BroadcastEvent(...)``
-construction by identity — callbacks receive the same live dict
-the emitter passed in. Pydantic v2's ``model_validate`` clones
-dicts, which breaks the identity contract several tests pin
-against (see :meth:`BroadcastBus.emit`).
+:class:`BroadcastEvent` is the base every push-channel event
+subclasses; each concrete event lives in its domain's schema
+module and narrows ``channel`` to a ``Literal``. This module stays
+a leaf (pydantic and typing only) so any tool can import it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
-BroadcastCallback = Callable[[str, dict[str, Any]], None]
-"""Subscriber signature. Kept as ``(channel, payload)`` for
-transport-adapter compatibility — the bus unpacks the event on
-the way out so internal callers get typed
-:class:`BroadcastEvent` construction while external subscribers
-keep the two-argument tuple signature."""
+from pydantic import BaseModel, ConfigDict, Field
 
 
-@dataclass(frozen=True)
-class BroadcastEvent:
-    """One push-channel event.
+class BroadcastEvent(BaseModel):
+    """One push-channel event. ``channel`` is the tag the FE routes
+    on; every other field is the event's payload."""
 
-    * ``channel`` — string tag the FE routes on
-      (``"plan_submitted"``, ``"permission_mode_changed"``, …).
-      Producer-open — new tools introduce new channels without a
-      schema change.
-    * ``payload`` — event-specific dict. Delivered to callbacks
-      by identity; a callback that mutates it sees the same live
-      dict the emitter did.
-
-    ``frozen=True`` guards accidental reassignment of the two
-    fields; the payload itself is intentionally mutable — the
-    identity contract requires the same live dict object to
-    survive from emit call to callback receipt.
-    """
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     channel: str
-    payload: dict[str, Any] = field(default_factory=dict)
+
+    def to_payload(self) -> dict[str, Any]:
+        """The wire payload: every field except ``channel``."""
+        return self.model_dump(mode="json", exclude={"channel"})
 
     def with_run_id(self, run_id: str | None) -> BroadcastEvent:
-        """Return an event whose payload carries ``run_id``.
+        """Events that are not run-scoped carry no run_id."""
+        return self
 
-        The drain path calls this so ``plan_submitted`` payloads
-        acquire the run_id the FE needs for ``approve_plan`` /
-        ``dismiss_plan``.
 
-        Contract:
+class RunScopedBroadcastEvent(BroadcastEvent):
+    """An event the post-run drain stamps with the finished run's id."""
 
-        * Empty / ``None`` ``run_id`` → return ``self`` unchanged.
-        * Payload already carries ``run_id`` → return ``self``
-          unchanged (an explicit value from the emitter wins over
-          an implicit stamp from the drain context).
-        * Otherwise return a new :class:`BroadcastEvent` with a
-          shallow-copied payload plus ``run_id`` — the source
-          event is not mutated.
-        """
-        if not run_id:
+    run_id: str | None = Field(default=None, exclude_if=lambda v: v is None)
+
+    def with_run_id(self, run_id: str | None) -> BroadcastEvent:
+        """A copy carrying ``run_id``; an explicit run_id already on
+        the event wins, and an empty one changes nothing."""
+        if not run_id or self.run_id is not None:
             return self
-        if "run_id" in self.payload:
-            return self
-        return BroadcastEvent(
-            channel=self.channel,
-            payload={**self.payload, "run_id": run_id},
-        )
+        return self.model_copy(update={"run_id": run_id})
+
+
+@runtime_checkable
+class BroadcastSink(Protocol):
+    """Anything that receives broadcast events: bus subscribers and
+    the emit callable tools are handed."""
+
+    def __call__(self, event: BroadcastEvent) -> None: ...

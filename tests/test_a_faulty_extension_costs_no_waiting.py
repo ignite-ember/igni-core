@@ -21,9 +21,9 @@ from typing import Any
 import pytest
 from agno.tools.function import ToolResult
 
-from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.extension_gate import DECIDING, ExtensionHookGate
+from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.hooks.extension_values import PreToolUseValue, StopValue
 from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.extensions.faults import ExtensionFaults
 from igni_core.extensions.health import ExtensionHealth
@@ -37,9 +37,7 @@ from igni_core.notifications.extension_notices import FaultNotices
 from igni_core.notifications.schemas import ExtensionNotice
 from tests.host_model_helpers import manifest
 
-CALL = {"session_id": "s-1", "tool_name": "run_shell_command", "tool_args": {"command": "ls"}}
-PRE = DECIDING[HookEvent.PRE_TOOL_USE]
-STOP = DECIDING[HookEvent.STOP]
+CALL = PreToolUseValue(session_id="s-1", tool_name="run_shell_command", tool_args={"command": "ls"})
 
 
 class Process:
@@ -75,20 +73,18 @@ def registry() -> ExtensionRegistry:
 
 @pytest.fixture
 def faults(registry: ExtensionRegistry) -> ExtensionFaults:
-    found = ExtensionFaults(registry)
-    return found
+    """The count of the installed set: the hooks and the RPC both keep it."""
+    return registry.faults
 
 
 @pytest.fixture
-def hooks(registry: ExtensionRegistry, faults: ExtensionFaults) -> ExtensionHooks:
-    found = ExtensionHooks(timeout=0.2, faults=faults)
-    found.attach(registry)
-    return found
+def hooks(registry: ExtensionRegistry) -> ExtensionHooks:
+    return ExtensionHooks(registry=registry, timeout=0.2)
 
 
 async def _hang_until_faulty(hooks: ExtensionHooks) -> None:
     for _ in range(ExtensionFaults.LIMIT):
-        await hooks.ask(PRE, CALL)
+        await hooks.ask(CALL)
 
 
 async def test_three_silences_in_a_row_make_it_faulty_and_say_so(
@@ -98,10 +94,10 @@ async def test_three_silences_in_a_row_make_it_faulty_and_say_so(
     faults.on_faulty(lambda extension_id, reason: told.append((extension_id, reason)))
     Process(hooks, "acme.guard", hung=True)
 
-    await hooks.ask(PRE, CALL)
-    await hooks.ask(PRE, CALL)
+    await hooks.ask(CALL)
+    await hooks.ask(CALL)
     assert not faults.faulty("acme.guard") and told == []
-    await hooks.ask(PRE, CALL)
+    await hooks.ask(CALL)
 
     assert faults.faulty("acme.guard")
     entry = registry.get("acme.guard")
@@ -116,8 +112,8 @@ async def test_a_hung_extension_costs_no_waiting_once_faulty(hooks: ExtensionHoo
     asked = process.asked
 
     started = time.monotonic()
-    refused = await hooks.ask(PRE, CALL)
-    skipped = await hooks.ask(STOP, {"session_id": "s-1", "response": ""})
+    refused = await hooks.ask(CALL)
+    skipped = await hooks.ask(StopValue(session_id="s-1"))
     took = time.monotonic() - started
 
     assert took < 0.05
@@ -140,7 +136,7 @@ async def test_an_answer_after_the_restart_clears_it(
     Process(hooks, "acme.guard", hung=False)
     faults.answered("acme.guard")
 
-    verdict = await hooks.ask(PRE, CALL)
+    verdict = await hooks.ask(CALL)
     assert verdict.allowed and not faults.faulty("acme.guard")
 
 
@@ -148,13 +144,13 @@ async def test_an_answer_starts_the_count_again(
     faults: ExtensionFaults, hooks: ExtensionHooks
 ) -> None:
     process = Process(hooks, "acme.guard", hung=True)
-    await hooks.ask(PRE, CALL)
-    await hooks.ask(PRE, CALL)
+    await hooks.ask(CALL)
+    await hooks.ask(CALL)
     process.hung = False
-    await hooks.ask(PRE, CALL)
+    await hooks.ask(CALL)
     process.hung = True
-    await hooks.ask(PRE, CALL)
-    await hooks.ask(PRE, CALL)
+    await hooks.ask(CALL)
+    await hooks.ask(CALL)
 
     assert not faults.faulty("acme.guard")
 
@@ -168,7 +164,7 @@ def _tools_only(registry: ExtensionRegistry) -> ToolEventHook:
 async def test_an_agent_tool_that_times_out_counts(
     registry: ExtensionRegistry, faults: ExtensionFaults, hooks: ExtensionHooks
 ) -> None:
-    ExtensionHookGate.install(hooks)
+    extension_hook_gate.install(hooks)
     hook = _tools_only(registry)
     timed_out = ToolResult(content="Error: Timed out while waiting for response")
 
@@ -182,7 +178,7 @@ async def test_a_hook_answered_between_tool_timeouts_starts_the_count_again(
     faults: ExtensionFaults, hooks: ExtensionHooks
 ) -> None:
     """Its process answers: what times out is one slow tool, not a hung process."""
-    ExtensionHookGate.install(hooks)
+    extension_hook_gate.install(hooks)
     hook = ToolEventHook(HookExecutor({}), session_id="s-1")
     process = Process(hooks, "acme.guard", hung=False)
     timed_out = ToolResult(content="Error: Timed out while waiting for response")
@@ -197,7 +193,7 @@ async def test_a_hook_answered_between_tool_timeouts_starts_the_count_again(
 async def test_a_tool_that_reports_its_own_error_answered(
     registry: ExtensionRegistry, faults: ExtensionFaults, hooks: ExtensionHooks
 ) -> None:
-    ExtensionHookGate.install(hooks)
+    extension_hook_gate.install(hooks)
     hook = _tools_only(registry)
     reported = ToolResult(content="Error from MCP tool 'scan': no such file")
 
@@ -213,7 +209,7 @@ async def test_a_tool_that_raises_its_own_error_answered(
     """An MCP tool's error now arrives raised (``core/mcp/tool_errors``); it answered."""
     from igni_core.core.mcp.tool_errors import MCPToolFailed
 
-    ExtensionHookGate.install(hooks)
+    extension_hook_gate.install(hooks)
     hook = _tools_only(registry)
 
     def reported(**kw: Any) -> Any:
@@ -229,7 +225,7 @@ async def test_a_tool_that_raises_its_own_error_answered(
 async def test_another_server_s_tool_is_nobody_s_business(
     registry: ExtensionRegistry, faults: ExtensionFaults, hooks: ExtensionHooks
 ) -> None:
-    ExtensionHookGate.install(hooks)
+    extension_hook_gate.install(hooks)
     hook = _tools_only(registry)
     timed_out = ToolResult(content="Error: Timed out")
 
@@ -250,8 +246,8 @@ class _Reporting:
 
 
 async def test_a_page_call_that_times_out_counts(registry: ExtensionRegistry) -> None:
-    faults = ExtensionFaults(registry)
-    rpc = ExtensionRpc(registry, faults=faults)
+    faults = registry.faults
+    rpc = ExtensionRpc(registry)
     registry.install(
         manifest("acme.guard", hooks=["PreToolUse"], rpc=["ext.acme.guard.*"]),
         state=ExtensionState.READY,

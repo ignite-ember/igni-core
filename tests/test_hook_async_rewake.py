@@ -19,6 +19,7 @@ import pytest
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.loader import HookLoader
 from igni_core.core.hooks.schemas import HookDefinition
+from igni_core.core.hooks.tool_events import PreToolUsePayload
 from igni_core.core.paths import CONFIG_DIR
 
 
@@ -44,7 +45,7 @@ async def test_async_rewake_exit_2_fires_rewake_callback() -> None:
         async_rewake=True,
     )
     executor = HookExecutor({"PreToolUse": [hook]}, rewake_callback=captured.append)
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.should_continue is True
     await _settle_background_tasks()
     assert len(captured) == 1
@@ -61,7 +62,7 @@ async def test_async_rewake_exit_0_no_wake() -> None:
         async_rewake=True,
     )
     executor = HookExecutor({"PreToolUse": [hook]}, rewake_callback=captured.append)
-    await executor.execute("PreToolUse", payload={})
+    await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     await _settle_background_tasks()
     assert captured == []
 
@@ -79,7 +80,7 @@ async def test_async_rewake_exit_2_uses_systemMessage_when_present() -> None:
         async_rewake=True,
     )
     executor = HookExecutor({"PreToolUse": [hook]}, rewake_callback=captured.append)
-    await executor.execute("PreToolUse", payload={})
+    await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     await _settle_background_tasks()
     assert len(captured) == 1
     assert captured[0] == "from-json"
@@ -96,7 +97,7 @@ async def test_background_without_async_rewake_does_not_wake() -> None:
         background=True,  # plain background, no async_rewake
     )
     executor = HookExecutor({"PreToolUse": [hook]}, rewake_callback=captured.append)
-    await executor.execute("PreToolUse", payload={})
+    await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     await _settle_background_tasks()
     assert captured == []
 
@@ -124,7 +125,7 @@ async def test_async_rewake_does_not_block_foreground_execute() -> None:
     )
     executor = HookExecutor({"PreToolUse": [hook]}, rewake_callback=lambda _t: None)
     start = asyncio.get_running_loop().time()
-    await executor.execute("PreToolUse", payload={})
+    await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     elapsed = asyncio.get_running_loop().time() - start
     assert elapsed < 0.15, f"expected fast return, took {elapsed:.2f}s"
     # Give the background subprocess time to finish so pytest's
@@ -143,7 +144,7 @@ async def test_async_rewake_no_callback_degrades_to_background() -> None:
         async_rewake=True,
     )
     executor = HookExecutor({"PreToolUse": [hook]})  # no callback
-    result = await executor.execute("PreToolUse", payload={})
+    result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
     assert result.should_continue is True
     await _settle_background_tasks()
 

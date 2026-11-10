@@ -15,16 +15,17 @@ from pathlib import Path
 import pytest
 import yaml
 
+from igni_core.backend.workflow_discovery import WorkflowDiscovery
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 from igni_core.core.config.permission_eval.schemas import PermissionDecision
-from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
-from igni_core.core.config.settings import load_settings
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.tool_permissions.store import ToolPermissions
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.loader import HookLoader
 from igni_core.core.lsp.loader import load_lsp_config
-from igni_core.core.monitors.config import load_monitor_config
+from igni_core.core.monitors import MonitorConfigLoader
+from igni_core.core.session.schemas import SessionLifecyclePayload
 from igni_core.core.tools.custom_loader import CustomToolLoader
 from igni_core.core.utils.markdown_commands import MarkdownCommand
 from igni_core.core.workspace_trust import (
@@ -33,8 +34,10 @@ from igni_core.core.workspace_trust import (
     WorkspaceTrust,
     WorkspaceTrustStore,
     canonical_remote,
+    process_trust,
     remote_matches,
 )
+from igni_core.core.workspace_trust.policy import WorkspaceTrustConfig
 
 pytestmark = pytest.mark.workspace_trust
 
@@ -62,7 +65,7 @@ def _write(path: Path, text: str) -> Path:
 
 
 def _trust() -> WorkspaceTrust:
-    return WorkspaceTrust.shared()
+    return process_trust()
 
 
 def _set_policy(**kwargs) -> None:
@@ -83,9 +86,7 @@ def managed(tmp_path: Path, monkeypatch):
         _write(path, yaml.safe_dump(payload))
         return path
 
-    monkeypatch.setattr(
-        SettingsLoader, "platform_managed_settings_path", staticmethod(lambda: path)
-    )
+    monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: path))
     return write
 
 
@@ -104,7 +105,7 @@ def test_untrusted_project_tool_is_never_imported(repo, tmp_path):
     marker = tmp_path / "tool-ran"
     _tool_that_writes(repo, marker)
 
-    result = CustomToolLoader().discover(repo)
+    result = CustomToolLoader(trust=_trust()).discover(repo)
 
     assert not marker.exists()
     assert not result.toolkits
@@ -115,13 +116,13 @@ def test_trusting_imports_project_tools_and_revoking_stops_it(repo, tmp_path):
     _tool_that_writes(repo, marker)
 
     _trust().trust(repo)
-    result = CustomToolLoader().discover(repo)
+    result = CustomToolLoader(trust=_trust()).discover(repo)
     assert marker.exists()
     assert [t.name for t in result.toolkits] == ["custom_x"]
 
     marker.unlink()
     _trust().revoke(repo)
-    assert not CustomToolLoader().discover(repo).toolkits
+    assert not CustomToolLoader(trust=_trust()).discover(repo).toolkits
     assert not marker.exists()
 
 
@@ -140,7 +141,7 @@ def _hook_that_writes(settings_file: Path, marker: Path) -> None:
 def _fire_session_start(repo: Path) -> None:
     hooks = HookLoader(repo, cross_tool_support=True).load().registry.raw
     executor = HookExecutor(hooks)
-    asyncio.run(executor.execute("SessionStart", {"session_id": "s-1", "source": "startup"}))
+    asyncio.run(executor.execute("SessionStart", SessionLifecyclePayload(session_id="s-1")))
 
 
 @pytest.mark.parametrize("folder", [".igni", ".claude"])
@@ -178,12 +179,10 @@ def _workflow_that_writes(repo: Path, marker: Path) -> None:
 
 
 def test_untrusted_project_workflows_are_neither_discovered_nor_run(repo, tmp_path):
-    from igni_core.backend.workflow_runner import WorkflowDiscovery
-
     marker = tmp_path / "workflow-ran"
     _workflow_that_writes(repo, marker)
 
-    found = asyncio.run(WorkflowDiscovery(project_dir=repo).list_workflows())
+    found = asyncio.run(WorkflowDiscovery.for_project(project_dir=repo).list_workflows())
 
     assert found == []
     assert not marker.exists()
@@ -191,13 +190,11 @@ def test_untrusted_project_workflows_are_neither_discovered_nor_run(repo, tmp_pa
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
 def test_trusted_project_workflows_are_discovered(repo, tmp_path):
-    from igni_core.backend.workflow_runner import WorkflowDiscovery
-
     marker = tmp_path / "workflow-ran"
     _workflow_that_writes(repo, marker)
     _trust().trust(repo)
 
-    asyncio.run(WorkflowDiscovery(project_dir=repo).list_workflows())
+    asyncio.run(WorkflowDiscovery.for_project(project_dir=repo).list_workflows())
 
     # Discovery ran the file — which is exactly why it waits for trust.
     assert marker.exists()
@@ -229,7 +226,10 @@ def test_untrusted_lsp_json_command_is_never_started(repo, tmp_path):
 
 def test_untrusted_monitors_json_is_not_loaded(repo):
     _write(repo / ".monitors.json", json.dumps({"monitors": {"m": {"command": "true"}}}))
-    assert load_monitor_config(repo) == {}
+    assert MonitorConfigLoader(repo, trust=_trust()).load() == {}
+
+    _trust().trust(repo)
+    assert "m" in MonitorConfigLoader(repo, trust=_trust()).load()
 
 
 # ── markdown commands ─────────────────────────────────────────────
@@ -288,9 +288,9 @@ def _loosening_config(repo: Path) -> None:
 
 def test_untrusted_project_config_cannot_loosen_safety_or_permissions(repo):
     _loosening_config(repo)
-    defaults = load_settings(project_dir=repo.parent)  # no project config there
+    defaults = SettingsLoader.load(project_dir=repo.parent)  # no project config there
 
-    settings = load_settings(project_dir=repo)
+    settings = SettingsLoader.load(project_dir=repo)
 
     assert settings.permissions.mode == "default"
     assert settings.permissions.shell_execute == "ask"
@@ -306,13 +306,13 @@ def test_trusting_lets_project_config_apply_and_revoking_takes_it_back(repo):
     _loosening_config(repo)
 
     _trust().trust(repo)
-    trusted = load_settings(project_dir=repo)
+    trusted = SettingsLoader.load(project_dir=repo)
     assert trusted.permissions.shell_execute == "allow"
     assert trusted.safety.blocked_commands == []
     assert ToolPermissions(project_dir=repo).get_level("Bash") == "allow"
 
     _trust().revoke(repo)
-    revoked = load_settings(project_dir=repo)
+    revoked = SettingsLoader.load(project_dir=repo)
     assert revoked.permissions.shell_execute == "ask"
     assert revoked.safety.blocked_commands
     assert ToolPermissions(project_dir=repo).get_level("Bash") == "ask"
@@ -356,7 +356,9 @@ def test_dont_trust_and_this_time_only(repo):
     assert _trust().is_trusted(repo)
     assert WorkspaceTrustStore().get(WorkspaceIdentity.of(repo)) == "untrusted"
     # A new process forgets "this time only".
-    assert not WorkspaceTrust.reset_shared().is_trusted(repo)
+    fresh = WorkspaceTrust()
+    assert fresh.decide(repo).source == "store"
+    assert not fresh.is_trusted(repo)
 
 
 def test_the_remote_is_read_without_running_git(repo, monkeypatch):
@@ -400,7 +402,7 @@ def test_never_keeps_every_folder_untrusted(repo, tmp_path):
     with pytest.raises(TrustRefused):
         _trust().trust(repo)
     assert not _trust().grant_for_run(repo).trusted
-    CustomToolLoader().discover(repo)
+    CustomToolLoader(trust=_trust()).discover(repo)
     assert not marker.exists()
 
 
@@ -435,7 +437,7 @@ def test_managed_policy_is_honoured_and_reaches_the_gate(repo, managed):
     managed({"workspace_trust": {"mode": "never"}})
     _trust().trust(repo)
 
-    settings = load_settings(project_dir=repo)
+    settings = SettingsLoader.load(project_dir=repo)
 
     assert settings.workspace_trust.mode == "never"
     assert not _trust().is_trusted(repo)
@@ -446,7 +448,7 @@ def test_group_policy_pack_sets_workspace_trust(repo):
         def to_settings_dict(self):
             return {"workspace_trust": {"mode": "trusted_remotes", "trusted_remotes": ["x/*"]}}
 
-    settings = load_settings(project_dir=repo, group_policy_fetcher=lambda: Pack())
+    settings = SettingsLoader.load(project_dir=repo, group_policy_fetcher=lambda: Pack())
 
     assert settings.workspace_trust.mode == "trusted_remotes"
     assert _trust().decide(repo).state == "untrusted"
@@ -466,7 +468,7 @@ def test_user_and_project_config_cannot_set_workspace_trust(repo, tmp_path):
     )
     _trust().trust(repo)  # even a trusted project cannot set it
 
-    settings = load_settings(project_dir=repo, cli_overrides={"workspace_trust": {"mode": "never"}})
+    settings = SettingsLoader.load(project_dir=repo)
 
     assert settings.workspace_trust == WorkspaceTrustConfig()
     assert _trust().decide(other).state == "ask"
@@ -474,11 +476,11 @@ def test_user_and_project_config_cannot_set_workspace_trust(repo, tmp_path):
 
 def test_the_environment_may_tighten_but_not_loosen(repo, managed, monkeypatch):
     monkeypatch.setenv("IGNI_WORKSPACE_TRUST_MODE", "never")
-    assert load_settings(project_dir=repo).workspace_trust.mode == "never"
+    assert SettingsLoader.load(project_dir=repo).workspace_trust.mode == "never"
 
     managed({"workspace_trust": {"mode": "never"}})
     monkeypatch.setenv("IGNI_WORKSPACE_TRUST_MODE", "ask")
-    assert load_settings(project_dir=repo).workspace_trust.mode == "never"
+    assert SettingsLoader.load(project_dir=repo).workspace_trust.mode == "never"
 
 
 # ── managed values are final ──────────────────────────────────────
@@ -490,17 +492,17 @@ def test_managed_ask_beats_a_trusted_projects_allow(repo, managed):
     _write(repo / ".igni" / "config.yaml", yaml.safe_dump({"permissions": {"allow": ["Bash"]}}))
     _trust().trust(repo)
 
-    settings = load_settings(project_dir=repo)
+    settings = SettingsLoader.load(project_dir=repo)
     perms = settings.permissions
 
     assert "shell_execute" in perms.final_fields
     assert ToolPermissions(project_dir=repo, settings_permissions=perms).get_level("Bash") == "ask"
-    deny, ask, allow = perms.category_rules()
+    category = perms.category_rules()
     evaluator = PermissionEvaluator.from_strings(
         mode=perms.mode,
-        deny=[*perms.deny, *deny],
-        ask=[*perms.ask, *ask],
-        allow=[*perms.allow, *allow],
+        deny=[*perms.deny, *category.deny],
+        ask=[*perms.ask, *category.ask],
+        allow=[*perms.allow, *category.allow],
     )
     decision = evaluator.evaluate("run_shell_command", {"command": "ls"})
     assert decision is PermissionDecision.ASK
@@ -510,7 +512,7 @@ def test_an_unmanaged_default_still_yields_to_a_trusted_project(repo):
     _write(repo / ".igni" / "settings.json", json.dumps({"permissions": {"allow": ["Bash"]}}))
     _trust().trust(repo)
 
-    perms = load_settings(project_dir=repo).permissions
+    perms = SettingsLoader.load(project_dir=repo).permissions
 
     assert perms.final_fields == frozenset()
     assert (
@@ -555,18 +557,23 @@ def test_igni_m_without_trust_runs_the_session_untrusted(repo, monkeypatch):
     from click.testing import CliRunner
 
     from igni_core import cli as cli_module
+    from igni_core.core.session.single_message_run import SingleMessageRun
 
     seen: dict[str, bool] = {}
 
-    async def fake_run_single_message(settings, message, **kwargs):
-        seen["trusted"] = WorkspaceTrust.shared().is_trusted(Path.cwd())
-        seen["shell"] = settings.permissions.shell_execute == "allow"
+    def fake_init(self, settings, **kwargs):
+        self._settings = settings
+
+    async def fake_run(self, message):
+        seen["trusted"] = process_trust().is_trusted(Path.cwd())
+        seen["shell"] = self._settings.permissions.shell_execute == "allow"
 
     _write(
         repo / ".igni" / "config.yaml", yaml.safe_dump({"permissions": {"shell_execute": "allow"}})
     )
     monkeypatch.setattr("pathlib.Path.cwd", lambda: repo)
-    monkeypatch.setattr(cli_module._session_module, "run_single_message", fake_run_single_message)
+    monkeypatch.setattr(SingleMessageRun, "__init__", fake_init)
+    monkeypatch.setattr(SingleMessageRun, "run", fake_run)
 
     result = CliRunner().invoke(cli_module.cli, ["-m", "hi"])
     assert result.exit_code == 0, result.output

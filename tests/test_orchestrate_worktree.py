@@ -3,26 +3,30 @@
 
 Layered:
 
-* Unit tests for the sandbox lifecycle (:meth:`SpawnSandbox.finalize`
-  plus the ``_rebind_tool_base_dirs`` / ``_create_isolated_worktree``
-  legacy shims on :class:`OrchestrateTools`) so failure modes have
-  clear coverage.
+* Unit tests for the sandbox lifecycle (:meth:`SpawnSandbox.finalize`,
+  :meth:`SpawnSandbox.rebind_tool_base_dirs` and
+  :meth:`SpawnSandbox.create`).
 * Integration tests that spin up a real git repo on ``tmp_path``
   and run ``spawn_agent`` with isolation enabled, asserting the
   worktree was created, the tool ``base_dir`` was rebased and
   restored, and the response carries the expected footer.
+
+The sandbox owns all three steps now — the toolkit's private shims
+are gone, so the unit tests call :class:`SpawnSandbox` directly
+rather than through :class:`OrchestrateTools`.
 """
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from igni_core.core.tools import orchestrate as orch_mod
 from igni_core.core.tools.orchestrate import OrchestrateTools
+from igni_core.core.tools.orchestrate_modes import IsolationMode
 from igni_core.core.tools.orchestrate_sandbox import SpawnSandbox
 
 # ── Shared fixtures (mirrored from test_orchestrate.py) ──────
@@ -46,8 +50,6 @@ def _mock_stream(content: str):
 
 
 def _mock_pool(content: str = "agent response", agent_tools: list | None = None):
-    from igni_core.core.tools.orchestrate_budget import SpawnBudget
-
     pool = MagicMock()
     agent = MagicMock()
     agent.arun = MagicMock(return_value=_mock_stream(content))
@@ -60,11 +62,9 @@ def _mock_pool(content: str = "agent response", agent_tools: list | None = None)
     defn.description = "Test agent"
     defn.tools = ["Read", "Write"]
     defn.force_isolation = None
+    defn.can_orchestrate = False
     pool.get.return_value = agent
-    pool.get_definition.return_value = defn
-    # Real SpawnBudget so OrchestrateTools.__init__ gets a live
-    # counter (max=20 matches _settings.orchestration.max_total_agents).
-    pool.spawn_budget.return_value = SpawnBudget(20)
+    pool.get_entry.return_value = SimpleNamespace(definition=defn)
     return pool
 
 
@@ -87,6 +87,26 @@ def _init_git_repo(path: Path) -> None:
     (path / "seed.txt").write_text("seed")
     subprocess.run(["git", "add", "."], cwd=path, check=True)
     subprocess.run(["git", "commit", "-qm", "seed"], cwd=path, check=True)
+
+
+def _sandbox(
+    *,
+    project_dir: Path | None,
+    agent: object,
+    isolation: IsolationMode = IsolationMode.WORKTREE,
+    task: str = "do the thing",
+    session_id: str = "s1",
+    agent_name: str = "editor",
+):
+    """One sandbox, set up the way a spawn sets one up."""
+    return SpawnSandbox.create(
+        project_dir=project_dir,
+        session_id=session_id,
+        agent=agent,
+        agent_name=agent_name,
+        isolation=isolation,
+        task=task,
+    )
 
 
 # ── SpawnSandbox.finalize (per-spawn worktree lifecycle) ──────
@@ -136,7 +156,7 @@ class TestFinalizeWorktree:
         assert "boom" in footer
 
 
-# ── _rebind_tool_base_dirs ────────────────────────────────────
+# ── SpawnSandbox.rebind_tool_base_dirs ────────────────────────
 
 
 class _FakeTool:
@@ -155,7 +175,7 @@ class TestRebindBaseDirs:
         agent = MagicMock()
         agent.tools = [a, b]
 
-        originals = OrchestrateTools._rebind_tool_base_dirs(agent, Path("/wt"))
+        originals = SpawnSandbox.rebind_tool_base_dirs(agent, Path("/wt"))
         # All tools' base_dirs now point at the worktree.
         for tool in agent.tools:
             assert tool.base_dir == Path("/wt")
@@ -174,7 +194,7 @@ class TestRebindBaseDirs:
         agent = MagicMock()
         agent.tools = [a]
 
-        OrchestrateTools._rebind_tool_base_dirs(agent, Path("/wt"))
+        SpawnSandbox.rebind_tool_base_dirs(agent, Path("/wt"))
         # Original tool's base_dir is unchanged.
         assert a.base_dir == Path("/orig/a")
         # But agent now points at a copy with the new base_dir.
@@ -191,7 +211,7 @@ class TestRebindBaseDirs:
         agent = MagicMock()
         agent.tools = [good, bare]
 
-        originals = OrchestrateTools._rebind_tool_base_dirs(agent, Path("/wt"))
+        originals = SpawnSandbox.rebind_tool_base_dirs(agent, Path("/wt"))
         assert len(originals) == 1
         # Tool that DID have base_dir is rebound.
         rebased_good = next(iter(originals))
@@ -199,38 +219,75 @@ class TestRebindBaseDirs:
 
     def test_no_tools_attribute_is_no_op(self):
         agent = MagicMock(spec=[])  # no .tools
-        originals = OrchestrateTools._rebind_tool_base_dirs(agent, Path("/wt"))
+        originals = SpawnSandbox.rebind_tool_base_dirs(agent, Path("/wt"))
         assert originals == {}
 
 
-# ── _create_isolated_worktree ─────────────────────────────────
+# ── SpawnSandbox.create (the worktree fork) ───────────────────
 
 
 class TestCreateIsolatedWorktree:
     def test_returns_error_when_no_project_dir(self):
-        tool = OrchestrateTools(pool=_mock_pool(), settings=_settings())
-        manager, payload = tool._create_isolated_worktree("editor")
-        assert manager is None
-        assert "requires a project" in payload
+        agent = SimpleNamespace(tools=[])
+
+        setup = _sandbox(project_dir=None, agent=agent)
+
+        assert setup.sandbox is None
+        assert "requires a project" in setup.error
 
     def test_returns_error_when_not_a_git_repo(self, tmp_path):
-        tool = OrchestrateTools(pool=_mock_pool(), settings=_settings(), project_dir=tmp_path)
-        manager, payload = tool._create_isolated_worktree("editor")
-        assert manager is None
-        assert "Error" in payload
-        assert "Not a git repository" in payload or "cannot create worktree" in payload
+        agent = SimpleNamespace(tools=[])
+
+        setup = _sandbox(project_dir=tmp_path, agent=agent)
+
+        assert setup.sandbox is None
+        assert "Error" in setup.error
+        assert "Not a git repository" in setup.error or "cannot create worktree" in setup.error
 
     def test_creates_worktree_in_git_repo(self, tmp_path):
         _init_git_repo(tmp_path)
-        tool = OrchestrateTools(pool=_mock_pool(), settings=_settings(), project_dir=tmp_path)
-        manager, info = tool._create_isolated_worktree("editor")
+        agent = SimpleNamespace(tools=[])
+
+        setup = _sandbox(project_dir=tmp_path, agent=agent)
+        sandbox = setup.sandbox
+        assert sandbox is not None
+        assert sandbox.info is not None
         try:
-            assert manager is not None
-            assert info.worktree_path.is_dir()
-            assert "editor" in info.branch_name
+            assert sandbox.info.worktree_path.is_dir()
+            assert "editor" in sandbox.info.branch_name
         finally:
-            if manager:
-                manager.cleanup()
+            sandbox.finalize()
+
+    def test_no_isolation_is_a_no_op(self, tmp_path):
+        """``isolation=NONE`` never forks a worktree — and never
+        touches the agent's tools."""
+        agent = SimpleNamespace(tools=[_FakeTool(Path("/orig"))])
+
+        setup = _sandbox(project_dir=tmp_path, agent=agent, isolation=IsolationMode.NONE)
+
+        assert setup.error is None
+        assert setup.sandbox is not None
+        assert setup.sandbox.manager is None
+        assert setup.sandbox.info is None
+        assert setup.sandbox.original_base_dirs == {}
+        assert setup.task == "do the thing"
+        assert agent.tools[0].base_dir == Path("/orig")
+
+    def test_the_task_names_the_worktree(self, tmp_path):
+        """The model has to know where it is: tools without a
+        ``base_dir`` are not rebased, so the task text is the only
+        thing telling it."""
+        _init_git_repo(tmp_path)
+        agent = SimpleNamespace(tools=[])
+
+        setup = _sandbox(project_dir=tmp_path, agent=agent)
+        sandbox = setup.sandbox
+        assert sandbox is not None
+        try:
+            assert "isolated git worktree" in setup.task
+            assert "do the thing" in setup.task
+        finally:
+            sandbox.finalize()
 
 
 # ── End-to-end spawn_agent(isolation="worktree") ──────────────
@@ -294,19 +351,18 @@ class TestSpawnAgentIsolation:
         # tool, so write directly via the post-rebind tool copy
         # AFTER spawn_agent has rebound base_dirs. To exercise the
         # preserved-worktree path, write through the rebased tool
-        # by hooking _run_agent_streaming.
-        async def _fake_run_agent_streaming(agent, *_a, **_kw):
+        # by patching the streamer the spawn runs through.
+        async def _fake_run_agent_streaming(context):
             # Use the agent's (already-rebound) writer tool.
-            writer = next(t for t in agent.tools if hasattr(t, "write"))
+            writer = next(t for t in context.runnable.tools if hasattr(t, "write"))
             writer.write("hello from isolated agent")
             return "did it", []
 
-        original = orch_mod._run_agent_streaming
-        orch_mod._run_agent_streaming = _fake_run_agent_streaming
-        try:
+        with patch(
+            "igni_core.core.tools.orchestrate.run_agent_streaming",
+            new=_fake_run_agent_streaming,
+        ):
             result = await tool.spawn_agent("Write a file", "editor", isolation="worktree")
-        finally:
-            orch_mod._run_agent_streaming = original
 
         assert "Worktree preserved" in result
         assert "git merge" in result
@@ -327,17 +383,16 @@ class TestSpawnAgentIsolation:
         _init_git_repo(tmp_path)
         captured: dict = {}
 
-        async def _capturing_run(_agent, task, *_a, **_kw):
-            captured["task"] = task
+        async def _capturing_run(context):
+            captured["task"] = context.task
             return "ok", []
 
-        original = orch_mod._run_agent_streaming
-        orch_mod._run_agent_streaming = _capturing_run
-        try:
+        with patch(
+            "igni_core.core.tools.orchestrate.run_agent_streaming",
+            new=_capturing_run,
+        ):
             tool = OrchestrateTools(pool=_mock_pool(), settings=_settings(), project_dir=tmp_path)
             await tool.spawn_agent("Original task", "editor", isolation="worktree")
-        finally:
-            orch_mod._run_agent_streaming = original
 
         body = captured["task"]
         assert "isolated git worktree" in body
@@ -359,17 +414,16 @@ class TestSpawnAgentIsolation:
         # Keep a ref to the agent so we can inspect post-spawn.
         agents_seen: list = []
 
-        async def _capture_agent(agent, *_a, **_kw):
-            agents_seen.append(agent)
+        async def _capture_agent(context):
+            agents_seen.append(context.runnable)
             return "ok", []
 
-        original_run = orch_mod._run_agent_streaming
-        orch_mod._run_agent_streaming = _capture_agent
-        try:
+        with patch(
+            "igni_core.core.tools.orchestrate.run_agent_streaming",
+            new=_capture_agent,
+        ):
             tool = OrchestrateTools(pool=pool, settings=_settings(), project_dir=tmp_path)
             await tool.spawn_agent("task", "editor", isolation="worktree")
-        finally:
-            orch_mod._run_agent_streaming = original_run
 
         spawned_agent = agents_seen[0]
         # The agent's tool copy was rebased to the worktree

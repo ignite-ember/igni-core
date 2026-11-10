@@ -92,7 +92,13 @@ _EMBER = re.compile(r"\bEmber\b|\bember\b")
 _HISTORICAL = {
     "NEO4J_MIGRATION_DONE.md",
     "REFACTOR_PROGRESS.md",
-    "MIGRATION.md",
+    # `MIGRATION.md` was on this list and came off it: it is a guide
+    # for people arriving from another tool, not a record of a change
+    # igni made, and every "ember" in it was the product's old name
+    # rather than a path or a package. Those were rewritten to igni, so
+    # the exemption protected nothing. `test_the_exemption_is_still_
+    # earning_its_keep` is what found that — an exemption protecting
+    # nothing is a hole waiting to hide the next document.
     # `CONFIG_LAYOUT_PLAN.md` was on this list and came off it: every
     # "ember" in it turned out to be `.ember`, the previous config
     # directory, which a document about renaming it has to be able to
@@ -339,13 +345,13 @@ def test_no_document_installs_or_clones_by_an_old_name(doc):
 
 
 def test_the_readme_puts_the_server_in_the_user_config():
-    """A project's config may not name a server (`merge_plan.py`), so the
+    """A project's config may not name a server (`tiers/project.py`), so the
     README's old advice — `api_url` in `.igni/config.local.yaml` — was
     ignored with a warning, and the CLI never reached the server."""
     readme = (_ROOT / "README.md").read_text()
     section = readme[readme.index("To point it at your own igni server") :][:1200]
     assert "~/.igni/config.yaml" in section
     assert "portal_url" in section
-    from igni_core.core.config.merge_plan import ProjectYamlTier
+    from igni_core.core.config.tiers.project import ProjectYamlTier
 
-    assert {"api_url", "portal_url"} <= set(ProjectYamlTier._NOT_FROM_A_PROJECT)
+    assert {"api_url", "portal_url"} <= set(ProjectYamlTier.NOT_FROM_A_PROJECT.keys)

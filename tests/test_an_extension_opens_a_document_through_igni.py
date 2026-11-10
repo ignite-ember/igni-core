@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from igni_core.extensions.host import members
+from igni_core.backend.file_opener import FileOpener
 from tests.host_model_helpers import HostRig
 
 
@@ -36,7 +36,7 @@ def opened(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
         seen.append(path)
         return True
 
-    monkeypatch.setattr(members.FileOpener, "open", staticmethod(record))
+    monkeypatch.setattr(FileOpener, "open", staticmethod(record))
     return seen
 
 
@@ -157,7 +157,7 @@ async def test_a_missing_file_or_a_directory_is_not_found(rig: HostRig, opened) 
 
 
 async def test_nothing_opening_it_is_a_failure(rig: HostRig, monkeypatch) -> None:
-    monkeypatch.setattr(members.FileOpener, "open", staticmethod(lambda path: False))
+    monkeypatch.setattr(FileOpener, "open", staticmethod(lambda path: False))
     ext = rig.install(host=["files.open"], workspace="read")
     document(rig, "a.pdf", "%PDF")
 

@@ -1,15 +1,13 @@
 """Pydantic schemas for the queue-hook seam.
 
-Each model captures a piece of state or a boundary object that used to
-live as loose dicts / callables / string constants in
-``core/queue_hook.py``:
+Each model captures a piece of state or a boundary object at the seam:
 
 * :class:`InjectedMessage` — one queued text with a stable id / timestamp
   (fields available for future telemetry; the persister currently reads
   only ``.text`` — that's intentional).
 * :class:`InjectedNote` — the ``[USER MESSAGE WHILE YOU WERE WORKING]``
-  wire format, previously an inline ``USER_NOTE_HEADER`` constant plus a
-  static ``_augment_result`` method.
+  wire format: it owns the note header and the rendering of the note
+  onto a tool result.
 * :class:`QueueCallbacks` — bundles the two optional UI callbacks that
   are always threaded together.
 * :class:`ToolHookInvocation` / :class:`PostHookInvocation` — typed

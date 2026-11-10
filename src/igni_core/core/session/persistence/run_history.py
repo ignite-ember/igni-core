@@ -20,6 +20,9 @@ import copy
 import uuid
 from typing import Any
 
+from agno.db.base import SessionType
+from agno.run.base import RunStatus
+
 
 class RunHistory:
     """Writes a session's runs to an Agno 3 database, the session's row too."""
@@ -61,6 +64,26 @@ class RunHistory:
             user_id=getattr(session, "user_id", None),
             run_index=run_index,
         )
+
+    async def close_interrupted(self, session_id: str, run_id: str, note: str) -> bool:
+        """End the stored run ``run_id`` in error, with ``note`` as its
+        content, when it is still paused — so a run a restart cut off
+        is not left paused with nothing to answer.
+
+        ``True`` when the run was found (closed now, or already ended).
+        """
+        stored = await self._db.get_session(session_id=session_id, session_type=SessionType.AGENT)
+        if stored is None:
+            return False
+        for run in stored.runs or []:
+            if run.run_id != run_id:
+                continue
+            if run.status == RunStatus.paused:
+                run.status = RunStatus.error
+                run.content = note
+                await self.save_run(stored, run)
+            return True
+        return False
 
     async def _stored_run_ids(self, session_id: str) -> list[str]:
         found = await self._db.get_runs(session_id=session_id, deserialize=True)

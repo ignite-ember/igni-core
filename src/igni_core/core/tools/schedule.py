@@ -110,7 +110,7 @@ class ScheduleTools(Toolkit):
         task = await self._ensure_store().get(task_id)
         if not task:
             return f"Task not found: {task_id}"
-        if task.status not in (TaskStatus.pending, TaskStatus.running):
+        if not task.status.is_active:
             return f"Task {task_id} is already {task.status.value}."
         await self._ensure_store().update_status(task_id, TaskStatus.cancelled)
         recur_note = " (recurring schedule stopped)" if task.recurrence else ""

@@ -95,17 +95,17 @@ Claude Code has no equivalent — it's always "single agent decides everything, 
 
 | Aspect | Claude Code | igni |
 |---|---|---|
-| **Framework** | Ink (React for CLI) | Textual (Python TUI) + Rich |
-| **Default mode** | Interactive CLI | Full TUI with panels and widgets |
-| **Fallback mode** | N/A | `--no-tui` for plain Rich CLI |
+| **Framework** | Ink (React for CLI) | React (web UI) + Tauri (desktop shell) + Click/Rich (CLI) |
+| **Default mode** | Interactive CLI | Chat in the desktop app or the web client; `igni -m "…"` runs one task and exits |
+| **Fallback mode** | N/A | N/A |
 | **Streaming** | Yes (token-by-token) | Yes (Agno native streaming) |
-| **Task visualization** | Todo lists in output | Live `TaskProgressWidget` with status icons |
-| **Session browser** | `--resume`, `--continue` | `/sessions` with interactive picker widget |
-| **Token tracking** | Cost display (`/cost`) | Real-time status bar (context/completion tokens) |
-| **Cloud indicator** | N/A | `☁ {org_name}` in status bar when connected |
-| **Cancellation** | Ctrl+C (exit) | Escape (cancel current agent, stay in session) |
+| **Task visualization** | Todo lists in output | Live task list in the client, with status icons |
+| **Session browser** | `--resume`, `--continue` | `/sessions` in the client; `igni --continue` / `--session-id` on the CLI |
+| **Token tracking** | Cost display (`/cost`) | Real-time status line (context/completion tokens) |
+| **Cloud indicator** | N/A | The account chip in the client names the connected igni-server account |
+| **Cancellation** | Ctrl+C (exit) | The client cancels the running agent and stays in the session |
 | **Media input** | `--file` flag or image paste | Auto-detect file paths and URLs in message text |
-| **Keyboard shortcuts** | Standard | Extended (Ctrl+O collapse, Ctrl+V verbose, Ctrl+Q queue panel) |
+| **Keyboard shortcuts** | Standard | The client's own |
 
 ---
 
@@ -128,8 +128,8 @@ Claude Code has no equivalent — it's always "single agent decides everything, 
 | Aspect | Claude Code | igni |
 |---|---|---|
 | **Memory model** | File-based (`MEMORY.md` index + `.md` files) | DB-backed (Agno Memory, SQLite default) |
-| **Session storage** | JSONL transcripts | SQLite (`~/.igni/sessions.db`) |
-| **Cross-device sync** | No (local files only) | Yes — set `storage.backend: postgres` |
+| **Session storage** | JSONL transcripts | SQLite (`~/.igni/projects/<id>/state.db`) |
+| **Cross-device sync** | No (local files only) | Yes — set `storage.database_url` |
 | **Memory types** | user, feedback, project, reference (manually categorized) | User memory + session context + entity memory (Agno LearningMachine) |
 | **Learning** | No | Yes — Agno builds user profiles, entity memory across sessions |
 | **Context compaction** | Automatic at context limit | Automatic at 80% context window |
@@ -202,11 +202,11 @@ Claude Code has no equivalent — it's always "single agent decides everything, 
 | **Unlimited agent nesting** | Recursive sub-teams (configurable depth) |
 | **Ephemeral agents** | Auto-generated session-scoped agents |
 | **CodeIndex** | Semantic code intelligence (6 analysis categories) |
-| **Knowledge base** | ChromaDB vector store with custom embeddings |
-| **Agno LearningMachine** | User profiles, entity memory across sessions |
+| **Documents** | The Artifacts extension's document store |
+| **Agno LearningMachine** | User memory across sessions |
 | **Guardrails** | PII detection, prompt injection, moderation |
 | **Task scheduling** | Background jobs with recurrence and bounded concurrency |
-| **Task visualization** | Live TUI widget with status icons |
+| **Task visualization** | Live task list in the client, with status icons |
 | **Agent evals** | Built-in regression testing for agent definitions |
 | **First-run onboarding** | Automatic first-run setup proposes project-specific agents |
 | **Model agnostic** | Any provider via BYOM registry |

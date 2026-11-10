@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,10 +34,12 @@ class PlanDecision(StrEnum):
 class PlanDecisionsBlob(BaseModel):
     """Typed shape for the persisted ``{run_id: decision}`` map.
 
-    Consumed by :class:`SessionPersistence.load_plan_decisions` /
-    :class:`SessionPersistence.save_plan_decisions` — the raw
-    ``dict[str, str]`` shape is preserved via
-    :meth:`model_dump` at the persistence boundary."""
+    The shape that crosses the persistence boundary in both
+    directions — :class:`SessionPersistence.load_plan_decisions`
+    returns one and :meth:`SessionPersistence.save_plan_decisions`
+    takes one. The plain ``dict[str, str]`` that lands in Agno's
+    ``session_data`` column is produced by the store, not by the
+    callers."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -95,6 +97,10 @@ class PlanStore:
     # source of truth for plan state — never inferred from mode,
     # never from message content.
     decisions: dict[str, PlanDecision] = field(default_factory=dict)
+    #: The run that submitted :attr:`latest`, when it is known (a plan
+    #: read back from history knows it; a fresh submission learns it from
+    #: the decision made on it).
+    latest_run_id: str = ""
     #: Submissions rejected since the agent last entered plan mode —
     #: what a ``PlanSubmit`` hook is told as ``attempt``.
     rejected: int = 0
@@ -104,12 +110,39 @@ class PlanStore:
     # indefinitely.
     _max_history: int = 10
 
-    def set_plan(self, plan: str) -> None:
+    def set_plan(self, plan: str, run_id: str = "") -> None:
         if self.latest:
             self.history.append(self.latest)
             if len(self.history) > self._max_history:
                 self.history = self.history[-self._max_history :]
         self.latest = plan
+        self.latest_run_id = run_id
+
+    def latest_state(self) -> Literal["", "pending", "approved", "dismissed"]:
+        """The latest plan's state: empty with no plan, the decision made
+        on it, or ``pending`` while there is none."""
+        if not self.latest:
+            return ""
+        decision = self.decisions.get(self.latest_run_id) if self.latest_run_id else None
+        return decision.value if decision is not None else "pending"
+
+    def reset_rejections(self) -> None:
+        """Forget the rejections — the count belongs to one plan.
+
+        Called when the agent enters plan mode: the plan being worked
+        on is a new one, so its first submission is attempt 0 again.
+        """
+        self.rejected = 0
+
+    def record_rejection(self) -> int:
+        """Count one rejected submission; return the new count.
+
+        The store owns the count — it is what a ``PlanSubmit`` hook is
+        told as ``attempt`` — so nothing outside the store increments
+        it.
+        """
+        self.rejected += 1
+        return self.rejected
 
     def set_decision(self, run_id: str, decision: PlanDecision | str) -> None:
         """Record the user's decision for a specific plan
@@ -130,6 +163,18 @@ class PlanStore:
             valid = tuple(d.value for d in PlanDecision)
             raise ValueError(f"decision must be one of {valid}, got {decision!r}") from exc
         self.decisions[run_id] = value
+        # A decision is made on the plan the person sees, the latest:
+        # a fresh submission's run is known from here on.
+        if self.latest and not self.latest_run_id:
+            self.latest_run_id = run_id
+
+    def forget_decision(self, run_id: str, previous: PlanDecision | None) -> None:
+        """Put ``run_id``'s decision back to ``previous`` — a decision that
+        could not be kept is not one."""
+        if previous is None:
+            self.decisions.pop(run_id, None)
+        else:
+            self.decisions[run_id] = previous
 
     def get_decision(self, run_id: str) -> str | None:
         """Return the recorded decision (as its wire string) or
@@ -139,18 +184,16 @@ class PlanStore:
         value = self.decisions.get(run_id)
         return value.value if value is not None else None
 
-    def load_decisions(self, data: PlanDecisionsBlob | dict | None) -> None:
-        """Bulk-load decisions from the persisted blob. Tolerates
-        ``None`` / wrong-shaped values — anything that doesn't
-        look like a ``str -> valid-decision`` mapping is
-        dropped silently. Called on session rehydrate.
+    def load_decisions(self, blob: PlanDecisionsBlob | None) -> None:
+        """Bulk-load decisions from a persisted blob.
 
-        Accepts either the raw dict shape (for back-compat) or a
-        pre-validated :class:`PlanDecisionsBlob`.
+        Tolerates ``None`` — nothing recorded is nothing to load.
+        The blob's own constructor already dropped every entry that
+        isn't a valid :class:`PlanDecision`, so what lands in the
+        map is always typed (Rule 1).
         """
-        if data is None:
+        if blob is None:
             return
-        blob = data if isinstance(data, PlanDecisionsBlob) else PlanDecisionsBlob.from_raw(data)
         self.decisions.update(blob.decisions)
 
     def decisions_snapshot(self) -> PlanDecisionsBlob:

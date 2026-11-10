@@ -15,14 +15,18 @@ diverging from what the CLI actually does.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from click.testing import CliRunner
 
 from igni_core.cli import cli
+from igni_core.core.config.cli_overrides import CliOverrides, PermissionOverrides
 from igni_core.core.config.permission_eval import (
     PermissionDecision,
     PermissionEvaluator,
     PermissionMode,
 )
+from igni_core.core.paths import CONFIG_DIR
 
 
 def _settings_from_flags(**flags: bool):
@@ -35,7 +39,7 @@ def _settings_from_flags(**flags: bool):
     @cli.result_callback()
     def _capture(result, **_kwargs):
         ctx = _capture.__click_context__  # noqa: SLF001
-        captured["settings"] = ctx.obj.get("settings")
+        captured["settings"] = ctx.obj.settings
 
     runner = CliRunner()
     flag_strs = []
@@ -49,25 +53,27 @@ def _settings_from_flags(**flags: bool):
     assert result.exit_code == 0
     # The settings object isn't directly captured by --help (it
     # exits before storing into ctx.obj). Replicate the merge by
-    # calling load_settings with the same override shape. The
+    # calling SettingsLoader.load with the same override shape. The
     # CLI's flag-handling block is short and self-contained;
     # tests below cross-check via PermissionEvaluator behavior.
     return None
 
 
 def _settings_with_overrides(**overrides):
-    from igni_core.core.config.settings import load_settings
+    from igni_core.core.config.settings_loader import SettingsLoader
 
-    return load_settings(cli_overrides={"permissions": overrides})
+    return SettingsLoader.load(
+        cli_overrides=CliOverrides(permissions=PermissionOverrides(**overrides))
+    )
 
 
 # ── Flag → mode mapping (direct check) ───────────────────────────
 
 
 def test_default_mode_is_default() -> None:
-    from igni_core.core.config.settings import load_settings
+    from igni_core.core.config.settings_loader import SettingsLoader
 
-    s = load_settings()
+    s = SettingsLoader.load()
     assert s.permissions.mode == "default"
 
 
@@ -142,11 +148,12 @@ def test_strict_dont_ask_denies_unmatched() -> None:
 
 def test_strict_with_explicit_allow_lets_through() -> None:
     """``dontAsk`` + explicit allow rule → ALLOW (you can still
-    opt in to specific tools)."""
-    s = _settings_with_overrides(
-        mode="dontAsk",
-        allow=["file_read"],
-    )
+    opt in to specific tools). The allow rule is the user's own config:
+    the command line has no flag for one."""
+    config = Path.home() / CONFIG_DIR / "config.yaml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text("permissions:\n  allow: [file_read]\n")
+    s = _settings_with_overrides(mode="dontAsk")
     ev = _evaluator_from_settings(s)
     assert ev.evaluate("file_read", {"file_path": "x.py"}) is PermissionDecision.ALLOW
     # Anything not in allow is still denied.

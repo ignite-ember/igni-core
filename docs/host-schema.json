@@ -1,5 +1,5 @@
 {
-  "version": "1.11.0",
+  "version": "1.13.0",
   "permissions": [
     {
       "name": "app",
@@ -518,6 +518,12 @@
       "doc": "A transient message on screen.",
       "fields": [
         {
+          "name": "type",
+          "type": "str",
+          "doc": "Always `toast`: what this is.",
+          "optional": false
+        },
+        {
           "name": "id",
           "type": "str",
           "doc": "",
@@ -577,6 +583,12 @@
       "name": "Dialog",
       "doc": "A dialog on screen: igni's own (`spec.kind` is `update`) or an extension's (`show_dialog`). One at a time; a new one replaces the last, which closes unanswered.",
       "fields": [
+        {
+          "name": "type",
+          "type": "str",
+          "doc": "Always `dialog`: what this is.",
+          "optional": false
+        },
         {
           "name": "id",
           "type": "str",
@@ -1701,8 +1713,8 @@
         },
         {
           "name": "tasks",
-          "type": "list[json]",
-          "doc": "",
+          "type": "list[TodoItem]",
+          "doc": "The todo list the plan carries.",
           "optional": false
         },
         {
@@ -1827,7 +1839,7 @@
         },
         {
           "name": "todos",
-          "type": "list[json]",
+          "type": "list[TodoItem]",
           "doc": "",
           "optional": false
         }
@@ -1871,6 +1883,12 @@
           "name": "cap_explicit",
           "type": "bool",
           "doc": "",
+          "optional": false
+        },
+        {
+          "name": "announced_total",
+          "type": "int | None",
+          "doc": "How many iterations were announced, when it is known.",
           "optional": false
         }
       ]
@@ -2151,9 +2169,9 @@
         },
         {
           "name": "previous",
-          "type": "str",
-          "doc": "",
-          "optional": false
+          "type": "str | None",
+          "doc": "The mode before this one; `None` when the push named none.",
+          "optional": true
         }
       ]
     },
@@ -2426,6 +2444,1344 @@
           "optional": false
         }
       ]
+    },
+    {
+      "name": "ModelRegistry",
+      "doc": "Every model igni knows: the default, the ceiling, and the rows.",
+      "fields": [
+        {
+          "name": "default",
+          "type": "str",
+          "doc": "The model used unless another is chosen.",
+          "optional": false
+        },
+        {
+          "name": "max_context_window",
+          "type": "int",
+          "doc": "The largest context window any model has.",
+          "optional": false
+        },
+        {
+          "name": "registry",
+          "type": "dict[str, ModelEntry]",
+          "doc": "The rows, by model id.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ModelEntry",
+      "doc": "One model in the registry — and never its credential: only whether it has a key.",
+      "fields": [
+        {
+          "name": "model_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "provider",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "url",
+          "type": "str | None",
+          "doc": "The endpoint, when the provider names one.",
+          "optional": false
+        },
+        {
+          "name": "has_api_key",
+          "type": "bool",
+          "doc": "Whether the entry says where its key comes from. Never the key, never the environment variable, never the command.",
+          "optional": false
+        },
+        {
+          "name": "temperature",
+          "type": "float | None",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "max_tokens",
+          "type": "int | None",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "timeout",
+          "type": "int",
+          "doc": "Seconds before a request to it is given up on.",
+          "optional": false
+        },
+        {
+          "name": "vision",
+          "type": "bool",
+          "doc": "Whether it reads images.",
+          "optional": false
+        },
+        {
+          "name": "context_window",
+          "type": "int | None",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "thinking",
+          "type": "dict[str, json] | None",
+          "doc": "How it is asked to think.",
+          "optional": false
+        },
+        {
+          "name": "effort",
+          "type": "str | None",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "prompt_caching",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "source",
+          "type": "str",
+          "doc": "Where the entry came from: `cloud` or the local configuration.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "McpServer",
+      "doc": "One MCP server: its name, and whether it is connected.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "connected",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "McpServerDetails",
+      "doc": "One MCP server and what it carries.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "connected",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "transport",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "tool_names",
+          "type": "list[str]",
+          "doc": "The tools it offers.",
+          "optional": false
+        },
+        {
+          "name": "tool_descriptions",
+          "type": "dict[str, str]",
+          "doc": "What each tool says it does.",
+          "optional": false
+        },
+        {
+          "name": "tools_disabled",
+          "type": "list[str]",
+          "doc": "The tools withheld from the agent.",
+          "optional": false
+        },
+        {
+          "name": "resources",
+          "type": "list[McpResource]",
+          "doc": "The resources it offers.",
+          "optional": false
+        },
+        {
+          "name": "prompts",
+          "type": "list[McpPrompt]",
+          "doc": "The prompts it offers.",
+          "optional": false
+        },
+        {
+          "name": "error",
+          "type": "str",
+          "doc": "Why it is not working, when it is not.",
+          "optional": false
+        },
+        {
+          "name": "policy_blocked",
+          "type": "bool",
+          "doc": "Whether the group's policy forbade it.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "McpResource",
+      "doc": "One resource an MCP server offers.",
+      "fields": [
+        {
+          "name": "uri",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "mime_type",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "McpPrompt",
+      "doc": "One prompt an MCP server offers.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "arguments",
+          "type": "list[str]",
+          "doc": "The arguments it takes.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "McpInit",
+      "doc": "What starting the MCP servers did.",
+      "fields": [
+        {
+          "name": "connected",
+          "type": "list[str]",
+          "doc": "The servers that are now connected.",
+          "optional": false
+        },
+        {
+          "name": "failed",
+          "type": "dict[str, str]",
+          "doc": "The servers that did not, and why.",
+          "optional": false
+        },
+        {
+          "name": "rebuilt",
+          "type": "bool",
+          "doc": "Whether the clients were rebuilt.",
+          "optional": false
+        },
+        {
+          "name": "skipped_reason",
+          "type": "str | None",
+          "doc": "Why nothing was started, when nothing was: `already_initialized`, `no_configured_servers` or `no_clients_connected`.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "McpToolToggle",
+      "doc": "One tool of one server, offered or withheld.",
+      "fields": [
+        {
+          "name": "server",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "tool",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "enabled",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PluginInfo",
+      "doc": "One installed plugin.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "version",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "source_root",
+          "type": "str",
+          "doc": "Where it was installed from.",
+          "optional": false
+        },
+        {
+          "name": "path",
+          "type": "str",
+          "doc": "Where it lives on this machine.",
+          "optional": false
+        },
+        {
+          "name": "enabled",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "has_skills",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "has_agents",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "has_hooks",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "has_mcp",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "has_tools",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "has_lsp",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "has_monitors",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "managed",
+          "type": "bool",
+          "doc": "Whether igni keeps it up to date itself.",
+          "optional": false
+        },
+        {
+          "name": "pin",
+          "type": "str",
+          "doc": "The version it is pinned to, when it is.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Marketplace",
+      "doc": "One marketplace of plugins.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "url",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "last_fetched",
+          "type": "str",
+          "doc": "When it was last read.",
+          "optional": false
+        },
+        {
+          "name": "plugins",
+          "type": "list[MarketplacePlugin]",
+          "doc": "The plugins it offers.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "MarketplacePlugin",
+      "doc": "One plugin a marketplace offers.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "source",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "version",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PluginContents",
+      "doc": "What a plugin carries.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "root_path",
+          "type": "str",
+          "doc": "Where it lives on this machine.",
+          "optional": false
+        },
+        {
+          "name": "skills",
+          "type": "list[PluginSkill]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "agents",
+          "type": "list[PluginAgent]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "hooks",
+          "type": "list[PluginHook]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "mcp_servers",
+          "type": "list[PluginMcpServer]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "tools",
+          "type": "list[PluginTool]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "readme",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "error",
+          "type": "str",
+          "doc": "Why it could not be read, when it could not.",
+          "optional": false
+        },
+        {
+          "name": "preview_source",
+          "type": "PluginPreviewSource | None",
+          "doc": "Where it would come from.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PluginSkill",
+      "doc": "One skill a plugin carries.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PluginAgent",
+      "doc": "One agent a plugin carries.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PluginHook",
+      "doc": "One hook a plugin carries: the event, and how many it registers.",
+      "fields": [
+        {
+          "name": "event",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "count",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PluginMcpServer",
+      "doc": "One MCP server a plugin carries.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "transport",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "command",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PluginTool",
+      "doc": "One tool a plugin carries.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PluginPreviewSource",
+      "doc": "Where a plugin would come from.",
+      "fields": [
+        {
+          "name": "url",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "subdir",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "HookEntry",
+      "doc": "One hook igni has.",
+      "fields": [
+        {
+          "name": "event",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "type",
+          "type": "str",
+          "doc": "How it runs: `command`, `url` or another.",
+          "optional": false
+        },
+        {
+          "name": "command",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "url",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "matcher",
+          "type": "str",
+          "doc": "What it matches, when it matches something.",
+          "optional": false
+        },
+        {
+          "name": "timeout_ms",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "background",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "header_names",
+          "type": "list[str]",
+          "doc": "The names of the headers an `http` hook sends. Never their values, which may be credentials.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PolicyPack",
+      "doc": "The group's policy pack.",
+      "fields": [
+        {
+          "name": "group_id",
+          "type": "str | None",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "group_name",
+          "type": "str | None",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "fetched_at",
+          "type": "str | None",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "entry_count",
+          "type": "int",
+          "doc": "How many rules it holds.",
+          "optional": false
+        },
+        {
+          "name": "default_model",
+          "type": "str | None",
+          "doc": "The model it points every group at.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PlanDecision",
+      "doc": "What was decided about a plan.",
+      "fields": [
+        {
+          "name": "run_id",
+          "type": "str",
+          "doc": "The run the plan belonged to.",
+          "optional": false
+        },
+        {
+          "name": "decision",
+          "type": "str",
+          "doc": "`approved` or `dismissed`.",
+          "optional": false
+        },
+        {
+          "name": "mode_status",
+          "type": "str",
+          "doc": "What the plan mode says now.",
+          "optional": false
+        },
+        {
+          "name": "ok",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "error",
+          "type": "str | None",
+          "doc": "Why it went wrong, when it did.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "TodoItem",
+      "doc": "One item of the agent's todo list.",
+      "fields": [
+        {
+          "name": "content",
+          "type": "str",
+          "doc": "What is to be done, as an imperative.",
+          "optional": false
+        },
+        {
+          "name": "status",
+          "type": "str",
+          "doc": "`pending`, `in_progress` or `completed`.",
+          "optional": false
+        },
+        {
+          "name": "activeForm",
+          "type": "str",
+          "doc": "What is shown while it is in progress — the gerund, e.g. `Running tests`.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "LoopAdvance",
+      "doc": "One iteration of a loop, taken.",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "`completed`, `safety_paused` or `step`.",
+          "optional": false
+        },
+        {
+          "name": "completed",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "total_iterations",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "safety_cap_paused",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "prompt",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "display_prompt",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "iteration",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "remaining",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "cap_explicit",
+          "type": "bool",
+          "doc": "Whether the cap was asked for.",
+          "optional": false
+        },
+        {
+          "name": "auto_extended",
+          "type": "bool",
+          "doc": "Whether the cap was extended by itself.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SlashCommand",
+      "doc": "One slash command.",
+      "fields": [
+        {
+          "name": "source",
+          "type": "str",
+          "doc": "`builtin`, `markdown`, `skill` or `extension`.",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "With its slash: `/ctx`.",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "argument_hint",
+          "type": "str",
+          "doc": "What it takes, as a hint.",
+          "optional": false
+        },
+        {
+          "name": "owner",
+          "type": "str | None",
+          "doc": "The extension that answers it, when an extension does.",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "SkillDefinition",
+      "doc": "One skill, as the agent is given it.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "prompt",
+          "type": "str",
+          "doc": "Its body: what the agent is told to do.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SkillDetails",
+      "doc": "One skill, as the person sees it.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "version",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "category",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "argument_hint",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "context",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "agent",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "user_invocable",
+          "type": "bool",
+          "doc": "Whether the person may invoke it as `/name`.",
+          "optional": false
+        },
+        {
+          "name": "body",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "source_dir",
+          "type": "str",
+          "doc": "Where it lives on this machine.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "AgentInfo",
+      "doc": "One agent.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "tools",
+          "type": "list[str]",
+          "doc": "The tools it may use.",
+          "optional": false
+        },
+        {
+          "name": "model",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "color",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "can_orchestrate",
+          "type": "bool",
+          "doc": "Whether it may run other agents.",
+          "optional": false
+        },
+        {
+          "name": "mcp_servers",
+          "type": "list[str]",
+          "doc": "The MCP servers it is given.",
+          "optional": false
+        },
+        {
+          "name": "tags",
+          "type": "list[str]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "system_prompt",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "source_path",
+          "type": "str",
+          "doc": "Where it lives on this machine.",
+          "optional": false
+        },
+        {
+          "name": "is_ephemeral",
+          "type": "bool",
+          "doc": "Whether it was made for one task only.",
+          "optional": false
+        },
+        {
+          "name": "unknown_tools",
+          "type": "list[str]",
+          "doc": "The tools it names that do not exist.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "PromoteResult",
+      "doc": "What became of an agent made for one task.",
+      "fields": [
+        {
+          "name": "ok",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "dest",
+          "type": "str",
+          "doc": "Where it was kept, when it was.",
+          "optional": false
+        },
+        {
+          "name": "reason",
+          "type": "str",
+          "doc": "Why it was not, when it was not.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "DiscardResult",
+      "doc": "What became of an agent made for one task, dropped.",
+      "fields": [
+        {
+          "name": "ok",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "reason",
+          "type": "str",
+          "doc": "Why it was not, when it was not.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "Workflow",
+      "doc": "One workflow.",
+      "fields": [
+        {
+          "name": "name",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "whenToUse",
+          "type": "str",
+          "doc": "When the agent should reach for it.",
+          "optional": false
+        },
+        {
+          "name": "phases",
+          "type": "list[WorkflowPhase]",
+          "doc": "The phases it runs through.",
+          "optional": false
+        },
+        {
+          "name": "path",
+          "type": "str",
+          "doc": "Where it lives on this machine.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "WorkflowPhase",
+      "doc": "One phase of a workflow.",
+      "fields": [
+        {
+          "name": "title",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "detail",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ScheduledTask",
+      "doc": "One scheduled task.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "description",
+          "type": "str",
+          "doc": "What the agent is asked to do.",
+          "optional": false
+        },
+        {
+          "name": "scheduled_at",
+          "type": "str",
+          "doc": "ISO 8601, when it is next due.",
+          "optional": false
+        },
+        {
+          "name": "created_at",
+          "type": "str",
+          "doc": "ISO 8601, when it was made.",
+          "optional": false
+        },
+        {
+          "name": "status",
+          "type": "str",
+          "doc": "`pending`, `running`, `completed`, `failed` or `cancelled`.",
+          "optional": false
+        },
+        {
+          "name": "result",
+          "type": "str",
+          "doc": "What it left behind, when it has run.",
+          "optional": false
+        },
+        {
+          "name": "error",
+          "type": "str",
+          "doc": "Why it failed, when it did.",
+          "optional": false
+        },
+        {
+          "name": "recurrence",
+          "type": "str",
+          "doc": "How it repeats, when it does.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ProcessRow",
+      "doc": "One background shell.",
+      "fields": [
+        {
+          "name": "pid",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "cmd",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "elapsed_seconds",
+          "type": "float",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "is_running",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "exit_code",
+          "type": "int | None",
+          "doc": "How it ended, when it has.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ProcessTail",
+      "doc": "A background shell's last lines.",
+      "fields": [
+        {
+          "name": "pid",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "output",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "is_running",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "exit_code",
+          "type": "int | None",
+          "doc": "How it ended, when it has.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ProcessStop",
+      "doc": "What stopping a background shell did.",
+      "fields": [
+        {
+          "name": "pid",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "killed",
+          "type": "bool",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "message",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "ShellResult",
+      "doc": "What a command in the project printed.",
+      "fields": [
+        {
+          "name": "output",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "exit_code",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "pid",
+          "type": "int | None",
+          "doc": "The process's id, once it started; `null` when it could not.",
+          "optional": false
+        },
+        {
+          "name": "backgrounded",
+          "type": "bool",
+          "doc": "`true` when the command is still running, in the background.",
+          "optional": false
+        }
+      ]
     }
   ],
   "objects": [
@@ -2644,7 +4000,7 @@
           "name": "check_for_update",
           "params": [],
           "result": "UpdateInfo | None",
-          "doc": "Ask whether a newer igni exists.",
+          "doc": "Ask whether a newer igni exists: `None` when none does. A check that could not reach an answer (offline, an HTTP error, an unreadable reply) is refused (`refused`) rather than answered `None`.",
           "permission": null,
           "inherit_permission": true,
           "stage": 1,
@@ -4221,7 +5577,7 @@
               "optional": true
             }
           ],
-          "result": "json",
+          "result": "PlanDecision",
           "doc": "Approve the plan.",
           "permission": null,
           "inherit_permission": true,
@@ -4238,7 +5594,7 @@
               "optional": true
             }
           ],
-          "result": "json",
+          "result": "PlanDecision",
           "doc": "Send the plan back.",
           "permission": null,
           "inherit_permission": true,
@@ -4256,7 +5612,7 @@
       "properties": [
         {
           "name": "todos",
-          "type": "list[json]",
+          "type": "list[TodoItem]",
           "doc": "The todo list.",
           "writable": false,
           "changed_by": [
@@ -4383,7 +5739,7 @@
         {
           "name": "pop_pending",
           "params": [],
-          "result": "json",
+          "result": "LoopAdvance | None",
           "doc": "Take the next iteration.",
           "permission": null,
           "inherit_permission": true,
@@ -4401,7 +5757,7 @@
       "properties": [
         {
           "name": "list",
-          "type": "list[json]",
+          "type": "list[SlashCommand]",
           "doc": "Every slash command.",
           "writable": false,
           "changed_by": [
@@ -4427,7 +5783,7 @@
         },
         {
           "name": "skill_definitions",
-          "type": "list[json]",
+          "type": "list[SkillDefinition]",
           "doc": "Each skill's description and prompt.",
           "writable": false,
           "changed_by": [
@@ -4440,7 +5796,7 @@
         },
         {
           "name": "skill_details",
-          "type": "list[json]",
+          "type": "list[SkillDetails]",
           "doc": "Each skill's details.",
           "writable": false,
           "changed_by": [
@@ -4482,7 +5838,7 @@
       "properties": [
         {
           "name": "details",
-          "type": "list[json]",
+          "type": "list[AgentInfo]",
           "doc": "Every agent.",
           "writable": false,
           "changed_by": [
@@ -4522,7 +5878,7 @@
               "optional": true
             }
           ],
-          "result": "json",
+          "result": "PromoteResult",
           "doc": "Keep an agent made for one task, as `/agents promote` does.",
           "permission": null,
           "inherit_permission": true,
@@ -4539,7 +5895,7 @@
               "optional": false
             }
           ],
-          "result": "json",
+          "result": "DiscardResult",
           "doc": "Drop an agent made for one task.",
           "permission": null,
           "inherit_permission": true,
@@ -4557,7 +5913,7 @@
       "properties": [
         {
           "name": "list",
-          "type": "list[json]",
+          "type": "list[Workflow]",
           "doc": "Every workflow.",
           "writable": false,
           "changed_by": [
@@ -4632,7 +5988,7 @@
       "properties": [
         {
           "name": "tasks",
-          "type": "list[json]",
+          "type": "list[ScheduledTask]",
           "doc": "Every scheduled task.",
           "writable": false,
           "changed_by": [
@@ -4711,7 +6067,7 @@
       "properties": [
         {
           "name": "list",
-          "type": "list[json]",
+          "type": "list[ProcessRow]",
           "doc": "Every background shell.",
           "writable": false,
           "changed_by": [
@@ -4751,7 +6107,7 @@
               "optional": true
             }
           ],
-          "result": "json",
+          "result": "ProcessTail",
           "doc": "A shell's last lines.",
           "permission": null,
           "inherit_permission": true,
@@ -4768,7 +6124,7 @@
               "optional": false
             }
           ],
-          "result": "json",
+          "result": "ProcessStop",
           "doc": "Stop a shell.",
           "permission": null,
           "inherit_permission": true,
@@ -4785,7 +6141,7 @@
               "optional": false
             }
           ],
-          "result": "json",
+          "result": "ShellResult",
           "doc": "Run a command in the project and wait for it.",
           "permission": null,
           "inherit_permission": true,
@@ -4955,7 +6311,7 @@
       "properties": [
         {
           "name": "registry",
-          "type": "json",
+          "type": "ModelRegistry",
           "doc": "Every model igni knows.",
           "writable": false,
           "changed_by": [
@@ -5002,7 +6358,7 @@
       "properties": [
         {
           "name": "servers",
-          "type": "list[json]",
+          "type": "list[McpServer]",
           "doc": "Every server.",
           "writable": false,
           "changed_by": [
@@ -5015,7 +6371,7 @@
         },
         {
           "name": "status",
-          "type": "list[json]",
+          "type": "list[McpServer]",
           "doc": "Each server's status.",
           "writable": false,
           "changed_by": [
@@ -5028,7 +6384,7 @@
         },
         {
           "name": "details",
-          "type": "list[json]",
+          "type": "list[McpServerDetails]",
           "doc": "Each server's tools and details.",
           "writable": false,
           "changed_by": [
@@ -5089,7 +6445,7 @@
         {
           "name": "ensure",
           "params": [],
-          "result": "json",
+          "result": "McpInit",
           "doc": "Start the servers that should be running.",
           "permission": null,
           "inherit_permission": true,
@@ -5118,7 +6474,7 @@
               "optional": false
             }
           ],
-          "result": "json",
+          "result": "McpToolToggle",
           "doc": "Offer or withhold one tool.",
           "permission": null,
           "inherit_permission": true,
@@ -5136,7 +6492,7 @@
       "properties": [
         {
           "name": "installed",
-          "type": "list[json]",
+          "type": "list[PluginInfo]",
           "doc": "Every installed plugin.",
           "writable": false,
           "changed_by": [
@@ -5149,7 +6505,7 @@
         },
         {
           "name": "marketplaces",
-          "type": "list[json]",
+          "type": "list[Marketplace]",
           "doc": "Every marketplace.",
           "writable": false,
           "changed_by": [
@@ -5183,7 +6539,7 @@
               "optional": false
             }
           ],
-          "result": "json",
+          "result": "PluginContents",
           "doc": "What a plugin carries.",
           "permission": null,
           "inherit_permission": true,
@@ -5212,7 +6568,7 @@
               "optional": true
             }
           ],
-          "result": "json",
+          "result": "PluginContents",
           "doc": "What a plugin would install.",
           "permission": null,
           "inherit_permission": true,
@@ -5419,7 +6775,7 @@
       "properties": [
         {
           "name": "details",
-          "type": "list[json]",
+          "type": "list[HookEntry]",
           "doc": "Every hook.",
           "writable": false,
           "changed_by": [
@@ -5520,8 +6876,8 @@
               "optional": true
             }
           ],
-          "result": "json",
-          "doc": "Would this tool call be allowed, asked or denied?",
+          "result": "str",
+          "doc": "Would this tool call be allowed, asked or denied? One of `allow`, `ask` or `deny`.",
           "permission": null,
           "inherit_permission": true,
           "stage": 1,
@@ -5561,7 +6917,7 @@
       "properties": [
         {
           "name": "pack",
-          "type": "json",
+          "type": "PolicyPack",
           "doc": "The group's policy pack.",
           "writable": false,
           "changed_by": [

@@ -18,10 +18,12 @@ import tempfile
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
 from igni_core.core.config.permission_eval import PermissionEvaluator
 from igni_core.core.hooks.executor import HookExecutor
-from igni_core.core.hooks.schemas import HookDefinition, HookResult
+from igni_core.core.hooks.schemas import HookDefinition, HookPayload, HookResult
+from igni_core.core.hooks.tool_events import PreToolUsePayload
 from igni_core.core.hooks.tool_hook import ToolEventHook
 
 
@@ -72,7 +74,7 @@ async def test_executor_parses_hookSpecificOutput_permissionDecision() -> None:
     try:
         hook = HookDefinition(type="command", command=script)
         executor = HookExecutor({"PreToolUse": [hook]})
-        result = await executor.execute("PreToolUse", payload={})
+        result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
         assert result.permission_decision == "allow"
     finally:
         _cleanup(script)
@@ -88,7 +90,7 @@ async def test_executor_accepts_top_level_permissionDecision_as_fallback() -> No
     try:
         hook = HookDefinition(type="command", command=script)
         executor = HookExecutor({"PreToolUse": [hook]})
-        result = await executor.execute("PreToolUse", payload={})
+        result = await executor.execute("PreToolUse", payload=PreToolUsePayload(tool_name="x"))
         assert result.permission_decision == "deny"
         assert result.message == "no"
     finally:
@@ -126,8 +128,8 @@ async def _run_with_hook_decision(
                 return super().get_matching_hooks(event, target)
             return [HookDefinition(type="command", command=":")]
 
-        async def execute(self, event: str, payload: dict[str, Any], target: str = ""):
-            calls.append((event, payload))
+        async def execute(self, event: str, payload: BaseModel, target: str = ""):
+            calls.append((event, HookPayload(body=payload).to_wire_dict()))
             # Delegate to the real executor only for the
             # PreToolUse event so the hook script actually runs;
             # synthetic PermissionDenied / PermissionRequest etc.

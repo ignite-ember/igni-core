@@ -5,7 +5,7 @@ same event shape ``_LoggingModel`` produces in production
 (CustomEvents interleaved with the Agno-native events). This bolts
 together the ends: given the wrapper produces CustomEvents
 (``test_tool_arg_streaming.py`` proves this from raw chunks), does
-``_run_agent_streaming`` correctly forward them to ``on_progress``
+``run_agent_streaming`` correctly forward them to ``on_progress``
 as ``visualization_delta`` payloads?
 
 If ANY link in that chain breaks, this test fails.
@@ -25,13 +25,14 @@ import pytest
 from agno.run import agent as agent_events
 from agno.run.agent import CustomEvent
 
-from igni_core.core.tools.orchestrate import _run_agent_streaming
+from igni_core.core.tools.orchestrate_stream_context import StreamContext, StreamSinks
+from igni_core.core.tools.orchestrate_streaming import run_agent_streaming
 
 
 class TestFullStreamThroughOrchestrate:
     """Now drive the WHOLE pipeline end-to-end: raw OpenAI chunks →
     _LoggingModel → Agno's own agent stream translation →
-    _run_agent_streaming's _handle → visualization_delta emissions.
+    run_agent_streaming's _handle → visualization_delta emissions.
 
     This is the closest to a real live LLM call we can get without
     actually paying for one, and it exercises every seam in the
@@ -94,28 +95,30 @@ class TestFullStreamThroughOrchestrate:
             async def aget_last_run_output(self, **_kw):
                 return None
 
-        progress: list[dict] = []
-        await _run_agent_streaming(
-            agent=_MockAgent(),
-            task="viz",
-            on_progress=lambda ev: progress.append(ev),
-            agent_path=["visualizer"],
+        progress: list = []
+        await run_agent_streaming(
+            StreamContext(
+                runnable=_MockAgent(),
+                task="viz",
+                agent_path=["visualizer"],
+                sinks=StreamSinks(on_progress=progress.append),
+            )
         )
 
         # The wire event history the FE would see:
-        deltas = [e for e in progress if e.get("type") == "visualization_delta"]
+        deltas = [e for e in progress if e.type == "visualization_delta"]
         assert deltas, (
-            f"No visualization_delta emitted; progress types: {[e.get('type') for e in progress]}"
+            f"No visualization_delta emitted; progress types: {[e.type for e in progress]}"
         )
 
         # Final delta carries the fully-parsed spec + final=True.
-        finals = [d for d in deltas if d.get("final") is True]
+        finals = [d for d in deltas if d.final is True]
         assert len(finals) == 1
-        parsed = json.loads(finals[0]["json"])
+        parsed = json.loads(finals[0].spec_json)
         assert parsed == {
             "root": "r",
             "elements": {"r": {"type": "Text", "props": {"text": "hi"}}},
         }
 
         # Every delta shares the same spec_id — FE dedup contract.
-        assert len({d["spec_id"] for d in deltas}) == 1
+        assert len({d.spec_id for d in deltas}) == 1

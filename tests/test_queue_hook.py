@@ -1,4 +1,9 @@
-"""Tests for queue_hook.py — message queue injection during agent execution."""
+"""Tests for the queue hooks — message queue injection during agent execution.
+
+The implementation lives in :mod:`igni_core.core.hooks.queue`. Both hooks are
+manufactured by :class:`~igni_core.core.hooks.queue.bridge.QueueBridge`,
+which owns the buffer they share.
+"""
 
 import os
 from types import SimpleNamespace
@@ -13,85 +18,41 @@ from agno.utils.hooks import filter_hook_args
 from igni_core.core.hooks.queue import (
     USER_NOTE_HEADER,
     QueueBridge,
-)
-from igni_core.core.hooks.queue import (
-    QueueInjectorHook as _RealQueueInjectorHook,
-)
-from igni_core.core.hooks.queue import (
-    QueuePersisterHook as _RealQueuePersisterHook,
+    QueueInjectorHook,
+    QueuePersisterHook,
 )
 
-# Re-export the real class for ``isinstance`` assertions in
-# ``TestCreateQueueHook``. Direct construction of the injector in
-# older test bodies now goes through :func:`_make_injector` (below)
-# which builds one via :class:`QueueBridge`, matching the pre-refactor
-# ``QueueInjectorHook(queue=…)`` call shape.
-QueuePersisterHook = _RealQueuePersisterHook
 
-
-def _make_injector(queue=None, on_inject=None, on_queue_changed=None):
-    """Test factory — construct just the injector with a fresh shared
-    buffer. Kept as a callable named ``QueueInjectorHook`` in the test
-    scope below so test bodies read unchanged."""
-    bridge = QueueBridge(
-        queue=queue if queue is not None else [],
-        on_inject=on_inject,
-        on_queue_changed=on_queue_changed,
-    )
-    return bridge.injector
-
-
-# Alias so the pre-refactor call sites keep reading naturally. This
-# is a callable that returns a real injector; ``isinstance`` checks
-# against the real class use ``_RealQueueInjectorHook`` below.
-QueueInjectorHook = _make_injector
-
-
-def create_queue_hook(queue, on_inject=None, on_queue_changed=None):
-    """Test helper mirroring the retired free function.
-
-    New code should call :class:`QueueBridge` directly; the helper
-    keeps the existing assertions readable.
-    """
-    bridge = QueueBridge(
-        queue=queue,
-        on_inject=on_inject,
-        on_queue_changed=on_queue_changed,
-    )
-    return bridge.injector, bridge.persister
-
-
-def _set_injected(injector, texts):
-    """Replace the pre-refactor ``injector._injected_this_run = […]``
-    reach-in. Populates the shared buffer directly."""
-    injector._buffer.items.clear()
+def _set_injected(bridge: QueueBridge, texts: list[str]) -> None:
+    """Put ``texts`` into the bridge's shared buffer, as a drain would."""
+    bridge.buffer.clear()
     for text in texts:
-        injector._buffer.append(text)
+        bridge.buffer.append(text)
 
 
 class TestQueueInjectorHook:
     @pytest.mark.asyncio
     async def test_passes_through_func_result(self):
-        hook = QueueInjectorHook(queue=[])
+        hook = QueueBridge(queue=[]).injector
         result = await hook(name="test", func=lambda: "hello", args={})
         assert result == "hello"
 
     @pytest.mark.asyncio
     async def test_passes_args_to_func(self):
-        hook = QueueInjectorHook(queue=[])
+        hook = QueueBridge(queue=[]).injector
         result = await hook(name="add", func=lambda x, y: x + y, args={"x": 1, "y": 2})
         assert result == 3
 
     @pytest.mark.asyncio
     async def test_no_func_returns_none(self):
-        hook = QueueInjectorHook(queue=[])
+        hook = QueueBridge(queue=[]).injector
         result = await hook(name="test")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_appends_queued_messages_to_tool_result(self):
         queue = ["message 1", "message 2"]
-        hook = QueueInjectorHook(queue=queue)
+        hook = QueueBridge(queue=queue).injector
         result = await hook(name="tool", func=lambda: "tool output", args={})
         assert isinstance(result, str)
         assert result.startswith("tool output")
@@ -102,14 +63,14 @@ class TestQueueInjectorHook:
 
     @pytest.mark.asyncio
     async def test_no_modification_when_queue_empty(self):
-        hook = QueueInjectorHook(queue=[])
+        hook = QueueBridge(queue=[]).injector
         result = await hook(name="tool", func=lambda: "raw output", args={})
         assert result == "raw output"
 
     @pytest.mark.asyncio
     async def test_handles_none_result(self):
         # Some tools return None (e.g. notify-style side-effect tools).
-        hook = QueueInjectorHook(queue=["heads up"])
+        hook = QueueBridge(queue=["heads up"]).injector
         result = await hook(name="tool", func=lambda: None, args={})
         assert isinstance(result, str)
         assert "heads up" in result
@@ -117,7 +78,7 @@ class TestQueueInjectorHook:
 
     @pytest.mark.asyncio
     async def test_handles_non_string_result(self):
-        hook = QueueInjectorHook(queue=["mid-run"])
+        hook = QueueBridge(queue=["mid-run"]).injector
         result = await hook(name="tool", func=lambda: {"k": "v"}, args={})
         assert isinstance(result, str)
         assert "mid-run" in result
@@ -127,20 +88,20 @@ class TestQueueInjectorHook:
     @pytest.mark.asyncio
     async def test_calls_on_inject_callback(self):
         on_inject = MagicMock()
-        hook = QueueInjectorHook(queue=["hello"], on_inject=on_inject)
+        hook = QueueBridge(queue=["hello"], on_inject=on_inject).injector
         await hook(name="tool", func=lambda: None, args={})
         on_inject.assert_called_once_with("hello")
 
     @pytest.mark.asyncio
     async def test_calls_on_queue_changed_callback(self):
         on_changed = MagicMock()
-        hook = QueueInjectorHook(queue=["msg"], on_queue_changed=on_changed)
+        hook = QueueBridge(queue=["msg"], on_queue_changed=on_changed).injector
         await hook(name="tool", func=lambda: None, args={})
         on_changed.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_awaits_async_func(self):
-        hook = QueueInjectorHook(queue=[])
+        hook = QueueBridge(queue=[]).injector
 
         async def async_func():
             return "async ok"
@@ -150,7 +111,7 @@ class TestQueueInjectorHook:
 
     @pytest.mark.asyncio
     async def test_appends_after_async_func(self):
-        hook = QueueInjectorHook(queue=["queued during async tool"])
+        hook = QueueBridge(queue=["queued during async tool"]).injector
 
         async def async_func():
             return "async result"
@@ -160,24 +121,24 @@ class TestQueueInjectorHook:
         assert "queued during async tool" in result
 
     def test_reset_is_idempotent(self):
-        hook = QueueInjectorHook(queue=[])
+        hook = QueueBridge(queue=[]).injector
         hook.reset()  # no-op now; just shouldn't raise
         hook.reset()
 
     @pytest.mark.asyncio
     async def test_tracks_injected_for_persistence(self):
-        hook = QueueInjectorHook(queue=["a", "b"])
-        await hook(name="t", func=lambda: "ok", args={})
-        assert hook.injected_this_run == ["a", "b"]
-        hook.clear_injected_this_run()
-        assert hook.injected_this_run == []
+        bridge = QueueBridge(queue=["a", "b"])
+        await bridge.injector(name="t", func=lambda: "ok", args={})
+        assert bridge.injector.injected_this_run == ["a", "b"]
+        bridge.injector.clear_injected_this_run()
+        assert bridge.injector.injected_this_run == []
 
 
 class TestQueuePersisterHook:
     def test_appends_user_messages_to_run_output(self):
         bridge = QueueBridge(queue=[])
         # Simulate two messages drained during the run.
-        _set_injected(bridge.injector, ["first", "second"])
+        _set_injected(bridge, ["first", "second"])
         persister = bridge.persister
 
         run_output = SimpleNamespace(messages=[])
@@ -191,7 +152,7 @@ class TestQueuePersisterHook:
 
     def test_initialises_messages_when_none(self):
         bridge = QueueBridge(queue=[])
-        _set_injected(bridge.injector, ["x"])
+        _set_injected(bridge, ["x"])
 
         run_output = SimpleNamespace(messages=None)
         bridge.persister(run_output=run_output)
@@ -207,32 +168,33 @@ class TestQueuePersisterHook:
 
     def test_no_run_output_clears_state(self):
         bridge = QueueBridge(queue=[])
-        _set_injected(bridge.injector, ["a"])
+        _set_injected(bridge, ["a"])
         bridge.persister(run_output=None)
         # State cleared even when there's nowhere to write.
         assert bridge.injector.injected_this_run == []
 
 
-class TestCreateQueueHook:
-    def test_returns_injector_and_persister(self):
-        injector, persister = create_queue_hook([])
-        assert isinstance(injector, _RealQueueInjectorHook)
-        assert isinstance(persister, QueuePersisterHook)
+class TestQueueBridge:
+    def test_manufactures_injector_and_persister(self):
+        bridge = QueueBridge(queue=[])
+        assert isinstance(bridge.injector, QueueInjectorHook)
+        assert isinstance(bridge.persister, QueuePersisterHook)
         # Injector and persister share the same buffer instance.
-        assert persister._buffer is injector._buffer
+        assert bridge.persister._buffer is bridge.injector._buffer
 
     def test_passes_callbacks(self):
         on_inject = MagicMock()
         on_changed = MagicMock()
-        injector, _ = create_queue_hook([], on_inject=on_inject, on_queue_changed=on_changed)
-        assert injector._callbacks.on_inject is on_inject
-        assert injector._callbacks.on_queue_changed is on_changed
+        bridge = QueueBridge(queue=[], on_inject=on_inject, on_queue_changed=on_changed)
+        assert bridge.injector._callbacks.on_inject is on_inject
+        assert bridge.injector._callbacks.on_queue_changed is on_changed
 
     @pytest.mark.asyncio
     async def test_full_flow_tool_then_persist(self):
         """End-to-end: inject → drain via tool_hook → persist via post_hook."""
         queue = ["mid-run note"]
-        injector, persister = create_queue_hook(queue)
+        bridge = QueueBridge(queue=queue)
+        injector, persister = bridge.injector, bridge.persister
 
         # 1. Tool executes; queue drains into the tool result.
         result = await injector(name="t", func=lambda: "tool result", args={})
@@ -260,7 +222,8 @@ class TestAgnoIntegration:
 
     def test_persister_invoked_with_real_filter_hook_args(self):
         """``filter_hook_args`` must hand our persister a usable run_output."""
-        injector, persister = create_queue_hook([])
+        bridge = QueueBridge(queue=[])
+        persister = bridge.persister
         # Mirror exactly what aexecute_post_hooks builds in Agno's _hooks.py.
         all_args = {
             "run_output": SimpleNamespace(messages=[]),
@@ -271,7 +234,7 @@ class TestAgnoIntegration:
             "debug_mode": False,
             "metadata": None,
         }
-        _set_injected(injector, ["typed during run"])
+        _set_injected(bridge, ["typed during run"])
         persister(**filter_hook_args(persister, all_args))
 
         run_output = all_args["run_output"]
@@ -280,8 +243,9 @@ class TestAgnoIntegration:
 
     def test_appends_to_real_runoutput(self):
         """The real Agno RunOutput accepts our Message append unchanged."""
-        injector, persister = create_queue_hook([])
-        _set_injected(injector, ["real-runoutput note"])
+        bridge = QueueBridge(queue=[])
+        persister = bridge.persister
+        _set_injected(bridge, ["real-runoutput note"])
 
         run_output = RunOutput(run_id="test-run-1", session_id="s1")
         # Agno may initialise messages later; persister must handle None.
@@ -299,8 +263,9 @@ class TestAgnoIntegration:
 
     def test_message_passes_session_skip_roles_filter(self):
         """User messages survive ``skip_roles=['system','tool']`` filtering."""
-        injector, persister = create_queue_hook([])
-        _set_injected(injector, ["should appear in /sessions"])
+        bridge = QueueBridge(queue=[])
+        persister = bridge.persister
+        _set_injected(bridge, ["should appear in /sessions"])
 
         run_output = RunOutput(run_id="r2", session_id="s2")
         persister(run_output=run_output)
@@ -338,7 +303,8 @@ class TestRealAgnoRun:
 
         queued_text = "PINEAPPLE-MARKER-9821"
         queue = [queued_text]
-        injector, persister = create_queue_hook(queue)
+        bridge = QueueBridge(queue=queue)
+        injector, persister = bridge.injector, bridge.persister
 
         widget_calls: list[bool] = []
 
@@ -364,7 +330,7 @@ class TestRealAgnoRun:
         run_output = await agent.arun("What is the secret widget code?")
 
         # 1. The model actually called the tool — without that, the
-        #    tool_hook never fires and the queue would never drain.
+        # tool_hook never fires and the queue would never drain.
         assert widget_calls, "Model didn't call get_widget; cannot validate hook flow"
 
         # 2. The queue was drained during the run.
@@ -372,8 +338,8 @@ class TestRealAgnoRun:
         assert injector.injected_this_run == [], "Persister should have cleared this"
 
         # 3. The queued message survives as a real user-role message in the
-        #    persisted run record — this is the contract the previous fix
-        #    didn't satisfy (the message used to vanish into a tool result).
+        # persisted run record — this is the contract the previous fix
+        # didn't satisfy (the message used to vanish into a tool result).
         assert run_output.messages is not None
         user_contents = [m.content for m in run_output.messages if m.role == "user"]
         assert any(queued_text in (c or "") for c in user_contents), (
@@ -382,6 +348,6 @@ class TestRealAgnoRun:
         )
 
         # 4. The user-visible history filter (skip_roles=['system','tool'])
-        #    still surfaces the queued message — it's not buried in tool output.
+        # still surfaces the queued message — it's not buried in tool output.
         visible = [m for m in run_output.messages if m.role not in {"system", "tool"}]
         assert any(queued_text in (m.content or "") for m in visible)

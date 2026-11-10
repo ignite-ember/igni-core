@@ -16,7 +16,8 @@ from igni_cloud.guest.credential import CredentialState, StateChange
 from igni_cloud.layer import CloudLayer
 from websockets.asyncio.client import connect
 
-from igni_core.core.layer import Layer, Layers
+from igni_core.backend.pool_rpcs import VmSignInRpc
+from igni_core.core.layer import Layer, layers
 from igni_core.protocol import messages as msg
 from igni_core.transport.websocket import WebSocketServerTransport
 from tests.host_model_helpers import HostRig
@@ -54,7 +55,7 @@ class ControlOnly(Layer):
 
 
 async def test_in_the_cloud_a_client_cannot_sign_the_vm_in_or_deliver_events(tmp_path: Path):
-    Layers.install(ControlOnly())
+    layers.install(ControlOnly())
     rig = await HostRig(tmp_path).start()
     asked: list[str] = []
 
@@ -64,7 +65,7 @@ async def test_in_the_cloud_a_client_cannot_sign_the_vm_in_or_deliver_events(tmp
 
     try:
         assert rig.orchestrator is not None
-        rig.orchestrator.attach_vm_sign_in(sign_in)
+        rig.orchestrator.mount(VmSignInRpc(sign_in))
         from_a_client = msg.RPCRequest(id="c", method="vm_sign_in", args={"session_token": "s"})
         await rig.orchestrator.dispatch(from_a_client)
         events = msg.RPCRequest(id="e", method="deliver_service_events", args={"events": []})

@@ -108,25 +108,24 @@ igni reads Claude Code's `marketplace.json` schema, so any catalog built for Cla
 
 ## The plugins panel
 
-`/plugins` opens a Textual panel with two tabs:
+`/plugins` opens the client's plugins panel with two tabs — the installed
+plugins and the marketplaces:
 
 ```text
 ┌─ Plugins ────────────────────────────────────────────────────┐
 │ ▸ ● git-extras           v1.2.0  · user-igni · S A          │
 │   ○ slack-tools          v0.9.1  · user-claude · S           │
-│                                                              │
-│ ↑/↓ navigate · Space toggle · u update · r remove ·          │
-│ Tab marketplace · Esc close                                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-`Tab` switches to the **Marketplace** tab to browse catalogs and install with `i`. `R` refreshes all catalogs.
+The **Marketplace** tab lists the catalogs and installs from them; the
+refresh action reloads every catalog.
 
 ### Slash + panel modes
 
 | Form | Surface |
 |---|---|
-| `/plugins` | Opens the TUI panel |
+| `/plugins` | Opens the client's panel |
 | `/plugins enable <name>` | Text-mode toggle (no panel) |
 | `/plugins disable <name>` | Text-mode toggle (no panel) |
 | `/plugin install ...` etc. | Text-mode (the panel can also drive these) |
@@ -218,6 +217,6 @@ Plugins built for Claude Code work in igni with no changes — same manifest, sa
 
 - Plugin loader: [`core/plugins/loader.py`](../src/igni_core/core/plugins/loader.py)
 - Installer (git operations): [`core/plugins/installer.py`](../src/igni_core/core/plugins/installer.py)
-- Marketplace registry: [`core/plugins/marketplaces.py`](../src/igni_core/core/plugins/marketplaces.py)
+- Marketplace registry: [`core/plugins/marketplace_store.py`](../src/igni_core/core/plugins/marketplace_store.py)
 - State files: `~/.igni/plugins.json`, `~/.igni/marketplaces.json`
-- TUI panel: [`frontend/tui/widgets/_plugins_panel.py`](../src/igni_core/frontend/tui/widgets/_plugins_panel.py)
+- Client panel: `clients/web/src/components/panels/PluginsPanel.tsx` (in igni-app)

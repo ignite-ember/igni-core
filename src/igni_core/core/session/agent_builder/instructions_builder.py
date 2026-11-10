@@ -19,10 +19,10 @@ from pathlib import Path
 from typing import Any
 
 from igni_core.core.paths import CONFIG_DIR
-from igni_core.core.utils.context import (
-    ProjectMemoryBank,
-    load_project_context,
-)
+from igni_core.core.prompts.contributions import PromptContributions
+from igni_core.core.prompts.loader import PromptLoader
+from igni_core.core.utils.context import RulesContextLoader
+from igni_core.core.utils.context_memory import ProjectMemoryBank
 
 from .plan_mode_nudge import PlanModeNudge
 
@@ -45,6 +45,8 @@ class InstructionsBuilder:
         settings: Any,
         output_styles: dict,
         active_output_style_name: str,
+        contributions: PromptContributions,
+        prompt_loader: PromptLoader,
     ) -> None:
         self._project_dir = project_dir
         self._project_instructions = project_instructions
@@ -52,6 +54,8 @@ class InstructionsBuilder:
         self._settings = settings
         self._output_styles = output_styles
         self._active_output_style_name = active_output_style_name
+        self._contributions = contributions
+        self._prompt_loader = prompt_loader
 
     def append_project_instructions(self, out: list[str]) -> None:
         """Append the igni.md / CLAUDE.md project instructions."""
@@ -80,10 +84,13 @@ class InstructionsBuilder:
             return
         out.append(workspace_ctx)
         for extra_dir in self._workspace.additional_dirs:
-            extra_rules = load_project_context(
-                extra_dir,
-                self._settings.context.project_file,
-                read_claude_md=self._settings.rules.cross_tool_support,
+            extra_rules = (
+                RulesContextLoader(
+                    project_dir=extra_dir,
+                    read_claude_md=self._settings.rules.cross_tool_support,
+                )
+                .load_all()
+                .render()
             )
             if extra_rules:
                 out.append(f"Additional workspace ({extra_dir.name}):\n{extra_rules}")
@@ -93,7 +100,7 @@ class InstructionsBuilder:
 
         As extensions have shaped it; see :class:`PlanModeNudge`.
         """
-        nudge = PlanModeNudge()
+        nudge = PlanModeNudge(contributions=self._contributions, prompt_loader=self._prompt_loader)
         out.append(nudge.render())
 
     def append_output_style(self, out: list[str]) -> None:

@@ -32,6 +32,7 @@ from websockets.http11 import Request
 
 from igni_core.backend import standing_policy
 from igni_core.backend.message_dispatcher import MessageDispatcher
+from igni_core.backend.pool_rpcs import ApproverTokenRpc
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
 from igni_core.protocol.schemas.envelope import Standing
@@ -93,7 +94,7 @@ async def _first_message(transport: WebSocketServerTransport, token: str) -> msg
     )
     try:
         await asyncio.wait_for(socket.recv(), 5)  # welcome
-        raw = json.loads(msg.HITLResponse(requirement_id="r", action="approve").model_dump_json())
+        raw = json.loads(msg.HITLResponse(requirement_id="r", action="confirm").model_dump_json())
         raw["_standing"] = "window"  # a client claiming a standing is nothing
         await socket.send(json.dumps(raw))
         async for message in transport.receive():
@@ -157,7 +158,7 @@ def _from(standing: Standing, message: msg.Message) -> msg.Message:
 
 
 def _approval() -> msg.Message:
-    return msg.HITLResponse(requirement_id="r", action="approve")
+    return msg.HITLResponse(requirement_id="r", action="confirm")
 
 
 def _batch() -> msg.Message:
@@ -261,11 +262,11 @@ async def test_a_program_s_approval_is_refused_before_any_handler(tmp_path: Path
     try:
         assert rig.orchestrator is not None
         await rig.orchestrator.dispatch(
-            _from(Standing.PROGRAM, msg.HITLResponse(id="a", requirement_id="r1", action="approve"))
+            _from(Standing.PROGRAM, msg.HITLResponse(id="a", requirement_id="r1", action="confirm"))
         )
         await rig.orchestrator.dispatch(
             _from(
-                Standing.APPROVER, msg.HITLResponse(id="b", requirement_id="r2", action="approve")
+                Standing.APPROVER, msg.HITLResponse(id="b", requirement_id="r2", action="confirm")
             )
         )
         assert reached == ["r2"]
@@ -311,7 +312,7 @@ async def test_the_window_mints_an_approver_token_and_only_it_hears_it(tmp_path:
     guard = HandshakeGuard(SECRET)
     try:
         assert rig.orchestrator is not None
-        rig.orchestrator.attach_approver_tokens(_Tokens(guard))
+        rig.orchestrator.mount(ApproverTokenRpc(_Tokens(guard)))
         await rig.orchestrator.dispatch(
             _from(Standing.PROGRAM, msg.RPCRequest(id="p", method=RpcMethod.MINT_APPROVER_TOKEN))
         )

@@ -36,11 +36,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.backend.schemas_context import DiscardInterruptedRunResult
+from igni_core.backend.server_context import ContextController
 from igni_core.core.session.pending_messages import (
     INTERRUPTED_REASONS,
     InterruptedMessage,
     PendingMessageStore,
 )
+from igni_core.protocol.rpc import RpcMethod
+from tests.rpc_tables import rpc_table_for
 
 # ── Schema migration ────────────────────────────────────────
 
@@ -178,10 +182,10 @@ def test_list_interrupted_excludes_completed_rows(tmp_path: Path) -> None:
 
 
 def test_list_interrupted_excludes_pending_not_stamped(tmp_path: Path) -> None:
-    """A pending row that was never stamped (legacy DB,
-    interrupted before this change) does NOT appear in the
-    interrupted list. The detection logic's legacy fallback in
-    ``InterruptedRunSummaryBuilder`` handles those."""
+    """A pending row that was never stamped (a hard crash runs no
+    cancel or error path) does NOT appear in the interrupted list.
+    ``InterruptedRunSummaryBuilder`` detects those from the pending
+    rows themselves."""
     store = PendingMessageStore(tmp_path / "state.db")
     store.record_received("sess", "stale pending row")
 
@@ -319,33 +323,28 @@ class TestInterruptedRunsRpcDispatch:
     methods with the right arg shapes. Same shape as the
     ``test_process_watcher.py`` dispatch tests."""
 
-    def _make_backend(self) -> MagicMock:
+    @pytest.mark.asyncio
+    async def test_get_interrupted_runs_extracts_session_id(self) -> None:
         backend = MagicMock()
         backend.get_interrupted_runs = AsyncMock(return_value=[])
-        backend.discard_interrupted_run = AsyncMock(return_value={"ok": True, "error": ""})
-        return backend
-
-    def test_get_interrupted_runs_extracts_session_id(self) -> None:
-        from igni_core.backend.__main__ import _build_rpc_table
-        from igni_core.protocol.rpc import RpcMethod
-
-        backend = MagicMock()
-        backend.get_interrupted_runs = AsyncMock(return_value=[])
-        table = _build_rpc_table(backend, MagicMock(), {})
-        table[RpcMethod.GET_INTERRUPTED_RUNS]({"session_id": "sess-1"})
+        table = rpc_table_for(backend, MagicMock())
+        await table[RpcMethod.GET_INTERRUPTED_RUNS]({"session_id": "sess-1"})
         backend.get_interrupted_runs.assert_called_once_with("sess-1")
 
-    def test_discard_interrupted_run_extracts_session_and_message_id(
+    @pytest.mark.asyncio
+    async def test_discard_interrupted_run_extracts_session_and_message_id(
         self,
     ) -> None:
-        from igni_core.backend.__main__ import _build_rpc_table
-        from igni_core.protocol.rpc import RpcMethod
-
         backend = MagicMock()
-        backend.discard_interrupted_run = AsyncMock(return_value={"ok": True, "error": ""})
-        table = _build_rpc_table(backend, MagicMock(), {})
-        table[RpcMethod.DISCARD_INTERRUPTED_RUN]({"session_id": "sess-1", "message_id": "msg-42"})
-        backend.discard_interrupted_run.assert_called_once_with("sess-1", "msg-42")
+        context = backend.controllers.context
+        context.discard_interrupted_run = AsyncMock(
+            return_value=DiscardInterruptedRunResult(ok=True)
+        )
+        table = rpc_table_for(backend, MagicMock())
+        await table[RpcMethod.DISCARD_INTERRUPTED_RUN](
+            {"session_id": "sess-1", "message_id": "msg-42"}
+        )
+        context.discard_interrupted_run.assert_called_once_with("sess-1", "msg-42")
 
 
 # ── Wire model projection ───────────────────────────────────
@@ -407,8 +406,6 @@ class TestContextControllerInterrupted:
 
     @pytest.mark.asyncio
     async def test_get_interrupted_runs_projects_to_wire(self, tmp_path: Path) -> None:
-        from igni_core.backend.server_context import ContextController
-
         store = PendingMessageStore(tmp_path / "state.db")
         msg_id = store.record_received("sess", "search foo")
         store.mark_interrupted(msg_id, "errored", last_error="timeout")
@@ -419,6 +416,8 @@ class TestContextControllerInterrupted:
             session=session,
             settings=MagicMock(),
             pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
         )
 
         rows = await controller.get_interrupted_runs("sess")
@@ -431,20 +430,22 @@ class TestContextControllerInterrupted:
 
     @pytest.mark.asyncio
     async def test_get_interrupted_runs_empty_on_clean_session(self, tmp_path: Path) -> None:
-        from igni_core.backend.server_context import ContextController
-
         store = PendingMessageStore(tmp_path / "state.db")
         # No interrupted rows for this session.
         session = MagicMock()
         session.session_id = "clean"
-        controller = ContextController(session=session, settings=MagicMock(), pending_store=store)
+        controller = ContextController(
+            session=session,
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
 
         assert await controller.get_interrupted_runs("clean") == []
 
     @pytest.mark.asyncio
     async def test_discard_interrupted_run_removes_one_row(self, tmp_path: Path) -> None:
-        from igni_core.backend.server_context import ContextController
-
         store = PendingMessageStore(tmp_path / "state.db")
         a = store.record_received("sess", "a")
         b = store.record_received("sess", "b")
@@ -453,7 +454,13 @@ class TestContextControllerInterrupted:
 
         session = MagicMock()
         session.session_id = "sess"
-        controller = ContextController(session=session, settings=MagicMock(), pending_store=store)
+        controller = ContextController(
+            session=session,
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
 
         result = await controller.discard_interrupted_run("sess", a)
         assert result.ok is True
@@ -468,24 +475,32 @@ class TestContextControllerInterrupted:
         """Deleting a row that doesn't exist returns ``ok=True``
         so the FE can safely retry on transient errors without
         worrying about double-delete surfacing as a failure."""
-        from igni_core.backend.server_context import ContextController
-
         store = PendingMessageStore(tmp_path / "state.db")
         session = MagicMock()
         session.session_id = "sess"
-        controller = ContextController(session=session, settings=MagicMock(), pending_store=store)
+        controller = ContextController(
+            session=session,
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
 
         result = await controller.discard_interrupted_run("sess", "nope")
         assert result.ok is True
 
     @pytest.mark.asyncio
     async def test_discard_interrupted_run_rejects_empty_message_id(self, tmp_path: Path) -> None:
-        from igni_core.backend.server_context import ContextController
-
         store = PendingMessageStore(tmp_path / "state.db")
         session = MagicMock()
         session.session_id = "sess"
-        controller = ContextController(session=session, settings=MagicMock(), pending_store=store)
+        controller = ContextController(
+            session=session,
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
 
         result = await controller.discard_interrupted_run("sess", "")
         assert result.ok is False

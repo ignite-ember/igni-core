@@ -40,13 +40,22 @@ from igni_cloud.guest.contract import CloudGuest
 from igni_cloud.guest.paths import GuestPaths
 from igni_cloud.logs import StdoutLog
 from igni_cloud.mcp_approvals import CloudMcpApprovals
-from igni_core.core.auth.credentials import CredentialSource
 from igni_core.core.layer import BackendHooks, Layer
 from igni_core.core.mcp.approval import McpApprovalPolicy
 
 
 class CloudLayer(Layer):
     name: ClassVar[str] = "cloud"
+
+    def __init__(self) -> None:
+        #: The process's credentials: the guest contract tells them who keeps the token.
+        self._credentials = EnvironmentCredentials()
+        #: The process's standard output: the guest contract holds its writer after a restore.
+        self._logs = StdoutLog()
+
+    @property
+    def logs(self) -> StdoutLog:
+        return self._logs
 
     def log_files(self) -> bool:
         return False
@@ -55,11 +64,11 @@ class CloudLayer(Layer):
         # The core attaches the handler to its own loggers; the layer's
         # (the guest contract's: binding, restores, the resume timeline)
         # go to the same standard output.
-        StdoutLog.attach("igni_cloud")
-        return StdoutLog.handler()
+        self._logs.attach("igni_cloud")
+        return self._logs.handler()
 
-    def credentials(self) -> CredentialSource | None:
-        return EnvironmentCredentials()
+    def credentials(self) -> EnvironmentCredentials:
+        return self._credentials
 
     def reads_local_settings(self) -> bool:
         return False
@@ -95,7 +104,7 @@ class CloudLayer(Layer):
         return False
 
     def backend(self) -> BackendHooks:
-        return CloudGuest.from_env()
+        return CloudGuest.from_env(tokens=self._credentials, logs=self._logs)
 
 
 __all__ = ["CloudLayer"]

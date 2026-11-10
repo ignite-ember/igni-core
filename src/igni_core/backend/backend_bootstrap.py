@@ -23,8 +23,8 @@ attributes:
 * :attr:`user_config_store` — :class:`UserConfigStore`.
 
 ``BackendServer.__init__`` shrinks to a one-liner + a controller-
-registry build. Tests that construct via ``BackendServer.__new__``
-bypass this file entirely — the seam is preserved.
+registry build. ``BackendServer.from_parts`` (tests) skips this
+file and takes already-built collaborators instead.
 """
 
 from __future__ import annotations
@@ -37,9 +37,12 @@ from igni_core.backend.pending_requirements_store import PendingRequirementsStor
 from igni_core.core.approvals.journal import ApprovalJournal
 from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.core.db.locator import StorageLocator
+from igni_core.core.prompts.contributions import PromptContributions
+from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.session.pending_messages import PendingMessageStore
 from igni_core.core.session.queued_messages import DurableMessageQueue, QueuedMessageStore
 from igni_core.core.session.session_preferences import SessionPreferencesStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 if TYPE_CHECKING:
     from igni_core.core.config.settings import Settings
@@ -50,8 +53,8 @@ class BackendBootstrap:
     needs before the controller registry can fire.
 
     Instantiate once per production ``BackendServer`` — every
-    attribute is a one-shot construction. Test fixtures that build
-    ``BackendServer`` via ``__new__`` never touch this class.
+    attribute is a one-shot construction. ``BackendServer.from_parts``
+    never touches this class.
     """
 
     def __init__(
@@ -60,6 +63,9 @@ class BackendBootstrap:
         project_dir: Path | None = None,
         resume_session_id: str | None = None,
         additional_dirs: list[Path] | None = None,
+        contributions: PromptContributions | None = None,
+        prompt_loader: PromptLoader | None = None,
+        supervisor: ProcessSupervisor | None = None,
     ) -> None:
         resolved_project_dir = project_dir or Path.cwd()
 
@@ -86,6 +92,9 @@ class BackendBootstrap:
             project_dir=project_dir,
             resume_session_id=resume_session_id,
             additional_dirs=additional_dirs,
+            contributions=contributions,
+            prompt_loader=prompt_loader,
+            supervisor=supervisor,
         )
         self.settings = settings
 

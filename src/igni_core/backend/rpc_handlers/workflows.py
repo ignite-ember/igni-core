@@ -1,107 +1,92 @@
-"""RPC handlers for the workflow runner.
+"""RPC handlers that discover, run and cancel ``.igni/workflows/*.mjs``.
 
-Mirrors :class:`SkillsRpcHandler`: each method is tagged with
-``@rpc(RpcMethod.X)`` and the router picks them up automatically
-via :meth:`RpcHandler.methods`. The runner lives on
-``backend.workflow_runner`` (set in :class:`BackendApp.run`); the
-handlers just reach for it via the context bundle.
+The work is the :class:`~igni_core.backend.workflow_runner.WorkflowRunner`'s;
+these handlers delegate and return the response model. The runner is a
+context collaborator: each :class:`RpcRouter` builds one and hands it over
+on :class:`RpcHandlerContext`.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
-from igni_core.backend.rpc_handlers.base import RpcHandler, rpc
-from igni_core.backend.schemas_workflows import WorkflowMetaEnvelope
-from igni_core.protocol.rpc import RpcMethod
-
-if TYPE_CHECKING:
-    from igni_core.core.session.core import Session
+from igni_core.backend.rpc_binding import Correlation, rpc
+from igni_core.backend.rpc_handlers.base import RpcHandler
+from igni_core.backend.schemas_workflows import (
+    WorkflowCancelRequest,
+    WorkflowCancelResponse,
+    WorkflowListItem,
+    WorkflowListRequest,
+    WorkflowRunRequest,
+    WorkflowRunResponse,
+)
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
+from igni_core.protocol.schemas.enums import PushChannel
 
 
 class WorkflowsRpcHandler(RpcHandler):
-    """Discover and run ``.igni/workflows/*.mjs`` scripts.
+    """Discover, run and cancel workflows in this session.
 
-    Discovery is read-only and cached. ``run_workflow`` is the
-    async entry point — it returns the ``workflow_run_id``
-    immediately; the FE then folds subsequent ``workflow_event``
-    pushes into a chat item keyed by that id.
+    ``run_workflow`` returns the ``workflow_run_id`` at once; the FE
+    folds the ``workflow_event`` pushes that follow into a chat item
+    keyed by that id. RPCs arrive already routed to their session, so
+    the run belongs to ``ctx.backend.session``.
     """
 
-    @rpc(RpcMethod.LIST_WORKFLOWS)
-    async def list_workflows(self, args: dict) -> list[dict[str, Any]]:
-        runner = getattr(self._ctx.backend, "workflow_runner", None)
-        if runner is None:
-            return []
-        envelopes: list[WorkflowMetaEnvelope] = await runner.list_workflows()
-        return [
-            {
-                "name": env.meta.name,
-                "description": env.meta.description,
-                "whenToUse": env.meta.whenToUse,
-                "phases": [p.model_dump() for p in env.meta.phases],
-                "path": env.path,
-            }
-            for env in envelopes
-        ]
+    @rpc(
+        RpcMethod.LIST_WORKFLOWS,
+        duration=RpcDuration.IO,
+        args=WorkflowListRequest,
+        scope=RpcScope.SESSION,
+    )
+    async def list_workflows(self, args: WorkflowListRequest) -> list[WorkflowListItem]:
+        """List the workflows this session's project can run.
 
-    @rpc(RpcMethod.RUN_WORKFLOW)
-    async def run_workflow(self, args: dict) -> dict[str, Any]:
-        runner = getattr(self._ctx.backend, "workflow_runner", None)
-        if runner is None:
-            raise RuntimeError(
-                "workflow_runner not initialised — BackendApp.run "
-                "didn't construct one (check the boot path)"
-            )
-        name = str(args.get("name", ""))
-        if not name:
-            raise ValueError("run_workflow: 'name' is required")
-        run_args = args.get("args") or {}
-        if not isinstance(run_args, dict):
-            raise TypeError(f"run_workflow: 'args' must be a dict, got {type(run_args).__name__}")
-        session = self._resolve_session(args.get("session_id", ""))
-        workflow_run_id = await runner.run(
-            name=name,
-            args=run_args,
-            session=session,
-        )
-        return {"workflow_run_id": workflow_run_id, "name": name}
-
-    @rpc(RpcMethod.CANCEL_WORKFLOW)
-    async def cancel_workflow(self, args: dict) -> dict[str, Any]:
-        """Stop a running workflow. The runner writes a
-        ``{"type":"cancel"}`` line to the subprocess stdin and
-        escalates to SIGTERM after a grace period.
-
-        Returns ``{"cancelled": true}`` if a run was found and
-        signalled, ``{"cancelled": false}`` if no such run is
-        active (already completed, already cancelled, or
-        unknown id — all the same outcome from the caller's
-        perspective).
+        Takes no arguments (any it is sent are ignored). Returns each workflow in
+        ``.igni/workflows/*.mjs`` (a project's shadowing the person's own
+        of the same name), sorted by name: its ``name``, ``description``,
+        ``whenToUse``, ``phases`` and ``path``. A file whose metadata cannot
+        be read is left out.
         """
-        runner = getattr(self._ctx.backend, "workflow_runner", None)
-        if runner is None:
-            raise RuntimeError(
-                "workflow_runner not initialised — BackendApp.run "
-                "didn't construct one (check the boot path)"
-            )
-        workflow_run_id = str(args.get("workflow_run_id", ""))
-        if not workflow_run_id:
-            raise ValueError("cancel_workflow: 'workflow_run_id' is required")
-        cancelled = await runner.cancel(workflow_run_id)
-        return {"cancelled": bool(cancelled), "workflow_run_id": workflow_run_id}
+        return [env.to_list_item() for env in await self._ctx.workflows.list_workflows()]
 
-    def _resolve_session(self, session_id: str) -> Session:
-        """Look up the live :class:`Session` for ``session_id``.
+    @rpc(
+        RpcMethod.RUN_WORKFLOW,
+        correlate=Correlation(by="payload.workflow_run_id", source="result.workflow_run_id"),
+        duration=RpcDuration.IO,
+        args=WorkflowRunRequest,
+        scope=RpcScope.SESSION,
+        streams=(PushChannel.WORKFLOW_EVENT,),
+    )
+    async def run_workflow(self, args: WorkflowRunRequest) -> WorkflowRunResponse:
+        """Start a workflow in this session and return its run id at once.
 
-        Falls back to the default runtime's session when the id
-        is empty or unknown (the BE's own session — useful for
-        the boot "auto-name" workflow if we ever add one).
+        ``name`` is the workflow (from ``list_workflows``); ``args`` its
+        input, a JSON object the workflow reads as it defines. Returns the
+        ``workflow_run_id`` and ``name``. The run goes on in the
+        background: each step it takes is pushed as ``workflow_event``
+        carrying that id, ending with ``workflow_completed`` or
+        ``workflow_failed``. Fails when there is no such workflow or the
+        workflow runtime is missing.
         """
-        backend = self._ctx.backend
-        if not session_id:
-            return backend._session
-        runtime = backend.sessions.find(session_id)
-        if runtime is None or runtime.backend is None:
-            return backend._session
-        return runtime.backend._session
+        # The session this call was routed to, read per call rather than bound at build.
+        result = await self._ctx.workflows.run(request=args, session=self._ctx.backend.session)
+        return result.to_response()
+
+    @rpc(
+        RpcMethod.CANCEL_WORKFLOW,
+        correlate=Correlation(by="payload.workflow_run_id", source="args.workflow_run_id"),
+        duration=RpcDuration.IO,
+        args=WorkflowCancelRequest,
+        scope=RpcScope.SESSION,
+        streams=(PushChannel.WORKFLOW_EVENT,),
+    )
+    async def cancel_workflow(self, args: WorkflowCancelRequest) -> WorkflowCancelResponse:
+        """Stop a running workflow of this session.
+
+        ``workflow_run_id`` is the run (from ``run_workflow``). The
+        workflow is asked to stop, then terminated after a grace period;
+        its last ``workflow_event`` says it was cancelled. Returns
+        ``cancelled: true`` when a live run was stopped, ``false`` when
+        there was no such run or it had already ended, with the
+        ``workflow_run_id`` asked about.
+        """
+        return args.answer(await self._ctx.workflows.cancel(args.workflow_run_id))

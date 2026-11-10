@@ -2,12 +2,16 @@
 
 Replaces the god-branching ``_apply_case_assertions`` free function.
 Each driver:
-    * owns its gate (``.should_run(case)``) so the runner doesn't
+    * owns its gate (``.should_run(ctx)``) so the runner doesn't
       re-implement ``if case.expected_tool_calls: …`` for every check;
-    * returns a :class:`CheckResult` from ``.run(ctx)``;
     * writes its own subset of :class:`CaseResult` fields via
-      ``.apply_to(result, check)``, so no single mutator touches every
+      ``.record(ctx, result)``, so no single mutator touches every
       field on the result.
+
+Drivers that produce one verdict derive from :class:`CheckDriver`,
+which splits ``record`` into ``run`` (returns a :class:`CheckResult`)
+and ``apply_to`` (writes it). :class:`FileDriver` records one
+:class:`~igni_core.core.evals.assertions.FileCheckResult` per assertion instead.
 
 The overall aggregate (``result.passed``) is derived by
 :meth:`CaseResult.compute_passed` after every driver has run — killing
@@ -18,24 +22,20 @@ old free-function pipeline.
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
+from agno.agent import Agent
 from agno.eval.accuracy import AccuracyEval
 from agno.eval.reliability import ReliabilityEval
-from pydantic import BaseModel, ConfigDict
+from agno.models.base import Model
 
 from igni_core.core.evals.agno_adapter import AgnoResponseAdapter
-from igni_core.core.evals.assertions import (
-    FileAssertion,
-    check_file_assertion,
-    check_unexpected_tool_calls,
-)
-from igni_core.core.evals.loader import EvalCase
 from igni_core.core.evals.schemas import (
     CaseResult,
     CheckResult,
-    FileCheckResult,
+    EvalCase,
     ToolArgAssertion,
     ToolTraceEntry,
 )
@@ -44,49 +44,59 @@ from igni_core.core.evals.tool_names import ToolNameCatalog
 logger = logging.getLogger(__name__)
 
 
-class AssertionContext(BaseModel):
-    """Snapshot passed to every driver's ``run()`` method.
+@dataclass(frozen=True)
+class AssertionContext:
+    """Snapshot passed to every driver.
 
-    Bundling into one model keeps driver signatures uniform and stops
+    Bundling into one object keeps driver signatures uniform and stops
     each new field from cascading through every driver's positional
     args (which is why the old free-function chain had 7+ params).
+    A frozen dataclass rather than a Pydantic model: it carries live
+    runtime objects (the agent, the judge model, the response adapter),
+    not data, and Pydantic cannot build a schema for Agno's ``Agent``.
     """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     case: EvalCase
     adapter: AgnoResponseAdapter
     output_text: str
     tool_trace: list[ToolTraceEntry]
-    agent: Any
-    judge_model: Any | None
+    agent: Agent
+    judge_model: Model | None
     work_dir: Path | None
     catalog: ToolNameCatalog
     allow_additional_tool_calls: bool = False
 
 
-class AssertionDriver:
+class AssertionDriver(ABC):
     """Base class for one kind of eval check.
 
-    Subclasses override:
-        * :meth:`should_run` — cheap gate based on ``case.*`` fields;
-        * :meth:`run` — async, returns a :class:`CheckResult`;
-        * :meth:`apply_to` — write the driver's fields on the result.
+    Subclasses implement:
+        * :meth:`should_run` — cheap gate on the case and its context;
+        * :meth:`record` — async, runs the check and writes its fields
+          on the result.
     """
 
-    async def run(self, ctx: AssertionContext) -> CheckResult:  # pragma: no cover - abstract
-        raise NotImplementedError
+    @abstractmethod
+    def should_run(self, ctx: AssertionContext) -> bool: ...
 
-    def should_run(self, case: EvalCase) -> bool:  # pragma: no cover - abstract
-        raise NotImplementedError
-
-    def apply_to(
-        self, result: CaseResult, check: CheckResult
-    ) -> None:  # pragma: no cover - abstract
-        raise NotImplementedError
+    @abstractmethod
+    async def record(self, ctx: AssertionContext, result: CaseResult) -> None: ...
 
 
-class ReliabilityDriver(AssertionDriver):
+class CheckDriver(AssertionDriver):
+    """A driver whose check yields exactly one :class:`CheckResult`."""
+
+    @abstractmethod
+    async def run(self, ctx: AssertionContext) -> CheckResult: ...
+
+    @abstractmethod
+    def apply_to(self, result: CaseResult, check: CheckResult) -> None: ...
+
+    async def record(self, ctx: AssertionContext, result: CaseResult) -> None:
+        self.apply_to(result, await self.run(ctx))
+
+
+class ReliabilityDriver(CheckDriver):
     """Runs Agno's ReliabilityEval against ``case.expected_tool_calls``.
 
     Agno's ReliabilityEval crashes with ``'NoneType' is not reversible``
@@ -100,8 +110,8 @@ class ReliabilityDriver(AssertionDriver):
     for the full rationale.
     """
 
-    def should_run(self, case: EvalCase) -> bool:
-        return bool(case.expected_tool_calls)
+    def should_run(self, ctx: AssertionContext) -> bool:
+        return bool(ctx.case.expected_tool_calls)
 
     async def run(self, ctx: AssertionContext) -> CheckResult:
         # ``expand_expected`` appends the always-allowed system tools,
@@ -166,37 +176,49 @@ class ReliabilityDriver(AssertionDriver):
         result.reliability_detail = check.detail
 
 
-class UnexpectedToolsDriver(AssertionDriver):
+class UnexpectedToolsDriver(CheckDriver):
     """Blocklist check — fails if any forbidden tool was called."""
 
-    def should_run(self, case: EvalCase) -> bool:
-        return bool(case.unexpected_tool_calls)
+    def should_run(self, ctx: AssertionContext) -> bool:
+        return bool(ctx.case.unexpected_tool_calls)
 
     async def run(self, ctx: AssertionContext) -> CheckResult:
         expanded = ctx.catalog.expand(ctx.case.unexpected_tool_calls or [])
-        passed, detail = check_unexpected_tool_calls(ctx.adapter.response, expanded)
-        return CheckResult(ok=passed, detail=detail)
+        return self.check(ctx.adapter.called_tool_names(), expanded)
+
+    @staticmethod
+    def check(called: set[str], unexpected: list[str]) -> CheckResult:
+        """Fail when any of ``unexpected`` appears in ``called``."""
+        forbidden_used = called & set(unexpected)
+        if forbidden_used:
+            return CheckResult(
+                ok=False,
+                detail=f"unexpected tools called: {', '.join(sorted(forbidden_used))}",
+            )
+        return CheckResult(ok=True, detail="no unexpected tool calls")
 
     def apply_to(self, result: CaseResult, check: CheckResult) -> None:
         result.unexpected_passed = check.ok
         result.unexpected_detail = check.detail
 
 
-class AccuracyDriver(AssertionDriver):
+class AccuracyDriver(CheckDriver):
     """Runs Agno's AccuracyEval against ``case.expected_output``.
 
     Skipped when no judge model is available or the case doesn't
-    specify an expected output.
+    specify an expected output — both are part of the gate, so a
+    skipped case leaves every ``accuracy_*`` field unset.
     """
 
-    def should_run(self, case: EvalCase) -> bool:
-        return bool(case.expected_output)
+    def should_run(self, ctx: AssertionContext) -> bool:
+        return bool(ctx.case.expected_output) and ctx.judge_model is not None
 
     async def run(self, ctx: AssertionContext) -> CheckResult:
         if ctx.judge_model is None:
-            # Gate is defined by (expected_output AND judge_model);
-            # the "no judge configured" path is treated as skipped.
-            return CheckResult(ok=True, detail="no judge model configured, skipped")
+            # Unreachable through the runner (the gate requires a judge);
+            # guards direct callers from Agno silently picking its own
+            # default model.
+            return CheckResult(ok=False, detail="accuracy eval error: no judge model configured")
         try:
             acc = AccuracyEval(
                 agent=ctx.agent,
@@ -242,23 +264,13 @@ class AccuracyDriver(AssertionDriver):
         except Exception as exc:
             return CheckResult(ok=False, detail=f"accuracy eval error: {exc}")
 
-    def should_run_with_judge(self, case: EvalCase, judge_model: Any | None) -> bool:
-        """Extended gate — the runner uses this in place of :meth:`should_run`
-        because the judge availability is a *context* concern, not a case one.
-        """
-        return bool(case.expected_output) and judge_model is not None
-
     def apply_to(self, result: CaseResult, check: CheckResult) -> None:
-        # Only overwrite when we actually ran (score present or a real
-        # ok/fail signal came back). We deliberately keep accuracy_score
-        # None for the "no judge configured" skipped path.
-        if check.score is not None or check.detail.startswith("accuracy eval"):
-            result.accuracy_passed = check.ok
-            result.accuracy_score = check.score
-            result.accuracy_reason = check.reason
+        result.accuracy_passed = check.ok
+        result.accuracy_score = check.score
+        result.accuracy_reason = check.reason
 
 
-class ToolArgDriver(AssertionDriver):
+class ToolArgDriver(CheckDriver):
     """Verifies each :class:`ToolArgAssertion` matched at least one call.
 
     An assertion passes when *some* call to ``tool`` has every key/value
@@ -269,42 +281,26 @@ class ToolArgDriver(AssertionDriver):
     verify assertion behaviour without spinning up a full runner).
     """
 
-    def should_run(self, case: EvalCase) -> bool:
-        return bool(case.tool_arg_assertions)
+    def should_run(self, ctx: AssertionContext) -> bool:
+        return bool(ctx.case.tool_arg_assertions)
 
     async def run(self, ctx: AssertionContext) -> CheckResult:
-        assertions = ToolArgDriver._coerce_assertions(ctx.case.tool_arg_assertions or [])
-        return self.check(ctx.tool_trace, assertions)
-
-    @staticmethod
-    def _coerce_assertions(
-        raw: list[dict[str, Any]] | list[ToolArgAssertion],
-    ) -> list[ToolArgAssertion]:
-        out: list[ToolArgAssertion] = []
-        for a in raw:
-            if isinstance(a, ToolArgAssertion):
-                out.append(a)
-            elif isinstance(a, dict):
-                out.append(ToolArgAssertion.model_validate(a))
-        return out
+        return self.check(ctx.tool_trace, ctx.case.tool_arg_assertions or [])
 
     @staticmethod
     def check(
         tool_trace: list[ToolTraceEntry],
-        assertions: list[ToolArgAssertion] | list[dict[str, Any]],
+        assertions: list[ToolArgAssertion],
     ) -> CheckResult:
-        """Public entry point used by :class:`CaseAssertionRunner` and tests.
+        """Public entry point used by :meth:`run` and tests.
 
-        Accepts either validated :class:`ToolArgAssertion` instances or
-        raw dicts (legacy shape). Malformed entries missing ``tool`` are
-        silently skipped — matches the pre-refactor behaviour where such
-        rows never matched anything.
+        Assertions with an empty ``tool`` are skipped — they name no
+        call to match, so they can neither pass nor fail.
         """
-        typed = ToolArgDriver._coerce_assertions(assertions)
         failures: list[str] = []
-        for a in typed:
+        for a in assertions:
             target_tool = a.tool
-            required = a.args_must_contain or {}
+            required = a.args_must_contain
             if not target_tool:
                 continue
             matched = False
@@ -340,43 +336,12 @@ class FileDriver(AssertionDriver):
     per-assertion outcomes.
     """
 
-    def should_run(self, case: EvalCase) -> bool:
-        return bool(case.file_assertions)
+    def should_run(self, ctx: AssertionContext) -> bool:
+        return bool(ctx.case.file_assertions)
 
-    async def run(self, ctx: AssertionContext) -> CheckResult:  # pragma: no cover - special case
-        # File assertions produce a list of per-file results, not a single
-        # CheckResult. The runner calls :meth:`run_all` directly instead
-        # of the base ``run`` — this ``run`` implementation exists only
-        # to satisfy the abstract contract if anyone calls it uniformly.
-        results = self.run_all(ctx)
-        every_ok = all(r.passed for r in results)
-        detail = ""
-        if not every_ok:
-            first_fail = next((r for r in results if not r.passed), None)
-            if first_fail is not None:
-                detail = f"{first_fail.type}: {first_fail.detail}"
-        return CheckResult(ok=every_ok, detail=detail)
-
-    def run_all(self, ctx: AssertionContext) -> list[FileCheckResult]:
-        results: list[FileCheckResult] = []
+    async def record(self, ctx: AssertionContext, result: CaseResult) -> None:
         for assertion in ctx.case.file_assertions or []:
-            passed, detail = check_file_assertion(assertion, work_dir=ctx.work_dir)
-            atype = FileDriver._extract_type(assertion)
-            results.append(FileCheckResult(type=atype, passed=passed, detail=detail))
-        return results
-
-    @staticmethod
-    def _extract_type(assertion: Any) -> str:
-        if isinstance(assertion, FileAssertion):
-            return assertion.type
-        if isinstance(assertion, dict):
-            return assertion.get("type", "")
-        return getattr(assertion, "type", "")
-
-    def apply_to(self, result: CaseResult, check: CheckResult) -> None:  # pragma: no cover
-        # No-op; file results are written directly via
-        # :meth:`CaseResult.add_file_result` during :meth:`CaseAssertionRunner.run`.
-        return None
+            result.add_file_result(assertion.check(ctx.work_dir))
 
 
 class CaseAssertionRunner:
@@ -388,33 +353,17 @@ class CaseAssertionRunner:
     """
 
     def __init__(self, drivers: list[AssertionDriver] | None = None) -> None:
-        self._reliability = ReliabilityDriver()
-        self._unexpected = UnexpectedToolsDriver()
-        self._accuracy = AccuracyDriver()
-        self._tool_arg = ToolArgDriver()
-        self._file = FileDriver()
         self._drivers: list[AssertionDriver] = drivers or [
-            self._reliability,
-            self._unexpected,
-            self._accuracy,
-            self._tool_arg,
+            ReliabilityDriver(),
+            UnexpectedToolsDriver(),
+            AccuracyDriver(),
+            ToolArgDriver(),
+            FileDriver(),
         ]
 
     async def run(self, ctx: AssertionContext, result: CaseResult) -> None:
         """Populate ``result`` with per-check outcomes from every driver."""
         for driver in self._drivers:
-            if isinstance(driver, AccuracyDriver):
-                if not driver.should_run_with_judge(ctx.case, ctx.judge_model):
-                    continue
-            elif not driver.should_run(ctx.case):
-                continue
-            check = await driver.run(ctx)
-            driver.apply_to(result, check)
-
-        # File assertions produce many per-file results, not one CheckResult
-        # — handle them separately so we don't lose per-file granularity.
-        if self._file.should_run(ctx.case):
-            for fr in self._file.run_all(ctx):
-                result.add_file_result(fr)
-
+            if driver.should_run(ctx):
+                await driver.record(ctx, result)
         result.compute_passed()

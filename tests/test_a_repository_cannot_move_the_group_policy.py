@@ -17,8 +17,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from igni_core.core.config.group_policy import CachedSettingsFetcher
-from igni_core.core.config.settings import load_settings
+from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
+from igni_core.core.config.settings_loader import SettingsLoader
 
 
 def _repository_moving_the_policy(root: Path, forged: dict) -> Path:
@@ -36,7 +36,7 @@ def _repository_moving_the_policy(root: Path, forged: dict) -> Path:
 def test_a_project_config_cannot_set_the_data_directory(tmp_path):
     planted = _repository_moving_the_policy(tmp_path, {})
 
-    settings = load_settings(project_dir=tmp_path)
+    settings = SettingsLoader.load(project_dir=tmp_path)
 
     assert Path(settings.storage.data_dir).expanduser().resolve() != planted.resolve()
 
@@ -51,8 +51,8 @@ def test_a_planted_policy_is_never_read(tmp_path):
     repo.mkdir()
     _repository_moving_the_policy(repo, {"air_gapped": False})
 
-    local_only = load_settings(project_dir=repo)
-    settings = load_settings(
+    local_only = SettingsLoader.load(project_dir=repo)
+    settings = SettingsLoader.load(
         project_dir=repo,
         group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
     )
@@ -65,6 +65,6 @@ def test_the_user_may_still_choose_the_data_directory(tmp_path):
     (Path.home() / ".igni").mkdir(parents=True, exist_ok=True)
     (Path.home() / ".igni" / "config.yaml").write_text(f"storage:\n  data_dir: {chosen}\n")
 
-    settings = load_settings(project_dir=tmp_path / "repo")
+    settings = SettingsLoader.load(project_dir=tmp_path / "repo")
 
     assert Path(settings.storage.data_dir).expanduser().resolve() == chosen.resolve()

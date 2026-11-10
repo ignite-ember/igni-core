@@ -24,11 +24,10 @@ from pathlib import Path
 
 from igni_core.core.agents.loader import AgentDefinitionLoader
 from igni_core.core.agents.schemas import AgentPriority
-from igni_core.core.config.group_policy import (
-    GroupPolicyCache,
-    GroupPolicyEntry,
-    GroupPolicyPack,
-)
+from igni_core.core.config.group_policy.cache import GroupPolicyCache
+from igni_core.core.config.group_policy.entry import GroupPolicyEntry
+from igni_core.core.config.group_policy.layout import GroupPolicyLayout
+from igni_core.core.config.group_policy.pack import GroupPolicyPack
 from igni_core.core.mcp.config import MCPConfigLoader
 from igni_core.core.paths import CONFIG_DIR
 
@@ -39,7 +38,7 @@ from igni_core.core.paths import CONFIG_DIR
 
 def test_materialize_wraps_mcps_in_envelope(tmp_path: Path):
     """Per-server MCP entries get wrapped so MCPConfigLoader can read them."""
-    cache = GroupPolicyCache(cache_dir=tmp_path)
+    cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
     pack = GroupPolicyPack(
         group_id="g-1",
         group_name="Engineering",
@@ -56,7 +55,7 @@ def test_materialize_wraps_mcps_in_envelope(tmp_path: Path):
     )
     cache.materialize(pack)
 
-    on_disk = cache.mcps_dir / "github.json"
+    on_disk = cache.layout.dir_for("mcps") / "github.json"
     assert on_disk.exists()
     import json
 
@@ -69,7 +68,7 @@ def test_materialize_wraps_mcps_in_envelope(tmp_path: Path):
 
 def test_materialize_strips_disabled_mcp(tmp_path: Path):
     """An override that's ``enabled=False`` should not be written."""
-    cache = GroupPolicyCache(cache_dir=tmp_path)
+    cache = GroupPolicyCache(GroupPolicyLayout(root=tmp_path))
     pack = GroupPolicyPack(
         group_id="g-1",
         group_name="Engineering",
@@ -85,7 +84,7 @@ def test_materialize_strips_disabled_mcp(tmp_path: Path):
         ],
     )
     cache.materialize(pack)
-    assert not (cache.mcps_dir / "off.json").exists()
+    assert not (cache.layout.dir_for("mcps") / "off.json").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from igni_core.extensions.host.windows import references
+from igni_core.extensions.host.window_values import references
 from tests.host_model_helpers import HostRig, Sink
 
 
@@ -48,7 +48,7 @@ def refused(reply: Any, code: str) -> str:
 def listen(rig: HostRig, extension_id: str, *wires: str) -> Sink:
     assert rig.model is not None
     sink = Sink()
-    rig.model.bus.subscribe(rig.model.bus.attach(extension_id, sink), list(wires))
+    rig.model.services.bus.subscribe(rig.model.services.bus.attach(extension_id, sink), list(wires))
     return sink
 
 
@@ -367,7 +367,7 @@ class TestFocus:
         await rig.window("w-1", connection="ws-a")
         await rig.window_writes("w-1", "focused", True)
         assert rig.model is not None
-        rig.model.connection_closed("ws-a")
+        rig.model.services.windows.registry.detached("ws-a")
         assert ok(await rig.ask(ext, "get", "windows.focused")) is None
 
 
@@ -377,7 +377,8 @@ class TestTheComposer:
         await rig.window("w-1", session="boot")
         await rig.window_writes("w-1", "composer", {"text": "for boot", "mode": "chat"})
         assert rig.orchestrator is not None
-        rig.orchestrator.client_state.set_value("w-1", "draft:other", "for other")
+        written = rig.orchestrator.client_state.set_value("w-1", "draft:other", "for other")
+        assert written.ok, written.error
         await rig.window_writes("w-1", "session", "other")
         assert ok(await rig.ask(ext, "get", "ui.composer"))["text"] == "for other"
         # The window was told: the composer it shows changed with the session.
@@ -451,3 +452,16 @@ async def test_a_full_stack_of_toasts_lets_the_oldest_go_and_says_so(rig: HostRi
     on_screen = ok(await rig.ask(ext, "get", "ui.toasts"))
     assert [t["text"] for t in on_screen] == [f"#{n}" for n in range(1, 7)]
     assert [v["toast"]["id"] for v in sink.values("ui.toast_dismissed")] == [shown[0]["id"]]
+
+
+async def test_a_write_that_changes_nothing_says_so(rig: HostRig) -> None:
+    """A write of the value already there pushes nothing; its answer says
+    it changed nothing, so a client does not wait for a push."""
+    await rig.window_model("w-9", "hydrate", connection_id="ws-9", kind="web")
+    panel = {"kind": "search", "params": {}}
+    first = await rig.window_model("w-9", "write", field="panel", value=panel, token="t1")
+    again = await rig.window_model("w-9", "write", field="panel", value=panel, token="t2")
+
+    assert (first["op"], first["changed"]) == ("write", True)
+    assert (again["op"], again["changed"]) == ("write", False)
+    assert [p["token"] for p in await rig.window_pushes("w-9")] == ["t1"]

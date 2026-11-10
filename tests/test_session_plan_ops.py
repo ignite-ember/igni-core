@@ -5,7 +5,7 @@ back-compat free functions (``approve_plan`` / ``dismiss_plan`` /
 ``_record_plan_decision`` / ``_coord_for``) were deleted after
 grep confirmed no live external callers. These tests drive the
 coordinator methods directly on a bare Session stub with a
-freshly-attached ``session.plan = PlanCoordinator(session)``.
+freshly-attached ``session.plan``, built from its own ``PlanDeps``.
 
 Headline invariant pinned here: persist-before-flip-mode
 ordering — the whole point of this code path existing (regression
@@ -21,12 +21,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.session.broadcast import BroadcastBus
-from igni_core.core.session.plan_ops import PlanCoordinator
+from igni_core.core.session.plan_ops import PlanCoordinator, PlanDeps
+from igni_core.core.session.schemas import PermissionModeSwitch, PersistResult
 from igni_core.core.tools.plan import PlanDecision, PlanDecisionsBlob
 
 
-def _bare_session(*, has_persistence: bool = True):
+def _bare_session(*, has_persistence: bool = True, has_plan_store: bool = True):
     """Session-shaped stub carrying only what plan_ops reads,
     with a freshly-attached :class:`PlanCoordinator`."""
     session = SimpleNamespace()
@@ -38,10 +40,21 @@ def _bare_session(*, has_persistence: bool = True):
     )
     if has_persistence:
         session.persistence = SimpleNamespace()
-        session.persistence.save_plan_decisions = AsyncMock()
-    session.set_permission_mode = MagicMock(return_value="mode → default")
+        session.persistence.save_plan_decisions = AsyncMock(return_value=PersistResult(ok=True))
+    session.set_permission_mode = MagicMock(
+        return_value=PermissionModeSwitch(changed=True, text="mode → default")
+    )
     session.broadcast_bus = BroadcastBus()
-    session.plan = PlanCoordinator(session)
+    session.plan = PlanCoordinator(
+        PlanDeps(
+            plan_store=session.plan_store if has_plan_store else None,
+            persistence=getattr(session, "persistence", None),
+            bus=session.broadcast_bus,
+            # Read per call, so a test can swap the stub's method afterwards.
+            set_permission_mode=lambda mode: session.set_permission_mode(mode),
+            starting_mode=lambda: PermissionMode.DEFAULT,
+        )
+    )
     return session
 
 
@@ -62,7 +75,7 @@ class TestApprovePlan:
     async def test_broadcasts_plan_decided(self):
         s = _bare_session()
         captured: list[tuple[str, dict]] = []
-        s.broadcast_bus.register(lambda ch, p: captured.append((ch, p)))
+        s.broadcast_bus.register(lambda e: captured.append((e.channel, e.to_payload())))
         await s.plan.approve("run-1")
         assert len(captured) == 1
         channel, payload = captured[0]
@@ -80,8 +93,12 @@ class TestApprovePlan:
         # class-of-bug that motivated persisting decisions at all.
         s = _bare_session()
         order = []
-        s.persistence.save_plan_decisions = AsyncMock(side_effect=lambda _: order.append("save"))
-        s.set_permission_mode = MagicMock(side_effect=lambda _: order.append("flip") or "ok")
+        s.persistence.save_plan_decisions = AsyncMock(
+            side_effect=lambda _: (order.append("save"), PersistResult(ok=True))[1]
+        )
+        s.set_permission_mode = MagicMock(
+            side_effect=lambda _: order.append("flip") or PermissionModeSwitch(text="ok")
+        )
         await s.plan.approve("run-1")
         assert order == ["save", "flip"], (
             "save_plan_decisions must run BEFORE set_permission_mode — "
@@ -118,8 +135,7 @@ class TestRecordPlanDecision:
 
     @pytest.mark.asyncio
     async def test_missing_plan_store_returns_error_envelope(self):
-        s = _bare_session()
-        s.plan_store = None
+        s = _bare_session(has_plan_store=False)
         out = await s.plan._record("run-1", PlanDecision.APPROVED, flip_mode=True)
         assert out.ok is False
         assert out.error is not None and "plan_store" in out.error
@@ -135,9 +151,9 @@ class TestRecordPlanDecision:
         out = await s.plan._record("run-1", PlanDecision.APPROVED, flip_mode=True)
         assert out.ok is False
         assert out.error is not None and "persistence" in out.error
-        # Store IS updated (the decision was recorded in memory)
-        # but no flip and no broadcast happened.
-        s.plan_store.set_decision.assert_called_once()
+        # Nothing is recorded — a decision that cannot be kept is not
+        # one — and no flip and no broadcast happened.
+        s.plan_store.set_decision.assert_not_called()
         s.set_permission_mode.assert_not_called()
 
     @pytest.mark.asyncio
@@ -150,7 +166,9 @@ class TestRecordPlanDecision:
         # module exists to prevent. Post-refactor the coordinator
         # returns ``ok=False`` and refuses to flip.
         s = _bare_session()
-        s.persistence.save_plan_decisions = AsyncMock(side_effect=RuntimeError("db down"))
+        s.persistence.save_plan_decisions = AsyncMock(
+            return_value=PersistResult(ok=False, error="db down")
+        )
         out = await s.plan._record("run-1", PlanDecision.APPROVED, flip_mode=True)
         s.set_permission_mode.assert_not_called()
         assert out.ok is False
@@ -163,7 +181,9 @@ class TestRecordPlanDecision:
         # reflects the decision, the FE gets the live broadcast,
         # and the next decision rewrites the blob anyway.
         s = _bare_session()
-        s.persistence.save_plan_decisions = AsyncMock(side_effect=RuntimeError("db down"))
+        s.persistence.save_plan_decisions = AsyncMock(
+            return_value=PersistResult(ok=False, error="db down")
+        )
         out = await s.plan._record("run-1", PlanDecision.DISMISSED, flip_mode=False)
         assert out.ok is True
         assert out.decision == PlanDecision.DISMISSED

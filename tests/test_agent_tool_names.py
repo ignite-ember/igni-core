@@ -13,6 +13,7 @@ do — treat an MCP name as a mistake, or stop a session from starting.
 
 from __future__ import annotations
 
+from igni_core.core.agents.tool_check import UnresolvedAgentTools
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.tool_spec import ToolResolutionRequest
 
@@ -44,50 +45,38 @@ class TestWhatResolvesAndWhatDoesNot:
         assert result.unknown == []
 
 
-class TestTheSessionCheck:
-    """Driven against a bare Session shell — constructing a whole one
-    needs a database and a model catalogue, and neither is what this is
-    about."""
+class TestThePoolCheck:
+    """Driven against the real registry — the answer is only as good as
+    what it can resolve."""
 
-    def _session(self, tmp_path, agents):
-        from igni_core.core.session.core import Session
-
-        session = Session.__new__(Session)
-        session.project_dir = tmp_path
-        session.pool = type("Pool", (), {"list_agents": lambda self: agents})()
-        return session
+    def _check(self, tmp_path, agents) -> UnresolvedAgentTools:
+        return UnresolvedAgentTools.check(agents, ToolRegistry(base_dir=str(tmp_path)))
 
     @staticmethod
     def _agent(name: str, tools: list[str]):
         return type("Defn", (), {"name": name, "tools": tools})()
 
     def test_a_clean_agent_reports_nothing(self, tmp_path):
-        session = self._session(tmp_path, [self._agent("reviewer", ["Bash", "Write"])])
+        check = self._check(tmp_path, [self._agent("reviewer", ["Bash", "Write"])])
 
-        session._check_agent_tools()
-
-        assert session.unknown_agent_tools() == {}
+        assert check.by_agent() == {}
 
     def test_a_typo_is_named_with_its_agent(self, tmp_path):
-        session = self._session(tmp_path, [self._agent("reviewer", ["WebSarch", "Bash"])])
+        check = self._check(tmp_path, [self._agent("reviewer", ["WebSarch", "Bash"])])
 
-        session._check_agent_tools()
-
-        assert session.unknown_agent_tools() == {"reviewer": ["WebSarch"]}
+        assert check.by_agent() == {"reviewer": ["WebSarch"]}
 
     def test_an_agent_with_no_tools_is_skipped(self, tmp_path):
-        session = self._session(tmp_path, [self._agent("thinker", [])])
+        check = self._check(tmp_path, [self._agent("thinker", [])])
 
-        session._check_agent_tools()
-
-        assert session.unknown_agent_tools() == {}
+        assert check.by_agent() == {}
 
     def test_it_logs_what_is_available(self, tmp_path, caplog):
         """The fix is usually visible in the list."""
-        session = self._session(tmp_path, [self._agent("reviewer", ["WebSarch"])])
+        check = self._check(tmp_path, [self._agent("reviewer", ["WebSarch"])])
 
         with caplog.at_level("WARNING"):
-            session._check_agent_tools()
+            check.log_warnings()
 
         assert "WebSarch" in caplog.text
         assert "WebSearch" in caplog.text  # in the available list
@@ -95,14 +84,14 @@ class TestTheSessionCheck:
     def test_a_broken_check_does_not_stop_a_session(self, tmp_path):
         """It is a diagnostic. Failing to produce it must cost the
         diagnostic, not the session."""
+        from igni_core.core.session.core import Session
 
         class Exploding:
             def list_agents(self):
                 raise RuntimeError("no pool")
 
-        session = self._session(tmp_path, [])
+        session = Session.__new__(Session)
+        session.project_dir = tmp_path
         session.pool = Exploding()
 
-        session._check_agent_tools()
-
-        assert session.unknown_agent_tools() == {}
+        assert session._check_agent_tools().by_agent() == {}

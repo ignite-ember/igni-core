@@ -27,10 +27,23 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
+
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.tools.orphan_process import OrphanProcess
 from igni_core.core.tools.process_log import ProcessLogStore
-from igni_core.core.tools.process_supervisor_locator import supervisors
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+
+
+@pytest.fixture
+def supervisor() -> ProcessSupervisor:
+    """The supervisor this test owns.
+
+    The backend injects the supervisor the process shares; a test
+    builds its own, so the log store's ``project_dir`` never leaks
+    from one test into the next.
+    """
+    return ProcessSupervisor()
 
 
 class TestLogPathResolution:
@@ -170,64 +183,80 @@ class TestOrphanRead:
       a render bug.
     """
 
-    def setup_method(self) -> None:
-        # Reset the process-wide supervisor so test order doesn't
-        # matter — the orphan reads through
-        # ``supervisors.default().log_store``, and that store's
-        # ``project_dir`` would otherwise leak across tests.
-        supervisors.reset_for_tests()
-
-    def teardown_method(self) -> None:
-        supervisors.reset_for_tests()
-
-    def test_reads_from_log_file(self, tmp_path: Path) -> None:
+    def test_reads_from_log_file(self, tmp_path: Path, supervisor: ProcessSupervisor) -> None:
         # Seed a log file as if a previous BE wrote it.
-        supervisors.default().configure_log_store(tmp_path)
-        store = supervisors.default().log_store
+        supervisor.configure_log_store(tmp_path)
+        store = supervisor.log_store
         log = store.path(101)
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text("[19:00:01] starting server\n[19:00:02] listening on :3000\n")
 
-        orphan = OrphanProcess(pid=101, cmd="npm run dev", started_epoch=int(time.time()), pgid=101)
+        orphan = OrphanProcess(
+            pid=101,
+            cmd="npm run dev",
+            started_epoch=int(time.time()),
+            pgid=101,
+            log_store=store,
+        )
         out = orphan.read(tail=10)
         assert "starting server" in out
         assert "listening on :3000" in out
 
-    def test_missing_log_returns_placeholder(self, tmp_path: Path) -> None:
-        supervisors.default().configure_log_store(tmp_path)
+    def test_missing_log_returns_placeholder(
+        self, tmp_path: Path, supervisor: ProcessSupervisor
+    ) -> None:
+        supervisor.configure_log_store(tmp_path)
         orphan = OrphanProcess(
-            pid=202, cmd="no-output-yet", started_epoch=int(time.time()) - 5, pgid=None
+            pid=202,
+            cmd="no-output-yet",
+            started_epoch=int(time.time()) - 5,
+            pgid=None,
+            log_store=supervisor.log_store,
         )
         out = orphan.read()
         assert "no buffered output" in out.lower()
         assert "kill button" in out.lower()
 
-    def test_empty_log_returns_placeholder(self, tmp_path: Path) -> None:
+    def test_empty_log_returns_placeholder(
+        self, tmp_path: Path, supervisor: ProcessSupervisor
+    ) -> None:
         # A backgrounded process can be totally silent — its log
         # file gets created (we open append on first line) but no
         # writes land. After restart the orphan finds the empty
         # file and should fall through to the placeholder.
-        supervisors.default().configure_log_store(tmp_path)
-        store = supervisors.default().log_store
+        supervisor.configure_log_store(tmp_path)
+        store = supervisor.log_store
         log = store.path(303)
         log.parent.mkdir(parents=True, exist_ok=True)
         log.touch()
 
-        orphan = OrphanProcess(pid=303, cmd="silent", started_epoch=int(time.time()), pgid=None)
+        orphan = OrphanProcess(
+            pid=303,
+            cmd="silent",
+            started_epoch=int(time.time()),
+            pgid=None,
+            log_store=store,
+        )
         out = orphan.read()
         assert "no buffered output" in out.lower()
 
-    def test_read_respects_tail_count(self, tmp_path: Path) -> None:
+    def test_read_respects_tail_count(self, tmp_path: Path, supervisor: ProcessSupervisor) -> None:
         # The watcher's ``read_process_tail`` RPC passes a tail
         # value through — the orphan's read must honor it so a
         # huge log doesn't slurp into the FE on every open.
-        supervisors.default().configure_log_store(tmp_path)
-        store = supervisors.default().log_store
+        supervisor.configure_log_store(tmp_path)
+        store = supervisor.log_store
         log = store.path(404)
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text("\n".join(f"line {i}" for i in range(1000)) + "\n")
 
-        orphan = OrphanProcess(pid=404, cmd="chatty", started_epoch=int(time.time()), pgid=None)
+        orphan = OrphanProcess(
+            pid=404,
+            cmd="chatty",
+            started_epoch=int(time.time()),
+            pgid=None,
+            log_store=store,
+        )
         out = orphan.read(tail=5)
         lines = out.splitlines()
         # Tail of last 5 — first should be ``line 995``.
@@ -241,29 +270,33 @@ class TestProjectDirWiring:
     calls. Tests round-trip the value and verify the store
     resolves paths using it."""
 
-    def setup_method(self) -> None:
-        supervisors.reset_for_tests()
-
-    def teardown_method(self) -> None:
-        supervisors.reset_for_tests()
-
     def test_constructor_records_project_dir(self, tmp_path: Path) -> None:
         store = ProcessLogStore(tmp_path)
         assert store.project_dir == tmp_path
 
-    def test_configure_log_store_round_trips(self, tmp_path: Path) -> None:
-        supervisors.default().configure_log_store(tmp_path)
-        assert supervisors.default().log_store.project_dir == tmp_path
+    def test_configure_log_store_round_trips(
+        self, tmp_path: Path, supervisor: ProcessSupervisor
+    ) -> None:
+        supervisor.configure_log_store(tmp_path)
+        assert supervisor.log_store.project_dir == tmp_path
 
-    def test_orphan_read_uses_supervisor_log_store(self, tmp_path: Path) -> None:
+    def test_orphan_read_uses_supervisor_log_store(
+        self, tmp_path: Path, supervisor: ProcessSupervisor
+    ) -> None:
         # If the orphan's project_dir lookup misuses the store,
         # the read goes to TMPDIR and we get back the placeholder
         # even though the real log file exists. Pin the wiring.
-        supervisors.default().configure_log_store(tmp_path)
-        store = supervisors.default().log_store
+        supervisor.configure_log_store(tmp_path)
+        store = supervisor.log_store
         log = store.path(555)
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text("real output\n")
 
-        orphan = OrphanProcess(pid=555, cmd="x", started_epoch=int(time.time()), pgid=None)
+        orphan = OrphanProcess(
+            pid=555,
+            cmd="x",
+            started_epoch=int(time.time()),
+            pgid=None,
+            log_store=store,
+        )
         assert "real output" in orphan.read()

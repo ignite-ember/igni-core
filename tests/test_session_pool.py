@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.backend.schemas_rpc import SessionPoolConfig
 from igni_core.backend.session_pool import (
     SessionPool,
     SessionRuntime,
@@ -160,7 +161,7 @@ class TestIdleEviction:
         pool = SessionPool(
             default,
             factory,
-            idle_timeout_seconds=idle_timeout,
+            config=SessionPoolConfig(idle_timeout_seconds=idle_timeout),
             clock=clock,
         )
         return pool, created
@@ -287,3 +288,80 @@ class TestSessionStamping:
         inner.port = 1234
         stamped = SessionStampingTransport(inner, MagicMock())
         assert stamped.port == 1234
+
+
+class TestClosingTheRouter:
+    """A runtime closes the router its table came from before the
+    backend, so the workflows that router started do not outlive it."""
+
+    @pytest.mark.asyncio
+    async def test_shutdown_closes_the_router_before_the_backend(self):
+        order: list[str] = []
+        backend = MagicMock()
+        backend.session_id = "s"
+        backend.shutdown = AsyncMock(side_effect=lambda: order.append("backend"))
+        router = MagicMock()
+        router.close = AsyncMock(side_effect=lambda: order.append("router"))
+        rt = SessionRuntime(
+            backend=backend, rpc_table={}, queue=[], transport=MagicMock(), router=router
+        )
+
+        report = await rt.shutdown_safely()
+
+        assert report.ok
+        assert order == ["router", "backend"]
+
+    @pytest.mark.asyncio
+    async def test_a_router_that_fails_to_close_is_reported(self):
+        backend = MagicMock()
+        backend.session_id = "s"
+        backend.shutdown = AsyncMock()
+        router = MagicMock()
+        router.close = AsyncMock(side_effect=RuntimeError("stuck"))
+        rt = SessionRuntime(
+            backend=backend, rpc_table={}, queue=[], transport=MagicMock(), router=router
+        )
+
+        report = await rt.shutdown_safely()
+
+        assert not report.ok
+        assert report.error == "stuck"
+
+    def test_a_live_workflow_keeps_the_runtime_busy(self):
+        backend = MagicMock()
+        backend.processing = False
+        router = MagicMock()
+        router.has_live_workflows.return_value = True
+        rt = SessionRuntime(
+            backend=backend, rpc_table={}, queue=[], transport=MagicMock(), router=router
+        )
+
+        assert rt.is_busy()
+        router.has_live_workflows.return_value = False
+        assert not rt.is_busy()
+
+    @pytest.mark.asyncio
+    async def test_the_evictor_spares_a_runtime_with_a_live_workflow(self):
+        default = _runtime("default-s")
+        backend = MagicMock()
+        backend.session_id = "wf-s"
+        backend.processing = False
+        backend.shutdown = AsyncMock()
+        router = MagicMock()
+        router.has_live_workflows.return_value = True
+        router.close = AsyncMock()
+        busy = SessionRuntime(
+            backend=backend, rpc_table={}, queue=[], transport=MagicMock(), router=router
+        )
+
+        async def factory(session_id: str) -> SessionRuntime:
+            return busy
+
+        pool = SessionPool(default, factory)
+        await pool.get_or_create("wf-s")
+        busy.last_used_at = -1e12
+
+        report = await pool.evict_idle()
+
+        assert report.evicted == []
+        router.close.assert_not_awaited()

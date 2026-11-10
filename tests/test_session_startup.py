@@ -22,8 +22,30 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from igni_core.core.session.mcp_ops import McpFailureCache
 from igni_core.core.session.schemas import McpInitResult
-from igni_core.core.session.startup import SessionStartupCoordinator
+from igni_core.core.session.startup import (
+    MarketplaceWarmupPhase,
+    McpInitDeps,
+    McpInitPhase,
+    SessionStartupCoordinator,
+)
+
+
+def _coordinator(s) -> SessionStartupCoordinator:
+    """The coordinator over a stub's collaborators, as the session builds it."""
+    return SessionStartupCoordinator(
+        MarketplaceWarmupPhase(settings_ref=lambda: s.settings),
+        McpInitPhase(
+            McpInitDeps(
+                mcp_manager=s.mcp_manager,
+                failures=s.mcp_failures,
+                display=s.display,
+                pool_ref=lambda: s.pool,
+                rebuild_team=lambda: s.rebuild_main_team(),
+            )
+        ),
+    )
 
 
 def _bare_session():
@@ -39,11 +61,7 @@ def _bare_session():
     session.mcp_manager.list_connected = MagicMock(return_value=[])
     session.mcp_manager._clients = {}
     session.mcp_manager.connect = AsyncMock(return_value=MCPConnectResult.failure(""))
-    # Session-scoped failure cache — populated by
-    # ``record_mcp_result`` in production. Tests that assert on
-    # the failure path also write to this dict directly.
-    session.mcp_failures = {}
-    session.record_mcp_result = MagicMock()
+    session.mcp_failures = McpFailureCache()
     session.pool = SimpleNamespace(build_agents=MagicMock())
     session._build_main_agent = MagicMock(return_value=SimpleNamespace())
     # The startup phases route through the public rebuild seam so
@@ -63,7 +81,7 @@ class TestStartMarketplaceRefreshBackground:
         # Missing settings attr — should still no-op without
         # crashing before the loop check.
         s.settings = SimpleNamespace(storage=SimpleNamespace(data_dir="/tmp/x"))
-        SessionStartupCoordinator(s).start_marketplace_refresh_background()  # should not raise
+        _coordinator(s).start_marketplace_refresh_background()  # should not raise
 
 
 class TestEnsureMcp:
@@ -72,7 +90,7 @@ class TestEnsureMcp:
         # Second call is a no-op — the ``mcp_initialized`` flag
         # is the once-per-session gate.
         s = _bare_session()
-        coord = SessionStartupCoordinator(s)
+        coord = _coordinator(s)
         coord.mcp_initialized = True
         result = await coord.ensure_mcp()
         s.mcp_manager.list_servers.assert_not_called()
@@ -86,7 +104,7 @@ class TestEnsureMcp:
     async def test_no_configured_servers_is_noop(self):
         s = _bare_session()
         s.mcp_manager.list_servers = MagicMock(return_value=[])
-        coord = SessionStartupCoordinator(s)
+        coord = _coordinator(s)
         result = await coord.ensure_mcp()
         # Flag flipped so subsequent calls also no-op.
         assert coord.mcp_initialized is True
@@ -105,7 +123,7 @@ class TestEnsureMcp:
         s.mcp_manager.connect = AsyncMock(
             return_value=MCPConnectResult.success(MagicMock(functions={"t1": lambda: None}))
         )
-        result = await SessionStartupCoordinator(s).ensure_mcp()
+        result = await _coordinator(s).ensure_mcp()
         s.pool.build_agents.assert_called_once()
         s.rebuild_main_team.assert_called_once()
         # Pattern-3 envelope reflects the success path.
@@ -125,7 +143,7 @@ class TestEnsureMcp:
         s.mcp_manager.connect = AsyncMock(
             return_value=MCPConnectResult.failure("handshake refused")
         )
-        result = await SessionStartupCoordinator(s).ensure_mcp()
+        result = await _coordinator(s).ensure_mcp()
         s.pool.build_agents.assert_not_called()
         s.rebuild_main_team.assert_not_called()
         # Envelope surfaces the failed set so callers don't
@@ -142,7 +160,7 @@ class TestRebuildMcp:
         c1 = MagicMock()
         s.mcp_manager.list_connected = MagicMock(return_value=["srv-a"])
         s.mcp_manager._clients = {"srv-a": c1}
-        SessionStartupCoordinator(s).rebuild_mcp()
+        _coordinator(s).rebuild_mcp()
         s.pool.build_agents.assert_called_once_with(mcp_clients={"srv-a": c1})
         s.rebuild_main_team.assert_called_once()
 
@@ -151,5 +169,5 @@ class TestRebuildMcp:
         # slightly differently; we pass None explicitly so the
         # tool surface degrades to the non-MCP shape.
         s = _bare_session()
-        SessionStartupCoordinator(s).rebuild_mcp()
+        _coordinator(s).rebuild_mcp()
         s.pool.build_agents.assert_called_once_with(mcp_clients=None)

@@ -39,34 +39,35 @@ from __future__ import annotations
 import gc
 import logging
 from collections.abc import Callable
-from pathlib import Path
-from typing import Any
 
 from igni_cloud.credentials import EnvironmentCredentials
 from igni_cloud.guest.activity_file import ActivityFile
 from igni_cloud.guest.binding import ProducerBinding
-from igni_cloud.guest.credential import (
-    CredentialFile,
-    CredentialState,
-    StateChange,
-    VmCredentialExchange,
-    VmCredentials,
-)
+from igni_cloud.guest.credential import StateChange
 from igni_cloud.guest.entropy import ProcessEntropy
 from igni_cloud.guest.files import ReadyFile
 from igni_cloud.guest.immortal import BaseObjects
 from igni_cloud.guest.paths import GuestPaths
+from igni_cloud.guest.ports import (
+    GuestTransport,
+    HostModelPort,
+    PoolRpcMount,
+    ResumingNotifications,
+)
 from igni_cloud.guest.practice import FirstAnswerPractice
-from igni_cloud.guest.resume import NextAnswer, Restored, RestoreStep, RestoreWatch
+from igni_cloud.guest.restore_steps import RestoreSteps
+from igni_cloud.guest.resume import NextAnswer, RestoreWatch
+from igni_cloud.guest.sign_in import GuestCredential
 from igni_cloud.guest.suspend import SuspendWatch
 from igni_cloud.guest.warm import WarmImports
-from igni_cloud.guest.watch import DirectoryWatch
+from igni_cloud.guest.watch import DirectoryWatches
 from igni_cloud.logs import StdoutLog
-from igni_core.backend.activity import Activity
-from igni_core.core.activity import ActivityRegistry, background
-from igni_core.core.db.engine import cache
+from igni_core.backend.pool_rpcs import VmSignInRpc
+from igni_core.core.activity import ActivityRegistry
+from igni_core.core.db.engine import engines
 from igni_core.core.db.scope import Tenant
 from igni_core.core.layer import BackendHooks
+from igni_core.core.log_fields import LogFields
 from igni_core.protocol import messages as msg
 
 logger = logging.getLogger(__name__)
@@ -85,21 +86,24 @@ class CloudGuest(BackendHooks):
         warm: WarmImports | None = None,
         gc_freeze: bool = True,
         practise: bool = True,
+        tokens: EnvironmentCredentials | None = None,
+        logs: StdoutLog | None = None,
+        activities: ActivityRegistry | None = None,
     ) -> None:
         self.paths = paths
         self.ready = ReadyFile(paths.ready)
-        self._directories: dict[Path, DirectoryWatch] = {}
+        directories = DirectoryWatches()
         self.binding = (
             binding
             if binding is not None
             else ProducerBinding(
-                paths.producer_env, directory=self._directory(paths.producer_env.parent)
+                paths.producer_env, directory=directories.of(paths.producer_env.parent)
             )
         )
         self.restores = (
             restores
             if restores is not None
-            else RestoreWatch(paths.restored, directory=self._directory(paths.restored.parent))
+            else RestoreWatch(paths.restored, directory=directories.of(paths.restored.parent))
         )
         self.suspends = (
             suspends
@@ -107,30 +111,43 @@ class CloudGuest(BackendHooks):
             else SuspendWatch(
                 paths.suspending,
                 paths.suspend_ready,
-                directory=self._directory(paths.suspending.parent),
+                directory=directories.of(paths.suspending.parent),
             )
         )
         self.warm = warm if warm is not None else WarmImports()
         self.entropy = ProcessEntropy()
         #: igni's next answer after a wake (a pause tells igni nothing).
         self.answers = NextAnswer()
+        self._logs = logs if logs is not None else StdoutLog()
+        #: The VM's own credential, kept while a bound producer is served.
+        self.credential = GuestCredential(
+            tokens if tokens is not None else EnvironmentCredentials(),
+            after_wake=self.answers.after,
+        )
+        self._after_restore = RestoreSteps(
+            logs=self._logs,
+            activities=activities if activities is not None else ActivityRegistry.shared(),
+            entropy=self.entropy,
+        )
         self._gc_freeze = gc_freeze
         self._practise = practise
         self.activity: ActivityFile | None = None
-        self.credentials: VmCredentials | None = None
-        self._model: Any = None
-        self._transport: Any = None
-
-    def _directory(self, path: Path) -> DirectoryWatch:
-        """The one watch of ``path`` the guest's file watches share."""
-        watch = self._directories.get(path)
-        if watch is None:
-            watch = self._directories[path] = DirectoryWatch(path)
-        return watch
 
     @classmethod
-    def from_env(cls) -> CloudGuest:
-        return cls(GuestPaths.from_env())
+    def from_env(
+        cls, *, tokens: EnvironmentCredentials | None = None, logs: StdoutLog | None = None
+    ) -> CloudGuest:
+        return cls(GuestPaths.from_env(), tokens=tokens, logs=logs)
+
+    @property
+    def tokens(self) -> EnvironmentCredentials:
+        """The credentials igni server's clients read."""
+        return self.credential.tokens
+
+    @property
+    def tenant(self) -> Tenant | None:
+        """Whose VM this is, once bound."""
+        return self.binding.tenant
 
     def starting(self) -> None:
         try:
@@ -138,7 +155,7 @@ class CloudGuest(BackendHooks):
         except OSError as exc:
             logger.warning("cannot clear %s: %s", self.ready.path, exc)
 
-    async def listening(self, transport: Any) -> None:
+    async def listening(self, transport: GuestTransport | None) -> None:
         """Warm the imports, practise the first answer, freeze it all, then say ``ready``."""
         self.warm.run()
         if self._practise and self.binding.needed():
@@ -148,7 +165,7 @@ class CloudGuest(BackendHooks):
             log = logger.info if result.ok else logger.warning
             log(
                 "first answer practised" if result.ok else "first answer not practised",
-                extra={"fields": {"practice": result.model_dump(mode="json")}},
+                extra=LogFields.of(practice=result).extra(),
             )
         if self._gc_freeze:
             # What the warm base holds is every producer's. Immortal, using
@@ -163,7 +180,7 @@ class CloudGuest(BackendHooks):
         except OSError as exc:
             logger.warning("cannot write %s: %s", self.ready.path, exc)
 
-    async def bind(self, transport: Any) -> bool:
+    async def bind(self, transport: GuestTransport | None) -> bool:
         """Wait for a producer, unless the environment already names one. ``True`` if bound here."""
         if not self.binding.needed():
             return False
@@ -177,49 +194,32 @@ class CloudGuest(BackendHooks):
     def serving(
         self,
         *,
-        model: Any,
-        transport: Any,
-        orchestrator: Any = None,
-        notifications: Any = None,
+        model: HostModelPort,
+        transport: GuestTransport,
+        orchestrator: PoolRpcMount | None = None,
+        notifications: ResumingNotifications | None = None,
         on_rebind: Callable[[], None] | None = None,
         api_url: Callable[[], str | None] | None = None,
     ) -> None:
         """Start what runs while igni serves the producer."""
-        self._model = model
-        self._transport = transport
-        self.credentials = self._credentials_for(api_url)
+        self.credential.open(
+            self.binding.bound, api_url, transport=transport, moved=self._rewrite_now
+        )
         if orchestrator is not None:
-            orchestrator.attach_vm_sign_in(self.vm_sign_in)
-        self.activity = ActivityFile(
+            orchestrator.mount(VmSignInRpc(self.vm_sign_in))
+        backend = model.services.backend
+        self.activity = activity = ActivityFile(
             self.paths.activity,
-            activity=self._current_activity,
-            clients=self._clients,
-            credential=self._credential_state,
+            activity=backend.activity,
+            clients=lambda: transport.client_count,
+            credential=self.credential.state,
         )
-        model.broadcasts.on_activity(self.activity.changed)
+        model.services.activity_watch.listen(activity.changed)
         # A window coming or going changes ``clients``.
-        watch_connections = getattr(
-            getattr(transport, "inner", transport), "watch_connections", None
-        )
-        if watch_connections is not None:
-            watch_connections(self._connection_moved)
-        observe = getattr(transport, "observe", None)
-        if observe is not None:
-            observe(self._sent)
-        self.activity.start()
-        # The log writer sleeps until the first answer and its burst are
-        # through: first of the steps after the restore, and first of the later ones.
-        self.restores.on_restore(self._hold_logs)
-        self.restores.on_restore(self._release_logs, when=RestoreStep.LATER)
-        # Before any query: the pools' connections marked stale (touches nothing).
-        self.restores.on_restore(self._reset_pools)
-        # The moment the first answer is out.
-        self.restores.on_restore(self.entropy.after_restore, when=RestoreStep.AT_FIRST_ANSWER)
-        # After the window's first burst: what can wait a moment.
-        if notifications is not None:
-            self.restores.on_restore(notifications.resumed, when=RestoreStep.LATER)
-        self.restores.on_restore(self._rearm_timers, when=RestoreStep.LATER)
-        self.restores.on_restore(self._rewrite_activity, when=RestoreStep.LATER)
+        transport.watch_connections(self._connection_moved)
+        transport.observe(self._sent)
+        activity.start()
+        self._after_restore.register(self.restores, activity=activity, notifications=notifications)
         self.restores.start()
         # A paused VM holds no database connection: a node pauses about a
         # thousand, and each producer's own login cannot share a pooler.
@@ -227,13 +227,7 @@ class CloudGuest(BackendHooks):
         self.suspends.start()
         if self.binding.bound is not None and on_rebind is not None:
             self.binding.watch(lambda _env: on_rebind())
-        if self.credentials is not None:
-            # Its token is the one igni server's clients read: never handed out expired.
-            EnvironmentCredentials.kept_by(self.credentials)
-            self.restores.on_restore(self._renew_credential, when=RestoreStep.LATER)
-            background.start(
-                self.credentials.start(), holder="vm-credential", reason="a token from it"
-            )
+        self.credential.serve(self.restores)
         # Everything igni built to serve this producer stays: frozen, the
         # collector no longer walks (and so writes to) it while igni idles.
         if self._gc_freeze:
@@ -242,21 +236,12 @@ class CloudGuest(BackendHooks):
 
     async def vm_sign_in(self, session_token: str, organisation: str | None = None) -> StateChange:
         """The gateway handed the person's session (``vm_sign_in``): get the VM its credential."""
-        if self.credentials is None:
-            return StateChange(state=CredentialState.NEEDS_SIGN_IN, message="not a producer's VM")
-        return await self.credentials.sign_in(session_token, organisation)
-
-    @property  # type: ignore[override]
-    def tenant(self) -> Tenant | None:
-        """Whose VM this is, once bound."""
-        return self.binding.tenant
+        return await self.credential.sign_in(session_token, organisation)
 
     async def stop(self) -> None:
-        if self.credentials is not None:
-            EnvironmentCredentials.kept_by(None)
-            await self.credentials.stop()
+        await self.credential.stop()
         await self.restores.stop()
-        StdoutLog.release()
+        self._logs.release()
         await self.suspends.stop()
         await self.binding.stop()
         if self.activity is not None:
@@ -265,49 +250,6 @@ class CloudGuest(BackendHooks):
             self.ready.clear()
         except OSError as exc:
             logger.debug("cannot clear %s: %s", self.ready.path, exc)
-
-    def _current_activity(self) -> Activity:
-        return Activity.model_validate(self._model.backend.activity())
-
-    def _clients(self) -> int:
-        inner = getattr(self._transport, "inner", self._transport)
-        return int(getattr(inner, "client_count", 0) or 0)
-
-    def _credentials_for(self, api_url: Callable[[], str | None] | None) -> VmCredentials | None:
-        """The credential keeper, for a VM bound to a producer through ``producer.env``."""
-        bound = self.binding.bound
-        if bound is None or api_url is None:
-            return None
-        # Read now: ``producer.env`` named the files after igni started.
-        paths = GuestPaths.from_env()
-        return VmCredentials(
-            credential_file=CredentialFile(paths.vm_credential),
-            token_file=paths.token,
-            exchange=VmCredentialExchange(api_url),
-            producer=bound.producer,
-            on_state=self._credential_moved,
-            after_wake=self.answers.after,
-        )
-
-    def _credential_state(self) -> str | None:
-        return self.credentials.state.value if self.credentials is not None else None
-
-    def _credential_moved(self, change: StateChange) -> None:
-        """Tell the windows, and the node agent through ``activity.json``."""
-        if change.state is not CredentialState.READY:
-            logger.warning("VM credential: %s (%s)", change.state.value, change.message)
-        if self._transport is not None:
-            background.daemon(
-                self._transport.send(
-                    msg.PushNotification(channel="vm_credential", payload=change.model_dump())
-                ),
-                name="push-vm-credential",
-            )
-        self._rewrite_now()
-
-    async def _renew_credential(self, _restored: Restored) -> None:
-        if self.credentials is not None:
-            await self.credentials.refresh(force=False)
 
     def _connection_moved(self, event: str, _client: str) -> None:
         timeline = self.restores.timeline
@@ -321,7 +263,7 @@ class CloudGuest(BackendHooks):
 
     def _sent(self, message: msg.Message) -> None:
         """An answer: the first after a restore or a wake lets the waiting steps run."""
-        if message.type == "rpc_response":
+        if isinstance(message, msg.RPCResponse):
             self.restores.answered()
             self.answers.answered()
 
@@ -330,23 +272,7 @@ class CloudGuest(BackendHooks):
             self.activity.refresh()
 
     async def _close_connections(self) -> None:
-        await cache.close_connections()
-
-    async def _hold_logs(self, _restored: Restored) -> None:
-        StdoutLog.hold()
-
-    async def _release_logs(self, _restored: Restored) -> None:
-        StdoutLog.release()
-
-    async def _reset_pools(self, _restored: Restored) -> None:
-        await cache.reset_pools()
-
-    async def _rearm_timers(self, _restored: Restored) -> None:
-        ActivityRegistry.shared().rearm()
-
-    async def _rewrite_activity(self, _restored: Restored) -> None:
-        if self.activity is not None:
-            self.activity.refresh(force=True)
+        await engines.close_connections()
 
 
 __all__ = ["CloudGuest"]

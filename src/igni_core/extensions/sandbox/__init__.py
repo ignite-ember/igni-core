@@ -10,8 +10,13 @@ This package confines the process to the same grants:
 * :mod:`.plan` — what one extension may read, write and reach;
 * :mod:`.proxy` — the egress proxy igni runs per extension, the only
   route out;
-* :mod:`.seatbelt` (macOS) and :mod:`.bubblewrap` (Linux, with
-  :mod:`.bridge` inside its network namespace) — the platform profiles;
+* :mod:`.mechanism` — the one interface the platform sandboxes answer
+  through;
+* :mod:`.seatbelt` (macOS), :mod:`.bubblewrap` (Linux, with
+  :mod:`.bridge` inside its network namespace) and :mod:`.appcontainer`
+  (Windows, with :mod:`.winapi` for igni's Win32 calls and
+  :mod:`.winbridge` for the runner and the shim inside) — the platform
+  sandboxes;
 * :mod:`.settings` — ``extensions.sandbox`` and
   ``extensions.require_sandbox``, from the tiers allowed to set them.
 """
@@ -22,6 +27,13 @@ from igni_core.extensions.sandbox.launcher import (
     Confinement,
     ExtensionSandbox,
     SandboxRefused,
+)
+from igni_core.extensions.sandbox.mechanism import (
+    MechanismDeps,
+    MechanismName,
+    MechanismRun,
+    SandboxAvailability,
+    SandboxMechanism,
 )
 from igni_core.extensions.sandbox.plan import SandboxPlan
 from igni_core.extensions.sandbox.proxy import EgressProxy, HostAllowList
@@ -35,6 +47,11 @@ __all__ = [
     "EgressProxy",
     "ExtensionSandbox",
     "HostAllowList",
+    "MechanismDeps",
+    "MechanismName",
+    "MechanismRun",
+    "SandboxAvailability",
+    "SandboxMechanism",
     "SandboxPlan",
     "SandboxRefused",
     "SandboxSettings",

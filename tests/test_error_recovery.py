@@ -3,30 +3,35 @@
 Covers: API timeout handling, cancel behavior, MCP crash recovery.
 """
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.backend.hitl_tracer import HITLTracer
-from igni_core.backend.pending_requirements_store import PendingRequirementsStore
-from igni_core.backend.run_controller import RunController as BackendRunController
 from igni_core.backend.server import BackendServer
+from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Error
+from tests.backend_server_factory import make_backend
 
 
-def _wire_backend_runs(server: BackendServer) -> None:
-    """Attach a :class:`BackendRunController` to a partial
-    ``BackendServer`` built via ``__new__``. The controller owns the
-    pre-run pipeline + streaming loop delegate. See
-    ``tests/test_streaming_done_unblock._wire_backend_runs`` for the
-    counterpart in the streaming-lock suite."""
-    server._runs = BackendRunController(
-        backend=server,
-        session=server._session,
-        pending_store=server._pending_store,
-    )
+def _pending_store() -> MagicMock:
+    store = MagicMock()
+    store.arecord_received = AsyncMock(return_value="mid-1")
+    store.amark_completed = AsyncMock()
+    store.adiscard = AsyncMock()
+    # The run loop stamps a streamed failure interrupted, so the FE can
+    # offer Retry/Discard on it; a bare MagicMock is not awaitable.
+    store.amark_interrupted = AsyncMock()
+    return store
+
+
+def _backend(session: MagicMock) -> BackendServer:
+    """A composed backend over ``session`` whose periodic checkpoint is
+    stubbed — the run body is what these tests exercise."""
+    server = make_backend(session, settings=MagicMock(), pending_store=_pending_store())
+    server.controllers.runs.periodic_checkpoint = AsyncMock()
+    return server
 
 
 class TestBackendRunMessageErrors:
@@ -35,103 +40,62 @@ class TestBackendRunMessageErrors:
     @pytest.mark.asyncio
     async def test_agno_exception_yields_error(self):
         """Agno runtime error should yield an Error protocol message."""
-        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
-            server = BackendServer.__new__(BackendServer)
-            server._session = MagicMock()
-            server._session.main_team = MagicMock()
+        session = MagicMock()
+        session.settings = SimpleNamespace(models=ModelsConfig(default="m"))
+        session.main_team = MagicMock()
 
-            async def _failing_arun(*args, **kwargs):
-                raise RuntimeError("Model API failure")
-                # Unreachable by design: the bare `yield` is what makes this
-                # an async generator, which is the shape the caller awaits.
-                #
-                # This previously carried a suppression directive naming
-                # `unreachable` — a mypy code, not a ruff one. Ruff 0.15
-                # reports that as malformed, and it had never suppressed
-                # anything. Spelling the directive out here would trip the
-                # same warning, so it is described rather than quoted.
-                yield
+        async def _failing_arun(*args, **kwargs):
+            raise RuntimeError("Model API failure")
+            # Unreachable by design: the bare `yield` is what makes this
+            # an async generator, which is the shape the caller awaits.
+            yield
 
-            server._session.main_team.arun = _failing_arun
-            server._session._learning = None
-            server._session._inject_learnings = AsyncMock()
-            # The run path checks guardrails before handing the message to the
-            # model; a bare MagicMock returns something unawaitable.
-            server._session.guardrail_runner.warning_prefix = AsyncMock(return_value="")
-            server._session.inject_learnings = AsyncMock()
-            server._session.hook_executor = MagicMock()
-            server._session.hook_executor.execute = AsyncMock(
-                return_value=MagicMock(should_continue=True, message="")
-            )
-            server._session.session_id = "test"
-            server._processing = False
-            server._settings = MagicMock()
-            server._hitl_store = PendingRequirementsStore()
-            server._hitl_tracer = HITLTracer(enabled=False)
-            server._run_lock = asyncio.Lock()
-            server._pending_store = MagicMock()
-            server._pending_store.arecord_received = AsyncMock(return_value="mid-1")
-            server._pending_store.amark_completed = AsyncMock()
-            server._pending_store.adiscard = AsyncMock()
-            # The run loop now stamps a streamed failure interrupted, so the FE
-            # can offer Retry/Discard on it — before that, the only thing that
-            # stamped anything was the `except` branch, which the HITL mux made
-            # unreachable. This stub predates the call and a bare MagicMock is
-            # not awaitable.
-            server._pending_store.amark_interrupted = AsyncMock()
-            server._periodic_checkpoint = AsyncMock()
-            _wire_backend_runs(server)
+        session.main_team.arun = _failing_arun
+        session._learning = None
+        session._inject_learnings = AsyncMock()
+        # The run path checks guardrails before handing the message to the
+        # model; a bare MagicMock returns something unawaitable.
+        session.guardrail_runner.warning_prefix = AsyncMock(return_value="")
+        session.inject_learnings = AsyncMock()
+        session.hook_executor = MagicMock()
+        session.hook_executor.execute = AsyncMock(
+            return_value=MagicMock(should_continue=True, message="")
+        )
+        session.session_id = "test"
+        server = _backend(session)
 
-            results = []
-            async for proto in server.run_message("hello"):
-                results.append(proto)
+        results = []
+        async for proto in server.run_message("hello"):
+            results.append(proto)
 
-            errors = [r for r in results if isinstance(r, Error)]
-            assert len(errors) >= 1
-            assert "Model API failure" in errors[0].text
+        errors = [r for r in results if isinstance(r, Error)]
+        assert len(errors) >= 1
+        assert "Model API failure" in errors[0].text
 
     @pytest.mark.asyncio
     async def test_hook_blocks_message(self):
         """UserPromptSubmit hook blocking should yield error, not crash."""
-        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
-            server = BackendServer.__new__(BackendServer)
-            server._session = MagicMock()
-            server._session._inject_learnings = AsyncMock()
-            # The run path checks guardrails before handing the message to the
-            # model; a bare MagicMock returns something unawaitable.
-            server._session.guardrail_runner.warning_prefix = AsyncMock(return_value="")
-            server._session.inject_learnings = AsyncMock()
-            server._session.hook_executor = MagicMock()
-            server._session.hook_executor.execute = AsyncMock(
-                return_value=MagicMock(should_continue=False, message="Blocked by hook")
-            )
-            server._session.session_id = "test"
-            server._session._learning = None
-            server._processing = False
-            server._settings = MagicMock()
-            server._hitl_store = PendingRequirementsStore()
-            server._hitl_tracer = HITLTracer(enabled=False)
-            server._run_lock = asyncio.Lock()
-            server._pending_store = MagicMock()
-            server._pending_store.arecord_received = AsyncMock(return_value="mid-1")
-            server._pending_store.amark_completed = AsyncMock()
-            server._pending_store.adiscard = AsyncMock()
-            # The run loop now stamps a streamed failure interrupted, so the FE
-            # can offer Retry/Discard on it — before that, the only thing that
-            # stamped anything was the `except` branch, which the HITL mux made
-            # unreachable. This stub predates the call and a bare MagicMock is
-            # not awaitable.
-            server._pending_store.amark_interrupted = AsyncMock()
-            server._periodic_checkpoint = AsyncMock()
-            _wire_backend_runs(server)
+        session = MagicMock()
+        session._inject_learnings = AsyncMock()
+        # The run path checks guardrails before handing the message to the
+        # model; a bare MagicMock returns something unawaitable.
+        session.guardrail_runner.warning_prefix = AsyncMock(return_value="")
+        session.inject_learnings = AsyncMock()
+        session.hook_executor = MagicMock()
+        session.hook_executor.execute = AsyncMock(
+            return_value=MagicMock(should_continue=False, message="Blocked by hook")
+        )
+        session.session_id = "test"
+        session._learning = None
+        server = _backend(session)
 
-            results = []
-            async for proto in server.run_message("blocked message"):
-                results.append(proto)
+        results = []
+        async for proto in server.run_message("blocked message"):
+            results.append(proto)
 
-            errors = [r for r in results if isinstance(r, Error)]
-            assert len(errors) == 1
-            assert "Blocked by hook" in errors[0].text
+        errors = [r for r in results if isinstance(r, Error)]
+        assert len(errors) == 1
+        assert "Blocked by hook" in errors[0].text
 
 
 class TestBackendCancelRun:
@@ -139,18 +103,12 @@ class TestBackendCancelRun:
 
     def test_cancel_run_no_crash_when_no_team(self):
         """cancel_run should not crash even if no team/run active."""
-        with patch("igni_core.backend.server.BackendServer.__init__", return_value=None):
-            server = BackendServer.__new__(BackendServer)
-            server._session = MagicMock()
-            server._session.main_team = MagicMock(spec=[])  # no run_id attr
-            # ``cancel_run`` now also cancels the in-flight asyncio
-            # task (``self._current_run_task``). ``__new__``-bypassed
-            # init leaves the attribute unset; mirror the real
-            # ``__init__`` default so the cancel path runs cleanly.
-            server._current_run_task = None
+        session = MagicMock()
+        session.main_team = MagicMock(spec=[])  # no run_id attr
+        server = make_backend(session, settings=MagicMock())
 
-            # Should not raise
-            server.cancel_run()
+        # Should not raise
+        server.cancel_run()
 
 
 class TestToolExceptionRecovery:

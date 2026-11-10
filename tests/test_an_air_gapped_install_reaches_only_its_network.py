@@ -24,9 +24,11 @@ from click.testing import CliRunner
 
 from igni_core.cli.ext import ext
 from igni_core.core.config.schemas import NetworkConfig, PluginsConfig
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.hooks.handlers.http import HttpHookHandler
 from igni_core.core.hooks.schemas import HookDefinition, HookPayload
+from igni_core.core.hooks.tool_events import PreToolUsePayload
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.config import MCPPolicy, MCPServerConfig, MCPTransport
 from igni_core.core.network_policy import NetworkPolicy
@@ -107,7 +109,7 @@ class TestThePolicy:
 class TestWhereTheHostsComeFrom:
     def test_the_user_config_names_them(self, tmp_path):
         _write_user_config("network:\n  internal_hosts: [git.acme.internal]\n")
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
         assert settings.network.internal_hosts == ["git.acme.internal"]
 
     def test_a_project_config_cannot_widen_them(self, tmp_path):
@@ -117,7 +119,7 @@ class TestWhereTheHostsComeFrom:
         (project / "config.yaml").write_text("network:\n  internal_hosts: [github.com]\n")
         (project / "config.local.yaml").write_text("network:\n  internal_hosts: ['*.com']\n")
 
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
 
         assert settings.network.internal_hosts == ["git.acme.internal"]
         assert not NetworkPolicy.from_settings(settings).allows(PUBLIC)
@@ -128,7 +130,7 @@ class TestWhereTheHostsComeFrom:
         project.mkdir()
         (project / "config.yaml").write_text("air_gapped: false\n")
 
-        assert load_settings(project_dir=tmp_path).air_gapped is True
+        assert SettingsLoader.load(project_dir=tmp_path).air_gapped is True
 
     def test_a_project_config_cannot_add_a_host_through_another_setting(self, tmp_path):
         # api_url, portal_url, update_endpoint and plugins.marketplaces all
@@ -143,7 +145,7 @@ class TestWhereTheHostsComeFrom:
             "plugins:\n  marketplaces: [https://evil.example/m.git]\n"
         )
 
-        settings = load_settings(project_dir=tmp_path)
+        settings = SettingsLoader.load(project_dir=tmp_path)
 
         assert not NetworkPolicy.from_settings(settings).allows("https://evil.example/x")
 
@@ -186,6 +188,7 @@ class TestExtInstall:
         assert "air-gapped" in done.output
         assert "network.internal_hosts" in done.output, "says how to allow it"
         assert "directory" in done.output, "and how to do without it"
+        assert "cloning" not in done.output, "a refused clone is not announced as started"
 
     def test_a_file_url_still_installs(self, dev_flag, tmp_path, mirror):
         _write_user_config("air_gapped: true\n")
@@ -193,6 +196,7 @@ class TestExtInstall:
             ext, ["install", f"file://{mirror}", "--root", str(tmp_path / "s")]
         )
         assert done.exit_code == 0, done.output
+        assert f"cloning file://{mirror}" in done.output
         assert "installed" in done.output
 
     def test_without_the_switch_the_clone_is_attempted(self, dev_flag, tmp_path):
@@ -270,7 +274,7 @@ def _hook(url: str) -> HookDefinition:
 
 
 def _payload() -> HookPayload:
-    return HookPayload(event="PreToolUse", tool_name="Bash")
+    return HookPayload(body=PreToolUsePayload(tool_name="Bash"))
 
 
 def _ok_response() -> MagicMock:

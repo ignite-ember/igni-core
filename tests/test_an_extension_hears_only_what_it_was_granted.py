@@ -42,7 +42,9 @@ async def rig(tmp_path: Path) -> AsyncIterator[HostRig]:
 def listening(rig: HostRig, extension_id: str, *signals: str) -> Sink:
     assert rig.model is not None
     sink = Sink()
-    rig.model.bus.subscribe(rig.model.bus.attach(extension_id, sink), list(signals))
+    rig.model.services.bus.subscribe(
+        rig.model.services.bus.attach(extension_id, sink), list(signals)
+    )
     return sink
 
 
@@ -94,7 +96,7 @@ async def test_only_the_audience_is_delivered_to(rig: HostRig):
     rig.install("acme.three", host=[])
     listening(rig, one, "chat.run_started")
     listening(rig, "acme.three", "chat.run_started")
-    told = rig.model.emit(
+    told = rig.model.services.bus.emit(
         "chat.run_started",
         {"session_id": "boot", "run_id": "r1", "parent_run_id": "", "agent_name": "", "model": ""},
     )
@@ -110,7 +112,9 @@ async def test_one_failing_delivery_does_not_cost_the_others_a_signal(rig: HostR
 
     assert rig.model is not None
     broken = rig.install("acme.broken", host=["chat.read"])
-    rig.model.bus.subscribe(rig.model.bus.attach(broken, Broken()), ["chat.run_started"])
+    rig.model.services.bus.subscribe(
+        rig.model.services.bus.attach(broken, Broken()), ["chat.run_started"]
+    )
     heard = listening(rig, rig.install("acme.fine", host=["chat.read"]), "chat.run_started")
     await rig.transport.send(msg.RunStarted(session_id="boot", run_id="r1"))
     assert len(heard.values("chat.run_started")) == 1
@@ -134,7 +138,7 @@ async def test_a_signal_about_one_extension_reaches_only_that_one(rig: HostRig):
     heard_one = listening(rig, one, "self.state_changed")
     heard_two = listening(rig, two, "self.state_changed")
     change: dict[str, Any] = {"extension_id": one, "state": "READY", "reason": ""}
-    told = rig.model.emit("self.state_changed", change, only=one)
+    told = rig.model.services.bus.emit("self.state_changed", change, only=one)
     assert told == [one]
     assert heard_one.values("self.state_changed") == [change]
     assert heard_two.got == []

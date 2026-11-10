@@ -18,7 +18,6 @@ import httpx
 import pytest
 from igni_cloud.credentials import EnvironmentCredentials
 from igni_cloud.layer import CloudLayer
-from igni_cloud.logs import StdoutLog
 from igni_cloud.mcp_approvals import CloudMcpApprovals, PersonMcpApprovals
 
 from igni_core.backend.hitl_tracer import HITLTracer
@@ -30,13 +29,15 @@ from igni_core.core.auth.credentials import (
 )
 from igni_core.core.config.llm_call_logger import LlmCallLogger
 from igni_core.core.config.managed_policy import ManagedPolicySource
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.db.locator import StorageLocator
-from igni_core.core.layer import Layer, Layers, UnknownLayer
+from igni_core.core.layer import Layer, Layers, UnknownLayer, layers
 from igni_core.core.mcp.approval import MCPApprovalManager
 from igni_core.core.utils.audit import AuditLogger
 from igni_core.core.utils.audit_schemas import AuditEntry
-from igni_core.extensions.store import ExtensionStore, StoredGroup
+from igni_core.extensions.listing import StoredGroup
+from igni_core.extensions.store import ExtensionStore
 
 
 @pytest.fixture
@@ -67,14 +68,14 @@ def home(monkeypatch, tmp_path: Path) -> Path:
 
 
 def test_one_setting_installs_the_layer_this_package_declares(monkeypatch):
-    assert type(Layers.current()) is Layer, "unset: the desktop's"
+    assert type(layers.current()) is Layer, "unset: the desktop's"
     monkeypatch.setenv(Layers.ENV, "cloud")
-    Layers.reset()
-    assert isinstance(Layers.current(), CloudLayer), "found through the igni.layers entry point"
+    layers.reset()
+    assert isinstance(layers.current(), CloudLayer), "found through the igni.layers entry point"
     monkeypatch.setenv(Layers.ENV, "laptop")
-    Layers.reset()
+    layers.reset()
     with pytest.raises(UnknownLayer, match="laptop"):
-        Layers.current()
+        layers.current()
 
 
 def test_the_backend_logs_json_lines_to_stdout_and_writes_no_file(
@@ -82,7 +83,7 @@ def test_the_backend_logs_json_lines_to_stdout_and_writes_no_file(
 ):
     assert configure_logging(path=tmp_path / "backend.log") is None
     logging.getLogger("igni_core.backend.test").warning("hello %s", "cloud")
-    StdoutLog.flush()
+    cloud.logs.flush()
     line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert line["message"] == "hello cloud"
     assert line["level"] == "WARNING"
@@ -93,7 +94,7 @@ def test_the_backend_logs_json_lines_to_stdout_and_writes_no_file(
 def test_the_hitl_trace_writes_no_file(cloud, clean_loggers, capsys, tmp_path: Path):
     configure_logging()
     HITLTracer(path=tmp_path / "hitl_trace.log").trace("paused run r1")
-    StdoutLog.flush()
+    cloud.logs.flush()
     assert not (tmp_path / "hitl_trace.log").exists()
     assert "paused run r1" in capsys.readouterr().out
 
@@ -106,7 +107,7 @@ def test_the_audit_log_is_a_json_line_on_stdout(cloud, clean_loggers, capsys, tm
         AuditEntry.success(session_id="s1", agent_name="igni", tool_name="run_shell_command")
     )
     assert result.ok
-    StdoutLog.flush()
+    cloud.logs.flush()
     assert not (tmp_path / "audit").exists()
     lines = [json.loads(x) for x in capsys.readouterr().out.strip().splitlines()]
     [entry] = [line["audit"] for line in lines if "audit" in line]
@@ -120,7 +121,7 @@ def test_the_audit_log_is_a_json_line_on_stdout(cloud, clean_loggers, capsys, tm
 def test_llm_calls_have_no_log_file(cloud, clean_loggers, tmp_path: Path):
     LlmCallLogger(log_dir=tmp_path).ensure_configured()
     assert not (tmp_path / "llm_calls.log").exists()
-    assert StdoutLog.handler() in logging.getLogger("igni_core.llm_calls").handlers
+    assert cloud.logs.handler() in logging.getLogger("igni_core.llm_calls").handlers
 
 
 def test_credentials_come_from_the_environment_and_are_never_written(
@@ -151,12 +152,12 @@ def _configured(home: Path, tmp_path: Path) -> Path:
 
 def test_settings_are_not_read_from_the_home_or_the_workspace(cloud, home, tmp_path: Path):
     project = _configured(home, tmp_path)
-    assert load_settings(project_dir=project).storage.max_history_runs == 10000
+    assert SettingsLoader.load(project_dir=project).storage.max_history_runs == 10000
 
 
 def test_the_desktop_reads_them_as_before(home, tmp_path: Path):
     project = _configured(home, tmp_path)
-    assert load_settings(project_dir=project).storage.max_history_runs == 9
+    assert SettingsLoader.load(project_dir=project).storage.max_history_runs == 9
 
 
 def test_the_cloud_needs_its_database(cloud, tmp_path: Path):
@@ -167,10 +168,11 @@ def test_the_cloud_needs_its_database(cloud, tmp_path: Path):
 
 def test_priority_and_group_are_igni_servers_and_never_written(cloud, tmp_path: Path):
     root = tmp_path / "extensions"
-    assert ExtensionStore(root).record_priority(["acme.a", "acme.b"])
-    ExtensionStore(root).record_group("engineering")
-    assert ExtensionStore(root).priority() == ["acme.a", "acme.b"]
-    assert ExtensionStore(root).group() == StoredGroup(group="engineering")
+    store = ExtensionStore(root)
+    assert store.listing.record_priority(["acme.a", "acme.b"])
+    store.listing.record_group("engineering")
+    assert store.listing.priority() == ["acme.a", "acme.b"]
+    assert store.listing.group() == StoredGroup(group="engineering")
     assert not root.exists(), "nothing written in the VM"
 
 

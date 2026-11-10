@@ -10,14 +10,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from igni_core.backend.__main__ import _build_rpc_table
 from igni_core.backend.command_handler import CommandHandler
-from igni_core.backend.server import BackendServer
+from igni_core.backend.server_panels import PanelsController
 from igni_core.core.output_styles import OutputStyle, discover_output_styles
 from igni_core.core.output_styles.loader import _parse_frontmatter
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.core import Session
+from igni_core.core.session.output_style_selection import OutputStyleSelection
 from igni_core.protocol.rpc import RpcMethod
+from tests.backend_server_factory import make_backend
+from tests.rpc_tables import rpc_table_for
+from tests.session_coordinators import wire_coordinators
 
 
 def _write(p: Path, body: str) -> None:
@@ -120,32 +123,36 @@ class TestDiscover:
 class TestSetOutputStyle:
     def _session(self, styles=None):
         session = Session.__new__(Session)
-        session.output_styles = styles or {
-            "default": OutputStyle(
-                name="default",
-                path=Path("/dev/null"),
-                description="Default mode",
-                body="Be terse.",
-            ),
-            "explanatory": OutputStyle(
-                name="explanatory",
-                path=Path("/dev/null"),
-                description="Explain everything",
-                body="Explain things.",
-            ),
-        }
-        session._active_output_style = "default"
+        session.output_style = OutputStyleSelection(
+            styles
+            or {
+                "default": OutputStyle(
+                    name="default",
+                    path=Path("/dev/null"),
+                    description="Default mode",
+                    body="Be terse.",
+                ),
+                "explanatory": OutputStyle(
+                    name="explanatory",
+                    path=Path("/dev/null"),
+                    description="Explain everything",
+                    body="Explain things.",
+                ),
+            },
+            active="default",
+        )
         from igni_core.core.session.broadcast import BroadcastBus
 
         session.broadcast_bus = BroadcastBus()
         session.main_team = None  # patch path tolerated
+        wire_coordinators(session)
         return session
 
     def test_switch_to_known_style(self):
         session = self._session()
         msg = session.set_output_style("explanatory")
         assert "default" in msg and "explanatory" in msg
-        assert session._active_output_style == "explanatory"
+        assert session.active_output_style == "explanatory"
 
     def test_switch_to_unknown_returns_available_list(self):
         session = self._session()
@@ -154,7 +161,7 @@ class TestSetOutputStyle:
         assert "default" in msg  # listed as available
         assert "explanatory" in msg
         # State unchanged.
-        assert session._active_output_style == "default"
+        assert session.active_output_style == "default"
 
     def test_no_op_when_already_active(self):
         session = self._session()
@@ -189,7 +196,7 @@ class TestSetOutputStyle:
     def test_broadcasts_output_style_changed(self):
         session = self._session()
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
         session.set_output_style("explanatory")
         evt = next(p for ch, p in captured if ch == "output_style_changed")
         assert evt["style"] == "explanatory"
@@ -202,25 +209,28 @@ class TestSetOutputStyle:
 class TestOutputStyleSlashCommand:
     def _make_session(self):
         session = Session.__new__(Session)
-        session.output_styles = {
-            "default": OutputStyle(
-                name="default",
-                path=Path("/dev/null"),
-                description="Default mode",
-                body="Be terse.",
-            ),
-            "explanatory": OutputStyle(
-                name="explanatory",
-                path=Path("/dev/null"),
-                description="Explain everything",
-                body="Explain.",
-            ),
-        }
-        session._active_output_style = "default"
+        session.output_style = OutputStyleSelection(
+            {
+                "default": OutputStyle(
+                    name="default",
+                    path=Path("/dev/null"),
+                    description="Default mode",
+                    body="Be terse.",
+                ),
+                "explanatory": OutputStyle(
+                    name="explanatory",
+                    path=Path("/dev/null"),
+                    description="Explain everything",
+                    body="Explain.",
+                ),
+            },
+            active="default",
+        )
         from igni_core.core.session.broadcast import BroadcastBus
 
         session.broadcast_bus = BroadcastBus()
         session.main_team = None
+        wire_coordinators(session)
         return session
 
     @pytest.mark.asyncio
@@ -255,14 +265,14 @@ class TestOutputStyleSlashCommand:
         session = self._make_session()
         handler = CommandHandler(session)
         await handler.handle("/output-style explanatory")
-        assert session._active_output_style == "explanatory"
+        assert session.active_output_style == "explanatory"
 
     @pytest.mark.asyncio
     async def test_set_with_explicit_set_keyword(self):
         session = self._make_session()
         handler = CommandHandler(session)
         await handler.handle("/output-style set explanatory")
-        assert session._active_output_style == "explanatory"
+        assert session.active_output_style == "explanatory"
 
     @pytest.mark.asyncio
     async def test_unknown_style_returns_error(self):
@@ -271,15 +281,14 @@ class TestOutputStyleSlashCommand:
         result = await handler.handle("/output-style nonexistent")
         assert "Error" in result.content
         # State unchanged.
-        assert session._active_output_style == "default"
+        assert session.active_output_style == "default"
 
     @pytest.mark.asyncio
     async def test_empty_styles_dir_explains_how(self):
         """When no styles are configured, ``list`` returns a
         helpful hint rather than an empty block."""
         session = self._make_session()
-        session.output_styles = {}
-        session._active_output_style = ""
+        session.output_style = OutputStyleSelection()
         handler = CommandHandler(session)
         result = await handler.handle("/output-style list")
         assert "No output styles" in result.content
@@ -306,10 +315,8 @@ class TestGetOutputStylesRpc:
                 body="y",
             ),
         }
-        session._active_output_style = "learning"
         session.active_output_style = "learning"
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
         out = backend.get_output_styles()
         assert out.active == "learning"
         names = [s.name for s in out.styles]
@@ -319,9 +326,7 @@ class TestGetOutputStylesRpc:
         session = MagicMock(spec=["output_styles", "active_output_style"])
         session.output_styles = {}
         session.active_output_style = ""
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
-        out = backend.get_output_styles()
+        out = PanelsController(session).output_styles()
         assert out.active == ""
         assert out.styles == []
 
@@ -335,12 +340,10 @@ class TestGetOutputStylesRpc:
                 body="",
             )
         }
-        session._active_output_style = "default"
         session.active_output_style = "default"
-        backend = BackendServer.__new__(BackendServer)
-        backend._session = session
+        backend = make_backend(session)
 
-        table = _build_rpc_table(backend, transport=MagicMock(), login_state={})
+        table = rpc_table_for(backend, transport=MagicMock())
         handler = table.get(RpcMethod.GET_OUTPUT_STYLES)
         assert handler is not None
         result = handler({})

@@ -7,7 +7,7 @@ exported and the OpenTelemetry SDK is not set up at all
 
 **Managed-only.** Honoured from the managed-settings file, the verified
 group policy pack and the environment, never from a user's or a project's
-config or the command line: ``TelemetryTier`` in ``merge_plan.py`` puts the
+config or the command line: ``TelemetryTier`` in ``tiers/organisation.py`` puts the
 block back to its defaults before the organisation tiers merge. A repository
 that could set it could send its readers' traces to a host of its choosing;
 a person who could set it could do the same with ``capture_content: true``.

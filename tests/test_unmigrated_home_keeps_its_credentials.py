@@ -20,7 +20,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.paths import CONFIG_DIR, LEGACY_CONFIG_DIR, home_config_dir
 
 
@@ -67,7 +68,7 @@ class TestAnUnmigratedHome:
         project.mkdir()
         _home(monkeypatch, home)
 
-        settings = load_settings(project_dir=project)
+        settings = SettingsLoader.load(project_dir=project)
 
         assert Path(settings.storage.data_dir) == home / LEGACY_CONFIG_DIR
 

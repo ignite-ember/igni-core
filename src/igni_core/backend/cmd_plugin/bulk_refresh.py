@@ -20,6 +20,7 @@ from igni_core.backend.plugin_schemas import (
     MarketplaceRefreshFailure,
     MarketplaceRefreshResult,
 )
+from igni_core.core.plugins.models import MarketplaceRegistry
 
 if TYPE_CHECKING:
     from igni_core.backend.cmd_plugin.gateway import PluginBackendGateway
@@ -35,7 +36,7 @@ class BulkRefreshRunner:
     def __init__(self, gateway: PluginBackendGateway) -> None:
         self._gateway = gateway
 
-    def run(self, registry) -> MarketplaceRefreshResult:
+    def run(self, registry: MarketplaceRegistry) -> MarketplaceRefreshResult:
         """Iterate ``registry.marketplaces``, refresh each, collect
         results. Per-marketplace failures are recorded (not raised)
         so one broken URL doesn't abort the whole refresh."""

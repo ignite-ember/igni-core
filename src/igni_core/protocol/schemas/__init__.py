@@ -15,20 +15,24 @@ grouped by concern:
 * :mod:`.rpc` — process-split RPC (RPCRequest, RPCResponse with
   ``ok`` / ``fail`` factories).
 * :mod:`.push` — BE → FE push notifications with typed channel enum
-  and per-channel factory helpers.
+  and per-channel factory helpers; :mod:`.push_payloads` — the payload
+  model each of those factories takes.
 * :mod:`.internal` — intermediate value objects the BE serializer
   builds and then unpacks into wire messages (:class:`ToolResultData`);
   NOT itself on the wire.
+* :mod:`.wire` — the wire contract itself: the list of message
+  classes that can arrive, and the ``type``-discriminated union they
+  form.
 
 The public export surface lives on this package's ``__all__`` so
 :mod:`igni_core.protocol.messages` can re-export the entire wire
-contract via ``from igni_core.protocol.schemas import *``. That
-star-import is what :class:`igni_core.protocol.registry.MessageRegistry`
-reflection-scans for :class:`Message` subclasses at construction
-time — every class listed in ``__all__`` here MUST be importable
-under the ``messages`` module namespace or registry discovery
-drops it and the wire deserializer starts logging
-``Unknown message type`` warnings.
+contract via ``from igni_core.protocol.schemas import *``.
+
+The contract the transports accept is stated separately, in
+:mod:`.wire` — :class:`igni_core.protocol.registry.MessageRegistry`
+reads that list instead of scanning an import namespace, so a message
+that reaches a schema module but not that list is a visible omission
+rather than a silent one.
 """
 
 from igni_core.protocol.schemas.be_events import (
@@ -95,13 +99,12 @@ from igni_core.protocol.schemas.mirroring import (
 )
 from igni_core.protocol.schemas.push import (
     PushNotification,
+    PushPayload,
     push_background_process_done,
     push_file_edited,
     push_login_result,
     push_login_status,
-    push_orchestrate_event,
-    push_orchestrate_progress,
-    push_permission_mode_changed,
+    push_on,
     push_process_exited,
     push_process_line,
     push_process_started,
@@ -109,7 +112,19 @@ from igni_core.protocol.schemas.push import (
     push_scheduler_started,
     push_session_named,
 )
-from igni_core.protocol.schemas.rpc import RPCRequest, RPCResponse
+from igni_core.protocol.schemas.push_payloads import (
+    BackgroundProcessDonePayload,
+    FileEditedPayload,
+    LoginResultPayload,
+    LoginStatusPayload,
+    ProcessExitedPayload,
+    ProcessLinePayload,
+    ProcessStartedPayload,
+    SchedulerCompletedPayload,
+    SchedulerStartedPayload,
+    SessionNamedPayload,
+)
+from igni_core.protocol.schemas.rpc import RpcErrorCode, RPCRequest, RPCResponse
 
 __all__ = [
     # Envelope + shared value objects
@@ -173,17 +188,27 @@ __all__ = [
     "StreamEnd",
     "UserMessage",
     # RPC
+    "RpcErrorCode",
     "RPCRequest",
     "RPCResponse",
     # Push
     "PushNotification",
+    "PushPayload",
+    "BackgroundProcessDonePayload",
+    "FileEditedPayload",
+    "LoginResultPayload",
+    "LoginStatusPayload",
+    "ProcessExitedPayload",
+    "ProcessLinePayload",
+    "ProcessStartedPayload",
+    "SchedulerCompletedPayload",
+    "SchedulerStartedPayload",
+    "SessionNamedPayload",
     "push_background_process_done",
     "push_file_edited",
     "push_login_result",
     "push_login_status",
-    "push_orchestrate_event",
-    "push_orchestrate_progress",
-    "push_permission_mode_changed",
+    "push_on",
     "push_process_exited",
     "push_process_line",
     "push_process_started",

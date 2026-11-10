@@ -1,7 +1,7 @@
 """Pydantic wire/data models for the web-tool subsystem.
 
 Extracted from :mod:`web` per the sibling schemas convention
-(mirrors :mod:`custom_loader_schemas`, :mod:`shell_orphan_schemas`,
+(mirrors :mod:`custom_loader_schemas`, :mod:`orphan_schemas`,
 and :mod:`process_store_schemas` in this exact directory). Every
 config / result model the web-fetching stack hands across a module
 boundary lives here so Rule 1 stays discoverable at one path.
@@ -21,11 +21,16 @@ Consumers:
   ``_get`` helper and :meth:`WebTools.fetch_url`. Callers at the
   Agno-toolkit boundary invoke :meth:`text_or_error` to stringify
   for the tool-call return contract.
+* :class:`HttpRetryAttemptEvent` / :class:`HttpRetrySucceededEvent`
+  — the broadcasts :class:`HttpFetcher` emits while retrying.
 """
 
-from pydantic import BaseModel, ConfigDict
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core import __version__
+from igni_core.core.broadcast_schema import BroadcastEvent
 
 
 class HttpFetcherConfig(BaseModel):
@@ -116,3 +121,23 @@ class FetchResult(BaseModel):
         pre-formatted :attr:`error` string.
         """
         return self.text if self.ok else self.error
+
+
+class HttpRetryAttemptEvent(BroadcastEvent):
+    """A web fetch failed with a temporary error and igni is about to retry it."""
+
+    channel: Literal["http_retry_attempt"] = "http_retry_attempt"
+    attempt: int = Field(
+        description="Number of the attempt about to be made, counting the first request as 1 "
+        "(so the first retry is 2)."
+    )
+    delay_seconds: float = Field(description="Seconds igni waits before making this attempt.")
+
+
+class HttpRetrySucceededEvent(BroadcastEvent):
+    """A web fetch succeeded after at least one retry."""
+
+    channel: Literal["http_retry_succeeded"] = "http_retry_succeeded"
+    url: str = Field(description="URL that was fetched.")
+    attempt_count: int = Field(description="Total number of requests made, including the first.")
+    delay_seconds: float = Field(description="Total seconds spent waiting between attempts.")

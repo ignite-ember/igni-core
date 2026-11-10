@@ -28,12 +28,21 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from igni_core.backend.server import BackendServer
+from igni_core.backend.server_history import ChatHistoryRebuilder
 from igni_core.core.config.permission_eval import PermissionMode
+from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
-from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore
+from igni_core.core.session.schemas import PersistResult
+from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore, PlanSubmittedEvent
+from tests.session_coordinators import wire_coordinators
 
 # ── PlanStore.decisions ─────────────────────────────────────
+
+
+async def _history(session: MagicMock) -> list[dict]:
+    """The rebuilt history as the RPC puts it on the wire."""
+    turns = await ChatHistoryRebuilder(session=session).rebuild("sess")
+    return [t.model_dump(mode="json") for t in turns]
 
 
 class TestPlanStoreDecisions:
@@ -85,22 +94,26 @@ class TestPlanStoreDecisions:
 
     def test_load_decisions_accepts_valid_blob(self) -> None:
         store = PlanStore()
-        store.load_decisions({"r1": "approved", "r2": "dismissed"})
+        store.load_decisions(PlanDecisionsBlob(decisions={"r1": "approved", "r2": "dismissed"}))
         assert store.get_decision("r1") == "approved"
         assert store.get_decision("r2") == "dismissed"
 
-    def test_load_decisions_filters_invalid_entries(self) -> None:
+    def test_blob_constructor_filters_invalid_entries(self) -> None:
         # Persistence-layer corruption (e.g. someone hand-edited
         # session_data) should be silently filtered, not raise.
-        store = PlanStore()
-        store.load_decisions(
+        # The filtering lives on the blob's tolerant constructor —
+        # the store only ever sees typed decisions.
+        blob = PlanDecisionsBlob.from_raw(
             {
                 "good": "approved",
                 "bad-value": "maybe",
-                42: "approved",  # type: ignore[dict-item]
+                42: "approved",
                 "empty-key": "",
             }
         )
+        assert blob.decisions == {"good": "approved"}
+        store = PlanStore()
+        store.load_decisions(blob)
         assert store.decisions == {"good": "approved"}
 
     def test_load_decisions_none_is_noop(self) -> None:
@@ -109,11 +122,9 @@ class TestPlanStoreDecisions:
         store.load_decisions(None)
         assert store.decisions == {"r1": "approved"}
 
-    def test_load_decisions_non_dict_is_noop(self) -> None:
-        store = PlanStore()
-        store.load_decisions("not a dict")  # type: ignore[arg-type]
-        store.load_decisions([("r1", "approved")])  # type: ignore[arg-type]
-        assert store.decisions == {}
+    def test_blob_constructor_drops_non_mapping_input(self) -> None:
+        assert PlanDecisionsBlob.from_raw("not a dict").decisions == {}
+        assert PlanDecisionsBlob.from_raw([("r1", "approved")]).decisions == {}
 
     def test_snapshot_returns_independent_copy(self) -> None:
         # Returning the live dict would let the persistence layer
@@ -141,29 +152,26 @@ class _StubPermissionEvaluator:
 class _StubPersistence:
     """Captures save_plan_decisions calls without touching disk.
 
-    Accepts the post-refactor typed :class:`PlanDecisionsBlob`
-    (the shape :class:`PlanCoordinator` now passes) and dumps it
-    to the historic ``dict[str, str]`` shape so the assertion
-    style ``saved[-1] == {"run-1": "approved"}`` keeps reading
-    naturally."""
+    Takes the typed :class:`PlanDecisionsBlob` the real
+    persistence layer takes and dumps it to the historic
+    ``dict[str, str]`` shape so the assertion style
+    ``saved[-1] == {"run-1": "approved"}`` keeps reading
+    naturally. A failure comes back as a :class:`PersistResult`
+    with ``ok=False`` — the Pattern-3 contract the coordinator
+    keys on."""
 
     def __init__(self) -> None:
         self.saved: list[dict[str, str]] = []
         self.fail = False
 
-    async def save_plan_decisions(self, decisions: PlanDecisionsBlob | dict[str, str]) -> None:
+    async def save_plan_decisions(self, decisions: PlanDecisionsBlob) -> PersistResult:
         if self.fail:
-            raise RuntimeError("simulated DB outage")
-        if isinstance(decisions, PlanDecisionsBlob):
-            self.saved.append(decisions.model_dump(mode="json")["decisions"])
-        else:
-            # ``model_dump(mode="json")`` on the raw dict path
-            # would explode; mirror the real persistence layer's
-            # dict-branch fallback.
-            self.saved.append(dict(decisions))
+            return PersistResult(ok=False, error="simulated DB outage")
+        self.saved.append(decisions.model_dump(mode="json")["decisions"])
+        return PersistResult(ok=True)
 
-    async def load_plan_decisions(self) -> dict[str, str]:
-        return {}
+    async def load_plan_decisions(self) -> PlanDecisionsBlob:
+        return PlanDecisionsBlob()
 
 
 def _build_session() -> object:
@@ -171,13 +179,12 @@ def _build_session() -> object:
     ``approve_plan`` / ``dismiss_plan`` touch. Skips Agno
     initialisation — keeps the test fast and isolated from
     schema drift in the storage layer."""
-    from igni_core.core.session.broadcast import BroadcastBus
-
     session = Session.__new__(Session)
     session.broadcast_bus = BroadcastBus()
     session.plan_store = PlanStore()
     session.permission_evaluator = _StubPermissionEvaluator()
     session.persistence = _StubPersistence()
+    wire_coordinators(session)
     return session
 
 
@@ -209,7 +216,7 @@ class TestSessionApproveDismiss:
         # the card stay in pending until they reloaded.
         session = _build_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
         await session.approve_plan("run-123")
         decided = [(c, p) for c, p in received if c == "plan_decided"]
         assert decided
@@ -231,7 +238,7 @@ class TestSessionApproveDismiss:
     async def test_dismiss_broadcasts_plan_decided(self) -> None:
         session = _build_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
         await session.dismiss_plan("run-789")
         decided = [(c, p) for c, p in received if c == "plan_decided"]
         assert decided
@@ -329,19 +336,16 @@ class TestNeverApprovedRegression:
         )
         agno_session = SimpleNamespace(runs=[run])
 
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(return_value=agno_session)
+        session = MagicMock()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(return_value=agno_session)
         # The exact failure condition from the bug report: mode
         # flipped to default, but no plan_decisions entry for R1.
-        server._session.permission_evaluator = SimpleNamespace(
-            mode=SimpleNamespace(value="default")
-        )
-        server._session.plan_store = PlanStore()  # empty decisions
+        session.permission_evaluator = SimpleNamespace(mode=SimpleNamespace(value="default"))
+        session.plan_store = PlanStore()  # empty decisions
 
-        history = await server.get_chat_history("sess")
+        history = await _history(session)
         plan_turns = [t for t in history if t.get("role") == "plan"]
         assert len(plan_turns) == 1
         assert plan_turns[0]["state"] == "pending", (
@@ -387,19 +391,18 @@ class TestNeverApprovedRegression:
         )
         agno_session = SimpleNamespace(runs=[run])
 
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(return_value=agno_session)
-        server._session.permission_evaluator = SimpleNamespace(
+        session = MagicMock()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(return_value=agno_session)
+        session.permission_evaluator = SimpleNamespace(
             mode=SimpleNamespace(value="plan")  # still in plan mode...
         )
         store = PlanStore()
         store.set_decision("R2", "approved")  # ...but user approved
-        server._session.plan_store = store
+        session.plan_store = store
 
-        history = await server.get_chat_history("sess")
+        history = await _history(session)
         plan_turns = [t for t in history if t.get("role") == "plan"]
         assert plan_turns[0]["state"] == "approved", (
             "Recorded approval must take precedence over mode. The "
@@ -448,17 +451,14 @@ class TestNeverApprovedRegression:
             runs=[_run("R-old", "Old plan", 10), _run("R-new", "New plan", 20)]
         )
 
-        server = BackendServer.__new__(BackendServer)
-        server._session = MagicMock()
-        server._session.session_id = "sess"
-        server._session.user_id = "u"
-        server._session.main_team.aget_session = AsyncMock(return_value=agno_session)
-        server._session.permission_evaluator = SimpleNamespace(
-            mode=SimpleNamespace(value="default")
-        )
-        server._session.plan_store = PlanStore()
+        session = MagicMock()
+        session.session_id = "sess"
+        session.user_id = "u"
+        session.main_team.aget_session = AsyncMock(return_value=agno_session)
+        session.permission_evaluator = SimpleNamespace(mode=SimpleNamespace(value="default"))
+        session.plan_store = PlanStore()
 
-        history = await server.get_chat_history("sess")
+        history = await _history(session)
         plan_turns = [t for t in history if t.get("role") == "plan"]
         assert len(plan_turns) == 2
         # Older plan: user moved on without clicking. We render
@@ -480,18 +480,17 @@ class TestPostRunBroadcastRunIdStamp:
     loop stamps it at drain time."""
 
     def _bus_session(self):
-        from igni_core.core.session.broadcast import BroadcastBus
-
         session = Session.__new__(Session)
         session.broadcast_bus = BroadcastBus()
+        wire_coordinators(session)
         return session
 
     def test_drain_stamps_run_id_into_payload(self) -> None:
         session = self._bus_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
 
-        session.queue_post_run_broadcast("plan_submitted", {"plan": "X", "tasks": []})
+        session.queue_post_run_broadcast(PlanSubmittedEvent(plan="X"))
         session.drain_post_run_broadcasts(run_id="R-stamped")
 
         assert received == [("plan_submitted", {"plan": "X", "tasks": [], "run_id": "R-stamped"})]
@@ -502,22 +501,21 @@ class TestPostRunBroadcastRunIdStamp:
         # through untouched.
         session = self._bus_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
 
-        session.queue_post_run_broadcast("plan_submitted", {"plan": "X", "tasks": []})
+        session.queue_post_run_broadcast(PlanSubmittedEvent(plan="X"))
         session.drain_post_run_broadcasts()  # no run_id arg
 
         assert received == [("plan_submitted", {"plan": "X", "tasks": []})]
 
     def test_drain_does_NOT_overwrite_existing_run_id(self) -> None:
-        # If the caller explicitly set run_id in the payload,
-        # the drain respects it. Belt and suspenders for tools
-        # that already know their run_id at queue time.
+        # If the caller explicitly set run_id on the event, the
+        # drain respects it.
         session = self._bus_session()
         received: list[tuple[str, dict]] = []
-        session.broadcast_bus.register(lambda c, p: received.append((c, p)))
+        session.broadcast_bus.register(lambda e: received.append((e.channel, e.to_payload())))
 
-        session.queue_post_run_broadcast("plan_submitted", {"plan": "X", "run_id": "explicit"})
+        session.queue_post_run_broadcast(PlanSubmittedEvent(plan="X", run_id="explicit"))
         session.drain_post_run_broadcasts(run_id="from-loop")
 
         assert received[0][1]["run_id"] == "explicit"

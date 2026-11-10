@@ -134,6 +134,7 @@
       "event_seq",
       "id",
       "payload",
+      "run_id",
       "session_id",
       "type"
     ],
@@ -178,6 +179,7 @@
       "type"
     ],
     "rpc_response": [
+      "code",
       "error",
       "event_seq",
       "id",

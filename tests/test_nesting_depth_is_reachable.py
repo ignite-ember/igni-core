@@ -31,9 +31,10 @@ import pytest
 import yaml
 
 import igni_core
+from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
-from igni_core.core.tools.orchestrate_events import SpawnDeps, SubAgentRegistry
-from igni_core.core.tools.orchestrate_spawn import AgentSpawn
+from igni_core.core.tools.orchestrate_spawn_agent import AgentSpawn
+from igni_core.core.tools.orchestrate_spawn_types import SpawnContext
 
 _BUNDLED = Path(igni_core.__file__).parent / "bundled_agents"
 
@@ -71,7 +72,12 @@ def _settings(max_depth: int = 5, max_agents: int = 20):
 
 
 def _spawn(*, depth: int, can_orchestrate: bool, max_depth: int = 5, agent=None):
-    """An :class:`AgentSpawn` wired with doubles, at a chosen depth."""
+    """An :class:`AgentSpawn` wired with doubles, at a chosen depth.
+
+    The toolkit it is built from is a real one, so the nested toolkit
+    the spawn grants is the real nested toolkit — the thing whose
+    wiring and depth these tests are about.
+    """
     settings = _settings(max_depth=max_depth)
     defn = SimpleNamespace(
         can_orchestrate=can_orchestrate,
@@ -82,38 +88,28 @@ def _spawn(*, depth: int, can_orchestrate: bool, max_depth: int = 5, agent=None)
     agent = agent if agent is not None else SimpleNamespace(tools=[])
     pool = MagicMock()
     pool.get.return_value = agent
-    pool.get_definition.return_value = defn
-    pool.spawn_budget.return_value = SpawnBudget(settings.orchestration.max_total_agents)
+    pool.get_entry.return_value = SimpleNamespace(definition=defn)
 
-    return AgentSpawn(
-        agent_name="archivist",
-        task="write it down",
-        isolation="none",
+    toolkit = OrchestrateTools(
         pool=pool,
         settings=settings,
-        session_id="s1",
-        hook_executor=None,
-        on_progress=None,
-        event_appender=None,
-        subagent_registry=SubAgentRegistry(),
-        hitl_coordinator=None,
-        budget=pool.spawn_budget.return_value,
         current_depth=depth,
-        max_depth=max_depth,
+        session_id="s1",
         project_dir=Path("."),
-        deps=SpawnDeps(
-            agent_streamer=MagicMock(),
-            team_streamer=MagicMock(),
-            team_factory=MagicMock(),
-            model_registry_factory=MagicMock(),
-        ),
+        budget=SpawnBudget(settings.orchestration.max_total_agents),
     )
+    context = SpawnContext(
+        scope=toolkit.scope,
+        wiring=toolkit.wiring,
+        deps=toolkit.spawn_deps(),
+        task="write it down",
+    )
+
+    return AgentSpawn(context=context, agent_name="archivist", isolation="none")
 
 
 def _nested(agent):
     """The orchestration toolkit granted to ``agent``, if any."""
-    from igni_core.core.tools.orchestrate import OrchestrateTools
-
     return [t for t in (agent.tools or []) if isinstance(t, OrchestrateTools)]
 
 
@@ -135,7 +131,7 @@ class TestTheCounterMoves:
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=1, can_orchestrate=True, agent=agent)
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._context.scope.pool.get_entry().definition)
 
         granted = _nested(agent)
         assert len(granted) == 1
@@ -150,7 +146,7 @@ class TestTheCounterMoves:
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=4, can_orchestrate=True, max_depth=5, agent=agent)
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._context.scope.pool.get_entry().definition)
 
         assert _nested(agent) == []
 
@@ -158,7 +154,7 @@ class TestTheCounterMoves:
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=0, can_orchestrate=False, agent=agent)
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._context.scope.pool.get_entry().definition)
 
         assert _nested(agent) == []
 
@@ -173,7 +169,7 @@ class TestTheGrantDoesNotLeak:
         agent = SimpleNamespace(tools=shared_list)
         spawn = _spawn(depth=1, can_orchestrate=True, agent=agent)
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._context.scope.pool.get_entry().definition)
 
         assert shared_list == [], "the pool's tool list was mutated"
         assert len(_nested(agent)) == 1
@@ -184,10 +180,9 @@ class TestTheGrantDoesNotLeak:
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=1, can_orchestrate=True, agent=agent)
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._context.scope.pool.get_entry().definition)
 
-        spawn._pool.spawn_budget.assert_called_with("s1")
-        assert _nested(agent)[0]._budget is spawn._budget
+        assert _nested(agent)[0].scope.budget is spawn._context.scope.budget
 
 
 class TestAgnoStillReadsToolsAtRunTime:
@@ -212,7 +207,7 @@ class TestAgnoStillReadsToolsAtRunTime:
 
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=1, can_orchestrate=True, agent=agent)
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._context.scope.pool.get_entry().definition)
 
         resolved = get_resolved_tools(agent)
 
@@ -232,14 +227,15 @@ class TestTheWiringSurvivesTheHop:
         agent = SimpleNamespace(tools=[])
         spawn = _spawn(depth=1, can_orchestrate=True, agent=agent)
         progress, appender = MagicMock(), MagicMock()
-        spawn._on_progress, spawn._event_appender = progress, appender
+        sinks = spawn._context.wiring.sinks
+        sinks.on_progress, sinks.event_appender = progress, appender
 
-        spawn._grant_nested_orchestration(agent, spawn._pool.get_definition())
+        spawn._grant_nested_orchestration(agent, spawn._context.scope.pool.get_entry().definition)
 
         granted = _nested(agent)[0]
-        assert granted.on_progress is progress
-        assert granted.event_appender is appender
-        assert granted.subagent_registry is spawn._subagent_registry
+        assert granted.wiring.sinks.on_progress is progress
+        assert granted.wiring.sinks.event_appender is appender
+        assert granted.wiring.sinks.subagent_registry is sinks.subagent_registry
 
 
 class TestTheDeclarationsAreRead:

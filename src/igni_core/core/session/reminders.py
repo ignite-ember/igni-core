@@ -1,17 +1,12 @@
 """Pending-reminder queue for asyncRewake hooks.
 
-Extracted from :mod:`igni_core.core.session.core` — the three
-methods (``_queue_rewake`` + ``_drain_pending_reminders`` +
-``_pending_reminders`` field) that own the queue of texts fired
-by background ``asyncRewake`` hooks (exit-code 2). The buffer is
-drained on the next :meth:`SessionMessageHandler.handle` turn.
+The queue of texts fired by background ``asyncRewake`` hooks
+(exit-code 2), drained on the next turn.
 
-Composed once by :class:`Session`; :attr:`queue` and :attr:`drain`
-are passed as callables to :class:`HookExecutor`'s
+Composed once by :class:`Session` as ``session.reminders``;
+:meth:`queue` and :meth:`drain` are handed to :class:`HookExecutor`'s
 ``rewake_callback`` and :class:`SessionMessageHandler`'s
-``pending_reminders_drain`` so the executor / handler never touch
-the buffer directly. Removes three fields / two methods from the
-Session god-class (Rule 6, oop_offender #5).
+``pending_reminders_drain`` so neither touches the buffer directly.
 """
 
 from __future__ import annotations
@@ -51,19 +46,15 @@ class PendingReminderQueue:
 
     @property
     def pending(self) -> list[str]:
-        """Read-only view of the current buffer. Exposed for
-        legacy test-patch surfaces (``session._pending_reminders``
-        used to be a plain list) — production callers should use
-        :meth:`drain` instead.
-        """
+        """Read-only view of the current buffer; production callers use
+        :meth:`drain`."""
         return self._reminders
 
     def replace(self, reminders: list[str]) -> None:
         """Replace the buffer wholesale.
 
-        Used by :class:`Session` when the hook executor is re-
-        initialised (``reload_hooks``); the buffer is reset so a
-        stray reminder from the previous incarnation can't leak
-        into the new one.
+        Used by :class:`SessionHooks` whenever it rebuilds the executor,
+        so a stray reminder from the previous one can't leak into the
+        new one.
         """
         self._reminders = list(reminders)

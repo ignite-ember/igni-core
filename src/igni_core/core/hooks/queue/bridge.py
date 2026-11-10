@@ -1,10 +1,9 @@
 """Coordinator that owns the buffer and manufactures both hooks.
 
-The old ``create_queue_hook`` free function that returned a
-``(injector, persister)`` tuple is retired in favour of an explicit
-:class:`QueueBridge` coordinator. The class makes the implicit
-subject of ``queue_hook.py`` explicit and centralises the shared
-:class:`InjectedRunBuffer` instance both hooks read/write.
+:class:`QueueBridge` is the seam between the message queue and the two
+Agno hooks: it owns the shared :class:`InjectedRunBuffer` instance both
+hooks read/write and hands out the injector (tool hook) and the
+persister (post hook).
 
 Typical usage in :class:`igni_core.backend.team_wiring.TeamWiring`::
 

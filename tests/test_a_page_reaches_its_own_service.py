@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
 
-from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.backend.pool_replier import PoolReplier
+from igni_core.backend.pool_rpcs import PageTokenRpc
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.origin import ExtensionOrigins
@@ -187,8 +188,11 @@ class StubMcp:
     def __init__(self) -> None:
         self.configs: dict[str, Any] = {}
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return SimpleNamespace(ok=True, reason="")
+        return MCPConnectResult(ok=True)
 
     async def disconnect_one(self, name: str) -> None:
         self.configs.pop(name, None)
@@ -387,43 +391,49 @@ class Sent:
         self.messages.append(message)
 
 
-def orchestrator_with(tokens: PageServiceTokens | None) -> tuple[SessionOrchestrator, Sent]:
-    orchestrator = SessionOrchestrator.__new__(SessionOrchestrator)
-    sent = Sent()
-    orchestrator._transport = sent
-    orchestrator._page_tokens = tokens
-    return orchestrator, sent
-
-
 async def test_the_rpc_answers_the_caller_s_own_service(two_pages, exchange):
-    orchestrator, sent = orchestrator_with(PageServiceTokens(origins=two_pages, exchange=exchange))
+    rpc = PageTokenRpc(PageServiceTokens(origins=two_pages, exchange=exchange))
+    sent = Sent()
     request = msg.RPCRequest(
         id="r1",
         method=RpcMethod.EXTENSION_SERVICE_TOKEN,
-        # An audience in the arguments is not read: the caller decides.
-        args={"audience": LEDGER},
+        args={},
         caller="acme.notes",
     )
-    await orchestrator._handle_service_token(request)
-    result = sent.messages[0].result
-    assert result["ok"] is True
-    assert result["service_url"] == NOTES
-    assert result["access_token"].endswith(NOTES)
+    request.mark_from("ws-page")
+    await rpc.handle(request, PoolReplier(sent))
+    (answer,) = sent.messages
+    assert answer.result["ok"] is True
+    assert answer.result["service_url"] == NOTES
+    assert answer.result["access_token"].endswith(NOTES)
+    # A secret: to the connection that asked, and to no other.
+    assert answer.to_client == "ws-page"
 
 
 async def test_the_rpc_refuses_a_call_from_no_extension(two_pages, exchange):
-    orchestrator, sent = orchestrator_with(PageServiceTokens(origins=two_pages, exchange=exchange))
+    rpc = PageTokenRpc(PageServiceTokens(origins=two_pages, exchange=exchange))
     request = msg.RPCRequest(id="r1", method=RpcMethod.EXTENSION_SERVICE_TOKEN, args={})
-    await orchestrator._handle_service_token(request)
-    assert sent.messages[0].error
+    assert (await rpc.answer(request)).error
 
 
 async def test_the_rpc_says_when_there_is_no_service(two_pages, exchange):
-    orchestrator, sent = orchestrator_with(PageServiceTokens(origins=two_pages, exchange=exchange))
+    rpc = PageTokenRpc(PageServiceTokens(origins=two_pages, exchange=exchange))
     request = msg.RPCRequest(
         id="r1", method=RpcMethod.EXTENSION_SERVICE_TOKEN, args={}, caller="acme.bare"
     )
-    await orchestrator._handle_service_token(request)
-    result = sent.messages[0].result
+    result = (await rpc.answer(request)).wire_result()
     assert result["ok"] is False
     assert "no service" in result["error"]
+
+
+async def test_the_rpc_takes_no_audience(two_pages, exchange):
+    """The caller decides the audience: a page naming one is refused, not obeyed."""
+    rpc = PageTokenRpc(PageServiceTokens(origins=two_pages, exchange=exchange))
+    request = msg.RPCRequest(
+        id="r1",
+        method=RpcMethod.EXTENSION_SERVICE_TOKEN,
+        args={"audience": LEDGER},
+        caller="acme.notes",
+    )
+    answer = await rpc.answer(request)
+    assert "'audience' is not an argument" in answer.error

@@ -35,10 +35,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
+from pydantic import ValidationError
 
 from igni_core.backend.hitl_controller import HitlController
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.backend.schemas_pause import PendingRequirement
+from igni_core.core.session.schemas import PermissionModeSwitch
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
 
 
@@ -54,7 +57,11 @@ def _fake_session() -> MagicMock:
     only touches ``set_permission_mode``, ``main_team``, ``session_id``,
     ``hook_executor``, ``sub_agent_hitl`` on the resume path."""
     session = MagicMock()
-    session.set_permission_mode = MagicMock(return_value="Permission mode: default → acceptEdits")
+    session.set_permission_mode = MagicMock(
+        return_value=PermissionModeSwitch(
+            changed=True, text="Permission mode: default → acceptEdits"
+        )
+    )
     session.session_id = "test-session"
     # ``acontinue_run`` is the call we want to observe AFTER the
     # mode flip. It's an async method on the main team.
@@ -67,9 +74,7 @@ def _fake_session() -> MagicMock:
         return_value=SimpleNamespace(should_continue=False, message="")
     )
     # Sub-agent HITL — none in this test.
-    session.sub_agent_hitl = SimpleNamespace(
-        resolve=lambda *_: False, take_ready_restored=lambda: []
-    )
+    session.sub_agent_hitl = SubAgentHITLCoordinator()
     return session
 
 
@@ -221,39 +226,17 @@ class TestAtomicModeFlip:
         assert session.set_permission_mode.call_args == call("acceptEdits")
 
     @pytest.mark.asyncio
-    async def test_unknown_mode_is_forwarded_as_is(self) -> None:
-        """The schema accepts any string for ``set_permission_mode``
-        (back-compat wire), but ``set_permission_mode`` on the
-        session returns an error string for unknown values. The
-        controller just forwards whatever the decision says — it
-        doesn't validate the enum. Pin that behaviour so a future
-        tightening (e.g. switching to ``Literal[...]``) is a
-        deliberate breaking change, not an accidental one."""
-        session = _fake_session()
-        store = PendingRequirementsStore()
-        _push(store, "req-1")
-        controller = HitlController(session, store)
-
-        decisions = [
+    def test_an_unknown_mode_is_refused_on_the_wire(self) -> None:
+        """``set_permission_mode`` names one of the modes, or none: a mode
+        that does not exist is refused when the message is read, not
+        forwarded for the session to refuse later."""
+        with pytest.raises(ValidationError):
             msg.HITLDecision(
                 requirement_id="req-1",
                 action="confirm",
                 choice="once",
-                set_permission_mode="notARealMode",
-            ),
-        ]
-
-        async def drain() -> None:
-            async for _ in controller.resolve_batch(decisions):
-                pass
-
-        await drain()
-
-        # Forwarded as-is to the session; the session's own validator
-        # would surface the error in the response. We don't second-
-        # guess the session here.
-        assert session.set_permission_mode.call_count == 1
-        assert session.set_permission_mode.call_args == call("notARealMode")
+                set_permission_mode="notARealMode",  # type: ignore[arg-type]
+            )
 
 
 class TestHitlDecisionSchema:

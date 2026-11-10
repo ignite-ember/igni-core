@@ -18,46 +18,127 @@ import asyncio
 import os
 import sys
 from collections.abc import AsyncIterator
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from igni_core.backend.activity import ActivityState, SessionActivity
 from igni_core.backend.command_result import CommandResult
-from igni_core.backend.host_backend import HostModelWiring, ObservedTransport
+from igni_core.backend.host_model_wiring import HostModelHubs, HostModelWiring
 from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.observed_transport import ObservedTransport
+from igni_core.backend.plugin_schemas import PluginContents
+from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_router import RpcRouter
-from igni_core.backend.schemas_panels import OutputStyleInfo, OutputStylesResult
+from igni_core.backend.schemas_history import UserTurn
+from igni_core.backend.schemas_loop import LoopStatusSnapshot
+from igni_core.backend.schemas_mcp import (
+    MCPServerSnapshot,
+    MCPServerSummary,
+    MCPToolToggleResult,
+)
+from igni_core.backend.schemas_panels import (
+    BuiltinSlashCommand,
+    DiscardEphemeralResult,
+    HookEntryView,
+    OutputStyleInfo,
+    OutputStylesResult,
+    PromoteEphemeralResult,
+    SlashCommandEntry,
+)
+from igni_core.backend.schemas_plan import LatestPlanResult
+from igni_core.backend.schemas_pool import ProjectDirs
+from igni_core.backend.schemas_processes import ProcessTailResult, StopProcessResult
 from igni_core.backend.schemas_rpc import GroupPolicyPackResult
+from igni_core.backend.schemas_visualization import (
+    VisualizationAction,
+    VisualizationActionResult,
+)
+from igni_core.backend.server_processes import ProcessRow
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_pool import SessionRuntime
-from igni_core.backend.session_stamping_transport import SessionStampingTransport
+from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
+from igni_core.core.activity import ActivityRegistry
+from igni_core.core.agents.schemas import AgentInfo
+from igni_core.core.approvals.events import approval_events
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.schemas.display import DisplayConfig
-from igni_core.core.session.event_log_schema import SessionEvent
-from igni_core.core.session.schemas import PersistResult
+from igni_core.core.config.schemas.models import ModelsConfig
+from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.plugins.models import MarketplaceInfo, PluginInfo
+from igni_core.core.scheduler.models import ScheduledTask
+from igni_core.core.session.event_log_schema import (
+    SessionEvent,
+    SessionEventAppendResult,
+    SessionEventDraft,
+    SessionEventKind,
+)
+from igni_core.core.session.schemas import (
+    ContextBreakdown,
+    LoopAdvance,
+    McpInitResult,
+    McpServerStatus,
+    PersistResult,
+    PlanDecisionResult,
+)
+from igni_core.core.skills.parser import SkillInfo
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
+from igni_core.core.tools.todo import TodoItemWire
+from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.channel import HostChannel
+from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
+from igni_core.extensions.host.processes import ExtensionProcesses
 from igni_core.extensions.host.wire import Op, Request
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.store import ExtensionStore
 from igni_core.protocol import messages as msg
+from igni_core.transport.base import ListeningTransport
 from tests.siblings import IGNI_SDK
 
 REPO = Path(__file__).resolve().parent.parent
 SDK_SRC = IGNI_SDK / "packages" / "igni-extension" / "src"
 
 
-class CapturingTransport:
+class CapturingTransport(ListeningTransport):
     """The windows, as a list: every message igni sent them."""
 
     def __init__(self) -> None:
         self.sent: list[msg.Message] = []
-        self.is_closed = False
+        self._closed = False
 
     async def send(self, message: msg.Message) -> None:
         self.sent.append(message)
+
+    async def receive(self) -> AsyncIterator[msg.Message]:
+        return
+        yield
+
+    async def close(self) -> None:
+        self._closed = True
+
+    @property
+    def is_closed(self) -> bool:
+        return self._closed
+
+    async def start(self) -> None:
+        return None
+
+    async def wait_for_connection(self, timeout: float | None = 30.0) -> None:
+        return None
+
+    @property
+    def client_count(self) -> int:
+        return 0
+
+    def owns_client(self, client_id: str) -> bool:
+        """No window ever identifies itself here, so none is owned."""
+        return False
 
     def of(self, kind: type[msg.Message]) -> list[Any]:
         return [m for m in self.sent if isinstance(m, kind)]
@@ -68,11 +149,138 @@ class CapturingTransport:
         ]
 
 
-class FakeModels:
+def fake_models() -> ModelsConfig:
+    """Two configured models, ``small`` the default.
+
+    ``large`` carries a key, the way a configured model does: the
+    extension must never see it, only the variable's name.
+    """
+    return ModelsConfig(
+        default="small",
+        max_context_window=100_000,
+        registry={
+            "small": {"model_id": "s"},
+            "large": {"model_id": "l", "api_key": "sk-secret", "api_key_env": "LARGE_KEY"},
+        },
+    )
+
+
+class FakePermissions:
+    """The permission rules igni keeps, as the HITL controller holds them."""
+
     def __init__(self) -> None:
-        self.default = "small"
-        self.max_context_window = 100_000
-        self.registry: dict[str, Any] = {"small": {"model_id": "s"}, "large": {"model_id": "l"}}
+        self.level = "allow"
+        self.rules: list[tuple[str, str]] = []
+
+    def check(self, tool_name: str, func_name: str, tool_args: Any) -> str:
+        return self.level
+
+    def save_rule(self, rule: str, level: str) -> None:
+        self.rules.append((rule, level))
+
+
+class FakeScheduler:
+    """The scheduler, as the loop controller holds it."""
+
+    def __init__(self) -> None:
+        self.executed: list[str] = []
+        self.cancelled: list[str] = []
+        self.stopped = False
+        #: The run id each execution was asked for, in the order they came.
+        self.run_ids: list[str] = []
+
+    async def execute(self, description: str, run_id: str = "") -> str:
+        self.executed.append(description)
+        self.run_ids.append(run_id)
+        return f"ran {description}"
+
+    async def cancel(self, task_id: str) -> str:
+        self.cancelled.append(task_id)
+        return f"cancelled {task_id}"
+
+    async def stop(self) -> None:
+        self.stopped = True
+
+
+class FakeLoop:
+    """The loop controller, as the backend holds it."""
+
+    def __init__(self) -> None:
+        self.scheduler = FakeScheduler()
+        #: The iteration waiting, if any.
+        self.pending: LoopAdvance | None = None
+        self.cancelled = False
+        self.paused = False
+        self.resumed = ""
+
+    async def pop_pending_iteration(self) -> LoopAdvance | None:
+        found, self.pending = self.pending, None
+        return found
+
+    async def cancel_pending(self) -> bool:
+        self.cancelled = True
+        return True
+
+    async def pause(self) -> bool:
+        self.paused = True
+        return True
+
+    async def resume(self) -> str:
+        self.resumed = "resumed"
+        return self.resumed
+
+
+class FakePlugins:
+    """The plugin controller, as the backend holds it."""
+
+    def __init__(self) -> None:
+        self.enabled: list[tuple[str, bool]] = []
+        self.installed: list[str] = []
+        self.removed: list[str] = []
+        self.updated: list[str] = []
+
+    def contents(self, name: str) -> PluginContents:
+        return PluginContents(name=name, root_path="", readme="")
+
+    async def preview(self, source: str, branch: str | None, subdir: str | None) -> PluginContents:
+        return PluginContents(name="previewed", root_path="", readme="")
+
+    def set_enabled(self, name: str, enabled: bool) -> Any:
+        self.enabled.append((name, enabled))
+        return SimpleNamespace(text=f"{name} {'on' if enabled else 'off'}")
+
+    def install(self, ref: str, install_ref: str | None) -> Any:
+        self.installed.append(ref)
+        return SimpleNamespace(text=f"installed {ref}")
+
+    def update(self, name: str, install_ref: str | None) -> Any:
+        self.updated.append(name)
+        return SimpleNamespace(text=f"updated {name}")
+
+    def remove(self, name: str) -> Any:
+        self.removed.append(name)
+        return SimpleNamespace(text=f"removed {name}")
+
+
+class FakeMarketplaces:
+    """The marketplace controller, as the backend holds it."""
+
+    def __init__(self) -> None:
+        self.added: list[str] = []
+        self.removed: list[str] = []
+        self.refreshed: list[str | None] = []
+
+    def add(self, url: str) -> Any:
+        self.added.append(url)
+        return SimpleNamespace(text=f"added {url}")
+
+    def remove(self, name: str) -> Any:
+        self.removed.append(name)
+        return SimpleNamespace(text=f"removed {name}")
+
+    def refresh(self, name: str | None) -> Any:
+        self.refreshed.append(name)
+        return SimpleNamespace(text="refreshed")
 
 
 class FakeSession:
@@ -88,7 +296,15 @@ class FakeSession:
         self.project_dir = project_dir
         self.processing = False
         self.run_timeout = 600
-        self.settings = SimpleNamespace(display=DisplayConfig(), models=FakeModels())
+        # The supervisor this backend process shares. The real
+        # ``BackendServer`` carries one; the fake needs one too,
+        # because the RPC router reads it to build the shell runner.
+        self.supervisor = ProcessSupervisor()
+        # Whether this backend process may run agent sessions. The real
+        # ``BackendServer`` carries one; the RPC router reads it to build
+        # the workflow runner. This one is open, so a run starts.
+        self.gate = RunGate()
+        self.settings = SimpleNamespace(display=DisplayConfig(), models=fake_models())
         self.runtime: Any = None
         self.ran: list[tuple[str, dict[str, str]]] = []
         self.commands: list[str] = []
@@ -97,10 +313,47 @@ class FakeSession:
         self.switched_to: list[str] = []
         self.output_style = ""
         self.skill_names = ["review"]
-        self.workflow_runner = None
         self.run_release: asyncio.Event | None = None
         self.titles: list[str] = []
         self.promoted: list[tuple[str, str]] = []
+        self.discarded: list[str] = []
+        self.plan_decisions: list[tuple[str, str]] = []
+        self.session_start_hooks = 0
+        #: The permission rules igni keeps, and the level a check answers.
+        self.permissions = FakePermissions()
+        #: The loop, as the backend holds it — and the scheduler in it.
+        self.loop = FakeLoop()
+        #: The plugins and the marketplaces, as the backend holds them.
+        self.plugins = FakePlugins()
+        self.marketplaces = FakeMarketplaces()
+        # The approvals still waiting, as a backend's HITL controller holds them.
+        self.controllers = SimpleNamespace(
+            hitl=SimpleNamespace(
+                waiting_messages=lambda: [],
+                permissions=self.permissions,
+            ),
+            loop=self.loop,
+            panels=SimpleNamespace(
+                reload_hooks=lambda: None,
+                discard_ephemeral_agent=self.discard_ephemeral_agent,
+            ),
+            mcp=SimpleNamespace(
+                ensure=self.ensure_mcp,
+                disconnect=self.mcp_disconnect,
+                set_tool_enabled=self.set_mcp_tool_enabled,
+            ),
+            processes=SimpleNamespace(
+                read_tail=self.read_process_tail,
+                stop=self.stop_process,
+            ),
+            plugins=self.plugins,
+            marketplaces=self.marketplaces,
+        )
+        #: The session the backend drives: the plan decisions go through it.
+        self.session = SimpleNamespace(
+            approve_plan=self.approve_plan,
+            dismiss_plan=self.dismiss_plan,
+        )
 
     # ── Lifecycle the pool and dispatcher touch ───────────────────
 
@@ -153,6 +406,9 @@ class FakeSession:
 
     # ── Reads ─────────────────────────────────────────────────────
 
+    async def fire_session_start_hook(self) -> None:
+        self.session_start_hooks += 1
+
     def get_status(self) -> msg.StatusUpdate:
         return msg.StatusUpdate(
             model=self.settings.models.default,
@@ -176,8 +432,8 @@ class FakeSession:
         self.switched_to.append(session_id)
         return msg.Info(text=f"Switched to session: {session_id}")
 
-    async def get_chat_history(self, session_id: str) -> list[dict]:
-        return [{"role": "user", "content": text} for text, _ in self.ran]
+    async def get_chat_history(self, session_id: str) -> list[UserTurn]:
+        return [UserTurn(content=text) for text, _ in self.ran]
 
     async def search_chat(self, session_id: str, query: str, limit: int = 50) -> list[dict]:
         return [{"text": t} for t, _ in self.ran if query in t][:limit]
@@ -191,27 +447,28 @@ class FakeSession:
     async def count_context_tokens(self) -> int:
         return 1234
 
-    async def context_breakdown(self) -> dict:
-        return {"history": 1000, "system": 234}
+    async def context_breakdown(self) -> ContextBreakdown:
+        return ContextBreakdown.from_totals(total=1234, runs=1000)
 
-    def get_latest_plan(self) -> dict:
-        return {"latest": "", "history": [], "tasks": [], "state": ""}
+    def get_latest_plan(self) -> LatestPlanResult:
+        return LatestPlanResult(latest="", history=[], tasks=[], state="")
 
-    def get_todos(self) -> list[dict]:
-        return [{"content": "write tests", "status": "pending"}]
+    def get_todos(self) -> list[TodoItemWire]:
+        return [TodoItemWire(content="write tests", status="pending", activeForm="Writing tests")]
 
-    async def loop_status(self) -> dict:
-        return {
-            "active": False,
-            "paused": False,
-            "prompt": "",
-            "iteration_index": 0,
-            "iterations_remaining": 0,
-            "cap_explicit": False,
-        }
+    async def loop_status(self) -> LoopStatusSnapshot:
+        return LoopStatusSnapshot(
+            active=False,
+            paused=False,
+            prompt="",
+            iteration_index=0,
+            iterations_remaining=0,
+            cap_explicit=False,
+            announced_total=None,
+        )
 
-    def get_slash_commands(self) -> list[dict]:
-        return [{"name": "/ctx", "description": "context"}]
+    def get_slash_commands(self) -> list[SlashCommandEntry]:
+        return [BuiltinSlashCommand(name="/ctx", description="context")]
 
     def get_skill_pool(self) -> Any:
         return SimpleNamespace(
@@ -220,42 +477,85 @@ class FakeSession:
             ]
         )
 
-    def get_skill_details(self) -> list[dict]:
-        return [{"name": "review"}]
+    def get_skill_details(self) -> list[SkillInfo]:
+        return [SkillInfo(name="review", description="Reviews")]
 
-    def get_agent_details(self) -> list[dict]:
-        return [{"name": "main"}]
+    def get_agent_details(self) -> list[AgentInfo]:
+        return [AgentInfo(name="main", description="The main agent")]
 
-    def promote_ephemeral_agent(self, name: str, target: str = "project") -> Any:
-        from igni_core.backend.schemas_panels import PromoteEphemeralResult
-
+    def promote_ephemeral_agent(self, name: str, target: str = "project") -> PromoteEphemeralResult:
         self.promoted.append((name, target))
         subdir = "agents" if target == "project" else "agents.local"
         return PromoteEphemeralResult(ok=True, name=name, dest=f".igni/{subdir}/{name}.md")
 
-    async def get_scheduled_tasks(self, include_done: bool = True) -> list[dict]:
-        return [{"id": "t1", "description": "nightly"}]
+    def discard_ephemeral_agent(self, name: str) -> DiscardEphemeralResult:
+        self.discarded.append(name)
+        return DiscardEphemeralResult(ok=True, name=name)
 
-    def list_background_processes(self) -> list[dict]:
+    async def get_scheduled_tasks(self, include_done: bool = True) -> list[ScheduledTask]:
+        return [
+            ScheduledTask(
+                id="t1",
+                description="nightly",
+                scheduled_at=datetime(2026, 1, 1, 3, 0),
+            )
+        ]
+
+    def list_background_processes(self) -> list[ProcessRow]:
         return []
 
-    def get_mcp_servers(self) -> list[dict]:
-        return [{"name": "github"}]
+    async def read_process_tail(self, pid: int, tail: int = 200) -> ProcessTailResult:
+        return ProcessTailResult(pid=pid, output="", is_running=False, exit_code=0)
 
-    def get_mcp_status(self) -> list[dict]:
-        return [{"name": "github", "connected": False}]
+    async def stop_process(self, pid: int) -> StopProcessResult:
+        return StopProcessResult(pid=pid, killed=True, message=f"stopped {pid}")
 
-    async def get_mcp_server_details(self) -> list[dict]:
-        return [{"name": "github", "tools": []}]
+    def get_mcp_servers(self) -> list[MCPServerSummary]:
+        return [MCPServerSummary(name="github", connected=False)]
 
-    def get_plugin_details(self) -> list[dict]:
+    def get_mcp_status(self) -> list[McpServerStatus]:
+        return [McpServerStatus(name="github", connected=False)]
+
+    async def get_mcp_server_details(self) -> list[MCPServerSnapshot]:
+        return [MCPServerSnapshot(name="github", connected=False, transport="stdio")]
+
+    async def ensure_mcp(self) -> McpInitResult:
+        return McpInitResult(connected=[], failed={}, rebuilt=False, skipped_reason=None)
+
+    async def mcp_disconnect(self, server_name: str) -> Any:
+        return SimpleNamespace(text=f"disconnected {server_name}")
+
+    def set_mcp_tool_enabled(self, server: str, tool: str, enabled: bool) -> MCPToolToggleResult:
+        return MCPToolToggleResult(server=server, tool=tool, enabled=enabled)
+
+    def get_plugin_details(self) -> list[PluginInfo]:
         return []
 
-    def get_marketplaces(self) -> list[dict]:
+    def get_marketplaces(self) -> list[MarketplaceInfo]:
         return []
 
-    def get_hooks_details(self) -> list[dict]:
+    def get_hooks_details(self) -> list[HookEntryView]:
         return []
+
+    async def approve_plan(self, run_id: str) -> PlanDecisionResult:
+        self.plan_decisions.append(("approve", run_id))
+        return PlanDecisionResult(
+            run_id=run_id,
+            decision="approved",
+            mode_status="mode → default",
+            ok=True,
+            error=None,
+        )
+
+    async def dismiss_plan(self, run_id: str) -> PlanDecisionResult:
+        self.plan_decisions.append(("dismiss", run_id))
+        return PlanDecisionResult(
+            run_id=run_id,
+            decision="dismissed",
+            mode_status="",
+            ok=True,
+            error=None,
+        )
 
     def get_group_policy(self) -> GroupPolicyPackResult:
         return GroupPolicyPackResult()
@@ -279,7 +579,10 @@ class FakeSession:
     def toggle_verbose(self) -> bool:
         return self.settings.display.toggle_show_routing()
 
-    def switch_model(self, model_name: str) -> msg.Info:
+    def switch_model(self, model_name: str) -> msg.Info | msg.Error:
+        # Refuses a name the registry doesn't know, as the real switcher does.
+        if model_name not in self.settings.models.registry:
+            return msg.Error(text=f"Unknown model: '{model_name}'.")
         self.settings.models.default = model_name
         return msg.Info(text=f"Switched to {model_name}")
 
@@ -289,44 +592,44 @@ class FakeSession:
     async def loop_pause(self) -> bool:
         return True
 
-    def dispatch_visualization_action(self, action: str, params: dict | None = None) -> dict:
-        return {"ok": True, "action": action, "params": dict(params or {})}
+    def dispatch_visualization_action(
+        self, entry: VisualizationAction
+    ) -> VisualizationActionResult:
+        return VisualizationActionResult.echo(entry)
 
     async def truncate_history(self, session_id: str, run_id: str) -> dict:
         return {"ok": True, "run_id": run_id}
 
+    def activity(self) -> SessionActivity:
+        return SessionActivity(session_id=self.session_id, state=ActivityState.IDLE)
+
     # ── The event log ─────────────────────────────────────────────
 
-    async def record_event(self, event_type: str, payload: dict, run_id: str = "") -> None:
-        self.events.append(
-            SessionEvent(seq=len(self.events) + 1, type=event_type, payload=payload, run_id=run_id)
-        )
+    async def record_event(self, event: SessionEventDraft) -> SessionEventAppendResult:
+        entry = event.to_event(len(self.events) + 1)
+        self.events.append(entry)
+        return SessionEventAppendResult(persisted=False)
 
-    def session_events(self, event_type: str) -> list[SessionEvent]:
+    def session_events(self, event_type: SessionEventKind) -> list[SessionEvent]:
         return [e for e in self.events if e.type == event_type]
 
 
-class RigOrchestrator(SessionOrchestrator):
-    """The real orchestrator, making stand-in sessions instead of real ones."""
+class RigRuntimeFactory(SessionRuntimeFactory):
+    """The real factory, making stand-in sessions instead of real ones."""
 
-    async def _create_runtime(self, session_id: str) -> SessionRuntime:
-        backend = FakeSession(session_id, self._project_dir)
-        stamped = SessionStampingTransport(self._transport, backend)
-        bridge = self._push_bridge.for_transport(stamped, queue=[])
-        router = RpcRouter(
+    async def create(self, session_id: str) -> SessionRuntime:
+        backend = FakeSession(session_id, self._dirs.project_dir)
+        stamped = self._wiring.stamped(backend)
+        router = self._wiring.router_for(
+            backend, self._wiring.push_bridge.for_transport(stamped, queue=[])
+        )
+        return self.bind(
             backend=backend,
+            rpc_table=router.build_table(),
+            queue=[],
             transport=stamped,
-            login=self._login,
-            push=bridge,
-            extensions=self._extensions,
-            origins=self._origins,
-            notifications=self._notifications,
+            router=router,
         )
-        runtime = SessionRuntime(
-            backend=backend, rpc_table=router.build_table(), queue=[], transport=stamped
-        )
-        backend.attach_runtime(runtime)
-        return runtime
 
 
 def manifest(extension_id: str = "acme.reviewer", **permissions: Any) -> ExtensionManifest:
@@ -357,12 +660,14 @@ class HostRig:
         self.windows = CapturingTransport()
         self.transport = ObservedTransport(self.windows)
         self.registry = ExtensionRegistry()
-        # The default store, as the RPC handlers use it; ``conftest``
+        # The extensions' hooks: the rig's own, so a test can ask through them.
+        self.hooks = ExtensionHooks(registry=self.registry)
+        # The default store, handed to the RPC handlers; ``conftest``
         # points the home directory it lives under at a temp dir.
         self.store = ExtensionStore()
         self.session = FakeSession("boot", self.project)
         self.model: HostModel | None = None
-        self.orchestrator: RigOrchestrator | None = None
+        self.orchestrator: SessionOrchestrator | None = None
         self.channel: HostChannel | None = None
         self._requests = 0
 
@@ -374,44 +679,54 @@ class HostRig:
         extensions = ExtensionRpc(self.registry)
         router = RpcRouter(
             backend=self.session,
-            transport=self.transport,
             login=login,
             push=push,
             extensions=extensions,
+            extension_store=self.store,
         )
         settings = SimpleNamespace(
             storage=SimpleNamespace(data_dir=str(self.tmp / "data"), database_url=None)
         )
-        self.orchestrator = RigOrchestrator(
-            backend=self.session,
-            transport=self.transport,
+        self.settings = settings
+        self.orchestrator = SessionOrchestrator.start(
+            boot=BootRuntime(
+                backend=self.session, rpc_table=router.build_table(), router=router, queue=queue
+            ),
+            wiring=PoolWiring(
+                transport=self.transport,
+                push_bridge=push,
+                login=login,
+                supervisors=SupervisorLocator(self.session.supervisor),
+                gate=self.session.gate,
+                extensions=extensions,
+                extension_store=self.store,
+            ),
             settings=settings,
-            project_dir=self.project,
-            additional_dirs=None,
-            rpc_router=router,
-            rpc_table=router.build_table(),
-            push_bridge=push,
-            login=login,
-            queue=queue,
-            extensions=extensions,
+            dirs=ProjectDirs(project_dir=self.project),
+            factory=RigRuntimeFactory,
         )
-        self.orchestrator.setup_pool()
         self.model = HostModelWiring.build(
             orchestrator=self.orchestrator,
             transport=self.transport,
             registry=self.registry,
+            hooks=self.hooks,
             project_dir=self.project,
+            hubs=HostModelHubs(
+                approvals=approval_events,
+                activities=ActivityRegistry.shared(),
+                install_hooks=extension_hook_gate.install,
+            ),
             store=self.store,
             strict=strict,
         )
-        self.channel = HostChannel(self.model)
+        self.channel = HostChannel(self.model, hooks=self.hooks, processes=ExtensionProcesses())
         return self
 
     async def stop(self) -> None:
         if self.channel is not None:
             await self.channel.stop()
         if self.model is not None:
-            await self.model.drain()
+            await self.model.services.work.drain()
 
     def install(self, extension_id: str = "acme.reviewer", **permissions: Any) -> str:
         self.registry.install(manifest(extension_id, **permissions), state=ExtensionState.READY)
@@ -444,7 +759,9 @@ class HostRig:
             params=params,
             value=value,
         )
-        return await self.model.handle(extension_id, request, home_window=home_window)
+        return await self.model.handle(
+            request, Caller(extension_id=extension_id, home_window=home_window)
+        )
 
     async def window(
         self, window_id: str = "w-main", *, connection: str = "ws-1", session: str = ""
@@ -452,7 +769,8 @@ class HostRig:
         """A window connects and hydrates its model, as ``clientState.ts`` does."""
         assert self.orchestrator is not None
         if session:
-            self.orchestrator.client_state.set_value(window_id, "session-id", session)
+            written = self.orchestrator.client_state.set_value(window_id, "session-id", session)
+            assert written.ok, written.error
         await self.window_model(window_id, "hydrate", connection_id=connection, kind="tauri")
         return window_id
 
@@ -491,10 +809,10 @@ class HostRig:
         for _ in range(20):
             await asyncio.sleep(0)
         assert self.orchestrator is not None and self.model is not None
-        tasks = [t for t in self.orchestrator._in_flight if not t.done()]
+        tasks = self.orchestrator.in_flight.pending()
         if tasks:
             await asyncio.wait(tasks, timeout=5)
-        await self.model.drain()
+        await self.model.services.work.drain()
         for _ in range(5):
             await asyncio.sleep(0)
 

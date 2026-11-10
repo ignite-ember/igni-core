@@ -1,13 +1,23 @@
 """Tests for session/core.py — Session construction and message handling."""
 
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from agno.db.base import AsyncBaseDb
 
+from igni_core.core.broadcast_schema import BroadcastEvent
+from igni_core.core.config.schemas.permissions import PermissionsConfig
 from igni_core.core.config.settings import Settings
+from igni_core.core.hooks.load_result import HookLoadResult
+from igni_core.core.hooks.registry import HookRegistry
 from igni_core.core.learn import LearnBootResult
+from igni_core.core.session.agent_builder.main_tools import MainToolSet
+from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.core import Session
-from igni_core.core.utils import context as ctx_mod
+from igni_core.core.session.reminders import PendingReminderQueue
+from igni_core.core.tools.plan import PlanSubmittedEvent
+from igni_core.core.utils import context_user as ctx_user_mod
 
 
 def _runs_db() -> MagicMock:
@@ -33,7 +43,7 @@ def _session_patches(**overrides):
     """Return a list of patch objects for all Session dependencies.
 
     *overrides* lets callers change specific return_values, e.g.
-    ``_session_patches(load_project_context="ctx")``.
+    ``_session_patches(Agent=None)``.
     """
     defaults = {
         "ProjectInitializer": None,
@@ -41,7 +51,7 @@ def _session_patches(**overrides):
         "AuditLogger": None,
         "HookLoader": None,
         "HookExecutor": None,
-        "load_project_context": "",
+        "RulesContextLoader": "",
         "AgentPool": None,
         "SkillPool": None,
         "ModelRegistry": None,
@@ -57,21 +67,47 @@ def _session_patches(**overrides):
         "create_guardrails": None,
         "MeasuredCompression": None,
         "Agent": None,
-        "load_prompt": "You are an assistant.",
     }
     defaults.update(overrides)
+    return _patches_for(defaults)
 
+
+#: Where each patched name is looked up, when not only in ``session.core``.
+_PATCH_MODULES: dict[str, tuple[str, ...]] = {
+    "HookLoader": ("igni_core.core.session.hooks",),
+    "HookExecutor": ("igni_core.core.session.hooks",),
+    "ModelRegistry": (
+        "igni_core.core.session.core",
+        "igni_core.core.session.compaction.context_budget",
+    ),
+}
+
+
+def _patches_for(defaults: dict) -> list:
+    """One shared mock per name, patched into every module that looks it up.
+
+    Classes (uppercase first letter) get no return_value, so the mock acts
+    as a callable returning a fresh MagicMock.
+    """
     patches = []
     for name, rv in defaults.items():
-        target = f"igni_core.core.session.core.{name}"
-        # For classes (uppercase first letter), don't set return_value so
-        # the mock acts as a callable that returns a fresh MagicMock.
-        if name[0].isupper():
-            p = patch(target)
-            patches.append(p)
-        else:
-            patches.append(patch(target, return_value=rv))
-
+        shared = MagicMock() if name[0].isupper() else MagicMock(return_value=rv)
+        if name == "RulesContextLoader":
+            # The session builds ``RulesContextLoader(...).load_all().render()``
+            # — the mock has to answer that whole chain with a string, or
+            # ``project_instructions`` ends up a MagicMock.
+            shared.return_value.load_all.return_value.render.return_value = rv
+        if name == "AgentPool":
+            # A mocked pool has no agents: an empty catalog, nothing unresolved.
+            shared.return_value.list_agents.return_value = []
+        if name == "HookLoader":
+            # A mocked loader finds no hooks: an empty registry, no warnings.
+            shared.return_value.load.return_value = HookLoadResult(registry=HookRegistry({}))
+        if name == "StorageManager":
+            # The pool checks its db against DbHandle, which a bare MagicMock fails.
+            shared.build_db.return_value = MagicMock(spec=AsyncBaseDb)
+        for module in _PATCH_MODULES.get(name, ("igni_core.core.session.core",)):
+            patches.append(patch(f"{module}.{name}", new=shared))
     return patches
 
 
@@ -183,7 +219,7 @@ class TestSessionMessageHandling:
 
     @pytest.mark.asyncio
     async def test_handle_message_returns_response(self, session):
-        with patch("igni_core.core.session.core.extract_response_text", return_value="Hello!"):
+        with patch("igni_core.core.utils.response.extract_response_text", return_value="Hello!"):
             result = await session.handle_message("Hi there")
             assert result == "Hello!"
             # Message includes a UTC timestamp prefix
@@ -227,8 +263,8 @@ class TestSessionMessageHandling:
             if c.kwargs.get("event") == "StopFailure"
         )
         payload = sf_call.kwargs["payload"]
-        assert "LLM failed" in payload["error"]
-        assert payload["error_type"] == "RuntimeError"
+        assert "LLM failed" in payload.error
+        assert payload.error_type == "RuntimeError"
 
 
 class TestSessionCompaction:
@@ -303,7 +339,7 @@ class TestSessionLearning:
             settings = Settings()
             settings.learning.enabled = False
             session = Session(settings, project_dir=tmp_path)
-            assert session._learning is None
+            assert session.learning is None
         finally:
             _stop_patches(patches)
 
@@ -315,7 +351,7 @@ class TestSessionLearning:
             settings = Settings()
             settings.learning.enabled = True
             session = Session(settings, project_dir=tmp_path)
-            assert session._learning is fake_lm
+            assert session.learning is fake_lm
         finally:
             _stop_patches(patches)
 
@@ -343,13 +379,13 @@ class TestSessionLearning:
             agent_cls = mocks["Agent"]
             assert agent_cls.called
             call_kwargs = agent_cls.call_args[1]
-            assert call_kwargs["learning"] is session._learning
+            assert call_kwargs["learning"] is session.learning
             assert call_kwargs["add_learnings_to_context"] is True
         finally:
             _stop_patches(patches)
 
     def test_learning_not_passed_when_disabled(self, tmp_path):
-        """With learning disabled, ``self._learning`` stays ``None`` and the
+        """With learning disabled, ``session.learning`` stays ``None`` and the
         Agent receives ``learning=None`` — no ``update_user_memory`` tool."""
         patches = _session_patches()
         mocks = {}
@@ -371,7 +407,7 @@ class TestSessionLearning:
 
 def _patches_with_real_context_loader():
     """Same set of mocks as ``_session_patches`` but leaves
-    ``load_project_context`` un-mocked so the real loader fires and we can
+    ``RulesContextLoader`` un-mocked so the real loader fires and we can
     verify that rule files on disk actually reach the agent."""
     overrides = {
         "ProjectInitializer": None,
@@ -394,16 +430,8 @@ def _patches_with_real_context_loader():
         "create_guardrails": None,
         "MeasuredCompression": None,
         "Agent": None,
-        "load_prompt": "You are an assistant.",
     }
-    patches = []
-    for name, rv in overrides.items():
-        target = f"igni_core.core.session.core.{name}"
-        if name[0].isupper():
-            patches.append(patch(target))
-        else:
-            patches.append(patch(target, return_value=rv))
-    return patches
+    return _patches_for(overrides)
 
 
 def _agent_instructions(agent_mock) -> list[str]:
@@ -431,10 +459,10 @@ class TestRulesReachAgent:
     def _isolate_user_rules(self, monkeypatch, tmp_path, *, claude_dir=None):
         """Redirect user-rule lookups into ``tmp_path`` so the test host's
         real ``~/.igni/`` and ``~/.claude/`` never leak in."""
-        monkeypatch.setattr(ctx_mod, "USER_RULES_PATH", tmp_path / "_no_legacy.md")
-        monkeypatch.setattr(ctx_mod, "USER_RULES_DIR", tmp_path / "_no_user_dir")
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_PATH", tmp_path / "_no_legacy.md")
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_DIR", tmp_path / "_no_user_dir")
         monkeypatch.setattr(
-            ctx_mod,
+            ctx_user_mod,
             "CLAUDE_USER_RULES_DIR",
             claude_dir if claude_dir is not None else tmp_path / "_no_claude_dir",
         )
@@ -466,9 +494,9 @@ class TestRulesReachAgent:
     def test_user_legacy_rules_md_reaches_agent_instructions(self, tmp_path, monkeypatch):
         legacy = tmp_path / "rules.md"
         legacy.write_text("SENTINEL_USER_LEGACY_ABC")
-        monkeypatch.setattr(ctx_mod, "USER_RULES_PATH", legacy)
-        monkeypatch.setattr(ctx_mod, "USER_RULES_DIR", tmp_path / "_no_user_dir")
-        monkeypatch.setattr(ctx_mod, "CLAUDE_USER_RULES_DIR", tmp_path / "_no_claude_dir")
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_PATH", legacy)
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_DIR", tmp_path / "_no_user_dir")
+        monkeypatch.setattr(ctx_user_mod, "CLAUDE_USER_RULES_DIR", tmp_path / "_no_claude_dir")
 
         project = tmp_path / "proj"
         project.mkdir()
@@ -493,9 +521,9 @@ class TestRulesReachAgent:
         (user_dir / "commit-style.md").write_text("SENTINEL_USER_DIR_RULE_111")
         (user_dir / "lint.md").write_text("SENTINEL_USER_DIR_RULE_222")
 
-        monkeypatch.setattr(ctx_mod, "USER_RULES_PATH", tmp_path / "_no_legacy.md")
-        monkeypatch.setattr(ctx_mod, "USER_RULES_DIR", user_dir)
-        monkeypatch.setattr(ctx_mod, "CLAUDE_USER_RULES_DIR", tmp_path / "_no_claude_dir")
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_PATH", tmp_path / "_no_legacy.md")
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_DIR", user_dir)
+        monkeypatch.setattr(ctx_user_mod, "CLAUDE_USER_RULES_DIR", tmp_path / "_no_claude_dir")
 
         project = tmp_path / "proj"
         project.mkdir()
@@ -581,9 +609,9 @@ class TestRulesReachAgent:
         claude_dir.mkdir()
         (claude_dir / "two.md").write_text("SENTINEL_TRIPLE_CLAUDE")
 
-        monkeypatch.setattr(ctx_mod, "USER_RULES_PATH", legacy)
-        monkeypatch.setattr(ctx_mod, "USER_RULES_DIR", igni_dir)
-        monkeypatch.setattr(ctx_mod, "CLAUDE_USER_RULES_DIR", claude_dir)
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_PATH", legacy)
+        monkeypatch.setattr(ctx_user_mod, "USER_RULES_DIR", igni_dir)
+        monkeypatch.setattr(ctx_user_mod, "CLAUDE_USER_RULES_DIR", claude_dir)
 
         project = tmp_path / "proj"
         project.mkdir()
@@ -604,10 +632,10 @@ class TestRulesReachAgent:
             _stop_patches(patches)
 
 
-# ── Session._queue_rewake (asyncRewake callback target) ───────
+# ── session.reminders (asyncRewake callback target) ───────────
 #
-# Background hooks that exit-2 fire ``_queue_rewake(text)`` → the
-# text buffers in ``_pending_reminders`` until the next
+# Background hooks that exit-2 fire ``reminders.queue(text)`` → the
+# text buffers in ``reminders.pending`` until the next
 # ``handle_message`` turn drains it (we can't interrupt an
 # in-flight response). The executor side is tested in
 # ``test_hook_async_rewake.py``; these lock down the Session-side
@@ -615,11 +643,11 @@ class TestRulesReachAgent:
 
 
 class TestSessionQueueRewake:
-    """Direct unit tests for ``Session._queue_rewake``."""
+    """Direct unit tests for the session's :class:`PendingReminderQueue`."""
 
     def _bare_session(self):
         session = Session.__new__(Session)
-        session._pending_reminders = []
+        session.reminders = PendingReminderQueue()
         return session
 
     def test_empty_text_is_dropped(self):
@@ -628,13 +656,13 @@ class TestSessionQueueRewake:
         # that prepends ``\n\n`` to the next turn and confuses
         # the agent. Empty → no-op.
         session = self._bare_session()
-        session._queue_rewake("")
-        assert session._pending_reminders == []
+        session.reminders.queue("")
+        assert session.reminders.pending == []
 
     def test_appends_single_reminder(self):
         session = self._bare_session()
-        session._queue_rewake("the hook reported")
-        assert session._pending_reminders == ["the hook reported"]
+        session.reminders.queue("the hook reported")
+        assert session.reminders.pending == ["the hook reported"]
 
     def test_accumulates_in_call_order(self):
         # Two background hooks landing in the same gap between
@@ -644,88 +672,10 @@ class TestSessionQueueRewake:
         # the contract so an accidental swap to a set would
         # trip it.
         session = self._bare_session()
-        session._queue_rewake("first")
-        session._queue_rewake("second")
-        session._queue_rewake("third")
-        assert session._pending_reminders == ["first", "second", "third"]
-
-
-# ── Session._mcp_resolver (mcp_tool hook target) ──────────────
-#
-# Resolver passed to ``HookExecutor`` so ``mcp_tool``-type hooks
-# can invoke MCP tools without the executor knowing about the
-# manager. Resolved at fire-time (not at construction) because
-# ``__init__`` builds the executor BEFORE ``mcp_manager`` is
-# wired. Returns ``None`` for every missing link so a broken MCP
-# setup degrades gracefully rather than crashing hook execution.
-
-
-class TestSessionMcpResolver:
-    """``Session._mcp_resolver(server, tool)`` walks
-    ``self.mcp_manager._clients[server].functions[tool]`` and
-    returns ``None`` at the first missing hop."""
-
-    def _bare_session(self):
-        return Session.__new__(Session)
-
-    def test_returns_none_when_manager_absent(self):
-        # The manager attribute may be unset entirely (MCP
-        # compiled out, or session built before MCP init
-        # completes). ``getattr`` with default None makes the
-        # chain safe.
-        session = self._bare_session()
-        assert session._mcp_resolver("slack", "send") is None
-
-    def test_returns_none_when_manager_is_none(self):
-        session = self._bare_session()
-        session.mcp_manager = None
-        assert session._mcp_resolver("slack", "send") is None
-
-    def test_returns_none_when_server_not_in_clients(self):
-        # Manager present + has _clients, but the named server
-        # isn't connected. ``None`` keeps hook execution from
-        # crashing on a misconfigured settings.json.
-        session = self._bare_session()
-        manager = MagicMock()
-        manager._clients = {}
-        session.mcp_manager = manager
-        assert session._mcp_resolver("missing", "any") is None
-
-    def test_returns_none_when_tool_not_in_functions(self):
-        # Server connected, but doesn't expose the named tool
-        # (typo in settings.json, or tool removed upstream).
-        session = self._bare_session()
-        client = MagicMock()
-        client.functions = {"other_tool": object()}
-        manager = MagicMock()
-        manager._clients = {"slack": client}
-        session.mcp_manager = manager
-        assert session._mcp_resolver("slack", "send_message") is None
-
-    def test_returns_function_when_fully_resolved(self):
-        # Happy path — function found, returned for the executor
-        # to invoke. Identity equality matters: the executor
-        # awaits the SAME callable, no proxy/wrap.
-        session = self._bare_session()
-        target = MagicMock(name="send_message_fn")
-        client = MagicMock()
-        client.functions = {"send_message": target}
-        manager = MagicMock()
-        manager._clients = {"slack": client}
-        session.mcp_manager = manager
-        assert session._mcp_resolver("slack", "send_message") is target
-
-    def test_returns_none_when_client_has_no_functions_attr(self):
-        # Older client classes didn't expose ``functions``.
-        # ``getattr(..., None) or {}`` in the source covers it
-        # so the chain still returns None instead of raising
-        # AttributeError into the hook executor.
-        session = self._bare_session()
-        client = MagicMock(spec=[])  # spec=[] strips functions
-        manager = MagicMock()
-        manager._clients = {"slack": client}
-        session.mcp_manager = manager
-        assert session._mcp_resolver("slack", "send") is None
+        session.reminders.queue("first")
+        session.reminders.queue("second")
+        session.reminders.queue("third")
+        assert session.reminders.pending == ["first", "second", "third"]
 
 
 # ── Session.broadcast + register_broadcast_callback ──────────
@@ -742,17 +692,19 @@ class TestSessionMcpResolver:
 # gone by design.
 
 
+class _PingEvent(BroadcastEvent):
+    channel: Literal["ping"] = "ping"
+
+
 class TestSessionBroadcast:
     def _bare_session(self):
-        from igni_core.core.session.broadcast import BroadcastBus
-
         session = Session.__new__(Session)
         session.broadcast_bus = BroadcastBus()
         return session
 
     def test_register_appends_callback(self):
         session = self._bare_session()
-        cb = lambda ch, p: None  # noqa: E731
+        cb = lambda e: None  # noqa: E731
         session.register_broadcast_callback(cb)
         assert session.broadcast_bus.callbacks_snapshot() == [cb]
 
@@ -764,7 +716,7 @@ class TestSessionBroadcast:
         # — load-bearing for the "callbacks fire once per
         # broadcast" contract callers rely on.
         session = self._bare_session()
-        cb = lambda ch, p: None  # noqa: E731
+        cb = lambda e: None  # noqa: E731
         session.register_broadcast_callback(cb)
         session.register_broadcast_callback(cb)
         session.register_broadcast_callback(cb)
@@ -772,8 +724,8 @@ class TestSessionBroadcast:
 
     def test_register_distinct_callbacks_both_kept(self):
         session = self._bare_session()
-        cb1 = lambda ch, p: None  # noqa: E731
-        cb2 = lambda ch, p: None  # noqa: E731
+        cb1 = lambda e: None  # noqa: E731
+        cb2 = lambda e: None  # noqa: E731
         session.register_broadcast_callback(cb1)
         session.register_broadcast_callback(cb2)
         assert session.broadcast_bus.callbacks_snapshot() == [cb1, cb2]
@@ -781,13 +733,13 @@ class TestSessionBroadcast:
     def test_broadcast_calls_every_registered_callback(self):
         session = self._bare_session()
         captured: list[tuple[str, dict]] = []
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
-        session.register_broadcast_callback(lambda ch, p: captured.append((ch, p)))
-        session.broadcast("plan_submitted", {"plan": "x"})
-        # Both callbacks fired with the same args.
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
+        session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
+        session.broadcast(PlanSubmittedEvent(plan="x"))
+        # Both callbacks fired with the same event.
         assert captured == [
-            ("plan_submitted", {"plan": "x"}),
-            ("plan_submitted", {"plan": "x"}),
+            ("plan_submitted", {"plan": "x", "tasks": []}),
+            ("plan_submitted", {"plan": "x", "tasks": []}),
         ]
 
     def test_broadcast_preserves_call_order(self):
@@ -796,24 +748,21 @@ class TestSessionBroadcast:
         # the active style lands first) rely on this.
         session = self._bare_session()
         log: list[str] = []
-        session.register_broadcast_callback(lambda ch, p: log.append("first"))
-        session.register_broadcast_callback(lambda ch, p: log.append("second"))
-        session.register_broadcast_callback(lambda ch, p: log.append("third"))
-        session.broadcast("any", {})
+        session.register_broadcast_callback(lambda e: log.append("first"))
+        session.register_broadcast_callback(lambda e: log.append("second"))
+        session.register_broadcast_callback(lambda e: log.append("third"))
+        session.broadcast(_PingEvent())
         assert log == ["first", "second", "third"]
 
-    def test_broadcast_forwards_payload_identity(self):
-        # The payload reaches the callback as the SAME object —
-        # no defensive copy. Callers can mutate the dict
-        # before/after broadcast and the callback sees it
-        # consistently. Pin this so a defensive ``copy.deepcopy``
-        # refactor surfaces as a deliberate behaviour change.
+    def test_broadcast_delivers_the_event_instance(self):
+        # Subscribers receive the emitted (frozen) event itself —
+        # no copy per subscriber.
         session = self._bare_session()
         seen: list[object] = []
-        session.register_broadcast_callback(lambda ch, p: seen.append(p))
-        payload = {"plan": "x"}
-        session.broadcast("plan_submitted", payload)
-        assert seen[0] is payload
+        session.register_broadcast_callback(seen.append)
+        event = PlanSubmittedEvent(plan="x")
+        session.broadcast(event)
+        assert seen[0] is event
 
     def test_callback_exception_does_not_block_others(self):
         # The contract is "best-effort fan-out" — one buggy
@@ -823,20 +772,20 @@ class TestSessionBroadcast:
         session = self._bare_session()
         log: list[str] = []
 
-        def boom(ch, p):
+        def boom(event):
             raise RuntimeError("subscriber crashed")
 
         session.register_broadcast_callback(boom)
-        session.register_broadcast_callback(lambda ch, p: log.append("after-boom"))
+        session.register_broadcast_callback(lambda e: log.append("after-boom"))
         # Must NOT raise.
-        session.broadcast("channel", {})
+        session.broadcast(_PingEvent())
         assert log == ["after-boom"]
 
     def test_broadcast_with_no_callbacks_is_noop(self):
         # Common case during session bootstrap before any
         # transport has subscribed. Don't crash.
         session = self._bare_session()
-        session.broadcast("any", {})  # no raise
+        session.broadcast(_PingEvent())  # no raise
 
     def test_broadcast_bus_is_construction_invariant(self):
         # Post-OOP-pivot: ``BroadcastBus`` is composed in
@@ -848,10 +797,9 @@ class TestSessionBroadcast:
         # test pins the tighter invariant so a regression toward
         # defensive silence surfaces.
         session = Session.__new__(Session)  # NO ``broadcast_bus``
-        import pytest as _pytest
 
-        with _pytest.raises(AttributeError):
-            session.broadcast("any", {})
+        with pytest.raises(AttributeError):
+            session.broadcast(_PingEvent())
 
     def test_callbacks_can_register_during_broadcast_safely(self):
         # Edge case — a callback that registers a NEW callback
@@ -863,17 +811,17 @@ class TestSessionBroadcast:
         session = self._bare_session()
         log: list[str] = []
 
-        def first(ch, p):
+        def first(event):
             log.append("first")
-            session.register_broadcast_callback(lambda c, p: log.append("late"))
+            session.register_broadcast_callback(lambda e: log.append("late"))
 
         session.register_broadcast_callback(first)
-        session.broadcast("ev", {})
+        session.broadcast(_PingEvent())
         # ``first`` fires; ``late`` is registered but doesn't
         # fire this round.
         assert log == ["first"]
         # ``late`` is now in the list for the next broadcast.
-        session.broadcast("ev2", {})
+        session.broadcast(_PingEvent())
         assert log == ["first", "first", "late"]
 
 
@@ -892,26 +840,16 @@ class TestMainTeamToolkit:
     """
 
     @staticmethod
-    def _stub_session(
+    def _tool_set(
         *,
         web: str = "ask",
         fetch: str = "ask",
-    ):
-        """Cheap stub: just enough state for
-        ``_resolve_main_tool_names`` to run, without booting Agno,
-        the DB, etc. The method only reads ``settings.permissions``."""
-        session = Session.__new__(Session)
-        permissions = MagicMock()
-        permissions.web_search = web
-        permissions.web_fetch = fetch
-        settings = MagicMock()
-        settings.permissions = permissions
-        session.settings = settings
-        return session
+    ) -> MainToolSet:
+        return MainToolSet(PermissionsConfig(web_search=web, web_fetch=fetch))
 
     @staticmethod
     def _stub_registry():
-        """ToolRegistry stub — ``_resolve_main_tool_names`` only
+        """ToolRegistry stub — :class:`MainToolSet` only
         uses ``.resolve([...])`` to probe whether a tool's
         dependencies are importable. Return a no-op success so
         every optional tool gets added when its permission/flag
@@ -920,8 +858,8 @@ class TestMainTeamToolkit:
         return MagicMock(resolve=MagicMock(return_value=[]))
 
     def test_core_toolkit_is_shell_first(self):
-        session = self._stub_session()
-        names = session._resolve_main_tool_names(self._stub_registry())
+        tool_set = self._tool_set()
+        names = tool_set.names(self._stub_registry())
         # The 5 always-on tools — shell-first design.
         for required in ("Write", "Edit", "Bash", "Schedule", "NotebookEdit"):
             assert required in names, f"main team must always include {required}"
@@ -931,8 +869,8 @@ class TestMainTeamToolkit:
         # (available to sub-agents that opt in). They MUST NOT
         # appear in the main team's toolkit. A regression here
         # silently re-introduces tool overlap with Bash.
-        session = self._stub_session()
-        names = session._resolve_main_tool_names(self._stub_registry())
+        tool_set = self._tool_set()
+        names = tool_set.names(self._stub_registry())
         for forbidden in ("Read", "Grep", "Glob", "LS", "Python"):
             assert forbidden not in names, (
                 f"{forbidden} is registry-only — sub-agents opt in via "
@@ -944,27 +882,27 @@ class TestMainTeamToolkit:
         # ``permissions.web_search: deny`` (e.g. ``--no-web`` CLI
         # flag) hides the WebSearch toolkit from the agent's
         # catalog entirely. Same for WebFetch.
-        session = self._stub_session(web="deny", fetch="deny")
-        names = session._resolve_main_tool_names(self._stub_registry())
+        tool_set = self._tool_set(web="deny", fetch="deny")
+        names = tool_set.names(self._stub_registry())
         assert "WebSearch" not in names
         assert "WebFetch" not in names
 
     def test_web_tools_included_when_allowed(self):
-        session = self._stub_session(web="ask", fetch="ask")
-        names = session._resolve_main_tool_names(self._stub_registry())
+        tool_set = self._tool_set(web="ask", fetch="ask")
+        names = tool_set.names(self._stub_registry())
         assert "WebSearch" in names
         assert "WebFetch" in names
 
     def test_web_tools_silently_skipped_on_import_error(self):
         # Optional extras may not be installed (e.g. headless
         # builds without DuckDuckGo). The registry raises
-        # ``ImportError``; ``_resolve_main_tool_names`` swallows
+        # ``ImportError``; :class:`MainToolSet` swallows
         # it and just omits the tool — no crash, no warning to
         # the user that doesn't want the dep anyway.
-        session = self._stub_session(web="ask", fetch="ask")
+        tool_set = self._tool_set(web="ask", fetch="ask")
         registry = MagicMock()
         registry.resolve = MagicMock(side_effect=ImportError("no ddgs"))
-        names = session._resolve_main_tool_names(registry)
+        names = tool_set.names(registry)
         assert "WebSearch" not in names
         assert "WebFetch" not in names
         # Core tools still landed.
@@ -972,15 +910,15 @@ class TestMainTeamToolkit:
 
     def test_igni_has_no_codeindex_tool(self):
         """CodeIndex is an extension: its tool reaches the agent over MCP."""
-        names = self._stub_session()._resolve_main_tool_names(self._stub_registry())
+        names = self._tool_set().names(self._stub_registry())
         assert "CodeIndex" not in names
 
     def test_core_tools_constant_is_immutable(self):
         # The 5-tool core is class-level + a tuple so a future
-        # contributor can't accidentally ``Session._MAIN_CORE_TOOLS
+        # contributor can't accidentally ``MainToolSet.CORE
         # .append("Read")`` and silently regress the design.
-        assert isinstance(Session._MAIN_CORE_TOOLS, tuple)
-        assert Session._MAIN_CORE_TOOLS == (
+        assert isinstance(MainToolSet.CORE, tuple)
+        assert MainToolSet.CORE == (
             "Write",
             "Edit",
             "Bash",

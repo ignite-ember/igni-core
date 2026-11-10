@@ -1,17 +1,9 @@
 """Shared :class:`SlashCommand` Protocol.
 
-Every OOP-refactored ``cmd_*`` package (starting with
-:mod:`igni_core.backend.cmd_plugin`) exposes one or more
-:class:`SlashCommand` instances, and types its exported tuple
-against this Protocol so a command that drifts from the shape fails
-type-check at its own module rather than at some future dispatch.
-
-:class:`BuiltinCommandRegistry` does **not** consume this shape yet —
-it still stores the bare-async-callable ``(handler, args) ->
-CommandResult`` form only (``BuiltinHandler``), which each ``cmd_*``
-package provides as a thin shim over its command objects. This
-docstring used to point at a ``_normalize_entry`` in the registry
-that accepted both shapes; no such function was ever written.
+A ``cmd_*`` package may implement its commands as classes satisfying
+this Protocol (starting with :mod:`igni_core.backend.cmd_plugin`).
+:class:`BuiltinCommandRegistry` accepts such a class as an entry's
+target: it constructs it on first use and dispatches to ``run``.
 
 Kept in its own module (not inside the registry file) so any
 ``cmd_*.py`` package can implement the protocol without importing

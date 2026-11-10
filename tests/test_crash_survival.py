@@ -32,8 +32,9 @@ import pytest
 
 from igni_core.backend.run_controller import RunController as BackendRunController
 from igni_core.backend.schemas_lifecycle import InterruptedRunSummary
-from igni_core.backend.server import BackendServer
+from igni_core.backend.server_context import ContextController
 from igni_core.backend.server_lifecycle import LifecycleController
+from igni_core.backend.session_checkpointer import SessionCheckpointer
 from igni_core.core.session.pending_messages import (
     PendingMessage,
     PendingMessageStore,
@@ -259,7 +260,7 @@ class TestSubprocessCrashSurvival:
 
         async def simulate_crashed_run():
             # Pre-persist (the new behaviour at the top of
-            # ``_run_message_locked``).
+            # ``RunController._run_locked``).
             mid = await store.arecord_received("sess-async", "long question")
             # "Streaming" — yields control, then gets cancelled
             # before the success-path mark_completed.
@@ -292,11 +293,17 @@ class TestGetPendingMessagesRPC:
 
     @pytest.mark.asyncio
     async def test_returns_pending_in_chat_history_shape(self, tmp_path):
-        server = BackendServer.__new__(BackendServer)
-        server._pending_store = PendingMessageStore(tmp_path / "state.db")
-        server._pending_store.record_received("sess-x", "first interrupted")
+        store = PendingMessageStore(tmp_path / "state.db")
+        context = ContextController(
+            session=MagicMock(),
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
+        store.record_received("sess-x", "first interrupted")
         time.sleep(0.01)
-        server._pending_store.record_received("sess-x", "second interrupted")
+        store.record_received("sess-x", "second interrupted")
         # ``get_pending_messages`` filters out rows newer than 60s
         # (suppresses the "interrupted message" banner during Agno's
         # post-stream tail). Backdate the freshly-inserted rows so
@@ -304,7 +311,7 @@ class TestGetPendingMessagesRPC:
         # cares about field layout, not the freshness window.
         _backdate_pending_rows(tmp_path / "state.db")
 
-        rows = await server.get_pending_messages("sess-x")
+        rows = await context.get_pending_messages("sess-x")
         assert [r.content for r in rows] == ["first interrupted", "second interrupted"]
         assert all(r.role == "user" for r in rows)
         assert all(hasattr(r, "received_at") for r in rows)
@@ -312,19 +319,25 @@ class TestGetPendingMessagesRPC:
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_pending(self, tmp_path):
-        server = BackendServer.__new__(BackendServer)
-        server._pending_store = PendingMessageStore(tmp_path / "state.db")
+        store = PendingMessageStore(tmp_path / "state.db")
+        context = ContextController(
+            session=MagicMock(),
+            settings=MagicMock(),
+            pending_store=store,
+            models=MagicMock(),
+            pack_meta=MagicMock(),
+        )
 
-        rows = await server.get_pending_messages("sess-x")
+        rows = await context.get_pending_messages("sess-x")
         assert rows == []
 
 
 class TestPendingNotDiscardedUntilConsumed:
     """The bug the user reported: pending rows were discarded during
-    ``_detect_interrupted_run``, so by the time the FE asked the
+    ``detect_interrupted_run``, so by the time the FE asked the
     backend for them, they were gone — the interrupted question
     never made it to the conversation pane. The pending rows must
-    survive until ``_run_message_locked`` actually consumes them."""
+    survive until ``RunController._run_locked`` actually consumes them."""
 
     @pytest.mark.asyncio
     async def test_detect_keeps_pending_alive(self, tmp_path):
@@ -359,7 +372,7 @@ class TestPendingNotDiscardedUntilConsumed:
 
 
 class TestInterruptedDetectionUsesPendingStore:
-    """``BackendServer._detect_interrupted_run`` must surface
+    """``LifecycleController.detect_interrupted_run`` must surface
     pre-persisted user messages even when Agno's session has
     nothing to show (the text-only-response crash case where Agno
     never wrote anything to disk).
@@ -392,7 +405,7 @@ class TestInterruptedDetectionUsesPendingStore:
         records which pending ids should be dropped next, but the
         rows themselves stay alive so the FE can fetch them via
         ``get_pending_messages``. Actual ``discard`` happens inside
-        ``_run_message_locked`` when the agent consumes the
+        ``RunController._run_locked`` when the agent consumes the
         summary."""
         session = MagicMock()
         session.session_id = "sess"
@@ -420,22 +433,26 @@ class TestPeriodicCheckpoint:
 
     * Fire on the configured interval
     * Cancel cleanly when the run ends
-    * Survive transient ``_checkpoint_session`` failures
+    * Survive transient checkpoint-hook failures
+
+    Driven through :meth:`SessionCheckpointer.run_forever` with a spy
+    hook — the loop :meth:`RunController.periodic_checkpoint` runs.
     """
 
     @pytest.mark.asyncio
     async def test_fires_at_interval_until_cancelled(self):
-        server = BackendServer.__new__(BackendServer)
         calls = 0
 
         async def counting_checkpoint(team):  # type: ignore[no-untyped-def]
             nonlocal calls
             calls += 1
 
-        server._checkpoint_session = counting_checkpoint  # type: ignore[method-assign]
-
         team = AsyncMock()
-        task = asyncio.create_task(server._periodic_checkpoint(team, interval=0.02))
+        task = asyncio.create_task(
+            SessionCheckpointer(team).run_forever(
+                interval=0.02, checkpoint_hook=counting_checkpoint
+            )
+        )
         await asyncio.sleep(0.07)
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -450,7 +467,6 @@ class TestPeriodicCheckpoint:
         """A flaky checkpoint must not kill the task — otherwise
         a single SQLite hiccup mid-run silently disables
         durability for the rest of the run."""
-        server = BackendServer.__new__(BackendServer)
         calls = 0
 
         async def flaky_checkpoint(team):  # type: ignore[no-untyped-def]
@@ -459,10 +475,10 @@ class TestPeriodicCheckpoint:
             if calls == 1:
                 raise RuntimeError("disk full")
 
-        server._checkpoint_session = flaky_checkpoint  # type: ignore[method-assign]
-
         team = AsyncMock()
-        task = asyncio.create_task(server._periodic_checkpoint(team, interval=0.02))
+        task = asyncio.create_task(
+            SessionCheckpointer(team).run_forever(interval=0.02, checkpoint_hook=flaky_checkpoint)
+        )
         await asyncio.sleep(0.05)
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

@@ -19,6 +19,10 @@ adds the missing pieces:
   ``plan_researcher`` sub-agent via :class:`OrchestrateTools`
   when :meth:`PlanTool.enter_plan_mode` is called with
   ``task=...``.
+* :class:`PlanTransactionCoordinator` — the two plan transactions
+  (enter / submit), which :class:`PlanTool` delegates to.
+* :class:`PlanSubmitGate` — may this plan go to the person? The
+  extensions answer first, then igni's own ``PlanSubmit`` hooks.
 
 The complementary half (``/plan`` slash command +
 ``Session.set_permission_mode``) lives in ``backend/command_handler.py``
@@ -30,11 +34,12 @@ symbols it exported are re-exported here.
 
 from igni_core.core.tools.plan.researcher import PlanResearcherRunner
 from igni_core.core.tools.plan.schemas import (
-    PermissionModeChangedPayload,
     PlanEnterResult,
-    PlanExitInput,
     PlanExitResult,
-    PlanSubmittedPayload,
+    PlanModeEnteredEvent,
+    PlanSubmitDecision,
+    PlanSubmittedEvent,
+    PlanTaskBatch,
     PlanTaskInput,
 )
 from igni_core.core.tools.plan.store import (
@@ -43,24 +48,23 @@ from igni_core.core.tools.plan.store import (
     PlanSnapshot,
     PlanStore,
 )
-from igni_core.core.tools.plan.submission import (
-    PlanSessionShapeError,
-    PlanTransactionCoordinator,
-)
+from igni_core.core.tools.plan.submission import PlanTransactionCoordinator
+from igni_core.core.tools.plan.submit_gate import PlanSubmitGate
 from igni_core.core.tools.plan.tool import PlanTool
 
 __all__ = [
-    "PermissionModeChangedPayload",
     "PlanDecision",
     "PlanDecisionsBlob",
     "PlanEnterResult",
-    "PlanExitInput",
     "PlanExitResult",
+    "PlanModeEnteredEvent",
     "PlanResearcherRunner",
-    "PlanSessionShapeError",
     "PlanSnapshot",
     "PlanStore",
-    "PlanSubmittedPayload",
+    "PlanSubmitDecision",
+    "PlanSubmitGate",
+    "PlanSubmittedEvent",
+    "PlanTaskBatch",
     "PlanTaskInput",
     "PlanTool",
     "PlanTransactionCoordinator",

@@ -16,8 +16,14 @@ from types import SimpleNamespace
 import pytest
 
 from igni_core.core.config.schemas.safety import BypassGuardConfig
-from igni_core.core.hooks.bypass_guard import BypassGuard
+from igni_core.core.hooks.bypass_guard import NOT_RUN, BypassGuard, Verdict
+from igni_core.core.hooks.bypass_judge import HarmJudge, HarmScore
 from igni_core.core.hooks.bypass_rules import flag_shell, flag_write
+from igni_core.core.hooks.bypass_tool_kind import ToolKind
+from igni_core.core.hooks.permission.bypass_guard_stage import BypassGuardStage
+from igni_core.core.hooks.permission.context import ToolCallContext
+from igni_core.core.hooks.permission.outcome import Block, Continue
+from igni_core.core.mcp.hints import ToolHintsRegistry
 
 
 @pytest.fixture
@@ -109,7 +115,7 @@ class FakeJudge:
         self.calls += 1
         if self.error:
             raise self.error
-        return self.probability, self.question
+        return HarmScore(probability=self.probability, question=self.question)
 
 
 class Asker:
@@ -128,6 +134,7 @@ def _guard(project, *, bypass=True, ask=None, judge=None, **config):
         project_dir=project,
         in_bypass=lambda: bypass,
         ask=ask,
+        tool_hints=ToolHintsRegistry(),
         judge=judge or FakeJudge(),
     )
 
@@ -177,7 +184,6 @@ class TestARejectedCallLooksRejected:
     """Not ✓ (it never ran) and not ✗ (nothing failed): its own state."""
 
     def test_the_guards_wording_is_what_the_card_recognises(self):
-        from igni_core.core.hooks.bypass_guard import NOT_RUN
         from igni_core.protocol.tool_error_conventions import ToolResultErrorDetector
 
         detector = ToolResultErrorDetector.default()
@@ -265,13 +271,6 @@ class TestARejectedCallLooksRejected:
 
 
 def test_the_pipeline_runs_it_last_and_blocks_on_its_word(project):
-    from igni_core.core.hooks.permission_pipeline import (
-        Block,
-        BypassGuardStage,
-        Continue,
-        ToolCallContext,
-    )
-
     stage = BypassGuardStage(_guard(project, ask=Asker(False)))
     blocked = asyncio.run(
         stage.evaluate(
@@ -285,52 +284,54 @@ def test_the_pipeline_runs_it_last_and_blocks_on_its_word(project):
 
 
 class TestAskingThroughTheSessionsApprovalChannel:
-    def _session(self):
-        from types import SimpleNamespace
-
-        from igni_core.core.session.core import Session
+    def _channel(self):
+        from igni_core.core.session.tool_approval import ToolCallApprovalChannel
         from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 
-        session = SimpleNamespace(sub_agent_hitl=SubAgentHITLCoordinator())
-        return session, Session._ask_about_tool_call
+        coordinator = SubAgentHITLCoordinator()
+        return coordinator, ToolCallApprovalChannel(coordinator).ask
 
     def test_with_no_relay_running_nobody_can_answer(self):
-        session, ask = self._session()
-        assert asyncio.run(ask(session, "run_shell_command", {"command": "x"}, "why", [])) is None
+        _, ask = self._channel()
+        assert asyncio.run(ask("run_shell_command", {"command": "x"}, "why", [])) is None
 
     def test_the_answer_comes_back_from_the_dialog(self):
         async def scenario(action):
-            session, ask = self._session()
-            coordinator = session.sub_agent_hitl
-            coordinator.listeners = 1
+            coordinator, ask = self._channel()
+            coordinator.open_relay()
             task = asyncio.create_task(
-                ask(session, "run_shell_command", {"command": "rm -rf ~"}, "deletes ~", ["editor"])
+                ask("run_shell_command", {"command": "rm -rf ~"}, "deletes ~", ["editor"])
             )
             await coordinator.new_arrival.wait()
-            [(req_id, entry)] = coordinator.list_new_pending()
+            [handle] = coordinator.list_new_pending()
+            req_id = handle.requirement_id
+            entry = handle.entry
             assert entry.requirement.details == "deletes ~"
             assert entry.agent_path == ["editor", "safety check"]
-            coordinator.resolve(req_id, action)
+            coordinator.resolve(req_id, msg.HITLAction(action))
             return await task
 
         assert asyncio.run(scenario("confirm")) is True
         assert asyncio.run(scenario("reject")) is False
 
     def test_the_dialog_is_told_why(self):
-        from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
-        from igni_core.core.session.core import _GuardRequirement
-        from igni_core.core.sub_agent_hitl import _PendingEntry
+        from igni_core.backend.schemas_pause import SubagentPause
+        from igni_core.core.hitl.models import PendingEntry, PendingHandle
+        from igni_core.core.session.tool_approval import GuardRequirement, GuardToolExecution
 
-        entry = _PendingEntry(
-            requirement=_GuardRequirement(
-                tool_name="run_shell_command",
-                tool_args={"command": "rm -rf ~"},
+        entry = PendingEntry(
+            requirement=GuardRequirement(
+                tool_execution=GuardToolExecution(
+                    tool_name="run_shell_command", tool_args={"command": "rm -rf ~"}
+                ),
                 details="deletes ~",
             ),
             run_id="r",
             agent_path=["safety check"],
         )
-        paused = HITLStreamMultiplexer.build_subagent_paused([("abc", entry)])
+        paused = SubagentPause(
+            entries=[PendingHandle(requirement_id="abc", entry=entry)]
+        ).run_paused()
         assert paused.requirements[0].details == "deletes ~"
         assert paused.requirements[0].tool_args == {"command": "rm -rf ~"}
 
@@ -346,11 +347,9 @@ def _model_cached() -> bool:
 
 @pytest.mark.skipif(not _model_cached(), reason="laya-typed-decisions is not in the local cache")
 def test_the_real_model_separates_a_harmful_call_from_an_ordinary_one():
-    from igni_core.core.hooks.bypass_guard import HarmJudge
-
     judge = HarmJudge()
-    harmful, _ = asyncio.run(judge.score("Bash: kubectl delete namespace production"))
-    ordinary, _ = asyncio.run(judge.score("Bash: ls -la src/"))
+    harmful = asyncio.run(judge.score("Bash: kubectl delete namespace production")).probability
+    ordinary = asyncio.run(judge.score("Bash: ls -la src/")).probability
     assert harmful > ordinary
     assert ordinary < 0.75
 
@@ -366,25 +365,30 @@ def test_the_real_model_separates_a_harmful_call_from_an_ordinary_one():
 from igni_core.backend.hitl_controller import HitlController  # noqa: E402
 from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer  # noqa: E402
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore  # noqa: E402
-from igni_core.core.session.core import Session  # noqa: E402
+from igni_core.core.session.tool_approval import ToolCallApprovalChannel  # noqa: E402
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator  # noqa: E402
 from igni_core.protocol import messages as msg  # noqa: E402
 
 
 class NoJudge:
     async def score(self, text):
-        return 0.0, "destructive"
+        return HarmScore(probability=0.0, question="destructive")
 
 
 @pytest.mark.parametrize("action,expect_ran", [("confirm", True), ("reject", False)])
 def test_the_dialog_pops_up_and_its_answer_decides(tmp_path, action, expect_ran):
     async def scenario():
-        session = SimpleNamespace(sub_agent_hitl=SubAgentHITLCoordinator(), project_dir=tmp_path)
+        session = SimpleNamespace(
+            sub_agent_hitl=SubAgentHITLCoordinator(),
+            project_dir=tmp_path,
+            permission_evaluator=None,
+        )
         guard = BypassGuard(
             config=BypassGuardConfig(),
             project_dir=tmp_path,
             in_bypass=lambda: True,
-            ask=lambda *a, **kw: Session._ask_about_tool_call(session, *a, **kw),
+            ask=ToolCallApprovalChannel(session.sub_agent_hitl).ask,
+            tool_hints=ToolHintsRegistry(),
             judge=NoJudge(),
         )
         outcome = {}
@@ -435,7 +439,7 @@ def test_a_nested_resume_takes_over_the_relay():
     found clicking through Bypass in the real UI. The outer relay now
     stands down and hands back whatever it had taken."""
     from igni_core.backend.schemas_pause import SubagentPause, TeamStreamEvent
-    from igni_core.core.sub_agent_hitl import _PendingEntry
+    from igni_core.core.hitl.models import PendingEntry, PendingHandle
 
     async def scenario():
         coordinator = SubAgentHITLCoordinator()
@@ -448,9 +452,9 @@ def test_a_nested_resume_takes_over_the_relay():
         )
         relay = asyncio.create_task(asyncio.sleep(3600))
         queue: asyncio.Queue = asyncio.Queue()
-        entry = _PendingEntry(requirement=object(), run_id="r", surfaced=True)
+        entry = PendingEntry(requirement=object(), run_id="r", surfaced=True)
         other = TeamStreamEvent(event="keep me")
-        queue.put_nowait(SubagentPause(entries=[("req1", entry)]))
+        queue.put_nowait(SubagentPause(entries=[PendingHandle(requirement_id="req1", entry=entry)]))
         queue.put_nowait(other)
         mux._sub_task, mux._queue = relay, queue
 
@@ -473,27 +477,19 @@ class TestTheDialogSaysWhy:
     """
 
     def test_a_rule_reads_as_a_sentence(self):
-        from igni_core.core.hooks.bypass_guard import Verdict, explain
-
-        text = explain(
-            "run_shell_command",
-            Verdict(needs_approval=True, reason="force-pushes, rewriting shared history"),
+        text = Verdict(needs_approval=True, reason="force-pushes, rewriting shared history").prompt(
+            ToolKind.of("run_shell_command")
         )
         assert text.startswith("This command force-pushes, rewriting shared history.")
         assert "Bypass mode skips approvals" in text
 
     def test_the_model_says_it_judged_and_how_strongly(self):
-        from igni_core.core.hooks.bypass_guard import Verdict, explain
-
-        text = explain(
-            "write_file",
-            Verdict(
-                needs_approval=True,
-                reason="might delete or overwrite data",
-                score=0.83,
-                judged=True,
-            ),
-        )
+        text = Verdict(
+            needs_approval=True,
+            reason="might delete or overwrite data",
+            score=0.83,
+            judged=True,
+        ).prompt(ToolKind.of("write_file"))
         assert text.startswith("This file write might delete or overwrite data")
         assert "safety model's judgment" in text and "0.83" in text
 

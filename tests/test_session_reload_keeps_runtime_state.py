@@ -24,7 +24,8 @@ import pytest
 import yaml
 
 from igni_core.core.config.permission_eval import PermissionMode
-from igni_core.core.config.settings import Settings, load_settings
+from igni_core.core.config.settings import Settings
+from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.paths import CONFIG_DIR
 
 #: Enough of a model registry for a Session to construct.
@@ -68,7 +69,7 @@ def _settings(project: Path, *, home: Path) -> Settings:
             }
         )
     )
-    return load_settings(project_dir=project)
+    return SettingsLoader.load(project_dir=project)
 
 
 @pytest.fixture

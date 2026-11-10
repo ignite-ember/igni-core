@@ -1,70 +1,38 @@
-"""HITL (human-in-the-loop) resolution + permission-rule persistence.
+"""HITL (human-in-the-loop) resolution for one session.
 
-Renamed from :mod:`igni_core.backend.server_hitl` — the "server_"
-prefix implied a free-function module that took ``BackendServer``
-first-arg (Rule 6 offender). The rename + shim-removal make the
-class-per-concern layout obvious: :class:`HitlController` owns the
-whole HITL surface for one :class:`Session`, and
-:class:`AgnoDecisionApplier` owns the ``req.confirm()`` /
-``req.reject()`` dispatch behind an enum (Pattern 7 — wire keeps
-the string literal; domain uses the enum).
+:class:`HitlController` owns the session's approval flow: it answers
+the requirements a pause left (:meth:`HitlController.resolve_batch`),
+continues the run they paused, drives each team stream through a
+:class:`HITLStreamMultiplexer`, and finishes what a previous backend
+was continuing when it died. Its collaborators each own one part:
 
-* :meth:`HitlController.resolve_batch` — resolve every requirement
-  from a multi-req pause in one shot (fixes the v0.5.11 "User
-  denied" cascade).
-* :meth:`HitlController.resolve_single` — thin shim over
-  :meth:`resolve_batch` for the legacy single-req entry point.
-* :meth:`HitlController.check_permission` — check permission level
-  for a tool call.
-* :meth:`HitlController.save_permission_rule` — persist a
-  permission rule.
-* :meth:`HitlController.maybe_persist_choice` — persist the
-  user's HITL choice as a permission rule when they picked a
-  sticky option.
-
-Composition: the controller holds one
-:class:`AgnoDecisionApplier` instance as ``self._decision_applier``.
-The applier is a small class rather than a free function so the
-``req.confirm()`` / ``req.reject()`` dispatch is a real method
-lookup (polymorphic on :class:`HitlAction`), not a stringly-typed
-compare on ``decision.action``.
+* :class:`AgnoDecisionApplier` — ``req.confirm()`` / ``req.reject()``.
+* :class:`HitlPermissions` — permission checks and the sticky choices
+  persisted as rules (``controller.permissions``).
+* :class:`PauseHandler` — a paused team event into a ``RunPaused``.
+* :class:`RunHistory` — closing Agno's stored run after a restart.
 """
 
 from __future__ import annotations
 
-import inspect
 import logging
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from agno.db.base import SessionType
-from agno.run.base import RunStatus
-
+from igni_core.backend.agno_decision_applier import AgnoDecisionApplier
 from igni_core.backend.cold_spawn_resume import ColdSpawnResume
+from igni_core.backend.hitl_permissions import HitlPermissions
 from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
 from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.pause_handler import PauseHandler
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
-from igni_core.backend.schemas_hitl import (
-    ApplyDecisionResult,
-    HitlAction,
-    PersistChoiceResult,
-    RunRequirement,
-    StreamFactory,
-    ToolCallArgs,
-)
-from igni_core.backend.schemas_pause import PauseHandleResult, PendingRequirement
+from igni_core.backend.schemas_hitl import PausedRun, ResolvedBatch, StreamFactory
+from igni_core.backend.schemas_pause import PauseHandleResult
 from igni_core.backend.schemas_run import StopHookPayload
-from igni_core.core.approvals.declined import declined_note
-from igni_core.core.config.permission_eval import PermissionRule
-from igni_core.core.config.tool_permissions import (
-    PermissionLevel,
-    ToolInvocation,
-    ToolNameResolver,
-    ToolPermissions,
-)
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.hooks.extension_gate import ExtensionHookGate, StopValue
+from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.hooks.extension_values import StopValue
+from igni_core.core.session.persistence.run_history import RunHistory
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
@@ -74,119 +42,51 @@ logger = logging.getLogger(__name__)
 
 _HITL_LLM_LOGGER = logging.getLogger("igni_core.llm_calls")
 
-
-class AgnoDecisionApplier:
-    """Applies an :class:`msg.HITLDecision` to an Agno
-    :class:`RunRequirement` via ``confirm()`` / ``reject()``.
-
-    Extracted from ``HitlController._apply_agno_decision`` (a free
-    method) so the dispatch is polymorphic on :class:`HitlAction`
-    (a real enum) rather than a stringly-typed ``if decision.action
-    == "confirm"`` compare. Kept as a small collaborator so
-    :class:`HitlController` composes rather than inherits — one
-    instance lives on the controller and is reused across every
-    ``resolve_batch`` call.
-
-    Wire/domain split (Pattern 7): the caller
-    (:meth:`HitlController.resolve_batch`) builds the wire
-    ``msg.Error`` from the returned :class:`ApplyDecisionResult`.
-    The applier itself never touches ``msg.*`` — it deals in the
-    domain enum + Result.
-    """
-
-    def __init__(self) -> None:
-        """Stateless — one instance per :class:`HitlController`."""
-
-    def apply(self, decision: msg.HITLDecision, req: RunRequirement) -> ApplyDecisionResult:
-        """Call ``req.confirm()`` or ``req.reject(...)``.
-
-        Returns :class:`ApplyDecisionResult` — ``ok=False`` when
-        the Agno call raised. Caller yields an ``msg.Error`` built
-        from ``result.reason`` on failure.
-        """
-        try:
-            action = HitlAction(decision.action)
-        except ValueError:
-            reason = (
-                f"Unknown HITL action '{decision.action}' for requirement {decision.requirement_id}"
-            )
-            logger.warning("resolve_hitl_batch: %s", reason)
-            return ApplyDecisionResult(ok=False, reason=reason)
-
-        try:
-            if action is HitlAction.CONFIRM:
-                req.confirm()
-            else:
-                tool_execution = getattr(req, "tool_execution", None)
-                req.reject(note=declined_note(str(getattr(tool_execution, "tool_name", "") or "")))
-        except Exception as exc:
-            logger.warning(
-                "resolve_hitl_batch: requirement %s %s() raised %s; skipping",
-                decision.requirement_id,
-                action.value,
-                exc,
-            )
-            return ApplyDecisionResult(
-                ok=False,
-                reason=(f"Failed to {action.value} requirement {decision.requirement_id}: {exc}"),
-            )
-        return ApplyDecisionResult(ok=True)
+#: Stateless, so one is shared by every controller.
+_DECISION_APPLIER = AgnoDecisionApplier()
 
 
 class HitlController:
-    """HITL resolution + permission-rule persistence for a single
-    session.
+    """HITL resolution for a single session (see the module docstring).
 
-    Owns every HITL responsibility scattered previously on
-    ``BackendServer``:
-
-    * :meth:`resolve_batch` / :meth:`resolve_single` — the FE
-      resolution entry points.
-    * :meth:`check_permission` / :meth:`save_permission_rule` —
-      the wire-side permission RPCs.
-    * :meth:`maybe_persist_choice` — persist a sticky HITL choice
-      as a permission rule.
-    * :meth:`handle_pause` — evaluate a paused team event
-      (previously ``server._handle_pause``); returns a typed
-      :class:`PauseHandleResult`.
-    * :meth:`build_subagent_run_paused` — wrap a sub-agent
-      coordinator batch into an ``msg.RunPaused``.
-    * :meth:`stream_with_subagent` — instantiate a fresh
-      :class:`HITLStreamMultiplexer` for one team-stream lifecycle.
-    * :meth:`sweep_run` — drop pending + auto-resolved requirements
-      for a finished run.
-
-    Construction accepts the optional ``pause_handler`` +
-    ``tracer`` collaborators so tests can inject fakes without
-    monkey-patching ``BackendServer``. Production wiring builds
-    both from the session so the "reach into ``_hitl_store`` /
-    ``_hitl_tracer``" that server.py used to do is gone.
+    ``stream_factory`` is how a continued run's stream is driven to
+    the window. By default it is :meth:`stream_with_subagent`; a test
+    passes its own to watch the stream without a multiplexer.
     """
+
+    #: What the session is told about a main-agent run cut off while it
+    #: was being continued.
+    INTERRUPTED_RUN = (
+        "A run was interrupted: igni restarted while it was continuing after "
+        "its approval was answered. It was not run again — what it did before "
+        "the restart may or may not have taken effect. You can carry on the "
+        "conversation."
+    )
 
     def __init__(
         self,
         session: Session,
         store: PendingRequirementsStore,
-        stream_factory: StreamFactory | None = None,
         *,
+        stream_factory: StreamFactory | None = None,
         pause_handler: PauseHandler | None = None,
         tracer: HITLTracer | None = None,
     ) -> None:
         self._session = session
         self._store = store
-        # ``stream_factory`` is retained for backwards-compat with
-        # legacy call sites that inject a stub. When omitted, the
-        # controller drives its own :class:`HITLStreamMultiplexer`
-        # via :meth:`stream_with_subagent` — the mux is instantiated
-        # per stream because its queue + drain-task state is
-        # per-call.
         self._stream_factory: StreamFactory = stream_factory or self.stream_with_subagent
-        self._decision_applier = AgnoDecisionApplier()
         self._pause_handler = pause_handler or PauseHandler(
-            evaluator=getattr(session, "permission_evaluator", None),
-            store=store,
+            evaluator=session.permission_evaluator, store=store
         )
         self._tracer = tracer or HITLTracer(enabled=False)
+
+    @property
+    def permissions(self) -> HitlPermissions:
+        """The session's permission rules, as the HITL flow reads and
+        writes them. Built on each use: it holds only the session."""
+        return HitlPermissions(self._session)
+
+    # ── Resolution ──────────────────────────────────────────────
 
     async def resolve_batch(self, decisions: list[msg.HITLDecision]) -> AsyncIterator[msg.Message]:
         """Resolve every requirement from a multi-req pause in one shot.
@@ -196,40 +96,9 @@ class HitlController:
         """
         if not decisions:
             return
-
-        main_resolved_reqs: list[RunRequirement] = []
-        run_id: str | None = None
-        for d in decisions:
-            if self._session.sub_agent_hitl.resolve(d.requirement_id, d.action):
-                # Sub-agent coordinator owns this req — drop any
-                # main-team entry under the same id.
-                self._store.pop(d.requirement_id)
-                continue
-            entry = self._store.pop(d.requirement_id)
-            if entry is None:
-                yield msg.Error(text=f"Unknown requirement: {d.requirement_id}")
-                continue
-            req, this_run_id = entry.req, entry.run_id
-            cross_run_error = self._guard_cross_run(d.requirement_id, entry, this_run_id, run_id)
-            if cross_run_error is not None:
-                yield cross_run_error
-                continue
-            if run_id is None:
-                run_id = this_run_id
-            applied = self._decision_applier.apply(d, req)
-            if not applied.ok:
-                yield msg.Error(text=applied.reason)
-                continue
-            main_resolved_reqs.append(req)
-            persist_result = self.maybe_persist_choice(d, req)
-            if not persist_result.ok and persist_result.reason:
-                logger.debug(
-                    "maybe_persist_choice: skipped for %s — %s",
-                    d.requirement_id,
-                    persist_result.reason,
-                )
-
-        self._merge_auto_resolved(main_resolved_reqs, run_id)
+        batch = self._take_main_requirements(decisions)
+        for error in batch.errors:
+            yield error
 
         # Sub-agent approvals a previous backend left: once all of a
         # run's are answered, nothing in this process waits on them —
@@ -238,44 +107,102 @@ class HitlController:
             async for proto in ColdSpawnResume(self._session, self._stream_factory).resume(ready):
                 yield proto
 
-        if not main_resolved_reqs:
+        if not batch.requirements:
             return  # everything was sub-agent or failed
 
-        # Atomic mode flip — applies BEFORE ``acontinue_run`` resumes
-        # the agent, so the very next tool permission check sees the
-        # new mode. Closes the race where a separate ``/accept on``
-        # slash command fired alongside this batch was dispatched
-        # concurrently by the WS orchestrator and lost the race —
-        # the agent resumed under the OLD mode and re-prompted for
-        # the next edit. The FE's "Accept all edits during this
-        # session" shortcut uses this field on the first decision;
-        # we scan the whole batch and take the first non-empty value
-        # so multiple callers (current req + ``once``/``always``
-        # choices) don't have to coordinate.
+        refusal = self._flip_mode(decisions)
+        if refusal is not None:
+            yield refusal
+        async for proto in self._continue(batch):
+            yield proto
+        async for proto in self._fire_stop_hooks():
+            yield proto
+
+    async def resolve_single(
+        self, requirement_id: str, action: str, choice: str = msg.HITLChoice.ONCE.value
+    ) -> AsyncIterator[msg.Message]:
+        """Resolve a single HITL requirement, through :meth:`resolve_batch`
+        so the ``acontinue_run(requirements=...)`` call site exists once.
+
+        ``action`` / ``choice`` are ``str`` as on the wire; producers can
+        pass :class:`msg.HITLAction` / :class:`msg.HITLChoice` members.
+        """
+        decision = msg.HITLDecision(requirement_id=requirement_id, action=action, choice=choice)
+        async for proto in self.resolve_batch([decision]):
+            yield proto
+
+    def _take_main_requirements(self, decisions: list[msg.HITLDecision]) -> ResolvedBatch:
+        """Apply each decision the main team owns; route the rest to the
+        sub-agent coordinator. Every applied requirement shares one run,
+        and the run's auto-resolved requirements join them."""
+        batch = ResolvedBatch()
         for d in decisions:
-            target_mode = d.set_permission_mode.strip() if d.set_permission_mode else ""
-            if not target_mode:
+            # The wire carries the action as a plain string; the
+            # coordinator reads it as the domain action it names.
+            if self._session.sub_agent_hitl.resolve(d.requirement_id, msg.HITLAction(d.action)):
+                # Sub-agent coordinator owns this req — drop any
+                # main-team entry under the same id.
+                self._store.pop(d.requirement_id)
                 continue
-            status = self._session.set_permission_mode(target_mode)
-            _HITL_LLM_LOGGER.info(
-                "resolve_hitl_batch: atomic mode flip → %s (%s)",
-                target_mode,
-                status,
-            )
-            if status.startswith("Error"):
-                # Refused — by the organisation's mode policy, most often.
-                # Said to the person on the same channel this flow reports
-                # its other errors, the same words ``/accept`` would use;
-                # the approvals themselves still go through.
-                yield msg.Error(text=status)
-            break  # first non-empty wins; ignore later decisions
+            entry = self._store.pop(d.requirement_id)
+            if entry is None:
+                batch.errors.append(msg.Error(text=f"Unknown requirement: {d.requirement_id}"))
+                continue
+            if not batch.claim(entry.run_id):
+                self._store.register(d.requirement_id, entry)  # back as it was, request and all
+                batch.errors.append(
+                    msg.Error(
+                        text=(
+                            f"Cross-run HITL batch rejected: "
+                            f"requirement {d.requirement_id} belongs to run "
+                            f"{entry.run_id} but batch is for run {batch.run_id}"
+                        )
+                    )
+                )
+                continue
+            applied = _DECISION_APPLIER.apply(d, entry.req)
+            if not applied.ok:
+                batch.errors.append(msg.Error(text=applied.reason))
+                continue
+            batch.requirements.append(entry.req)
+            persisted = self.permissions.persist_choice(d, entry.req)
+            if not persisted.ok and persisted.reason:
+                logger.debug(
+                    "persist_choice: skipped for %s — %s", d.requirement_id, persisted.reason
+                )
+        if batch.run_id is not None:
+            batch.requirements.extend(self._store.drain_auto_resolved(batch.run_id))
+        return batch
 
-        team = self._session.main_team
+    def _flip_mode(self, decisions: list[msg.HITLDecision]) -> msg.Error | None:
+        """Apply the batch's mode switch, if a decision carries one.
 
+        Atomic — applied BEFORE ``acontinue_run`` resumes the agent, so
+        the very next tool permission check sees the new mode. Closes the
+        race where a separate ``/accept on`` fired alongside this batch
+        was dispatched concurrently and lost: the agent resumed under the
+        OLD mode and re-prompted for the next edit. The first non-empty
+        value in the batch wins, so callers need not coordinate.
+
+        A refusal (by the organisation's mode policy, most often) comes
+        back as the ``msg.Error`` to show, in the words ``/accept`` would
+        use; the approvals themselves still go through.
+        """
+        target = next(
+            (d.set_permission_mode.strip() for d in decisions if d.set_permission_mode.strip()),
+            "",
+        )
+        if not target:
+            return None
+        switch = self._session.set_permission_mode(target)
+        _HITL_LLM_LOGGER.info("resolve_hitl_batch: atomic mode flip → %s (%s)", target, switch.text)
+        return msg.Error(text=switch.text) if switch.refused else None
+
+    async def _continue(self, batch: ResolvedBatch) -> AsyncIterator[msg.Message]:
+        """Continue the paused run with the answered requirements."""
+        run_id = batch.run_id
         _HITL_LLM_LOGGER.info(
-            "resolve_hitl_batch: %d req(s) resolved, run_id=%s",
-            len(main_resolved_reqs),
-            run_id,
+            "resolve_hitl_batch: %d req(s) resolved, run_id=%s", len(batch.requirements), run_id
         )
         # Marked while it runs: a backend that dies before the run ends
         # leaves the mark, and the next one reports the run interrupted
@@ -284,10 +211,10 @@ class HitlController:
             self._store.begin_continuing(run_id)
         try:
             async for proto in self._stream_factory(
-                team.acontinue_run(
+                self._session.main_team.acontinue_run(
                     run_id=run_id,
                     session_id=self._session.session_id,
-                    requirements=main_resolved_reqs,
+                    requirements=batch.requirements,
                     stream=True,
                     stream_events=True,
                 )  # type: ignore[call-overload]  # kwargs + agno overload interplay
@@ -297,137 +224,52 @@ class HitlController:
             if run_id:
                 self._store.end_continuing(run_id)
 
-        # Fire Stop hook after continuation completes: the extensions
-        # that hook it first, then the configured hooks.
-        verdict = await ExtensionHookGate.ask(
-            StopValue(session_id=self._session.session_id), HookEvent.STOP
-        )
+    async def _fire_stop_hooks(self) -> AsyncIterator[msg.Message]:
+        """The Stop hook, once the continuation completes: the extensions
+        that hook it first, then the configured hooks."""
+        verdict = await extension_hook_gate.ask(StopValue(session_id=self._session.session_id))
         if not verdict.allowed:
             yield msg.Info(text=verdict.reason)
             return
         stop_result = await self._session.hook_executor.execute(
             event=HookEvent.STOP.value,
-            payload=StopHookPayload(session_id=self._session.session_id).model_dump(),
+            payload=StopHookPayload(session_id=self._session.session_id),
         )
         if stop_result.message and not stop_result.should_continue:
             yield msg.Info(text=stop_result.message)
 
-    async def resolve_single(
-        self, requirement_id: str, action: str, choice: str = msg.HITLChoice.ONCE.value
-    ) -> AsyncIterator[msg.Message]:
-        """Resolve a single HITL requirement.
+    # ── Pause / stream lifecycle ────────────────────────────────
 
-        Implemented as a thin shim over :meth:`resolve_batch` so
-        the dangerous ``acontinue_run(requirements=[req])`` call
-        site only exists in one place.
-
-        ``action`` / ``choice`` typed as ``str`` for wire-compat;
-        producers can pass :class:`msg.HITLAction` /
-        :class:`msg.HITLChoice` members (StrEnum coerces to str).
-        """
-        decision = msg.HITLDecision(requirement_id=requirement_id, action=action, choice=choice)
-        async for proto in self.resolve_batch([decision]):
-            yield proto
-
-    def check_permission(
-        self, tool_name: str, func_name: str, tool_args: ToolCallArgs
-    ) -> PermissionLevel:
-        """Check permission level for a tool call.
-
-        Accepts :class:`ToolCallArgs` (validated at the RPC seam)
-        rather than a raw ``dict[str, Any]`` — the widest
-        wire→domain boundary lives at ``rpc_router._check_permission``.
-        """
-        perms = ToolPermissions(project_dir=self._session.project_dir)
-        # Prefer the Agno-function-name table over the caller-supplied
-        # ``tool_name`` — matches the historical
-        # ``FUNC_TO_TOOL.get(func_name, tool_name)`` fallback shape.
-        # The catalog side (``run_shell_command`` → ``Bash``) is the
-        # authoritative name for permission dispatch.
-        resolver = ToolNameResolver()
-        registry_name = resolver.catalog_for(func_name) or tool_name
-        return perms.check(registry_name, func_name, tool_args.as_dict())
-
-    def save_permission_rule(self, rule: str, level: PermissionLevel) -> None:
-        """Persist a permission rule."""
-        perms = ToolPermissions(project_dir=self._session.project_dir)
-        perms.save_rule(rule, level)
-
-    def maybe_persist_choice(
-        self, decision: msg.HITLDecision, req: RunRequirement
-    ) -> PersistChoiceResult:
-        """Persist the user's HITL choice as a permission rule when
-        they picked a sticky option ("always" / "similar" / "deny").
-
-        Returns :class:`PersistChoiceResult` — ``ok=False`` with a
-        ``reason`` when the requirement was malformed or the
-        choice was a per-invocation ``once``. Callers log
-        ``reason`` at debug and move on; a genuine bug from a
-        malformed decision blob still bubbles.
-
-        Dispatch is on :class:`msg.HITLChoice` members via
-        ``StrEnum``, replacing the previous stringly-typed
-        ``choice in ("always", "similar", "deny")`` compare — the
-        enum's :meth:`is_persistent` method owns the "which
-        choices persist" invariant.
-        """
-        choice = msg.HITLChoice((decision.choice or "").lower())
-        if not choice.is_persistent():
-            return PersistChoiceResult(
-                ok=False, reason=f"choice '{decision.choice}' is not persistable"
-            )
-        tool_execution = getattr(req, "tool_execution", None)
-        tool_name = str(getattr(tool_execution, "tool_name", "") or "")
-        tool_args = getattr(tool_execution, "tool_args", None) or {}
-        if not tool_name:
-            logger.warning(
-                "maybe_persist_choice: missing tool metadata on requirement; "
-                "choice=%s degraded to no-op",
-                choice.value,
-            )
-            return PersistChoiceResult(ok=False, reason="missing tool metadata on requirement")
-        # Prefer the catalog-name for the persisted rule so it's
-        # readable in ``.igni/settings.local.json`` regardless of
-        # whether the requirement arrived tagged with the Agno
-        # function name or the friendly catalog name already.
-        resolver = ToolNameResolver()
-        canonical = resolver.catalog_for(tool_name) or tool_name
-        invocation = ToolInvocation.from_raw(canonical, tool_args)
-        if choice is msg.HITLChoice.SIMILAR:
-            rule = invocation.pattern_rule()
-        else:
-            rule = invocation.exact_rule()
-        level: PermissionLevel = "deny" if choice is msg.HITLChoice.DENY else "allow"
-        perms = ToolPermissions(project_dir=self._session.project_dir)
-        perms.save_rule(rule, level)
-        self._patch_live_evaluator(rule, level)
-        logger.info("Persisted HITL rule from choice=%s: %s %s", choice.value, level, rule)
-        return PersistChoiceResult(ok=True, rule=rule, level=level)
-
-    # ── Pause / stream lifecycle (moved from BackendServer) ─────────
-
-    def handle_pause(self, event: Any) -> PauseHandleResult:
+    def handle_pause(self, event: PausedRun) -> PauseHandleResult:
         """Convert a paused team event into a typed
-        :class:`PauseHandleResult`.
-
-        Migrated from ``BackendServer._handle_pause``. Uses the
-        controller's owned :class:`PauseHandler` (bound at
-        construction) rather than instantiating a fresh handler per
-        call — fixes the two-site duplication where server.py built
-        one here and the mux built another.
-        """
+        :class:`PauseHandleResult`, through the controller's one
+        :class:`PauseHandler` (the multiplexer shares it)."""
         return self._pause_handler.handle(event)
 
-    def build_subagent_run_paused(self, entries: list[tuple[str, Any]]) -> msg.Message:
-        """Wrap a batch of sub-agent coordinator entries in an
-        ``msg.RunPaused``.
+    async def stream_with_subagent(
+        self, team_stream: AsyncIterator[Any]
+    ) -> AsyncIterator[msg.Message]:
+        """Drive one team-stream lifecycle through a fresh
+        :class:`HITLStreamMultiplexer`.
 
-        Migrated from ``BackendServer._build_subagent_run_paused``
-        — delegates to the now-public
-        :meth:`HITLStreamMultiplexer.build_subagent_paused` static
-        so the wire shape is identical.
+        The mux is instantiated per stream because its ``asyncio.Queue``
+        + drain-task state is per-call — sharing would leak state across
+        concurrent streams.
         """
-        return HITLStreamMultiplexer.build_subagent_paused(entries)
+        mux = HITLStreamMultiplexer(
+            session=self._session,
+            store=self._store,
+            pause_handler=self._pause_handler,
+            tracer=self._tracer,
+        )
+        async for proto in mux.stream(team_stream):
+            yield proto
+
+    def sweep_run(self, run_id: str) -> None:
+        """Drop pending + auto-resolved entries for a finished run."""
+        self._store.sweep_run(run_id)
+
+    # ── What survives a reload or a restart ─────────────────────
 
     def waiting_messages(self) -> list[msg.RunPaused]:
         """Every approval of this session still waiting on the person,
@@ -441,39 +283,6 @@ class HitlController:
             *self._store.waiting_messages(),
             *self._session.sub_agent_hitl.waiting_requests(),
         ]
-
-    #: What the session is told about a main-agent run cut off while it
-    #: was being continued.
-    INTERRUPTED_RUN = (
-        "A run was interrupted: igni restarted while it was continuing after "
-        "its approval was answered. It was not run again — what it did before "
-        "the restart may or may not have taken effect. You can carry on the "
-        "conversation."
-    )
-
-    async def _close_interrupted_run(self, run_id: str) -> bool:
-        """Mark Agno's stored run as ended in error, so it is no longer
-        paused with nothing left to answer. ``True`` when it was found."""
-        db = getattr(self._session.main_team, "db", None)
-        if db is None:
-            return False
-        found = db.get_session(session_id=self._session.session_id, session_type=SessionType.AGENT)
-        stored = await found if inspect.isawaitable(found) else found
-        for run in getattr(stored, "runs", None) or []:
-            if run.run_id != run_id:
-                continue
-            if run.status == RunStatus.paused:
-                run.status = RunStatus.error
-                run.content = self.INTERRUPTED_RUN
-                # The run, in its own row: Agno 3 stores runs apart from
-                # the session, and saving the session would not save it.
-                saved = db.upsert_run(
-                    run, session_id=stored.session_id, user_id=getattr(stored, "user_id", None)
-                )
-                if inspect.isawaitable(saved):
-                    await saved
-            return True
-        return False
 
     async def resume_interrupted(self) -> AsyncIterator[msg.Message]:
         """Finish what a previous backend was continuing when it died.
@@ -495,73 +304,14 @@ class HitlController:
             ):
                 yield proto
 
-    def sweep_run(self, run_id: str) -> None:
-        """Drop pending + auto-resolved entries for a finished run.
-
-        Migrated from ``BackendServer._drop_pending_for_run`` —
-        thin wrapper on :meth:`PendingRequirementsStore.sweep_run`.
-        """
-        self._store.sweep_run(run_id)
-
-    async def stream_with_subagent(
-        self, team_stream: AsyncIterator[Any]
-    ) -> AsyncIterator[msg.Message]:
-        """Drive one team-stream lifecycle through a fresh
-        :class:`HITLStreamMultiplexer`.
-
-        Migrated from ``BackendServer._stream_with_subagent_hitl``.
-        The mux is instantiated per stream because its
-        ``asyncio.Queue`` + drain-task state is per-call — sharing
-        would leak state across concurrent streams.
-        """
-        mux = HITLStreamMultiplexer(
-            session=self._session,
-            store=self._store,
-            pause_handler=self._pause_handler,
-            tracer=self._tracer,
-        )
-        async for proto in mux.stream(team_stream):
-            yield proto
-
-    def _guard_cross_run(
-        self,
-        requirement_id: str,
-        entry: PendingRequirement,
-        this_run_id: str | None,
-        batch_run_id: str | None,
-    ) -> msg.Error | None:
-        """Reject any requirement whose ``run_id`` doesn't match the
-        batch."""
-        if batch_run_id is None or this_run_id == batch_run_id:
-            return None
-        self._store.register(requirement_id, entry)  # back as it was, request and all
-        return msg.Error(
-            text=(
-                f"Cross-run HITL batch rejected: "
-                f"requirement {requirement_id} belongs to run "
-                f"{this_run_id} but batch is for run {batch_run_id}"
-            )
+    async def _close_interrupted_run(self, run_id: str) -> bool:
+        """Close Agno's stored run ``run_id``; ``True`` when it was found."""
+        db = self._session.main_team.db
+        if db is None:
+            return False
+        return await RunHistory(db).close_interrupted(
+            self._session.session_id, run_id, self.INTERRUPTED_RUN
         )
 
-    def _merge_auto_resolved(
-        self,
-        main_resolved_reqs: list[RunRequirement],
-        run_id: str | None,
-    ) -> None:
-        """Drain the auto-resolved bucket for ``run_id`` and merge
-        into ``main_resolved_reqs``."""
-        if run_id is None:
-            return
-        main_resolved_reqs.extend(self._store.drain_auto_resolved(run_id))
 
-    def _patch_live_evaluator(self, rule: str, level: PermissionLevel) -> None:
-        """Append ``rule`` to the session's live ``PermissionEvaluator``."""
-        evaluator = getattr(self._session, "permission_evaluator", None)
-        if evaluator is None:
-            return
-        parsed = PermissionRule.parse(rule)
-        if parsed is None:
-            return
-        target = evaluator.deny if level == "deny" else evaluator.allow
-        if parsed not in target:
-            target.append(parsed)
+__all__ = ["HitlController"]

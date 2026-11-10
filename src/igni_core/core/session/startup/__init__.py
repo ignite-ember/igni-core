@@ -27,10 +27,11 @@ dependency.
 from igni_core.core.session.startup.base import SessionStartupPhase
 from igni_core.core.session.startup.coordinator import SessionStartupCoordinator
 from igni_core.core.session.startup.marketplace import MarketplaceWarmupPhase
-from igni_core.core.session.startup.mcp import McpInitPhase
+from igni_core.core.session.startup.mcp import McpInitDeps, McpInitPhase
 
 __all__ = [
     "MarketplaceWarmupPhase",
+    "McpInitDeps",
     "McpInitPhase",
     "SessionStartupCoordinator",
     "SessionStartupPhase",

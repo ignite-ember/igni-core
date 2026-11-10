@@ -8,8 +8,15 @@ import pytest
 from pydantic import ValidationError
 
 from igni_core.backend.command_handler import CommandHandler
-from igni_core.core.evals.assertion_runner import ToolArgDriver
-from igni_core.core.evals.assertions import check_file_assertion, check_unexpected_tool_calls
+from igni_core.core.evals.agno_adapter import AgnoResponseAdapter
+from igni_core.core.evals.assertion_runner import ToolArgDriver, UnexpectedToolsDriver
+from igni_core.core.evals.assertions import (
+    FILE_ASSERTION,
+    FileContains,
+    FileExists,
+    FileNotContains,
+    FileNotExists,
+)
 from igni_core.core.evals.loader import EvalCase, EvalSuite, load_eval_file
 from igni_core.core.evals.reporter import format_results
 from igni_core.core.evals.runner import (
@@ -19,6 +26,7 @@ from igni_core.core.evals.runner import (
     SuiteRunner,
     ToolTraceEntry,
 )
+from igni_core.core.evals.schemas import ToolArgAssertion
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.commands import InteractiveCommandDispatcher
 
@@ -132,6 +140,11 @@ class TestLoadEvalSuites:
 # ── Assertions tests ──────────────────────────────────────────
 
 
+def check_unexpected(response, unexpected):
+    called = AgnoResponseAdapter(response).called_tool_names()
+    return UnexpectedToolsDriver.check(called, unexpected)
+
+
 class TestCheckUnexpectedToolCalls:
     def test_no_forbidden_tools(self):
         response = MagicMock()
@@ -139,8 +152,7 @@ class TestCheckUnexpectedToolCalls:
         tool.tool_name = "Edit"
         response.tools = [tool]
 
-        passed, detail = check_unexpected_tool_calls(response, ["Write"])
-        assert passed is True
+        assert check_unexpected(response, ["Write"]).ok is True
 
     def test_forbidden_tool_detected(self):
         response = MagicMock()
@@ -148,9 +160,9 @@ class TestCheckUnexpectedToolCalls:
         tool.tool_name = "Write"
         response.tools = [tool]
 
-        passed, detail = check_unexpected_tool_calls(response, ["Write"])
-        assert passed is False
-        assert "Write" in detail
+        check = check_unexpected(response, ["Write"])
+        assert check.ok is False
+        assert "Write" in check.detail
 
     def test_fallback_to_messages(self):
         response = MagicMock()
@@ -159,106 +171,79 @@ class TestCheckUnexpectedToolCalls:
         msg.tool_calls = [{"function": {"name": "Bash"}}]
         response.messages = [msg]
 
-        passed, detail = check_unexpected_tool_calls(response, ["Bash"])
-        assert passed is False
-        assert "Bash" in detail
+        check = check_unexpected(response, ["Bash"])
+        assert check.ok is False
+        assert "Bash" in check.detail
 
     def test_no_tools_at_all(self):
         response = MagicMock()
         response.tools = None
         response.messages = []
 
-        passed, detail = check_unexpected_tool_calls(response, ["Write"])
-        assert passed is True
+        assert check_unexpected(response, ["Write"]).ok is True
 
 
-class TestCheckFileAssertion:
+class TestFileAssertions:
     def test_file_exists_pass(self, tmp_path):
         f = tmp_path / "exists.txt"
         f.write_text("hello")
-        passed, _ = check_file_assertion({"type": "file_exists", "path": str(f)})
-        assert passed is True
+        assert FileExists(path=str(f)).check().passed is True
 
     def test_file_exists_fail(self, tmp_path):
-        passed, _ = check_file_assertion(
-            {"type": "file_exists", "path": str(tmp_path / "nope.txt")}
-        )
-        assert passed is False
+        assert FileExists(path=str(tmp_path / "nope.txt")).check().passed is False
 
     def test_file_not_exists_pass(self, tmp_path):
-        passed, _ = check_file_assertion(
-            {"type": "file_not_exists", "path": str(tmp_path / "nope.txt")}
-        )
-        assert passed is True
+        assert FileNotExists(path=str(tmp_path / "nope.txt")).check().passed is True
 
     def test_file_not_exists_fail(self, tmp_path):
         f = tmp_path / "exists.txt"
         f.write_text("hello")
-        passed, _ = check_file_assertion({"type": "file_not_exists", "path": str(f)})
-        assert passed is False
+        assert FileNotExists(path=str(f)).check().passed is False
 
     def test_file_contains_pass(self, tmp_path):
         f = tmp_path / "code.py"
         f.write_text("def process_data(x):\n    return x\n")
-        passed, _ = check_file_assertion(
-            {
-                "type": "file_contains",
-                "path": str(f),
-                "pattern": r"def process_data",
-            }
-        )
-        assert passed is True
+        assert FileContains(path=str(f), pattern=r"def process_data").check().passed is True
 
     def test_file_contains_fail(self, tmp_path):
         f = tmp_path / "code.py"
         f.write_text("def processData(x):\n    return x\n")
-        passed, _ = check_file_assertion(
-            {
-                "type": "file_contains",
-                "path": str(f),
-                "pattern": r"def process_data",
-            }
-        )
-        assert passed is False
+        assert FileContains(path=str(f), pattern=r"def process_data").check().passed is False
 
     def test_file_not_contains_pass(self, tmp_path):
         f = tmp_path / "code.py"
         f.write_text("def process_data(x):\n    return x\n")
-        passed, _ = check_file_assertion(
-            {
-                "type": "file_not_contains",
-                "path": str(f),
-                "pattern": r"def processData",
-            }
-        )
-        assert passed is True
+        assert FileNotContains(path=str(f), pattern=r"def processData").check().passed is True
 
     def test_file_not_contains_fail(self, tmp_path):
         f = tmp_path / "code.py"
         f.write_text("def processData(x):\n    return x\n")
-        passed, _ = check_file_assertion(
-            {
-                "type": "file_not_contains",
-                "path": str(f),
-                "pattern": r"def processData",
-            }
-        )
-        assert passed is False
+        assert FileNotContains(path=str(f), pattern=r"def processData").check().passed is False
 
     def test_file_contains_missing_file(self, tmp_path):
-        passed, _ = check_file_assertion(
-            {
-                "type": "file_contains",
-                "path": str(tmp_path / "missing.py"),
-                "pattern": r"anything",
-            }
-        )
-        assert passed is False
+        check = FileContains(path=str(tmp_path / "missing.py"), pattern=r"anything").check()
+        assert check.passed is False
 
-    def test_unknown_type(self):
-        passed, detail = check_file_assertion({"type": "bogus"})
-        assert passed is False
-        assert "unknown" in detail
+    def test_relative_path_resolves_against_work_dir(self, tmp_path):
+        (tmp_path / "out.txt").write_text("x")
+        check = FileExists(path="out.txt").check(tmp_path)
+        assert check.passed is True
+        assert check.type == "file_exists"
+
+    def test_yaml_entry_validates_to_its_kind(self):
+        spec = FILE_ASSERTION.validate_python(
+            {"type": "file_contains", "path": "a.py", "pattern": "x"}
+        )
+        assert isinstance(spec, FileContains)
+
+    def test_unknown_type_fails_validation(self):
+        with pytest.raises(ValidationError):
+            FILE_ASSERTION.validate_python({"type": "bogus"})
+
+    def test_file_unchanged_is_not_accepted(self):
+        # It was never implemented and used to pass silently.
+        with pytest.raises(ValidationError):
+            FILE_ASSERTION.validate_python({"type": "file_unchanged", "path": "a"})
 
 
 # ── Runner tests ──────────────────────────────────────────────
@@ -489,8 +474,8 @@ class TestToolTraceEntry:
         }
 
     def test_check_tool_arg_assertion_matches_pydantic_trace(self):
-        # End-to-end for the check function: pydantic trace + plain
-        # dict assertions → assertion matches when args contain the
+        # End-to-end for the check function: pydantic trace + typed
+        # assertions → assertion matches when args contain the
         # required key/value pair.
         trace = [
             ToolTraceEntry(name="spawn_team", args={"mode": "coordinate"}),
@@ -498,7 +483,7 @@ class TestToolTraceEntry:
         ]
         check = ToolArgDriver.check(
             trace,
-            [{"tool": "spawn_team", "args_must_contain": {"mode": "coordinate"}}],
+            [ToolArgAssertion(tool="spawn_team", args_must_contain={"mode": "coordinate"})],
         )
         assert check.ok is True
         assert "all tool-arg assertions matched" in check.detail
@@ -508,25 +493,23 @@ class TestToolTraceEntry:
         trace = [ToolTraceEntry(name="save_file", args={"path": "/tmp/x"})]
         check = ToolArgDriver.check(
             trace,
-            [{"tool": "spawn_team", "args_must_contain": {"mode": "coordinate"}}],
+            [ToolArgAssertion(tool="spawn_team", args_must_contain={"mode": "coordinate"})],
         )
         assert check.ok is False
         assert "missing tool-arg matches" in check.detail
         assert "spawn_team" in check.detail
 
     def test_check_tool_arg_assertion_skips_missing_tool_field(self):
-        # Malformed assertion (no ``tool`` key) is silently skipped —
-        # matches the pre-refactor behaviour where such rows never
-        # matched anything.
+        # An assertion naming no tool is skipped — it has no call to match.
         trace = [ToolTraceEntry(name="save_file", args={})]
-        check = ToolArgDriver.check(trace, [{"args_must_contain": {"x": 1}}])
+        check = ToolArgDriver.check(trace, [ToolArgAssertion(args_must_contain={"x": 1})])
         assert check.ok is True
 
     def test_check_tool_arg_assertion_handles_none_args(self):
         # ``args=None`` (no args captured) must not crash the check.
         trace = [ToolTraceEntry(name="save_file", args=None)]
         check = ToolArgDriver.check(
-            trace, [{"tool": "save_file", "args_must_contain": {"path": "/x"}}]
+            trace, [ToolArgAssertion(tool="save_file", args_must_contain={"path": "/x"})]
         )
         # Should be a clean failure ("no match"), not an exception.
         assert check.ok is False

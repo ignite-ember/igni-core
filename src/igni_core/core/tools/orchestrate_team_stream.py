@@ -1,13 +1,10 @@
 """Team stream handler — one Agno team, one stream, N members.
 
-Concrete subclass of :class:`BaseStreamHandler` for the
-``spawn_team`` path. Sibling of :class:`SubAgentStreamHandler`.
+Concrete subclass of :class:`BaseStreamHandler` for the ``spawn_team``
+path. Sibling of :class:`SubAgentStreamHandler`.
 
 The team case adds:
 
-* A ``_should_hide_coordinator`` predicate that drops the team's own
-  lifecycle/content/tool events (they overlap with each member's,
-  and the team-progress card already represents the team).
 * Per-member agent-path derivation via ``_agent_path_for`` /
   ``_event_agent_path`` — each Agno event carries its owning agent
   name, so tool events attribute to the right specialist even when
@@ -16,6 +13,13 @@ The team case adds:
   :meth:`TeamStreamState.append_content_delta`.
 * Task lifecycle events (``TaskCreated`` / ``TaskUpdated`` /
   ``TaskIterationStarted``) — team-mode-only.
+
+The team's own lifecycle and tool events are not handled at all: Agno's
+Team runs its own coordinator model in coordinate/route/tasks modes,
+and surfacing that coordinator as a fourth row beside three real
+workers confuses users — the team-progress card already represents
+the team. Leaving those events out of :data:`TEAM_EVENT_HANDLERS` is
+what hides them.
 """
 
 from __future__ import annotations
@@ -27,60 +31,62 @@ from agno.run import agent as agent_events
 from agno.run import team as team_events
 
 from igni_core.core.tools.orchestrate_events import (
-    TASK_STATUS_ICONS,
     AgentCompletedEvent,
     AgentPausedEvent,
     AgentStartedEvent,
     ContentPreviewEvent,
-    EventAppender,
-    HitlCoordinatorProtocol,
-    LogSymbols,
-    OnProgress,
     RunErrorEvent,
-    SubAgentRegistry,
     TaskCreatedEvent,
     TaskUpdatedEvent,
     ToolCompletedEvent,
     ToolStartedEvent,
 )
 from igni_core.core.tools.orchestrate_preview import PREVIEWS
-from igni_core.core.tools.orchestrate_stream_handler import BaseStreamHandler
+from igni_core.core.tools.orchestrate_stream_context import StreamContext
+from igni_core.core.tools.orchestrate_stream_handler import (
+    BaseStreamHandler,
+    active_requirements,
+    handler_name,
+)
+from igni_core.core.tools.orchestrate_symbols import TASK_STATUS_ICONS, LogSymbols
 from igni_core.core.tools.subagent_stream import TeamStreamState
+from igni_core.protocol.agno_compat import RunProducer
 
 _stream_log = logging.getLogger("igni_core.llm_calls")
 
 
-class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
-    """Drive one Agno team stream. Constructor mirrors the old
-    ``run_team_streaming`` function signature."""
+#: Which method answers which Agno event, for a team's stream. A
+#: member's events are Agno's *agent* events; the team's own are its
+#: *team* events, and the ones the team does not want to show — its
+#: coordinator's lifecycle and tool calls — are simply absent.
+TEAM_EVENT_HANDLERS: dict[type, str] = {
+    agent_events.RunStartedEvent: "_on_agent_run_started",
+    team_events.RunPausedEvent: "_on_run_paused",
+    team_events.TaskCreatedEvent: "_on_task_created",
+    team_events.TaskUpdatedEvent: "_on_task_updated",
+    team_events.TaskIterationStartedEvent: "_on_task_iteration_started",
+    agent_events.ToolCallStartedEvent: "_on_tool_started",
+    agent_events.ToolCallCompletedEvent: "_on_tool_completed",
+    agent_events.ToolCallErrorEvent: "_on_tool_error",
+    agent_events.RunErrorEvent: "_on_run_error",
+    agent_events.RunCompletedEvent: "_on_agent_run_completed",
+    agent_events.RunContentEvent: "_on_run_content",
+}
 
-    def __init__(
-        self,
-        team: Any,
-        task: str,
-        *,
-        on_progress: OnProgress | None = None,
-        hitl_coordinator: HitlCoordinatorProtocol | None = None,
-        agent_path: list[str] | None = None,
-        card_id: str = "",
-        subagent_registry: SubAgentRegistry,
-        event_appender: EventAppender | None = None,
-    ) -> None:
+
+class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
+    """Drive one Agno team stream."""
+
+    def __init__(self, context: StreamContext) -> None:
+        base_path = list(context.agent_path)
         super().__init__(
-            team,
-            task,
-            on_progress=on_progress,
-            hitl_coordinator=hitl_coordinator,
-            agent_path=agent_path,
-            card_id=card_id,
-            subagent_registry=subagent_registry,
-            event_appender=event_appender,
+            context,
+            TeamStreamState(
+                team_path_id=".".join(base_path) if base_path else "team",
+                card_id=context.card_id,
+            ),
         )
-        self._base_path: list[str] = list(agent_path or [])
-        self.state = TeamStreamState(
-            team_path_id=".".join(self._base_path) if self._base_path else "team",
-            card_id=card_id,
-        )
+        self._base_path = base_path
 
     def _latch_run_ids(self, event: Any) -> None:
         """Latch the *team's* run, not a member's.
@@ -99,79 +105,12 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
         ``None``."""
         self._latch_run_ids(event)
 
-        # Hide the team coordinator's own lifecycle/content/tool
-        # events — see :meth:`_should_hide_coordinator`.
-        if self._should_hide_coordinator(event):
+        name = handler_name(TEAM_EVENT_HANDLERS, event)
+        if name is None:
             return None
-
-        if isinstance(event, agent_events.RunStartedEvent):
-            self._on_agent_run_started(event)
-            return None
-        if isinstance(event, team_events.RunPausedEvent):
-            # The team's own pause: its run id is what Agno continues,
-            # and its requirements name the member that asked.
-            return await self._on_run_paused(event)
-        if isinstance(event, agent_events.RunPausedEvent):
-            # A member's pause, relayed: the team pauses with it next.
-            # Continuing the member's run id through the team found no
-            # run, and the approval led nowhere.
-            return None
-        if isinstance(event, team_events.TaskCreatedEvent):
-            self._on_task_created(event)
-            return None
-        if isinstance(event, team_events.TaskUpdatedEvent):
-            self._on_task_updated(event)
-            return None
-        if isinstance(event, team_events.TaskIterationStartedEvent):
-            self._on_task_iteration_started(event)
-            return None
-        if isinstance(event, agent_events.ToolCallStartedEvent):
-            self._on_tool_started(event)
-            return None
-        if isinstance(event, agent_events.ToolCallCompletedEvent):
-            self._on_tool_completed(event)
-            return None
-        if isinstance(event, agent_events.ToolCallErrorEvent):
-            self._on_tool_error(event)
-            return None
-        if isinstance(event, agent_events.RunErrorEvent):
-            self._on_run_error(event)
-            return None
-        if isinstance(event, agent_events.RunCompletedEvent):
-            self._on_agent_run_completed(event)
-            return None
-        if isinstance(event, agent_events.RunContentEvent):
-            self._on_run_content(event)
-            return None
-        return None
+        return await getattr(self, name)(event)
 
     # ── Helpers ────────────────────────────────────────────────────
-    @staticmethod
-    def _should_hide_coordinator(event: Any) -> bool:
-        """Drop the team's own lifecycle/content/tool events.
-
-        Agno's Team has its own model that does routing/planning in
-        coordinate/route/tasks modes and emits ``team_events.*``
-        alongside the workers' ``agent_events.*``. Surfacing the
-        coordinator as a 4th row alongside three real workers
-        confuses users — the team-progress card itself already
-        represents the team. ``TaskCreated`` / ``TaskUpdated`` are
-        team_events too, but attributed to a member assignee, so
-        they stay (handled below).
-        """
-        return isinstance(
-            event,
-            (
-                team_events.RunStartedEvent,
-                team_events.RunCompletedEvent,
-                team_events.RunContentEvent,
-                team_events.RunErrorEvent,
-                team_events.ToolCallStartedEvent,
-                team_events.ToolCallCompletedEvent,
-                team_events.ToolCallErrorEvent,
-            ),
-        )
-
     def _agent_path_for(self, name: str | None) -> str:
         """Build the agent-path id for a team member by appending
         its name to the team's base path."""
@@ -191,18 +130,13 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
         ``team_name`` for nested teams), and using that prevents
         the "all tools land on the last started agent" bug.
         """
-        name = (
-            getattr(event, "agent_name", None)
-            or getattr(event, "team_name", None)
-            or self.state.current_agent
-            or ""
-        )
+        name = RunProducer.from_agno(event).name or self.state.current_agent or ""
         return self._agent_path_for(name), name
 
     # ── Per-event handlers ─────────────────────────────────────────
-    def _on_agent_run_started(self, event: Any) -> None:
+    async def _on_agent_run_started(self, event: agent_events.RunStartedEvent) -> None:
         state = self.state
-        name = getattr(event, "agent_name", None) or getattr(event, "team_name", None)
+        name = RunProducer.from_agno(event).name
         if not name or name == state.current_agent:
             return
         state.current_agent = name
@@ -216,26 +150,27 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
                 # specific sub-agent for cancellation —
                 # ``cancel_agent_run(run_id)`` flags this run for
                 # cooperative stop while siblings keep going.
-                run_id=str(getattr(event, "run_id", "") or ""),
+                run_id=str(event.run_id or ""),
                 # The team's task is what the parent agent asked
                 # the broadcast to do. Each member receives the
                 # same prompt — the FE Retry UI pre-fills it so
                 # the user can tweak before respawning.
-                task=self._task,
+                task=self._context.task,
             )
         )
 
-    async def _on_run_paused(self, event: Any) -> Any:
+    async def _on_run_paused(self, event: team_events.RunPausedEvent) -> Any:
         state = self.state
-        reqs = getattr(event, "active_requirements", None) or []
-        if self._hitl_coordinator is None or not reqs:
+        coordinator = self._context.sinks.hitl_coordinator
+        reqs = active_requirements(event)
+        if coordinator is None or not reqs:
             self._log_line(
                 f"  {LogSymbols.T_TRUNK.value}  "
                 f"{LogSymbols.WARNING.value} paused: no HITL bridge available"
             )
             return None
-        run_id = getattr(event, "run_id", "") or state.current_run_id or ""
-        session_id = getattr(event, "session_id", None) or state.current_session_id
+        run_id = event.run_id or state.current_run_id or ""
+        session_id = event.session_id or state.current_session_id
         req_ids: list[str] = []
         for req in reqs:
             # If Agno tagged the requirement with a member name (set
@@ -243,7 +178,7 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
             # the FE shows e.g. ``review-team → security``.
             member = getattr(req, "member_agent_name", None)
             req_path = self._base_path + [member] if member else self._base_path
-            req_id = await self._hitl_coordinator.push_requirement(
+            req_id = await coordinator.push_requirement(
                 req, run_id=run_id, agent_path=req_path, session_id=session_id or ""
             )
             req_ids.append(req_id)
@@ -262,20 +197,20 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
         )
         try:
             for req_id in req_ids:
-                await self._hitl_coordinator.wait_resolved(req_id)
+                await coordinator.wait_resolved(req_id)
         finally:
             for req_id in req_ids:
-                self._hitl_coordinator.cleanup(req_id)
-        return self._runnable.acontinue_run(
+                coordinator.cleanup(req_id)
+        return self._context.runnable.acontinue_run(
             run_id=run_id,
             session_id=session_id,
             requirements=reqs,
             stream=True,
         )
 
-    def _on_task_created(self, event: Any) -> None:
-        title = getattr(event, "title", "")
-        assignee = getattr(event, "assignee", "")
+    async def _on_task_created(self, event: team_events.TaskCreatedEvent) -> None:
+        title = event.title or ""
+        assignee = event.assignee or ""
         self._log_line(f"  {LogSymbols.T_ROOT.value} TASK: {title}")
         if assignee:
             self._log_line(f"  {LogSymbols.T_TRUNK.value}  assigned to: {assignee}")
@@ -287,8 +222,8 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
             )
         )
 
-    def _on_task_updated(self, event: Any) -> None:
-        status = getattr(event, "status", "")
+    async def _on_task_updated(self, event: team_events.TaskUpdatedEvent) -> None:
+        status = event.status or ""
         icon = TASK_STATUS_ICONS.get(status, "·")
         self._log_line(f"  {LogSymbols.T_TRUNK.value}  {icon} {status}")
         self._emit(
@@ -298,10 +233,12 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
             )
         )
 
-    def _on_task_iteration_started(self, event: Any) -> None:
-        self._log_line(f"  {LogSymbols.T_JOIN.value} Iteration {getattr(event, 'iteration', 0)}")
+    async def _on_task_iteration_started(
+        self, event: team_events.TaskIterationStartedEvent
+    ) -> None:
+        self._log_line(f"  {LogSymbols.T_JOIN.value} Iteration {event.iteration}")
 
-    def _on_tool_started(self, event: Any) -> None:
+    async def _on_tool_started(self, event: agent_events.ToolCallStartedEvent) -> None:
         ev_path, _name = self._event_agent_path(event)
         te = event.tool
         tn = (te.tool_name or "tool") if te else "tool"
@@ -322,7 +259,7 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
             )
         )
 
-    def _on_tool_completed(self, event: Any) -> None:
+    async def _on_tool_completed(self, event: agent_events.ToolCallCompletedEvent) -> None:
         state = self.state
         ev_path, _name = self._event_agent_path(event)
         te = event.tool
@@ -349,7 +286,7 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
         if state.current_tool == tn:
             state.current_tool = None
 
-    def _on_tool_error(self, event: Any) -> None:
+    async def _on_tool_error(self, event: agent_events.ToolCallErrorEvent) -> None:
         state = self.state
         ev_path, _name = self._event_agent_path(event)
         te = getattr(event, "tool", None)
@@ -372,7 +309,7 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
         if state.current_tool == tn:
             state.current_tool = None
 
-    def _on_run_error(self, event: Any) -> None:
+    async def _on_run_error(self, event: agent_events.RunErrorEvent) -> None:
         ev_path, _name = self._event_agent_path(event)
         err = str(getattr(event, "content", "?"))
         self._log_line(f"  {LogSymbols.T_TRUNK.value}  {LogSymbols.T_LEAF.value} ERROR: {err}")
@@ -383,11 +320,10 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
             )
         )
 
-    def _on_agent_run_completed(self, event: Any) -> None:
+    async def _on_agent_run_completed(self, event: agent_events.RunCompletedEvent) -> None:
         state = self.state
         ev_path, _name = self._event_agent_path(event)
-        content = getattr(event, "content", None)
-        state.record_completion(content)
+        state.record_completion(getattr(event, "content", None))
         # Pull per-agent token totals off ``event.metrics`` so the
         # team-progress card can show "N tokens" per agent and
         # sum them in the header.
@@ -402,9 +338,9 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
             )
         )
 
-    def _on_run_content(self, event: Any) -> None:
-        # Live progress preview only — final content comes from
-        # ``team.run_response.content`` after the stream ends.
+    async def _on_run_content(self, event: agent_events.RunContentEvent) -> None:
+        # Live progress preview only — final content comes from the
+        # team's stored output after the stream ends.
         ev_path, _name = self._event_agent_path(event)
         chunk = event.content or ""
         preview = self.state.append_content_delta(ev_path, chunk)
@@ -418,36 +354,4 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
         )
 
 
-class ResumedTeamStreamHandler(TeamStreamHandler):
-    """A team's paused run, continued after a restart with the decisions.
-
-    Agno keeps the team's run: members that finished keep their results
-    in it, and only the paused members are continued before the team
-    leader goes on (``backend/cold_spawn_resume.py``).
-    """
-
-    def __init__(
-        self,
-        team: Any,
-        *,
-        run_id: str,
-        session_id: str,
-        requirements: list[Any],
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(team, "", **kwargs)
-        self._resume_run_id = run_id
-        self._resume_session_id = session_id
-        self._requirements = requirements
-        # The team's run, known up front: the continued stream starts
-        # with the members' events, whose run ids are theirs.
-        self.state.current_run_id = run_id
-        self.state.current_session_id = session_id
-
-    def _first_stream(self) -> Any:
-        return self._runnable.acontinue_run(
-            run_id=self._resume_run_id,
-            session_id=self._resume_session_id,
-            requirements=self._requirements,
-            stream=True,
-        )
+__all__ = ["TEAM_EVENT_HANDLERS", "TeamStreamHandler"]

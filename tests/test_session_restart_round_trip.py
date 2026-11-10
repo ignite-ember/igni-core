@@ -4,11 +4,11 @@ Each piece has its own integration test:
 
 * ``test_session_data_real_db.py`` — ``save/load_plan_decisions``
   + ``save/load_todos`` against a real Agno SQLite.
-* ``test_plan_rehydrate.py`` — ``_rehydrate_plan_store`` walks
+* ``test_plan_rehydrate.py`` — ``RehydrateController.plan_store`` walks
   Agno's session history back into ``PlanStore.latest``.
-* ``test_plan_rpc_wiring.py`` — ``BackendServer.startup``
+* ``test_plan_rpc_wiring.py`` — ``LifecycleController.startup``
   actually calls the rehydrate methods.
-* ``test_todo_persistence.py`` — ``_rehydrate_todos`` overrides
+* ``test_todo_persistence.py`` — ``RehydrateController.todos`` overrides
   the plan-args seed.
 
 But no test runs the FULL cycle — write all three through one
@@ -30,10 +30,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 from agno.session.agent import AgentSession
 
-from igni_core.backend.server import BackendServer
+from igni_core.backend.server_lifecycle import LifecycleController
+from igni_core.backend.server_rehydrate import RehydrateController
 from igni_core.core.session.persistence import SessionPersistence
-from igni_core.core.tools.plan import PlanStore
-from igni_core.core.tools.todo import TodoStore
+from igni_core.core.tools.plan import PlanDecisionsBlob, PlanStore
+from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.todo import TodoItemWire, TodoStore
 
 
 def _make_db(tmp_path: Path):
@@ -47,20 +49,37 @@ def _make_db(tmp_path: Path):
     )
 
 
-def _make_server_against_db(db, session_id: str) -> BackendServer:
-    """Build a ``BackendServer`` shell with stores + persistence
-    pointing at ``db``. Skips Agno team / agent boot — those
-    aren't part of the restart contract. The persistence layer
-    IS real (it talks to ``db``), so this exercises the actual
-    storage path."""
-    server = BackendServer.__new__(BackendServer)
-    server._session = SimpleNamespace(
+class _Boot:
+    """A session plus the startup that rehydrates it — what a BE
+    restart runs, minus the Agno team."""
+
+    def __init__(self, session: SimpleNamespace) -> None:
+        self.session = session
+        self._lifecycle = LifecycleController(
+            session=session,  # type: ignore[arg-type]
+            pending_store=None,
+            runs=None,
+            rehydrate=RehydrateController(session, ProcessSupervisor()),  # type: ignore[arg-type]
+        )
+        self._lifecycle.detect_interrupted_run = AsyncMock()  # type: ignore[method-assign]
+
+    async def startup(self) -> None:
+        await self._lifecycle.startup()
+
+
+def _make_server_against_db(db, session_id: str) -> _Boot:
+    """Build a session with stores + persistence pointing at ``db``,
+    and the startup that rehydrates it. Skips Agno team / agent
+    boot — those aren't part of the restart contract. The
+    persistence layer IS real (it talks to ``db``), so this
+    exercises the actual storage path."""
+    session = SimpleNamespace(
         session_id=session_id,
         user_id="u",
         plan_store=PlanStore(),
         todo_store=TodoStore(),
         persistence=SessionPersistence(db=db, session_id=session_id),
-        # ``_rehydrate_plan_store`` needs ``main_team.aget_session``;
+        # ``RehydrateController.plan_store`` needs ``main_team.aget_session``;
         # an AsyncMock returning None means "no Agno session row"
         # → plan_store.latest stays empty, which is fine for
         # tests that don't write through a real Agno run.
@@ -77,8 +96,7 @@ def _make_server_against_db(db, session_id: str) -> BackendServer:
         # the closest analogue and safe because no orphan rows exist.
         project_dir=Path(tempfile.gettempdir()),
     )
-    server._detect_interrupted_run = AsyncMock()
-    return server
+    return _Boot(session)
 
 
 class TestFullRestartRoundTrip:
@@ -94,14 +112,14 @@ class TestFullRestartRoundTrip:
 
         # Approve a plan — uses the real ``approve_plan`` /
         # persistence flow.
-        await live._session.persistence.save_plan_decisions(
-            {"run-1": "approved", "run-2": "dismissed"}
+        await live.session.persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-1": "approved", "run-2": "dismissed"})
         )
         # Tick a todo to in_progress.
-        await live._session.persistence.save_todos(
+        await live.session.persistence.save_todos(
             [
-                {"content": "Task A", "status": "in_progress"},
-                {"content": "Task B", "status": "pending"},
+                TodoItemWire(content="Task A", status="in_progress"),
+                TodoItemWire(content="Task B", status="pending"),
             ]
         )
 
@@ -111,12 +129,12 @@ class TestFullRestartRoundTrip:
         await restarted.startup()
 
         # Decisions intact.
-        assert restarted._session.plan_store.decisions == {
+        assert restarted.session.plan_store.decisions == {
             "run-1": "approved",
             "run-2": "dismissed",
         }
         # Todos intact, statuses preserved.
-        statuses = {t["content"]: t["status"] for t in restarted._session.todo_store.snapshot()}
+        statuses = {t.content: t.status for t in restarted.session.todo_store.items}
         assert statuses == {"Task A": "in_progress", "Task B": "pending"}
 
     async def test_only_decisions_written_other_pieces_empty(self, tmp_path):
@@ -127,13 +145,15 @@ class TestFullRestartRoundTrip:
         # test harness).
         db = _make_db(tmp_path)
         live = _make_server_against_db(db, "sess-decisions-only")
-        await live._session.persistence.save_plan_decisions({"run-X": "approved"})
+        await live.session.persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-X": "approved"})
+        )
 
         restarted = _make_server_against_db(db, "sess-decisions-only")
         await restarted.startup()
 
-        assert restarted._session.plan_store.decisions == {"run-X": "approved"}
-        assert restarted._session.todo_store.snapshot() == []
+        assert restarted.session.plan_store.decisions == {"run-X": "approved"}
+        assert restarted.session.todo_store.items == []
 
     async def test_only_todos_written_decisions_empty(self, tmp_path):
         # Mirror corner: live execution started but no plan
@@ -141,14 +161,16 @@ class TestFullRestartRoundTrip:
         # stay empty (NOT a stale leftover — fresh start).
         db = _make_db(tmp_path)
         live = _make_server_against_db(db, "sess-todos-only")
-        await live._session.persistence.save_todos([{"content": "Task A", "status": "completed"}])
+        await live.session.persistence.save_todos(
+            [TodoItemWire(content="Task A", status="completed")]
+        )
 
         restarted = _make_server_against_db(db, "sess-todos-only")
         await restarted.startup()
 
-        assert restarted._session.plan_store.decisions == {}
-        assert restarted._session.todo_store.snapshot() == [
-            {"content": "Task A", "status": "completed", "activeForm": ""}
+        assert restarted.session.plan_store.decisions == {}
+        assert restarted.session.todo_store.items == [
+            TodoItemWire(content="Task A", status="completed")
         ]
 
     async def test_independent_sessions_dont_cross_contaminate(self, tmp_path):
@@ -160,23 +182,29 @@ class TestFullRestartRoundTrip:
         a_live = _make_server_against_db(db, "sess-A")
         b_live = _make_server_against_db(db, "sess-B")
 
-        await a_live._session.persistence.save_plan_decisions({"run-A1": "approved"})
-        await b_live._session.persistence.save_plan_decisions({"run-B1": "dismissed"})
-        await a_live._session.persistence.save_todos(
-            [{"content": "A task", "status": "in_progress"}]
+        await a_live.session.persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-A1": "approved"})
         )
-        await b_live._session.persistence.save_todos([{"content": "B task", "status": "completed"}])
+        await b_live.session.persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-B1": "dismissed"})
+        )
+        await a_live.session.persistence.save_todos(
+            [TodoItemWire(content="A task", status="in_progress")]
+        )
+        await b_live.session.persistence.save_todos(
+            [TodoItemWire(content="B task", status="completed")]
+        )
 
         # Restart only session A.
         a_restarted = _make_server_against_db(db, "sess-A")
         await a_restarted.startup()
 
         # A's state intact, NO B leakage.
-        assert a_restarted._session.plan_store.decisions == {"run-A1": "approved"}
-        statuses = {t["content"]: t["status"] for t in a_restarted._session.todo_store.snapshot()}
+        assert a_restarted.session.plan_store.decisions == {"run-A1": "approved"}
+        statuses = {t.content: t.status for t in a_restarted.session.todo_store.items}
         assert statuses == {"A task": "in_progress"}
         assert "B task" not in statuses
-        assert "run-B1" not in a_restarted._session.plan_store.decisions
+        assert "run-B1" not in a_restarted.session.plan_store.decisions
 
     async def test_multiple_writes_then_restart_uses_latest(self, tmp_path):
         # Each write replaces the snapshot; restart sees ONLY
@@ -187,28 +215,30 @@ class TestFullRestartRoundTrip:
         live = _make_server_against_db(db, "sess-multi-write")
 
         # Write twice. Second write wins.
-        await live._session.persistence.save_todos([{"content": "A", "status": "pending"}])
-        await live._session.persistence.save_todos(
+        await live.session.persistence.save_todos([TodoItemWire(content="A", status="pending")])
+        await live.session.persistence.save_todos(
             [
-                {"content": "A", "status": "in_progress"},
-                {"content": "B", "status": "pending"},
+                TodoItemWire(content="A", status="in_progress"),
+                TodoItemWire(content="B", status="pending"),
             ]
         )
-        await live._session.persistence.save_plan_decisions({"run-1": "approved"})
-        await live._session.persistence.save_plan_decisions(
-            {"run-1": "approved", "run-2": "approved"}
+        await live.session.persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-1": "approved"})
+        )
+        await live.session.persistence.save_plan_decisions(
+            PlanDecisionsBlob(decisions={"run-1": "approved", "run-2": "approved"})
         )
 
         restarted = _make_server_against_db(db, "sess-multi-write")
         await restarted.startup()
 
         # Decisions: latest snapshot has both runs.
-        assert restarted._session.plan_store.decisions == {
+        assert restarted.session.plan_store.decisions == {
             "run-1": "approved",
             "run-2": "approved",
         }
         # Todos: latest snapshot has both items, A flipped.
-        statuses = {t["content"]: t["status"] for t in restarted._session.todo_store.snapshot()}
+        statuses = {t.content: t.status for t in restarted.session.todo_store.items}
         assert statuses == {"A": "in_progress", "B": "pending"}
 
     async def test_restart_survives_persistence_layer_corruption(self, tmp_path):
@@ -244,8 +274,8 @@ class TestFullRestartRoundTrip:
         await restarted.startup()  # must not raise
 
         # Only the valid decision survives.
-        assert restarted._session.plan_store.decisions == {"run-1": "approved"}
+        assert restarted.session.plan_store.decisions == {"run-1": "approved"}
         # Only the valid todo survives.
-        assert restarted._session.todo_store.snapshot() == [
-            {"content": "Good", "status": "in_progress", "activeForm": ""}
+        assert restarted.session.todo_store.items == [
+            TodoItemWire(content="Good", status="in_progress")
         ]

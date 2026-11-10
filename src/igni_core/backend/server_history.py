@@ -50,11 +50,11 @@ from igni_core.backend.schemas_history import (
     ChatTurn,
     PlanTurn,
     ToolTurn,
-    VisualizationDeltaPayload,
     VisualizationTurn,
 )
 from igni_core.backend.schemas_plan import PlanState
 from igni_core.backend.server_history_walker import RunWalker
+from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session
@@ -207,7 +207,9 @@ class ChatHistoryRebuilder:
         for rid, group in by_run.items():
             spawn_idxs = spawn_indices_by_run.get(rid, [])
             for n, ev in enumerate(group):
-                payload = VisualizationDeltaPayload.model_validate(ev.payload or {})
+                payload = ev.payload
+                if not isinstance(payload, VisualizationDeltaPayload):
+                    continue
                 if not payload.spec_json:
                     continue
                 try:
