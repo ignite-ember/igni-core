@@ -7,7 +7,7 @@ description of that dependency a type-checker ever sees, so anything it
 leaves out is a call nobody verifies.
 
 It left out ``group_dir``. ``try_render`` has always passed it, the real
-:func:`discover_markdown_commands` has always accepted it, and the
+:meth:`MarkdownCommand.discover` has always accepted it, and the
 Protocol in between said the parameter did not exist — the one artefact
 whose entire job was to be checked was the one that was wrong (SWU-100).
 
@@ -38,7 +38,7 @@ from igni_core.backend.markdown_command_dispatcher import (
     DiscoverMarkdownCommands,
     MarkdownCommandDispatcher,
 )
-from igni_core.core.utils.markdown_commands import discover_markdown_commands
+from igni_core.core.utils.markdown_commands import MarkdownCommand
 
 _ROOT = Path(__file__).resolve().parent.parent
 _MODULE = "igni_core.backend.markdown_command_dispatcher"
@@ -55,15 +55,15 @@ class TestTheProtocolDescribesTheRealFunction:
         positional-or-keyword one in the function is the same class of lie,
         one step subtler."""
         protocol = inspect.signature(DiscoverMarkdownCommands.__call__)
-        real = inspect.signature(discover_markdown_commands)
+        real = inspect.signature(MarkdownCommand.discover)
 
         assert _params(protocol)[1:] == _params(real), (
-            "DiscoverMarkdownCommands.__call__ no longer describes discover_markdown_commands"
+            "DiscoverMarkdownCommands.__call__ no longer describes MarkdownCommand.discover"
         )
 
     def test_the_return_annotation_matches(self):
         protocol = inspect.signature(DiscoverMarkdownCommands.__call__)
-        real = inspect.signature(discover_markdown_commands)
+        real = inspect.signature(MarkdownCommand.discover)
 
         assert protocol.return_annotation == real.return_annotation
 
