@@ -58,6 +58,7 @@ from igni_core.core.config.permission_eval import PermissionEvaluator, Permissio
 from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.memory_sync import MemorySyncHook
+from igni_core.core.hooks.queue.agno_adapter import AgnoCallableAdapter
 from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.hooks.turn_results import TurnResultHook
 from igni_core.core.prompts.contributions import PromptContributions
@@ -67,7 +68,7 @@ from igni_core.core.session.event_log_schema import (
     SessionEventAppendResult,
     SessionEventDraft,
 )
-from igni_core.core.session.parts import SessionComposer, SessionComposerDeps
+from igni_core.core.session.parts import SessionComposer, SessionDeps
 from igni_core.core.session.parts.agents import AgentsBuilder
 from igni_core.core.session.parts.plugins import PluginBuilder
 from igni_core.core.session.parts.tooling import ToolingBuilder
@@ -108,7 +109,7 @@ class Session(SessionSurface):
         self.on_new_dialogue = None
         SessionComposer(
             self,
-            SessionComposerDeps(
+            SessionDeps(
                 settings=settings,
                 project_dir=project_dir,
                 resume_session_id=resume_session_id,
@@ -178,14 +179,24 @@ class Session(SessionSurface):
         PluginBuilder(self).mirror_hooks()
         tool_event_hook = self.tool_event_hook()
         if self.main_team:
+            # Agno owns the team's hook list and offers no setter, so
+            # the one hook that changed is swapped in place: the old
+            # tool-event hook is dropped and the new one appended.
             existing = self.main_team.tool_hooks or []
             self.main_team.tool_hooks = [h for h in existing if not isinstance(h, ToolEventHook)]
             self.main_team.tool_hooks.append(tool_event_hook)
         return count
 
     def reload_plugins(self) -> PluginReloadCounts:
-        """Hot-reload plugin contents from disk — no session restart."""
-        return self.plugin_reload_orchestrator.reload()
+        """Hot-reload plugin contents from disk — no session restart.
+
+        The team is rebuilt here, once: the orchestrator re-applies the
+        plugins' contributions, and the team that draws on them is the
+        session's own.
+        """
+        counts = self.plugin_reload_orchestrator.reload()
+        self.rebuild_main_team()
+        return counts
 
     async def apply_workspace_trust(self, settings: Settings | None = None) -> None:
         """Pick up a changed workspace-trust decision without a restart.
@@ -212,9 +223,11 @@ class Session(SessionSurface):
                     "Could not stop %s on a trust change: %s", type(manager).__name__, exc
                 )
 
-        # Plugins, hooks, output styles, pools and plugin MCP configs; then
-        # the language-server and monitor managers; then the main team,
-        # whose build re-discovers custom tools and picks up the managers.
+        # Plugins, hooks, output styles, pools and plugin MCP configs;
+        # then the language-server and monitor managers; then the main
+        # team, whose build re-discovers custom tools and picks up the
+        # managers. The team is built once, here: the orchestrator
+        # re-applies the plugins' contributions, not the team.
         self.plugin_reload_orchestrator.reload()
         ToolingBuilder(self).build()
         self.rebuild_main_team()
@@ -256,11 +269,11 @@ class Session(SessionSurface):
             return PermissionMode.DEFAULT.value
         return evaluator.mode.value
 
-    def memory_sync_hooks(self) -> list[Any]:
+    def memory_sync_hooks(self) -> list[AgnoCallableAdapter]:
         """The main agent's durability hooks: memory-file writes stored (in
         the cloud), and finished calls' results kept for a turn a restart
         may cut (``core/hooks/turn_results.py``)."""
-        hooks: list[Any] = [TurnResultHook(self.sub_agent_hitl)]
+        hooks: list[AgnoCallableAdapter] = [TurnResultHook(self.sub_agent_hitl)]
         mirror = getattr(self, "memory_mirror", None)
         if mirror is not None:
             hooks.append(MemorySyncHook(mirror))

@@ -121,7 +121,6 @@ class PluginBuilder:
             disabled_plugins_ref=lambda: session.disabled_plugins,
             rebuild_plugins_and_hooks=lambda: PluginBuilder(session).build_plugins_and_styles(),
             rebuild_agent_and_skill_pools=lambda: AgentsBuilder(session).build_pools(),
-            rebuild_main_team=session.rebuild_main_team,
             skill_pool_ref=lambda: session.skill_pool,
             agent_pool_ref=lambda: session.pool,
             hooks_map_ref=lambda: session.hooks.hooks_map,

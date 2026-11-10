@@ -16,69 +16,19 @@ right for the values the user has not overridden.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
-from typing import Any
 
 import pytest
-import yaml
 
 from igni_core.core.config.permission_eval import PermissionMode
-from igni_core.core.config.settings import Settings
-from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.parts.plugins import PluginBuilder
-
-#: Enough of a model registry for a Session to construct.
-_STUB_MODEL: dict[str, Any] = {
-    "default": "stub",
-    "registry": {
-        "stub": {
-            "provider": "openai_like",
-            "model_id": "stub-1",
-            "url": "http://localhost:9/v1",
-            "api_key": "x",
-            "context_window": 8192,
-        }
-    },
-}
-
-
-def _repo(tmp_path: Path) -> Path:
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    (tmp_path / "f.py").write_text("x = 1\n")
-    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
-    subprocess.run(
-        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"],
-        cwd=tmp_path,
-        check=True,
-    )
-    return tmp_path
-
-
-def _settings(project: Path, *, home: Path) -> Settings:
-    config = project / CONFIG_DIR
-    config.mkdir(parents=True, exist_ok=True)
-    (config / "config.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "code_index": {"enabled": False},
-                "knowledge": {"enabled": False},
-                "models": _STUB_MODEL,
-                "storage": {"data_dir": str(home)},
-            }
-        )
-    )
-    return SettingsLoader.load(project_dir=project)
+from tests.session_factory import build_session
 
 
 @pytest.fixture
 def session(tmp_path: Path):
-    from igni_core.core.session.core import Session
-
-    project = _repo(tmp_path / "proj")
-    return Session(settings=_settings(project, home=tmp_path / "home"), project_dir=project)
+    return build_session(tmp_path)
 
 
 def test_permission_mode_survives_a_plugin_reload(session) -> None:

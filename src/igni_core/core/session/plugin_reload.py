@@ -8,10 +8,9 @@ hooks + MCP configs).
 
 Constructor takes a closure over Session's own
 ``_init_plugins_output_styles_hooks`` /
-``_init_agent_and_skill_pools`` / ``_build_main_agent`` /
-``_disabled_plugins`` accessors — the coordinator owns the
-orchestration flow; Session still owns the sub-system re-inits
-because they touch a wide slice of Session state.
+``_init_agent_and_skill_pools`` / ``_disabled_plugins`` accessors —
+the coordinator owns the orchestration flow; Session still owns the
+sub-system re-inits because they touch a wide slice of Session state.
 
 Returns :class:`PluginReloadCounts` (schema-typed — no raw
 dicts on the boundary).
@@ -50,7 +49,6 @@ class PluginReloadOrchestrator:
         disabled_plugins_ref: Callable[[], set[str]],
         rebuild_plugins_and_hooks: Callable[[], None],
         rebuild_agent_and_skill_pools: Callable[[], None],
-        rebuild_main_team: Callable[[], None],
         skill_pool_ref: Callable[[], object],
         agent_pool_ref: Callable[[], object],
         hooks_map_ref: Callable[[], dict],
@@ -63,7 +61,6 @@ class PluginReloadOrchestrator:
         self._disabled_plugins_ref = disabled_plugins_ref
         self._rebuild_plugins_and_hooks = rebuild_plugins_and_hooks
         self._rebuild_agent_and_skill_pools = rebuild_agent_and_skill_pools
-        self._rebuild_main_team = rebuild_main_team
         self._skill_pool_ref = skill_pool_ref
         self._agent_pool_ref = agent_pool_ref
         self._hooks_map_ref = hooks_map_ref
@@ -78,13 +75,17 @@ class PluginReloadOrchestrator:
 
         * **Hooks** — rebuilt by :meth:`SessionHooks.load`, plugins merged.
         * **Skills** — fresh :class:`SkillPool` reload from disk.
-        * **Agents** — fresh :class:`AgentPool` rebuilt; the main
-          team is rebuilt at the end so the new agents are
-          attached.
+        * **Agents** — fresh :class:`AgentPool` rebuilt.
         * **MCP server configs** — merged into
           ``mcp_manager.configs``. Connections aren't auto-started
           for the new set here — :meth:`_reapply_mcp` fires them
           in the background.
+
+        The main team is **not** rebuilt here: it is the session's
+        own, and the session rebuilds it once the reload is done, so
+        that a caller who has more to change — the language-server
+        and monitor managers on a workspace-trust change — can change
+        it before the team is built against it.
 
         Returns a :class:`PluginReloadCounts` for the caller's chat
         confirmation.
@@ -97,11 +98,6 @@ class PluginReloadOrchestrator:
         self._rebuild_agent_and_skill_pools()
 
         self._reapply_mcp()
-
-        # Rebuild the main team so newly-bundled custom tools
-        # (``<plugin>/tools/*.py``) and the refreshed agent pool are
-        # visible to the live agent.
-        self._rebuild_main_team()
 
         plugin_loader = self._plugin_loader_ref()
         skill_pool = self._skill_pool_ref()

@@ -15,17 +15,12 @@ in the code instead of implied by the order.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from igni_core.core.prompts.contributions import PromptContributions
-from igni_core.core.prompts.fragments import PromptFragments
-from igni_core.core.prompts.loader import PromptLoader
-from igni_core.core.session.cloud_catalog import CloudModelCatalog
 from igni_core.core.session.compaction import ContextBudget
 from igni_core.core.session.parts.agents import AgentsBuilder
 from igni_core.core.session.parts.coordinators import CoordinatorBuilder
+from igni_core.core.session.parts.foundation import FoundationBuilder, SessionDeps
 from igni_core.core.session.parts.mcp import McpBuilder
 from igni_core.core.session.parts.persistence import PersistenceBuilder
 from igni_core.core.session.parts.plugins import PluginBuilder
@@ -33,29 +28,9 @@ from igni_core.core.session.parts.project import ProjectBuilder
 from igni_core.core.session.parts.runtime import RuntimeBuilder
 from igni_core.core.session.parts.stores import StoresBuilder
 from igni_core.core.session.parts.tooling import ToolingBuilder
-from igni_core.core.tools.process_supervisor import ProcessSupervisor
-from igni_core.core.workspace import WorkspaceManager
 
 if TYPE_CHECKING:
-    from igni_core.core.config.settings import Settings
     from igni_core.core.session.core import Session
-
-
-@dataclass(frozen=True)
-class SessionComposerDeps:
-    """What the session was given when it was created.
-
-    Everything here is a choice the caller made. Everything else the
-    session holds is built from these.
-    """
-
-    settings: Settings
-    project_dir: Path | None = None
-    resume_session_id: str | None = None
-    additional_dirs: list[Path] | None = None
-    contributions: PromptContributions | None = None
-    prompt_loader: PromptLoader | None = None
-    supervisor: ProcessSupervisor | None = None
 
 
 class SessionComposer:
@@ -66,7 +41,7 @@ class SessionComposer:
     thing that decides which of them may read which.
     """
 
-    def __init__(self, session: Session, deps: SessionComposerDeps) -> None:
+    def __init__(self, session: Session, deps: SessionDeps) -> None:
         self._session = session
         self._deps = deps
 
@@ -76,42 +51,7 @@ class SessionComposer:
         deps = self._deps
 
         # ── What the session was given ──────────────────────────
-        session.settings = deps.settings
-
-        # The supervisor this session's shell toolkits run on. The
-        # backend hands the session the supervisor the process shares
-        # (one BE = one watcher panel); a session built on its own
-        # gets a supervisor of its own.
-        session.supervisor = deps.supervisor if deps.supervisor is not None else ProcessSupervisor()
-
-        # What extensions have done to the prompts. Injected: the
-        # backend hands the session the process-wide table, so every
-        # session of a deployment sees the same contributions; a
-        # session built on its own gets a table of its own, empty.
-        session.prompt_contributions = (
-            deps.contributions if deps.contributions is not None else PromptContributions()
-        )
-
-        # igni's prompt files, and the anchors extensions fill into
-        # them. Injected for the same reason as the contributions: an
-        # anchor an extension supplies has to reach every session of
-        # the deployment, and a session built on its own gets a table
-        # of its own, empty.
-        session.prompt_loader = (
-            deps.prompt_loader
-            if deps.prompt_loader is not None
-            else PromptLoader(PromptFragments())
-        )
-
-        # Every code path below may read ``settings.models.default``, so
-        # the cloud catalog is refreshed first: a brand-new install reaches
-        # a usable state right after login without a hardcoded fallback.
-        session.cloud_catalog = CloudModelCatalog(deps.settings)
-        session.cloud_catalog.refresh()
-
-        # ── Where the session runs ───────────────────────────────
-        session.project_dir = deps.project_dir or Path.cwd()
-        session.workspace = WorkspaceManager(session.project_dir, deps.additional_dirs)
+        FoundationBuilder(session, deps).build()
 
         # ── The scratch the tools write into ─────────────────────
         stores = StoresBuilder(session)
@@ -156,4 +96,4 @@ class SessionComposer:
         runtime.build_message_handler()
 
 
-__all__ = ["SessionComposer", "SessionComposerDeps"]
+__all__ = ["SessionComposer", "SessionDeps"]
