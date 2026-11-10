@@ -44,6 +44,7 @@ from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.approvals.events import approval_events
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.hooks.extension_gate import extension_hook_gate
@@ -144,6 +145,10 @@ class FakeSession:
         # ``BackendServer`` carries one; the fake needs one too,
         # because the RPC router reads it to build the shell runner.
         self.supervisor = ProcessSupervisor()
+        # Whether this backend process may run agent sessions. The real
+        # ``BackendServer`` carries one; the RPC router reads it to build
+        # the workflow runner. This one is open, so a run starts.
+        self.gate = RunGate()
         self.settings = SimpleNamespace(display=DisplayConfig(), models=fake_models())
         self.runtime: Any = None
         self.ran: list[tuple[str, dict[str, str]]] = []
@@ -454,6 +459,7 @@ class HostRig:
                 push_bridge=push,
                 login=login,
                 supervisors=SupervisorLocator(self.session.supervisor),
+                gate=self.session.gate,
                 extensions=extensions,
                 extension_store=self.store,
             ),

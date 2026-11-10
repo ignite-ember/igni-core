@@ -16,6 +16,7 @@ from igni_core.backend.controller_registry import ControllerRegistry
 from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
 from igni_core.backend.server import BackendServer
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.session.pending_messages import PendingMessageStore
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
@@ -48,6 +49,7 @@ def make_backend(
     if pending_store is None and tmp_path is not None:
         pending_store = PendingMessageStore(tmp_path / "pending.db")
     supervisor = _supervisor_for(session)
+    gate = RunGate()
     controllers = ControllerRegistry.build(
         session=session,
         settings=settings,
@@ -58,6 +60,7 @@ def make_backend(
         hitl_tracer=HITLTracer(enabled=False),
         message_queue=message_queue,
         supervisor=supervisor,
+        gate=gate,
     )
     return BackendServer.from_parts(
         session=session,
@@ -65,6 +68,7 @@ def make_backend(
         controllers=controllers,
         message_queue=message_queue,
         supervisors=SupervisorLocator(supervisor),
+        gate=gate,
     )
 
 

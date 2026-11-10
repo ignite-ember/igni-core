@@ -36,7 +36,7 @@ from igni_core.backend.schemas_rpc import LifecyclePhase
 from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.backend.transport_builder import TransportBuilder
 from igni_core.core.config.group_policy import policy_settings
-from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.protocol import messages as msg
 from igni_core.transport.composite import CompositeTransport
@@ -172,10 +172,8 @@ def test_a_required_policy_that_cannot_be_had_closes_the_gate_but_boots(project,
         return local
 
     monkeypatch.setattr(policy_settings.SettingsLoader, "load", classmethod(_unavailable))
-    try:
-        settings = BackendSettingsLoader(project).load()
+    gate = RunGate()
+    settings = BackendSettingsLoader(project, gate).load()
 
-        assert settings is local
-        assert GroupPolicyGate.reason() == "no verified pack"
-    finally:
-        GroupPolicyGate.reset()
+    assert settings is local
+    assert gate.reason == "no verified pack"

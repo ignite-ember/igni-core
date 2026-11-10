@@ -23,6 +23,7 @@ from igni_core.backend.schemas_workflows import WorkflowRunRequest
 from igni_core.backend.workflow_discovery import WorkflowDiscovery
 from igni_core.backend.workflow_layers import FallbackLayerNotice
 from igni_core.backend.workflow_runner import WorkflowRunner
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.paths import CONFIG_DIR
 
 
@@ -55,7 +56,7 @@ def _write(path: Path, text: str) -> None:
 
 
 async def test_not_found_names_the_igni_directory(tmp_path: Path) -> None:
-    runner = WorkflowRunner.for_project(project_dir=tmp_path, push=AsyncMock())
+    runner = WorkflowRunner.for_project(project_dir=tmp_path, push=AsyncMock(), gate=RunGate())
     result = await runner.run(
         request=WorkflowRunRequest(name="no-such-workflow"), session=AsyncMock()
     )

@@ -29,7 +29,7 @@ from igni_core.backend.schemas_scheduler import (
     TaskCreatedPayload,
 )
 from igni_core.core.activity import background
-from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
 from igni_core.core.scheduler.prompt import wrap_scheduled_prompt
@@ -69,9 +69,13 @@ class SchedulerController:
         session: Session,
         settings: Settings | None,
         *,
+        gate: RunGate,
         execute_fn: Callable[[str], Awaitable[str]] | None = None,
     ) -> None:
         self._session = session
+        # The run gate of the backend process: no scheduled task runs
+        # while it is closed.
+        self._gate = gate
         # ``settings`` may be ``None`` in loop-pump-only test
         # fixtures that only care about the loop pump. Every
         # method that actually consults settings raises the natural
@@ -100,7 +104,7 @@ class SchedulerController:
         :class:`SchedulerRunner` covers both callers: the poller and the
         "run it now" RPC. Both are a stored task firing, not a live turn.
         """
-        refusal = GroupPolicyGate.reason()
+        refusal = self._gate.reason
         if refusal:
             # Raised, not returned: a returned string would be recorded as
             # the task's successful result.

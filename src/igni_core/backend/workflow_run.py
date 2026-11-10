@@ -28,6 +28,7 @@ from igni_core.backend.schemas_workflows import (
 from igni_core.backend.workflow_agent_bridge import WorkflowAgentBridge
 from igni_core.backend.workflow_runtime_process import WorkflowRuntimeProcess
 from igni_core.core.activity import background
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.session.event_log_schema import WorkflowEventDraft
 
 if TYPE_CHECKING:
@@ -89,14 +90,18 @@ class WorkflowRun:
         process: WorkflowRuntimeProcess,
         session: Session,
         push: PushNotificationBridge,
+        gate: RunGate,
     ) -> WorkflowRun:
         """A run whose records go to ``session`` and ``push``, and whose
-        ``agent()`` calls are answered by ``session``'s team."""
+        ``agent()`` calls are answered by ``session``'s team.
+
+        ``gate`` is the run gate of the backend process: while it is
+        closed, every ``agent()`` call is refused."""
         return cls(
             identity=identity,
             process=process,
             sink=WorkflowEventSink(session, push),
-            bridge=WorkflowAgentBridge(session),
+            bridge=WorkflowAgentBridge(session, gate),
         )
 
     @property
