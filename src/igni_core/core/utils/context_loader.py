@@ -25,6 +25,7 @@ from typing import Protocol
 
 from igni_core.core.utils.context_managed import load_managed_rules
 from igni_core.core.utils.context_memory import ProjectMemoryBank
+from igni_core.core.utils.context_memory_paths import MemoryPaths
 from igni_core.core.utils.context_project import (
     load_project_rules,
     load_project_rules_dirs,
@@ -124,12 +125,14 @@ class MemoryTier:
 
     project_dir: Path
     read_claude_md: bool = True
+    paths: MemoryPaths | None = None
 
     def load(self) -> str:
         """The project's memory index (200-line / 25-KB cap)."""
         return ProjectMemoryBank(
             self.project_dir,
             read_claude_fallback=self.read_claude_md,
+            paths=self.paths,
         ).load_index()
 
 

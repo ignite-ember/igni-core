@@ -2,6 +2,7 @@
 
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -9,16 +10,11 @@ import pytest
 from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.utils import context_managed as context_managed_module
-from igni_core.core.utils import context_memory as context_memory_module
 from igni_core.core.utils.context import RulesContextLoader
 from igni_core.core.utils.context_frontmatter import parse_frontmatter
 from igni_core.core.utils.context_loader import ProjectRootTier, RulesReaders
-from igni_core.core.utils.context_memory import (
-    ProjectMemoryBank,
-    _claude_project_memory_dir,
-    _igni_project_memory_dir,
-    _project_memory_slug,
-)
+from igni_core.core.utils.context_memory import ProjectMemoryBank
+from igni_core.core.utils.context_memory_paths import MemoryPaths, ProjectMemoryPaths
 from igni_core.core.utils.context_schemas import UserRulesPaths
 
 # Alias for the deleted ``settings._platform_managed_settings_path``
@@ -63,6 +59,7 @@ def _loader(
     working_dir: Path | None = None,
     read_claude_md: bool = True,
     user_rules: UserRulesPaths | None = None,
+    memory_paths: MemoryPaths | None = None,
 ) -> RulesContextLoader:
     """A rules loader whose user-rule locations point at an empty sandbox.
 
@@ -82,6 +79,7 @@ def _loader(
                 claude_rules_dir=project_dir / "_no_claude_user_rules_dir",
             )
         ),
+        memory_paths=memory_paths,
     )
 
 
@@ -863,31 +861,40 @@ class TestManagedPolicyInContextOutput:
         assert "PROJECT LINE" in out
 
 
-def _redirect_memory_dirs(monkeypatch, tmp_path, *, with_claude=False):
-    """Point both per-project memory dir lookups at sandbox paths
-    under ``tmp_path``. Default ``with_claude=False`` so a test
-    that only writes an igni-native MEMORY.md doesn't accidentally
-    pick up whatever's in the user's real
-    ``~/.claude/projects/.../memory/`` (which the slug derivation
-    won't normally produce a hit for, but be safe).
+@dataclass(frozen=True)
+class _SandboxMemoryPaths:
+    """Memory paths pointing into a test sandbox.
 
-    Patches the module that owns the lookups —
-    :class:`context_memory.ProjectMemoryBank` resolves them on the
-    module namespace at call time, so patching them here is what
-    the bank reads.
+    The bank's collaborator, supplied by the test rather than
+    derived from the project path — the seam that keeps the bank
+    from reading module globals to find out where memory lives.
     """
-    igni_dir = tmp_path / "igni_memory"
-    claude_dir = tmp_path / "claude_memory" if with_claude else tmp_path / "no_claude_memory"
 
-    ember_fn = lambda _pd, _d=igni_dir: _d  # noqa: E731
-    claude_fn = lambda _pd, _d=claude_dir: _d  # noqa: E731
+    igni: Path
+    claude: Path
 
-    monkeypatch.setattr(context_memory_module, "_igni_project_memory_dir", ember_fn)
-    monkeypatch.setattr(context_memory_module, "_claude_project_memory_dir", claude_fn)
-    return igni_dir, claude_dir
+    def igni_dir(self) -> Path:
+        return self.igni
+
+    def claude_dir(self) -> Path:
+        return self.claude
 
 
-class TestProjectMemorySlug:
+def _memory_paths(tmp_path: Path, *, with_claude: bool = False) -> _SandboxMemoryPaths:
+    """Memory paths under ``tmp_path``.
+
+    Default ``with_claude=False`` so a test that only writes an
+    igni-owned MEMORY.md doesn't accidentally pick up whatever's in
+    the user's real ``~/.claude/projects/.../memory/`` (which the
+    slug derivation won't normally produce a hit for, but be safe).
+    """
+    return _SandboxMemoryPaths(
+        igni=tmp_path / "igni_memory",
+        claude=tmp_path / "claude_memory" if with_claude else tmp_path / "no_claude_memory",
+    )
+
+
+class TestProjectMemoryPaths:
     """Slug encoding mirrors Claude Code's convention: absolute
     path with ``/`` → ``-``. This shape is what lets the cross-
     tool fallback find an existing CC memory bank for the same
@@ -896,8 +903,8 @@ class TestProjectMemorySlug:
     def test_unix_path(self):
         # Use a real path that exists so .resolve() doesn't surprise us.
         # The slug shape is what matters, not what the path points at.
-        slug = _project_memory_slug(Path("/Users/x/proj"))
-        assert slug == "-Users-x-proj"
+        paths = ProjectMemoryPaths(Path("/Users/x/proj"))
+        assert paths.slug == "-Users-x-proj"
 
     def test_paths_relative_to_cwd_resolve_first(self, tmp_path, monkeypatch):
         """Slug derives from the RESOLVED absolute path — so a
@@ -905,15 +912,16 @@ class TestProjectMemorySlug:
         sub = tmp_path / "sub"
         sub.mkdir()
         monkeypatch.chdir(sub)
-        slug_abs = _project_memory_slug(sub)
-        slug_rel = _project_memory_slug(Path("."))
+        slug_abs = ProjectMemoryPaths(sub).slug
+        slug_rel = ProjectMemoryPaths(Path(".")).slug
         assert slug_abs == slug_rel
 
     def test_dir_paths_match_published_convention(self):
         """The igni and claude memory dirs are siblings under
         their respective home-dir bases."""
-        igni = _igni_project_memory_dir(Path("/Users/x/proj"))
-        claude = _claude_project_memory_dir(Path("/Users/x/proj"))
+        paths = ProjectMemoryPaths(Path("/Users/x/proj"))
+        igni = paths.igni_dir()
+        claude = paths.claude_dir()
         assert igni.parts[-3:] == ("projects", "-Users-x-proj", "memory")
         assert claude.parts[-3:] == ("projects", "-Users-x-proj", "memory")
         assert CONFIG_DIR in igni.parts
@@ -921,50 +929,59 @@ class TestProjectMemorySlug:
 
 
 class TestLoadMemoryIndex:
-    def test_reads_igni_memory_md(self, tmp_path, monkeypatch):
-        igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
-        igni_dir.mkdir()
-        (igni_dir / "MEMORY.md").write_text("ONE\nTWO\nTHREE\n")
-        assert ProjectMemoryBank(tmp_path).load_index() == "ONE\nTWO\nTHREE\n"
+    def test_the_bank_defaults_to_the_project_layout(self, tmp_path):
+        """With no collaborator supplied, the bank keeps memory where
+        the project's own layout says."""
+        bank = ProjectMemoryBank(tmp_path)
+        paths = ProjectMemoryPaths(tmp_path)
 
-    def test_returns_empty_when_no_index(self, tmp_path, monkeypatch):
-        _redirect_memory_dirs(monkeypatch, tmp_path)
-        assert ProjectMemoryBank(tmp_path).load_index() == ""
+        assert bank.igni_dir() == paths.igni_dir()
+        assert bank.claude_dir() == paths.claude_dir()
 
-    def test_line_cap_at_200(self, tmp_path, monkeypatch):
-        igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
-        igni_dir.mkdir()
+    def test_reads_igni_memory_md(self, tmp_path):
+        paths = _memory_paths(tmp_path)
+        paths.igni.mkdir()
+        (paths.igni / "MEMORY.md").write_text("ONE\nTWO\nTHREE\n")
+        assert ProjectMemoryBank(tmp_path, paths=paths).load_index() == "ONE\nTWO\nTHREE\n"
+
+    def test_returns_empty_when_no_index(self, tmp_path):
+        paths = _memory_paths(tmp_path)
+        assert ProjectMemoryBank(tmp_path, paths=paths).load_index() == ""
+
+    def test_line_cap_at_200(self, tmp_path):
+        paths = _memory_paths(tmp_path)
+        paths.igni.mkdir()
         # 250 short lines — only the first 200 should load.
         body = "".join(f"line{i}\n" for i in range(250))
-        (igni_dir / "MEMORY.md").write_text(body)
-        out = ProjectMemoryBank(tmp_path).load_index()
+        (paths.igni / "MEMORY.md").write_text(body)
+        out = ProjectMemoryBank(tmp_path, paths=paths).load_index()
         assert "line0" in out
         assert "line199" in out  # 200th line (zero-indexed)
         assert "line200" not in out
         assert out.count("\n") == 200
 
-    def test_byte_cap_at_25kb(self, tmp_path, monkeypatch):
-        igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
-        igni_dir.mkdir()
+    def test_byte_cap_at_25kb(self, tmp_path):
+        paths = _memory_paths(tmp_path)
+        paths.igni.mkdir()
         # 30 KB on a single line (well under the 200-line cap).
         big = "x" * 30_000 + "\n"
-        (igni_dir / "MEMORY.md").write_text(big)
-        out = ProjectMemoryBank(tmp_path).load_index()
+        (paths.igni / "MEMORY.md").write_text(big)
+        out = ProjectMemoryBank(tmp_path, paths=paths).load_index()
         assert len(out.encode("utf-8")) <= 25_000
         # Truncation drops the trailing newline; payload starts with x's.
         assert out.startswith("x")
 
-    def test_byte_cap_preserves_utf8(self, tmp_path, monkeypatch):
+    def test_byte_cap_preserves_utf8(self, tmp_path):
         """A multi-byte codepoint chopped at the byte cap must
         not produce invalid UTF-8 — ``errors='ignore'`` drops the
         partial sequence cleanly."""
-        igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
-        igni_dir.mkdir()
+        paths = _memory_paths(tmp_path)
+        paths.igni.mkdir()
         # Pad to just under 25_000 bytes, then add a 4-byte emoji
         # that straddles the cap boundary.
         padding = "a" * 24_998
-        (igni_dir / "MEMORY.md").write_text(padding + "\U0001f525\n")
-        out = ProjectMemoryBank(tmp_path).load_index()
+        (paths.igni / "MEMORY.md").write_text(padding + "\U0001f525\n")
+        out = ProjectMemoryBank(tmp_path, paths=paths).load_index()
         # Result is valid UTF-8 (re-decoding doesn't raise).
         out.encode("utf-8").decode("utf-8")
         # The fire emoji is the last 4 bytes — at byte cap 25_000
@@ -972,31 +989,31 @@ class TestLoadMemoryIndex:
         # discarded. So the emoji shouldn't appear.
         assert "\U0001f525" not in out
 
-    def test_claude_fallback_when_cross_tool_enabled(self, tmp_path, monkeypatch):
-        _, claude_dir = _redirect_memory_dirs(monkeypatch, tmp_path, with_claude=True)
-        claude_dir.mkdir()
-        (claude_dir / "MEMORY.md").write_text("CC-NATIVE")
-        # No igni-native file present → falls back to CC's.
-        bank = ProjectMemoryBank(tmp_path, read_claude_fallback=True)
+    def test_claude_fallback_when_cross_tool_enabled(self, tmp_path):
+        paths = _memory_paths(tmp_path, with_claude=True)
+        paths.claude.mkdir()
+        (paths.claude / "MEMORY.md").write_text("CC-NATIVE")
+        # No igni-owned file present → falls back to CC's.
+        bank = ProjectMemoryBank(tmp_path, read_claude_fallback=True, paths=paths)
         assert bank.load_index() == "CC-NATIVE"
 
-    def test_claude_fallback_skipped_when_disabled(self, tmp_path, monkeypatch):
-        _, claude_dir = _redirect_memory_dirs(monkeypatch, tmp_path, with_claude=True)
-        claude_dir.mkdir()
-        (claude_dir / "MEMORY.md").write_text("CC-NATIVE")
-        bank = ProjectMemoryBank(tmp_path, read_claude_fallback=False)
+    def test_claude_fallback_skipped_when_disabled(self, tmp_path):
+        paths = _memory_paths(tmp_path, with_claude=True)
+        paths.claude.mkdir()
+        (paths.claude / "MEMORY.md").write_text("CC-NATIVE")
+        bank = ProjectMemoryBank(tmp_path, read_claude_fallback=False, paths=paths)
         assert bank.load_index() == ""
 
-    def test_igni_wins_over_claude_when_both_exist(self, tmp_path, monkeypatch):
-        """The igni-native location is the preferred source. If both
+    def test_igni_wins_over_claude_when_both_exist(self, tmp_path):
+        """The igni-owned location is the preferred source. If both
         files exist, only the igni version loads — concatenation would
         duplicate near-identical memories during a mid-migration."""
-        igni_dir, claude_dir = _redirect_memory_dirs(monkeypatch, tmp_path, with_claude=True)
-        igni_dir.mkdir()
-        claude_dir.mkdir()
-        (igni_dir / "MEMORY.md").write_text("IGNI")
-        (claude_dir / "MEMORY.md").write_text("CLAUDE")
-        out = ProjectMemoryBank(tmp_path).load_index()
+        paths = _memory_paths(tmp_path, with_claude=True)
+        paths.igni.mkdir()
+        paths.claude.mkdir()
+        (paths.igni / "MEMORY.md").write_text("IGNI")
+        (paths.claude / "MEMORY.md").write_text("CLAUDE")
+        out = ProjectMemoryBank(tmp_path, paths=paths).load_index()
         assert "IGNI" in out
         assert "CLAUDE" not in out
 
@@ -1007,9 +1024,9 @@ class TestMemoryIndexInContextOutput:
         Project Rules. Ensures the agent reads sysadmin
         directives first, then its own remembered context, then
         the rules layered on top."""
-        igni_dir, _ = _redirect_memory_dirs(monkeypatch, tmp_path)
-        igni_dir.mkdir()
-        (igni_dir / "MEMORY.md").write_text("REMEMBERED FACT")
+        paths = _memory_paths(tmp_path)
+        paths.igni.mkdir()
+        (paths.igni / "MEMORY.md").write_text("REMEMBERED FACT")
 
         managed_dir = tmp_path / "managed"
         managed_dir.mkdir()
@@ -1023,29 +1040,20 @@ class TestMemoryIndexInContextOutput:
         project = tmp_path / "project"
         project.mkdir()
         (project / "ember.md").write_text("PROJECT")
-        # Have to override memory lookup again for the actual
-        # project_dir we pass in — slug-based lookup means the
-        # ``project`` path produces a different slug than
-        # ``tmp_path``.
-        monkeypatch.setattr(
-            context_memory_module,
-            "_igni_project_memory_dir",
-            lambda _pd, _d=igni_dir: _d,
-        )
 
-        out = _loader(project).load_all().render()
+        out = _loader(project, memory_paths=paths).load_all().render()
         assert "# Managed Policy" in out
         assert "# Memory Index" in out
         assert "REMEMBERED FACT" in out
         # Order check.
         assert out.index("MANAGED") < out.index("REMEMBERED FACT") < out.index("PROJECT")
 
-    def test_no_memory_section_when_no_file(self, tmp_path, monkeypatch):
-        _redirect_memory_dirs(monkeypatch, tmp_path)
+    def test_no_memory_section_when_no_file(self, tmp_path):
+        paths = _memory_paths(tmp_path)
         project = tmp_path / "project"
         project.mkdir()
         (project / "ember.md").write_text("PROJECT")
-        out = _loader(project).load_all().render()
+        out = _loader(project, memory_paths=paths).load_all().render()
         assert "# Memory Index" not in out
         assert "PROJECT" in out
 
@@ -1082,10 +1090,13 @@ class TestEnsureMemoryDir:
             raise OSError("read-only")
 
         monkeypatch.setattr(Path, "mkdir", _exploding_mkdir)
-        with caplog.at_level(logging.DEBUG, logger="igni_core.core.utils.context_memory"):
+        with caplog.at_level(logging.WARNING, logger="igni_core.core.utils.context_memory"):
             target = ProjectMemoryBank(tmp_path / "project").ensure()
         # Returns a path even on failure.
         assert isinstance(target, Path)
+        # And says so loudly enough to be noticed: a warning, not a
+        # debug line nobody reads.
+        assert "could not be created" in caplog.text
 
 
 class TestMemoryWritebackInstructions:

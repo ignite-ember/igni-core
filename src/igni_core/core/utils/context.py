@@ -68,6 +68,7 @@ from igni_core.core.utils.context_loader import (
     SubdirectoryTier,
     UserTier,
 )
+from igni_core.core.utils.context_memory_paths import MemoryPaths
 from igni_core.core.utils.context_schemas import (
     RulesBundle,
     RulesSection,
@@ -93,7 +94,7 @@ TierT = TypeVar("TierT", bound=RulesTier)
 class RulesContextLoader:
     """Owns the session-level state for a rules load + drives all six tiers.
 
-    Instance state (5 fields, per CODE_STANDARDS checklist):
+    Instance state (6 fields, per CODE_STANDARDS checklist):
 
     * ``project_dir`` — the repo root; anchors every tier.
     * ``working_dir`` — optional; drives the subdirectory walk and
@@ -104,6 +105,8 @@ class RulesContextLoader:
       object holding the injected file-read helpers.
     * ``user_rules_paths`` — the user's global-rules locations, as one
       typed value.
+    * ``memory_paths`` — where the project's memory files live, as one
+      typed value; ``None`` means the default layout.
 
     The managed-policy directory is not stored here: it is a property
     of the platform, so :func:`context_managed.platform_managed_rules_dir`
@@ -115,6 +118,7 @@ class RulesContextLoader:
     read_claude_md: bool = True
     readers: RulesReaders = field(default_factory=RulesReaders)
     user_rules_paths: UserRulesPaths = field(default_factory=default_user_rules_paths)
+    memory_paths: MemoryPaths | None = None
 
     # ── Tier composition ─────────────────────────────────────
 
@@ -139,6 +143,7 @@ class RulesContextLoader:
             MemoryTier(
                 project_dir=self.project_dir,
                 read_claude_md=self.read_claude_md,
+                paths=self.memory_paths,
             ),
             UserTier(
                 readers=self.readers,
