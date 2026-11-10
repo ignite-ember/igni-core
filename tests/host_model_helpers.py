@@ -18,6 +18,7 @@ import asyncio
 import os
 import sys
 from collections.abc import AsyncIterator
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -27,12 +28,29 @@ from igni_core.backend.command_result import CommandResult
 from igni_core.backend.host_model_wiring import HostModelHubs, HostModelWiring
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.observed_transport import ObservedTransport
+from igni_core.backend.plugin_schemas import PluginContents
 from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_router import RpcRouter
 from igni_core.backend.schemas_history import UserTurn
-from igni_core.backend.schemas_panels import OutputStyleInfo, OutputStylesResult
+from igni_core.backend.schemas_loop import LoopStatusSnapshot
+from igni_core.backend.schemas_mcp import (
+    MCPServerSnapshot,
+    MCPServerSummary,
+    MCPToolToggleResult,
+)
+from igni_core.backend.schemas_panels import (
+    BuiltinSlashCommand,
+    DiscardEphemeralResult,
+    HookEntryView,
+    OutputStyleInfo,
+    OutputStylesResult,
+    PromoteEphemeralResult,
+    SlashCommandEntry,
+)
+from igni_core.backend.schemas_plan import LatestPlanResult
 from igni_core.backend.schemas_pool import ProjectDirs
+from igni_core.backend.schemas_processes import ProcessTailResult, StopProcessResult
 from igni_core.backend.schemas_rpc import GroupPolicyPackResult
 from igni_core.backend.schemas_visualization import (
     VisualizationAction,
@@ -43,20 +61,32 @@ from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
 from igni_core.core.activity import ActivityRegistry
+from igni_core.core.agents.schemas import AgentInfo
 from igni_core.core.approvals.events import approval_events
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.plugins.models import MarketplaceInfo, PluginInfo
+from igni_core.core.scheduler.models import ScheduledTask
 from igni_core.core.session.event_log_schema import (
     SessionEvent,
     SessionEventAppendResult,
     SessionEventDraft,
     SessionEventKind,
 )
-from igni_core.core.session.schemas import ContextBreakdown, PersistResult
+from igni_core.core.session.schemas import (
+    ContextBreakdown,
+    LoopAdvance,
+    McpInitResult,
+    McpServerStatus,
+    PersistResult,
+    PlanDecisionResult,
+)
+from igni_core.core.skills.parser import SkillInfo
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
+from igni_core.core.tools.todo import TodoItemWire
 from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.hooks import ExtensionHooks
@@ -120,12 +150,134 @@ class CapturingTransport(ListeningTransport):
 
 
 def fake_models() -> ModelsConfig:
-    """Two configured models, ``small`` the default."""
+    """Two configured models, ``small`` the default.
+
+    ``large`` carries a key, the way a configured model does: the
+    extension must never see it, only the variable's name.
+    """
     return ModelsConfig(
         default="small",
         max_context_window=100_000,
-        registry={"small": {"model_id": "s"}, "large": {"model_id": "l"}},
+        registry={
+            "small": {"model_id": "s"},
+            "large": {"model_id": "l", "api_key": "sk-secret", "api_key_env": "LARGE_KEY"},
+        },
     )
+
+
+class FakePermissions:
+    """The permission rules igni keeps, as the HITL controller holds them."""
+
+    def __init__(self) -> None:
+        self.level = "allow"
+        self.rules: list[tuple[str, str]] = []
+
+    def check(self, tool_name: str, func_name: str, tool_args: Any) -> str:
+        return self.level
+
+    def save_rule(self, rule: str, level: str) -> None:
+        self.rules.append((rule, level))
+
+
+class FakeScheduler:
+    """The scheduler, as the loop controller holds it."""
+
+    def __init__(self) -> None:
+        self.executed: list[str] = []
+        self.cancelled: list[str] = []
+        self.stopped = False
+
+    async def execute(self, description: str) -> str:
+        self.executed.append(description)
+        return f"ran {description}"
+
+    async def cancel(self, task_id: str) -> str:
+        self.cancelled.append(task_id)
+        return f"cancelled {task_id}"
+
+    async def stop(self) -> None:
+        self.stopped = True
+
+
+class FakeLoop:
+    """The loop controller, as the backend holds it."""
+
+    def __init__(self) -> None:
+        self.scheduler = FakeScheduler()
+        #: The iteration waiting, if any.
+        self.pending: LoopAdvance | None = None
+        self.cancelled = False
+        self.paused = False
+        self.resumed = ""
+
+    async def pop_pending_iteration(self) -> LoopAdvance | None:
+        found, self.pending = self.pending, None
+        return found
+
+    async def cancel_pending(self) -> bool:
+        self.cancelled = True
+        return True
+
+    async def pause(self) -> bool:
+        self.paused = True
+        return True
+
+    async def resume(self) -> str:
+        self.resumed = "resumed"
+        return self.resumed
+
+
+class FakePlugins:
+    """The plugin controller, as the backend holds it."""
+
+    def __init__(self) -> None:
+        self.enabled: list[tuple[str, bool]] = []
+        self.installed: list[str] = []
+        self.removed: list[str] = []
+        self.updated: list[str] = []
+
+    def contents(self, name: str) -> PluginContents:
+        return PluginContents(name=name, root_path="", readme="")
+
+    async def preview(self, source: str, branch: str | None, subdir: str | None) -> PluginContents:
+        return PluginContents(name="previewed", root_path="", readme="")
+
+    def set_enabled(self, name: str, enabled: bool) -> Any:
+        self.enabled.append((name, enabled))
+        return SimpleNamespace(text=f"{name} {'on' if enabled else 'off'}")
+
+    def install(self, ref: str, install_ref: str | None) -> Any:
+        self.installed.append(ref)
+        return SimpleNamespace(text=f"installed {ref}")
+
+    def update(self, name: str, install_ref: str | None) -> Any:
+        self.updated.append(name)
+        return SimpleNamespace(text=f"updated {name}")
+
+    def remove(self, name: str) -> Any:
+        self.removed.append(name)
+        return SimpleNamespace(text=f"removed {name}")
+
+
+class FakeMarketplaces:
+    """The marketplace controller, as the backend holds it."""
+
+    def __init__(self) -> None:
+        self.added: list[str] = []
+        self.removed: list[str] = []
+        self.refreshed: list[str | None] = []
+
+    def add(self, url: str) -> Any:
+        self.added.append(url)
+        return SimpleNamespace(text=f"added {url}")
+
+    def remove(self, name: str) -> Any:
+        self.removed.append(name)
+        return SimpleNamespace(text=f"removed {name}")
+
+    def refresh(self, name: str | None) -> Any:
+        self.refreshed.append(name)
+        return SimpleNamespace(text="refreshed")
 
 
 class FakeSession:
@@ -161,8 +313,44 @@ class FakeSession:
         self.run_release: asyncio.Event | None = None
         self.titles: list[str] = []
         self.promoted: list[tuple[str, str]] = []
+        self.discarded: list[str] = []
+        self.plan_decisions: list[tuple[str, str]] = []
+        self.session_start_hooks = 0
+        #: The permission rules igni keeps, and the level a check answers.
+        self.permissions = FakePermissions()
+        #: The loop, as the backend holds it — and the scheduler in it.
+        self.loop = FakeLoop()
+        #: The plugins and the marketplaces, as the backend holds them.
+        self.plugins = FakePlugins()
+        self.marketplaces = FakeMarketplaces()
         # The approvals still waiting, as a backend's HITL controller holds them.
-        self.controllers = SimpleNamespace(hitl=SimpleNamespace(waiting_messages=lambda: []))
+        self.controllers = SimpleNamespace(
+            hitl=SimpleNamespace(
+                waiting_messages=lambda: [],
+                permissions=self.permissions,
+            ),
+            loop=self.loop,
+            panels=SimpleNamespace(
+                reload_hooks=lambda: None,
+                discard_ephemeral_agent=self.discard_ephemeral_agent,
+            ),
+            mcp=SimpleNamespace(
+                ensure=self.ensure_mcp,
+                disconnect=self.mcp_disconnect,
+                set_tool_enabled=self.set_mcp_tool_enabled,
+            ),
+            processes=SimpleNamespace(
+                read_tail=self.read_process_tail,
+                stop=self.stop_process,
+            ),
+            plugins=self.plugins,
+            marketplaces=self.marketplaces,
+        )
+        #: The session the backend drives: the plan decisions go through it.
+        self.session = SimpleNamespace(
+            approve_plan=self.approve_plan,
+            dismiss_plan=self.dismiss_plan,
+        )
 
     # ── Lifecycle the pool and dispatcher touch ───────────────────
 
@@ -215,6 +403,9 @@ class FakeSession:
 
     # ── Reads ─────────────────────────────────────────────────────
 
+    async def fire_session_start_hook(self) -> None:
+        self.session_start_hooks += 1
+
     def get_status(self) -> msg.StatusUpdate:
         return msg.StatusUpdate(
             model=self.settings.models.default,
@@ -256,24 +447,25 @@ class FakeSession:
     async def context_breakdown(self) -> ContextBreakdown:
         return ContextBreakdown.from_totals(total=1234, runs=1000)
 
-    def get_latest_plan(self) -> dict:
-        return {"latest": "", "history": [], "tasks": [], "state": ""}
+    def get_latest_plan(self) -> LatestPlanResult:
+        return LatestPlanResult(latest="", history=[], tasks=[], state="")
 
-    def get_todos(self) -> list[dict]:
-        return [{"content": "write tests", "status": "pending"}]
+    def get_todos(self) -> list[TodoItemWire]:
+        return [TodoItemWire(content="write tests", status="pending", activeForm="Writing tests")]
 
-    async def loop_status(self) -> dict:
-        return {
-            "active": False,
-            "paused": False,
-            "prompt": "",
-            "iteration_index": 0,
-            "iterations_remaining": 0,
-            "cap_explicit": False,
-        }
+    async def loop_status(self) -> LoopStatusSnapshot:
+        return LoopStatusSnapshot(
+            active=False,
+            paused=False,
+            prompt="",
+            iteration_index=0,
+            iterations_remaining=0,
+            cap_explicit=False,
+            announced_total=None,
+        )
 
-    def get_slash_commands(self) -> list[dict]:
-        return [{"name": "/ctx", "description": "context"}]
+    def get_slash_commands(self) -> list[SlashCommandEntry]:
+        return [BuiltinSlashCommand(name="/ctx", description="context")]
 
     def get_skill_pool(self) -> Any:
         return SimpleNamespace(
@@ -282,42 +474,85 @@ class FakeSession:
             ]
         )
 
-    def get_skill_details(self) -> list[dict]:
-        return [{"name": "review"}]
+    def get_skill_details(self) -> list[SkillInfo]:
+        return [SkillInfo(name="review", description="Reviews")]
 
-    def get_agent_details(self) -> list[dict]:
-        return [{"name": "main"}]
+    def get_agent_details(self) -> list[AgentInfo]:
+        return [AgentInfo(name="main", description="The main agent")]
 
-    def promote_ephemeral_agent(self, name: str, target: str = "project") -> Any:
-        from igni_core.backend.schemas_panels import PromoteEphemeralResult
-
+    def promote_ephemeral_agent(self, name: str, target: str = "project") -> PromoteEphemeralResult:
         self.promoted.append((name, target))
         subdir = "agents" if target == "project" else "agents.local"
         return PromoteEphemeralResult(ok=True, name=name, dest=f".igni/{subdir}/{name}.md")
 
-    async def get_scheduled_tasks(self, include_done: bool = True) -> list[dict]:
-        return [{"id": "t1", "description": "nightly"}]
+    def discard_ephemeral_agent(self, name: str) -> DiscardEphemeralResult:
+        self.discarded.append(name)
+        return DiscardEphemeralResult(ok=True, name=name)
+
+    async def get_scheduled_tasks(self, include_done: bool = True) -> list[ScheduledTask]:
+        return [
+            ScheduledTask(
+                id="t1",
+                description="nightly",
+                scheduled_at=datetime(2026, 1, 1, 3, 0),
+            )
+        ]
 
     def list_background_processes(self) -> list[ProcessRow]:
         return []
 
-    def get_mcp_servers(self) -> list[dict]:
-        return [{"name": "github"}]
+    async def read_process_tail(self, pid: int, tail: int = 200) -> ProcessTailResult:
+        return ProcessTailResult(pid=pid, output="", is_running=False, exit_code=0)
 
-    def get_mcp_status(self) -> list[dict]:
-        return [{"name": "github", "connected": False}]
+    async def stop_process(self, pid: int) -> StopProcessResult:
+        return StopProcessResult(pid=pid, killed=True, message=f"stopped {pid}")
 
-    async def get_mcp_server_details(self) -> list[dict]:
-        return [{"name": "github", "tools": []}]
+    def get_mcp_servers(self) -> list[MCPServerSummary]:
+        return [MCPServerSummary(name="github", connected=False)]
 
-    def get_plugin_details(self) -> list[dict]:
+    def get_mcp_status(self) -> list[McpServerStatus]:
+        return [McpServerStatus(name="github", connected=False)]
+
+    async def get_mcp_server_details(self) -> list[MCPServerSnapshot]:
+        return [MCPServerSnapshot(name="github", connected=False, transport="stdio")]
+
+    async def ensure_mcp(self) -> McpInitResult:
+        return McpInitResult(connected=[], failed={}, rebuilt=False, skipped_reason=None)
+
+    async def mcp_disconnect(self, server_name: str) -> Any:
+        return SimpleNamespace(text=f"disconnected {server_name}")
+
+    def set_mcp_tool_enabled(self, server: str, tool: str, enabled: bool) -> MCPToolToggleResult:
+        return MCPToolToggleResult(server=server, tool=tool, enabled=enabled)
+
+    def get_plugin_details(self) -> list[PluginInfo]:
         return []
 
-    def get_marketplaces(self) -> list[dict]:
+    def get_marketplaces(self) -> list[MarketplaceInfo]:
         return []
 
-    def get_hooks_details(self) -> list[dict]:
+    def get_hooks_details(self) -> list[HookEntryView]:
         return []
+
+    async def approve_plan(self, run_id: str) -> PlanDecisionResult:
+        self.plan_decisions.append(("approve", run_id))
+        return PlanDecisionResult(
+            run_id=run_id,
+            decision="approved",
+            mode_status="mode → default",
+            ok=True,
+            error=None,
+        )
+
+    async def dismiss_plan(self, run_id: str) -> PlanDecisionResult:
+        self.plan_decisions.append(("dismiss", run_id))
+        return PlanDecisionResult(
+            run_id=run_id,
+            decision="dismissed",
+            mode_status="",
+            ok=True,
+            error=None,
+        )
 
     def get_group_policy(self) -> GroupPolicyPackResult:
         return GroupPolicyPackResult()
