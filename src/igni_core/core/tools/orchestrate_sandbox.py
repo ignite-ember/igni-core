@@ -32,7 +32,9 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from igni_core.core.tools.orchestrate_events import SandboxSetupResult
+from pydantic import BaseModel, ConfigDict, SkipValidation
+
+from igni_core.core.tools.orchestrate_modes import IsolationMode
 from igni_core.core.worktree import WorktreeManager
 
 if TYPE_CHECKING:
@@ -77,26 +79,26 @@ class SpawnSandbox:
         session_id: str,
         agent: Any,
         agent_name: str,
-        isolation: str,
+        isolation: IsolationMode,
         task: str,
     ) -> SandboxSetupResult:
         """Build a sandbox for one spawn.
 
-        ``isolation == ""`` returns an empty (no-op) sandbox — the
-        caller can still call :meth:`finalize` unconditionally and
-        get back an empty footer.
+        ``isolation == IsolationMode.NONE`` returns an empty (no-op)
+        sandbox — the caller can still call :meth:`finalize`
+        unconditionally and get back an empty footer.
 
-        ``isolation == "worktree"`` creates a fresh git worktree
-        branched off ``project_dir``, rebases every ``base_dir``-
-        bearing tool on ``agent`` to that worktree, and returns
-        the populated sandbox plus a task-preamble instructing the
-        model to operate within it.
+        ``isolation == IsolationMode.WORKTREE`` creates a fresh git
+        worktree branched off ``project_dir``, rebases every
+        ``base_dir``-bearing tool on ``agent`` to that worktree, and
+        returns the populated sandbox plus a task-preamble instructing
+        the model to operate within it.
 
         Failures (missing project dir, non-git repo, path
         collision) come back as
         :class:`SandboxSetupResult` with a populated ``error``.
         """
-        if isolation != "worktree":
+        if isolation is not IsolationMode.WORKTREE:
             return SandboxSetupResult(
                 sandbox=cls(
                     manager=None,
@@ -131,15 +133,7 @@ class SpawnSandbox:
             )
         info = create_result.info
 
-        # ``agent is None`` is a legacy shim path
-        # (:meth:`OrchestrateTools._create_isolated_worktree` in
-        # test scaffolds) — skip the rebind and hand back an empty
-        # ``original_base_dirs`` map so :meth:`finalize` stays a
-        # no-op on the tool side.
-        if agent is None:
-            original_base_dirs: dict[Any, Any] = {}
-        else:
-            original_base_dirs = cls.rebind_tool_base_dirs(agent, info.worktree_path)
+        original_base_dirs = cls.rebind_tool_base_dirs(agent, info.worktree_path)
         worktree_task = (
             f"You are running in an isolated git worktree at "
             f"{info.worktree_path} (branch: "
@@ -230,4 +224,24 @@ class SpawnSandbox:
         )
 
 
-__all__ = ["SpawnSandbox"]
+class SandboxSetupResult(BaseModel):
+    """What a sandbox setup says.
+
+    A worktree that could not be created is an expected failure, not
+    an exception: it comes back here with ``error`` populated and the
+    caller renders it. The sandbox lives here rather than in the
+    events module because it is the sandbox's own outcome, and
+    because the events module must not know about worktrees.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    #: The sandbox the spawn runs in — ``None`` when the setup failed.
+    sandbox: SkipValidation[SpawnSandbox | None] = None
+    #: The task the sandbox wants the agent to work on.
+    task: str = ""
+    #: Why the sandbox could not be set up, when it could not.
+    error: str | None = None
+
+
+__all__ = ["SandboxSetupResult", "SpawnSandbox"]

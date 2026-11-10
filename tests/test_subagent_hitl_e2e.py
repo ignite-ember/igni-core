@@ -8,7 +8,7 @@ sub-agent's stream and the backend run loop.
 
 Test strategy: mock Agno's Agent with a tiny fake that emits a
 controlled stream (RunStarted → RunPaused → ... post-resume → RunContent →
-RunCompleted). Drive ``_run_agent_streaming`` from
+RunCompleted). Drive ``run_agent_streaming`` from
 ``core.tools.orchestrate`` and assert the coordinator receives the
 requirement, the resume call lands, and the final content is captured.
 
@@ -32,7 +32,8 @@ from pydantic import BaseModel
 
 from igni_core.core.hitl.models import PendingEntry
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
-from igni_core.core.tools.orchestrate import _run_agent_streaming
+from igni_core.core.tools.orchestrate_stream_context import StreamContext, StreamSinks
+from igni_core.core.tools.orchestrate_streaming import run_agent_streaming
 from igni_core.protocol import messages as msg
 
 
@@ -158,6 +159,11 @@ class _FakeAgentCompletedOnly(_FakeAgent):
         self._run_output.content = self._final_content
 
 
+def _stream(agent: Any, task: str = "test", **sinks: Any):
+    """The stream one sub-agent run is driven through."""
+    return run_agent_streaming(StreamContext(runnable=agent, task=task, sinks=StreamSinks(**sinks)))
+
+
 async def _wait_until(predicate, timeout: float = 5.0, interval: float = 0.02) -> bool:
     """Poll ``predicate()`` until truthy or ``timeout`` elapses."""
     loop = asyncio.get_event_loop()
@@ -178,9 +184,7 @@ class TestSubAgentHITLPlumbing:
         coordinator = SubAgentHITLCoordinator()
         agent = _FakeAgent()
 
-        spawn_task = asyncio.create_task(
-            _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
-        )
+        spawn_task = asyncio.create_task(_stream(agent, hitl_coordinator=coordinator))
 
         # Coordinator should receive the requirement within a tick or two
         arrived = await _wait_until(lambda: bool(coordinator.pending.ids()))
@@ -200,9 +204,7 @@ class TestSubAgentHITLPlumbing:
         coordinator = SubAgentHITLCoordinator()
         agent = _FakeAgent()
 
-        spawn_task = asyncio.create_task(
-            _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
-        )
+        spawn_task = asyncio.create_task(_stream(agent, hitl_coordinator=coordinator))
 
         await _wait_until(lambda: bool(coordinator.pending.ids()))
         req_id = coordinator.pending.ids()[0]
@@ -238,9 +240,7 @@ class TestSubAgentHITLPlumbing:
         coordinator = SubAgentHITLCoordinator()
         agent = _FakeAgent()
 
-        spawn_task = asyncio.create_task(
-            _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
-        )
+        spawn_task = asyncio.create_task(_stream(agent, hitl_coordinator=coordinator))
 
         await _wait_until(lambda: bool(coordinator.pending.ids()))
         req_id = coordinator.pending.ids()[0]
@@ -259,7 +259,7 @@ class TestSubAgentHITLPlumbing:
         the no-coordinator code path."""
         agent = _FakeAgent()
 
-        spawn_task = asyncio.create_task(_run_agent_streaming(agent, "test", hitl_coordinator=None))
+        spawn_task = asyncio.create_task(_stream(agent))
 
         # No coordinator → the loop just falls through the pause event.
         # Should complete (no resume happens, but no infinite wait either).
@@ -275,9 +275,7 @@ class TestSubAgentHITLPlumbing:
         coordinator = SubAgentHITLCoordinator()
         agent = _FakeAgent()
 
-        spawn_task = asyncio.create_task(
-            _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
-        )
+        spawn_task = asyncio.create_task(_stream(agent, hitl_coordinator=coordinator))
 
         await _wait_until(lambda: bool(coordinator.pending.ids()))
         req_id = coordinator.pending.ids()[0]
@@ -327,9 +325,7 @@ class TestSubAgentHITLPlumbing:
         coordinator = SubAgentHITLCoordinator()
         agent = _FakeAgentCompletedOnly()
 
-        spawn_task = asyncio.create_task(
-            _run_agent_streaming(agent, "test", hitl_coordinator=coordinator)
-        )
+        spawn_task = asyncio.create_task(_stream(agent, hitl_coordinator=coordinator))
 
         await _wait_until(lambda: bool(coordinator.pending.ids()))
         req_id = coordinator.pending.ids()[0]

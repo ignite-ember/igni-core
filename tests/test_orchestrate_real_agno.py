@@ -6,11 +6,11 @@ real session-DB persistence (e.g. the architect's PAUSED-vs-COMPLETED
 state, ``aget_run_output`` lookup semantics). This test wires up a real
 ``Agent`` with a real ``AsyncSqliteDb`` and a stub model, and confirms:
 
-1. ``_run_agent_streaming`` captures the same ``run_id`` / ``session_id``
+1. ``run_agent_streaming`` captures the same ``run_id`` / ``session_id``
    that Agno persists into the DB.
 2. After the stream ends, ``aget_run_output`` returns a ``RunOutput``
    with the model's content.
-3. The final string returned from ``_run_agent_streaming`` matches.
+3. The final string returned from ``run_agent_streaming`` matches.
 
 The stub model is intentionally minimal: emits a single
 ``assistant_response`` ``ModelResponse`` with content (no tool calls),
@@ -27,7 +27,8 @@ from typing import Any
 
 import pytest
 
-from igni_core.core.tools.orchestrate import _run_agent_streaming
+from igni_core.core.tools.orchestrate_stream_context import StreamContext
+from igni_core.core.tools.orchestrate_streaming import run_agent_streaming
 
 
 def _make_stub_model(content: str):
@@ -91,7 +92,7 @@ def _has_async_sqlite() -> bool:
 
 @pytest.mark.skipif(not _has_async_sqlite(), reason="agno.db.sqlite not installed")
 @pytest.mark.asyncio
-async def test_run_agent_streaming_reads_persisted_content():
+async def testrun_agent_streaming_reads_persisted_content():
     """Spawn drives a real Agno Agent; after the stream completes,
     ``aget_run_output`` (the Agno-canonical read path) must return the
     model's content. This is what production uses to fetch the
@@ -106,7 +107,9 @@ async def test_run_agent_streaming_reads_persisted_content():
     agent = Agent(name="test-architect", model=_make_stub_model(answer), db=db)
 
     result, _log = await asyncio.wait_for(
-        _run_agent_streaming(agent, "Analyze", agent_path=["architect"]),
+        run_agent_streaming(
+            StreamContext(runnable=agent, task="Analyze", agent_path=["architect"])
+        ),
         timeout=15,
     )
 

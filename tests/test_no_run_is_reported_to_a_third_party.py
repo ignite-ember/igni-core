@@ -50,14 +50,23 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 from igni_core.core.agents.schemas import AgentConstructorArgs
 from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.session.agent_builder.agent_build_spec import AgentBuildSpec
+from igni_core.core.tools.orchestrate_spawn_team import TeamSpawn
+from igni_core.core.tools.orchestrate_spawn_types import SpawnDeps, TeamBuildRequest
 from igni_core.extensions.install_environment import ProcessEnvironment
 from igni_core.extensions.manifest import ExtensionManifest
 
 _ROOT = Path(__file__).resolve().parent.parent
+
+
+async def _never_streamed(_context: Any) -> tuple[str, list[str]]:
+    """A streamer no test here ever runs — the team is built, not streamed."""
+    raise AssertionError("the team should never be streamed")
 
 
 def _env_after_import(preset: dict[str, str] | None = None) -> str | None:
@@ -164,8 +173,47 @@ class TestTheConstructorsSayItToo:
         assert kwargs["telemetry"] is False
 
     def test_a_sub_team_passes_it(self):
-        source = (_ROOT / "src/igni_core/core/tools/orchestrate_spawn.py").read_text()
-        assert '"telemetry": AgnoTelemetry.CONSTRUCTOR_VALUE' in source
+        """The team a sub-team spawn builds says it too.
+
+        Checked on the spec the spawn actually builds rather than on
+        the source text: what matters is the team that comes out of
+        the constructor, and the constructor has moved more than once.
+        """
+        specs = []
+
+        def _team_factory(spec):
+            specs.append(spec)
+            return SimpleNamespace(members=spec.members)
+
+        pool = SimpleNamespace(
+            get=lambda name: SimpleNamespace(name=name),
+            get_entry=lambda name: SimpleNamespace(
+                definition=SimpleNamespace(description="", tools=[])
+            ),
+            db=None,
+        )
+        deps = SpawnDeps(
+            agent_streamer=_never_streamed,
+            team_streamer=_never_streamed,
+            team_factory=_team_factory,
+            model_registry_factory=lambda _settings: SimpleNamespace(get_model=lambda: None),
+            nested_toolkit_factory=lambda _spec: SimpleNamespace(),
+        )
+
+        TeamSpawn.build_team(
+            TeamBuildRequest(
+                pool=pool,
+                settings=SimpleNamespace(orchestration=SimpleNamespace(max_task_iterations=10)),
+                names=["coder"],
+                mode="coordinate",
+                depth=1,
+            ),
+            deps,
+        )
+
+        assert len(specs) == 1
+        assert specs[0].telemetry is AgnoTelemetry.CONSTRUCTOR_VALUE
+        assert specs[0].telemetry is False
 
     def test_an_extension_service_is_handed_it_and_cannot_turn_it_on(self, monkeypatch):
         """An MCP stdio launch passes on only ``PATH``, ``HOME`` and a few

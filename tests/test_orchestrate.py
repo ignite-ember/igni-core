@@ -113,7 +113,7 @@ class TestOrchestrateTools:
             patch("igni_core.core.tools.orchestrate.Team"),
             patch("igni_core.core.tools.orchestrate.ModelRegistry") as MockReg,
             patch(
-                "igni_core.core.tools.orchestrate._run_team_streaming",
+                "igni_core.core.tools.orchestrate.run_team_streaming",
                 new=AsyncMock(return_value=("team result", [])),
             ),
         ):

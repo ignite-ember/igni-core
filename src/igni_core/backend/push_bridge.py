@@ -31,6 +31,7 @@ from igni_core.core.tools.edit import (
     FileEditNotifier,
     default_file_edit_notifier,
 )
+from igni_core.core.tools.orchestrate_events import OrchestrateEvent
 from igni_core.core.tools.process_events import (
     ProcessExitEvent,
     ProcessLineEvent,
@@ -318,17 +319,24 @@ class PushNotificationBridge:
 
     # ── Orchestrate progress ────────────────────────────────────
 
-    def on_orchestrate_progress(self, event: msg.PushPayload) -> None:
-        """Forward one orchestrate sub-agent event (the
-        :data:`~igni_core.core.tools.orchestrate_events.OnProgress`
-        contract: an ``_EventBase`` model already dumped at the emit
-        site) onto ``orchestrate_event``. Kept sync — the tool fires it
-        from inside a run without awaiting.
+    def on_orchestrate_progress(self, event: OrchestrateEvent) -> None:
+        """Forward one orchestrate sub-agent event onto
+        ``orchestrate_event``. Kept sync — the tool fires it from
+        inside a run without awaiting.
+
+        The event arrives as the model it is; this is where it
+        becomes a wire payload, so the shape is produced once rather
+        than at each emit site.
 
         The payload shape belongs to the orchestrate events, not to
         the push wire — hence the open channel rather than one of the
         typed factories above."""
-        self._schedule_push(msg.push_on(PushChannel.ORCHESTRATE_EVENT, event))
+        self._schedule_push(
+            msg.push_on(
+                PushChannel.ORCHESTRATE_EVENT,
+                event.model_dump(by_alias=True, exclude_none=True),
+            )
+        )
 
     # ── Session naming ──────────────────────────────────────────
 
@@ -361,9 +369,7 @@ class PushNotificationBridge:
         """The folder's workspace-trust status, after an answer (or when a
         window must ask): every window showing the trust dialog for that
         folder closes it, or opens it when ``state`` is ``ask``."""
-        self._schedule_push(
-            msg.push_on(PushChannel.WORKSPACE_TRUST_REQUIRED, status.model_dump())
-        )
+        self._schedule_push(msg.push_on(PushChannel.WORKSPACE_TRUST_REQUIRED, status.model_dump()))
 
     def workflow_event(self, record: WorkflowEventRecord) -> None:
         """One event of a running workflow, for the window folding it into
