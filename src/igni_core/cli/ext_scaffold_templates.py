@@ -232,7 +232,10 @@ async def ticket_from_service(ticket_id: str) -> str:
 @ext.hook(Hooks.POST_TOOL_USE)
 async def audit(call: PostToolUse) -> None:
     """Record every tool the agent ran in this extension's data directory."""
-    audit_log = Path(ext.environment.data_dir) / "tool-audit.log"
+    data_dir = ext.environment.data_dir  # None when igni did not start it
+    if data_dir is None:
+        return
+    audit_log = Path(data_dir) / "tool-audit.log"
     try:
         with audit_log.open("a") as f:
             f.write(f"{call.tool_name}\\n")
@@ -309,7 +312,7 @@ def create_app(igni: IgniService | None = None) -> FastAPI:
     @app.get("/v1/vm-profile")
     async def vm_profile(person: Person = Depends(igni.org_admin)) -> dict:
         """What became of the extension's ``vm`` request in the caller's organisation."""
-        status = await igni.host(person.org_id).vm_profile()
+        status = await igni.host(person.org_id).extension_vm_profile()
         return status.model_dump(mode="json")
 
     return app
@@ -323,7 +326,8 @@ import httpx
 import pytest
 from igni_extension import Caller, CallerKind
 from igni_extension.testing import ConcurrencyHarness, ConcurrentCall, HostHarness
-from igni_service.testing import FakeIgni
+from igni_service import Member
+from igni_service.testing import FakeIgni, IgniAddresses
 
 from {{MODULE}} import ext
 from service import create_app
@@ -357,17 +361,17 @@ async def test_many_callers_at_once() -> None:
 
 
 async def test_the_service_takes_a_person_and_answers_export_and_erasure() -> None:
-    fake = FakeIgni(service_url="http://tickets.test")
-    fake.add_member("org-1", "u-ada", email="ada@acme.test", name="Ada")
+    fake = FakeIgni(addresses=IgniAddresses(service_url="http://tickets.test"))
+    fake.directory.add_member("org-1", Member(user_id="u-ada", email="ada@acme.test", name="Ada"))
     app = create_app(fake.service())
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://tickets.test") as http:
-        person = {"Authorization": f"Bearer {fake.person_token('u-ada', org_id='org-1')}"}
+        person = {"Authorization": f"Bearer {fake.signer.person_token('u-ada', org_id='org-1')}"}
         r = await http.get("/v1/tickets/T-1001", headers=person)
         assert r.status_code == 200, r.text
         assert r.json()["looked_up_by"] == "ada@acme.test"
 
-        igni = {"Authorization": f"Bearer {fake.igni_token('org-1')}"}
+        igni = {"Authorization": f"Bearer {fake.signer.igni_token('org-1')}"}
         r = await http.get("/v1/igni/subjects/u-ada/export", headers=igni)
         assert r.status_code == 200, r.text
         assert "T-1001" in r.text
