@@ -26,17 +26,27 @@ from igni_core.core.tools.todo import TodoItemWire
 PlanState = Literal["pending", "approved", "dismissed", ""]
 
 
+# Built by PlanSnapshotBuilder.latest; ``tasks`` mirrors TodoStore.items
+# (each row dumps ``activeForm`` camelCase on its own, see TodoItemWire).
 class LatestPlanResult(BaseModel):
-    """Wire shape for :meth:`PlanSnapshotBuilder.latest` — the
-    plan-mode panel reads this on open + after each ``exit_plan_mode``.
+    """The session's current plan-mode plan and task list.
 
-    ``state`` is ``"pending"`` when a plan exists (user hasn't
-    approved/dismissed yet) or ``""`` when no plan submitted.
-    ``tasks`` mirrors :attr:`TodoStore.items` (each row dumps
-    ``activeForm`` camelCase on its own, see :class:`TodoItemWire`) so the FE renders the plan and task list from a
-    single payload."""
+    Read it when opening a plan view and again after the agent submits
+    a plan."""
 
-    latest: str = ""
-    history: list[str] = Field(default_factory=list)
-    tasks: list[TodoItemWire] = Field(default_factory=list)
-    state: PlanState = ""
+    latest: str = Field(
+        default="", description="The most recent plan text (Markdown); empty if none."
+    )
+    history: list[str] = Field(
+        default_factory=list, description="Earlier plans submitted in this session, oldest first."
+    )
+    tasks: list[TodoItemWire] = Field(
+        default_factory=list, description="The session's current task (todo) list."
+    )
+    state: PlanState = Field(
+        default="",
+        description=(
+            "`pending` when a plan is waiting for the user to approve or "
+            'dismiss it; `""` when no plan has been submitted.'
+        ),
+    )

@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from igni_core.backend.command_result import CommandResult
 from igni_core.protocol.messages import CommandAction, CommandResultKind
@@ -168,27 +168,38 @@ class LoopResumedView(BaseModel):
 
 
 class LoopStatusSnapshot(BaseModel):
-    """RPC wire shape for :meth:`LoopController.status`.
+    """Status of the session's ``/loop`` (a prompt the agent repeats
+    over several iterations)."""
 
-    Renamed from the old inline ``LoopStatus`` (in ``server_loop.py``)
-    to avoid colliding with the sibling :class:`LoopStatusView` chat
-    card in this same module. Same eight fields, same wire contract
-    (the RPC layer serialises via ``.model_dump()`` so the FE JSON
-    payload is byte-identical).
-
-    ``from_session`` is the canonical constructor — it encapsulates
-    the announced-total lookup on :class:`LoopProgressStore` so
-    :class:`LoopController` doesn't have to know that the total lives
-    on a per-run key/value store.
-    """
-
-    active: bool
-    paused: bool
-    prompt: str
-    iteration_index: int
-    iterations_remaining: int
-    cap_explicit: bool
-    announced_total: int | None
+    # Returned by LoopController.status. ``from_session`` is the canonical
+    # constructor — it encapsulates the announced-total lookup on
+    # LoopProgressStore.
+    active: bool = Field(description="`true` when a loop is running or paused.")
+    paused: bool = Field(
+        description=(
+            "`true` when the loop stopped early (it hit the hard iteration cap or "
+            "an iteration failed) and waits to be resumed."
+        )
+    )
+    prompt: str = Field(description="The prompt being looped; empty when no loop is active.")
+    iteration_index: int = Field(
+        description="Number of iterations started so far (1-based); `0` when idle."
+    )
+    iterations_remaining: int = Field(
+        description="Iterations left before the loop's cap is reached; `0` when idle."
+    )
+    cap_explicit: bool = Field(
+        description=(
+            "`true` when the user gave the iteration count (`/loop N <prompt>`), so the "
+            "loop ends at the cap. `false`: the cap is a safety net that extends automatically."
+        )
+    )
+    announced_total: int | None = Field(
+        description=(
+            "Total number of iterations the agent said the loop will take, for "
+            "progress display (`N / total`); `null` if the agent has not said."
+        )
+    )
 
     @classmethod
     async def from_session(cls, session: Session) -> LoopStatusSnapshot:

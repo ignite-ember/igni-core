@@ -24,13 +24,16 @@ from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 
 class AttachSessionParams(RpcArgs):
-    """``attach_session``: which session, and in which directory; empty for neither."""
+    """Which session to attach a connection to, and in which folder."""
 
-    #: The session to bind; empty for the default one, or a new one when
-    #: ``project_dir`` is given.
-    session_id: str = ""
-    #: The folder the session works in; empty for the backend's own.
-    project_dir: str = ""
+    session_id: str = Field(
+        default="",
+        description="The session to attach to; empty for the default one, or a new one "
+        "when `project_dir` is given.",
+    )
+    project_dir: str = Field(
+        default="", description="The folder the session works in; empty for igni's own."
+    )
 
     @field_validator("session_id", "project_dir", mode="before")
     @classmethod
@@ -45,12 +48,13 @@ class AttachRefused(BaseModel):
 
 
 class VmSignInParams(RpcArgs):
-    """``vm_sign_in``: the person's session, and the organisation it signs in for."""
+    """A person's igni server session, for a cloud VM to sign in with."""
 
-    #: The person's igni server session, as the gateway holds it.
-    session_token: str = ""
-    #: The organisation the VM signs in for; ``None`` for the person's own.
-    organisation: str | None = None
+    session_token: str = Field(default="", description="The person's igni server session token.")
+    organisation: str | None = Field(
+        default=None,
+        description="The organisation the VM signs in for; `null` for the person's own.",
+    )
 
     @field_validator("session_token", mode="before")
     @classmethod
@@ -64,19 +68,29 @@ class VmSignInParams(RpcArgs):
 
 
 class ServiceEventsParams(RpcArgs):
-    """``deliver_service_events``: the platform's batch."""
+    """A batch of events from extension services, to deliver to sessions."""
 
-    events: list[ServiceEvent] = Field(default_factory=list)
+    events: list[ServiceEvent] = Field(default_factory=list, description="The events to deliver.")
 
 
 class ServiceEventsAck(BaseModel):
-    """What became of a batch, and which events the platform may forget."""
+    """What became of each event in a batch, and which events the sender
+    may now forget. Each list holds event ids."""
 
-    delivered: list[str]
-    duplicate: list[str]
-    failed: list[str]
-    not_handled: list[NotHandled]
-    acknowledge: list[str]
+    delivered: list[str] = Field(description="Events delivered now.")
+    duplicate: list[str] = Field(description="Events delivered before; nothing else happened.")
+    failed: list[str] = Field(
+        description="Events not delivered because the session could not take them. They "
+        "are not acknowledged, so send them again."
+    )
+    not_handled: list[NotHandled] = Field(
+        description="Events that no handler took, and why. They are acknowledged, since "
+        "sending them again would not change that."
+    )
+    acknowledge: list[str] = Field(
+        description="Every event the sender may forget: `delivered`, `not_handled` and "
+        "`duplicate` together."
+    )
 
     @classmethod
     def of(cls, receipt: DeliveryReceipt) -> ServiceEventsAck:
@@ -90,32 +104,33 @@ class ServiceEventsAck(BaseModel):
 
 
 class VmCredentialState(BaseModel):
-    """``vm_sign_in``'s answer: the state of the VM's own credential after the sign-in.
+    """The state of a cloud VM's own credential after it signed in."""
 
-    The layer's credential keeper answers with its own model; it is read
-    into this one, so what goes on the wire is what is published.
-    """
-
-    #: ``ready``: the VM holds a credential and a token from it.
-    #: ``needs_sign_in``: the person must sign in through the gateway again.
-    #: ``needs_reissue``: an app VM's credential is gone; an org admin re-issues it.
-    #: ``unreachable``: igni server could not be reached; the last token holds
-    #: until it expires.
-    state: Literal["ready", "needs_sign_in", "needs_reissue", "unreachable"]
-    #: What went wrong, when something did.
-    message: str = ""
+    # The credential keeper answers with its own model; it is read into
+    # this one, so what goes on the wire is what is published.
+    state: Literal["ready", "needs_sign_in", "needs_reissue", "unreachable"] = Field(
+        description="`ready`: the VM holds a credential and a token from it. "
+        "`needs_sign_in`: the person must sign in through the gateway again. "
+        "`needs_reissue`: an app VM's credential is gone and an organisation admin must "
+        "re-issue it. `unreachable`: igni server could not be reached; the last token "
+        "holds until it expires."
+    )
+    message: str = Field(default="", description="What went wrong; empty when nothing did.")
 
 
 class ApproverTokenMinted(BaseModel):
-    """``mint_approver_token``'s answer: the token, for the window that asked."""
+    """A new token that lets a program answer the agent's approval requests."""
 
-    token: str
+    token: str = Field(
+        description="The token. A program that connects with it may answer approval "
+        "requests and approve plans. It is valid until igni exits or the tokens are revoked."
+    )
 
 
 class ApproverTokensRevoked(BaseModel):
-    """``revoke_approver_tokens``'s answer: how many were forgotten."""
+    """How many approver tokens were revoked."""
 
-    revoked: int
+    revoked: int = Field(description="The number of tokens revoked.")
 
 
 class ExtensionPost(BaseModel):

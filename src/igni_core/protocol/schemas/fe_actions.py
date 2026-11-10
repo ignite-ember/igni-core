@@ -1,4 +1,4 @@
-"""FE → BE actions the user (or an FE-side coordinator) can send.
+"""Messages a client sends igni on the person's behalf.
 
 Every previously-free-string field that names a closed set of
 values is retyped to its :mod:`.enums` StrEnum member. Wire
@@ -22,38 +22,42 @@ from igni_core.protocol.schemas.envelope import Direction, Message
 
 
 class UserMessage(Message):
-    """User sends a chat message.
-
-    ``client_id`` (mirroring) identifies the sending view so the BE's
-    ``UserMessageReceived`` broadcast lets every OTHER view paint the
-    bubble while the sender skips its own echo. Empty for views that
-    predate mirroring — the echo then renders everywhere except
-    nowhere, which is harmless for a single view.
-
-    ``force`` (default ``False``) tells the BE to supersede any
-    interrupted or pending rows for the session before starting the
-    run. Used by the FE's "Retry" action on an interrupted-banner:
-    discard the stale interrupted state, then start clean with the
-    same prompt. Backwards compatible — pre-force clients keep the
-    existing behaviour (the old rows linger until natural
-    completion or explicit discard).
-    """
+    """The person sends a chat message, starting a run."""
 
     type: Literal["user_message"] = "user_message"
     direction: ClassVar[Direction] = Direction.TO_IGNI
-    text: str = ""
-    file_contents: dict[str, str] = Field(default_factory=dict)  # path → content
-    client_id: str = ""
-    force: bool = False
+    text: str = Field(default="", description="The message.")
+    file_contents: dict[str, str] = Field(
+        default_factory=dict,
+        description="Files attached to the message: their contents, keyed by path.",
+    )
+    client_id: str = Field(
+        default="",
+        description=(
+            "This client's id, from `welcome`. igni echoes the message to every other client "
+            "attached to the session (`user_message_received`); the sender recognises its own "
+            "by this id. Empty is allowed."
+        ),
+    )
+    force: bool = Field(
+        default=False,
+        description=(
+            "True to discard any interrupted or pending runs of the session first, then start "
+            "afresh with this message; for retrying after an interruption."
+        ),
+    )
 
 
 class QueueMessage(Message):
-    """User types while agent is running."""
+    """A message the person sends while a run is still going; it is queued for the agent."""
 
     type: Literal["queue_message"] = "queue_message"
     direction: ClassVar[Direction] = Direction.TO_IGNI
-    text: str = ""
-    client_id: str = ""
+    text: str = Field(default="", description="The message.")
+    client_id: str = Field(
+        default="",
+        description="This client's id, from `welcome`, so it can recognise its own echo. Empty is allowed.",
+    )
 
 
 #: The person's answer to an approval request: run the tool call, or not.
@@ -69,18 +73,24 @@ HitlModeValue = Literal["", "default", "plan", "acceptEdits", "bypassPermissions
 
 
 class HITLResponse(Message):
-    """The person's answer to one approval request.
-
-    ``requirement_id`` is the request's id (from ``run_paused``);
-    ``action`` is ``confirm`` or ``reject``; ``choice`` says whether to
-    save a rule from it.
-    """
+    """The person's answer to one approval request (from ``run_paused``)."""
 
     type: Literal["hitl_response"] = "hitl_response"
     direction: ClassVar[Direction] = Direction.TO_IGNI
-    requirement_id: str = ""
-    action: HitlActionValue = "reject"
-    choice: HitlChoiceValue = ""
+    requirement_id: str = Field(
+        default="", description="The approval request's id, from its `hitl_request`."
+    )
+    action: HitlActionValue = Field(
+        default="reject", description="`confirm` to run the tool call, `reject` to refuse it."
+    )
+    choice: HitlChoiceValue = Field(
+        default="",
+        description=(
+            "How long the answer stands. `once` (or empty): this call only. `always`: save a "
+            "rule allowing this exact call. `similar`: save a rule allowing calls like it. "
+            "`deny`: save a rule refusing it."
+        ),
+    )
 
 
 class HITLDecision(Message):
@@ -91,10 +101,24 @@ class HITLDecision(Message):
 
     type: Literal["hitl_decision"] = "hitl_decision"
     direction: ClassVar[Direction] = Direction.TO_IGNI
-    requirement_id: str = ""
-    action: HitlActionValue = "reject"
-    choice: HitlChoiceValue = ""
-    set_permission_mode: HitlModeValue = ""
+    requirement_id: str = Field(
+        default="", description="The approval request's id, from its `hitl_request`."
+    )
+    action: HitlActionValue = Field(
+        default="reject", description="`confirm` to run the tool call, `reject` to refuse it."
+    )
+    choice: HitlChoiceValue = Field(
+        default="",
+        description=(
+            "How long the answer stands. `once` (or empty): this call only. `always`: save a "
+            "rule allowing this exact call. `similar`: save a rule allowing calls like it. "
+            "`deny`: save a rule refusing it."
+        ),
+    )
+    set_permission_mode: HitlModeValue = Field(
+        default="",
+        description="A permission mode to switch to before the run resumes; empty to keep the current one.",
+    )
 
 
 class HITLResponseBatch(Message):
@@ -103,19 +127,21 @@ class HITLResponseBatch(Message):
 
     type: Literal["hitl_response_batch"] = "hitl_response_batch"
     direction: ClassVar[Direction] = Direction.TO_IGNI
-    decisions: list[HITLDecision] = []
+    decisions: list[HITLDecision] = Field(
+        default=[], description="One answer per approval request."
+    )
 
 
 class Command(Message):
-    """Slash command from user."""
+    """A slash command the person typed. igni answers with a ``command_result``."""
 
     type: Literal["command"] = "command"
     direction: ClassVar[Direction] = Direction.TO_IGNI
-    text: str = ""
+    text: str = Field(default="", description="The command as typed, slash included, e.g. `/help`.")
 
 
 class Cancel(Message):
-    """Cancel current run."""
+    """Stop the run in progress."""
 
     type: Literal["cancel"] = "cancel"
     direction: ClassVar[Direction] = Direction.TO_IGNI
@@ -129,46 +155,46 @@ class CancelLogin(Message):
 
 
 class SessionSwitch(Message):
-    """Switch to a different session."""
+    """Switch to a different saved session."""
 
     type: Literal["session_switch"] = "session_switch"
     direction: ClassVar[Direction] = Direction.TO_IGNI
-    session_id: str = ""
+    session_id: str = Field(default="", description="The id of the session to switch to.")
 
 
 class SessionList(Message):
-    """Request session list."""
+    """Ask for the saved sessions. igni answers with a ``session_list_result``."""
 
     type: Literal["session_list"] = "session_list"
     direction: ClassVar[Direction] = Direction.TO_IGNI
 
 
 class ModelSwitch(Message):
-    """Switch model."""
+    """Switch the session to a different model."""
 
     type: Literal["model_switch"] = "model_switch"
     direction: ClassVar[Direction] = Direction.TO_IGNI
-    model_name: str = ""
+    model_name: str = Field(default="", description="The id of the model to switch to.")
 
 
 class MCPToggle(Message):
-    """Toggle MCP server connection."""
+    """Connect or disconnect one of the configured MCP servers."""
 
     type: Literal["mcp_toggle"] = "mcp_toggle"
     direction: ClassVar[Direction] = Direction.TO_IGNI
-    server_name: str = ""
-    connect: bool = True
+    server_name: str = Field(default="", description="The MCP server's name, as configured.")
+    connect: bool = Field(default=True, description="True to connect, false to disconnect.")
 
 
 class Shutdown(Message):
-    """Graceful shutdown."""
+    """Shut igni down cleanly."""
 
     type: Literal["shutdown"] = "shutdown"
     direction: ClassVar[Direction] = Direction.TO_IGNI
 
 
 class StreamEnd(Message):
-    """Marks end of a streaming response (run_message, resolve_hitl)."""
+    """Marks the end of a streamed answer, such as a run's events."""
 
     type: Literal["stream_end"] = "stream_end"
     direction: ClassVar[Direction] = Direction.TO_CLIENT

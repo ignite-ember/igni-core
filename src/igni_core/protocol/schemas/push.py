@@ -38,20 +38,15 @@ from igni_core.protocol.schemas.envelope import Direction, Message
 
 
 class PushNotification(Message):
-    """BE→FE push for callbacks (scheduler, progress, login status,
-    permission-mode changes, background processes, file edits, …).
+    """Something happened that a client may want to show, sent without being asked.
 
-    The ``channel`` field discriminates which producer emitted the
-    push; the FE routes on ``channel`` to render / dispatch. See
-    :class:`PushChannel` for the catalogue of known channels — the
-    producer set is open, so treat anything unlisted as a channel
-    this module simply hasn't catalogued yet, not as invalid.
-
-    Producers should prefer the :func:`push_*` factory helpers over
-    hand-building the class — they take a typed payload model and
-    dump it at the seam, matching every existing callsite's shape
-    while keeping the boilerplate to one line.
+    Scheduled tasks, login status, permission-mode changes, background
+    processes, file edits and more each have a ``channel``; the shape of
+    ``payload`` depends on it. Ignore a channel you do not know.
     """
+
+    # Producers should prefer the ``push_*`` factory helpers over
+    # hand-building the class.
 
     # ``channel`` stays a raw ``str`` on the wire (not a strict
     # :class:`PushChannel` enum field) so producer sites that emit
@@ -63,12 +58,17 @@ class PushNotification(Message):
     # member); the raw-string path is the compatibility bridge.
     type: Literal["push_notification"] = "push_notification"
     direction: ClassVar[Direction] = Direction.TO_CLIENT
-    channel: str = ""
-    payload: dict[str, WireJson] = Field(default_factory=dict)
-    #: The run whose work sent this push, when igni chose its id (a
-    #: scheduled task run now: ``execute_scheduled_task``'s ``run_id``);
-    #: empty otherwise.
-    run_id: str = ""
+    channel: str = Field(
+        default="", description="What kind of push this is; it decides the shape of `payload`."
+    )
+    payload: dict[str, WireJson] = Field(
+        default_factory=dict, description="The push's data, shaped by `channel`."
+    )
+    # Today: a scheduled task run (``execute_scheduled_task``'s ``run_id``).
+    run_id: str = Field(
+        default="",
+        description="The run whose work sent this push, when igni chose that run's id; empty otherwise.",
+    )
 
 
 def _push(channel: PushChannel, payload: Any) -> PushNotification:

@@ -47,30 +47,48 @@ from igni_core.core.tools.orchestrate_events import VisualizationDeltaEvent
 SessionEventKind = Literal["visualization_delta", "workflow_event"]
 
 
+# Subclasses the wire event the visualizer and the extensions send, so
+# the log keeps one shape for a card. ``final`` defaults to True here
+# (the wire event defaults to False): a payload without the key means
+# "the card is complete", which the view list and the history splicer
+# have always read. The card's own fields default too: a producer that
+# sends a partial card is logged as sent, and readers skip what they
+# can't use.
 class VisualizationDeltaPayload(VisualizationDeltaEvent):
-    """The payload of a ``visualization_delta`` entry: the viz card.
+    """A visualization card recorded in the session's event log.
 
-    Subclasses the wire event the visualizer and the extensions send,
-    so the log keeps one shape for a card; the two additions are the
-    labels an extension's ``chat.append`` puts on its block — the
-    card's ``title`` and the extension's id as ``source``. The
-    visualizer sends neither, so both read empty.
-
-    ``final`` defaults to ``True`` here (the wire event defaults to
-    ``False``): a payload without the key means "the card is
-    complete", which is the convention the view list and the history
-    splicer have always read. The card's own fields default too — a
-    producer that sends a partial card is logged as it sent it, and
-    the readers skip what they can't use.
+    The card's spec arrives as JSON text, possibly in several partial
+    updates sharing one ``spec_id``; the update with ``final`` set holds
+    the complete spec. ``title`` and ``source`` are set only for cards
+    an extension added to the chat.
     """
 
     type: Literal["visualization_delta"] = Field(default="visualization_delta", frozen=True)
-    agent_path: str = ""
-    spec_id: str = ""
-    spec_json: str = Field(default="", alias="json")
-    final: bool = True
-    title: str = ""
-    source: str = ""
+    agent_path: str = Field(
+        default="",
+        description="Dot-joined names of the agent that produced the card. Empty when not known.",
+    )
+    spec_id: str = Field(
+        default="",
+        description="Identifier of the card; later updates with the same id replace earlier ones.",
+    )
+    spec_json: str = Field(
+        default="",
+        alias="json",
+        description="The card's visualization spec as JSON text. Partial (possibly incomplete "
+        "JSON) until `final` is true.",
+    )
+    final: bool = Field(
+        default=True,
+        description="True when `json` holds the complete spec; false for an in-progress update.",
+    )
+    title: str = Field(
+        default="", description="Card title given by the extension that added it. Empty otherwise."
+    )
+    source: str = Field(
+        default="",
+        description="Id of the extension that added the card. Empty for cards produced by an agent.",
+    )
 
 
 # ── Drafts — what a producer hands the log ────────────────────

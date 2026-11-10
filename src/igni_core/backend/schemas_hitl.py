@@ -47,7 +47,7 @@ from enum import Enum
 from typing import Any, Protocol
 
 from agno.models.response import ToolExecution
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.core.config.tool_permissions import PermissionLevel
 from igni_core.protocol import messages as msg
@@ -161,25 +161,21 @@ class HitlAction(str, Enum):
 
 
 class ToolCallArgs(BaseModel):
-    """Typed replacement for the raw ``dict[str, Any]``
-    ``tool_args`` payload at the RPC wire seam.
+    """The arguments of a tool call, as a JSON object.
 
-    Each tool defines its own arg keys (``command`` for bash,
-    ``file_path`` for read/write, ``url`` for fetch, …); we don't
-    enumerate every one here because the set grows with the tool
-    registry. ``extra='allow'`` preserves every provided key at the
-    Pydantic seam so the downstream ``ToolPermissions.check`` reads
-    them unchanged. Named fields are the common ones — they give
-    static coverage for the handful of well-known keys without
-    forcing the schema to know every tool.
+    Each tool defines its own keys; any key is accepted and kept. The
+    common ones are named below; leave out the ones the tool does not
+    use.
     """
 
+    # ``extra='allow'`` preserves every provided key so the downstream
+    # ToolPermissions.check reads them unchanged.
     model_config = ConfigDict(extra="allow", json_schema_extra=JSON_OBJECT_EXTRA)
 
-    command: str = ""
-    file_path: str = ""
-    url: str = ""
-    query: str = ""
+    command: str = Field(default="", description="Shell command, for shell tools.")
+    file_path: str = Field(default="", description="File path, for file read/write/edit tools.")
+    url: str = Field(default="", description="URL, for web-fetch tools.")
+    query: str = Field(default="", description="Search query, for search tools.")
 
     def as_dict(self) -> dict[str, Any]:
         """Lower back to a plain ``dict`` for callees that still

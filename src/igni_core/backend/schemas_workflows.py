@@ -36,12 +36,14 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 
 class WorkflowPhase(BaseModel):
-    """One phase in a workflow's published ``meta.phases`` list."""
+    """One step of a workflow, as the workflow describes itself."""
 
     model_config = ConfigDict(extra="forbid")
 
-    title: str
-    detail: str = ""
+    title: str = Field(description="Short name of the phase.")
+    detail: str = Field(
+        default="", description="Longer explanation of what the phase does; may be empty."
+    )
 
 
 class WorkflowMeta(BaseModel):
@@ -57,7 +59,7 @@ class WorkflowMeta(BaseModel):
 
     name: str
     description: str = ""
-    when_to_use: str = Field("", alias="whenToUse")
+    when_to_use: str = Field(default="", alias="whenToUse")
     phases: list[WorkflowPhase] = Field(default_factory=list)
 
 
@@ -88,20 +90,26 @@ class WorkflowMetaEnvelope(BaseModel):
 
 
 class WorkflowListItem(BaseModel):
-    """One ``LIST_WORKFLOWS`` row: ``{name, description, whenToUse, phases, path}``.
+    """A workflow script available to run in this project."""
 
-    ``when_to_use`` goes out as ``whenToUse`` — the model serialises
-    by alias, so the dispatcher's plain ``model_dump()`` emits the
-    wire name.
-    """
-
+    # ``when_to_use`` goes out as ``whenToUse`` — the model serialises by
+    # alias, so a plain ``model_dump()`` emits the wire name.
     model_config = ConfigDict(extra="forbid", validate_by_name=True, serialize_by_alias=True)
 
-    name: str
-    description: str = ""
-    when_to_use: str = Field("", alias="whenToUse")
-    phases: list[WorkflowPhase]
-    path: str
+    name: str = Field(description="The workflow's name; pass it to run the workflow.")
+    description: str = Field(default="", description="What the workflow does; may be empty.")
+    when_to_use: str = Field(
+        default="",
+        alias="whenToUse",
+        description="When the workflow is the right choice; may be empty.",
+    )
+    phases: list[WorkflowPhase] = Field(description="The workflow's steps, in order.")
+    path: str = Field(
+        description=(
+            "Where the workflow file is: relative to the project root, or absolute "
+            "for a workflow outside the project (e.g. in the user's home)."
+        )
+    )
 
 
 # ── RPC contracts (LIST / RUN / CANCEL_WORKFLOW) ───────────────────
@@ -125,16 +133,16 @@ class WorkflowListRequest(_WorkflowRpcArgs):
 
 
 class WorkflowRunRequest(_WorkflowRpcArgs):
-    """``RUN_WORKFLOW`` params.
+    """Arguments for starting a workflow."""
 
-    ``name`` is the workflow; ``args`` is the workflow's own JSON
-    input: it is handed to the script as-is, and each workflow defines
-    and reads its own keys, so the only contract here is that it is a
-    JSON object.
-    """
-
-    name: str = Field(min_length=1)
-    args: dict[str, JsonValue] = Field(default_factory=dict)
+    name: str = Field(min_length=1, description="Name of the workflow to run.")
+    args: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        description=(
+            "The workflow's own input, passed to it unchanged. Each workflow defines "
+            "the keys it reads; omit for none."
+        ),
+    )
 
     @field_validator("args", mode="before")
     @classmethod
@@ -143,24 +151,24 @@ class WorkflowRunRequest(_WorkflowRpcArgs):
 
 
 class WorkflowRunResponse(BaseModel):
-    """``RUN_WORKFLOW`` response.
+    """The workflow run that was started.
 
-    Returned synchronously — the run is async on the BE side. The
-    FE optimistically creates a workflow ``ChatItem`` keyed by
-    ``workflow_run_id`` and folds subsequent ``workflow_event``
-    pushes into it.
+    Returned as soon as the run starts; its progress then arrives as
+    ``workflow_event`` pushes carrying the same ``workflow_run_id``.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    workflow_run_id: str
-    name: str
+    workflow_run_id: str = Field(
+        description="Id of the new run; use it to match events and to cancel the run."
+    )
+    name: str = Field(description="Name of the workflow that was started.")
 
 
 class WorkflowCancelRequest(_WorkflowRpcArgs):
-    """``CANCEL_WORKFLOW`` params."""
+    """Arguments for cancelling a running workflow."""
 
-    workflow_run_id: str = Field(min_length=1)
+    workflow_run_id: str = Field(min_length=1, description="Id of the workflow run to cancel.")
 
     def answer(self, outcome: WorkflowCancelOutcome) -> WorkflowCancelResponse:
         """The response to this request, echoing the id it named."""
@@ -170,17 +178,17 @@ class WorkflowCancelRequest(_WorkflowRpcArgs):
 
 
 class WorkflowCancelResponse(BaseModel):
-    """``CANCEL_WORKFLOW`` response.
-
-    ``cancelled`` is false when no such run is active — already
-    finished, already cancelled, or an unknown id are the same
-    outcome to the caller.
-    """
+    """Result of cancelling a workflow run."""
 
     model_config = ConfigDict(extra="forbid")
 
-    cancelled: bool
-    workflow_run_id: str
+    cancelled: bool = Field(
+        description=(
+            "`true` when the run was stopped. `false` when no such run is active: it "
+            "already finished, was already cancelled, or the id is unknown."
+        )
+    )
+    workflow_run_id: str = Field(description="Id of the run the request named.")
 
 
 # ── Status (used by FE reducer; also stable across the wire) ──────

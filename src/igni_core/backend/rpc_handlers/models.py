@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.backend.rpc_binding import NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
@@ -18,30 +18,36 @@ from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class SwitchModelArgs(BaseModel):
-    """``switch_model``: the model to make current."""
+    """Arguments for switching the session's model."""
 
     model_config = ConfigDict(extra="ignore")
 
-    model_name: str
+    model_name: str = Field(
+        description="A model name from the model registry (see `get_model_registry`)."
+    )
 
 
 class CheckPermissionArgs(BaseModel):
-    """``check_permission``: one tool call to look up a level for."""
+    """Arguments for looking up the permission level of one tool call."""
 
     model_config = ConfigDict(extra="ignore")
 
-    tool_name: str
-    func_name: str
-    tool_args: ToolCallArgs
+    tool_name: str = Field(description="Name of the tool.")
+    func_name: str = Field(description="Name of the tool's function being called.")
+    tool_args: ToolCallArgs = Field(
+        description="The call's arguments, which argument-specific rules are matched against."
+    )
 
 
 class SavePermissionRuleArgs(BaseModel):
-    """``save_permission_rule``: a rule and the level it is saved under."""
+    """Arguments for saving a permission rule for the project."""
 
     model_config = ConfigDict(extra="ignore")
 
-    rule: str
-    level: PermissionLevel
+    rule: str = Field(
+        description="The permission rule: a tool name, or a tool with an argument pattern such as `Bash(git status)`."
+    )
+    level: PermissionLevel = Field(description="What the rule does: `allow`, `ask` or `deny`.")
 
 
 class ModelsRpcHandler(RpcHandler):

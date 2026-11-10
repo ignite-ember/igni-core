@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.backend.plugin_schemas import PluginContents
 from igni_core.backend.rpc_binding import NoArgs, rpc
@@ -13,67 +13,83 @@ from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class PluginArgs(BaseModel):
-    """Base for every plugin RPC's arguments: keys a newer frontend adds
+    """Base for every plugin RPC's arguments: keys a newer client adds
     are ignored rather than refused."""
 
     model_config = ConfigDict(extra="ignore")
 
 
 class PluginNameArgs(PluginArgs):
-    """``get_plugin_contents`` / ``remove_plugin``: the installed plugin
-    to act on."""
+    """Arguments naming an installed plugin."""
 
-    name: str
+    name: str = Field(description="Name of the installed plugin.")
 
 
 class PreviewPluginArgs(PluginArgs):
-    """``preview_plugin``: the git source of a not-yet-installed plugin,
-    with an optional branch and subdirectory inside the repo."""
+    """Arguments for previewing a plugin from git without installing it."""
 
-    source: str
-    branch: str | None = None
-    subdir: str | None = None
+    source: str = Field(
+        description="The plugin's git URL, optionally followed by a folder inside the repository."
+    )
+    branch: str | None = Field(
+        default=None, description="Branch, tag or commit to read; the default branch when absent."
+    )
+    subdir: str | None = Field(
+        default=None,
+        description="The plugin's folder inside the repository; overrides one given in `source`.",
+    )
 
 
 class PluginEnabledArgs(PluginArgs):
-    """``set_plugin_enabled``: one installed plugin, on or off."""
+    """Arguments for switching an installed plugin on or off."""
 
-    name: str
-    enabled: bool
+    name: str = Field(description="Name of the installed plugin.")
+    enabled: bool = Field(description="The plugin's new state: `true` to switch it on.")
 
 
 class InstallPluginArgs(PluginArgs):
-    """``install_plugin``: a git URL or ``@<marketplace>/<plugin>`` ref,
-    and the branch / tag / SHA to check out (the default when absent)."""
+    """Arguments for installing a plugin."""
 
-    ref: str
-    install_ref: str | None = None
+    ref: str = Field(
+        description="A git URL, or `@<marketplace>/<plugin>` for a marketplace plugin."
+    )
+    install_ref: str | None = Field(
+        default=None,
+        description=(
+            "Branch, tag or commit to check out; when absent, the marketplace's choice "
+            "or the default branch."
+        ),
+    )
 
 
 class UpdatePluginArgs(PluginArgs):
-    """``update_plugin``: the installed plugin and the branch / tag / SHA
-    to reset it to (origin's HEAD when absent)."""
+    """Arguments for moving an installed plugin to another commit."""
 
-    name: str
-    install_ref: str | None = None
+    name: str = Field(description="Name of the installed plugin.")
+    install_ref: str | None = Field(
+        default=None,
+        description="Branch, tag or commit to move to; the remote's default branch when absent.",
+    )
 
 
 class MarketplaceUrlArgs(PluginArgs):
-    """``add_marketplace``: the catalog's URL."""
+    """Arguments for adding a plugin marketplace."""
 
-    url: str
+    url: str = Field(description="The marketplace's git URL.")
 
 
 class MarketplaceNameArgs(PluginArgs):
-    """``remove_marketplace``: the registered marketplace to drop."""
+    """Arguments naming a plugin marketplace."""
 
-    name: str
+    name: str = Field(description="Name of the marketplace.")
 
 
 class RefreshMarketplacesArgs(PluginArgs):
-    """``refresh_marketplaces``: one marketplace, or every one when absent."""
+    """Arguments for re-reading marketplace catalogues."""
 
-    name: str | None = None
+    name: str | None = Field(
+        default=None, description="The marketplace to refresh; every marketplace when absent."
+    )
 
 
 class PluginsRpcHandler(RpcHandler):

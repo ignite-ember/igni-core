@@ -143,22 +143,34 @@ class WindowRecord(BaseModel):
 
 
 class WindowChange(BaseModel):
-    """One change to one window's model, as listeners are told it."""
+    """One change to one window's model. Every window is told; only the window it names applies it."""
 
-    window: str
-    field: str
-    value: WireJson = None
-    #: The window's revision after the change.
-    rev: int
-    #: The writer's token, echoed so the window that wrote it knows its
-    #: own write; empty for an extension's.
-    token: str = ""
-    #: For the list- and dialog-shaped fields: what happened —
-    #: ``toast_shown``, ``toast_dismissed``, ``dialog_opened``,
-    #: ``dialog_closed`` — and to which one.
-    event: str = ""
-    item: dict[str, WireJson] | None = None
-    answer: WireJson = None
+    window: str = Field(description="The id of the window whose model changed.")
+    field: str = Field(description="The name of the field that changed.")
+    value: WireJson = Field(default=None, description="The field's new value.")
+    rev: int = Field(description="The window's revision after the change.")
+    token: str = Field(
+        default="",
+        description=(
+            "The token the writing window gave with its write, so it can recognise its own "
+            "change; empty for a change an extension made."
+        ),
+    )
+    event: str = Field(
+        default="",
+        description=(
+            "For the toast and dialog fields, what happened: `toast_shown`, "
+            "`toast_dismissed`, `dialog_opened` or `dialog_closed`. Empty otherwise."
+        ),
+    )
+    item: dict[str, WireJson] | None = Field(
+        default=None,
+        description="The toast or dialog that `event` is about; null when there is no `event`.",
+    )
+    answer: WireJson = Field(
+        default=None,
+        description="For `dialog_closed`: the person's answer; null when the dialog was dismissed.",
+    )
 
 
 class WindowRequest(BaseModel):

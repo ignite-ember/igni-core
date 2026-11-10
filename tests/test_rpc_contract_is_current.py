@@ -10,6 +10,7 @@ typed result and documentation, and nothing in it is "any value".
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -192,7 +193,7 @@ def _unconstrained(schema: Any, defs: dict[str, Any], where: str) -> Iterator[st
 
 def test_the_contract_says_who_reaches_each_access_level(contract: dict[str, Any]) -> None:
     for level in RpcAccess:
-        assert f"``{level.value}``" in contract["access"], f"{level.value} is not explained"
+        assert f"`{level.value}`" in contract["access"], f"{level.value} is not explained"
 
 
 def _unions_without_discriminator(schema: Any, defs: dict[str, Any]) -> list[str]:
@@ -280,3 +281,58 @@ def test_every_method_that_streams_says_how_to_follow_it(contract: dict[str, Any
                 or "equals" in entry["correlate"]
                 or (entry["correlate"]["by"] == "channel")
             ), method
+
+
+# ── What a person reads ───────────────────────────────────────────
+
+#: Text a published description must not carry: reStructuredText roles and
+#: literals, source paths, implementation names and notes for igni's own
+#: developers.
+_NOT_FOR_READERS = re.compile(
+    r":[a-z]+:`"
+    r"|``"
+    r"|\b(src|backend|core|protocol|transport|extensions|tests|docs|packages)/[\w./-]+"
+    r"|\.py\b"
+    r"|\b[A-Z]\w+(Controller|Coordinator|Router|Bridge|Dispatcher|Builder|Runner|Registry"
+    r"|Gateway|Handler|Walker|Scanner|Pipeline|Rehydrator)\b"
+    r"|\bWire shape\b|\bPattern[- ]\d|\bthe (FE|BE)\b|\bFE\b|\bBE\b"
+    r"|\b(was|were) (an? )?(unconstrained|free[- ]string|raw)\b"
+    r"|\bback-?compat\b|\blegacy\b|\brefactor"
+)
+
+
+def _prose(node: Any, at: str = "") -> Iterator[tuple[str, str]]:
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in {"description", "doc", "summary", "access"} and isinstance(value, str):
+                yield f"{at}.{key}", value
+            else:
+                yield from _prose(value, f"{at}.{key}")
+    elif isinstance(node, list):
+        for i, value in enumerate(node):
+            yield from _prose(value, f"{at}[{i}]")
+
+
+def test_no_published_text_is_written_for_igni_s_own_developers(contract: dict[str, Any]) -> None:
+    leaks = [
+        f"{at}: {m.group(0)!r}"
+        for at, text in _prose(contract)
+        for m in [_NOT_FOR_READERS.search(text)]
+        if m
+    ]
+    assert not leaks, "\n".join(leaks)
+
+
+def test_every_published_type_is_described(contract: dict[str, Any]) -> None:
+    missing = [name for name, schema in contract["defs"].items() if not schema.get("description")]
+    assert not missing, missing
+
+
+def test_every_published_field_is_described(contract: dict[str, Any]) -> None:
+    missing = [
+        f"{name}.{field}"
+        for name, schema in contract["defs"].items()
+        for field, prop in (schema.get("properties") or {}).items()
+        if not prop.get("description")
+    ]
+    assert not missing, "\n".join(missing)

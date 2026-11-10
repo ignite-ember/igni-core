@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from pydantic import ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator
 
 from igni_core.extensions.host.caller import Caller
 from igni_core.extensions.host.pushes import WindowPushes
@@ -21,12 +21,20 @@ from igni_core.extensions.host.wire import ErrorBody, Op, Reply, Request, Signal
 
 
 class PageRequest(Request):
-    """A page's request, and the window framing the page."""
+    """A request from an extension's page to the host model, sent through the ``host_model`` method."""
 
-    id: int | str = "page"
-    #: Added by the window's side of the bridge, which knows it. A page's
-    #: ``host.ui`` is its own window's.
-    home_window: str | None = None
+    id: int | str = Field(
+        default="page",
+        description="Any id you choose; it is echoed on the reply and never interpreted.",
+    )
+    # Added by the window's side of the bridge, which knows it.
+    home_window: str | None = Field(
+        default=None,
+        description=(
+            "The id of the window showing the page; a page's `host.ui` is its own window's. "
+            "Set by the window, not the page."
+        ),
+    )
 
     @field_validator("home_window", mode="before")
     @classmethod

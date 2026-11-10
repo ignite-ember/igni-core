@@ -268,21 +268,34 @@ class SyntheticTerminalPayload(BaseModel):
 
 
 class WorkflowEventRecord(BaseModel):
-    """One workflow event as the session log stores it and the frontend
-    receives it on the ``workflow_event`` push channel.
+    """One progress event from a running workflow, as pushed on the
+    ``workflow_event`` channel and kept in the session log."""
 
-    ``payload`` is the runtime's payload, forwarded as-is, or a dumped
-    :class:`SyntheticTerminalPayload`.
-    """
-
+    # ``payload`` is the runtime's payload, forwarded as-is, or a dumped
+    # SyntheticTerminalPayload.
     model_config = ConfigDict(extra="forbid")
 
-    workflow_run_id: str
-    name: str
-    ts: int
-    seq: int
-    type: str
-    payload: dict[str, WireJson]
+    workflow_run_id: str = Field(description="Id of the workflow run the event belongs to.")
+    name: str = Field(description="Name of the workflow.")
+    ts: int = Field(description="When the event happened, in Unix epoch milliseconds.")
+    seq: int = Field(
+        description=(
+            "Order of the event within its run, from `0`. `-1` for the final event igni "
+            "adds itself when the workflow process exits without reporting an end."
+        )
+    )
+    type: str = Field(
+        description=(
+            "Event kind, e.g. `workflow_meta`, `phase_*`, `agent_*`, `parallel_*`, "
+            "`pipeline_*`, `log`, and the final `workflow_completed` or `workflow_failed`."
+        )
+    )
+    payload: dict[str, WireJson] = Field(
+        description=(
+            "Event details; keys depend on `type`. For the final event added by igni: "
+            "`status` (`completed`, `failed` or `cancelled`), `exit_code` and `synthetic`."
+        )
+    )
 
     @classmethod
     def from_event(

@@ -42,77 +42,132 @@ if TYPE_CHECKING:
 
 
 class _EventBase(BaseModel):
-    """Common base for every ``on_progress`` payload.
+    """Common fields of every sub-agent progress event.
 
-    All events carry an ``agent_path`` (dot-joined identity of the
-    emitting agent) plus a frozen ``type`` discriminator. The
-    ``card_id`` is stamped by the handler at emit time so the FE can
-    route this run's events to the same team-progress card across
-    info-item interleaves, page refreshes, and concurrent spawns.
+    Every event names the agent that emitted it (``agent_path``) and
+    carries a fixed ``type`` discriminator. ``card_id`` groups all
+    events of one spawn so a client can show them on the same
+    team-progress card across page refreshes and concurrent spawns.
     """
 
     model_config = ConfigDict(populate_by_name=True)
 
     type: str
-    agent_path: str
-    card_id: str | None = None
+    agent_path: str = Field(
+        description="Dot-joined names of the agent that emitted the event, from the outermost "
+        "spawning agent down to the emitter (`root` for the top level)."
+    )
+    card_id: str | None = Field(
+        default=None,
+        description="Identifier of the team-progress card this event belongs to. All events "
+        "of one spawn share it. Null when the event is not tied to a card.",
+    )
 
 
 class ToolStartedEvent(_EventBase):
+    """A sub-agent started calling a tool."""
+
     type: Literal["tool_started"] = Field(default="tool_started", frozen=True)
-    tool: str
-    tool_call_id: str | None = None
-    args: str = ""
+    tool: str = Field(description="Name of the tool being called.")
+    tool_call_id: str | None = Field(
+        default=None,
+        description="Identifier of this tool call; matches the `tool_completed` event for "
+        "the same call. Null when the model did not supply one.",
+    )
+    args: str = Field(
+        default="",
+        description="Preview of the tool arguments as text (usually JSON, may be truncated). Empty when none.",
+    )
 
 
 class ToolCompletedEvent(_EventBase):
+    """A sub-agent's tool call finished."""
+
     type: Literal["tool_completed"] = Field(default="tool_completed", frozen=True)
-    tool: str
-    tool_call_id: str | None = None
-    result: str = ""
-    is_error: bool = False
+    tool: str = Field(description="Name of the tool that was called.")
+    tool_call_id: str | None = Field(
+        default=None,
+        description="Identifier of the tool call; matches the earlier `tool_started` event. "
+        "Null when the model did not supply one.",
+    )
+    result: str = Field(
+        default="",
+        description="Preview of the tool output, or the error message when `is_error` is true; may be truncated. Empty when none.",
+    )
+    is_error: bool = Field(default=False, description="True when the tool call failed.")
 
 
 class AgentStartedEvent(_EventBase):
+    """A sub-agent started running a task."""
+
     type: Literal["agent_started"] = Field(default="agent_started", frozen=True)
-    agent: str
-    parent: str | None = None
-    run_id: str | None = None
-    task: str | None = None
+    agent: str = Field(description="Name of the sub-agent that started.")
+    parent: str | None = Field(
+        default=None, description="Path of the agent that spawned it. Null for a top-level spawn."
+    )
+    run_id: str | None = Field(
+        default=None, description="Identifier of the sub-agent's run, when known."
+    )
+    task: str | None = Field(
+        default=None, description="Task text given to the sub-agent, when known."
+    )
 
 
 class AgentPausedEvent(_EventBase):
+    """A sub-agent paused because it needs user input (e.g. a tool approval)."""
+
     type: Literal["agent_paused"] = Field(default="agent_paused", frozen=True)
-    count: int = 1
+    count: int = Field(default=1, description="Number of pending requests the agent is waiting on.")
 
 
 class AgentCompletedEvent(_EventBase):
+    """A sub-agent finished its run, with its token usage."""
+
     type: Literal["agent_completed"] = Field(default="agent_completed", frozen=True)
-    is_error: bool = False
-    input_tokens: int = 0
-    output_tokens: int = 0
-    reasoning_tokens: int = 0
+    is_error: bool = Field(
+        default=False, description="True when the sub-agent ended with an error."
+    )
+    input_tokens: int = Field(default=0, description="Input (prompt) tokens the sub-agent used.")
+    output_tokens: int = Field(
+        default=0, description="Output (completion) tokens the sub-agent produced."
+    )
+    reasoning_tokens: int = Field(
+        default=0, description="Reasoning tokens the sub-agent used; 0 when the model reports none."
+    )
 
 
 class RunErrorEvent(_EventBase):
+    """A sub-agent's run failed."""
+
     type: Literal["run_error"] = Field(default="run_error", frozen=True)
-    error: str
+    error: str = Field(description="Error message describing the failure.")
 
 
 class ContentPreviewEvent(_EventBase):
+    """A short preview of the text a sub-agent is producing."""
+
     type: Literal["content_preview"] = Field(default="content_preview", frozen=True)
-    text: str
+    text: str = Field(description="Preview text of the sub-agent's latest output.")
 
 
 class TaskCreatedEvent(_EventBase):
+    """A task was added to a team's task list."""
+
     type: Literal["task_created"] = Field(default="task_created", frozen=True)
-    title: str = ""
-    assignee: str = ""
+    title: str = Field(default="", description="Task title. Empty when not given.")
+    assignee: str = Field(
+        default="", description="Name of the team member assigned the task. Empty when unassigned."
+    )
 
 
 class TaskUpdatedEvent(_EventBase):
+    """A task in a team's task list changed status."""
+
     type: Literal["task_updated"] = Field(default="task_updated", frozen=True)
-    status: str = ""
+    status: str = Field(
+        default="",
+        description="New task status, such as `running`, `completed` or `failed`. Empty when unknown.",
+    )
 
 
 class VisualizationDeltaEvent(BaseModel):

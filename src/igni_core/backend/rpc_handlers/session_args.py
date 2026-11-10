@@ -3,53 +3,66 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SessionRpcArgs(BaseModel):
-    """Base for every session RPC's arguments: keys a newer frontend adds
+    """Base for every session RPC's arguments: keys a newer client adds
     are ignored rather than refused."""
 
     model_config = ConfigDict(extra="ignore")
 
 
 class SessionIdArgs(SessionRpcArgs):
-    """``get_chat_history`` / ``get_pending_messages`` / ``get_interrupted_runs`` /
-    ``switch_session``: the session to act on."""
+    """Arguments naming a session."""
 
-    session_id: str
+    session_id: str = Field(description="Id of the session to act on.")
 
 
 class InterruptedRunArgs(SessionIdArgs):
-    """``discard_interrupted_run``: one interrupted run of one session.
-    An empty ``message_id`` reaches the controller, which refuses it."""
+    """Arguments naming one interrupted run of a session."""
 
-    message_id: str
+    message_id: str = Field(
+        description=(
+            "Id of the message that started the run, as listed by "
+            "`get_interrupted_runs`; must not be empty."
+        )
+    )
 
 
 class UploadAttachmentArgs(SessionRpcArgs):
-    """``upload_attachment``: the file's name and its base64 contents."""
+    """Arguments for uploading a file to attach to a message."""
 
-    filename: str
-    content_base64: str
+    filename: str = Field(
+        description=(
+            "The file's name. It is made safe for the disk; a name clash gets a `-N` suffix."
+        )
+    )
+    content_base64: str = Field(description="The file's bytes, base64-encoded.")
 
 
 class AgentRunArgs(SessionRpcArgs):
-    """``cancel_agent_run``: the sub-agent run to stop (empty is refused
-    by the controller)."""
+    """Arguments naming a sub-agent run to stop."""
 
-    run_id: str = ""
+    run_id: str = Field(
+        default="",
+        description="Id of the sub-agent run, as its events carry it; must not be empty.",
+    )
 
 
 class SearchChatArgs(SessionIdArgs):
-    """``search_chat``: the text to find in one session's history, and
-    at most how many hits to return."""
+    """Arguments for searching a session's conversation."""
 
-    query: str
-    limit: int = 50
+    query: str = Field(description="Text to find, case-insensitive; blank finds nothing.")
+    limit: int = Field(default=50, description="Maximum number of hits to return.")
 
 
 class TruncateHistoryArgs(SessionIdArgs):
-    """``truncate_history``: the run to drop, with every later run."""
+    """Arguments for dropping a run, and every later run, from a
+    session's history."""
 
-    run_id: str
+    run_id: str = Field(
+        description=(
+            "Id of the first run to drop: a top-level run, as `get_chat_history` carries it."
+        )
+    )

@@ -10,7 +10,7 @@ floor's, not the extension's.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.backend.rpc_binding import Correlation, NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
@@ -25,12 +25,18 @@ from igni_core.protocol.schemas.enums import PushChannel
 
 
 class MarkReadArgs(BaseModel):
-    """``notifications_mark_read``: ``{ids}``, ``{source}``, or ``{}`` for all."""
+    """Arguments for marking notifications read: give ``ids``, or
+    ``source``, or neither to mark every notification read."""
 
     model_config = ConfigDict(extra="ignore")
 
-    ids: list[str] | None = None
-    source: str | None = None
+    ids: list[str] | None = Field(
+        default=None, description="Ids of the notifications to mark read."
+    )
+    source: str | None = Field(
+        default=None,
+        description="An extension id: marks all of that extension's notifications read.",
+    )
 
 
 class NotificationsRpcHandler(RpcHandler):

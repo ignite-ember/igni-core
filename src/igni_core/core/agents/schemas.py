@@ -104,30 +104,52 @@ class AgentDefinition(BaseModel):
         return self.model_copy(update={"name": f"{prefix}:{self.name}"})
 
 
+# Emitted by BackendServer.get_agent_details for the agents panel. A
+# subset of AgentDefinition adapted for JSON: ``source_path`` is a str
+# and ``is_ephemeral`` is computed by igni.
 class AgentInfo(BaseModel):
-    """Wire format for one agent — emitted by
-    :meth:`BackendServer.get_agent_details`, consumed by the
-    agents panel.
+    """One agent available in the session, as shown in the agents panel."""
 
-    Sub-set of :class:`AgentDefinition` adapted for JSON transport:
-    ``source_path`` is widened to ``str`` (Path doesn't serialize),
-    and ``is_ephemeral`` is computed at the backend.
-    """
-
-    name: str
-    description: str = ""
-    tools: list[str] = Field(default_factory=list)
-    model: str = ""
-    color: str = ""
-    can_orchestrate: bool = True
-    mcp_servers: list[str] = Field(default_factory=list)
-    tags: list[str] = Field(default_factory=list)
-    system_prompt: str = ""
-    source_path: str = ""
-    is_ephemeral: bool = False
-    #: Tool names igni cannot resolve. Empty for almost every agent;
-    #: when it is not, this one raises the moment something calls it.
-    unknown_tools: list[str] = Field(default_factory=list)
+    name: str = Field(
+        description="Agent name; plugin agents are prefixed with the plugin name (`plugin:agent`)."
+    )
+    description: str = Field(default="", description="What the agent is for. Empty when not given.")
+    tools: list[str] = Field(
+        default_factory=list,
+        description="Names of the tools the agent may use. Empty when not restricted.",
+    )
+    model: str = Field(
+        default="", description="Model the agent runs on. Empty to use the session's default model."
+    )
+    color: str = Field(
+        default="", description="Display color declared for the agent. Empty when none."
+    )
+    can_orchestrate: bool = Field(
+        default=True, description="True when the agent may spawn sub-agents of its own."
+    )
+    mcp_servers: list[str] = Field(
+        default_factory=list, description="Names of the MCP servers whose tools the agent gets."
+    )
+    tags: list[str] = Field(
+        default_factory=list, description="Free-form tags declared for the agent."
+    )
+    system_prompt: str = Field(
+        default="", description="The agent's system prompt (the body of its definition file)."
+    )
+    source_path: str = Field(
+        default="",
+        description="Path of the file the agent was loaded from. Empty for agents not loaded from a file.",
+    )
+    is_ephemeral: bool = Field(
+        default=False,
+        description="True for an agent created during this session that has not been saved "
+        "to disk; it disappears when the session ends unless promoted.",
+    )
+    unknown_tools: list[str] = Field(
+        default_factory=list,
+        description="Tool names the agent declares that igni cannot find. Usually empty; when "
+        "not, the agent fails when it is called.",
+    )
 
 
 class AgentEntry(BaseModel):

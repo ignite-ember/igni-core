@@ -63,31 +63,27 @@ PENDING_STALENESS_SECONDS = 60
 
 
 class TruncateHistoryResult(BaseModel):
-    """Wire shape for :meth:`ContextController.truncate_history` —
-    ``removed`` is the count of runs dropped (0 on any failure);
-    ``error`` is empty on success."""
+    """The outcome of cutting a session's history back to before a given run."""
 
-    removed: int
-    error: str = ""
+    removed: int = Field(
+        description="How many runs were removed, the given one included; `0` on failure."
+    )
+    error: str = Field(default="", description="Why nothing was removed; empty on success.")
 
 
 class PendingMessage(BaseModel):
-    """One pre-persisted user message row surfaced by
-    :meth:`ContextController.get_pending_messages`. ``role`` is
-    always ``"user"`` — only user turns get pre-persisted.
+    """A user message whose run has started but not yet finished."""
 
-    Build one from a storage-row dataclass via
-    :meth:`from_pending_row`.
-    """
-
-    role: Literal["user"] = "user"
-    content: str
-    received_at: int
-    message_id: str
+    # Only user turns are stored before their run completes, so `role`
+    # is always "user". Build one with from_pending_row.
+    role: Literal["user"] = Field(default="user", description="Always `user`.")
+    content: str = Field(description="The message's text.")
+    received_at: int = Field(description="When igni received it, in seconds since the Unix epoch.")
+    message_id: str = Field(description="The message's id.")
 
     @classmethod
     def from_pending_row(cls, row: PendingMessageRow) -> PendingMessage:
-        """Project a domain :class:`PendingMessage` storage row
+        """Project a domain ``PendingMessage`` storage row
         (the ``@dataclass`` in
         :mod:`igni_core.core.session.pending_messages`) onto the
         wire model."""
@@ -99,36 +95,34 @@ class PendingMessage(BaseModel):
 
 
 class InterruptedRun(BaseModel):
-    """Wire shape for one explicitly-interrupted run surfaced by
-    :meth:`ContextController.get_interrupted_runs`.
+    """A run that stopped before it finished, and the user message that
+    started it. A client can offer to retry it, discard it, or edit the
+    message and send it again."""
 
-    A row is "interrupted" when the cancel or error path in
-    :class:`RunController` stamped it with ``interrupted_at`` and
-    ``interrupted_reason``. The FE renders this as the banner on
-    the assistant bubble that was in-flight when the run stopped,
-    with Retry / Discard / Edit-prompt actions.
-
-    ``reason`` is the storage column's :data:`InterruptedReason`.
-    ``last_error`` is set when
-    ``reason == "errored"`` and ``None`` otherwise.
-    """
-
-    message_id: str
-    content: str
-    received_at: int
-    interrupted_at: int
-    reason: InterruptedReason
-    last_error: str | None = None
+    message_id: str = Field(description="The id of the user message that started the run.")
+    content: str = Field(description="That message's text.")
+    received_at: int = Field(
+        description="When igni received the message, in seconds since the Unix epoch."
+    )
+    interrupted_at: int = Field(
+        description="When the run stopped, in seconds since the Unix epoch."
+    )
+    reason: InterruptedReason = Field(
+        description="Why it stopped: `cancelled` (the user stopped it), `errored` (it "
+        "failed; see `last_error`) or `abandoned` (it never finished, e.g. igni stopped "
+        "while it ran)."
+    )
+    last_error: str | None = Field(
+        default=None, description="The error, when `reason` is `errored`; `null` otherwise."
+    )
 
     @classmethod
     def from_interrupted_row(
         cls,
         row: InterruptedMessageRow,
     ) -> InterruptedRun:
-        """Project a domain :class:`InterruptedMessage` storage row
-        onto the wire model. Keeps the controller free of literal
-        field-by-field mapping — see the sibling
-        :meth:`PendingMessage.from_pending_row`."""
+        """Project a domain ``InterruptedMessage`` storage row
+        onto the wire model."""
         return cls(
             message_id=row.message_id,
             content=row.text,
@@ -140,26 +134,33 @@ class InterruptedRun(BaseModel):
 
 
 class CompactionOutcome(BaseModel):
-    """``compact_if_needed``'s answer: whether the conversation was
-    compacted, and if so the summary it was replaced by."""
+    """Whether the conversation was compacted, and if so the summary it
+    was replaced by."""
 
-    #: ``False`` when the context was below the threshold, the
-    #: ``PreCompact`` hooks refused, or there was nothing to compact.
-    compacted: bool
-    #: The session the conversation continues in (the same id today).
-    new_session_id: str = ""
-    #: What the compacted conversation was replaced by.
-    summary: str = ""
+    compacted: bool = Field(
+        description="`false` when the context was below the threshold, a `PreCompact` "
+        "hook refused, or there was nothing to compact."
+    )
+    new_session_id: str = Field(
+        default="",
+        description="The session the conversation continues in (currently the same id); "
+        "empty when not compacted.",
+    )
+    summary: str = Field(
+        default="",
+        description="What the compacted conversation was replaced by; empty when not compacted.",
+    )
 
 
 class DiscardInterruptedRunResult(BaseModel):
-    """Wire shape for :meth:`ContextController.discard_interrupted_run`.
-    ``ok`` is ``True`` once no such interrupted run is left — also when
-    there was none, so a retry is harmless — and ``False`` with
-    ``error`` when the id was empty or the store could not be written."""
+    """The outcome of discarding an interrupted run."""
 
-    ok: bool
-    error: str = ""
+    ok: bool = Field(
+        description="`true` once no such interrupted run is left, also when there was none, "
+        "so a retry is harmless. `false` when the id was empty or the change could not "
+        "be saved."
+    )
+    error: str = Field(default="", description="Why it failed; empty when `ok` is true.")
 
 
 class OutputStylesListView(BaseModel):

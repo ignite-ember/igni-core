@@ -22,11 +22,16 @@ class NotificationTarget(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    page: str = Field(min_length=1)
-    #: The page's launch parameters. Strings, because they end up in a
-    #: route the client persists and in the extension's ``params``; a
-    #: number or a flag is written as its JSON text rather than dropped.
-    params: dict[str, str] = Field(default_factory=dict)
+    page: str = Field(min_length=1, description="The id of the extension's page to open.")
+    # Strings, because they end up in a route the client persists and in
+    # the extension's ``params``.
+    params: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "The parameters to open the page with. Always strings: a number or a flag is "
+            "given as its JSON text."
+        ),
+    )
 
     @field_validator("params", mode="before")
     @classmethod
@@ -92,12 +97,15 @@ class ServerNotificationPage(BaseModel):
 
 
 class NotificationCounts(BaseModel):
-    """Unread, in all and per source — the badge on each extension."""
+    """How many notifications are unread, in all and per extension — the numbers for badges."""
 
     model_config = ConfigDict(extra="ignore")
 
-    unread: int = 0
-    by_source: dict[str, int] = Field(default_factory=dict)
+    unread: int = Field(default=0, description="Unread notifications in all.")
+    by_source: dict[str, int] = Field(
+        default_factory=dict,
+        description="Unread notifications per extension id; an extension with none is left out.",
+    )
 
     def plus(self, other: NotificationCounts) -> NotificationCounts:
         """Both counts, added source by source."""
@@ -138,34 +146,54 @@ class ExtensionNotice(BaseModel):
 
 
 class NotificationOrigin(StrEnum):
-    """Which of the two paths a notification came by."""
+    """Where a notification came from.
 
-    #: Delivered by igni server; its read state lives there.
+    * ``server``: delivered by igni server, which keeps whether it was read.
+    * ``local``: posted by an extension on this machine; this igni keeps
+      whether it was read.
+    """
+
     SERVER = "server"
-    #: Told by an extension on this machine; its read state lives here.
     LOCAL = "local"
 
 
 class FloorNotification(BaseModel):
-    """One notification, as the client draws it."""
+    """One notification for the person, from igni server or from an extension on this machine."""
 
-    id: str
-    origin: NotificationOrigin
-    #: The extension it is from.
-    source: str
-    kind: str = ""
-    title: str = ""
-    body: str = ""
-    actor: str = ""
-    target: NotificationTarget | None = None
-    created_at: datetime | None = None
-    read: bool = False
-    #: The organisation it happened in — server rows only.
-    org_id: str = ""
-    #: That organisation's name, **only when the person belongs to more
-    #: than one**: with one, every row is from it and saying so is noise.
-    #: The client shows the name when there is one.
-    org_name: str = ""
+    id: str = Field(description="The notification's id; use it to mark it read.")
+    origin: NotificationOrigin = Field(description="Where it came from.")
+    source: str = Field(description="The id of the extension it is from.")
+    kind: str = Field(
+        default="",
+        description="The extension's own name for what kind of notification it is; empty when none.",
+    )
+    title: str = Field(default="", description="A one-line headline.")
+    body: str = Field(
+        default="", description="The text under the headline; empty when there is none."
+    )
+    actor: str = Field(
+        default="", description="Who caused it, for display; empty when nobody in particular."
+    )
+    target: NotificationTarget | None = Field(
+        default=None,
+        description="The page to open when the person opens it; null when there is none.",
+    )
+    created_at: datetime | None = Field(
+        default=None, description="When it was created; null when unknown."
+    )
+    read: bool = Field(default=False, description="True once it has been marked read.")
+    org_id: str = Field(
+        default="",
+        description="The organisation it happened in, for one from igni server; empty for a local one.",
+    )
+    # With one organisation every row is from it, and saying so is noise.
+    org_name: str = Field(
+        default="",
+        description=(
+            "That organisation's name, set only when the person belongs to more than one. "
+            "Show it when it is set."
+        ),
+    )
 
     @classmethod
     def from_server(
@@ -191,21 +219,36 @@ class FloorNotification(BaseModel):
 
 
 class NotificationsListResult(BaseModel):
-    """``notifications_list``: both paths, newest first, and the counts."""
+    """The person's notifications, newest first, with the unread counts."""
 
-    notifications: list[FloorNotification] = Field(default_factory=list)
-    counts: NotificationCounts = Field(default_factory=NotificationCounts)
-    #: Why igni server's half is not current, when it is not. The local
-    #: half and the last server rows that were read are still returned:
-    #: "could not ask" is not "nothing is waiting".
-    server_error: str = ""
+    notifications: list[FloorNotification] = Field(
+        default_factory=list, description="The notifications, newest first."
+    )
+    counts: NotificationCounts = Field(
+        default_factory=NotificationCounts, description="The unread counts."
+    )
+    server_error: str = Field(
+        default="",
+        description=(
+            "Why igni server could not be asked, when it could not; empty otherwise. The "
+            "local notifications and the last ones fetched from the server are still returned."
+        ),
+    )
 
 
 class NotificationsReadResult(BaseModel):
-    """``notifications_mark_read``: the counts after marking."""
+    """The unread counts after marking notifications read."""
 
-    counts: NotificationCounts = Field(default_factory=NotificationCounts)
-    server_error: str = ""
+    counts: NotificationCounts = Field(
+        default_factory=NotificationCounts, description="The unread counts now."
+    )
+    server_error: str = Field(
+        default="",
+        description=(
+            "Why igni server could not be told, when it could not; empty otherwise. "
+            "Notifications from the server may then still count as unread."
+        ),
+    )
 
 
 #: What moved the counts. ``server``: igni server's list was read again on
@@ -217,7 +260,18 @@ NotificationsCause = Literal["server", "listed", "marked_read", "extension", "si
 
 
 class NotificationsChanged(BaseModel):
-    """The ``notifications_changed`` push: the counts moved, and why."""
+    """The unread notification counts changed. Refetch the list if you are showing it."""
 
-    counts: NotificationCounts = Field(default_factory=NotificationCounts)
-    cause: NotificationsCause = "server"
+    counts: NotificationCounts = Field(
+        default_factory=NotificationCounts, description="The unread counts now."
+    )
+    cause: NotificationsCause = Field(
+        default="server",
+        description=(
+            "What changed them. `server`: igni server's list was fetched again on its own "
+            "(after signing in, or when the server said something changed). `listed`: a "
+            "`notifications_list` call fetched it. `marked_read`: a "
+            "`notifications_mark_read` call. `extension`: an extension on this machine "
+            "posted a notice. `signed_out`: the person signed out."
+        ),
+    )

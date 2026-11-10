@@ -40,111 +40,152 @@ from igni_core.protocol.json_value import WireJson
 from igni_core.protocol.messages import SessionListEntry
 
 
+# Every rebuilt-history turn carries ``run_id`` so the client can map
+# back to the owning Agno run for edit/delete truncation. ``created_at``
+# is Agno-issued epoch seconds and is set only on conversational turns
+# (user/assistant/thinking/tool/plan) — the per-run ``stats`` badge and
+# spliced ``visualization`` turns intentionally omit ``created_at`` on
+# the wire to match the pre-refactor free-function output exactly.
 class _RunOwned(BaseModel):
-    """Shared base for turns that carry ``run_id`` on the wire.
+    """Base for chat-history turns that belong to an agent run."""
 
-    Every rebuilt-history turn carries ``run_id`` so the FE can
-    map back to the owning Agno run for edit/delete truncation.
-    ``created_at`` is Agno-issued epoch seconds and is set only on
-    conversational turns (user/assistant/thinking/tool/plan) — the
-    per-run ``stats`` badge and spliced ``visualization`` turns
-    intentionally omit ``created_at`` on the wire to match the
-    pre-refactor free-function output exactly.
-    """
-
-    run_id: str = ""
+    run_id: str = Field(
+        default="",
+        description=(
+            "Id of the agent run this turn belongs to. Pass it to "
+            "`truncate_history` to edit or delete from this point."
+        ),
+    )
 
 
 class _TimedTurn(_RunOwned):
     """Conversational turn with a per-message wall-clock stamp."""
 
-    created_at: int = 0
+    created_at: int = Field(
+        default=0,
+        description="When the message was created, in Unix epoch seconds; `0` if unknown.",
+    )
 
 
 class UserTurn(_TimedTurn):
-    """A user-input turn."""
+    """A message the user sent."""
 
-    role: Literal["user"] = "user"
-    content: str = ""
+    role: Literal["user"] = Field(default="user", description="Turn kind; always `user`.")
+    content: str = Field(default="", description="The text the user sent.")
 
 
 class AssistantTurn(_TimedTurn):
-    """An assistant-visible-reply turn (may be one of many per run
-    when the original stream interleaved ``<think>`` blocks)."""
+    """A visible reply from the assistant.
 
-    role: Literal["assistant"] = "assistant"
-    content: str = ""
+    One run can produce several of these when the reply was
+    interleaved with thinking blocks."""
+
+    role: Literal["assistant"] = Field(
+        default="assistant", description="Turn kind; always `assistant`."
+    )
+    content: str = Field(default="", description="The reply text (Markdown).")
 
 
 class ThinkingTurn(_TimedTurn):
-    """A synthesized ``thinking`` card — either from Agno's
-    ``reasoning_content`` sidecar or from an inline ``<think>``
-    block in the assistant content."""
+    """The model's reasoning ("thinking") for part of a run.
 
-    role: Literal["thinking"] = "thinking"
-    content: str = ""
+    Comes either from the model's separate reasoning output or from an
+    inline ``<think>`` block in the reply."""
+
+    role: Literal["thinking"] = Field(
+        default="thinking", description="Turn kind; always `thinking`."
+    )
+    content: str = Field(default="", description="The reasoning text.")
 
 
 class ToolTurn(_TimedTurn):
-    """A rebuilt tool card (previously emitted live as
-    ``tool_started`` + ``tool_completed`` events)."""
+    """One tool call the agent made, with its result.
 
-    role: Literal["tool"] = "tool"
-    tool_name: str = ""
-    friendly_name: str = ""
-    args: str = ""
-    content: str = ""
-    is_error: bool = False
-    #: Kept from running — see ``ToolCompleted.is_rejected``.
-    is_rejected: bool = False
+    The history equivalent of the live ``tool_started`` and
+    ``tool_completed`` events."""
+
+    role: Literal["tool"] = Field(default="tool", description="Turn kind; always `tool`.")
+    tool_name: str = Field(default="", description="Internal name of the tool that was called.")
+    friendly_name: str = Field(default="", description="Human-readable tool name for display.")
+    args: str = Field(default="", description="The call's arguments, as display text.")
+    content: str = Field(default="", description="The tool's result text.")
+    is_error: bool = Field(default=False, description="`true` when the tool call failed.")
+    # Kept from running — see ``ToolCompleted.is_rejected``.
+    is_rejected: bool = Field(
+        default=False, description="`true` when the user rejected the call, so it never ran."
+    )
 
 
 class PlanTurn(_TimedTurn):
-    """A PlanCard turn synthesized in place of an ``exit_plan_mode``
-    tool result. ``state`` uses the empty-string sentinel during
-    the walk — the post-walk pass rewrites it to
-    ``"pending"``/``"approved"``/``"dismissed"``. The empty-string
-    default is preserved (rather than ``None``) so the wire dump
-    keeps the same shape the FE reads today."""
+    """A plan the agent proposed in plan mode, shown in place of the
+    ``exit_plan_mode`` tool call."""
 
-    role: Literal["plan"] = "plan"
-    plan: str = ""
-    tasks: list[WireJson] = Field(default_factory=list)
-    state: PlanState = ""
+    # ``state`` uses the empty-string sentinel during the walk — the
+    # post-walk pass rewrites it to pending/approved/dismissed. The
+    # empty-string default is preserved (rather than ``None``) so the
+    # wire dump keeps the same shape clients read today.
+    role: Literal["plan"] = Field(default="plan", description="Turn kind; always `plan`.")
+    plan: str = Field(default="", description="The plan text (Markdown).")
+    tasks: list[WireJson] = Field(
+        default_factory=list, description="The task list submitted with the plan."
+    )
+    state: PlanState = Field(
+        default="",
+        description=(
+            "Whether the user acted on the plan: `pending` (not yet), "
+            '`approved`, `dismissed`, or `""` if unknown.'
+        ),
+    )
 
 
 class StatsTurn(_RunOwned):
-    """The per-run input/output token badge. ``duration`` stays a
-    float even when zero — the FE consumer treats ``0`` and
-    ``0.0`` interchangeably but the persisted wire is float. No
-    ``created_at`` on the wire (matches the pre-refactor output)."""
+    """Token usage and duration for one agent run, shown at the end of
+    the run. Has no ``created_at``."""
 
-    role: Literal["stats"] = "stats"
-    input_tokens: int = 0
-    output_tokens: int = 0
-    reasoning_tokens: int = 0
-    duration: float = 0.0
+    role: Literal["stats"] = Field(default="stats", description="Turn kind; always `stats`.")
+    input_tokens: int = Field(default=0, description="Input (prompt) tokens used by the run.")
+    output_tokens: int = Field(default=0, description="Output tokens generated by the run.")
+    reasoning_tokens: int = Field(
+        default=0,
+        description="Reasoning tokens generated by the run; `0` if the model reports none.",
+    )
+    duration: float = Field(default=0.0, description="How long the run took, in seconds.")
 
 
 class VisualizationTurn(_RunOwned):
-    """A visualizer card spliced from the session event log.
+    """A visualization card (chart, diagram, extension view) shown in
+    the chat during a run.
 
-    ``spec`` stays a raw dict — the visualizer subagent owns the
-    JSON schema and we don't validate it here. ``seq`` is the
-    :class:`SessionEvent.seq` for ordering within a run. No
-    ``created_at`` on the wire — the FE derives display time from
-    the neighboring turns."""
+    Has no ``created_at``; use the neighbouring turns for display
+    time."""
 
-    role: Literal["visualization"] = "visualization"
-    spec_id: str = ""
-    spec: dict[str, WireJson] = Field(default_factory=dict)
-    source_agent: str = "visualizer"
-    #: The card's title — an extension's ``chat.append(view, title)``.
-    title: str = ""
-    #: The id of the extension that appended the card; empty for the
-    #: visualizer's. The client shows the extension's name.
-    extension_id: str = ""
-    seq: int = 0
+    # ``spec`` stays a raw dict — the visualizer subagent owns the JSON
+    # schema and we don't validate it here.
+    role: Literal["visualization"] = Field(
+        default="visualization", description="Turn kind; always `visualization`."
+    )
+    spec_id: str = Field(default="", description="Unique id of this visualization.")
+    spec: dict[str, WireJson] = Field(
+        default_factory=dict,
+        description="The visualization specification to render, as JSON. Not validated by igni.",
+    )
+    source_agent: str = Field(
+        default="visualizer", description="Name of the agent that produced the visualization."
+    )
+    title: str = Field(
+        default="", description="The card's title, as given by the extension that appended it."
+    )
+    extension_id: str = Field(
+        default="",
+        description=(
+            "Id of the extension that appended the card; empty when the "
+            "built-in visualizer made it. Show the extension's name."
+        ),
+    )
+    seq: int = Field(
+        default=0,
+        description="Position of the card in the session's event log, for ordering within a run.",
+    )
 
 
 #: Discriminated union of every turn kind the rebuilder can emit.
@@ -326,32 +367,34 @@ class ChatHistoryEntry(BaseModel):
     created_at: int = 0
 
 
+# ``history_index`` MUST align with the emission order of
+# ChatHistoryRebuilder.rebuild — clients keep a parallel
+# ``historyIndex → itemIndex`` map built at session load, so any drift
+# breaks the "click result → jump to chat item" mapping.
 class ChatSearchHit(BaseModel):
-    """One match returned by
-    :meth:`SessionsController.search_chat` /
-    :meth:`igni_core.backend.chat_history_searcher.ChatHistorySearcher.search`.
+    """One match from searching a session's chat history."""
 
-    Wire shape: ``{history_index, role, run_id, snippet, match_start,
-    match_end, created_at}``. ``history_index`` MUST align with the
-    emission order of :meth:`ChatHistoryRebuilder.rebuild` — the FE
-    keeps a parallel ``historyIndex → itemIndex`` map built at
-    session load, so any drift breaks the "click result → jump to
-    chat item" mapping.
-
-    ``match_start`` / ``match_end`` are positions within
-    ``snippet`` (not the original content) — keeps the FE highlight
-    logic trivial.
-    """
-
-    history_index: int = 0
-    role: str = ""
-    run_id: str = ""
-    snippet: str = ""
-    match_start: int = 0
-    match_end: int = 0
-    # Epoch seconds (Agno-issued) — the FE formats it into a
-    # relative "2h ago" / locale time string per row.
-    created_at: int = 0
+    history_index: int = Field(
+        default=0,
+        description=(
+            "Index of the matching turn in the list returned by "
+            "`get_chat_history`; use it to jump to that turn."
+        ),
+    )
+    role: str = Field(
+        default="", description="Kind of the matching turn, e.g. `user`, `assistant` or `tool`."
+    )
+    run_id: str = Field(default="", description="Id of the agent run the matching turn belongs to.")
+    snippet: str = Field(default="", description="Excerpt of the turn's text around the match.")
+    match_start: int = Field(
+        default=0, description="Start offset of the match within `snippet` (not the full text)."
+    )
+    match_end: int = Field(
+        default=0, description="End offset (exclusive) of the match within `snippet`."
+    )
+    created_at: int = Field(
+        default=0, description="When the turn was created, in Unix epoch seconds; `0` if unknown."
+    )
 
 
 __all__ = [

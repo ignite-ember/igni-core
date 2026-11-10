@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.backend.rpc_binding import NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
@@ -13,21 +13,24 @@ from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class CompactIfNeededArgs(BaseModel):
-    """``compact_if_needed``: the turn's context size against its window."""
+    """Arguments for compacting the conversation when its context is
+    nearly full."""
 
     model_config = ConfigDict(extra="ignore")
 
-    ctx_tokens: int
-    max_ctx: int
+    ctx_tokens: int = Field(description="Tokens of context the last turn used.")
+    max_ctx: int = Field(
+        description="The model's context window, in tokens. Compaction happens at 80% or more."
+    )
 
 
 class ExtractLearningsArgs(BaseModel):
-    """``extract_learnings``: the turn's user and assistant messages."""
+    """Arguments for learning from one finished turn."""
 
     model_config = ConfigDict(extra="ignore")
 
-    user_msg: str
-    assistant_msg: str
+    user_msg: str = Field(description="The user's message in the turn.")
+    assistant_msg: str = Field(description="The assistant's answer in the turn.")
 
 
 class LoopRpcHandler(RpcHandler):

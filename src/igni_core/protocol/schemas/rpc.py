@@ -73,38 +73,45 @@ _ERROR_DOCS: dict[RpcErrorCode, str] = {
 
 
 class RPCRequest(Message):
-    """Generic RPC call for accessor/utility methods."""
+    """A call to one of igni's methods. igni answers with an ``rpc_response`` carrying the same ``id``."""
 
     type: Literal["rpc_request"] = "rpc_request"
     direction: ClassVar[Direction] = Direction.TO_IGNI
-    method: str = ""
-    args: dict[str, WireJson] = Field(default_factory=dict)
-    #: Which extension's frame this came from, if any.
-    #:
-    #: ``None`` is igni's own UI, and igni's own UI may not call the
-    #: ``ext.*`` namespace — an extension reaches its own service and
-    #: no other, and without a caller there is nothing to check that
-    #: against. The field is optional so a client that predates it
-    #: keeps working: it simply cannot make extension calls, which is
-    #: what it could do before.
-    caller: str | None = None
+    method: str = Field(default="", description="The name of the method to call.")
+    args: dict[str, WireJson] = Field(
+        default_factory=dict, description="The method's arguments, by name."
+    )
+    # Optional so a client that predates it keeps working: it simply
+    # cannot make extension calls, which is what it could do before.
+    caller: str | None = Field(
+        default=None,
+        description=(
+            "The id of the extension whose page is making the call; null for igni's own "
+            "interface. Methods under `ext.` need it: an extension may reach only its own "
+            "service."
+        ),
+    )
 
 
 class RPCResponse(Message):
-    """Response to an RPCRequest.
+    """The answer to an ``rpc_request``, with the request's ``id``.
 
-    Carries either ``result`` (success) or ``error`` (failure) —
-    never both, but the invariant is by convention. Use the
-    :classmethod:`ok` / :classmethod:`fail` factories to construct
-    responses safely; they enforce the shape at the callsite.
+    It carries either ``result`` (the call succeeded) or ``error`` and
+    ``code`` (it failed), never both.
     """
+
+    # Construct with the ``ok`` / ``fail`` factories; they enforce the
+    # either-or shape at the callsite.
 
     type: Literal["rpc_response"] = "rpc_response"
     direction: ClassVar[Direction] = Direction.TO_CLIENT
     result: WireJson = None
-    error: str | None = None
-    #: Why it failed, when it did; ``null`` on success.
-    code: RpcErrorCode | None = None
+    error: str | None = Field(
+        default=None, description="What went wrong, as a sentence for a person; null on success."
+    )
+    code: RpcErrorCode | None = Field(
+        default=None, description="Why the call failed, for a client to branch on; null on success."
+    )
 
     @classmethod
     def ok(cls, request_id: str, result: Any = None) -> RPCResponse:

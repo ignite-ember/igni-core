@@ -47,31 +47,45 @@ class PageHostModel(Protocol):
 
 
 class WindowModelArgs(RpcArgs):
-    """``window_model``: one window reading or writing its own model."""
+    """Arguments for a window reading or writing its own state (its
+    window model)."""
 
-    #: ``hydrate``: read the whole model, and say the window is open.
-    #: ``write``: set ``field`` to ``value``. ``toast`` / ``dismiss_toast``:
-    #: show the toast ``value``, or remove the toast whose id is ``value``.
-    #: ``open_dialog``: show igni's own dialog, ``value`` its spec.
-    #: ``answer_dialog``: close dialog ``dialog_id`` with the answer ``value``
-    #: (``null``: dismissed).
-    op: Literal["hydrate", "write", "toast", "dismiss_toast", "open_dialog", "answer_dialog"]
-    #: The window's id, chosen by the window and stable across its reloads.
-    window: str = Field(min_length=1)
-    #: The field a ``write`` sets.
-    field: str = ""
-    #: What the op writes, shows or answers with; its shape is the field's.
-    value: JsonValue = None
-    #: The writer's own name for this change, echoed on ``window_model_changed``.
-    token: str = ""
-    #: The dialog an ``answer_dialog`` closes.
-    dialog_id: str = ""
-    #: What kind of window this is, recorded when it opens.
-    kind: str = ""
-    #: The window's connection, for a request from a transport without
-    #: connections (the terminal's socket, an in-process client). Over a
-    #: WebSocket it is the connection the request came on, whatever this says.
-    connection_id: str = ""
+    op: Literal["hydrate", "write", "toast", "dismiss_toast", "open_dialog", "answer_dialog"] = (
+        Field(
+            description=(
+                "What to do. `hydrate`: read the whole model, and report the window as open. "
+                "`write`: set `field` to `value`. `toast`: show the toast `value`. "
+                "`dismiss_toast`: remove the toast whose id is `value`. `open_dialog`: show "
+                "igni's own dialog, `value` being its spec. `answer_dialog`: close dialog "
+                "`dialog_id` with the answer `value` (`null`: dismissed)."
+            )
+        )
+    )
+    window: str = Field(
+        min_length=1,
+        description="The window's id, chosen by the window and stable across its reloads.",
+    )
+    field: str = Field(default="", description="The model field a `write` sets.")
+    value: JsonValue = Field(
+        default=None,
+        description="What the op writes, shows or answers with; its shape depends on the op and field.",
+    )
+    token: str = Field(
+        default="",
+        description="The writer's own name for this change, echoed on `window_model_changed`.",
+    )
+    dialog_id: str = Field(default="", description="The dialog an `answer_dialog` closes.")
+    kind: str = Field(
+        default="", description="What kind of window this is, recorded when it opens."
+    )
+    connection_id: str = Field(
+        default="",
+        description=(
+            "The window's connection id, for transports without connections (a terminal "
+            "socket, an in-process client). Ignored over a WebSocket: the request's own "
+            "connection is used."
+        ),
+    )
 
 
 class HostModelRpcs(PoolRpc):
@@ -168,8 +182,8 @@ class HostModelRpcs(PoolRpc):
 
         Only igni's window makes this call, for a page it frames, with the
         page's extension as the request's ``caller``. The arguments are one
-        host-model request (``docs/HOST_OBJECT_MODEL.md``; the members are
-        published in ``docs/host-schema.json``): ``op`` (``get``, ``set``,
+        host object model request — the members are published in igni-core's
+        ``host-schema.json``: ``op`` (``get``, ``set``,
         ``call``, ``subscribe``, ``unsubscribe``), ``path``, and ``params``,
         ``value``, ``signals``, ``window``, ``session`` as the op needs.
         ``home_window`` is the window framing the page; the window on the

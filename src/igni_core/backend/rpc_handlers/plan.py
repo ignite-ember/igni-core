@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from igni_core.backend.rpc_binding import Correlation, NoArgs, RpcArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
@@ -13,13 +13,17 @@ from igni_core.protocol.schemas.enums import PushChannel
 
 
 class PlanRunArgs(RpcArgs):
-    """``approve_plan`` / ``dismiss_plan``: the run that submitted the plan.
-    Empty is refused in the answer (``ok: false``), not as an argument; a
-    number is taken as its string."""
+    """Arguments naming the run that submitted a plan.
+
+    An empty ``run_id`` is refused in the answer (``ok: false``) rather
+    than as an invalid argument; a number is taken as its string."""
 
     model_config = ConfigDict(extra="forbid", coerce_numbers_to_str=True)
 
-    run_id: str = ""
+    run_id: str = Field(
+        default="",
+        description="Id of the run that submitted the plan, as `plan_submitted` carries it.",
+    )
 
 
 class PlanRpcHandler(RpcHandler):

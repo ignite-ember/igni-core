@@ -28,53 +28,85 @@ PROTOCOL_VERSION = 1
 
 
 class Op(StrEnum):
+    """What a host-model request does.
+
+    * ``get``: read a property.
+    * ``set``: write a property.
+    * ``call``: call a method.
+    * ``subscribe`` / ``unsubscribe``: start or stop receiving signals.
+    * ``answer``: an extension process's answer to a hook event; a page
+      may not send it.
+    """
+
     GET = "get"
     SET = "set"
     CALL = "call"
     SUBSCRIBE = "subscribe"
     UNSUBSCRIBE = "unsubscribe"
-    #: The process's answer to a ``hook`` message. Not a page's to send.
     ANSWER = "answer"
 
 
 class Request(BaseModel):
-    """SDK → host."""
+    """A request from an extension to the host model: read, write or call one member, or subscribe to signals."""
 
     model_config = ConfigDict(extra="forbid")
 
-    #: Echoed on the reply. Chosen by the SDK; never interpreted.
-    id: int | str
-    op: Op
-    #: ``chat.processing`` for get/set, ``chat.post`` for call. Empty
-    #: for subscribe.
-    path: str = ""
-    #: A window id, for a per-window member addressed to a window other
-    #: than the active one (``host.windows.ui(id)``).
-    window: str | None = None
-    #: A session id, for a per-session member addressed to a session other
-    #: than the one on screen (``host.sessions.chat(id)``).
-    session: str | None = None
-    #: A method's parameters, by name.
-    params: dict[str, WireJson] = Field(default_factory=dict)
-    #: The value of a ``set``.
-    value: WireJson = None
-    #: Signal wire names, for subscribe and unsubscribe.
-    signals: list[str] = Field(default_factory=list)
+    id: int | str = Field(
+        description="Any id you choose; it is echoed on the reply and never interpreted."
+    )
+    op: Op = Field(description="What the request does.")
+    path: str = Field(
+        default="",
+        description=(
+            "The member it is about, e.g. `chat.processing` for `get`/`set` or `chat.post` "
+            "for `call`. Empty for `subscribe` and `unsubscribe`."
+        ),
+    )
+    window: str | None = Field(
+        default=None,
+        description=(
+            "A window id, to address a per-window member of a window other than the active "
+            "one (`host.windows.ui(id)`); null for the active window."
+        ),
+    )
+    session: str | None = Field(
+        default=None,
+        description=(
+            "A session id, to address a per-session member of a session other than the one "
+            "on screen (`host.sessions.chat(id)`); null for the one on screen."
+        ),
+    )
+    params: dict[str, WireJson] = Field(
+        default_factory=dict, description="For `call`: the method's parameters, by name."
+    )
+    value: WireJson = Field(default=None, description="For `set`: the value to write.")
+    signals: list[str] = Field(
+        default_factory=list,
+        description="For `subscribe` and `unsubscribe`: the signals' names, e.g. `chat.run_completed`.",
+    )
 
 
 class ErrorBody(BaseModel):
-    code: ErrorCode
-    message: str
+    """Why a host-model request was refused or failed."""
+
+    code: ErrorCode = Field(description="Why, as a word code can branch on.")
+    message: str = Field(description="What happened, as a sentence for the extension's author.")
 
 
 class Reply(BaseModel):
-    """Host → SDK: the answer to one request."""
+    """The host model's answer to one request."""
 
-    op: Literal["reply"] = "reply"
-    id: int | str
-    ok: bool
-    result: WireJson = None
-    error: ErrorBody | None = None
+    op: Literal["reply"] = Field(
+        default="reply", description="Always `reply`: what kind of message this is."
+    )
+    id: int | str = Field(description="The `id` of the request it answers.")
+    ok: bool = Field(
+        description="True when the request was answered; false when it was refused or failed."
+    )
+    result: WireJson = Field(
+        default=None, description="When `ok`: the value read or the method's result; null for none."
+    )
+    error: ErrorBody | None = Field(default=None, description="When not `ok`: why; null otherwise.")
 
     @classmethod
     def answered(cls, id: int | str, result: Any = None) -> Reply:

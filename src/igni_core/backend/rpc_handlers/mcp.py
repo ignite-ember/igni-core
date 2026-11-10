@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.backend.rpc_binding import NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
@@ -17,21 +17,21 @@ from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
 
 class McpServerArgs(BaseModel):
-    """``mcp_connect`` / ``mcp_disconnect``: the server to act on."""
+    """Arguments naming a configured MCP server."""
 
     model_config = ConfigDict(extra="ignore")
 
-    server_name: str
+    server_name: str = Field(description="The server's name in the MCP configuration.")
 
 
 class McpToolEnabledArgs(BaseModel):
-    """``set_mcp_tool_enabled``: one tool of one server, on or off."""
+    """Arguments for switching one MCP server tool on or off."""
 
     model_config = ConfigDict(extra="ignore")
 
-    server: str
-    tool: str
-    enabled: bool
+    server: str = Field(description="Name of the MCP server; not checked to exist.")
+    tool: str = Field(description="Name of the server's tool; not checked to exist.")
+    enabled: bool = Field(description="The tool's new state: `true` lets the agent use it.")
 
 
 class McpRpcHandler(RpcHandler):

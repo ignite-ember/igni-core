@@ -59,6 +59,7 @@ import functools
 import inspect
 import json
 import operator
+import re
 import types
 import typing
 from collections.abc import Mapping
@@ -108,6 +109,14 @@ class WireJsonSchema(GenerateJsonSchema):
             return super().model_schema(schema)
         finally:
             self.by_alias = by_alias
+
+    def model_fields_schema(self, schema: core_schema.ModelFieldsSchema) -> JsonSchemaValue:
+        """A message's ``type`` is fixed per message; it says what it is."""
+        json_schema = super().model_fields_schema(schema)
+        kind = json_schema.get("properties", {}).get("type")
+        if isinstance(kind, dict) and "const" in kind and "description" not in kind:
+            kind["description"] = f"Always `{kind['const']}`: what kind of message this is."
+        return json_schema
 
     def get_default_value(self, schema: core_schema.WithDefaultSchema) -> Any:
         """A field's default, its ``default_factory``'s included: an empty
@@ -282,18 +291,20 @@ def build() -> dict[str, Any]:
             schema = {"$ref": f"#/defs/{name}"}
         push_channels[channel.value] = {"doc": payload.doc, "schema": schema}
 
-    return {
-        "version": VERSION,
-        "access": inspect.getdoc(RpcAccess) or "",
-        "errors": {code.value: code.doc for code in RpcErrorCode},
-        "durations": {
-            d.value: {"doc": d.doc, "timeout_seconds": d.timeout_seconds} for d in RpcDuration
-        },
-        "defs": defs,
-        "methods": methods,
-        "messages": wire_messages,
-        "push_channels": push_channels,
-    }
+    return _published(
+        {
+            "version": VERSION,
+            "access": inspect.getdoc(RpcAccess) or "",
+            "errors": {code.value: code.doc for code in RpcErrorCode},
+            "durations": {
+                d.value: {"doc": d.doc, "timeout_seconds": d.timeout_seconds} for d in RpcDuration
+            },
+            "defs": defs,
+            "methods": methods,
+            "messages": wire_messages,
+            "push_channels": push_channels,
+        }
+    )
 
 
 def push_payloads() -> Mapping[PushChannel, Any]:
@@ -350,6 +361,36 @@ def _without_channel(event: type[BaseModel]) -> type[BaseModel]:
 
 def _pascal(wire: str) -> str:
     return "".join(part.capitalize() for part in wire.split("_"))
+
+
+#: Prose keys of the contract: what a person reads.
+_PROSE_KEYS = frozenset({"description", "doc", "summary", "access"})
+
+_ROLE = re.compile(r":[a-z]+:`~?([^`<]*?)(?:\s*<[^>]*>)?`")
+_LITERAL = re.compile(r"``([^`]+)``")
+
+
+def _published(contract: dict[str, Any]) -> dict[str, Any]:
+    """The contract with its prose in Markdown: docstrings are written in
+    reStructuredText (``literal``, :class:`Name`), and a published page
+    reads `literal` and `Name`."""
+
+    def walk(node: Any, key: str = "") -> Any:
+        if isinstance(node, dict):
+            return {k: walk(v, k) for k, v in node.items()}
+        if isinstance(node, list):
+            return [walk(v, key) for v in node]
+        if isinstance(node, str) and key in _PROSE_KEYS:
+            return markdown(node)
+        return node
+
+    return walk(contract)  # type: ignore[no-any-return]
+
+
+def markdown(text: str) -> str:
+    """reStructuredText's inline markup as Markdown's."""
+    text = _ROLE.sub(lambda m: f"`{m.group(1).rsplit('.', 1)[-1].strip()}`", text)
+    return _LITERAL.sub(r"`\1`", text)
 
 
 def _correlation(correlate: Any) -> dict[str, str] | None:

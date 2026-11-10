@@ -19,7 +19,7 @@ from os.path import expanduser
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.paths import DEFAULT_DATA_DIR
@@ -34,28 +34,39 @@ if TYPE_CHECKING:
 
 
 class ReadFileResult(BaseModel):
-    """Wire shape for :meth:`FilesController.read_file` — sandboxed
-    FE preview.
+    """The contents of a text file, for previewing it.
 
-    ``error`` is empty on success; ``language`` is the detected
-    highlight hint (extension → name mapping) and stays empty on
-    every non-success path so the FE never mis-highlights an
-    error payload."""
+    Only files inside the project or igni's data folder can be read,
+    and large files are refused."""
 
-    path: str
-    contents: str
-    size: int
-    error: str = ""
-    language: str = ""
+    path: str = Field(
+        description="The file's path (resolved to an absolute path when the read got that far)."
+    )
+    contents: str = Field(description="The file's text; empty when `error` is set.")
+    size: int = Field(description="The file's size in bytes.")
+    error: str = Field(default="", description="Why the file could not be read; empty on success.")
+    language: str = Field(
+        default="",
+        description=(
+            "Syntax-highlighting language guessed from the file extension "
+            "(e.g. `python`); empty if unknown or on error."
+        ),
+    )
 
 
 class UploadAttachmentResult(BaseModel):
-    """Wire shape for :meth:`FilesController.upload_attachment` —
-    persisted FE-uploaded file location + byte count."""
+    """Where an uploaded attachment was saved."""
 
-    path: str
-    size: int
-    error: str = ""
+    path: str = Field(
+        description=(
+            "The stored file's path, or an `attachment:<id>` reference when attachments are "
+            "kept in shared storage; use it to refer to the file in a message. Empty on error."
+        )
+    )
+    size: int = Field(description="Size of the stored file in bytes; `0` on error.")
+    error: str = Field(
+        default="", description="Why the upload failed, e.g. invalid base64; empty on success."
+    )
 
 
 # Cap on ``read_file`` size. The RPC is only invoked by the

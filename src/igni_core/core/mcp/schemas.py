@@ -46,18 +46,23 @@ if TYPE_CHECKING:
 
 
 class MCPResource(BaseModel):
-    """Wire shape for one MCP resource entry.
+    """One resource an MCP server offers (a file, document or other data it can return).
 
-    Fields are the four columns the panel actually renders —
-    ``uri`` is the only required identity field, the rest
-    default to ``""`` so servers that omit optional metadata
-    still serialize cleanly.
+    Only ``uri`` is always set; the other fields are empty when the
+    server does not provide them.
     """
 
-    uri: str
-    name: str = ""
-    description: str = ""
-    mime_type: str = ""
+    uri: str = Field(description="URI that identifies the resource on its server.")
+    name: str = Field(
+        default="", description="Human-readable name of the resource. Empty when not given."
+    )
+    description: str = Field(
+        default="", description="What the resource contains. Empty when not given."
+    )
+    mime_type: str = Field(
+        default="",
+        description="MIME type of the resource content, e.g. `text/plain`. Empty when unknown.",
+    )
 
     @classmethod
     def from_sdk(cls, resource: Any) -> MCPResource:
@@ -71,19 +76,19 @@ class MCPResource(BaseModel):
         )
 
 
+# ``arguments`` carries only names; if a consumer needs the type /
+# required-flag columns, add fields here and update from_sdk.
 class MCPPrompt(BaseModel):
-    """Wire shape for one MCP prompt entry.
+    """One prompt template an MCP server offers."""
 
-    ``arguments`` is a flat ``list[str]`` of argument names —
-    the panel only needs the identity list, not the full
-    argument metadata. If a future consumer needs the type /
-    required-flag columns, add fields here and update
-    :meth:`from_sdk` to project them.
-    """
-
-    name: str
-    description: str = ""
-    arguments: list[str] = Field(default_factory=list)
+    name: str = Field(description="Name of the prompt on its server.")
+    description: str = Field(
+        default="", description="What the prompt is for. Empty when not given."
+    )
+    arguments: list[str] = Field(
+        default_factory=list,
+        description="Names of the arguments the prompt takes. Empty when it takes none.",
+    )
 
     @classmethod
     def from_sdk(cls, prompt: Any) -> MCPPrompt:

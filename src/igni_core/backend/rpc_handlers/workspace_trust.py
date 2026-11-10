@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from pydantic import Field
+
 from igni_core.backend.rpc_binding import Correlation, NoArgs, RpcArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
@@ -24,11 +26,14 @@ from igni_core.protocol.schemas.enums import PushChannel
 
 
 class TrustDecisionArgs(RpcArgs):
-    """``set_workspace_trust``: the person's answer to "Trust this folder?"."""
+    """The user's answer to "Trust this folder?"."""
 
-    #: ``trust``: trust the folder and remember it. ``once``: trust it until
-    #: igni exits. ``distrust``: do not trust it, and remember that.
-    decision: Literal["trust", "distrust", "once"]
+    decision: Literal["trust", "distrust", "once"] = Field(
+        description=(
+            "`trust`: trust the folder and remember it. `once`: trust it until igni "
+            "exits. `distrust`: do not trust it, and remember that."
+        )
+    )
 
 
 class WorkspaceTrustRpcHandler(RpcHandler):

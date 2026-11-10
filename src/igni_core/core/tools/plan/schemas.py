@@ -42,34 +42,56 @@ from igni_core.core.broadcast_schema import BroadcastEvent, RunScopedBroadcastEv
 from igni_core.core.tools.todo import TodoItemWire
 
 
+# The base mode flip is already broadcast by RuntimeModeCoordinator;
+# this follow-up carries who did it and why.
 class PlanModeEnteredEvent(BroadcastEvent):
-    """The ``permission_mode_changed`` broadcast the plan tool fires
-    after switching into plan mode. The base flip is already
-    broadcast by :class:`RuntimeModeCoordinator`; this follow-up
-    carries the agent-attribution + reason string the FE renders as
-    a small banner."""
+    """Plan mode was entered, with who entered it and why.
+
+    Sent on the same channel as a plain permission-mode switch, after
+    it; a client can show it as a short banner explaining the switch."""
 
     channel: Literal["permission_mode_changed"] = "permission_mode_changed"
-    #: What this push says: the agent entered plan mode, and why.
-    kind: Literal["plan_mode_entered"] = "plan_mode_entered"
-    mode: Literal["default", "plan", "acceptEdits", "bypassPermissions"]
-    source: Literal["agent", "user"]
-    reason: str = ""
+    kind: Literal["plan_mode_entered"] = Field(
+        default="plan_mode_entered",
+        description="Always `plan_mode_entered`: tells this message apart from a plain mode "
+        "switch (kind `switched`) on the same channel.",
+    )
+    mode: Literal["default", "plan", "acceptEdits", "bypassPermissions"] = Field(
+        description="Permission mode now in effect: `default` (ask before risky actions), "
+        "`plan` (read-only planning, no edits), `acceptEdits` (file edits approved "
+        "automatically) or `bypassPermissions` (no approval prompts)."
+    )
+    source: Literal["agent", "user"] = Field(
+        description="Who entered plan mode: `agent` (the agent chose to plan first) or `user`."
+    )
+    reason: str = Field(
+        default="", description="Why plan mode was entered, as given. Empty when none was given."
+    )
 
 
+# Queued by PlanTool.exit_plan_mode.
 class PlanSubmittedEvent(RunScopedBroadcastEvent):
-    """The ``plan_submitted`` broadcast queued by
-    :meth:`PlanTool.exit_plan_mode`. ``tasks`` rides along so
-    the FE seeds the PlanCard checklist on first render — later
-    ``todos_updated`` pushes refresh statuses live.
+    """The agent submitted a plan for the user to approve or dismiss.
 
-    The rows are :class:`TodoItemWire` checklist rows — the same
-    shape the ``todos_updated`` broadcast carries, so the FE reads
-    one row type for both channels."""
+    ``tasks`` is the plan's initial checklist, in the same row shape
+    as the ``todos_updated`` push; later ``todos_updated`` pushes
+    update the rows' statuses as work proceeds."""
 
     channel: Literal["plan_submitted"] = "plan_submitted"
-    plan: str
-    tasks: list[TodoItemWire] = Field(default_factory=list)
+    # Redeclared from RunScopedBroadcastEvent only to describe it; same type,
+    # default and serialisation.
+    run_id: str | None = Field(
+        default=None,
+        exclude_if=lambda v: v is None,
+        description="Run in which the plan was submitted; pass it back when approving or "
+        "dismissing the plan. Omitted when not known.",
+    )
+    plan: str = Field(description="The plan text, in Markdown.")
+    tasks: list[TodoItemWire] = Field(
+        default_factory=list,
+        description="Checklist of the plan's steps, all starting as `pending`. Empty when "
+        "the plan has no task list.",
+    )
 
 
 class PlanSubmitHookPayload(BaseModel):
@@ -118,7 +140,7 @@ class PlanTaskInput(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     content: str = ""
-    active_form: str = Field("", alias="activeForm")
+    active_form: str = Field(default="", alias="activeForm")
 
     @model_validator(mode="before")
     @classmethod

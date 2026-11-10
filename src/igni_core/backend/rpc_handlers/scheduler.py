@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from igni_core.backend.rpc_binding import Correlation, NoArgs, RpcArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
@@ -16,34 +16,39 @@ from igni_core.protocol.schemas.enums import PushChannel
 
 
 class ExecuteScheduledTaskArgs(RpcArgs):
-    """``execute_scheduled_task``: what the task asks the agent to do, and
-    the id to give its run."""
+    """Arguments for running a scheduled task's work now."""
 
-    description: str
-    #: The run's id, chosen by the caller so it can follow the run's pushes
-    #: (their ``run_id``) as they come; one is made when it is absent.
-    run_id: str = ""
+    description: str = Field(
+        description="What the task asks the agent to do (a scheduled task's `description`)."
+    )
+    run_id: str = Field(
+        default="",
+        description=(
+            "Id to give the run, so the caller can follow the run's pushes (their "
+            "`run_id`) as they come; one is made when absent."
+        ),
+    )
 
 
 class ScheduledTaskRunResult(BaseModel):
-    """What a scheduled task run now answered, and the run it was."""
+    """The answer of a scheduled task run, and the run's id."""
 
-    #: The run's id: the one asked for, or the one made.
-    run_id: str
-    #: The agent's answer, as text.
-    result: str
+    run_id: str = Field(description="The run's id: the one asked for, or the one made.")
+    result: str = Field(description="The agent's answer, as text.")
 
 
 class ScheduledTaskArgs(RpcArgs):
-    """``cancel_scheduled_task``: the task to cancel."""
+    """Arguments naming a scheduled task."""
 
-    task_id: str
+    task_id: str = Field(description="The task's `id`, as `get_scheduled_tasks` lists it.")
 
 
 class ScheduledTasksArgs(RpcArgs):
-    """``get_scheduled_tasks``: whether finished tasks are listed too."""
+    """Arguments for listing scheduled tasks."""
 
-    include_done: bool = True
+    include_done: bool = Field(
+        default=True, description="Also list completed, failed and cancelled tasks."
+    )
 
 
 class SchedulerRpcHandler(RpcHandler):

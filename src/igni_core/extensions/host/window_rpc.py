@@ -17,55 +17,69 @@ from igni_core.protocol.json_value import WireJson
 
 
 class Hydrated(BaseModel):
-    """The whole model, its revision, and the fields nobody set."""
+    """The answer to ``hydrate``: the window's whole model, its revision, and the fields nobody has set."""
 
-    op: Literal["hydrate"] = "hydrate"
-    state: dict[str, WireJson]
-    rev: int
-    unset: list[str]
+    op: Literal["hydrate"] = Field(
+        default="hydrate", description="Always `hydrate`: the request this answers."
+    )
+    state: dict[str, WireJson] = Field(description="Every field of the window's model, by name.")
+    rev: int = Field(description="The window's revision.")
+    unset: list[str] = Field(description="The fields still at their defaults, never set.")
 
 
 class Written(BaseModel):
-    """A field written: the window's revision after it, and whether the
-    value changed — a write of the value already there changes nothing,
-    and pushes nothing."""
+    """The answer to ``write``: the window's revision after it, and whether the value changed."""
 
-    op: Literal["write"] = "write"
-    rev: int
-    changed: bool = True
+    op: Literal["write"] = Field(
+        default="write", description="Always `write`: the request this answers."
+    )
+    rev: int = Field(description="The window's revision after the write.")
+    changed: bool = Field(
+        default=True,
+        description="False when the field already held the value: nothing changed and no change was sent.",
+    )
 
 
 class ToastAdded(BaseModel):
-    """The toast as shown, with its id, and the window's revision."""
+    """The answer to ``toast``: the toast as shown, with its id, and the window's revision."""
 
-    op: Literal["toast"] = "toast"
-    toast: dict[str, WireJson]
-    rev: int
+    op: Literal["toast"] = Field(
+        default="toast", description="Always `toast`: the request this answers."
+    )
+    toast: dict[str, WireJson] = Field(description="The toast as shown, its `id` included.")
+    rev: int = Field(description="The window's revision after showing it.")
 
 
 class Revised(BaseModel):
-    """A toast dismissed: the window's new revision."""
+    """The answer to ``dismiss_toast``: the window's new revision."""
 
-    op: Literal["dismiss_toast"] = "dismiss_toast"
+    op: Literal["dismiss_toast"] = Field(
+        default="dismiss_toast", description="Always `dismiss_toast`: the request this answers."
+    )
 
-    rev: int
+    rev: int = Field(description="The window's revision after the toast was dismissed.")
 
 
 class DialogShown(BaseModel):
-    """The dialog as shown, with its id, and the window's revision."""
+    """The answer to ``open_dialog``: the dialog as shown, with its id, and the window's revision."""
 
-    op: Literal["open_dialog"] = "open_dialog"
-    dialog: dict[str, WireJson]
-    rev: int
+    op: Literal["open_dialog"] = Field(
+        default="open_dialog", description="Always `open_dialog`: the request this answers."
+    )
+    dialog: dict[str, WireJson] = Field(description="The dialog as shown, its `id` included.")
+    rev: int = Field(description="The window's revision after opening it.")
 
 
 class DialogAnswered(BaseModel):
-    """Whether the dialog answered was still the open one, and the window's revision."""
+    """The answer to ``answer_dialog``: whether the dialog was still the open one, and the window's revision."""
 
-    op: Literal["answer_dialog"] = "answer_dialog"
-    #: ``False`` when that dialog is not the one open any more.
-    answered: bool
-    rev: int
+    op: Literal["answer_dialog"] = Field(
+        default="answer_dialog", description="Always `answer_dialog`: the request this answers."
+    )
+    answered: bool = Field(
+        description="False when that dialog was no longer the open one, so the answer was not taken."
+    )
+    rev: int = Field(description="The window's revision after the answer.")
 
 
 #: One ``window_model`` answer, told apart by the ``op`` it answers.
