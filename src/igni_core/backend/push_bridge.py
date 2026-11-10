@@ -7,8 +7,11 @@ event loop. :class:`PushNotificationBridge` centralises the
 loop-affinity + coroutine-scheduling boilerplate that used to live
 as five separate nested closures inside ``__main__._run``.
 
-Every payload is a typed :mod:`schemas_push` model — no more raw
-``dict`` literals flowing across the wire.
+Every push is built by one of the typed factories in
+:mod:`igni_core.protocol.schemas.push` — the channel and its payload
+model are bound together there, so no producer here can pair the
+wrong payload with the wrong channel, and no raw ``dict`` literal
+flows across the wire.
 """
 
 from __future__ import annotations
@@ -17,20 +20,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable, MutableSequence
-from typing import Any
 
-from igni_core.backend.schemas_push import (
-    BackgroundProcessDonePayload,
-    FileEditedPayload,
-    LoginResultPayload,
-    LoginStatusPayload,
-    ProcessExitedPayload,
-    ProcessLinePayload,
-    ProcessStartedPayload,
-    SchedulerCompletedPayload,
-    SchedulerStartedPayload,
-    SessionNamedPayload,
-)
 from igni_core.backend.schemas_sessions import TransportLike
 from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
 from igni_core.backend.server import BackendServer
@@ -50,6 +40,18 @@ from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.notifications.schemas import NotificationCounts, NotificationsChanged
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.push_payloads import (
+    BackgroundProcessDonePayload,
+    FileEditedPayload,
+    LoginResultPayload,
+    LoginStatusPayload,
+    ProcessExitedPayload,
+    ProcessLinePayload,
+    ProcessStartedPayload,
+    SchedulerCompletedPayload,
+    SchedulerStartedPayload,
+    SessionNamedPayload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -211,11 +213,11 @@ class PushNotificationBridge:
 
     def _on_process_started(self, event: ProcessStartEvent) -> None:
         payload = ProcessStartedPayload(pid=event.pid, cmd=event.cmd, started_at=event.started_at)
-        self._schedule_push(PushChannel.PROCESS_STARTED, payload.model_dump())
+        self._schedule_push(msg.push_process_started(payload))
 
     def _on_process_line(self, event: ProcessLineEvent) -> None:
         payload = ProcessLinePayload(pid=event.pid, line=event.line)
-        self._schedule_push(PushChannel.PROCESS_LINE, payload.model_dump())
+        self._schedule_push(msg.push_process_line(payload))
 
     def _on_process_exited(self, event: ProcessExitEvent) -> None:
         payload = ProcessExitedPayload(
@@ -224,7 +226,7 @@ class PushNotificationBridge:
             exit_code=event.exit_code,
             duration_seconds=event.duration_seconds,
         )
-        self._schedule_push(PushChannel.PROCESS_EXITED, payload.model_dump())
+        self._schedule_push(msg.push_process_exited(payload))
 
     def _on_process_done(self, event: ProcessExitEvent) -> None:
         """Long-form background-process completion notice + queue
@@ -276,7 +278,7 @@ class PushNotificationBridge:
             exit_code=event.exit_code,
             duration_seconds=event.duration_seconds,
         )
-        self._schedule_push(PushChannel.BACKGROUND_PROCESS_DONE, payload.model_dump())
+        self._schedule_push(msg.push_background_process_done(payload))
 
     # ── File-edit channel ───────────────────────────────────────
 
@@ -288,7 +290,7 @@ class PushNotificationBridge:
 
     def _on_file_edited(self, abs_path: str) -> None:
         payload = FileEditedPayload(path=abs_path)
-        self._schedule_push(PushChannel.FILE_EDITED, payload.model_dump())
+        self._schedule_push(msg.push_file_edited(payload))
 
     # ── Broadcast bus ───────────────────────────────────────────
 
@@ -312,17 +314,21 @@ class PushNotificationBridge:
         ``call_soon_threadsafe``.
 
         The event is serialised here, at the transport boundary."""
-        self._schedule_push(event.channel, event.to_payload())
+        self._schedule_push(msg.push_on(event.channel, event.to_payload()))
 
     # ── Orchestrate progress ────────────────────────────────────
 
-    def on_orchestrate_progress(self, event: dict[str, Any]) -> None:
+    def on_orchestrate_progress(self, event: msg.PushPayload) -> None:
         """Forward one orchestrate sub-agent event (the
         :data:`~igni_core.core.tools.orchestrate_events.OnProgress`
         contract: an ``_EventBase`` model already dumped at the emit
         site) onto ``orchestrate_event``. Kept sync — the tool fires it
-        from inside a run without awaiting."""
-        self._schedule_push(PushChannel.ORCHESTRATE_EVENT, event)
+        from inside a run without awaiting.
+
+        The payload shape belongs to the orchestrate events, not to
+        the push wire — hence the open channel rather than one of the
+        typed factories above."""
+        self._schedule_push(msg.push_on(PushChannel.ORCHESTRATE_EVENT, event))
 
     # ── Session naming ──────────────────────────────────────────
 
@@ -345,35 +351,40 @@ class PushNotificationBridge:
     def notifications_changed(self, counts: NotificationCounts) -> None:
         """The floor's unread counts, after either path moved them."""
         self._schedule_push(
-            PushChannel.NOTIFICATIONS_CHANGED,
-            NotificationsChanged(counts=counts).model_dump(),
+            msg.push_on(
+                PushChannel.NOTIFICATIONS_CHANGED,
+                NotificationsChanged(counts=counts).model_dump(),
+            )
         )
 
     def workspace_trust(self, status: WorkspaceTrustStatus) -> None:
         """The folder's workspace-trust status, after an answer (or when a
         window must ask): every window showing the trust dialog for that
         folder closes it, or opens it when ``state`` is ``ask``."""
-        self._schedule_push(PushChannel.WORKSPACE_TRUST_REQUIRED, status.model_dump())
+        self._schedule_push(
+            msg.push_on(PushChannel.WORKSPACE_TRUST_REQUIRED, status.model_dump())
+        )
 
     def workflow_event(self, record: WorkflowEventRecord) -> None:
         """One event of a running workflow, for the window folding it into
         that run's chat item."""
-        self._schedule_push(PushChannel.WORKFLOW_EVENT, record.model_dump())
+        self._schedule_push(msg.push_on(PushChannel.WORKFLOW_EVENT, record.model_dump()))
 
     # ── Private helpers ─────────────────────────────────────────
 
-    def _schedule_push(self, channel: str, payload: dict[str, Any]) -> None:
-        """Hop onto the running loop and enqueue a
+    def _schedule_push(self, push: msg.PushNotification) -> None:
+        """Hop onto the running loop and send a
         :class:`PushNotification`. Safe to call from any thread —
         the reader thread + the file-edit listener thread + the
-        orchestrate progress thread all end up here."""
+        orchestrate progress thread all end up here.
+
+        The push arrives already built: the channel and its payload
+        were bound together by the factory that made it, so there is
+        nothing left to pair up here."""
 
         def _send() -> None:
             # A message to the windows: too short to count as busy.
-            background.daemon(
-                self._transport.send(msg.PushNotification(channel=channel, payload=payload)),
-                name=f"push-{channel}",
-            )
+            background.daemon(self._transport.send(push), name=f"push-{push.channel}")
 
         # Event loop closed during shutdown — drop the push instead
         # of crashing the callback thread. ``loop`` is optional so

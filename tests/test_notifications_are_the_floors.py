@@ -37,6 +37,7 @@ from igni_core.notifications.server_client import (
 )
 from igni_core.protocol.rpc import RpcMethod
 from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.push import PushNotification
 from tests.notification_helpers import (
     API_URL,
     SESSION,
@@ -310,18 +311,17 @@ async def test_a_server_that_cannot_mark_says_so(tmp_path, rows):
 
 
 def test_the_counts_reach_the_client_on_their_own_channel():
-    sent: list[tuple[str, dict]] = []
+    sent: list[PushNotification] = []
     bridge = PushNotificationBridge(transport=MagicMock(), loop=None, queue=[])
-    bridge._schedule_push = lambda channel, payload: sent.append((channel, payload))  # type: ignore[method-assign]
+    bridge._schedule_push = lambda push: sent.append(push)  # type: ignore[method-assign]
 
     bridge.notifications_changed(NotificationCounts(unread=2, by_source={"igni.artifacts": 2}))
 
-    assert sent == [
-        (
-            PushChannel.NOTIFICATIONS_CHANGED,
-            {"counts": {"unread": 2, "by_source": {"igni.artifacts": 2}}},
-        )
-    ]
+    assert len(sent) == 1
+    assert sent[0].channel == PushChannel.NOTIFICATIONS_CHANGED
+    assert sent[0].payload == {
+        "counts": {"unread": 2, "by_source": {"igni.artifacts": 2}}
+    }
 
 
 def test_the_three_rpcs_are_the_handlers():
