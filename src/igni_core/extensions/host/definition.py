@@ -40,7 +40,7 @@ OPENABLE_SUFFIXES = frozenset(
 )
 
 #: The model's version. Semver; see the module docstring.
-SCHEMA_VERSION = "1.11.0"
+SCHEMA_VERSION = "1.12.0"
 
 # ── Permissions ───────────────────────────────────────────────────
 
@@ -798,7 +798,12 @@ TYPES = (
         "PermissionModeChange",
         "The session's permission mode changed.",
         field("mode", "str"),
-        field("previous", "str"),
+        field(
+            "previous",
+            "str | None",
+            "The mode before this one; `None` when the push named none.",
+            optional=True,
+        ),
     ),
     typedef(
         "Account",

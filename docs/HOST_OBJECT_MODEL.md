@@ -140,7 +140,7 @@ window, another extension, or this one.
   the model's — fails the build, so the model cannot fall behind the
   app.
 - **One schema, two SDKs.** The model is described once —
-  `igni_core.extensions.host.definition`, version **1.11.0** — and
+  `igni_core.extensions.host.definition`, version **1.12.0** — and
   versioned under the compatibility floor (EXTENSIBILITY §8): a new
   member is a minor version, a changed or removed one a major. The Python
   SDK (`igni-extension`, `igni_extension.host_model`) and the TypeScript
@@ -428,6 +428,7 @@ rules are EXTENSIBILITY §6, *A page and its own service*.
 | Workspace trust (`get_workspace_trust`, `set_workspace_trust`, the `workspace_trust_required` push) | Trusting a folder lets it run its own code; that is the person's decision, made in igni's own dialog or `igni trust`, never an extension's. |
 | A page's token for its own service (`extension_service_token`) | Not igni's to model: it is how a page reaches its own service (`bridge.service`), the page's half of what `ext.service` is for the process. No `permissions.host` grant — having a service is the grant — and the audience is that extension's own service, never one it names. |
 | Letting a program answer approval requests (`mint_approver_token`, `revoke_approver_tokens`) | The person's decision, made in igni's own window: an extension that could mint the token could approve its own agent's calls (SECURITY §10). |
+| The push channels nothing produces (`orchestrate_progress`, `scheduler_event`) | No producer sends them: a run's progress goes on `orchestrate_event`, and a scheduled task's outcome on `scheduler_completed` (the scheduler's own `scheduler.event` is a broadcast, and it is in the model). |
 
 Anything else missing from this table is a bug in it.
 

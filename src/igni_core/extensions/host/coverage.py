@@ -87,6 +87,13 @@ NOT_REACHABLE: tuple[Unreachable, ...] = (
         why="The person's decision, made in igni's own window: an extension that could "
         "mint the token could approve its own agent's calls (SECURITY §10).",
     ),
+    Unreachable(
+        key="dead_channel",
+        what="The push channels nothing produces (`orchestrate_progress`, `scheduler_event`)",
+        why="No producer sends them: a run's progress goes on `orchestrate_event`, and a "
+        "scheduled task's outcome on `scheduler_completed` (the scheduler's own "
+        "`scheduler.event` is a broadcast, and it is in the model).",
+    ),
 )
 
 _ROWS = {row.key for row in NOT_REACHABLE}
@@ -290,8 +297,6 @@ BROADCAST_PARTS: dict[str, str] = {
 PUSH: dict[PushChannel, str] = {
     PushChannel.SCHEDULER_STARTED: "scheduler.event",
     PushChannel.SCHEDULER_COMPLETED: "scheduler.event",
-    PushChannel.SCHEDULER_EVENT: "scheduler.event",
-    PushChannel.ORCHESTRATE_PROGRESS: "chat.agent_event",
     PushChannel.ORCHESTRATE_EVENT: "chat.agent_event",
     PushChannel.LOGIN_STATUS: "account.changed",
     PushChannel.LOGIN_RESULT: "account.changed",
@@ -318,6 +323,8 @@ PUSH_UNREACHABLE: dict[PushChannel, str] = {
     PushChannel.OPEN_EXTERNAL: "channel",
     PushChannel.WINDOW_MODEL_CHANGED: "channel",
     PushChannel.WORKSPACE_TRUST_REQUIRED: "workspace_trust",
+    PushChannel.ORCHESTRATE_PROGRESS: "dead_channel",
+    PushChannel.SCHEDULER_EVENT: "dead_channel",
 }
 
 #: ``UNKNOWN`` is the enum's catch-all for a channel nobody listed,

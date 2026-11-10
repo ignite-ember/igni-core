@@ -13,11 +13,11 @@ wrong payload with the wrong channel. The open channels — a broadcast
 event's, a workflow record's — go out through ``push_on``.
 
 What the payload *is* stays a mapping, and that is deliberate: the
-extension host parses a push's payload with ``model_validate`` against
-deliberately lenient readers, which refuse a model instance. The
-tests below pin that, because the day someone "improves" the payload
-into a union of models, the extension host breaks in a way no unit
-test of the producer would notice.
+extension host reads a push's payload with ``model_validate`` against
+the model that produced it, and ``model_validate`` refuses a model
+instance. The tests below pin that, because the day someone "improves"
+the payload into a union of models, the extension host breaks in a way
+no unit test of the producer would notice.
 """
 
 from __future__ import annotations
@@ -25,10 +25,7 @@ from __future__ import annotations
 import pytest
 from pydantic import TypeAdapter
 
-from igni_core.extensions.host.broadcasts.push_payloads import (
-    NotificationsPush,
-    SessionNamedPush,
-)
+from igni_core.notifications.schemas import NotificationsChanged
 from igni_core.protocol.schemas.enums import PushChannel
 from igni_core.protocol.schemas.push import (
     PushNotification,
@@ -280,25 +277,25 @@ class TestTheMessage:
 class TestTheExtensionHostCanStillReadThePayload:
     """The reason the payload stays a mapping.
 
-    The host's readers are deliberately lenient — they accept a
-    producer's partial payload and keep its extra fields — but they
-    are still *models*, and ``model_validate`` refuses a model
-    instance. A payload typed as a union of producer models would
-    arrive at the host as a model, and every host reader would raise.
+    The host reads a push through the model that produced it — the
+    typed payloads here, a broadcast event's own class for the open
+    channels — and ``model_validate`` refuses a model instance. A
+    payload typed as a union of producer models would arrive at the
+    host as a model, and every host reader would raise.
     """
 
     def test_the_host_reads_a_producers_payload(self):
         push = push_session_named(SessionNamedPayload(session_id="s-1", name="Refactor"))
 
-        read = SessionNamedPush.model_validate(push.payload)
+        read = SessionNamedPayload.model_validate(push.payload)
 
         assert read.session_id == "s-1"
         assert read.name == "Refactor"
 
     def test_the_host_reads_a_payload_it_was_never_told_about(self):
-        """A channel whose shape no producer model names."""
+        """A channel whose shape no payload model names: its own model."""
         push = push_on(PushChannel.NOTIFICATIONS_CHANGED, {"counts": {"unread": 2}})
 
-        read = NotificationsPush.model_validate(push.payload)
+        read = NotificationsChanged.model_validate(push.payload)
 
-        assert read.counts is not None
+        assert read.counts.unread == 2

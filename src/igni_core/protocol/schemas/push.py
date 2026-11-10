@@ -20,12 +20,10 @@ stylistic:
   not a closed set: a new tool adds a channel by subclassing
   :class:`~igni_core.core.broadcast_schema.BroadcastEvent`, and the
   push carrying it has to go out without a protocol change.
-* **The payload must stay a mapping.** The extension host parses a
-  push's payload with ``model_validate`` against deliberately lenient
-  readers
-  (:mod:`igni_core.extensions.host.broadcasts.push_payloads`), which
-  accept a producer's partial payload and keep its extra fields. A
-  model instance would refuse both.
+* **The payload must stay a mapping.** The extension host reads a
+  push's payload with ``model_validate`` against the model that
+  produced it — the typed payloads here, or the broadcast event's own
+  class. A model instance would refuse both.
 
 So the payload travels as a JSON object, and the typing moves to where
 it can still do work: **one factory per channel igni produces**, each

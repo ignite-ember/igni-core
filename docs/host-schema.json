@@ -1,5 +1,5 @@
 {
-  "version": "1.11.0",
+  "version": "1.12.0",
   "permissions": [
     {
       "name": "app",
@@ -2151,9 +2151,9 @@
         },
         {
           "name": "previous",
-          "type": "str",
-          "doc": "",
-          "optional": false
+          "type": "str | None",
+          "doc": "The mode before this one; `None` when the push named none.",
+          "optional": true
         }
       ]
     },

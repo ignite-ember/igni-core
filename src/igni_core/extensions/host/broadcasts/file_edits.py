@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from igni_core.extensions.host.broadcasts.push_payloads import FileEditedPush
+from igni_core.extensions.host.broadcasts.push_reads import read_push
 from igni_core.extensions.host.broadcasts.signal import PushHandler
 from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.host.project_paths import ProjectRoot
@@ -12,6 +12,7 @@ from igni_core.extensions.host.signal_values import Emitter, Signal
 from igni_core.extensions.host.state.runs import RunLedger
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.push_payloads import FileEditedPayload
 
 
 class FileEditedSignal(Signal):
@@ -37,8 +38,10 @@ class FileEditSignals:
 
     def file_edited(self, m: msg.PushNotification) -> None:
         """Outside the session's project, the edit is nothing an extension is told."""
-        push = FileEditedPush.model_validate(m.payload)
-        found = self._root.relative(m.session_id, push.path)
+        payload = read_push(FileEditedPayload, m.payload, channel=m.channel)
+        if payload is None:
+            return
+        found = self._root.relative(m.session_id, payload.path)
         if not found.ok:
             return
         self._ledger.edited(m.session_id, found.relative)

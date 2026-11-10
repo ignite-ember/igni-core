@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 
+from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
 from igni_core.extensions.host import coverage
 from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.definition import HOST_SCHEMA
@@ -264,29 +265,43 @@ async def test_scheduler_pushes_become_scheduler_events(rig, heard):
     await _send(
         rig,
         _push("scheduler_started", task_id="c1", description="nightly"),
-        _push("scheduler_completed", task_id="c1", error="timed out"),
-        _push("scheduler_event", task_id="c1", event_type="skipped"),
-        _push("scheduler_event", task_id="c1"),
+        _push("scheduler_completed", task_id="c1", description="nightly", result="timed out"),
     )
 
     assert [(v["kind"], v["result"]) for v in heard.values("scheduler.event")] == [
         ("started", ""),
         ("completed", "timed out"),
-        ("skipped", ""),
-        ("event", ""),
     ]
+
+
+async def test_the_push_channels_nothing_produces_are_silent(rig, heard):
+    """``orchestrate_progress`` and ``scheduler_event``: no producer sends them."""
+    await _send(
+        rig,
+        _push("orchestrate_progress", step=1),
+        _push("scheduler_event", task_id="c1", event_type="skipped"),
+    )
+
+    assert heard.values("scheduler.event") == []
+    assert heard.values("chat.agent_event") == []
 
 
 async def test_an_agents_progress_and_a_finished_view_are_told(rig, heard):
     await _send(
         rig,
-        _push("orchestrate_progress", step=1),
-        _push("orchestrate_event", type="agent_started", name="reviewer"),
-        _push("orchestrate_event"),
-        _push("orchestrate_event", type="visualization_delta", spec_id="v1", json="{"),
+        _push("orchestrate_event", type="agent_started", agent_path="main", agent="reviewer"),
         _push(
             "orchestrate_event",
             type="visualization_delta",
+            agent_path="main",
+            final=False,
+            spec_id="v1",
+            json="{",
+        ),
+        _push(
+            "orchestrate_event",
+            type="visualization_delta",
+            agent_path="main",
             final=True,
             spec_id="v1",
             json='{"type": "Card"}',
@@ -294,11 +309,7 @@ async def test_an_agents_progress_and_a_finished_view_are_told(rig, heard):
         ),
     )
 
-    assert [v["kind"] for v in heard.values("chat.agent_event")] == [
-        "progress",
-        "agent_started",
-        "event",
-    ]
+    assert [v["kind"] for v in heard.values("chat.agent_event")] == ["agent_started"]
     assert heard.values("chat.views.shown") == [
         {
             "view_id": "v1",
@@ -311,44 +322,70 @@ async def test_an_agents_progress_and_a_finished_view_are_told(rig, heard):
 
 
 def test_a_view_whose_spec_is_not_json_is_shown_empty():
-    from_wire = {"spec_id": "v1", "json": "{not json"}
+    delta = VisualizationDeltaPayload(spec_id="v1", spec_json="{not json", final=True)
 
-    assert ViewShown.from_payload("s", from_wire).spec == {}
+    assert ViewShown.shown("s", delta).spec == {}
 
 
 async def test_session_mode_plan_and_todo_pushes_are_told(rig, heard):
     await _send(
         rig,
-        _push("session_named", name="Refactor"),
+        msg.PushNotification(
+            channel="session_named",
+            session_id="boot",
+            payload={"session_id": "boot", "name": "Refactor"},
+        ),
         _push("permission_mode_changed", mode="plan", previous="default"),
-        _push("plan_submitted", run_id="r1"),
+        _push("plan_submitted", plan="Ship it", tasks=[{"content": "a", "status": "pending"}]),
         _push("plan_decided", run_id="r1", decision="approved"),
-        _push("todos_updated", todos=[{"content": "a"}]),
-        _push("todos_updated", todos="not a list"),
-        _push("http_retry_attempt", attempt=1),
-        _push("http_retry_succeeded", attempt=2),
-        _push("visualization_action_dispatched", action="refresh"),
+        _push("todos_updated", todos=[{"content": "a", "status": "pending"}]),
+        _push("http_retry_attempt", attempt=1, delay_seconds=0.5),
+        _push("http_retry_succeeded", url="https://x.test", attempt_count=2, delay_seconds=0.5),
+        _push("visualization_action_dispatched", action="refresh", params={}),
     )
 
     assert heard.values("sessions.named") == [{"session_id": "boot", "name": "Refactor"}]
     assert heard.values("permissions.mode_changed") == [{"mode": "plan", "previous": "default"}]
     assert [v["kind"] for v in heard.values("plan.changed")] == ["submitted", "decided"]
-    assert [v["todos"] for v in heard.values("tasks.todos_changed")] == [[{"content": "a"}], []]
+    assert [v["todos"] for v in heard.values("tasks.todos_changed")] == [
+        [{"content": "a", "status": "pending", "activeForm": ""}]
+    ]
     assert [v["kind"] for v in heard.values("chat.retry")] == ["attempt", "succeeded"]
     assert heard.values("chat.views.action") == [
         {"session_id": "boot", "action": "refresh", "params": {}}
     ]
 
 
+async def test_a_push_whose_payload_does_not_fit_its_model_is_dropped(rig, heard):
+    """A payload that does not fit the model that produced it is not read half-way."""
+    await _send(
+        rig,
+        _push("todos_updated", todos="not a list"),
+        _push("plan_submitted", run_id="r1"),
+        _push("orchestrate_event", type="not_an_event"),
+    )
+
+    assert heard.values("tasks.todos_changed") == []
+    assert heard.values("plan.changed") == []
+    assert heard.values("chat.agent_event") == []
+
+
 async def test_process_and_workflow_pushes_are_told(rig, heard):
     await _send(
         rig,
-        _push("process_started", pid=1),
-        _push("process_line", line="ok"),
-        _push("process_exited", code=0),
-        _push("background_process_done", pid=1),
-        _push("workflow_event", type="step", name="release"),
-        _push("workflow_event"),
+        _push("process_started", pid=1, cmd="pytest", started_at=12.5),
+        _push("process_line", pid=1, line="ok"),
+        _push("process_exited", pid=1, cmd="pytest", exit_code=0, duration_seconds=1.25),
+        _push("background_process_done", pid=1, cmd="pytest", exit_code=0, duration_seconds=1.25),
+        _push(
+            "workflow_event",
+            workflow_run_id="w1",
+            name="release",
+            ts=1,
+            seq=0,
+            type="step",
+            payload={"n": 3},
+        ),
         _push("a_channel_nobody_translates", x=1),
     )
 
@@ -359,8 +396,7 @@ async def test_process_and_workflow_pushes_are_told(rig, heard):
         "done",
     ]
     assert [(v["what"], v["name"]) for v in heard.values("workflows.changed")] == [
-        ("step", "release"),
-        ("event", None),
+        ("step", "release")
     ]
 
 
@@ -578,8 +614,7 @@ async def test_what_is_heard_fits_the_schema(rig, heard):
         _push("file_edited", path="src/a.py"),
         msg.HITLRequest(session_id="boot", requirement_id="q1", tool_name="x"),
         msg.TaskStateUpdated(session_id="boot", tasks=[TaskSnapshot(task_id="t1")]),
-        _push("orchestrate_event", type="step"),
-        _push("scheduler_event", task_id=None),
+        _push("orchestrate_event", type="agent_started", agent_path="main", agent="helper"),
         msg.RunCompleted(session_id="boot", run_id="r1"),
     )
     types = {HOST_SCHEMA.wire_name(o, s): s.type for o in HOST_SCHEMA.objects for s in o.signals}
