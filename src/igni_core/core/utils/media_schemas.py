@@ -1,68 +1,65 @@
 """Typed schemas + taxonomy for media detection & attachment.
 
-Extracted from :mod:`igni_core.core.utils.media` — the free-function
-pile that used a raw ``str`` return type (``_classify_extension``),
-two duplicated ``if/elif`` ladders (``attach_resolved_files`` and
-``extract_media_urls``), and returned ``dict[str, list[Any]]`` for
-Agno's media kwargs. Every kind (image/audio/video/document) now
-lives as one :class:`MediaKindSpec` row inside :class:`MediaTaxonomy`;
-polymorphic construction goes through :meth:`MediaKindSpec.build`.
+The taxonomy is the shape of the answer: every kind (image / audio /
+video / document) is one :class:`MediaKindSpec` row inside a
+:class:`MediaTaxonomy`, and polymorphic construction goes through
+:meth:`MediaKindSpec.build`. The bundle the resolver produces is a
+:class:`MediaAttachments` — one typed field per kind, holding the
+live Agno containers.
 
 Contents:
 
-* :class:`MediaKind` — string enum replacing the untyped ``str``
-  return of the old ``_classify_extension`` free function.
+* :class:`MediaKind` — string enum naming the four kinds Agno's
+  per-provider plugins accept as attachment containers.
+* :class:`MediaBucket` — the four names the bundle's buckets go by.
+  The bucket a kind belongs to is part of the taxonomy row, so
+  adding a kind is one row rather than an edit in two places.
 * :class:`MediaKindSpec` — frozen dataclass, one row per kind.
-  Carries the extension set, the Agno container class, the
-  :class:`MediaAttachments` bucket field name, and a
-  :meth:`build` method that constructs the Agno object from either
-  a local filepath or a remote URL. Kills both if/elif ladders.
+  Carries the extension set, the Agno container class, the bucket
+  the attachment lands in, and a :meth:`build` method that
+  constructs the Agno object from either a local filepath or a
+  remote URL.
 * :class:`MediaTaxonomy` — small object holding a tuple of specs
   with :meth:`classify` for ext lookup and :meth:`default`
   classmethod for the current 4-kind taxonomy.
 * :class:`MediaAttachments` — Pydantic model, moved down from
   :mod:`igni_core.backend.schemas_run` so
   :class:`~igni_core.core.utils.media.MediaResolver` can produce
-  it directly. Adds :meth:`merge` (typed) and :meth:`total`
-  (int summary) replacing the dict-shaped ``merge_urls`` /
-  ``sum(len(v) for v in .values())`` idioms.
+  it directly. One typed list per kind, a typed :meth:`merge`, and
+  :meth:`total` (int summary) in place of the dict-shaped idioms.
 * :class:`ResolvedText` — Pydantic model, return type of
-  :meth:`MediaResolver.resolve_text_references`. Iterable so
-  ``message, resolved = resolver.resolve_text_references(msg)``
-  keeps the tuple-unpacking shape from the pre-refactor free
-  function.
-
-``MediaAttachments`` is re-exported from
-:mod:`igni_core.backend.schemas_run` for import-path compatibility
-with all pre-refactor callers.
+  :meth:`MediaResolver.resolve_text_references`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
+from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from agno.media import Audio, File, Image, Video
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+
+#: The names the attachment bundle's buckets go by. Agno's
+#: ``arun`` takes one keyword per kind, so these are the keyword
+#: names as well as the field names.
+MediaBucket = Literal["images", "audio", "videos", "files"]
+
+#: One attachment, whatever its kind.
+MediaObject = Image | Audio | Video | File
 
 
 class MediaKind(str, Enum):
-    """Typed replacement for the ``str`` return of the old
-    ``_classify_extension`` — the four media kinds Agno's
-    per-provider plugins accept as attachment containers.
-
-    :attr:`unknown` is the "no match" sentinel for callers that
-    still branch on the classification result (e.g. tests).
-    """
+    """The four media kinds Agno's per-provider plugins accept as
+    attachment containers."""
 
     image = "image"
     audio = "audio"
     video = "video"
     document = "document"
-    unknown = "unknown"
 
 
 @dataclass(frozen=True)
@@ -72,23 +69,23 @@ class MediaKindSpec:
     it's one row with :meth:`build` handling both local and remote
     attachment construction.
 
-    ``bucket_field`` is the attribute name on :class:`MediaAttachments`
-    (``images`` / ``audio`` / ``videos`` / ``files``). It differs from
-    ``kind.value`` for images (bucket ``images``) and videos
-    (bucket ``videos``) — hence the explicit field.
+    ``bucket`` is the name of the :class:`MediaAttachments` field
+    the attachment lands in. It differs from ``kind.value`` for
+    images (bucket ``images``) and videos (bucket ``videos``) —
+    hence the explicit field.
     """
 
     kind: MediaKind
     extensions: frozenset[str]
-    container_cls: type[Image | Audio | Video | File]
-    bucket_field: str
+    container_cls: type[MediaObject]
+    bucket: MediaBucket
 
     def build(
         self,
         *,
         url: str | None = None,
         filepath: Path | None = None,
-    ) -> Image | Audio | Video | File:
+    ) -> MediaObject:
         """Construct the Agno media container.
 
         Exactly one of ``url`` / ``filepath`` must be provided —
@@ -115,21 +112,27 @@ class MediaTaxonomy:
 
     specs: tuple[MediaKindSpec, ...]
 
+    @cached_property
+    def by_extension(self) -> Mapping[str, MediaKindSpec]:
+        """Every known extension → its row.
+
+        The lookup the resolver uses. The patterns that find a media
+        path are built from these same extensions, so a path one of
+        them matched always has a row here.
+        """
+        return {ext: spec for spec in self.specs for ext in spec.extensions}
+
     def classify(self, ext: str) -> MediaKindSpec | None:
         """Return the spec whose extension set contains ``ext``,
         or ``None`` if no spec matches. Case-insensitive."""
-        needle = ext.lower()
-        for spec in self.specs:
-            if needle in spec.extensions:
-                return spec
-        return None
+        return self.by_extension.get(ext.lower())
 
     @property
     def all_extensions(self) -> frozenset[str]:
         """All known extensions across every kind — used to build
         the URL / file regex alternation in
         :class:`~igni_core.core.utils.media.MediaResolver`."""
-        return frozenset().union(*(s.extensions for s in self.specs))
+        return frozenset(self.by_extension)
 
     @classmethod
     def default(cls) -> MediaTaxonomy:
@@ -157,55 +160,74 @@ class MediaTaxonomy:
                         }
                     ),
                     container_cls=Image,
-                    bucket_field="images",
+                    bucket="images",
                 ),
                 MediaKindSpec(
                     kind=MediaKind.audio,
                     extensions=frozenset({".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".wma"}),
                     container_cls=Audio,
-                    bucket_field="audio",
+                    bucket="audio",
                 ),
                 MediaKindSpec(
                     kind=MediaKind.video,
                     extensions=frozenset({".mp4", ".mov", ".avi", ".webm", ".mkv", ".wmv"}),
                     container_cls=Video,
-                    bucket_field="videos",
+                    bucket="videos",
                 ),
                 MediaKindSpec(
                     kind=MediaKind.document,
                     extensions=frozenset({".pdf"}),
                     container_cls=File,
-                    bucket_field="files",
+                    bucket="files",
                 ),
             )
         )
 
 
 class MediaAttachments(BaseModel):
-    """Typed replacement for the ``dict[str, Any]`` ``media`` kwargs
-    threaded through ``run_message`` → ``team.arun``.
+    """The attachments one turn carries, one typed list per kind.
 
     Agno's per-provider model plugins accept different media kinds
-    (images / audio / video / files); the exact set is
-    provider-dependent and grows as new plugins land. We name the
-    common ones explicitly for static coverage and keep
-    ``extra='allow'`` so a provider-specific key still round-trips
-    at the protocol boundary. The one place we lower back to a
-    dict is :meth:`to_kwargs` — the Agno interop seam.
+    (images / audio / video / files), and ``team.arun`` takes one
+    keyword per kind. This model is that set: four lists, each
+    holding the live Agno container of its kind.
 
-    Moved from :mod:`igni_core.backend.schemas_run` so
-    :class:`~igni_core.core.utils.media.MediaResolver` can produce
-    the typed model directly (previously the resolver returned a
-    raw dict and PromptBuilder ran ``model_validate`` at the seam).
-    Re-exported from the old location for wire-compat.
+    The buckets are typed rather than ``list[Any]``, so a caller
+    that reads ``attachments.images[0]`` gets an :class:`Image`
+    back, and a bucket that holds the wrong kind of object is a
+    validation error rather than a surprise at the provider.
+
+    The one place we lower back to a dict is :meth:`to_kwargs` —
+    the Agno interop seam.
     """
 
-    model_config = ConfigDict(extra="allow")
+    images: list[Image] = Field(default_factory=list)
+    audio: list[Audio] = Field(default_factory=list)
+    videos: list[Video] = Field(default_factory=list)
+    files: list[File] = Field(default_factory=list)
 
-    images: list[Any] = Field(default_factory=list)
-    audio: list[Any] = Field(default_factory=list)
-    videos: list[Any] = Field(default_factory=list)
-    files: list[Any] = Field(default_factory=list)
+    def add(self, bucket: MediaBucket, item: MediaObject) -> None:
+        """Put one attachment in the bucket its kind belongs to.
+
+        The bucket is named by the taxonomy row that produced the
+        attachment, so the kind and the bucket cannot drift apart.
+        """
+        buckets: dict[MediaBucket, list[Any]] = {
+            "images": self.images,
+            "audio": self.audio,
+            "videos": self.videos,
+            "files": self.files,
+        }
+        buckets[bucket].append(item)
+
+    def merge(self, other: MediaAttachments) -> None:
+        """Merge another attachments bundle into this one in place.
+
+        Preserves existing entries and extends per-kind lists."""
+        self.images.extend(other.images)
+        self.audio.extend(other.audio)
+        self.videos.extend(other.videos)
+        self.files.extend(other.files)
 
     def to_kwargs(self) -> dict[str, Any]:
         """Lower to ``**kwargs`` for ``team.arun(**media.to_kwargs())``.
@@ -221,16 +243,14 @@ class MediaAttachments(BaseModel):
         would cause some providers to send an empty images-array
         rather than skip the field)."""
         out: dict[str, Any] = {}
-        # Declared buckets first — always present as attributes.
-        for name in ("images", "audio", "videos", "files"):
-            v = getattr(self, name)
-            if v:
-                out[name] = v
-        # ``extra='allow'`` extension buckets — future-media forward
-        # compat. ``model_extra`` returns the raw stored objects.
-        for name, v in (self.__pydantic_extra__ or {}).items():
-            if v not in (None, [], {}):
-                out[name] = v
+        if self.images:
+            out["images"] = self.images
+        if self.audio:
+            out["audio"] = self.audio
+        if self.videos:
+            out["videos"] = self.videos
+        if self.files:
+            out["files"] = self.files
         return out
 
     def is_empty(self) -> bool:
@@ -239,62 +259,16 @@ class MediaAttachments(BaseModel):
         return not self.to_kwargs()
 
     def total(self) -> int:
-        """Total attachment count across every declared bucket.
+        """Total attachment count across every bucket.
 
         Replaces the ``sum(len(v) for v in raw_dict.values())``
         idiom PromptBuilder used to run after ``extract_media_urls``
         returned a dict."""
-        return sum(len(v) for v in self.to_kwargs().values() if isinstance(v, list))
-
-    @classmethod
-    def from_optional_dict(cls, raw: dict[str, Any] | None) -> MediaAttachments | None:
-        """Build from the legacy ``dict[str, Any] | None`` shape kept
-        on the ``run_message`` signature for FE compatibility.
-
-        Empty dicts collapse to ``None`` so callers can treat "no
-        media" uniformly."""
-        if not raw:
-            return None
-        return cls.model_validate(raw)
-
-    def merge(self, other: MediaAttachments) -> None:
-        """Merge another attachments bundle into this one in place.
-
-        Preserves existing entries and extends per-kind lists.
-        Supersedes the dict-shaped ``merge_urls`` — the resolver
-        now returns a typed :class:`MediaAttachments` directly."""
-        for k, v in other.to_kwargs().items():
-            if not isinstance(v, list):
-                continue
-            existing = getattr(self, k, None)
-            if isinstance(existing, list):
-                existing.extend(v)
-            else:
-                # ``extra='allow'`` path — attribute may not be a
-                # declared field. Fall back to attr set.
-                setattr(self, k, list(v))
-
-    def merge_urls(self, url_media: dict[str, list[Any]]) -> None:
-        """Backward-compatible shim for the pre-refactor dict-shaped
-        merge. New code should use :meth:`merge` with a typed
-        :class:`MediaAttachments`. Kept because the wire-compat
-        re-export from ``schemas_run`` promises the same public
-        surface as before."""
-        for k, v in url_media.items():
-            existing = getattr(self, k, None)
-            if isinstance(existing, list):
-                existing.extend(v)
-            else:
-                setattr(self, k, list(v))
+        return len(self.images) + len(self.audio) + len(self.videos) + len(self.files)
 
 
 class ResolvedText(BaseModel):
     """Return type of :meth:`MediaResolver.resolve_text_references`.
-
-    Replaces the old ``tuple[str, list[str]]`` return of the free
-    function. Iterable so callers that unpack the tuple form —
-    ``message, resolved = resolver.resolve_text_references(msg)`` —
-    keep working without a signature-migration diff.
 
     :attr:`missed` surfaces bare-filename lookups that failed so a
     future :class:`PromptBuilder` Info message can warn the user
@@ -314,9 +288,3 @@ class ResolvedText(BaseModel):
     paths: list[str] = Field(default_factory=list)
     attachable: list[str] = Field(default_factory=list)
     missed: list[str] = Field(default_factory=list)
-
-    def __iter__(self) -> Iterator[Any]:  # type: ignore[override]
-        """Yield ``(text, paths)`` so the old tuple-unpacking
-        callsites stay a one-line migration."""
-        yield self.text
-        yield self.paths

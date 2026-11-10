@@ -187,9 +187,7 @@ async def test_a_user_message_is_mirrored_then_streamed_under_its_id():
     echo = transport.sent[0]
     assert (echo.text, echo.client_id) == ("hello", "tab-a")
     assert all(m.id == "r1" for m in transport.sent[1:])
-    assert backend.calls == [
-        ("run_message", ("hello", MediaAttachments.from_optional_dict({"a.py": "x"})))
-    ]
+    assert backend.calls == [("run_message", ("hello", None))]
     assert len(backend.runtime.spawned) == 1
     backend.runtime.spawned[0].close()
 

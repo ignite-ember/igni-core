@@ -48,7 +48,7 @@ from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.backend.run_hook_gate import RunHookGate
 from igni_core.backend.schemas_hitl import StreamFactory
 from igni_core.backend.schemas_lifecycle import InterruptedRunSummary
-from igni_core.backend.schemas_run import CancelAgentRunResult, MediaAttachments, RunPhase
+from igni_core.backend.schemas_run import CancelAgentRunResult, RunPhase
 from igni_core.backend.session_checkpointer import SessionCheckpointer
 from igni_core.backend.stream_event_dispatcher import StreamEventDispatcher
 from igni_core.core.activity import background
@@ -56,6 +56,7 @@ from igni_core.core.config.group_policy.gate import GroupPolicyGate
 from igni_core.core.session.pending_messages import InterruptedReason
 from igni_core.core.session.queued_messages import DurableMessageQueue
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
