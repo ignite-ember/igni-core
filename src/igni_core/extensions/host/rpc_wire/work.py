@@ -5,8 +5,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
-
 from igni_core.extensions.host.rpc_wire.base import RpcArgs
 
 
@@ -39,7 +37,7 @@ class ScheduledTaskArgs(RpcArgs):
 
 class ExecuteTaskArgs(RpcArgs):
     #: As the scheduled task carries it.
-    description: Any
+    description: str
 
 
 class TailArgs(RpcArgs):
@@ -55,35 +53,6 @@ class ShellArgs(RpcArgs):
     command: str
 
 
-class ScheduledTask(BaseModel):
-    """One scheduled task, as far as running it now needs."""
-
-    key: str
-    #: As the backend has it: what ``execute_scheduled_task`` is handed back.
-    description: Any
-
-
-class ScheduledTasks(BaseModel):
-    """``get_scheduled_tasks``, by id."""
-
-    tasks: list[ScheduledTask]
-
-    @classmethod
-    def from_rpc(cls, found: Any) -> ScheduledTasks:
-        return cls(
-            tasks=[
-                ScheduledTask(
-                    key=str(t.get("id") or t.get("task_id")),
-                    description=t.get("description", ""),
-                )
-                for t in found or []
-            ]
-        )
-
-    def find(self, task_id: str) -> ScheduledTask | None:
-        return next((t for t in self.tasks if t.key == task_id), None)
-
-
 __all__ = [
     "AgentNameArgs",
     "CancelWorkflowArgs",
@@ -91,9 +60,7 @@ __all__ = [
     "PidArgs",
     "PromoteArgs",
     "RunWorkflowArgs",
-    "ScheduledTask",
     "ScheduledTaskArgs",
-    "ScheduledTasks",
     "ScheduledTasksArgs",
     "ShellArgs",
     "TailArgs",

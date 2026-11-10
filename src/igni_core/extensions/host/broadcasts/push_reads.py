@@ -28,9 +28,7 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 ValueT = TypeVar("ValueT")
 
 
-def read_push(
-    model: type[ModelT], payload: Mapping[str, Any], *, channel: str
-) -> ModelT | None:
+def read_push(model: type[ModelT], payload: Mapping[str, Any], *, channel: str) -> ModelT | None:
     """The payload as the model that produced it; ``None`` when it does not fit."""
     try:
         return model.model_validate(payload)
