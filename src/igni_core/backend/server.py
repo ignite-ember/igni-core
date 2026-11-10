@@ -71,7 +71,7 @@ if TYPE_CHECKING:
     from igni_core.core.session.schemas import ContextBreakdown, McpServerStatus
     from igni_core.core.skills import SkillPool
     from igni_core.core.skills.parser import SkillInfo
-    from igni_core.core.tools.orchestrate_events import OnProgress
+    from igni_core.core.tools.orchestrate_contracts import OnProgress
     from igni_core.core.tools.todo import TodoItemWire
     from igni_core.core.utils.media_schemas import MediaAttachments
 

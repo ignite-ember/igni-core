@@ -1,88 +1,93 @@
-"""Abstract base for the two Agno-stream event pumps.
+"""The base every Agno stream handler shares.
 
-Owns everything that :class:`SubAgentStreamHandler` and
-:class:`TeamStreamHandler` share:
+Owns everything :class:`~igni_core.core.tools.orchestrate_agent_stream.SubAgentStreamHandler`
+and :class:`~igni_core.core.tools.orchestrate_team_stream.TeamStreamHandler`
+have in common:
 
-* The outer ``while stream is not None`` loop that handles
-  pause/resume follow-up streams.
-* ``run_id`` / ``session_id`` latching + cancellation-registry
-  register/discard around the loop.
-* Post-loop belt-and-suspenders ``agent_completed`` emission and
-  DB-fallback ``aget_run_output`` finalization.
-* One-line ``_emit`` / ``_log_line`` helpers so subclasses read
+* the outer ``while stream is not None`` loop that handles
+  pause/resume follow-up streams;
+* ``run_id`` / ``session_id`` latching and the cancellation-registry
+  register/discard around the loop;
+* the read-back of the run's final answer, and the ``agent_completed``
+  the frontend needs to stop a card spinning;
+* one-line ``_emit`` / ``_log_line`` helpers so subclasses read
   clean.
 
-Subclasses provide the ``_handle`` polymorphism — one method per
-Agno event type via ``match`` dispatch — and override the small
-post-loop hook that shapes the final response string.
-
-Replaces the two 400-line procedural generators in
-``orchestrate_streaming.py`` with a class hierarchy.
+The collaborators arrive as one :class:`StreamContext` and the run's
+memory as one :class:`StreamState`, so the base asks for what it
+needs rather than probing for it: ``state.current_run_id`` is a
+field, not a ``getattr(state, "current_run_id", None)`` that answers
+``None`` for a state that simply forgot.
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
+from collections.abc import Mapping
 from typing import Any, Generic, TypeVar
 
-from igni_core.core.tools.orchestrate_events import (
-    AgentCompletedEvent,
-    EventAppender,
-    FinalizeResult,
-    HitlCoordinatorProtocol,
-    OnProgress,
-    SubAgentRegistry,
-    _EventBase,
-)
+from igni_core.core.tools.orchestrate_events import AgentCompletedEvent, OrchestrateEvent
+from igni_core.core.tools.orchestrate_stream_context import StreamContext
+from igni_core.core.tools.orchestrate_stream_finalize import RunFinalizer
+from igni_core.core.tools.orchestrate_stream_state import StreamState
 
 _stream_log = logging.getLogger("igni_core.llm_calls")
 
-_TState = TypeVar("_TState")
+_TState = TypeVar("_TState", bound=StreamState)
+
+
+def active_requirements(event: Any) -> list[Any]:
+    """The requirements a paused run is still waiting on.
+
+    Agno derives this from the run's requirements, each of which knows
+    whether it has been resolved. A requirement that cannot answer
+    leaves the run with nothing to wait for, and the run carries on
+    without a bridge.
+    """
+    try:
+        return list(event.active_requirements)
+    except AttributeError:
+        return []
+
+
+def handler_name(table: Mapping[type, str], event: object) -> str | None:
+    """The name of the handler that answers ``event``, if any.
+
+    ``table`` maps an Agno event class to a method name on the
+    handler. The lookup walks the event's method resolution order, so
+    a class that derives from a handled event is answered by its
+    parent's handler rather than falling through.
+
+    The walk is why no table may key on a shared base class: Agno's
+    agent events and team events both descend from
+    ``BaseRunOutputEvent``, and a key on it would make a team's
+    coordinator look like a worker.
+    """
+    cls = getattr(event, "__class__", type(event))
+    for klass in getattr(cls, "__mro__", (cls,)):
+        name = table.get(klass)
+        if name is not None:
+            return name
+    return None
 
 
 class BaseStreamHandler(Generic[_TState]):
     """Abstract driver for one Agno agent-or-team stream.
 
     Subclasses supply the state model and the per-event handling
-    (``_handle`` returns a follow-up async iterator on
-    pause+resume, else ``None``). Everything else — the outer
-    loop, cancellation registry hook-up, DB fallback, emit helper
-    — lives here so the two concrete subclasses stay focused on
-    event dispatch.
+    (``_handle`` returns a follow-up async iterator on pause+resume,
+    else ``None``). Everything else — the outer loop, the
+    cancellation registry hook-up, the final read, the emit helper —
+    lives here so the two concrete subclasses stay focused on event
+    dispatch.
     """
 
-    #: The Agno agent or team we're driving. Duck-typed to keep the
-    #: base compatible with both ``Agent`` and ``Team`` instances.
-    _runnable: Any
-    #: The task string passed to ``arun``.
-    _task: str
-    #: State object owned by this handler; subclasses set it in
-    #: ``__init__`` before calling ``super().__init__``.
-    state: _TState
-
-    def __init__(
-        self,
-        runnable: Any,
-        task: str,
-        *,
-        on_progress: OnProgress | None,
-        hitl_coordinator: HitlCoordinatorProtocol | None,
-        agent_path: list[str] | None,
-        card_id: str,
-        subagent_registry: SubAgentRegistry,
-        event_appender: EventAppender | None,
-    ) -> None:
-        self._runnable = runnable
-        self._task = task
-        self._on_progress = on_progress
-        self._hitl_coordinator = hitl_coordinator
-        self._path: list[str] = list(agent_path or [])
-        self._card_id = card_id
-        self._registry = subagent_registry
-        self._event_appender = event_appender
+    def __init__(self, context: StreamContext, state: _TState) -> None:
+        self._context = context
+        self.state = state
 
     # ── Subclass hooks ─────────────────────────────────────────────
+
     async def _handle(self, event: Any) -> Any:
         """Dispatch one Agno event. Returns a follow-up async
         iterator when a resume was requested (pause+continue),
@@ -95,26 +100,30 @@ class BaseStreamHandler(Generic[_TState]):
     def _shape_final(self, final: str) -> str:
         """Post-loop transformation of the raw final answer string.
 
-        Default: return unchanged. :class:`SubAgentStreamHandler`
-        overrides so visualizer sub-agents return a short summary
-        line instead of the raw spec JSON.
+        Default: return unchanged. The sub-agent handler overrides so
+        a visualizer returns a short summary line instead of the raw
+        spec JSON.
         """
         return final
 
     def _agent_completed_path(self) -> str:
-        """The ``agent_path`` field on the belt-and-suspenders
-        ``agent_completed`` payload. Subclasses override for teams —
-        the sub-agent path here isn't correct for the team's own
-        finalization emit."""
-        return self._path[0] if self._path else "root"
+        """The ``agent_path`` field on the ``agent_completed`` event.
+
+        Subclasses override for teams — the sub-agent path here isn't
+        correct for the team's own finalization emit.
+        """
+        path = self._context.agent_path
+        return path[0] if path else "root"
 
     # ── Public entry point ─────────────────────────────────────────
+
     async def run(self) -> tuple[str, list[str]]:
         """Drive the stream to completion. Returns ``(response, log)``
-        — same shape both concrete handlers exposed before the OOP
-        refactor, so callers in ``orchestrate.py`` and the test suite
-        pick up the new implementation transparently.
+        — the sub-agent's final text and the activity log the parent
+        agent recaps.
         """
+        registry = self._context.sinks.subagent_registry
+        coordinator = self._context.sinks.hitl_coordinator
         try:
             stream = self._first_stream()
             while stream is not None:
@@ -132,176 +141,84 @@ class BaseStreamHandler(Generic[_TState]):
                         next_stream = follow_up
                 stream = next_stream
         finally:
-            run_id = getattr(self.state, "current_run_id", None)
+            run_id = self.state.current_run_id
             if run_id:
-                self._registry.discard(run_id)
+                registry.discard(run_id)
                 # Whatever waited above this run has its answer now (or
                 # never will): nothing hangs from it any more.
-                if self._hitl_coordinator is not None:
-                    self._hitl_coordinator.forget_spawn(run_id)
+                if coordinator is not None:
+                    coordinator.forget_spawn(run_id)
 
         self._ensure_agent_completed_emitted()
-        final = await self._fetch_final_content_with_fallback()
-        return self._shape_final(final), self._log()
+        final = await self._finalizer().final_content()
+        return self._shape_final(final), self.state.log
 
     def _first_stream(self) -> Any:
         """The stream the run starts with: a fresh run of the task."""
-        return self._runnable.arun(self._task, stream=True)
+        return self._context.runnable.arun(self._context.task, stream=True)
 
     # ── Shared helpers ─────────────────────────────────────────────
-    def _log(self) -> list[str]:
-        return self.state.log
 
     def _log_line(self, line: str) -> None:
         """Append one line to the parent-recap activity log. Not
         FE-facing — the FE gets structured events via ``_emit``."""
-        self._log().append(line)
+        self.state.log.append(line)
 
-    def _emit(self, event: _EventBase | dict[str, Any]) -> None:
-        """Deliver a structured event to the FE.
+    def _emit(self, event: OrchestrateEvent) -> None:
+        """Deliver one structured event to the progress callback.
 
-        Accepts either a :class:`_EventBase` (preferred — new call
-        sites use typed payloads) or a raw dict (test-friendly and
-        the shape :class:`VisualizationDeltaEvent` already dumps
-        into). Stamps ``card_id`` at the boundary so every subclass
-        emit stays clean.
+        The event travels as the model it is — the frontend's wire
+        shape is produced once, at the push boundary. The card id is
+        stamped here so every event of one run lands on the same card
+        across interleaved info items, a page refresh, and concurrent
+        spawns.
         """
-        if self._on_progress is None:
+        callback = self._context.sinks.on_progress
+        if callback is None:
             return
-        if isinstance(event, _EventBase):
-            payload = event.model_dump(by_alias=True, exclude_none=True)
-        else:
-            payload = dict(event)
-        if self._card_id:
-            payload["card_id"] = self._card_id
-        with contextlib.suppress(Exception):
-            self._on_progress(payload)
+        card_id = self._context.card_id
+        if card_id:
+            event.card_id = card_id
+        try:
+            callback(event)
+        except Exception as exc:
+            _stream_log.warning("progress callback failed: %s", exc)
 
-    def _latch_run_ids(self, event: Any) -> None:
-        """Delegate to the state model's latching logic and register
-        with the cancellation registry when a fresh run_id lands."""
-        newly_run = self.state.latch_ids(event)  # type: ignore[attr-defined]
-        if newly_run:
-            run_id = self.state.current_run_id  # type: ignore[attr-defined]
+    def _latch_run_ids(self, event: object) -> None:
+        """Latch the run ids off the event, and register the run with
+        the cancellation registry when a fresh one lands."""
+        if self.state.latch_ids(event):
+            run_id = self.state.current_run_id
             if run_id:
                 # ``BackendServer.cancel_run`` iterates the registry
                 # to reach every in-flight sub-agent. Without this
                 # add, a stuck specialist ignores the top-level ESC.
-                self._registry.register(run_id)
+                self._context.sinks.subagent_registry.register(run_id)
 
     def _ensure_agent_completed_emitted(self) -> None:
-        """Belt-and-suspenders ``agent_completed`` emit.
+        """Say the run is done, when nothing else has.
 
         Agno's specialist ``arun`` doesn't yield ``RunCompletedEvent``
-        unless ``stream_events=True`` (which we deliberately keep off
-        to avoid noisy lifecycle events on the wire). Without an
-        ``agent_completed`` emit, the FE's team-progress card keeps
-        spinning after the sub-agent has actually finished — the
-        exact bug the user reported at iter 11. Fire our own here
-        IF the in-stream handler didn't already (i.e. the caller
-        opted into stream_events and a real RunCompletedEvent
-        arrived, or the team's per-member handler already emitted).
+        unless ``stream_events=True`` — which is deliberately kept off
+        so the wire carries no lifecycle noise. The frontend stops the
+        sub-agent's card on ``agent_completed``, so a stream that ends
+        without one says it here.
 
-        Only the sub-agent handler carries an
-        ``agent_completed_emitted`` flag; team streams don't emit a
-        blanket completion (each member does its own), so this
-        hook is a no-op there.
+        A team does not: each of its members reports its own
+        completion, and a blanket team completion would say the whole
+        team finished when one member did. The state says which kind
+        of stream this is.
         """
-        emitted = getattr(self.state, "agent_completed_emitted", None)
-        if emitted is None or emitted:
+        if not self.state.emits_agent_completed:
             return
-        # Metrics unknown without RunCompletedEvent — the DB-backed
-        # ``aget_run_output`` fallback below can fill in the
-        # ``content`` but not the per-agent token totals. FE keeps
-        # any previously-known numbers.
+        if self.state.agent_completed_emitted:
+            return
         self._emit(AgentCompletedEvent(agent_path=self._agent_completed_path()))
-        with contextlib.suppress(Exception):
-            self.state.agent_completed_emitted = True  # type: ignore[attr-defined]
+        self.state.agent_completed_emitted = True
 
-    async def _fetch_final_content_with_fallback(self) -> str:
-        """Read the final answer back from Agno's session DB.
+    def _finalizer(self) -> RunFinalizer:
+        """The reader that fetches the run's final answer back."""
+        return RunFinalizer(self._context.runnable, self.state, self._context.agent_path)
 
-        ``Agent`` / ``Team`` do not expose a ``run_response`` attribute
-        (we tried — it errors with AttributeError); the supported
-        way to fetch the canonical ``RunOutput`` after a streaming
-        run completes is ``aget_run_output(run_id, session_id)``.
 
-        Fall through to the streamed ``RunCompletedEvent.content``
-        (captured in ``state.completed_content``) if the DB lookup
-        comes up empty — in practice we've seen the DB-backed lookup
-        return ``None`` for MiniMax-driven specialists even though
-        the run completed cleanly.
-        """
-        result = await self._fetch_from_db()
-        content = result.content
-        if not content and self.state.completed_content:  # type: ignore[attr-defined]
-            content = self.state.completed_content  # type: ignore[attr-defined]
-            _stream_log.info(
-                "stream_handler: used RunCompletedEvent fallback path=%s len=%d",
-                self._path,
-                len(content),
-            )
-        return self._clean_final(content)
-
-    async def _fetch_from_db(self) -> FinalizeResult:
-        """Isolated DB-backed lookup — narrowed exception surface.
-
-        Only ``AttributeError`` / ``KeyError`` / ``TimeoutError`` (the
-        expected "DB not flushed yet" shapes we've seen in the field)
-        are swallowed; anything else re-raises so unexpected bugs
-        aren't silently hidden.
-        """
-        run_id = self.state.current_run_id  # type: ignore[attr-defined]
-        session_id = self.state.current_session_id  # type: ignore[attr-defined]
-        _stream_log.info(
-            "stream_handler: stream ended path=%s run_id=%s session_id=%s completed_content_len=%d",
-            self._path,
-            run_id,
-            session_id,
-            len(getattr(self.state, "completed_content", "") or ""),
-        )
-        try:
-            run_output = None
-            if run_id and session_id:
-                run_output = await self._runnable.aget_run_output(
-                    run_id=run_id, session_id=session_id
-                )
-            if run_output is None and session_id:
-                run_output = await self._runnable.aget_last_run_output(session_id=session_id)
-        except (AttributeError, KeyError, TimeoutError) as exc:
-            _stream_log.info(
-                "stream_handler: expected read failure path=%s err=%s",
-                self._path,
-                exc,
-            )
-            return FinalizeResult(error=str(exc))
-
-        rr_content = getattr(run_output, "content", None) if run_output else None
-        rr_status = getattr(run_output, "status", None) if run_output else None
-        _stream_log.info(
-            "stream_handler: db lookup path=%s found=%s status=%s content_len=%d",
-            self._path,
-            run_output is not None,
-            rr_status,
-            len(str(rr_content)) if rr_content else 0,
-        )
-        return FinalizeResult(
-            content=str(rr_content) if rr_content else None,
-            # Agno RunOutput.status is a StrEnum in prod and a MagicMock
-            # in tests — coerce so Pydantic's string validator accepts
-            # both without swallowing the whole DB-fallback path.
-            status=str(rr_status) if rr_status is not None else None,
-            found=run_output is not None,
-        )
-
-    @staticmethod
-    def _clean_final(content: str | None) -> str:
-        """Strip the ``<think>`` scaffolding and trim.
-
-        Some models leak ``<think>...</think>`` blocks the tokenizer
-        template didn't strip — safe to remove verbatim from the
-        final response we hand back to the parent agent.
-        """
-        if not content:
-            return ""
-        return content.replace("<think>", "").replace("</think>", "").strip()
+__all__ = ["BaseStreamHandler", "active_requirements", "handler_name"]

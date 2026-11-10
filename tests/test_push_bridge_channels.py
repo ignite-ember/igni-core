@@ -28,6 +28,7 @@ from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
 from igni_core.core.activity.background import background
 from igni_core.core.broadcast_schema import BroadcastEvent
+from igni_core.core.tools.orchestrate_events import ToolStartedEvent
 from igni_core.core.tools.process_events import (
     ProcessExitEvent,
     ProcessLineEvent,
@@ -275,11 +276,16 @@ class TestTheOpenChannels:
     def test_the_orchestrate_progress_goes_out_on_its_channel(self):
         bridge = _Bridge()
 
-        bridge.bridge.on_orchestrate_progress({"type": "tool_started", "tool": "Read"})
+        bridge.bridge.on_orchestrate_progress(ToolStartedEvent(agent_path="coder", tool="Read"))
 
         [push] = bridge.scheduled
         assert push.channel == PushChannel.ORCHESTRATE_EVENT
-        assert push.payload == {"type": "tool_started", "tool": "Read"}
+        assert push.payload == {
+            "type": "tool_started",
+            "agent_path": "coder",
+            "tool": "Read",
+            "args": "",
+        }
 
     def test_the_notification_counts_go_out_on_their_channel(self):
         bridge = _Bridge()

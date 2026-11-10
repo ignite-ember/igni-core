@@ -462,14 +462,14 @@ class TestTheAssembly:
         toolkit = tools[0]
         assert toolkit.pool is deps.orchestration.pool
         assert toolkit.settings is deps.registry.settings
-        # The rest of the delegation surface is private to the toolkit;
-        # reading it here pins the wiring instead of assuming it.
-        state = vars(toolkit)
-        assert state["_session_id"] == deps.orchestration.session_id
-        assert state["_project_dir"] == deps.registry.project_dir
-        assert state["_hook_executor"] is deps.orchestration.hook_executor
-        assert state["_budget"] is deps.orchestration.spawn_budget
-        assert state["_hitl_coordinator"] is deps.orchestration.sub_agent_hitl
+        # The rest of the delegation surface travels in the toolkit's
+        # two bundles; reading it here pins the wiring instead of
+        # assuming it.
+        assert toolkit.wiring.session_id == deps.orchestration.session_id
+        assert toolkit.scope.project_dir == deps.registry.project_dir
+        assert toolkit.wiring.hook_executor is deps.orchestration.hook_executor
+        assert toolkit.scope.budget is deps.orchestration.spawn_budget
+        assert toolkit.wiring.sinks.hitl_coordinator is deps.orchestration.sub_agent_hitl
 
     def test_the_registry_is_built_once_for_the_whole_assembly(self, tmp_path):
         """Core tools and custom tools share one registry."""

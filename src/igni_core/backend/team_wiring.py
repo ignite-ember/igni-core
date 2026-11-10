@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 from igni_core.core.hooks.queue import QueueBridge
 from igni_core.core.tools.orchestrate import OrchestrateTools
-from igni_core.core.tools.orchestrate_events import EventAppender, OnProgress
+from igni_core.core.tools.orchestrate_contracts import EventAppender, OnProgress
 
 if TYPE_CHECKING:
     from igni_core.core.session import Session
@@ -56,7 +56,7 @@ class TeamWiring:
     def wire_orchestrate_progress(self, callback: OnProgress) -> None:
         """Set a progress callback on the orchestrate tool."""
         for tool in self._orchestrate_tools():
-            tool.on_progress = callback
+            tool.wiring.sinks.on_progress = callback
 
     def wire_orchestrate_event_appender(self, appender: EventAppender) -> None:
         """Set the session event-log appender on the orchestrate
@@ -65,12 +65,13 @@ class TeamWiring:
         entry to place the viz card next to its originating
         ``spawn_agent`` tool turn on reload."""
         for tool in self._orchestrate_tools():
-            tool.event_appender = appender
+            tool.wiring.sinks.event_appender = appender
 
     def active_subagent_runs(self) -> int:
         """Sub-agent runs the main agent has going (its spawns' registry)."""
         registries = {
-            id(t.subagent_registry): t.subagent_registry for t in self._orchestrate_tools()
+            id(t.wiring.sinks.subagent_registry): t.wiring.sinks.subagent_registry
+            for t in self._orchestrate_tools()
         }
         return sum(len(r) for r in registries.values())
 
