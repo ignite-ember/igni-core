@@ -37,8 +37,9 @@ from websockets.asyncio.client import connect
 from igni_core.extensions.host.wire import Reply
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcMethod
+from igni_core.transport.composite import CompositeTransport
 from igni_core.transport.in_process import InProcessTransport
-from igni_core.transport.websocket import CompositeTransport, WebSocketServerTransport
+from igni_core.transport.websocket import WebSocketServerTransport
 from tests.host_model_helpers import HostRig
 
 # ── The transport ─────────────────────────────────────────────────
@@ -287,8 +288,8 @@ async def test_a_window_s_connection_is_the_one_it_spoke_on(tmp_path: Path):
             _from("ws-a", RpcMethod.WINDOW_MODEL, op="hydrate", window="w-1", connection_id="ws-x")
         )
 
-        assert rig.model.services.windows.by_connection("ws-a") == "w-1"
-        assert rig.model.services.windows.by_connection("ws-x") is None
+        assert rig.model.services.windows.registry.by_connection("ws-a") == "w-1"
+        assert rig.model.services.windows.registry.by_connection("ws-x") is None
     finally:
         await rig.stop()
 

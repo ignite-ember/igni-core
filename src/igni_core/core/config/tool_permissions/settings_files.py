@@ -35,6 +35,7 @@ from igni_core.core.config.tool_permissions.schemas import (
     PermissionLevel,
 )
 from igni_core.core.paths import home_config_dir, project_config_dir
+from igni_core.core.workspace_trust import TrustGate, WorkspaceTrust
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +56,16 @@ class SettingsFileLoader:
     whether to warn, degrade, or ignore.
     """
 
-    def __init__(self, project_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        project_dir: Path | None = None,
+        *,
+        trust: WorkspaceTrust | None = None,
+    ) -> None:
         self._project_dir = project_dir or Path.cwd()
+        #: The trust service that says whether the folder's own rules
+        #: count. The process's own, unless a caller says otherwise.
+        self._trust = TrustGate(trust)
 
     def paths(self) -> list[Path]:
         """The ordered list of settings files this loader consults —
@@ -82,9 +91,7 @@ class SettingsFileLoader:
         # A folder's own rules count only once it is trusted
         # (``core/workspace_trust``): an untrusted repository could otherwise
         # commit ``allow: [Bash]`` for whoever opens it.
-        from igni_core.core.workspace_trust import WorkspaceTrust
-
-        if WorkspaceTrust.shared().is_trusted(self._project_dir, what="permission rules"):
+        if self._trust.is_trusted(self._project_dir, what="permission rules"):
             project_ember = project_config_dir(self._project_dir)
             paths += [
                 project_ember / "settings.json",

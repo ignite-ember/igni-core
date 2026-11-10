@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from igni_core.core.config.config_io import DictMerger, YamlSource
 from igni_core.core.config.permission_eval.mode_policy import ModePolicy
-from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
+from igni_core.core.workspace_trust.policy import WorkspaceTrustConfig
 
 if TYPE_CHECKING:
     from igni_core.core.config.group_policy.pack import GroupPolicyPack

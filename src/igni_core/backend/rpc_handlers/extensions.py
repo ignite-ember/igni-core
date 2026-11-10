@@ -22,7 +22,7 @@ from igni_core.backend.schemas_extensions import (
     ExtensionSummary,
     SetExtensionSettingsArgs,
 )
-from igni_core.extensions.store import StoreError
+from igni_core.extensions.store_errors import StoreError
 from igni_core.extensions.web_home import ExtensionWebHome
 from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 

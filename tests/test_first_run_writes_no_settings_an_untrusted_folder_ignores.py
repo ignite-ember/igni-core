@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from igni_core.core.init.project_initializer import ProjectInitializer
-from igni_core.core.workspace_trust import WorkspaceTrust
+from igni_core.core.workspace_trust import process_trust
 
 pytestmark = pytest.mark.workspace_trust
 
@@ -30,7 +30,7 @@ def _project(tmp_path: Path) -> Path:
 def test_an_untrusted_folder_gets_no_starter_permissions(tmp_path: Path):
     project = _project(tmp_path)
 
-    ProjectInitializer(project_dir=project, trust=WorkspaceTrust.shared()).run()
+    ProjectInitializer(project_dir=project, trust=process_trust()).run()
 
     assert (project / ".igni" / "config.yaml").exists()  # the rest of the first run happened
     assert not (project / ".igni" / "settings.local.json").exists()
@@ -38,8 +38,8 @@ def test_an_untrusted_folder_gets_no_starter_permissions(tmp_path: Path):
 
 def test_a_trusted_folder_still_gets_the_starter(tmp_path: Path):
     project = _project(tmp_path)
-    WorkspaceTrust.shared().grant_for_run(project)
+    process_trust().grant_for_run(project)
 
-    ProjectInitializer(project_dir=project, trust=WorkspaceTrust.shared()).run()
+    ProjectInitializer(project_dir=project, trust=process_trust()).run()
 
     assert (project / ".igni" / "settings.local.json").exists()

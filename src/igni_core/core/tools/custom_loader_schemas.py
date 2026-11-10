@@ -15,6 +15,10 @@ Consumers:
   ``"custom_<plugin>"`` for plugin dirs — the loader appends
   ``_<file.stem>`` so a plugin's tool file can never shadow or be
   shadowed by a same-named file in the user's own ``.igni/tools/``.
+* :class:`PluginToolDir` — one plugin's tool directory, as the plugin
+  loader reports it and the custom-tool loader consumes it. The plugin
+  name and the directory travel together because the name is what
+  namespaces the plugin's toolkits.
 * :class:`LoadedFile` — one successfully loaded ``.py`` file, its
   emitted toolkit name, and the count of ``@tool``-decorated
   functions it contributed. Additive to the existing
@@ -32,11 +36,9 @@ Consumers:
   (agno's :class:`Toolkit`, not a Pydantic type) so
   ``arbitrary_types_allowed=True`` is required.
 
-The back-compat :func:`igni_core.core.tools.custom_loader.load_custom_tools`
-shim returns ``result.toolkits`` — a plain ``list[Toolkit]`` — so
-existing callers (:mod:`registry`, :mod:`tools_builder`) keep
-working unchanged. New callers migrate incrementally to
-:meth:`CustomToolLoader.discover` for the full result shape.
+The loader is asked directly for the result it produces: the toolkits
+come out of :attr:`DiscoveryResult.toolkits`, and the files that were
+skipped or failed come with them.
 """
 
 from __future__ import annotations
@@ -61,6 +63,25 @@ class ToolSource(BaseModel):
     """
 
     name_prefix: str
+    tools_dir: Path
+
+
+class PluginToolDir(BaseModel):
+    """One plugin's tool directory, and the name that namespaces it.
+
+    A plugin's tool files are loaded under ``custom_<plugin>_<file>``,
+    so a plugin can never shadow a tool of the person's own. The
+    namespace is the plugin's name, so the name and the directory
+    travel together — as this model, not as a pair of values in a
+    tuple that a caller has to keep in step.
+
+    Produced by
+    :meth:`igni_core.core.plugins.loader.PluginLoader.collect_tool_dirs`
+    and consumed by
+    :meth:`igni_core.core.tools.custom_loader.CustomToolLoader.discover`.
+    """
+
+    plugin_name: str
     tools_dir: Path
 
 
@@ -126,12 +147,10 @@ class DiscoveryResult(BaseModel):
     existing pattern in the ``tools/`` package where result models
     hold agno objects.
 
-    The back-compat :func:`load_custom_tools` shim returns only
-    :attr:`toolkits` (a plain ``list[Toolkit]``) so callers that
-    iterate the result under ``list(...)`` don't silently get the
-    model's fields instead of the toolkits. New callers migrate
-    to :meth:`CustomToolLoader.discover` to get ``loaded`` /
-    ``skipped`` / ``failed`` alongside the toolkits.
+    The toolkits are the result of the run; ``loaded``, ``skipped``
+    and ``failed`` say what happened to each file that was looked at,
+    so a caller can show the person why a tool they expected is
+    missing.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

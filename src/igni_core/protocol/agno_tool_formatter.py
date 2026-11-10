@@ -9,80 +9,38 @@ explicit collaborators:
 * :class:`DefaultFormatter` — the generic ``key=value`` fallback.
 * :class:`SpawnFormatter` — the ``spawn_agent`` / ``spawn_team``
   special case (agent name + first-line task snippet).
-* :class:`ToolCallFormatterRegistry` — owns the friendly-name map
-  and dispatches ``tool_name → formatter`` polymorphically.
+* :class:`ToolCallFormatterRegistry` — dispatches
+  ``tool_name → formatter`` polymorphically. The routing table is
+  per-instance state — nothing is shared at module level.
 * :class:`AgnoToolEventFormatter` — the coordinator caller-facing
   surface with :meth:`args_summary`, :meth:`friendly_name`, and
   :meth:`extract_result`. Composes a registry + optional
-  :class:`EditDiffRenderer` for the ``edit_file`` diff branch.
+  :class:`EditDiffComputer` for the ``edit_file`` diff branch.
 
-Note: this module deliberately does NOT import Agno at module
-scope — construction and every public method access only Agno
-event objects duck-typed via ``getattr``. The permission
-evaluator's lazy import path (``core/config/permission_eval.py``)
-still needs the registry to be creatable without loading Agno.
+The friendly-name catalog (raw Agno tool name → display name) is
+not formatter state — it is immutable data shared by several
+callers, so it lives in :mod:`igni_core.protocol.tool_friendly_names`
+as a class constant rather than behind a process-wide registry
+singleton that anyone could mutate.
+
+This module imports no Agno at all: every public method takes Agno
+event objects duck-typed via ``getattr``, so importing the protocol
+layer never loads Agno and the permission evaluator's import path
+stays light.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
-from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from igni_core.protocol.messages import ToolResultData
+from igni_core.protocol.tool_friendly_names import ToolFriendlyNames
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from igni_core.protocol.edit_diff_computer import EditDiffComputer
-
-
-# ── Friendly-name catalog ─────────────────────────────────────────
-
-# Snake_case Agno tool name → CC-style display name shown in the
-# tool-call header. Two callers read this raw (permission_eval's
-# lazy import, tests pinning the contract); everyone else routes
-# through ``ToolCallFormatterRegistry.friendly_name``.
-_DEFAULT_TOOL_NAMES: Mapping[str, str] = MappingProxyType(
-    {
-        "read_file": "Read",
-        "save_file": "Write",
-        "edit_file": "Edit",
-        "edit_file_replace_all": "Edit",
-        "create_file": "Write",
-        "run_shell_command": "Bash",
-        "grep": "Grep",
-        "grep_files": "Grep",
-        "grep_count": "Grep",
-        "glob_files": "Glob",
-        "list_files": "LS",
-        # ``web_search`` / ``search_news`` are what ``WebSearchToolSpec``
-        # registers; the ``duckduckgo_*`` spellings are what Agno's toolkit
-        # was called before the rename. ``FriendlyToolNameResolver`` inverts
-        # this map, so while it carried only the old names a rule reading
-        # ``deny: ["WebSearch"]`` resolved to two functions nothing registers
-        # and denied nothing — measured: the same rule returned ALLOW for
-        # ``web_search`` and DENY for ``duckduckgo_search``. The old names stay
-        # so a config written against them keeps working.
-        "web_search": "WebSearch",
-        "search_news": "WebSearch",
-        "duckduckgo_search": "WebSearch",
-        "duckduckgo_news": "WebSearch",
-        "fetch_url": "WebFetch",
-        "fetch_json": "WebFetch",
-        "run_python_code": "Python",
-        "spawn_agent": "Agent",
-        "spawn_team": "Team",
-        "delegate_task_to_member": "Delegate",
-        "delegate_task_to_members": "Delegate",
-        "search_knowledge_base": "Knowledge",
-        "update_user_memory": "Memory",
-        "schedule_task": "Schedule",
-        "list_scheduled_tasks": "Schedule",
-        "cancel_scheduled_task": "Schedule",
-    }
-)
 
 
 # ── ToolCallFormatter hierarchy ───────────────────────────────────
@@ -178,24 +136,23 @@ class SpawnFormatter(ToolCallFormatter):
 
 
 class ToolCallFormatterRegistry:
-    """Owns the friendly-name catalog and the tool_name → formatter
-    routing table.
+    """Owns the ``tool_name → formatter`` routing table.
 
-    Mutable via :meth:`register`, but the default construction is
-    already the production shape — external plugins that want to
-    add a special-case formatter for their own tool call
-    :meth:`register` explicitly (or subclass this registry).
+    The table is per-instance state: every registry owns its own
+    formatters, and nothing is shared at module level. A plain
+    construction is already the production shape — callers that
+    want a different routing (an extra special-case formatter, say)
+    build their own registry and inject it into
+    :class:`AgnoToolEventFormatter`.
 
-    The friendly-name map is exposed via :attr:`friendly_names`
-    as a read-only :class:`MappingProxyType` so ``permission_eval``
-    can iterate it without importing Agno and without risking
-    mutation.
+    The friendly-name catalog is *not* part of this class: it is
+    immutable shared data and lives in
+    :class:`~igni_core.protocol.tool_friendly_names.ToolFriendlyNames`.
     """
 
     def __init__(self) -> None:
         self._default_formatter: ToolCallFormatter = DefaultFormatter()
         self._formatters: dict[str, ToolCallFormatter] = {}
-        self._names: dict[str, str] = dict(_DEFAULT_TOOL_NAMES)
 
         # Register the two orchestration tools that get the spawn
         # special-case. Any new tool with the same shape (task +
@@ -222,60 +179,20 @@ class ToolCallFormatterRegistry:
         """
         return self._formatters.get(tool_name, self._default_formatter)
 
-    def format_args(self, tool_name: str, tool_args: dict | None) -> str:
+    def format_args(self, tool_name: str, tool_args: dict[str, Any] | None) -> str:
         """Format ``tool_args`` for ``tool_name`` via the routed
         formatter. Empty / non-dict args short-circuit to ``""``
         (defensive — the header is on the hot path and a TypeError
-        here would kill the streaming display)."""
+        here would kill the streaming display).
+
+        ``tool_args`` stays a plain mapping: it carries tool-invocation
+        payloads produced by Agno / third-party MCP servers whose
+        schema we don't control, so there is no closed model to type
+        it with.
+        """
         if not tool_args or not isinstance(tool_args, dict):
             return ""
         return self.formatter_for(tool_name).format_args(tool_args)
-
-    def friendly_name(self, tool_name: str, default: str | None = None) -> str:
-        """Look up the display name for a raw Agno tool name.
-
-        Unknown tools fall back to ``default`` (or the raw name
-        when default is None) so the TUI never shows an empty
-        pill for a custom tool.
-        """
-        if default is None:
-            default = tool_name
-        return self._names.get(tool_name, default)
-
-    @property
-    def friendly_names(self) -> Mapping[str, str]:
-        """Read-only view of the raw ``name → friendly`` map.
-
-        Exposed for ``permission_eval`` which builds a reverse
-        index (``Bash → {run_shell_command, ...}``) and for tests
-        pinning the catalog contract. The proxy prevents accidental
-        mutation of the shared registry state.
-        """
-        return MappingProxyType(self._names)
-
-
-# Module-level default registry — the coordinator constructs this
-# lazily so callers that only need friendly names (permission_eval)
-# don't pay to boot the spawn special-case. Instances are cheap
-# (a dict + two formatters) so this is more about explicit ownership
-# than performance.
-_default_registry: ToolCallFormatterRegistry | None = None
-
-
-def default_registry() -> ToolCallFormatterRegistry:
-    """Return the process-wide default registry, constructing on
-    first access.
-
-    Every call site that does not want to inject its own registry
-    (server_history_walker, hitl_stream_mux, pause_handler,
-    permission_eval) reaches through this getter — a single seam
-    where a test can override with a bespoke registry via monkeypatch
-    if that becomes useful.
-    """
-    global _default_registry
-    if _default_registry is None:
-        _default_registry = ToolCallFormatterRegistry()
-    return _default_registry
 
 
 # ── Coordinator ──────────────────────────────────────────────────
@@ -286,9 +203,9 @@ class AgnoToolEventFormatter:
 
     Composes a :class:`ToolCallFormatterRegistry` plus an optional
     :class:`EditDiffComputer` (only needed for the ``edit_file``
-    branch of :meth:`extract_result`). Callers can either construct
-    once and reuse (the serializer does this) or use the module-
-    level :func:`default_formatter` singleton.
+    branch of :meth:`extract_result`). The registry is owned by this
+    instance — a caller that wants a different routing injects its
+    own; there is no shared registry behind a module-level getter.
     """
 
     def __init__(
@@ -296,31 +213,25 @@ class AgnoToolEventFormatter:
         registry: ToolCallFormatterRegistry | None = None,
         diff_computer: EditDiffComputer | None = None,
     ) -> None:
-        self._registry = registry or default_registry()
+        self._registry = registry if registry is not None else ToolCallFormatterRegistry()
         self._diff_computer = diff_computer
 
     # ── Public API ───────────────────────────────────────────
 
-    def args_summary(self, tool_name: str, tool_args: dict | None) -> str:
+    def args_summary(self, tool_name: str, tool_args: dict[str, Any] | None) -> str:
         """Format ``tool_args`` for the tool-call header."""
         return self._registry.format_args(tool_name, tool_args)
 
     def friendly_name(self, tool_name: str, default: str | None = None) -> str:
         """Return the display name for an Agno tool."""
-        return self._registry.friendly_name(tool_name, default=default)
-
-    @property
-    def registry(self) -> ToolCallFormatterRegistry:
-        """Expose the underlying registry for callers that need
-        the friendly-names view (permission_eval)."""
-        return self._registry
+        return ToolFriendlyNames.friendly_name(tool_name, default=default)
 
     def extract_result(self, event: Any) -> ToolResultData:
         """Extract a :class:`ToolResultData` from a completed tool
         event.
 
         Handles the ``edit_file`` diff branch (composing with
-        :class:`EditDiffRenderer` when injected — otherwise treats
+        :class:`EditDiffComputer` when injected — otherwise treats
         the tool as unknown and falls through to the summary
         path). Preserves every pinned behavior from the pre-
         refactor free function:
@@ -339,15 +250,16 @@ class AgnoToolEventFormatter:
         result = getattr(tool, "result", None) if tool else None
         tool_name = getattr(tool, "tool_name", "?") if tool else "?"
 
+        raw_text = str(result) if result is not None else ""
+        result_str = raw_text.strip() if result else ""
+
         logger.debug(
             "extract_result [%s]: result type=%s, is_none=%s, len=%d",
             tool_name,
             type(result).__name__,
             result is None,
-            len(str(result)) if result is not None else 0,
+            len(raw_text),
         )
-
-        result_str = str(result).strip() if result else ""
 
         # Diff branch: only when the diff computer is available AND
         # this is an edit_file success (see docstring for the
@@ -369,7 +281,7 @@ class AgnoToolEventFormatter:
                 )
 
         # Non-diff / non-edit path.
-        full_text = self._normalize_full_text(str(result).strip() if result else "")
+        full_text = self._normalize_full_text(result_str)
         summary = self._compose_summary(full_text, timing)
         return ToolResultData(summary=summary, full_result=full_text)
 
@@ -434,5 +346,4 @@ __all__ = [
     "SpawnFormatter",
     "ToolCallFormatter",
     "ToolCallFormatterRegistry",
-    "default_registry",
 ]

@@ -130,11 +130,14 @@ def make_loop(tmp_path: Path, monkeypatch) -> Iterator[Any]:
                 raise line
             return line
 
-        async def check() -> UpdateInfo:
-            return update or UpdateInfo()
+        class _Checker:
+            """The update checker the banner asks."""
+
+            async def check(self) -> UpdateInfo:
+                return update or UpdateInfo()
 
         monkeypatch.setattr(f"{LOOP}.Prompt.ask", ask)
-        monkeypatch.setattr(f"{LOOP}.check_for_update", check)
+        monkeypatch.setattr(f"{LOOP}.UpdateChecker", _Checker)
         with patch("igni_core.core.session.session_run.Session", return_value=session):
             loop = InteractiveSessionLoop(Settings(), resume_session_id=resume)
         return _Run(loop, session, events)

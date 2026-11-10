@@ -5,7 +5,11 @@ until the person trusts the folder. A folder's ``.igni/tools/*.py``, its
 hooks, workflows, ``.lsp.json`` / ``.monitors.json`` commands, project
 plugins and markdown commands' ``!`cmd``` tokens all run code, and its
 config could empty the safety lists — so all of that waits for trust
-(``core/workspace_trust``).
+(this package).
+
+It lives here, beside the service that honours it, rather than with the
+other settings schemas: the settings package re-exports it, and the
+trust package reads it without pulling the settings layer in.
 
 This block lets an organisation narrow that decision:
 

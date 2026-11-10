@@ -1,5 +1,5 @@
 {
-  "version": "1.11.0",
+  "version": "1.12.0",
   "permissions": [
     {
       "name": "app",
@@ -518,6 +518,12 @@
       "doc": "A transient message on screen.",
       "fields": [
         {
+          "name": "type",
+          "type": "str",
+          "doc": "Always `toast`: what this is.",
+          "optional": false
+        },
+        {
           "name": "id",
           "type": "str",
           "doc": "",
@@ -577,6 +583,12 @@
       "name": "Dialog",
       "doc": "A dialog on screen: igni's own (`spec.kind` is `update`) or an extension's (`show_dialog`). One at a time; a new one replaces the last, which closes unanswered.",
       "fields": [
+        {
+          "name": "type",
+          "type": "str",
+          "doc": "Always `dialog`: what this is.",
+          "optional": false
+        },
         {
           "name": "id",
           "type": "str",

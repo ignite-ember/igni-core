@@ -8,12 +8,48 @@ so a window's change and an extension's are one change. One method per
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Annotated, Literal, TypeAlias
+from typing import Annotated, Any, Literal, TypeAlias
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from igni_core.extensions.host.windows import WindowRequest, Windows
-from igni_core.protocol.json_value import WireJson
+from igni_core.extensions.host.window_values import Dialog, Toast, WindowModelState
+from igni_core.extensions.host.windows import Windows
+
+
+class WindowRequest(BaseModel):
+    """One ``window_model`` request: a window reading or writing its model.
+
+    ``hydrate`` answers the whole model and says the window is open;
+    ``write`` sets one field; ``toast`` and ``dismiss_toast`` add and
+    remove one toast; ``open_dialog`` shows igni's own dialog and
+    ``answer_dialog`` closes the open one with the person's answer
+    (``value``; ``None`` for dismissed). ``token`` is the window's own
+    name for the write, echoed on the push.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    op: Literal["hydrate", "write", "toast", "dismiss_toast", "open_dialog", "answer_dialog"] = (
+        Field(description="What the window asks for.")
+    )
+    window: str = Field(min_length=1, description="The window's own stable id.")
+    field: str = Field(default="", description="The field to write, for ``write``.")
+    value: Any = Field(default=None, description="The value to write, or the answer to a dialog.")
+    token: str = Field(
+        default="",
+        description="The window's own name for this write, echoed on the push it gets back.",
+    )
+    dialog_id: str = Field(default="", description="The dialog to answer, for ``answer_dialog``.")
+    connection_id: str = Field(
+        default="",
+        description=(
+            "The connection the window came in on, for transports without connections; ignored "
+            "over a WebSocket, where the request's own connection is the window's."
+        ),
+    )
+    kind: str = Field(
+        default="", description="What kind of window this is, recorded when it opens."
+    )
 
 
 class Hydrated(BaseModel):
@@ -22,7 +58,9 @@ class Hydrated(BaseModel):
     op: Literal["hydrate"] = Field(
         default="hydrate", description="Always `hydrate`: the request this answers."
     )
-    state: dict[str, WireJson] = Field(description="Every field of the window's model, by name.")
+    state: WindowModelState = Field(
+        description="Every field of the window's model, as the model holds it."
+    )
     rev: int = Field(description="The window's revision.")
     unset: list[str] = Field(description="The fields still at their defaults, never set.")
 
@@ -46,7 +84,7 @@ class ToastAdded(BaseModel):
     op: Literal["toast"] = Field(
         default="toast", description="Always `toast`: the request this answers."
     )
-    toast: dict[str, WireJson] = Field(description="The toast as shown, its `id` included.")
+    toast: Toast = Field(description="The toast as shown, its `id` included.")
     rev: int = Field(description="The window's revision after showing it.")
 
 
@@ -66,7 +104,7 @@ class DialogShown(BaseModel):
     op: Literal["open_dialog"] = Field(
         default="open_dialog", description="Always `open_dialog`: the request this answers."
     )
-    dialog: dict[str, WireJson] = Field(description="The dialog as shown, its `id` included.")
+    dialog: Dialog = Field(description="The dialog as shown, its `id` included.")
     rev: int = Field(description="The window's revision after opening it.")
 
 
@@ -109,12 +147,12 @@ class WindowModelRpc:
 
     def handle(self, request: WindowRequest) -> WindowReply:
         """Answer one request. Raises
-        :class:`~igni_core.extensions.host.windows.WindowModelError`
+        :class:`~igni_core.extensions.host.window_errors.WindowModelError`
         for a write the model refuses."""
-        if request.op == "hydrate" or not self._windows.known(request.window):
+        if request.op == "hydrate" or not self._windows.registry.known(request.window):
             # A write from a window that has not hydrated in this process
             # is a reconnect racing its own hydrate: the window is open.
-            self._windows.attached(
+            self._windows.registry.attached(
                 request.window, connection_id=request.connection_id, kind=request.kind
             )
         return self._ops[request.op](request)
@@ -136,8 +174,9 @@ class WindowModelRpc:
 
     def _toast(self, request: WindowRequest) -> WindowReply:
         window = request.window
-        toast = self._windows.toast(window, dict(request.value or {}), token=request.token)
-        return ToastAdded(toast=toast, rev=self._windows.rev(window))
+        toast = Toast.model_validate(request.value or {})
+        shown = self._windows.toast(window, toast, token=request.token)
+        return ToastAdded(toast=shown, rev=self._windows.rev(window))
 
     def _dismiss_toast(self, request: WindowRequest) -> WindowReply:
         window = request.window
@@ -165,5 +204,6 @@ __all__ = [
     "ToastAdded",
     "WindowModelRpc",
     "WindowReply",
+    "WindowRequest",
     "Written",
 ]

@@ -31,6 +31,7 @@ from igni_core.core.config.tool_permissions.settings_files import (
     SettingsFileWriter,
 )
 from igni_core.core.config.tool_permissions.tool_name_resolver import ToolNameResolver
+from igni_core.core.workspace_trust import WorkspaceTrust
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +53,14 @@ class ToolPermissions:
         self,
         project_dir: Path | None = None,
         settings_permissions: PermissionsConfig | None = None,
+        *,
+        trust: WorkspaceTrust | None = None,
     ) -> None:
         self._project_dir = project_dir or Path.cwd()
 
         # Collaborators (composition, not inheritance)
         self._defaults = ToolPermissionDefaults()
-        self._loader = SettingsFileLoader(project_dir=self._project_dir)
+        self._loader = SettingsFileLoader(project_dir=self._project_dir, trust=trust)
         self._writer = SettingsFileWriter(project_dir=project_dir)
         self._resolver = ToolNameResolver()
         self._category_map = CategoryToToolMap()

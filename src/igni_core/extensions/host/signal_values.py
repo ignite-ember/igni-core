@@ -33,6 +33,7 @@ class Emit(Protocol):
         *,
         content: Content | None = None,
         only: str | None = None,
+        window: str | None = None,
     ) -> list[str]: ...
 
 
@@ -47,6 +48,16 @@ class Signal(BaseModel):
         return cls.model_validate(message, from_attributes=True)
 
 
+class Windowed(Signal):
+    """A signal about one window: it says which window it is about.
+
+    The window is told to the bus beside the value, so the ``changed``
+    report of a per-window member need not read it out of the value.
+    """
+
+    window: str | None = None
+
+
 class Emitter:
     """Signals onto the bus, dumped at the seam."""
 
@@ -56,11 +67,17 @@ class Emitter:
     def send(
         self, signal: Signal, *, content: Content | None = None, only: str | None = None
     ) -> None:
-        self._emit(signal.WIRE, signal.model_dump(), content=content, only=only)
+        self._emit(
+            signal.WIRE,
+            signal.model_dump(),
+            content=content,
+            only=only,
+            window=signal.window if isinstance(signal, Windowed) else None,
+        )
 
     def value(self, wire: str, value: Any, *, content: Content | None = None) -> None:
         """A value in the published shape — plain data or a model, dumped here."""
         self._emit(wire, plain(value), content=content)
 
 
-__all__ = ["Emit", "Emitter", "Signal"]
+__all__ = ["Emit", "Emitter", "Signal", "Windowed"]

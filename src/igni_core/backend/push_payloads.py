@@ -21,18 +21,6 @@ from typing import Annotated, Any, Literal
 from pydantic import Field
 
 from igni_core.backend.schemas_pool import VmCredentialState
-from igni_core.backend.schemas_push import (
-    BackgroundProcessDonePayload,
-    FileEditedPayload,
-    LoginResultPayload,
-    LoginStatusPayload,
-    ProcessExitedPayload,
-    ProcessLinePayload,
-    ProcessStartedPayload,
-    SchedulerCompletedPayload,
-    SchedulerStartedPayload,
-    SessionNamedPayload,
-)
 from igni_core.backend.schemas_visualization import VisualizationActionDispatchedEvent
 from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
@@ -60,6 +48,18 @@ from igni_core.extensions.host.pushes import ExternalOpen, HostSignalPush
 from igni_core.extensions.host.windows import WindowChange
 from igni_core.notifications.schemas import NotificationsChanged
 from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.push_payloads import (
+    BackgroundProcessDonePayload,
+    FileEditedPayload,
+    LoginResultPayload,
+    LoginStatusPayload,
+    ProcessExitedPayload,
+    ProcessLinePayload,
+    ProcessStartedPayload,
+    SchedulerCompletedPayload,
+    SchedulerStartedPayload,
+    SessionNamedPayload,
+)
 
 #: One ``orchestrate_event``: a sub-agent's progress, or a view the agent
 #: (or an extension) drew, told apart by ``type``.

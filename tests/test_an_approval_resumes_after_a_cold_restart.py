@@ -625,7 +625,7 @@ async def test_a_spawn_waits_for_its_approval_as_long_as_the_person_takes(
         run_in_progress=True,
         waiting_approvals=1,
         blocked_spawns=backend.coordinator.waiting_count,
-        active_subagent_runs=len(tools.subagent_registry),
+        active_subagent_runs=len(tools.wiring.sinks.subagent_registry),
     )
     assert activity.state is ActivityState.WAITING
 

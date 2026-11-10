@@ -169,7 +169,7 @@
       "type": "object"
     },
     "AgentPausedEvent": {
-      "description": "A sub-agent paused because it needs user input (e.g. a tool approval).",
+      "description": "A sub-agent paused because it needs user input (e.g. a tool\napproval): the run waits for someone to answer its approvals.",
       "properties": {
         "agent_path": {
           "description": "Dot-joined names of the agent that emitted the event, from the outermost spawning agent down to the emitter (`root` for the top level).",
@@ -223,7 +223,7 @@
       "type": "object"
     },
     "AgentStartedEvent": {
-      "description": "A sub-agent started running a task.",
+      "description": "A member of the run started: a sub-agent began running a task.",
       "properties": {
         "agent": {
           "description": "Name of the sub-agent that started.",
@@ -980,6 +980,34 @@
       "title": "CompleteFilesArgs",
       "type": "object"
     },
+    "Composer": {
+      "description": "A window's composer: its draft, the files it names and its mode.",
+      "properties": {
+        "attachments": {
+          "default": [],
+          "description": "The files the draft names, in order.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Attachments",
+          "type": "array"
+        },
+        "mode": {
+          "default": "chat",
+          "description": "What the composer is in: `chat`, `command` (a slash command) or `shell`.",
+          "title": "Mode",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "description": "The draft's text, as the person wrote it.",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "title": "Composer",
+      "type": "object"
+    },
     "ContentDelta": {
       "description": "A chunk of the model's reply, streamed as it is written.\n\nAppend each chunk's `text` to what came before to build the reply.",
       "properties": {
@@ -1025,7 +1053,7 @@
       "type": "object"
     },
     "ContentPreviewEvent": {
-      "description": "A short preview of the text a sub-agent is producing.",
+      "description": "A short preview of what the agent is writing, mid-stream.",
       "properties": {
         "agent_path": {
           "description": "Dot-joined names of the agent that emitted the event, from the outermost spawning agent down to the emitter (`root` for the top level).",
@@ -1092,6 +1120,63 @@
       "title": "ContextBreakdown",
       "type": "object"
     },
+    "Dialog": {
+      "description": "A dialog on screen: igni's own or an extension's. One at a time.",
+      "properties": {
+        "id": {
+          "description": "The dialog's own id: two writers cannot collide.",
+          "title": "Id",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The extension that asked for it; null for igni's own.",
+          "title": "Source"
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "description": "Any JSON value.",
+              "type": [
+                "object",
+                "array",
+                "string",
+                "number",
+                "integer",
+                "boolean",
+                "null"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the dialog shows: igni's own spec, or an extension's.",
+          "title": "Spec"
+        },
+        "type": {
+          "const": "dialog",
+          "default": "dialog",
+          "description": "Always `dialog`: what this is.",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Dialog",
+      "type": "object"
+    },
     "DialogAnswered": {
       "description": "The answer to `answer_dialog`: whether the dialog was still the open one, and the window's revision.",
       "properties": {
@@ -1124,21 +1209,8 @@
       "description": "The answer to `open_dialog`: the dialog as shown, with its id, and the window's revision.",
       "properties": {
         "dialog": {
-          "additionalProperties": {
-            "description": "Any JSON value.",
-            "type": [
-              "object",
-              "array",
-              "string",
-              "number",
-              "integer",
-              "boolean",
-              "null"
-            ]
-          },
-          "description": "The dialog as shown, its `id` included.",
-          "title": "Dialog",
-          "type": "object"
+          "$ref": "#/defs/Dialog",
+          "description": "The dialog as shown, its `id` included."
         },
         "op": {
           "const": "open_dialog",
@@ -2519,21 +2591,8 @@
           "type": "integer"
         },
         "state": {
-          "additionalProperties": {
-            "description": "Any JSON value.",
-            "type": [
-              "object",
-              "array",
-              "string",
-              "number",
-              "integer",
-              "boolean",
-              "null"
-            ]
-          },
-          "description": "Every field of the window's model, by name.",
-          "title": "State",
-          "type": "object"
+          "$ref": "#/defs/WindowModelState",
+          "description": "Every field of the window's model, as the model holds it."
         },
         "unset": {
           "description": "The fields still at their defaults, never set.",
@@ -4111,6 +4170,36 @@
       "title": "OutputStylesResult",
       "type": "object"
     },
+    "Page": {
+      "description": "One level of a window's page stack.",
+      "properties": {
+        "kind": {
+          "description": "What kind of page this is: `plugins`, `extensions`, or an extension's own kind.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "description": "The name shown for this page.",
+          "title": "Label",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "The page's parameters, as text: what the page was opened with.",
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Page",
+      "type": "object"
+    },
     "PageRequest": {
       "additionalProperties": false,
       "description": "A request from an extension's page to the host model, sent through the `host_model` method.",
@@ -4262,6 +4351,51 @@
         "ok"
       ],
       "title": "PageTokenReply",
+      "type": "object"
+    },
+    "Panel": {
+      "additionalProperties": {
+        "description": "Any JSON value.",
+        "type": [
+          "object",
+          "array",
+          "string",
+          "number",
+          "integer",
+          "boolean",
+          "null"
+        ]
+      },
+      "description": "The panel open over a window's chat. One at a time.",
+      "properties": {
+        "kind": {
+          "description": "What kind of panel this is: `notifications`, `search`, `login` or `dir-picker`.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "description": "Any JSON value.",
+            "type": [
+              "object",
+              "array",
+              "string",
+              "number",
+              "integer",
+              "boolean",
+              "null"
+            ]
+          },
+          "default": {},
+          "description": "The panel's own parameters: what the panel shows, in the panel's own shape.",
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Panel",
       "type": "object"
     },
     "PendingMessage": {
@@ -4986,6 +5120,33 @@
       "title": "PluginToolInfo",
       "type": "object"
     },
+    "Preview": {
+      "additionalProperties": {
+        "description": "Any JSON value.",
+        "type": [
+          "object",
+          "array",
+          "string",
+          "number",
+          "integer",
+          "boolean",
+          "null"
+        ]
+      },
+      "description": "The file a window's preview shows.",
+      "properties": {
+        "path": {
+          "description": "The path of the file being previewed.",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "Preview",
+      "type": "object"
+    },
     "PreviewPluginArgs": {
       "description": "Arguments for previewing a plugin from git without installing it.",
       "properties": {
@@ -5356,7 +5517,7 @@
       "type": "object"
     },
     "PushNotification": {
-      "description": "Something happened that a client may want to show, sent without being asked.\n\nScheduled tasks, login status, permission-mode changes, background\nprocesses, file edits and more each have a `channel`; the shape of\n`payload` depends on it. Ignore a channel you do not know.",
+      "description": "A push \u2014 the channel, and the payload that channel carries.\n\nSomething happened that a client may want to show, sent without\nbeing asked. Scheduled tasks, login status, permission-mode\nchanges, background processes, file edits and more each have a\n`channel`; the shape of `payload` depends on it. Ignore a\nchannel you do not know.\n\nThe `channel` field says which kind of event this is; a client\nroutes on it to render or dispatch. See `PushChannel` for\nthe catalogue of known channels \u2014 the producer set is open, so\ntreat anything unlisted as a channel this module simply hasn't\ncatalogued yet, not as invalid.\n\n`channel` stays a raw `str` on the wire (not a strict\n`PushChannel` enum field) so a producer emitting a channel\nthe catalogue does not name yet survives verbatim \u2014 a strict enum\nwith `_missing_` \u2192 `UNKNOWN` would rewrite the value to\n`\"unknown\"` and lose the routing information a client keys on.\n\nProducers should build their pushes with the `push_*` factories\nbelow rather than by hand: each takes that channel's payload\nmodel, so the channel and the payload cannot drift apart.",
       "properties": {
         "channel": {
           "default": "",
@@ -5531,7 +5692,7 @@
       "type": "object"
     },
     "RPCResponse": {
-      "description": "The answer to an `rpc_request`, with the request's `id`.\n\nIt carries either `result` (the call succeeded) or `error` and\n`code` (it failed), never both.",
+      "description": "The answer to an `rpc_request`, with the request's `id`.\n\nIt carries either `result` (the call succeeded) or `error` and\n`code` (it failed), never both. The two factories build the two\nshapes; a frame that carries both is refused on the way in.",
       "properties": {
         "code": {
           "anyOf": [
@@ -6446,6 +6607,44 @@
       "title": "SchedulerStartedPayload",
       "type": "object"
     },
+    "Scroll": {
+      "additionalProperties": {
+        "description": "Any JSON value.",
+        "type": [
+          "object",
+          "array",
+          "string",
+          "number",
+          "integer",
+          "boolean",
+          "null"
+        ]
+      },
+      "description": "Where a window's transcript is scrolled to.",
+      "properties": {
+        "at_bottom": {
+          "default": true,
+          "description": "Whether the transcript is scrolled to its end.",
+          "title": "At Bottom",
+          "type": "boolean"
+        },
+        "message_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The message the transcript is scrolled to; null when it is at the end.",
+          "title": "Message Id"
+        }
+      },
+      "title": "Scroll",
+      "type": "object"
+    },
     "SearchChatArgs": {
       "description": "Arguments for searching a session's conversation.",
       "properties": {
@@ -6548,6 +6747,64 @@
         }
       },
       "title": "SearchCodeResult",
+      "type": "object"
+    },
+    "Selection": {
+      "additionalProperties": {
+        "description": "Any JSON value.",
+        "type": [
+          "object",
+          "array",
+          "string",
+          "number",
+          "integer",
+          "boolean",
+          "null"
+        ]
+      },
+      "description": "What is selected in a window. Each part is independent; `None` for nothing.",
+      "properties": {
+        "file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The file the selection is in; null when none is.",
+          "title": "File"
+        },
+        "message_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The message the selection starts in; null when nothing is selected.",
+          "title": "Message Id"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The selected text; null when none is.",
+          "title": "Text"
+        }
+      },
+      "title": "Selection",
       "type": "object"
     },
     "ServerChoice": {
@@ -7170,6 +7427,45 @@
         }
       },
       "title": "Shutdown",
+      "type": "object"
+    },
+    "Sidebar": {
+      "description": "A window's sidebar: open or not, its width and its section.",
+      "properties": {
+        "open": {
+          "default": false,
+          "description": "Whether the sidebar is open.",
+          "title": "Open",
+          "type": "boolean"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The section the sidebar shows; null for none.",
+          "title": "Section"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The sidebar's width in pixels; null for igni's own sidebar.",
+          "title": "Width"
+        }
+      },
+      "title": "Sidebar",
       "type": "object"
     },
     "SkillDefinition": {
@@ -7941,6 +8237,90 @@
       "title": "ThinkingTurn",
       "type": "object"
     },
+    "Toast": {
+      "additionalProperties": {
+        "description": "Any JSON value.",
+        "type": [
+          "object",
+          "array",
+          "string",
+          "number",
+          "integer",
+          "boolean",
+          "null"
+        ]
+      },
+      "description": "A transient message on screen.",
+      "properties": {
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A second line; null when there is none.",
+          "title": "Body"
+        },
+        "id": {
+          "default": "",
+          "description": "The toast's own id: two writers cannot collide.",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "description": "How it is styled: `info`, `success`, `warning` or `error`.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The extension that showed it; null for igni's own.",
+          "title": "Source"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/defs/Page"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where clicking the toast goes; null when it goes nowhere."
+        },
+        "text": {
+          "description": "The toast's first line.",
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "toast",
+          "default": "toast",
+          "description": "Always `toast`: what this is.",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "kind"
+      ],
+      "title": "Toast",
+      "type": "object"
+    },
     "ToastAdded": {
       "description": "The answer to `toast`: the toast as shown, with its id, and the window's revision.",
       "properties": {
@@ -7957,21 +8337,8 @@
           "type": "integer"
         },
         "toast": {
-          "additionalProperties": {
-            "description": "Any JSON value.",
-            "type": [
-              "object",
-              "array",
-              "string",
-              "number",
-              "integer",
-              "boolean",
-              "null"
-            ]
-          },
-          "description": "The toast as shown, its `id` included.",
-          "title": "Toast",
-          "type": "object"
+          "$ref": "#/defs/Toast",
+          "description": "The toast as shown, its `id` included."
         }
       },
       "required": [
@@ -8176,7 +8543,7 @@
       "type": "object"
     },
     "ToolCompletedEvent": {
-      "description": "A sub-agent's tool call finished.",
+      "description": "A sub-agent's tool call finished \u2014 or failed, which is what\n`is_error` says.",
       "properties": {
         "agent_path": {
           "description": "Dot-joined names of the agent that emitted the event, from the outermost spawning agent down to the emitter (`root` for the top level).",
@@ -8223,7 +8590,7 @@
             }
           ],
           "default": null,
-          "description": "Identifier of the tool call; matches the earlier `tool_started` event. Null when the model did not supply one.",
+          "description": "Identifier of this tool call; matches the earlier `tool_started` event. Null when the model did not supply one.",
           "title": "Tool Call Id"
         },
         "type": {
@@ -8354,7 +8721,7 @@
       "type": "object"
     },
     "ToolStartedEvent": {
-      "description": "A sub-agent started calling a tool.",
+      "description": "A tool call started: a sub-agent began calling a tool.",
       "properties": {
         "agent_path": {
           "description": "Dot-joined names of the agent that emitted the event, from the outermost spawning agent down to the emitter (`root` for the top level).",
@@ -8943,6 +9310,19 @@
           "title": "Agent Path",
           "type": "string"
         },
+        "card_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The card this delta belongs to; it is not part of the event's wire shape.",
+          "title": "Card Id"
+        },
         "final": {
           "default": true,
           "description": "True when `json` holds the complete spec; false for an in-progress update.",
@@ -9145,56 +9525,66 @@
       "type": "object"
     },
     "WindowChange": {
-      "description": "One change to one window's model. Every window is told; only the window it names applies it.",
+      "description": "One change to one window's model, as listeners are told it.",
       "properties": {
         "answer": {
-          "default": null,
-          "description": "For `dialog_closed`: the person's answer; null when the dialog was dismissed.",
-          "title": "Answer",
-          "type": [
-            "object",
-            "array",
-            "string",
-            "number",
-            "integer",
-            "boolean",
-            "null"
-          ]
-        },
-        "event": {
-          "default": "",
-          "description": "For the toast and dialog fields, what happened: `toast_shown`, `toast_dismissed`, `dialog_opened` or `dialog_closed`. Empty otherwise.",
-          "title": "Event",
-          "type": "string"
-        },
-        "field": {
-          "description": "The name of the field that changed.",
-          "title": "Field",
-          "type": "string"
-        },
-        "item": {
           "anyOf": [
             {
-              "additionalProperties": {
-                "description": "Any JSON value.",
-                "type": [
-                  "object",
-                  "array",
-                  "string",
-                  "number",
-                  "integer",
-                  "boolean",
-                  "null"
-                ]
-              },
-              "type": "object"
+              "description": "Any JSON value.",
+              "type": [
+                "object",
+                "array",
+                "string",
+                "number",
+                "integer",
+                "boolean",
+                "null"
+              ]
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "The toast or dialog that `event` is about; null when there is no `event`.",
+          "description": "The answer given to the dialog, as JSON; null when it was dismissed.",
+          "title": "Answer"
+        },
+        "event": {
+          "default": "",
+          "description": "What happened, for the fields that hold a list or a dialog: `toast_shown`, `toast_dismissed`, `dialog_opened` or `dialog_closed`; empty otherwise.",
+          "title": "Event",
+          "type": "string"
+        },
+        "field": {
+          "description": "Which of the window's fields changed.",
+          "title": "Field",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "dialog": "#/defs/Dialog",
+                  "toast": "#/defs/Toast"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/defs/Toast"
+                },
+                {
+                  "$ref": "#/defs/Dialog"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The toast or the dialog the event is about.",
           "title": "Item"
         },
         "rev": {
@@ -9204,26 +9594,34 @@
         },
         "token": {
           "default": "",
-          "description": "The token the writing window gave with its write, so it can recognise its own change; empty for a change an extension made.",
+          "description": "The writer's own name for the write, echoed so the window that wrote it knows its own write; empty for an extension's.",
           "title": "Token",
           "type": "string"
         },
         "value": {
+          "anyOf": [
+            {
+              "description": "Any JSON value.",
+              "type": [
+                "object",
+                "array",
+                "string",
+                "number",
+                "integer",
+                "boolean",
+                "null"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
           "default": null,
-          "description": "The field's new value.",
-          "title": "Value",
-          "type": [
-            "object",
-            "array",
-            "string",
-            "number",
-            "integer",
-            "boolean",
-            "null"
-          ]
+          "description": "The field's new value, as JSON.",
+          "title": "Value"
         },
         "window": {
-          "description": "The id of the window whose model changed.",
+          "description": "The window whose model changed.",
           "title": "Window",
           "type": "string"
         }
@@ -9300,6 +9698,120 @@
         "window"
       ],
       "title": "WindowModelArgs",
+      "type": "object"
+    },
+    "WindowModelState": {
+      "description": "A window's whole model: every field, as a window hydrates from it.",
+      "properties": {
+        "composer": {
+          "$ref": "#/defs/Composer",
+          "default": {
+            "attachments": [],
+            "mode": "chat",
+            "text": ""
+          },
+          "description": "The window's composer."
+        },
+        "dialog": {
+          "anyOf": [
+            {
+              "$ref": "#/defs/Dialog"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The dialog on screen."
+        },
+        "focused": {
+          "default": false,
+          "description": "Whether this window has the focus.",
+          "title": "Focused",
+          "type": "boolean"
+        },
+        "panel": {
+          "anyOf": [
+            {
+              "$ref": "#/defs/Panel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The panel open over the chat."
+        },
+        "preview": {
+          "anyOf": [
+            {
+              "$ref": "#/defs/Preview"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The file being previewed."
+        },
+        "project_dir": {
+          "default": "",
+          "description": "The folder the window shows.",
+          "title": "Project Dir",
+          "type": "string"
+        },
+        "route": {
+          "default": [],
+          "description": "The window's page stack.",
+          "items": {
+            "$ref": "#/defs/Page"
+          },
+          "title": "Route",
+          "type": "array"
+        },
+        "scroll": {
+          "$ref": "#/defs/Scroll",
+          "default": {
+            "at_bottom": true,
+            "message_id": null
+          },
+          "description": "Where the transcript is scrolled."
+        },
+        "selection": {
+          "$ref": "#/defs/Selection",
+          "default": {
+            "file": null,
+            "message_id": null,
+            "text": null
+          },
+          "description": "What is selected."
+        },
+        "session": {
+          "default": "",
+          "description": "The session the window shows.",
+          "title": "Session",
+          "type": "string"
+        },
+        "sidebar": {
+          "$ref": "#/defs/Sidebar",
+          "default": {
+            "open": false,
+            "section": null,
+            "width": null
+          },
+          "description": "The window's sidebar."
+        },
+        "toasts": {
+          "default": [],
+          "description": "The toasts on screen.",
+          "items": {
+            "$ref": "#/defs/Toast"
+          },
+          "title": "Toasts",
+          "type": "array"
+        }
+      },
+      "title": "WindowModelState",
       "type": "object"
     },
     "WorkflowCancelRequest": {
@@ -9747,7 +10259,7 @@
     },
     "push_notification": {
       "direction": "to_client",
-      "doc": "Something happened that a client may want to show, sent without being asked.\n\nScheduled tasks, login status, permission-mode changes, background\nprocesses, file edits and more each have a `channel`; the shape of\n`payload` depends on it. Ignore a channel you do not know.",
+      "doc": "A push \u2014 the channel, and the payload that channel carries.\n\nSomething happened that a client may want to show, sent without\nbeing asked. Scheduled tasks, login status, permission-mode\nchanges, background processes, file edits and more each have a\n`channel`; the shape of `payload` depends on it. Ignore a\nchannel you do not know.\n\nThe `channel` field says which kind of event this is; a client\nroutes on it to render or dispatch. See `PushChannel` for\nthe catalogue of known channels \u2014 the producer set is open, so\ntreat anything unlisted as a channel this module simply hasn't\ncatalogued yet, not as invalid.\n\n`channel` stays a raw `str` on the wire (not a strict\n`PushChannel` enum field) so a producer emitting a channel\nthe catalogue does not name yet survives verbatim \u2014 a strict enum\nwith `_missing_` \u2192 `UNKNOWN` would rewrite the value to\n`\"unknown\"` and lose the routing information a client keys on.\n\nProducers should build their pushes with the `push_*` factories\nbelow rather than by hand: each takes that channel's payload\nmodel, so the channel and the payload cannot drift apart.",
       "schema": {
         "$ref": "#/defs/PushNotification"
       }
@@ -9789,7 +10301,7 @@
     },
     "rpc_response": {
       "direction": "to_client",
-      "doc": "The answer to an `rpc_request`, with the request's `id`.\n\nIt carries either `result` (the call succeeded) or `error` and\n`code` (it failed), never both.",
+      "doc": "The answer to an `rpc_request`, with the request's `id`.\n\nIt carries either `result` (the call succeeded) or `error` and\n`code` (it failed), never both. The two factories build the two\nshapes; a frame that carries both is refused on the way in.",
       "schema": {
         "$ref": "#/defs/RPCResponse"
       }

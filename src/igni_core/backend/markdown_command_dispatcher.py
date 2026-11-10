@@ -17,13 +17,8 @@ editor.
 Discovery is a constructor-injected dependency
 (:attr:`_discover`, typed via :data:`DiscoverMarkdownCommands`)
 supplied by the composing :class:`CommandHandler` — not a
-sibling-module reach-in at call time. Tests patch
-``igni_core.backend.command_handler.discover_markdown_commands``
-BEFORE constructing the handler, so the patched symbol is what
-gets captured as the injected callable. The same path through
-``igni_core.backend.markdown_command_dispatcher
-.discover_markdown_commands`` is no longer valid here (no module-
-level alias), so the test helper stacks both patch targets.
+sibling-module reach-in at call time. A test hands the handler a
+stub callable instead of patching a module-level symbol.
 """
 
 from __future__ import annotations
@@ -33,7 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from igni_core.backend.command_result import CommandResult
-from igni_core.core.utils.markdown_commands import MarkdownCommand, discover_markdown_commands
+from igni_core.core.utils.markdown_commands import MarkdownCommand
 from igni_core.protocol.messages import CommandAction, CommandResultKind
 
 if TYPE_CHECKING:
@@ -41,15 +36,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["MarkdownCommandDispatcher", "discover_markdown_commands"]
+__all__ = ["DiscoverMarkdownCommands", "MarkdownCommandDispatcher"]
 
 
 class DiscoverMarkdownCommands(Protocol):
     """Callable signature for the discovery dependency injected into
     :class:`MarkdownCommandDispatcher`.
 
-    Matches :func:`igni_core.core.utils.markdown_commands
-    .discover_markdown_commands` — kept as a Protocol (not a
+    Matches :meth:`igni_core.core.utils.markdown_commands
+    .MarkdownCommand.discover` — kept as a Protocol (not a
     direct import reference) so tests can substitute a bare
     ``MagicMock`` without pulling in the real discovery chain.
 
@@ -60,17 +55,17 @@ class DiscoverMarkdownCommands(Protocol):
     :meth:`MarkdownCommandDispatcher.try_render` has always passed —
     and the omission survived because ``call-arg`` sat in the
     project-wide ``disable_error_code`` list (SWU-100). Both halves
-    are fixed: the signature below is the real function's, and
+    are fixed: the signature below is the real classmethod's, and
     ``pyproject.toml`` re-enables ``call-arg`` for this module.
 
-    Parameters are positional-or-keyword (no ``*``) because that is
-    how the real function declares them; the call site passes the
-    last two by keyword regardless.
+    ``read_claude`` and ``group_dir`` are keyword-only because that
+    is how the classmethod declares them.
     """
 
     def __call__(
         self,
         project_dir: Path,
+        *,
         read_claude: bool = True,
         group_dir: Path | None = None,
     ) -> dict[str, MarkdownCommand]: ...
@@ -95,14 +90,9 @@ class MarkdownCommandDispatcher:
     ) -> None:
         """Compose a session and a discovery callable.
 
-        ``discover`` is captured at construction — tests must
-        construct (or reconstruct) the handler INSIDE the
-        ``with patch(...)`` block so the patched symbol is what
-        gets injected. The composing :class:`CommandHandler`
-        threads the module-level
-        ``igni_core.backend.command_handler
-        .discover_markdown_commands`` reference, so any patch on
-        that path before handler construction lands here.
+        ``discover`` is captured at construction, so a test that
+        wants a stub passes it in rather than patching a symbol
+        the dispatcher would have to look up later.
         """
         self._session = session
         self._discover = discover

@@ -21,10 +21,8 @@ from typing import Any
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.loader import PromptLoader
-from igni_core.core.utils.context import (
-    ProjectMemoryBank,
-    load_project_context,
-)
+from igni_core.core.utils.context import RulesContextLoader
+from igni_core.core.utils.context_memory import ProjectMemoryBank
 
 from .plan_mode_nudge import PlanModeNudge
 
@@ -86,10 +84,13 @@ class InstructionsBuilder:
             return
         out.append(workspace_ctx)
         for extra_dir in self._workspace.additional_dirs:
-            extra_rules = load_project_context(
-                extra_dir,
-                self._settings.context.project_file,
-                read_claude_md=self._settings.rules.cross_tool_support,
+            extra_rules = (
+                RulesContextLoader(
+                    project_dir=extra_dir,
+                    read_claude_md=self._settings.rules.cross_tool_support,
+                )
+                .load_all()
+                .render()
             )
             if extra_rules:
                 out.append(f"Additional workspace ({extra_dir.name}):\n{extra_rules}")

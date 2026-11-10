@@ -14,16 +14,21 @@
 
 from __future__ import annotations
 
+from igni_core.contracts.wire_schema import EmptyWireContractError, WireSchemaPublisher
 from igni_core.extensions.host import published
-from igni_core.protocol import rpc_contract, wire_schema
+from igni_core.protocol import rpc_contract
 
 
 def main() -> None:
     print(f"wrote {published.write()}")
     path, contract = rpc_contract.write()
     print(f"wrote {path} ({len(contract['methods'])} methods, {len(contract['messages'])} messages)")
-    path, schema = wire_schema.write()
-    print(f"wrote {path} ({len(schema['messages'])} messages, {len(schema['rpc'])} rpc payloads)")
+    publisher = WireSchemaPublisher()
+    try:
+        path, schema = publisher.write()
+    except EmptyWireContractError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"wrote {path} ({len(schema.messages)} messages, {len(schema.rpc)} rpc payloads)")
 
 
 if __name__ == "__main__":

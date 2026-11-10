@@ -22,9 +22,19 @@ spends a paragraph forbidding.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
+from typing import Any
 
-from igni_core.core.tools.orchestrate_events import VIS_SPEC_PREFIX
-from igni_core.core.tools.orchestrate_spawn import AgentSpawn
+from igni_core.core.tools.orchestrate_budget import SpawnBudget
+from igni_core.core.tools.orchestrate_spawn_agent import AgentSpawn
+from igni_core.core.tools.orchestrate_spawn_types import (
+    AgentSpawnState,
+    OrchestrateScope,
+    SpawnContext,
+    SpawnDeps,
+    SpawnWiring,
+)
+from igni_core.core.tools.orchestrate_symbols import VIS_SPEC_PREFIX
 
 SPEC = {
     "root": "kpi",
@@ -37,6 +47,36 @@ SPEC = {
     },
     "state": {"total": 12500},
 }
+
+
+def _context(task: str = "chart the migration") -> SpawnContext:
+    """A context with nothing in it the render path touches."""
+    settings = SimpleNamespace(
+        orchestration=SimpleNamespace(sub_team_timeout=30, max_nesting_depth=5)
+    )
+    return SpawnContext(
+        scope=OrchestrateScope(
+            pool=SimpleNamespace(),
+            settings=settings,
+            budget=SpawnBudget(20),
+            current_depth=0,
+            max_depth=5,
+            project_dir=None,
+        ),
+        wiring=SpawnWiring(session_id="s1", hook_executor=None),
+        deps=SpawnDeps(
+            agent_streamer=_never_streamed,
+            team_streamer=_never_streamed,
+            team_factory=lambda _spec: None,
+            model_registry_factory=lambda _settings: None,
+            nested_toolkit_factory=lambda _spec: None,
+        ),
+        task=task,
+    )
+
+
+async def _never_streamed(_context: Any) -> tuple[str, list[str]]:
+    raise AssertionError("streamed a spawn whose result was composed directly")
 
 
 def _activity_with_spec(spec: dict) -> list[str]:
@@ -85,12 +125,14 @@ class TestItIsStillTheOldResult:
     what it expects."""
 
     class _Spawn(AgentSpawn):
-        def __init__(self):  # noqa: D107 — bypasses the real wiring
-            self._agent_name = "visualizer"
-            self._agent_desc = "Renders structured data as UI"
-            self._agent_tools = "visualize"
-            self._task = "chart the migration"
-            self._sandbox = None
+        def __init__(self) -> None:  # noqa: D107 — bypasses the real wiring
+            self._context = _context()
+            self._state = AgentSpawnState(
+                agent_name="visualizer",
+                description="Renders structured data as UI",
+                tools="visualize",
+                effective_task="chart the migration",
+            )
 
     def test_the_header_and_response_are_untouched(self):
         out = self._Spawn().format_result(

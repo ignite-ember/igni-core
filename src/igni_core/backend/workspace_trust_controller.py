@@ -27,7 +27,9 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.workspace_trust import (
     GATED_SUMMARY,
     TrustDecision,
+    TrustRefused,
     WorkspaceTrust,
+    process_trust,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,8 +114,8 @@ class WorkspaceTrustController:
 
     @property
     def _service(self) -> WorkspaceTrust:
-        # Read per call: the process-wide instance can be replaced (tests).
-        return self._trust or WorkspaceTrust.shared()
+        # Read per call: the process's instance can be replaced (tests).
+        return self._trust if self._trust is not None else process_trust()
 
     def status(self) -> WorkspaceTrustStatus:
         return WorkspaceTrustStatus.of(self._service.decide(self._project_dir))
@@ -125,8 +127,6 @@ class WorkspaceTrustController:
         policy does not allow the folder to be trusted, or the answer is not
         one of ``trust`` / ``distrust`` / ``once``.
         """
-        from igni_core.core.workspace_trust import TrustRefused
-
         before = self._service.decide(self._project_dir).trusted
         try:
             if decision == "trust":

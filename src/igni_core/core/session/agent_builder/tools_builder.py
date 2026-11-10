@@ -150,7 +150,7 @@ class ToolsBuilder:
             plugin_tool_dirs=plugin_tool_dirs,
             group_tools_dir=sources.group_tools_dir,
         )
-        return list(loaded)
+        return list(loaded.toolkits)
 
     def assemble(self) -> list[Toolkit]:
         """Compose all toolkit families in the canonical order.

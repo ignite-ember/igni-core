@@ -3,14 +3,16 @@
 ``test_anthropic_provider.py`` covers the provider against a stub; this
 checks the stub has not drifted from the real thing: a turn with a tool
 call, streamed, through the builder igni uses. Skips unless
-``ANTHROPIC_API_KEY`` holds a key of Anthropic's own, since every run
-costs money.
+``ANTHROPIC_API_KEY`` is set, since every run costs money — and unless
+Anthropic's own API accepts that key, since the key may belong to an
+Anthropic-compatible gateway instead, which the provider never talks to.
 """
 
 from __future__ import annotations
 
 import os
 
+import httpx
 import pytest
 from agno.agent import Agent
 
@@ -45,8 +47,40 @@ pytestmark = [
     pytest.mark.reaches_the_internet,
 ]
 
+#: Where the provider always sends its requests — its own API, whatever
+#: the machine's environment names.
+ANTHROPIC_API = "https://api.anthropic.com/v1/models"
 
-async def test_a_streamed_tool_call_against_anthropic() -> None:
+
+@pytest.fixture
+def _anthropic_accepts_the_key() -> None:
+    """Skip unless Anthropic's own API accepts the key in the environment.
+
+    ``ANTHROPIC_API_KEY`` may name a key of an Anthropic-compatible
+    gateway rather than of Anthropic. The provider always talks to
+    Anthropic's own API, and such a key is refused there, so the live
+    call would fail on the credentials rather than on the provider.
+    Listing the models costs nothing and answers a key Anthropic holds
+    with a list.
+    """
+    response = httpx.get(
+        ANTHROPIC_API,
+        headers={
+            "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+            "anthropic-version": "2023-06-01",
+        },
+        timeout=10.0,
+    )
+    if response.status_code != 200:
+        pytest.skip(
+            "Anthropic's own API does not accept this key "
+            f"(HTTP {response.status_code}), so the live call cannot be made"
+        )
+
+
+async def test_a_streamed_tool_call_against_anthropic(
+    _anthropic_accepts_the_key: None,
+) -> None:
     calls: list[tuple[int, int]] = []
 
     def add_numbers(a: int, b: int) -> str:

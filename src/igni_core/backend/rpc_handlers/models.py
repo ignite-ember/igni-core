@@ -12,7 +12,7 @@ from igni_core.backend.schemas_hitl import ToolCallArgs
 from igni_core.backend.schemas_rpc import ModelRegistryResult, UpdateAvailable
 from igni_core.core.config.schemas.display import DisplayConfig
 from igni_core.core.config.tool_permissions import PermissionLevel
-from igni_core.core.utils.update_checker import PackageMetadata, check_for_update
+from igni_core.core.utils.update_checker import PackageMetadata, UpdateChecker
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
@@ -155,7 +155,7 @@ class ModelsRpcHandler(RpcHandler):
         reach an answer (network, HTTP status, an unreadable reply), so a
         caller can tell that from "no update".
         """
-        info = await check_for_update()
+        info = await UpdateChecker().check()
         if info.error is not None:
             raise ValueError(f"update check failed ({info.error.value}): {info.error_detail}")
         if not info.available:

@@ -7,8 +7,8 @@ from typing import Any, ClassVar
 
 from igni_core.core.config.accumulator import SettingsAccumulator
 from igni_core.core.config.schemas.telemetry import OtlpConfig, TelemetryConfig
-from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
 from igni_core.core.config.tiers.base import Tier
+from igni_core.core.workspace_trust.policy import WorkspaceTrustConfig
 
 logger = logging.getLogger(__name__)
 

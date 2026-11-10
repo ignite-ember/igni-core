@@ -32,12 +32,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
 
 from igni_core.core.utils.attachment_store import Attachments
 from igni_core.core.utils.media_schemas import (
     MediaAttachments,
-    MediaKind,
     MediaTaxonomy,
     ResolvedText,
 )
@@ -92,8 +90,13 @@ class MediaResolver:
         # (without the dot). Compiled per instance so a custom
         # taxonomy in a test surfaces the right alt set.
         ext_alt = "|".join(ext.lstrip(".") for ext in sorted(self._taxonomy.all_extensions))
+        # ``(?![.\w])`` after the extension: the URL ends *at* the
+        # extension. Without it ``photo.tiff`` matched as ``photo.tif``
+        # (the shorter extension first) and ``page.png.html`` matched
+        # as ``page.png`` — both put a URL on the wire that names a
+        # file that does not exist.
         self._url_pattern = re.compile(
-            rf"(https?://\S+/\S+\.(?:{ext_alt})(?:\?\S*)?)", re.IGNORECASE
+            rf"(https?://\S+/\S+\.(?:{ext_alt})(?![.\w])(?:\?\S*)?)", re.IGNORECASE
         )
         # Explicit paths (starts with ~, ., /, or drive letter), optionally
         # as an ``@`` mention — how the composer names every upload. The
@@ -149,9 +152,9 @@ class MediaResolver:
         message like ``check ./photo.png and report.pdf`` resolves
         deterministically when both syntaxes appear.
 
-        Returns a :class:`ResolvedText` — iterable so
-        ``message, resolved = resolver.resolve_text_references(msg)``
-        works as a tuple-unpack.
+        Returns a :class:`ResolvedText` — the rewritten text, the
+        paths it names, the paths that may be attached, and the bare
+        filenames it could not find.
         """
         resolved: list[str] = []
         attachable: dict[str, None] = {}
@@ -192,23 +195,23 @@ class MediaResolver:
 
         Returns ``None`` if no attachable media was found so the
         caller can decide "text-only path" versus "attach and
-        announce". The Agno container class is selected via
-        :meth:`MediaTaxonomy.classify` → :meth:`MediaKindSpec.build`
-        — no if/elif ladder.
+        announce". The Agno container class is the taxonomy row's
+        (:meth:`MediaKindSpec.build`) — no if/elif ladder — and the
+        attachment goes into the bucket that row names, on the
+        bundle itself.
         """
-        buckets: dict[str, list[Any]] = {}
+        attachments = MediaAttachments()
 
         for path_str in paths:
             p = Path(path_str)
-            spec = self._taxonomy.classify(p.suffix)
+            spec = self._taxonomy.by_extension.get(p.suffix.lower())
             if spec is None:
                 continue
-            media_obj = spec.build(filepath=p)
-            buckets.setdefault(spec.bucket_field, []).append(media_obj)
+            attachments.add(spec.bucket, spec.build(filepath=p))
 
-        if not buckets:
+        if attachments.is_empty():
             return None
-        return MediaAttachments.model_validate(buckets)
+        return attachments
 
     def extract_url_media(self, text: str) -> MediaAttachments | None:
         """Extract media URLs from text and return as a typed
@@ -219,70 +222,18 @@ class MediaResolver:
         taxonomy participates in both local and remote paths
         automatically.
         """
-        buckets: dict[str, list[Any]] = {}
+        attachments = MediaAttachments()
 
         for match in self._url_pattern.finditer(text):
             url = match.group(1)
             path_part = url.split("?")[0]
             ext = Path(path_part).suffix.lower()
-            spec = self._taxonomy.classify(ext)
-            if spec is None:
-                continue
-            media_obj = spec.build(url=url)
-            buckets.setdefault(spec.bucket_field, []).append(media_obj)
+            # The pattern was built from the taxonomy's own
+            # extensions, so the extension it matched always has a
+            # row — a KeyError here would mean the two drifted apart.
+            spec = self._taxonomy.by_extension[ext]
+            attachments.add(spec.bucket, spec.build(url=url))
 
-        if not buckets:
+        if attachments.is_empty():
             return None
-        return MediaAttachments.model_validate(buckets)
-
-
-# ── Backward-compatible free-function shims ──────────────────────────
-#
-# Existing tests (``tests/test_images.py``, ``tests/test_media_urls.py``)
-# and any external importer still call the pre-refactor free
-# functions. Each one below constructs a MediaResolver and delegates.
-# New code should use MediaResolver directly.
-
-
-def _classify_extension(ext: str) -> str:
-    """Legacy dispatcher — returns the ``str`` value of the matching
-    :class:`MediaKind` or ``"unknown"``. New code should use
-    :meth:`MediaTaxonomy.classify` on a taxonomy instance."""
-    spec = MediaTaxonomy.default().classify(ext)
-    return spec.kind.value if spec is not None else MediaKind.unknown.value
-
-
-def _find_bare_file(filename: str, project_dir: Path | None = None) -> Path | None:
-    """Legacy helper. Prefer instantiating a
-    :class:`MediaResolver` and calling its private ``_find_bare_file``
-    — this thin shim exists only to preserve import-path
-    compatibility for any straggling caller."""
-    return MediaResolver(project_dir=project_dir)._find_bare_file(filename)
-
-
-def resolve_file_references(text: str, project_dir: Path | None = None) -> tuple[str, list[str]]:
-    """Legacy tuple-shaped path-resolution entry. Delegates to
-    :meth:`MediaResolver.resolve_text_references`."""
-    result = MediaResolver(project_dir=project_dir).resolve_text_references(text)
-    return result.text, result.paths
-
-
-def attach_resolved_files(paths: list[str]) -> dict[str, list[Any]] | None:
-    """Legacy dict-shaped local-attachment entry. Delegates to
-    :meth:`MediaResolver.attach_local_paths` and lowers the typed
-    result back to the pre-refactor ``dict[str, list[Any]]`` shape
-    so existing tests keep working."""
-    media = MediaResolver().attach_local_paths(paths)
-    if media is None:
-        return None
-    return media.to_kwargs()
-
-
-def extract_media_urls(text: str) -> dict[str, list[Any]] | None:
-    """Legacy dict-shaped URL-extraction entry. Delegates to
-    :meth:`MediaResolver.extract_url_media` and lowers to the
-    pre-refactor ``dict[str, list[Any]]`` shape."""
-    media = MediaResolver().extract_url_media(text)
-    if media is None:
-        return None
-    return media.to_kwargs()
+        return attachments

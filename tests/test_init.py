@@ -17,7 +17,7 @@ from igni_core.core.init import (
     ProjectInitializer,
 )
 from igni_core.core.paths import CONFIG_DIR, PROJECT_CONTEXT_FILE
-from igni_core.core.workspace_trust import WorkspaceTrust
+from igni_core.core.workspace_trust import process_trust
 
 # All tests patch Path.home() so that ~/.igni/ writes go to tmp_path
 # instead of the real home directory.
@@ -35,7 +35,7 @@ def _initialize(project_dir: Path, config: InitConfig | None = None) -> bool:
     return (
         ProjectInitializer(
             project_dir=project_dir,
-            trust=WorkspaceTrust.shared(),
+            trust=process_trust(),
             config=config or InitConfig(),
         )
         .run()

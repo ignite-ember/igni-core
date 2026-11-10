@@ -134,17 +134,17 @@ class TestUnixSocketTransport:
 
     @pytest.mark.asyncio
     async def test_deserialize_unknown_type(self):
-        result = MessageRegistry.default().deserialize('{"type": "unknown_type", "payload": {}}')
+        result = MessageRegistry().deserialize('{"type": "unknown_type", "payload": {}}')
         assert result is None
 
     @pytest.mark.asyncio
     async def test_deserialize_invalid_json(self):
-        result = MessageRegistry.default().deserialize("not json at all")
+        result = MessageRegistry().deserialize("not json at all")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_deserialize_valid_message(self):
-        result = MessageRegistry.default().deserialize(
+        result = MessageRegistry().deserialize(
             '{"type": "content_delta", "text": "hello", "is_thinking": false}'
         )
         assert isinstance(result, ContentDelta)

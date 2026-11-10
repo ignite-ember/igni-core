@@ -34,17 +34,21 @@ from agno.models.message import Message
 from agno.models.response import ToolExecution
 from agno.run.agent import RunOutput, RunStatus
 from agno.run.requirement import RunRequirement
-from pydantic import BaseModel, ConfigDict
 
 from igni_core.backend.schemas_hitl import StreamFactory
 from igni_core.core.approvals.records import SpawnLink
 from igni_core.core.hitl.models import RestoredRun
 from igni_core.core.hooks.untrusted import UntrustedOutputHook
 from igni_core.core.tools.orchestrate import OrchestrateTools
-from igni_core.core.tools.orchestrate_agent_stream import ResumedSubAgentStreamHandler
-from igni_core.core.tools.orchestrate_events import EventAppender, OnProgress, SubAgentRegistry
-from igni_core.core.tools.orchestrate_spawn import TeamSpawn
-from igni_core.core.tools.orchestrate_team_stream import ResumedTeamStreamHandler
+from igni_core.core.tools.orchestrate_resumed_agent_stream import ResumedSubAgentStreamHandler
+from igni_core.core.tools.orchestrate_resumed_team_stream import ResumedTeamStreamHandler
+from igni_core.core.tools.orchestrate_spawn_team import TeamSpawn
+from igni_core.core.tools.orchestrate_spawn_types import TeamBuildRequest
+from igni_core.core.tools.orchestrate_stream_context import (
+    ResumeSpec,
+    StreamContext,
+    StreamSinks,
+)
 from igni_core.core.tools.spawn_context import ParentCall, SpawnCalls
 from igni_core.protocol import messages as msg
 
@@ -52,27 +56,6 @@ if TYPE_CHECKING:
     from igni_core.core.session import Session
 
 logger = logging.getLogger(__name__)
-
-
-class _HandlerWiring(BaseModel):
-    """What a continued agent's stream handler reports through: the
-    session's spawn tools' sinks, or none when it has no spawn tools."""
-
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-
-    on_progress: OnProgress | None
-    subagent_registry: SubAgentRegistry
-    event_appender: EventAppender | None
-
-    @classmethod
-    def of(cls, tools: OrchestrateTools | None) -> _HandlerWiring:
-        if tools is None:
-            return cls(on_progress=None, subagent_registry=SubAgentRegistry(), event_appender=None)
-        return cls(
-            on_progress=tools.on_progress,
-            subagent_registry=tools.subagent_registry,
-            event_appender=tools.event_appender,
-        )
 
 
 class ColdSpawnResume:
@@ -188,28 +171,33 @@ class ColdSpawnResume:
         if tools is None:
             return "The team could not be rebuilt: no spawn tools in this session."
         built = TeamSpawn.build_team(
-            pool=self._session.pool,
-            settings=tools.settings,
-            names=args.team_names,
-            mode=args.mode,
-            depth=tools.current_depth + 1,
-            deps=tools.spawn_deps(),
+            TeamBuildRequest(
+                pool=self._session.pool,
+                settings=tools.settings,
+                names=args.team_names,
+                mode=args.mode,
+                depth=tools.current_depth + 1,
+            ),
+            tools.spawn_deps(),
         )
         if built.team is None:
             return f"The team could not be rebuilt: {built.error}"
-        wiring = _HandlerWiring.of(tools)
         with SpawnCalls.restored(link.parents):
             handler = ResumedTeamStreamHandler(
-                built.team,
-                run_id=ready.run_id,
-                session_id=link.agent_session_id,
-                requirements=ready.requirements,
-                on_progress=wiring.on_progress,
-                hitl_coordinator=self._session.sub_agent_hitl,
-                agent_path=SpawnCalls.path_to(f"team({','.join(args.team_names)})", link.parents),
-                card_id="",
-                subagent_registry=wiring.subagent_registry,
-                event_appender=wiring.event_appender,
+                StreamContext(
+                    runnable=built.team,
+                    task=args.task,
+                    agent_path=SpawnCalls.path_to(
+                        f"team({','.join(args.team_names)})", link.parents
+                    ),
+                    card_id="",
+                    sinks=self._sinks(tools),
+                ),
+                ResumeSpec(
+                    run_id=ready.run_id,
+                    session_id=link.agent_session_id,
+                    requirements=ready.requirements,
+                ),
             )
             result, _activity = await handler.run()
         return str(result)
@@ -228,23 +216,42 @@ class ColdSpawnResume:
         """Run one continued agent through its stream handler, under the
         calls still waiting above it: by ``run_id`` from Agno's stored
         run, or from ``run_response`` when given."""
-        wiring = _HandlerWiring.of(self._orchestrate_tools())
         with SpawnCalls.restored(chain):
             handler = ResumedSubAgentStreamHandler(
-                agent,
-                run_id=run_id,
-                session_id=session_id,
-                requirements=requirements,
-                run_response=run_response,
-                on_progress=wiring.on_progress,
-                hitl_coordinator=self._session.sub_agent_hitl,
-                agent_path=SpawnCalls.path_to(name, chain),
-                card_id="",
-                subagent_registry=wiring.subagent_registry,
-                event_appender=wiring.event_appender,
+                StreamContext(
+                    runnable=agent,
+                    task="",
+                    agent_path=SpawnCalls.path_to(name, chain),
+                    card_id="",
+                    sinks=self._sinks(self._orchestrate_tools()),
+                ),
+                ResumeSpec(
+                    run_id=run_id,
+                    session_id=session_id,
+                    requirements=requirements,
+                    run_response=run_response,
+                ),
             )
             result, _activity = await handler.run()
         return str(result)
+
+    def _sinks(self, tools: OrchestrateTools | None) -> StreamSinks:
+        """The sinks a continued run reports through.
+
+        The session's spawn tools carry them — the same ones a live
+        spawn reports through, so a continued run's progress reaches
+        the same window a live one would. A session without spawn
+        tools gets an empty set: the run then reports nowhere, which
+        is all such a session can offer.
+
+        The HITL bridge is the session's own, not the toolkit's: it is
+        what a continued run pauses against.
+        """
+        if tools is None:
+            return StreamSinks(hitl_coordinator=self._session.sub_agent_hitl)
+        sinks = tools.wiring.sinks.model_copy()
+        sinks.hitl_coordinator = self._session.sub_agent_hitl
+        return sinks
 
     @staticmethod
     def tool_result(call: ParentCall, result: str) -> str:

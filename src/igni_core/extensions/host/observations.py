@@ -13,7 +13,7 @@ from igni_core.backend.workspace_watch import Head
 from igni_core.extensions.busy import ExtensionBusy
 from igni_core.extensions.events import HostTopic
 from igni_core.extensions.host.grants import HostGrants
-from igni_core.extensions.host.signal_values import Emitter, Signal
+from igni_core.extensions.host.signal_values import Emitter, Signal, Windowed
 from igni_core.extensions.registry import ExtensionState, InstalledExtension
 
 
@@ -51,7 +51,7 @@ class FilesChanged(Signal):
     truncated: bool
 
 
-class SessionSwitched(Signal):
+class SessionSwitched(Windowed):
     WIRE: ClassVar[str] = HostTopic.SESSION_SWITCHED
 
     session_id: str

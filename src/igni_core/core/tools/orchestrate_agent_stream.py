@@ -1,14 +1,14 @@
 """Sub-agent stream handler — one specialist agent, one Agno stream.
 
 Concrete subclass of :class:`BaseStreamHandler` for the ``spawn_agent``
-path. The base class owns the outer loop + cancellation registry +
-DB fallback; this class owns per-event dispatch via ``match``.
+path. The base class owns the outer loop, the cancellation registry and
+the final read-back; this class owns per-event dispatch.
 
-Replaces the ~230-line ``_handle`` closure at the top of the old
-``orchestrate_streaming.py``. Each Agno event type has a dedicated
-method — polymorphism instead of an ``isinstance`` ladder — which
-also makes it easy to add a new event type without hunting a giant
-``elif`` chain.
+Dispatch is a table, not a ladder: :data:`AGENT_EVENT_HANDLERS` maps an
+Agno event class to the method that answers it, and the lookup walks
+the event's method resolution order, so a class that derives from a
+handled event is answered by its parent's method. Adding an event type
+is one row in the table and one method beside it.
 """
 
 from __future__ import annotations
@@ -21,63 +21,60 @@ from typing import Any
 from agno.run import agent as agent_events
 
 from igni_core.core.tools.orchestrate_events import (
-    VIS_SPEC_PREFIX,
     AgentCompletedEvent,
     AgentPausedEvent,
     ContentPreviewEvent,
-    EventAppender,
-    HitlCoordinatorProtocol,
-    LogSymbols,
-    OnProgress,
     RunErrorEvent,
-    SubAgentRegistry,
     ToolCompletedEvent,
     ToolStartedEvent,
     VisualizationDeltaEvent,
 )
 from igni_core.core.tools.orchestrate_preview import PREVIEWS
-from igni_core.core.tools.orchestrate_stream_handler import BaseStreamHandler
+from igni_core.core.tools.orchestrate_stream_context import StreamContext
+from igni_core.core.tools.orchestrate_stream_handler import (
+    BaseStreamHandler,
+    active_requirements,
+    handler_name,
+)
+from igni_core.core.tools.orchestrate_symbols import VIS_SPEC_PREFIX, LogSymbols
 from igni_core.core.tools.subagent_stream import SubAgentStreamState
 
 _stream_log = logging.getLogger("igni_core.llm_calls")
 _logger = logging.getLogger(__name__)
 
 
+#: Which method answers which Agno event. The lookup walks the event's
+#: method resolution order, so a class that derives from a handled
+#: event is answered by its parent's method.
+AGENT_EVENT_HANDLERS: dict[type, str] = {
+    agent_events.RunPausedEvent: "_on_run_paused",
+    agent_events.ToolCallStartedEvent: "_on_tool_started",
+    agent_events.ToolCallCompletedEvent: "_on_tool_completed",
+    agent_events.ToolCallErrorEvent: "_on_tool_error",
+    agent_events.RunErrorEvent: "_on_run_error",
+    agent_events.RunCompletedEvent: "_on_run_completed",
+    agent_events.CustomEvent: "_on_custom_event",
+    agent_events.RunContentEvent: "_on_run_content",
+}
+
+
 class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
     """Drive one Agno agent stream to completion.
 
-    Constructor mirrors the old ``run_agent_streaming`` function
-    signature — the module-level wrapper in
-    ``orchestrate_streaming.py`` builds one of these and calls
-    ``.run()``.
+    The handler is built from a :class:`StreamContext`: the agent to
+    drive, the task to start it with, and the sinks it reports
+    through. Its state is derived from the same context — the agent
+    path is the context's path, the card id is the context's card id.
     """
 
-    def __init__(
-        self,
-        agent: Any,
-        task: str,
-        *,
-        on_progress: OnProgress | None = None,
-        hitl_coordinator: HitlCoordinatorProtocol | None = None,
-        agent_path: list[str] | None = None,
-        card_id: str = "",
-        subagent_registry: SubAgentRegistry,
-        event_appender: EventAppender | None = None,
-    ) -> None:
+    def __init__(self, context: StreamContext) -> None:
+        path = list(context.agent_path)
         super().__init__(
-            agent,
-            task,
-            on_progress=on_progress,
-            hitl_coordinator=hitl_coordinator,
-            agent_path=agent_path,
-            card_id=card_id,
-            subagent_registry=subagent_registry,
-            event_appender=event_appender,
-        )
-        path = list(agent_path or [])
-        self.state = SubAgentStreamState(
-            agent_path_id=".".join(path) if path else "root",
-            card_id=card_id,
+            context,
+            SubAgentStreamState(
+                agent_path_id=".".join(path) if path else "root",
+                card_id=context.card_id,
+            ),
         )
 
     # ── Base-class hooks ───────────────────────────────────────────
@@ -91,7 +88,8 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         # rendered. Return a short summary so the PARENT agent's
         # context doesn't get polluted with the raw spec JSON — the
         # parent just quotes the summary to the user.
-        if self._path and self._path[-1] == "visualizer":
+        path = self._context.agent_path
+        if path and path[-1] == "visualizer":
             return "Emitted visualization to the client."
         return final
 
@@ -100,11 +98,10 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         """Drive progress reporting and HITL bridging.
 
         We don't try to reassemble the model's text from streaming
-        events — Agno already accumulates that into
-        ``agent.run_response.content`` when the run ends. We just
-        watch the stream for tool-call lifecycle (for activity log
-        lines), HITL pauses (for the bridge), and content deltas
-        (for the live progress preview).
+        events — Agno already accumulates that into the run's content
+        when the run ends. We just watch the stream for tool-call
+        lifecycle (for activity log lines), HITL pauses (for the
+        bridge), and content deltas (for the live progress preview).
 
         Returns a follow-up async iterator when we resumed the run
         after a pause; otherwise ``None``.
@@ -114,38 +111,17 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         # see :meth:`SubAgentStreamState.latch_ids`.
         self._latch_run_ids(event)
 
-        if isinstance(event, agent_events.RunStartedEvent):
+        name = handler_name(AGENT_EVENT_HANDLERS, event)
+        if name is None:
             return None
-        if isinstance(event, agent_events.RunPausedEvent):
-            return await self._on_run_paused(event)
-        if isinstance(event, agent_events.ToolCallStartedEvent):
-            await self._on_tool_started(event)
-            return None
-        if isinstance(event, agent_events.ToolCallCompletedEvent):
-            self._on_tool_completed(event)
-            return None
-        if isinstance(event, agent_events.ToolCallErrorEvent):
-            self._on_tool_error(event)
-            return None
-        if isinstance(event, agent_events.RunErrorEvent):
-            self._on_run_error(event)
-            return None
-        if isinstance(event, agent_events.RunCompletedEvent):
-            self._on_run_completed(event)
-            return None
-        if isinstance(event, agent_events.CustomEvent):
-            self._on_custom_event(event)
-            return None
-        if isinstance(event, agent_events.RunContentEvent):
-            self._on_run_content(event)
-            return None
-        return None
+        return await getattr(self, name)(event)
 
     # ── Per-event handlers ─────────────────────────────────────────
-    async def _on_run_paused(self, event: Any) -> Any:
+    async def _on_run_paused(self, event: agent_events.RunPausedEvent) -> Any:
         state = self.state
-        reqs = getattr(event, "active_requirements", None) or []
-        if self._hitl_coordinator is None or not reqs:
+        coordinator = self._context.sinks.hitl_coordinator
+        reqs = active_requirements(event)
+        if coordinator is None or not reqs:
             self._log_line(
                 f"  {LogSymbols.T_TRUNK.value}  "
                 f"{LogSymbols.WARNING.value} paused: no HITL bridge available"
@@ -157,12 +133,15 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
                 )
             )
             return None
-        run_id = getattr(event, "run_id", "") or state.current_run_id or ""
-        session_id = getattr(event, "session_id", None) or state.current_session_id
+        run_id = event.run_id or state.current_run_id or ""
+        session_id = event.session_id or state.current_session_id
         req_ids: list[str] = []
         for req in reqs:
-            req_id = await self._hitl_coordinator.push_requirement(
-                req, run_id=run_id, agent_path=self._path, session_id=session_id or ""
+            req_id = await coordinator.push_requirement(
+                req,
+                run_id=run_id,
+                agent_path=self._context.agent_path,
+                session_id=session_id or "",
             )
             req_ids.append(req_id)
         # One concise activity line per pause batch — the user has
@@ -183,22 +162,22 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         )
         try:
             for req_id in req_ids:
-                await self._hitl_coordinator.wait_resolved(req_id)
+                await coordinator.wait_resolved(req_id)
         finally:
             for req_id in req_ids:
-                self._hitl_coordinator.cleanup(req_id)
+                coordinator.cleanup(req_id)
         # ``run_id`` + ``session_id`` is enough for Agno to find the
         # paused run — but only when the agent has a ``db=`` so the
         # run was actually persisted. The pool wires ``InMemoryDb``
         # into every specialist for exactly this reason.
-        return self._runnable.acontinue_run(
+        return self._context.runnable.acontinue_run(
             run_id=run_id,
             session_id=session_id,
             requirements=reqs,
             stream=True,
         )
 
-    async def _on_tool_started(self, event: Any) -> None:
+    async def _on_tool_started(self, event: agent_events.ToolCallStartedEvent) -> None:
         state = self.state
         te = event.tool
         tn = (te.tool_name or "tool") if te else "tool"
@@ -221,7 +200,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
             )
         )
 
-    async def _emit_visualizer_final_delta(self, spec: dict) -> None:
+    async def _emit_visualizer_final_delta(self, spec: dict[str, Any]) -> None:
         """Visualizer final delta.
 
         The model finished streaming args, ``ta["spec"]`` now holds
@@ -245,9 +224,9 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
             spec_json=spec_json,
             final=True,
         )
-        final_payload = final_event.model_dump(by_alias=True)
-        self._emit(final_payload)
-        if self._event_appender is None:
+        self._emit(final_event)
+        appender = self._context.sinks.event_appender
+        if appender is None:
             return
         try:
             # Use the PARENT (top-level) run_id, not the visualizer
@@ -255,14 +234,11 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
             # ``parent_top_run_id`` docstring on
             # :class:`SubAgentStreamState` and the ``get_chat_history``
             # splicing block in ``backend/server.py``.
-            await self._event_appender(
-                final_event,
-                state.parent_top_run_id or state.current_run_id or "",
-            )
+            await appender(final_event, state.parent_top_run_id or state.current_run_id or "")
         except Exception as exc:  # noqa: BLE001 — a logging callback must not break the stream
             _logger.warning("visualization event log append failed: %s", exc)
 
-    def _on_tool_completed(self, event: Any) -> None:
+    async def _on_tool_completed(self, event: agent_events.ToolCallCompletedEvent) -> None:
         state = self.state
         te = event.tool
         r = getattr(te, "result", None) if te else None
@@ -286,7 +262,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         if state.current_tool == tn:
             state.current_tool = None
 
-    def _on_tool_error(self, event: Any) -> None:
+    async def _on_tool_error(self, event: agent_events.ToolCallErrorEvent) -> None:
         state = self.state
         te = getattr(event, "tool", None)
         tn = (te.tool_name if te else None) or state.current_tool or "tool"
@@ -308,7 +284,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         if state.current_tool == tn:
             state.current_tool = None
 
-    def _on_run_error(self, event: Any) -> None:
+    async def _on_run_error(self, event: agent_events.RunErrorEvent) -> None:
         state = self.state
         err = str(getattr(event, "content", "") or getattr(event, "error", "?"))
         self._log_line(f"  {LogSymbols.T_TRUNK.value}  {LogSymbols.WARNING.value} RUN ERROR: {err}")
@@ -318,15 +294,16 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
                 error=err[:400],
             )
         )
-        _stream_log.info("subagent_stream: RunErrorEvent path=%s err=%s", self._path, err[:300])
+        _stream_log.info(
+            "subagent_stream: RunErrorEvent path=%s err=%s", self.state.agent_path_id, err[:300]
+        )
 
-    def _on_run_completed(self, event: Any) -> None:
+    async def _on_run_completed(self, event: agent_events.RunCompletedEvent) -> None:
         # Last RunCompletedEvent of the run carries the full final
         # answer — keep the latest non-empty value as a fallback in
         # case the DB-backed lookup below comes up empty.
         state = self.state
-        content = getattr(event, "content", None)
-        state.record_completion(content)
+        state.record_completion(getattr(event, "content", None))
         # Emit ``agent_completed`` with the run's metrics so the FE
         # can surface per-agent token totals. Agno's ``event.metrics``
         # is a ``Metrics`` object with the same fields the top-level
@@ -342,7 +319,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
             )
         )
 
-    def _on_custom_event(self, event: Any) -> None:
+    async def _on_custom_event(self, event: agent_events.CustomEvent) -> None:
         """Tool-arg streaming (see ``_LoggingModel.process_response_stream``).
 
         When the visualizer sub-agent calls ``visualize({spec: ...})``,
@@ -350,6 +327,10 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         with the accumulated arguments JSON. We extract the ``spec``
         sub-field with partial-json and forward as a
         ``visualization_delta`` so the FE renders live.
+
+        ``tool_name`` and ``arguments_partial`` are not declared on
+        Agno's ``CustomEvent`` — the model layer sets them on the
+        instance — so they are read as attributes rather than fields.
         """
         if getattr(event, "event", "") != "tool_call_input_delta":
             return
@@ -370,11 +351,11 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         if event_out is None:
             return
         state.record_vis_emission(now_s, len(args_partial))
-        self._emit(event_out.model_dump(by_alias=True))
+        self._emit(event_out)
 
-    def _on_run_content(self, event: Any) -> None:
-        # Live progress preview only — final content comes from
-        # ``agent.run_response.content`` after the stream ends.
+    async def _on_run_content(self, event: agent_events.RunContentEvent) -> None:
+        # Live progress preview only — final content comes from the
+        # run's stored output after the stream ends.
         chunk = event.content or ""
         preview = self.state.append_content_delta(chunk)
         if preview is None:
@@ -387,49 +368,4 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         )
 
 
-class ResumedSubAgentStreamHandler(SubAgentStreamHandler):
-    """A sub-agent's paused run, continued instead of started.
-
-    Used after a restart (``backend/cold_spawn_resume.py``) for two kinds
-    of paused run: one Agno stored, paused for approvals the person has
-    now answered (continued by ``run_id``), and one rebuilt from a call
-    that was waiting on another agent (continued from ``run_response``
-    with that agent's answer as the call's result). Everything after the
-    first stream — another pause, the final answer — is the parent's, so
-    a continued run streams its progress and can be paused again like a
-    live one.
-    """
-
-    def __init__(
-        self,
-        agent: Any,
-        *,
-        run_id: str,
-        session_id: str,
-        requirements: list[Any],
-        run_response: Any = None,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(agent, "", **kwargs)
-        self._resume_run_id = run_id
-        self._resume_session_id = session_id
-        self._requirements = requirements
-        self._run_response = run_response
-        # The run id latches from the continued run's events, which
-        # registers it for cancellation like any other.
-        self.state.current_session_id = session_id
-
-    def _first_stream(self) -> Any:
-        if self._run_response is not None:
-            return self._runnable.acontinue_run(
-                run_response=self._run_response,
-                session_id=self._resume_session_id,
-                requirements=self._requirements,
-                stream=True,
-            )
-        return self._runnable.acontinue_run(
-            run_id=self._resume_run_id,
-            session_id=self._resume_session_id,
-            requirements=self._requirements,
-            stream=True,
-        )
+__all__ = ["AGENT_EVENT_HANDLERS", "SubAgentStreamHandler"]

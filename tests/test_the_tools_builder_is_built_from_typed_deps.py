@@ -65,6 +65,7 @@ from igni_core.core.session.agent_builder.tools_builder_deps import (
 )
 from igni_core.core.session.core import Session
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
+from igni_core.core.tools.custom_loader_schemas import DiscoveryResult, PluginToolDir
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.registry import ToolRegistry
@@ -96,7 +97,7 @@ class _Stubs:
         self.permission_kwargs: list[dict[str, Any]] = []
         self.resolved_with: list[ToolRegistry] = []
         self.group_tools_dirs: list[Path | None] = []
-        self.plugin_tool_dirs: list[list[Path]] = []
+        self.plugin_tool_dirs: list[list[PluginToolDir]] = []
         self.disabled_seen: list[set[str] | None] = []
         self.reasoning_settings: list[Settings] = []
         self.core_tools: list[Toolkit] = [_CORE]
@@ -128,7 +129,7 @@ def _stub_registry_class(stubs: _Stubs) -> type[ToolRegistry]:
         ):
             stubs.group_tools_dirs.append(group_tools_dir)
             stubs.plugin_tool_dirs.append(list(plugin_tool_dirs or []))
-            return list(stubs.custom_tools)
+            return DiscoveryResult(toolkits=list(stubs.custom_tools))
 
     return _StubRegistry
 
@@ -154,7 +155,7 @@ class _StubPluginLoader(PluginLoader):
     def collect_tool_dirs(self, disabled=None):
         if self._stubs is not None:
             self._stubs.disabled_seen.append(disabled)
-        return [Path("/plugins/alpha")]
+        return [PluginToolDir(plugin_name="alpha", tools_dir=Path("/plugins/alpha"))]
 
 
 class _StubMcpManager(MCPClientManager):
@@ -444,7 +445,9 @@ class TestTheAssembly:
 
         builder.assemble()
 
-        assert stubs.plugin_tool_dirs == [[Path("/plugins/alpha")]]
+        assert stubs.plugin_tool_dirs == [
+            [PluginToolDir(plugin_name="alpha", tools_dir=Path("/plugins/alpha"))]
+        ]
         assert stubs.disabled_seen == [{"off-plugin"}]
 
     def test_the_delegation_surface_is_built_from_the_bag(self, tmp_path):
@@ -459,14 +462,14 @@ class TestTheAssembly:
         toolkit = tools[0]
         assert toolkit.pool is deps.orchestration.pool
         assert toolkit.settings is deps.registry.settings
-        # The rest of the delegation surface is private to the toolkit;
-        # reading it here pins the wiring instead of assuming it.
-        state = vars(toolkit)
-        assert state["_session_id"] == deps.orchestration.session_id
-        assert state["_project_dir"] == deps.registry.project_dir
-        assert state["_hook_executor"] is deps.orchestration.hook_executor
-        assert state["_budget"] is deps.orchestration.spawn_budget
-        assert state["_hitl_coordinator"] is deps.orchestration.sub_agent_hitl
+        # The rest of the delegation surface travels in the toolkit's
+        # two bundles; reading it here pins the wiring instead of
+        # assuming it.
+        assert toolkit.wiring.session_id == deps.orchestration.session_id
+        assert toolkit.scope.project_dir == deps.registry.project_dir
+        assert toolkit.wiring.hook_executor is deps.orchestration.hook_executor
+        assert toolkit.scope.budget is deps.orchestration.spawn_budget
+        assert toolkit.wiring.sinks.hitl_coordinator is deps.orchestration.sub_agent_hitl
 
     def test_the_registry_is_built_once_for_the_whole_assembly(self, tmp_path):
         """Core tools and custom tools share one registry."""

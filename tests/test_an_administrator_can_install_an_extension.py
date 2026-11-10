@@ -26,9 +26,11 @@ from igni_core.cli.ext import ext
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.origin import ExtensionOrigins
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
-from igni_core.extensions.store import DistributionRecord, ExtensionStore, StoreError
+from igni_core.extensions.store import ExtensionStore
+from igni_core.extensions.store_errors import StoreError
 
 FIXTURE = Path(__file__).parent / "fixtures" / "dev_extension"
 
@@ -206,7 +208,7 @@ def test_list_says_where_each_one_came_from(run, tmp_path):
     run("init", str(target), rooted=False)
     run("install", str(target))
     store = ExtensionStore(run.store)
-    store.record_distribution(
+    store.provenance.record(
         DistributionRecord(
             extension_id="local.mine",
             version="0.1.0",
@@ -217,7 +219,7 @@ def test_list_says_where_each_one_came_from(run, tmp_path):
     listed = run("list")
     assert "from https://mine.example.com" in listed.output
 
-    store.distribution_path("local.mine").unlink()
+    store.provenance.path("local.mine").unlink()
     assert "development install" in run("list").output
 
 

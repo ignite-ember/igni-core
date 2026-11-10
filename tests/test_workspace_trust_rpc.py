@@ -26,9 +26,9 @@ from igni_core.backend.workspace_trust_controller import (
     WorkspaceTrustRefusedError,
     reload_settings,
 )
-from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
 from igni_core.core.paths import CONFIG_DIR
-from igni_core.core.workspace_trust import WorkspaceIdentity, WorkspaceTrust
+from igni_core.core.workspace_trust import WorkspaceIdentity, process_trust
+from igni_core.core.workspace_trust.policy import WorkspaceTrustConfig
 from igni_core.protocol.rpc import RpcMethod
 
 pytestmark = pytest.mark.workspace_trust
@@ -44,7 +44,7 @@ def _handler(folder: Path) -> tuple[WorkspaceTrustRpcHandler, MagicMock]:
 
 
 def _stored(folder: Path) -> str | None:
-    return WorkspaceTrust.shared().store.get(WorkspaceIdentity.of(folder))
+    return process_trust().store.get(WorkspaceIdentity.of(folder))
 
 
 def test_both_rpcs_are_registered(tmp_path: Path) -> None:
@@ -104,7 +104,7 @@ async def test_distrusting_a_trusted_folder_rebuilds(tmp_path: Path) -> None:
 
 
 async def test_policy_never_refuses_with_its_reason(tmp_path: Path) -> None:
-    WorkspaceTrust.shared().set_policy(WorkspaceTrustConfig(mode="never"))
+    process_trust().set_policy(WorkspaceTrustConfig(mode="never"))
     handler, ctx = _handler(tmp_path)
     status = handler.methods()[RpcMethod.GET_WORKSPACE_TRUST]({})
     assert status.state == "untrusted"
@@ -192,14 +192,14 @@ async def test_a_running_session_picks_up_trust_and_its_revocation(tmp_path: Pat
     assert project_hooks() == 0
     assert not denies_make_deploy()
 
-    WorkspaceTrust.shared().trust(project)
+    process_trust().trust(project)
     await session.apply_workspace_trust(reload_settings(project))
     assert project_hooks() == 1
     assert denies_make_deploy()
     # The mode the person chose survives the rebuild.
     assert session.permission_mode_value == "plan"
 
-    WorkspaceTrust.shared().revoke(project)
+    process_trust().revoke(project)
     await session.apply_workspace_trust(reload_settings(project))
     assert project_hooks() == 0
     assert not denies_make_deploy()

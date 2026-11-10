@@ -40,7 +40,7 @@ OPENABLE_SUFFIXES = frozenset(
 )
 
 #: The model's version. Semver; see the module docstring.
-SCHEMA_VERSION = "1.11.0"
+SCHEMA_VERSION = "1.12.0"
 
 # ── Permissions ───────────────────────────────────────────────────
 
@@ -271,6 +271,7 @@ TYPES = (
     typedef(
         "Toast",
         "A transient message on screen.",
+        field("type", "str", "Always `toast`: what this is."),
         field("id", "str"),
         field("text", "str", "Its first line."),
         field("kind", "str", "`info`, `success`, `warning` or `error`."),
@@ -291,6 +292,7 @@ TYPES = (
         "A dialog on screen: igni's own (`spec.kind` is `update`) or an extension's "
         "(`show_dialog`). One at a time; a new one replaces the last, which closes "
         "unanswered.",
+        field("type", "str", "Always `dialog`: what this is."),
         field("id", "str"),
         field("spec", "json"),
         field("source", "str | None", "The extension that asked; `None` for igni.", optional=True),

@@ -70,7 +70,7 @@ from igni_core.core.activity import background
 from igni_core.core.config.settings import Settings
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.core import Session
-from igni_core.core.utils.update_checker import check_for_update
+from igni_core.core.utils.update_checker import UpdateChecker
 from tests.egress_guard import EgressGuard, EgressLog, InternalNetwork
 
 #: Whether the schema has the one switch that would turn D11 off.
@@ -252,7 +252,7 @@ class AirGappedInstall:
     async def _start_and_answer(self, settings: Settings, message: str) -> str:
         session = Session(settings, project_dir=self.project_dir)
         session.start_marketplace_refresh_background()  # D11, as BackendApp does after ready
-        await check_for_update()  # D9, as the banner and the RPC do
+        await UpdateChecker().check()  # D9, as the banner and the RPC do
         await session.fire_session_start_hook()
         response = await session.handle_message(message)
         await background.drain()

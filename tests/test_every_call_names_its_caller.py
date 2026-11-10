@@ -77,7 +77,7 @@ class TestTheSignedInPerson:
         """The session's is a snapshot of up to 30 days ago; the listing's was read when it listed."""
         credentials = _signed_in(tmp_path, sub="u-ada", org="org-acme", group="g-legal")
         store = ExtensionStore(tmp_path / "store")
-        store.record_group("g-finance")
+        store.listing.record_group("g-finance")
 
         principal = SignedInPerson(credentials, store)()
 
@@ -87,7 +87,7 @@ class TestTheSignedInPerson:
         """Taken out of their group since the session was issued: the listing is the fresher word."""
         credentials = _signed_in(tmp_path, sub="u-ada", org="org-acme", group="g-legal")
         store = ExtensionStore(tmp_path / "store")
-        store.record_group(None)
+        store.listing.record_group(None)
 
         principal = SignedInPerson(credentials, store)()
 
@@ -168,8 +168,7 @@ class TestAToolCallCarriesIt:
 async def test_a_hook_frame_names_its_principal() -> None:
     registry = ExtensionRegistry()
     registry.install(manifest("acme.a", hooks=["PreToolUse", "SessionStart"]))
-    hooks = ExtensionHooks(timeout=0.5)
-    hooks.attach(registry)
+    hooks = ExtensionHooks(registry=registry, timeout=0.5)
     hooks.set_principal(lambda: ADA)
     frames: list[dict[str, Any]] = []
 

@@ -108,9 +108,9 @@ class TestTheDocumentCoversTheEnum:
 class TestEventsAreFiredThroughTheEnum:
     """Bare strings at a fire site outlive a rename; the enum does not."""
 
-    #: ``orchestrate_spawn._fire_start`` / ``_fire_stop_once``. Both
-    #: are known and both are wrong in the same way; the point of the
-    #: number is that it cannot grow.
+    #: ``orchestrate_spawn_hooks.SpawnHooks.fire_start`` /
+    #: ``fire_stop_once``. Both are known and both are wrong in the
+    #: same way; the point of the number is that it cannot grow.
     _KNOWN_BARE_STRING_FIRES = 2
 
     def _fire_sites(self) -> list[str]:

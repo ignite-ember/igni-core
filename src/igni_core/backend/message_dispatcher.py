@@ -32,14 +32,14 @@ from igni_core.backend.agent_framing import ExtensionMessage, PlanResearchHint
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.rpc_errors import code_of
 from igni_core.backend.rpc_result import RpcResult
-from igni_core.backend.schemas_push import SessionNamedPayload
 from igni_core.backend.schemas_sessions import DispatchedBackend, TransportLike
 from igni_core.core.activity import BusyKind, background
-from igni_core.core.utils.media_schemas import MediaAttachments
+from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.registry import ExtensionRefused
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Message
+from igni_core.protocol.schemas.push_payloads import SessionNamedPayload
 from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 logger = logging.getLogger(__name__)
@@ -136,10 +136,22 @@ class MessageDispatcher:
         agent_text = self._maybe_wrap_plan_hint(message.text)
         await self._run_turn(agent_text, message.file_contents, req_id)
 
-    async def _run_turn(self, agent_text: str, media: dict[str, str], req_id: str) -> None:
-        """Run one turn and stream it to every view."""
-        attachments = MediaAttachments.from_optional_dict(media)
-        async for proto in self._backend.run_message(agent_text, media=attachments):
+    async def _run_turn(self, agent_text: str, files: dict[str, str], req_id: str) -> None:
+        """Run one turn and stream it to every view.
+
+        ``files`` is a path → content map of *text* files: the wire's
+        ``file_contents`` for a person's message, the host API's
+        ``attachments`` for an extension's. Agno's ``arun`` takes live
+        ``Image`` / ``Audio`` / ``Video`` / ``File`` containers, so a
+        map of text files was never attachable — the old code turned
+        it into extra fields on the media bundle and handed them to
+        ``arun`` as unknown keyword arguments, which Agno dropped.
+        The model's own tools read such files instead, under their
+        permissions.
+        """
+        if files:
+            logger.debug("message carries %d file(s) of text", len(files))
+        async for proto in self._backend.run_message(agent_text, media=None):
             if req_id:
                 proto = proto.model_copy(update={"id": req_id})
             await self._transport.send(proto)
@@ -152,7 +164,7 @@ class MessageDispatcher:
     # ── An extension's messages ──────────────────────────────────
 
     async def post_from_extension(
-        self, extension_id: str, text: str, media: dict[str, str], from_service: str = ""
+        self, extension_id: str, text: str, media: ChatAttachments, from_service: str = ""
     ) -> None:
         """``host.chat.post``: a message from an extension, for the agent.
 
@@ -170,7 +182,7 @@ class MessageDispatcher:
                 service_client_id=from_service,
             )
         )
-        await self._run_turn(ExtensionMessage.wrap(extension_id, text), media, "")
+        await self._run_turn(ExtensionMessage.wrap(extension_id, text), media.files, "")
 
     async def queue_from_extension(
         self, extension_id: str, text: str, from_service: str = ""

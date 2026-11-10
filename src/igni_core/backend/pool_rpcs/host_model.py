@@ -12,8 +12,8 @@ from igni_core.backend.rpc_streams import RUN_EVENTS, TOOL_PUSHES
 from igni_core.backend.schemas_pool import PoolAnswer
 from igni_core.extensions.host.page_channel import PageRequest
 from igni_core.extensions.host.spec import ErrorCode
-from igni_core.extensions.host.window_rpc import WindowReply
-from igni_core.extensions.host.windows import WindowModelError, WindowRequest, WindowStateError
+from igni_core.extensions.host.window_errors import WindowModelError, WindowStateError
+from igni_core.extensions.host.window_rpc import WindowReply, WindowRequest
 from igni_core.extensions.host.wire import ErrorBody, Reply
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
@@ -25,8 +25,13 @@ class WindowRpc(Protocol):
     def handle(self, request: WindowRequest, /) -> WindowReply: ...
 
 
-class FramingWindows(Protocol):
+class FramingRegistry(Protocol):
     def by_connection(self, connection_id: str, /) -> str | None: ...
+
+
+class FramingWindows(Protocol):
+    @property
+    def registry(self) -> FramingRegistry: ...
 
 
 class PageHostServices(Protocol):
@@ -204,7 +209,9 @@ class HostModelRpcs(PoolRpc):
             raise PoolRefusal(self.PAGE_ONLY, RpcErrorCode.FORBIDDEN)
         wire = args.model_dump(mode="json", exclude_unset=True)
         windows = self._model.services.windows
-        framing = windows.by_connection(request.from_client) if request.from_client else None
+        framing = (
+            windows.registry.by_connection(request.from_client) if request.from_client else None
+        )
         if framing:
             wire["home_window"] = framing
         return await self._model.handle_page(request.caller, wire)

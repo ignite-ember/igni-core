@@ -22,6 +22,7 @@ These tests cover:
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 from agno.models.response import ModelResponse
@@ -34,11 +35,10 @@ from igni_core.core.config.model_stream import (
     _ToolCallAccumulatorStore,
     _ToolCallFragment,
 )
-from igni_core.core.tools.orchestrate import _run_agent_streaming
-from igni_core.core.tools.orchestrate_events import (
-    SubAgentRegistry,
-    VisualizationDeltaEvent,
-)
+from igni_core.core.tools.orchestrate_events import VisualizationDeltaEvent
+from igni_core.core.tools.orchestrate_registry import SubAgentRegistry
+from igni_core.core.tools.orchestrate_stream_context import StreamContext, StreamSinks
+from igni_core.core.tools.orchestrate_streaming import run_agent_streaming
 
 
 def _chunk(tool_calls: list[dict]) -> ModelResponse:
@@ -359,7 +359,7 @@ class TestAsyncPipelineWrapping:
 
 
 class _RunStartedFake:
-    """Minimal RunStartedEvent shape orchestrate.py reads for
+    """Minimal RunStartedEvent shape the stream handler reads for
     ``run_id`` / ``session_id`` / ``parent_run_id`` capture."""
 
     def __init__(self, run_id: str, session_id: str, parent_run_id: str | None = None):
@@ -382,7 +382,7 @@ class _ToolExecutionFake:
 
 
 class _MockAgent:
-    """Minimum surface of an Agno Agent that ``_run_agent_streaming``
+    """Minimum surface of an Agno Agent that the stream handler
     reads. Yields a pre-built event tape and returns nothing
     meaningful from the DB lookup — the visualization we care about
     lands via ``on_progress``, not via the parent's returned text."""
@@ -406,11 +406,27 @@ class _MockAgent:
         return None
 
 
+def _context(
+    agent: Any,
+    *,
+    task: str = "viz",
+    agent_path: tuple[str, ...] = ("visualizer",),
+    **sinks: Any,
+) -> StreamContext:
+    """The stream context one run is driven through."""
+    return StreamContext(
+        runnable=agent,
+        task=task,
+        agent_path=list(agent_path),
+        sinks=StreamSinks(**sinks),
+    )
+
+
 class TestOrchestrateVisualizerIntegration:
-    """Drives ``_run_agent_streaming`` with a mocked Agno event tape
-    that mimics what the visualizer sub-agent produces: streaming
-    CustomEvents from ``_LoggingModel`` plus a final
-    ``ToolCallStartedEvent`` carrying the parsed args.
+    """Drives the sub-agent stream handler with a mocked Agno event
+    tape that mimics what the visualizer sub-agent produces:
+    streaming CustomEvents from ``_LoggingModel`` plus a final
+    ToolCallStartedEvent carrying the parsed args.
 
     This is the closest we can get to "the whole thing works"
     without a live LLM — the model layer is stubbed but every
@@ -461,35 +477,30 @@ class TestOrchestrateVisualizerIntegration:
         )
         tape.append(ts_event)
 
-        progress: list[dict] = []
-        await _run_agent_streaming(
-            agent=_MockAgent(tape),
-            task="viz",
-            on_progress=lambda ev: progress.append(ev),
-            agent_path=["visualizer"],
-        )
+        progress: list[Any] = []
+        await run_agent_streaming(_context(_MockAgent(tape), on_progress=progress.append))
 
-        deltas = [e for e in progress if e.get("type") == "visualization_delta"]
+        deltas = [e for e in progress if e.type == "visualization_delta"]
         assert deltas, (
-            f"Expected visualization_delta events; got types: {[e.get('type') for e in progress]}"
+            f"Expected visualization_delta events; got types: {[e.type for e in progress]}"
         )
 
         # First delta may be dropped by the 50ms throttle if the
         # test wall-clock is generous; the LAST delta must be final.
-        finals = [d for d in deltas if d.get("final") is True]
+        finals = [d for d in deltas if d.final is True]
         assert len(finals) == 1
         final = finals[0]
-        assert final["spec_id"]
+        assert final.spec_id
         # The final JSON parses to the exact spec the tool call
         # carried.
-        parsed = json.loads(final["json"])
+        parsed = json.loads(final.spec_json)
         assert parsed == {
             "root": "r",
             "elements": {"r": {"type": "Text", "props": {"text": "AAPL"}}},
         }
 
         # spec_id is stable across the whole run — the FE dedups on it.
-        spec_ids = {d["spec_id"] for d in deltas}
+        spec_ids = {d.spec_id for d in deltas}
         assert len(spec_ids) == 1
 
     @pytest.mark.asyncio
@@ -507,15 +518,17 @@ class TestOrchestrateVisualizerIntegration:
             ),
         ]
 
-        progress: list[dict] = []
-        await _run_agent_streaming(
-            agent=_MockAgent(tape),
-            task="read",
-            on_progress=lambda ev: progress.append(ev),
-            agent_path=["explorer"],
+        progress: list[Any] = []
+        await run_agent_streaming(
+            _context(
+                _MockAgent(tape),
+                task="read",
+                agent_path=("explorer",),
+                on_progress=progress.append,
+            )
         )
 
-        deltas = [e for e in progress if e.get("type") == "visualization_delta"]
+        deltas = [e for e in progress if e.type == "visualization_delta"]
         assert deltas == []
 
     @pytest.mark.asyncio
@@ -549,22 +562,17 @@ class TestOrchestrateVisualizerIntegration:
             ),
         ]
 
-        progress: list[dict] = []
-        await _run_agent_streaming(
-            agent=_MockAgent(tape),
-            task="viz",
-            on_progress=lambda ev: progress.append(ev),
-            agent_path=["visualizer"],
-        )
+        progress: list[Any] = []
+        await run_agent_streaming(_context(_MockAgent(tape), on_progress=progress.append))
 
-        completed_events = [e for e in progress if e.get("type") == "agent_completed"]
+        completed_events = [e for e in progress if e.type == "agent_completed"]
         assert len(completed_events) == 1, (
             f"Expected exactly one agent_completed emission (post-loop "
             f"fallback), got {len(completed_events)}. Progress types: "
-            f"{[e.get('type') for e in progress]}"
+            f"{[e.type for e in progress]}"
         )
-        assert completed_events[0]["agent_path"] == "visualizer"
-        assert completed_events[0]["is_error"] is False
+        assert completed_events[0].agent_path == "visualizer"
+        assert completed_events[0].is_error is False
 
     @pytest.mark.asyncio
     async def test_agent_completed_not_double_emitted_when_run_completed_fires(
@@ -592,15 +600,10 @@ class TestOrchestrateVisualizerIntegration:
             ),
         ]
 
-        progress: list[dict] = []
-        await _run_agent_streaming(
-            agent=_MockAgent(tape),
-            task="viz",
-            on_progress=lambda ev: progress.append(ev),
-            agent_path=["visualizer"],
-        )
+        progress: list[Any] = []
+        await run_agent_streaming(_context(_MockAgent(tape), on_progress=progress.append))
 
-        completed_events = [e for e in progress if e.get("type") == "agent_completed"]
+        completed_events = [e for e in progress if e.type == "agent_completed"]
         assert len(completed_events) == 1, (
             f"Expected exactly one agent_completed emission (the "
             f"in-loop one), got {len(completed_events)}. "
@@ -617,7 +620,7 @@ class TestOrchestrateVisualizerIntegration:
         distinct run_ids.
 
         Fix: :class:`SubAgentRegistry` — an injectable collaborator
-        that ``_run_agent_streaming`` populates when it latches onto
+        that the stream handler populates when it latches onto
         the sub-agent's run_id and cleans up in its ``finally``
         block. ``BackendServer.cancel_run`` iterates the registry
         and cancels every entry.
@@ -648,7 +651,7 @@ class TestOrchestrateVisualizerIntegration:
             # A trivial content event so on_progress fires while
             # the run is still active — the RunContentEvent class
             # requires ``agent_id``/``agent_name`` but nothing else
-            # in ``_run_agent_streaming`` reads them.
+            # in the stream handler reads them.
             agent_events.RunContentEvent(
                 agent_id="",
                 agent_name="",
@@ -658,12 +661,12 @@ class TestOrchestrateVisualizerIntegration:
             ),
         ]
 
-        await _run_agent_streaming(
-            agent=_MockAgent(tape),
-            task="viz",
-            on_progress=on_progress,
-            agent_path=["visualizer"],
-            subagent_registry=registry,
+        await run_agent_streaming(
+            _context(
+                _MockAgent(tape),
+                on_progress=on_progress,
+                subagent_registry=registry,
+            )
         )
 
         # During the run, the sub-agent's run_id was in the registry.
@@ -712,12 +715,13 @@ class TestOrchestrateVisualizerIntegration:
         registry = SubAgentRegistry()
 
         with pytest.raises(RuntimeError, match="simulated"):
-            await _run_agent_streaming(
-                agent=_BoomAgent(),
-                task="boom",
-                on_progress=lambda _e: None,
-                agent_path=["visualizer"],
-                subagent_registry=registry,
+            await run_agent_streaming(
+                _context(
+                    _BoomAgent(),
+                    task="boom",
+                    on_progress=lambda _e: None,
+                    subagent_registry=registry,
+                )
             )
 
         assert "boom-run" not in registry, (
@@ -770,12 +774,12 @@ class TestOrchestrateVisualizerIntegration:
         # Inject the appender as a proper constructor collaborator
         # (no more classvar patching — the OOP refactor made this
         # an ordinary keyword argument).
-        await _run_agent_streaming(
-            agent=_MockAgent(tape),
-            task="viz",
-            on_progress=lambda _ev: None,
-            agent_path=["visualizer"],
-            event_appender=_fake_append,
+        await run_agent_streaming(
+            _context(
+                _MockAgent(tape),
+                on_progress=lambda _ev: None,
+                event_appender=_fake_append,
+            )
         )
 
         assert len(captured_calls) == 1

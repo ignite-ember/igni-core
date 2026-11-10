@@ -148,12 +148,13 @@ from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.todo import TodoStore
 from igni_core.core.utils.audit import AuditLogger
-from igni_core.core.utils.context import ProjectMemoryBank, load_project_context
+from igni_core.core.utils.context import RulesContextLoader
+from igni_core.core.utils.context_memory import ProjectMemoryBank
 from igni_core.core.utils.display import DisplayManager
 from igni_core.core.utils.memory_files import MemoryMirror
 from igni_core.core.utils.rules_index import RulesIndex
 from igni_core.core.workspace import WorkspaceManager
-from igni_core.core.workspace_trust import WorkspaceTrust
+from igni_core.core.workspace_trust import process_trust
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +215,7 @@ class Session:
         # removed, and two sources would fight over one checksum file.
         ProjectInitializer(
             project_dir=self.project_dir,
-            trust=WorkspaceTrust.shared(),
+            trust=process_trust(),
             config=InitConfig(
                 skip_bundled_agents=self.group_policy.ships("agents"),
                 skip_builtin_hook_registration=self.group_policy.ships("hooks"),
@@ -414,10 +415,13 @@ class Session:
 
         Subdirectory rules are discovered lazily by :class:`ToolEventHook`.
         """
-        self.project_instructions = load_project_context(
-            self.project_dir,
-            settings.context.project_file,
-            read_claude_md=settings.rules.cross_tool_support,
+        self.project_instructions = (
+            RulesContextLoader(
+                project_dir=self.project_dir,
+                read_claude_md=settings.rules.cross_tool_support,
+            )
+            .load_all()
+            .render()
         )
         self.rules_index = RulesIndex(
             self.project_dir,
@@ -517,7 +521,7 @@ class Session:
 
         monitor_configs = MonitorConfigLoader(
             self.project_dir,
-            trust=WorkspaceTrust.shared(),
+            trust=process_trust(),
             plugin_roots=self.plugin_loader.collect_monitor_roots(disabled=self._disabled_plugins),
         ).load()
         self.monitor_manager = MonitorManager(monitor_configs, self.project_dir)

@@ -21,7 +21,9 @@ import pytest
 
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.schemas_rpc import LoginResult
+from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.extensions.installer import ExtensionInstaller
+from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.python_env import PythonEnvironments
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from igni_core.extensions.rpc import ExtensionRpc
@@ -37,7 +39,7 @@ from igni_core.extensions.service_token import (
     ServiceTokenExchange,
     TokenExchangeFailed,
 )
-from igni_core.extensions.store import DistributionRecord, ExtensionStore
+from igni_core.extensions.store import ExtensionStore
 from tests.extension_distribution_helpers import API_URL, SESSION, FakeIgni, build_wheel, manifest
 
 NOTES = "https://notes.example.com"
@@ -286,8 +288,11 @@ class StubMcp:
     def __init__(self) -> None:
         self.configs: dict[str, Any] = {}
 
+    def register_server(self, config: Any) -> None:
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> Any:
-        return type("Ok", (), {"ok": True, "reason": ""})()
+        return MCPConnectResult(ok=True)
 
     async def disconnect_one(self, name: str) -> None:
         self.configs.pop(name, None)

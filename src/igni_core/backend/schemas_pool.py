@@ -19,6 +19,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, SerializeAsAny, field_validator
 
 from igni_core.backend.rpc_binding import RpcArgs
+from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.service_events import DeliveryReceipt, NotHandled, ServiceEvent
 from igni_core.protocol.schemas.rpc import RpcErrorCode
 
@@ -144,14 +145,14 @@ class ExtensionPost(BaseModel):
     session_id: str
     extension_id: str
     text: str
-    media: dict[str, str] = Field(default_factory=dict)
+    media: ChatAttachments = Field(default_factory=ChatAttachments)
     queued: bool
     from_service: str = ""
 
     @field_validator("media", mode="before")
     @classmethod
     def _no_media_is_empty(cls, value: Any) -> Any:
-        return {} if value is None else value
+        return ChatAttachments() if value is None else value
 
 
 class ProjectDirs(BaseModel):

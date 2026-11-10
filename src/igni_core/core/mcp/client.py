@@ -207,6 +207,20 @@ class MCPClientManager:
 
     # ── Connection lifecycle ──────────────────────────────────────
 
+    def register_server(self, config: MCPServerConfig) -> None:
+        """Add a server igni configures itself, to connect it by name.
+
+        The extension layer configures an extension's service at
+        install time — it is in nobody's ``.mcp.json`` and in no
+        managed settings — and then connects to it. Registering it
+        here rather than writing into :attr:`configs` keeps the
+        manager's own map an implementation detail of the manager.
+
+        Args:
+            config: The server to add, under ``config.name``.
+        """
+        self.configs[config.name] = config
+
     async def connect(self, name: str) -> MCPConnectResult:
         """Connect to an MCP server by name.
 

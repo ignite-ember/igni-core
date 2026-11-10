@@ -19,7 +19,6 @@ from igni_core.backend.workflow_discovery import WorkflowDiscovery
 from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
 from igni_core.core.config.permission_eval.schemas import PermissionDecision
-from igni_core.core.config.schemas.workspace_trust import WorkspaceTrustConfig
 from igni_core.core.config.settings_loader import SettingsLoader
 from igni_core.core.config.tool_permissions.store import ToolPermissions
 from igni_core.core.hooks.executor import HookExecutor
@@ -35,8 +34,10 @@ from igni_core.core.workspace_trust import (
     WorkspaceTrust,
     WorkspaceTrustStore,
     canonical_remote,
+    process_trust,
     remote_matches,
 )
+from igni_core.core.workspace_trust.policy import WorkspaceTrustConfig
 
 pytestmark = pytest.mark.workspace_trust
 
@@ -64,7 +65,7 @@ def _write(path: Path, text: str) -> Path:
 
 
 def _trust() -> WorkspaceTrust:
-    return WorkspaceTrust.shared()
+    return process_trust()
 
 
 def _set_policy(**kwargs) -> None:
@@ -104,7 +105,7 @@ def test_untrusted_project_tool_is_never_imported(repo, tmp_path):
     marker = tmp_path / "tool-ran"
     _tool_that_writes(repo, marker)
 
-    result = CustomToolLoader().discover(repo)
+    result = CustomToolLoader(trust=_trust()).discover(repo)
 
     assert not marker.exists()
     assert not result.toolkits
@@ -115,13 +116,13 @@ def test_trusting_imports_project_tools_and_revoking_stops_it(repo, tmp_path):
     _tool_that_writes(repo, marker)
 
     _trust().trust(repo)
-    result = CustomToolLoader().discover(repo)
+    result = CustomToolLoader(trust=_trust()).discover(repo)
     assert marker.exists()
     assert [t.name for t in result.toolkits] == ["custom_x"]
 
     marker.unlink()
     _trust().revoke(repo)
-    assert not CustomToolLoader().discover(repo).toolkits
+    assert not CustomToolLoader(trust=_trust()).discover(repo).toolkits
     assert not marker.exists()
 
 
@@ -355,7 +356,9 @@ def test_dont_trust_and_this_time_only(repo):
     assert _trust().is_trusted(repo)
     assert WorkspaceTrustStore().get(WorkspaceIdentity.of(repo)) == "untrusted"
     # A new process forgets "this time only".
-    assert not WorkspaceTrust.reset_shared().is_trusted(repo)
+    fresh = WorkspaceTrust()
+    assert fresh.decide(repo).source == "store"
+    assert not fresh.is_trusted(repo)
 
 
 def test_the_remote_is_read_without_running_git(repo, monkeypatch):
@@ -399,7 +402,7 @@ def test_never_keeps_every_folder_untrusted(repo, tmp_path):
     with pytest.raises(TrustRefused):
         _trust().trust(repo)
     assert not _trust().grant_for_run(repo).trusted
-    CustomToolLoader().discover(repo)
+    CustomToolLoader(trust=_trust()).discover(repo)
     assert not marker.exists()
 
 
@@ -562,7 +565,7 @@ def test_igni_m_without_trust_runs_the_session_untrusted(repo, monkeypatch):
         self._settings = settings
 
     async def fake_run(self, message):
-        seen["trusted"] = WorkspaceTrust.shared().is_trusted(Path.cwd())
+        seen["trusted"] = process_trust().is_trusted(Path.cwd())
         seen["shell"] = self._settings.permissions.shell_execute == "allow"
 
     _write(

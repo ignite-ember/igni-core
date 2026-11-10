@@ -26,7 +26,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
 
-from igni_core.extensions.installer import SERVER_PREFIX
+from igni_core.extensions.install_service import SERVER_PREFIX
 from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.notifications.schemas import (
     ExtensionNotice,

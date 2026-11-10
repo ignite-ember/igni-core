@@ -62,6 +62,14 @@ class UnixSocketServerTransport(NDJsonStreamTransport, ListeningTransport):
         writer = self._writer
         return 1 if writer is not None and not writer.is_closing() else 0
 
+    def owns_client(self, client_id: str) -> bool:
+        """The socket's one connection carries no client id, so it owns none.
+
+        The terminal that attaches over this socket is never the target
+        of a reply addressed to one client.
+        """
+        return False
+
     async def wait_for_connection(self, timeout: float | None = 30.0) -> None:
         """Wait until a client connects."""
         await asyncio.wait_for(self._connected.wait(), timeout=timeout)

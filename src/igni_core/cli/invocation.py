@@ -24,7 +24,7 @@ from igni_core.cli.options import CliOptions
 from igni_core.cli.resume import ResumeResolver
 from igni_core.core.config.settings import Settings
 from igni_core.core.session.single_message_run import SingleMessageRun
-from igni_core.core.workspace_trust import WorkspaceTrust
+from igni_core.core.workspace_trust import process_trust
 from igni_core.core.worktree import WorktreeManager
 
 #: The console script pyproject installs. `ignite-ember` is the other
@@ -127,7 +127,7 @@ class CliInvocation:
         worktree = self.project_dir
         if worktree is None or worktree == folder:
             return
-        service = WorkspaceTrust.shared()
+        service = process_trust()
         if service.is_trusted(folder):
             service.grant_for_run(worktree)
 

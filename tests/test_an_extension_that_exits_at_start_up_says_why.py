@@ -20,6 +20,7 @@ import pytest
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.stdio_binding import StdioMCPBinding
 from igni_core.extensions.health import ExtensionHealth
+from igni_core.extensions.host.processes import ExtensionProcesses
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
@@ -65,7 +66,9 @@ async def wired(tmp_path: Path):
     installer = ExtensionInstaller(
         registry=registry, rpc=rpc, mcp=mcp, origins=origins, allow_development=True
     )
-    health = ExtensionHealth(registry=registry, rpc=rpc, mcp=mcp, interval_s=3600)
+    health = ExtensionHealth(
+        registry=registry, rpc=rpc, mcp=mcp, interval_s=3600, processes=ExtensionProcesses()
+    )
     try:
         yield registry, installer, health
     finally:

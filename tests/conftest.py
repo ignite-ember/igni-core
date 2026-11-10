@@ -17,9 +17,6 @@ from igni_core.core.db.urls import DatabaseUrl, Dialect
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.layer import Layers, layers
 from igni_core.core.paths import CONFIG_DIR
-from igni_core.extensions.faults import ExtensionFaults
-from igni_core.extensions.host.hooks import ExtensionHooks
-from igni_core.extensions.host.processes import ExtensionProcesses
 from tests.egress_guard import EgressGuard, InternalNetwork
 from tests.root_guard import RootGuard
 from tests.storage_backends import ThrowawayPostgres
@@ -122,16 +119,23 @@ def _workspace_trust(request: pytest.FixtureRequest) -> Iterator[None]:
     Workspace trust (``core/workspace_trust``) starts every folder untrusted,
     and the tests written before it exist open project folders whose tools,
     hooks and settings are their subject. Those get a trusted folder, as a
-    person who had trusted it would. A test marked
-    ``@pytest.mark.workspace_trust`` gets the real decision, starting unset.
-    """
-    from igni_core.core.workspace_trust import WorkspaceTrust
+    person who had trusted it would be — a trust service that trusts what
+    nobody has decided about (``tests/workspace_trust_doubles.py``). A test
+    marked ``@pytest.mark.workspace_trust`` gets the real service and the
+    real decision, starting unset.
 
-    WorkspaceTrust.reset_shared(
-        trust_everything=not request.node.get_closest_marker(WORKSPACE_TRUST)
-    )
+    The service is put in place for the test and taken away afterwards, so
+    one test's decisions are never another's.
+    """
+    from igni_core.core.workspace_trust import WorkspaceTrust, trust_service
+    from tests.workspace_trust_doubles import TrustEverything
+
+    if request.node.get_closest_marker(WORKSPACE_TRUST):
+        trust_service.replace(WorkspaceTrust())
+    else:
+        trust_service.replace(TrustEverything())
     yield
-    WorkspaceTrust.reset_shared(trust_everything=True)
+    trust_service.replace(None)
 
 
 @pytest.fixture(autouse=True)
@@ -223,9 +227,6 @@ def _no_extension_hooks_left_behind():
     """
     yield
     extension_hook_gate.install(None)
-    ExtensionHooks.reset_shared()
-    ExtensionFaults.reset_shared()
-    ExtensionProcesses.reset_shared()
 
 
 @pytest.fixture

@@ -14,7 +14,13 @@ Public back-compat surface preserved:
 - ``normalize_agno_names(names) -> list[str]`` classmethod raising
   ``ValueError`` on unknown names (used by ``core/agents/ephemeral.py``).
 - ``available_tools`` property.
-- ``load_custom_tools`` and ``cloud_connected``.
+- ``cloud_connected``.
+
+``load_custom_tools`` returns the structured
+:class:`~igni_core.core.tools.custom_loader_schemas.DiscoveryResult`
+rather than a bare list of toolkits: the files that were skipped and
+the ones that failed to import are part of what it found, and a
+caller that cannot see them cannot say why a tool is missing.
 
 The verbose :class:`ToolResolutionResult` shape is also available via
 :meth:`resolve_typed` — callers can migrate incrementally.
@@ -26,11 +32,10 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from agno.tools import Toolkit
-
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.tool_permissions import ToolPermissions
-from igni_core.core.tools.custom_loader import load_custom_tools as _load_custom_tools
+from igni_core.core.tools.custom_loader import CustomToolLoader
+from igni_core.core.tools.custom_loader_schemas import DiscoveryResult, PluginToolDir
 from igni_core.core.tools.edit import FileEditNotifier
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.tool_spec import (
@@ -41,6 +46,7 @@ from igni_core.core.tools.tool_spec import (
     ToolSpec,
     ToolSpecCatalog,
 )
+from igni_core.core.workspace_trust import WorkspaceTrust, process_trust
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +80,7 @@ class ToolRegistry:
         broadcast: BroadcastSink | None = None,
         file_edit_notifier: FileEditNotifier | None = None,
         supervisor: ProcessSupervisor | None = None,
+        trust: WorkspaceTrust | None = None,
     ):
         self.base_dir = Path(base_dir) if base_dir else Path.cwd()
         self.permissions = permissions or ToolPermissions(project_dir=self.base_dir)
@@ -100,6 +107,13 @@ class ToolRegistry:
         # shares, so the watcher panel sees every background command.
         # A registry built on its own gets a supervisor of its own.
         self._supervisor = supervisor if supervisor is not None else ProcessSupervisor()
+        # The trust service the custom-tool loader asks whether a
+        # folder's own tools may run. One process-wide instance by
+        # default, like the settings loader hands it — but a caller
+        # that means a different one (a test, a run with its own
+        # policy) says so here rather than the loader reaching for
+        # one itself.
+        self._trust = trust if trust is not None else process_trust()
         # Custom factories registered at runtime via :meth:`register`.
         # These don't fit the spec-catalog shape (they're raw callables
         # returning ``Toolkit`` instances) so they live on the instance
@@ -262,11 +276,10 @@ class ToolRegistry:
         self,
         project_dir: Path | None = None,
         *,
-        plugin_tool_dirs: list[tuple[str, Path]] | None = None,
+        plugin_tool_dirs: list[PluginToolDir] | None = None,
         group_tools_dir: Path | None = None,
-    ) -> list[Toolkit]:
-        """Discover custom tools from ``.igni/tools/`` and return as
-        toolkit list.
+    ) -> DiscoveryResult:
+        """Discover custom tools from ``.igni/tools/``.
 
         Scans directories in priority order:
 
@@ -274,8 +287,13 @@ class ToolRegistry:
         2. ``<project>/.igni/tools/`` (project tools)
         3. Plugin tools (``plugin_tool_dirs``, namespaced
            ``custom_<plugin>_<file>``)
+
+        The result carries the toolkits and what happened to every
+        file that was looked at, so a caller can tell the person why
+        a tool they expected is missing.
         """
-        return _load_custom_tools(
+        loader = CustomToolLoader(trust=self._trust)
+        return loader.discover(
             project_dir or self.base_dir,
             plugin_tool_dirs=plugin_tool_dirs,
             group_tools_dir=group_tools_dir,

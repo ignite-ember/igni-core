@@ -31,6 +31,7 @@ from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
 from igni_core.extensions.contributions import ExtensionContributions
+from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.origin import ExtensionOrigins
@@ -66,6 +67,7 @@ class Wired:
             rpc=self.rpc,
             prompt_loader=self.prompt_loader,
             prompts=self.prompts,
+            hooks=ExtensionHooks(registry=self.registry),
         )
         self.contributions.attach()
         self.installer = ExtensionInstaller(

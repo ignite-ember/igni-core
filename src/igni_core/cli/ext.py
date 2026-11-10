@@ -44,10 +44,11 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.plugins.git import GitClient
 from igni_core.extensions.bundle_source import BundleSource, BundleSourceError
-from igni_core.extensions.distribution import OneShotSync
+from igni_core.extensions.distribution.once import OneShotSync
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.profile import DEV_FLAG, DevelopmentFlag
-from igni_core.extensions.store import ExtensionStore, StoreError
+from igni_core.extensions.store import ExtensionStore
+from igni_core.extensions.store_errors import StoreError
 
 #: What this build of igni implements. An extension declares a range
 #: and this is what it is checked against — the only compatibility
@@ -314,12 +315,12 @@ def sync(root: str | None, timeout: float) -> None:
     if report.skipped is not None:
         raise click.ClickException(f"nothing was synced: {report.skipped}")
 
-    group = store.group()
+    group = store.listing.group()
     who = f" (group {group.label})" if group is not None and group.label else ""
     click.echo(f"synced with {syncer.api_url}{who}")
     rows: list[tuple[str, str]] = []
     for extension_id in report.installed:
-        record = store.distribution_of(extension_id)
+        record = store.provenance.of(extension_id)
         source = f" {record.version} from {record.service_url}" if record else ""
         rows.append(("installed", f"{extension_id}{source}"))
     rows += [("unchanged", extension_id) for extension_id in report.unchanged]
@@ -368,7 +369,7 @@ def list_installed(root: str | None) -> None:
         except StoreError as exc:
             click.echo(f"{bundle.name:<28} unreadable — {exc}")
             continue
-        record = store.distribution_of(manifest.id)
+        record = store.provenance.of(manifest.id)
         source = f"from {record.service_url}" if record is not None else "development install"
         click.echo(f"{manifest.id:<28} {manifest.version:<10} {source}")
 
@@ -385,7 +386,7 @@ def remove(extension_id: str, root: str | None) -> None:
     """
     store = _store(root)
     try:
-        distributed = store.distribution_of(extension_id)
+        distributed = store.provenance.of(extension_id)
         removed = store.remove(extension_id)
     except StoreError as exc:
         raise click.ClickException(str(exc)) from exc

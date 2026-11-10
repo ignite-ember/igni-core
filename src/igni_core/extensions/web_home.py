@@ -28,7 +28,7 @@ class ExtensionWebHome:
         self._store = store
 
     def url_for(self, manifest: ExtensionManifest) -> str | None:
-        record = self._store.distribution_of(manifest.id)
+        record = self._store.provenance.of(manifest.id)
         if record is not None and record.service_url:
             return self._web(record.service_url)
         value = self._store.settings(manifest).get(SERVICE_URL_SETTING)

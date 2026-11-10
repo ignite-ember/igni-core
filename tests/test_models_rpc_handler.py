@@ -12,6 +12,7 @@ with ``ValueError``, which the host gateway maps to ``refused``.
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -32,6 +33,13 @@ def _handler() -> tuple[ModelsRpcHandler, MagicMock]:
 
 def _call(handler: ModelsRpcHandler, method: RpcMethod, wire: dict):
     return handler.methods()[method](wire)
+
+
+def _probe_answers(monkeypatch: pytest.MonkeyPatch, answer: UpdateInfo) -> None:
+    """Make the handler's update checker answer ``answer``."""
+    checker = MagicMock()
+    checker.check = AsyncMock(return_value=answer)
+    monkeypatch.setattr(models_module, "UpdateChecker", MagicMock(return_value=checker))
 
 
 def test_check_permission_gets_typed_tool_args() -> None:
@@ -80,11 +88,7 @@ def test_a_refused_model_switch_fails_the_call() -> None:
 
 async def test_no_newer_release_answers_none(monkeypatch: pytest.MonkeyPatch) -> None:
     handler, _ = _handler()
-    monkeypatch.setattr(
-        models_module,
-        "check_for_update",
-        AsyncMock(return_value=UpdateInfo(available=False, current_version="1.0.0")),
-    )
+    _probe_answers(monkeypatch, UpdateInfo(available=False, current_version="1.0.0"))
     assert await _call(handler, RpcMethod.CHECK_FOR_UPDATE, {}) is None
 
 
@@ -96,7 +100,7 @@ async def test_a_newer_release_is_reported(monkeypatch: pytest.MonkeyPatch) -> N
         latest_version="1.1.0",
         download_url="https://example.invalid/igni",
     )
-    monkeypatch.setattr(models_module, "check_for_update", AsyncMock(return_value=found))
+    _probe_answers(monkeypatch, found)
     monkeypatch.setattr(
         models_module.PackageMetadata, "load", classmethod(lambda cls: PackageMetadata(name="igni"))
     )
@@ -114,7 +118,7 @@ async def test_a_failed_probe_fails_the_call(monkeypatch: pytest.MonkeyPatch) ->
         error=UpdateError.NETWORK,
         error_detail="connection refused",
     )
-    monkeypatch.setattr(models_module, "check_for_update", AsyncMock(return_value=failed))
+    _probe_answers(monkeypatch, failed)
 
     with pytest.raises(ValueError, match="network"):
         await _call(handler, RpcMethod.CHECK_FOR_UPDATE, {})
@@ -123,7 +127,7 @@ async def test_a_failed_probe_fails_the_call(monkeypatch: pytest.MonkeyPatch) ->
 async def test_missing_package_metadata_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     handler, _ = _handler()
     found = UpdateInfo(available=True, current_version="1.0.0", latest_version="1.1.0")
-    monkeypatch.setattr(models_module, "check_for_update", AsyncMock(return_value=found))
+    _probe_answers(monkeypatch, found)
 
     def _missing(cls: type[PackageMetadata]) -> PackageMetadata:
         raise PackageNotFoundError("igni-core")
@@ -136,21 +140,34 @@ async def test_missing_package_metadata_is_refused(monkeypatch: pytest.MonkeyPat
 
 async def test_an_update_check_with_no_package_metadata_is_refused(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    """Building the checker reads the installed package's metadata; a missing
-    distribution raised ``PackageNotFoundError`` past the update check's
-    "never raises", so the call failed with a raw import error instead of
-    the refusal every other failed check is."""
-    from importlib.metadata import PackageNotFoundError
+    """A missing distribution must not reach the caller as a raw import error.
 
+    The check reads the installed package's metadata before it can ask
+    PyPI; a distribution that is not installed made that probe raise
+    ``PackageNotFoundError`` past the update check's "never raises", so
+    the call failed with a raw import error instead of the refusal every
+    other failed check is. The checker now turns the failure into a
+    typed error of its own, and the handler turns that into the refusal.
+    """
+    from igni_core.core.config.settings import Settings
     from igni_core.core.utils import update_checker
 
     def no_package() -> object:
         raise PackageNotFoundError("igni-core")
 
-    monkeypatch.setattr(update_checker.UpdateChecker, "_pkg_cache", None)
+    # The checker is built by the handler, so the world it runs in is
+    # set here: the check is on, the cache is empty, and the installed
+    # distribution cannot be found.
+    monkeypatch.setattr(
+        update_checker.SettingsLoader,
+        "load",
+        classmethod(lambda cls: Settings(update_check_ttl=86400, air_gapped=False)),
+    )
+    monkeypatch.setattr(update_checker, "default_cache_path", lambda: tmp_path / ".update-check")
     monkeypatch.setattr(update_checker.PackageMetadata, "load", staticmethod(no_package))
     handler, _ = _handler()
 
-    with pytest.raises(ValueError, match="update check failed"):
+    with pytest.raises(ValueError, match=r"update check failed \(unknown\)"):
         await _call(handler, RpcMethod.CHECK_FOR_UPDATE, {})

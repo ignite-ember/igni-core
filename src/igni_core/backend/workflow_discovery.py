@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from igni_core.backend.schemas_workflows import WorkflowMetaEnvelope, WorkflowStartResult
 from igni_core.backend.workflow_layers import FallbackLayerNotice, WorkflowLayers
 from igni_core.backend.workflow_runtime_process import RUNTIME_PATH, WorkflowRuntime
-from igni_core.core.workspace_trust import WorkspaceTrust
+from igni_core.core.workspace_trust import WorkspaceTrust, process_trust
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class WorkflowDiscovery:
         return cls(
             layers=layers,
             runtime=runtime or WorkflowRuntime(runtime_path=RUNTIME_PATH, cwd=layers.project_dir),
-            trust=trust or WorkspaceTrust.shared(),
+            trust=trust if trust is not None else process_trust(),
             notice=notice or FallbackLayerNotice(),
         )
 

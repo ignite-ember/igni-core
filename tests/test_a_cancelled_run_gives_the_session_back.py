@@ -24,18 +24,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from pathlib import Path
 from types import SimpleNamespace
+
+from agno.media import Image
 
 from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.backend.run_controller import RunController
 from igni_core.backend.schemas_run import (
     HookGateResult,
-    MediaAttachments,
     ModelConfig,
     PromptBuildResult,
     RunPhase,
 )
-from igni_core.core.utils.media_schemas import ResolvedText
+from igni_core.core.utils.media_schemas import MediaAttachments, ResolvedText
 from igni_core.protocol import messages as msg
 
 # ── Fakes ────────────────────────────────────────────────────────────
@@ -244,32 +246,41 @@ def _builder(attached: MediaAttachments | None) -> PromptBuilder:
     return builder
 
 
+def _image(path: str) -> MediaAttachments:
+    """A bundle holding one image at ``path`` — the shape the FE's paste
+    and the resolver's attach both produce."""
+    return MediaAttachments(images=[Image(filepath=Path(path))])
+
+
 class TestSuppliedAttachmentsAreKept:
     async def test_the_pasted_image_is_not_replaced_by_the_resolved_one(self):
         """Both reach the model — the branch used to return only the resolved
         bundle, dropping whatever the FE sent with the message."""
-        builder = _builder(MediaAttachments(images=["resolved-diagram"]))
-        supplied = MediaAttachments(images=["pasted-screenshot"])
+        builder = _builder(_image("/project/resolved-diagram.png"))
+        supplied = _image("/project/pasted-screenshot.png")
 
         step = builder._attach_file_references(
             "see diagram.png", supplied, ModelConfig(vision=True)
         )
 
         assert step.media is not None
-        assert step.media.images == ["pasted-screenshot", "resolved-diagram"]
+        assert [i.filepath for i in step.media.images] == [
+            Path("/project/pasted-screenshot.png"),
+            Path("/project/resolved-diagram.png"),
+        ]
 
     async def test_a_message_with_no_supplied_media_is_unchanged(self):
-        builder = _builder(MediaAttachments(images=["resolved-diagram"]))
+        builder = _builder(_image("/project/resolved-diagram.png"))
 
         step = builder._attach_file_references("see diagram.png", None, ModelConfig(vision=True))
 
         assert step.media is not None
-        assert step.media.images == ["resolved-diagram"]
+        assert [i.filepath for i in step.media.images] == [Path("/project/resolved-diagram.png")]
 
     async def test_nothing_attachable_leaves_the_supplied_bundle_alone(self):
         """``attach_local_paths`` returning ``None`` is the text-only path."""
         builder = _builder(None)
-        supplied = MediaAttachments(images=["pasted-screenshot"])
+        supplied = _image("/project/pasted-screenshot.png")
 
         step = builder._attach_file_references("see notes.txt", supplied, ModelConfig(vision=True))
 

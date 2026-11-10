@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from igni_core.extensions.host.windows import WindowChange
+from igni_core.extensions.host.window_changes import WindowChange
 from igni_core.extensions.host.wire import SignalMessage
 from igni_core.protocol import messages as msg
 from igni_core.protocol.json_value import WireJson

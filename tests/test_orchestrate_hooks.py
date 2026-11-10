@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.tools.orchestrate import OrchestrateTools
 
@@ -45,15 +46,15 @@ class TestSubagentStartStop:
         t = OrchestrateTools(pool=p, settings=_settings(), hook_executor=executor, session_id="s1")
 
         with patch(
-            "igni_core.core.tools.orchestrate._run_agent_streaming",
+            "igni_core.core.tools.orchestrate.run_agent_streaming",
             new=AsyncMock(return_value=("done", [])),
         ):
             result = await t.spawn_agent(task="code", agent_name="coder")
         assert "done" in result
 
         calls = executor.execute.call_args_list
-        assert any(c[1].get("event") == "SubagentStart" for c in calls)
-        assert any(c[1].get("event") == "SubagentStop" for c in calls)
+        assert any(c[1]["event"] is HookEvent.SUBAGENT_START for c in calls)
+        assert any(c[1]["event"] is HookEvent.SUBAGENT_STOP for c in calls)
 
     @pytest.mark.asyncio
     async def test_spawn_agent_fires_stop_on_error(self):
@@ -67,7 +68,7 @@ class TestSubagentStartStop:
         t = OrchestrateTools(pool=p, settings=_settings(), hook_executor=executor, session_id="s1")
 
         with patch(
-            "igni_core.core.tools.orchestrate._run_agent_streaming",
+            "igni_core.core.tools.orchestrate.run_agent_streaming",
             new=AsyncMock(side_effect=RuntimeError("crash")),
         ):
             result = await t.spawn_agent(task="stuff", agent_name="buggy")
@@ -79,7 +80,7 @@ class TestSubagentStartStop:
         agent.name = "coder"
         t = OrchestrateTools(pool=_pool(agent), settings=_settings())
         with patch(
-            "igni_core.core.tools.orchestrate._run_agent_streaming",
+            "igni_core.core.tools.orchestrate.run_agent_streaming",
             new=AsyncMock(return_value=("ok", [])),
         ):
             result = await t.spawn_agent(task="code", agent_name="coder")
@@ -103,7 +104,7 @@ class TestSubagentStartStop:
             patch("igni_core.core.tools.orchestrate.Team"),
             patch("igni_core.core.tools.orchestrate.ModelRegistry") as MockReg,
             patch(
-                "igni_core.core.tools.orchestrate._run_team_streaming",
+                "igni_core.core.tools.orchestrate.run_team_streaming",
                 new=AsyncMock(return_value=("team done", [])),
             ),
         ):
