@@ -162,20 +162,29 @@ class PermissionEvaluator:
         deny: list[str] | None = None,
         ask: list[str] | None = None,
         allow: list[str] | None = None,
+        catalog: ToolCategoryCatalog | None = None,
     ) -> PermissionEvaluator:
         """Convenience constructor — accepts raw strings from
         ``settings.permissions`` and parses them into
         :class:`PermissionRule` objects, silently dropping malformed
-        entries (caller can check the lengths if it cares)."""
+        entries (caller can check the lengths if it cares).
+
+        ``catalog`` is the catalog the modes classify tools with; the
+        default one reads the process's table of what an extension's
+        tools say they are.
+        """
         return cls(
             _mode=PermissionMode(mode) if isinstance(mode, str) else mode,
             deny=PermissionRule.parse_many(deny or []),
             ask=PermissionRule.parse_many(ask or []),
             allow=PermissionRule.parse_many(allow or []),
+            catalog=catalog if catalog is not None else ToolCategoryCatalog.default(),
         )
 
     @classmethod
-    def from_permissions(cls, perms: PermissionsConfig) -> PermissionEvaluator:
+    def from_permissions(
+        cls, perms: PermissionsConfig, catalog: ToolCategoryCatalog | None = None
+    ) -> PermissionEvaluator:
         """The evaluator a session runs with, from its ``permissions`` block.
 
         The per-category levels (``file_write``, ``shell_execute``, …) are
@@ -189,6 +198,7 @@ class PermissionEvaluator:
             deny=[*perms.deny, *category.deny],
             ask=[*perms.ask, *category.ask],
             allow=[*perms.allow, *category.allow],
+            catalog=catalog,
         )
         evaluator.read_only = perms.read_only
         return evaluator

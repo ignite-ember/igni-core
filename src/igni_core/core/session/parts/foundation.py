@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
@@ -44,6 +45,7 @@ class SessionDeps:
     contributions: PromptContributions | None = None
     prompt_loader: PromptLoader | None = None
     supervisor: ProcessSupervisor | None = None
+    tool_hints: ToolHintsRegistry | None = None
 
 
 class FoundationBuilder:
@@ -83,6 +85,14 @@ class FoundationBuilder:
             deps.prompt_loader
             if deps.prompt_loader is not None
             else PromptLoader(PromptFragments())
+        )
+
+        # What an extension's tools say about themselves. Injected for
+        # the same reason: the installer fills the table, and every
+        # session of the deployment must judge those tools by the same
+        # hints.
+        session.tool_hints = (
+            deps.tool_hints if deps.tool_hints is not None else ToolHintsRegistry.shared()
         )
 
         # Every code path below may read ``settings.models.default``, so

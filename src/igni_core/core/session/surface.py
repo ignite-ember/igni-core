@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from igni_core.core.loop import LoopProgressStore, LoopStore
     from igni_core.core.lsp import LspServerManager
     from igni_core.core.mcp.client import MCPClientManager
+    from igni_core.core.mcp.hints import ToolHintsRegistry
     from igni_core.core.monitors import MonitorManager
     from igni_core.core.plugins import PluginLoader, PluginsState
     from igni_core.core.prompts.contributions import PromptContributions
@@ -84,6 +85,7 @@ class SessionSurface:
     supervisor: ProcessSupervisor
     prompt_contributions: PromptContributions
     prompt_loader: PromptLoader
+    tool_hints: ToolHintsRegistry
     cloud_catalog: CloudModelCatalog
 
     # ── Where the session runs ─────────────────────────────────

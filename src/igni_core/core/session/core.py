@@ -61,6 +61,7 @@ from igni_core.core.hooks.memory_sync import MemorySyncHook
 from igni_core.core.hooks.queue.agno_adapter import AgnoCallableAdapter
 from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.hooks.turn_results import TurnResultHook
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.session.event_log_schema import (
@@ -101,6 +102,7 @@ class Session(SessionSurface):
         contributions: PromptContributions | None = None,
         prompt_loader: PromptLoader | None = None,
         supervisor: ProcessSupervisor | None = None,
+        tool_hints: ToolHintsRegistry | None = None,
     ):
         # The live evaluator is the tool-hook factory's; the session
         # mirrors it. There is none until the factory has built one.
@@ -117,6 +119,7 @@ class Session(SessionSurface):
                 contributions=contributions,
                 prompt_loader=prompt_loader,
                 supervisor=supervisor,
+                tool_hints=tool_hints,
             ),
         ).compose()
 
@@ -177,14 +180,9 @@ class Session(SessionSurface):
         """Reload hooks from the settings files; returns how many are loaded."""
         count = self.hooks.reload()
         PluginBuilder(self).mirror_hooks()
-        tool_event_hook = self.tool_event_hook()
-        if self.main_team:
-            # Agno owns the team's hook list and offers no setter, so
-            # the one hook that changed is swapped in place: the old
-            # tool-event hook is dropped and the new one appended.
-            existing = self.main_team.tool_hooks or []
-            self.main_team.tool_hooks = [h for h in existing if not isinstance(h, ToolEventHook)]
-            self.main_team.tool_hooks.append(tool_event_hook)
+        # The team is the agents builder's: it is the one that knows
+        # how a tool-event hook is attached to it.
+        AgentsBuilder(self).replace_tool_event_hook(self.tool_event_hook())
         return count
 
     def reload_plugins(self) -> PluginReloadCounts:
@@ -274,7 +272,7 @@ class Session(SessionSurface):
         the cloud), and finished calls' results kept for a turn a restart
         may cut (``core/hooks/turn_results.py``)."""
         hooks: list[AgnoCallableAdapter] = [TurnResultHook(self.sub_agent_hitl)]
-        mirror = getattr(self, "memory_mirror", None)
+        mirror = self.memory_mirror
         if mirror is not None:
             hooks.append(MemorySyncHook(mirror))
         return hooks

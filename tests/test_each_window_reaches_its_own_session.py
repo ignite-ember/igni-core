@@ -155,6 +155,7 @@ class _Pooled(_Backend):
         additional_dirs: Any,
         contributions: Any = None,
         prompt_loader: Any = None,
+        tool_hints: Any = None,
         supervisors: SupervisorLocator | None = None,
         gate: RunGate | None = None,
     ) -> None:

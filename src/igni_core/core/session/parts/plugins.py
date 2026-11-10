@@ -14,7 +14,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from igni_core.core.config.models import ModelRegistry
-from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.output_styles import discover_output_styles
 from igni_core.core.plugins import PluginLoader, load_state
 from igni_core.core.session.hooks import SessionHooks
@@ -89,13 +88,18 @@ class PluginBuilder:
             hooks=session.hooks,
             session_id_ref=lambda: session.session_id,
             permission_evaluator=session.permission_evaluator,
+            # The table of what the extension tools say they are: the
+            # modes and Bypass's last check both read it.
+            tool_hints=session.tool_hints,
         )
         factory.bypass_guard = factory.build_bypass_guard(
             session.approval.ask,
             # Read per call: ``apply_workspace_trust`` replaces ``settings``.
             model_ref=lambda: ModelRegistry(session.settings).get_model(),
-            # The process's registry, which the extension installer fills.
-            tool_hints=ToolHintsRegistry.shared(),
+            # The registry the session was given: the extension
+            # installer fills it, and every session of the deployment
+            # judges those tools by the same hints.
+            tool_hints=session.tool_hints,
         )
         factory.ask_person = session.approval.ask
         session.tool_hook_factory = factory

@@ -20,6 +20,7 @@ import yaml
 
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.paths import CONFIG_DIR
 
 if TYPE_CHECKING:
@@ -71,12 +72,16 @@ def stub_settings(project: Path, *, home: Path) -> Settings:
     return SettingsLoader.load(project_dir=project)
 
 
-def build_session(root: Path) -> Session:
+def build_session(root: Path, *, tool_hints: ToolHintsRegistry | None = None) -> Session:
     """A session on a throwaway project under *root*."""
     from igni_core.core.session.core import Session
 
     project = stub_project(root / "proj")
-    return Session(settings=stub_settings(project, home=root / "home"), project_dir=project)
+    return Session(
+        settings=stub_settings(project, home=root / "home"),
+        project_dir=project,
+        tool_hints=tool_hints,
+    )
 
 
 __all__ = ["STUB_MODEL", "build_session", "stub_project", "stub_settings"]

@@ -7,10 +7,11 @@ inline imports. Every one of those imports lived under a "late-
 import to avoid cycle" comment; the fix is to move the *class
 boundary*, not to hide the import.
 
-:class:`BackendBootstrap` accepts the four caller-supplied inputs
-(``settings``, ``project_dir``, ``resume_session_id``,
-``additional_dirs``) and exposes the built collaborators as
-attributes:
+:class:`BackendBootstrap` accepts the caller-supplied inputs — the
+settings, the project directory, the session id to resume, the extra
+directories, and the process-wide tables the extensions write into
+(prompt contributions, prompt anchors, tool hints) — and exposes the
+built collaborators as attributes:
 
 * :attr:`session` — the :class:`Session`.
 * :attr:`settings` — the ``Settings`` passed in.
@@ -37,6 +38,7 @@ from igni_core.backend.pending_requirements_store import PendingRequirementsStor
 from igni_core.core.approvals.journal import ApprovalJournal
 from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.core.db.locator import StorageLocator
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.session.pending_messages import PendingMessageStore
@@ -66,6 +68,7 @@ class BackendBootstrap:
         contributions: PromptContributions | None = None,
         prompt_loader: PromptLoader | None = None,
         supervisor: ProcessSupervisor | None = None,
+        tool_hints: ToolHintsRegistry | None = None,
     ) -> None:
         resolved_project_dir = project_dir or Path.cwd()
 
@@ -95,6 +98,7 @@ class BackendBootstrap:
             contributions=contributions,
             prompt_loader=prompt_loader,
             supervisor=supervisor,
+            tool_hints=tool_hints,
         )
         self.settings = settings
 

@@ -58,6 +58,10 @@ class SessionRuntimeFactory:
             additional_dirs=self._dirs.additional_dirs,
             contributions=self._wiring.contributions,
             prompt_loader=self._wiring.prompt_loader,
+            # The extension tools' hints, shared by the whole pool: the
+            # installer fills one table, and every session of the pool
+            # judges those tools by it.
+            tool_hints=self._wiring.tool_hints,
             # The supervisor the whole backend process shares — the
             # resumed session's processes land on the same registry
             # the watcher panel reads.

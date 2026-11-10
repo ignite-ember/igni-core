@@ -16,6 +16,7 @@ from igni_core.core.agents import AgentContributionApplier, AgentPool
 from igni_core.core.agents.tool_check import UnresolvedAgentTools
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.session.agent_builder import MainAgentBuilder
 from igni_core.core.session.agent_factory import (
     create_guardrails,
@@ -108,6 +109,22 @@ class AgentsBuilder:
             guardrails_factory=create_guardrails,
             prompt_loader=session.prompt_loader,
         ).build()
+
+    def replace_tool_event_hook(self, hook: ToolEventHook) -> None:
+        """Swap the tool-event hook on the live team.
+
+        The team is built with the hook attached, but the hook is
+        rebuilt whenever the hooks are reloaded, and the team is not.
+        Agno owns the team's hook list and offers no setter, so the one
+        hook that changed is swapped in place: the old tool-event hook
+        is dropped and the new one appended.
+        """
+        team = self._session.main_team
+        if team is None:
+            return
+        existing = team.tool_hooks or []
+        team.tool_hooks = [h for h in existing if not isinstance(h, ToolEventHook)]
+        team.tool_hooks.append(hook)
 
 
 __all__ = ["AgentsBuilder"]

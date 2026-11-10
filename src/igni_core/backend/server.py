@@ -27,6 +27,7 @@ from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustController, reload_settings
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.session.event_log_schema import (
@@ -93,6 +94,7 @@ class BackendServer:
         prompt_loader: PromptLoader | None = None,
         supervisors: SupervisorLocator | None = None,
         gate: RunGate | None = None,
+        tool_hints: ToolHintsRegistry | None = None,
     ):
         # The supervisor this backend process shares. The backend's
         # composition root builds one locator per process and hands it
@@ -112,6 +114,7 @@ class BackendServer:
             contributions=contributions,
             prompt_loader=prompt_loader,
             supervisor=self._supervisors.supervisor,
+            tool_hints=tool_hints,
         )
         controllers = ControllerRegistry.build(
             session=bootstrap.session,

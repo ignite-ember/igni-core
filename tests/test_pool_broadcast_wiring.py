@@ -55,6 +55,7 @@ class _PooledBackend:
         additional_dirs: Any = None,
         contributions: Any = None,
         prompt_loader: Any = None,
+        tool_hints: Any = None,
         supervisors: SupervisorLocator | None = None,
         gate: RunGate | None = None,
     ) -> None:

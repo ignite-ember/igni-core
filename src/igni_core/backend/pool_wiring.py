@@ -13,6 +13,7 @@ from igni_core.backend.schemas_sessions import BackendLike
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
@@ -35,9 +36,10 @@ class PoolWiring:
     one: the fields are runtime objects. There is one login flow per
     backend process, one extension namespace (a second session must not
     see a different set of extensions), one notification center, one
-    table of what extensions have done to the prompts and one table of
-    the anchors they fill; the root ``transport`` is stamped with each
-    session's id on the way out.
+    table of what extensions have done to the prompts, one table of
+    the anchors they fill and one table of what their tools say they
+    are; the root ``transport`` is stamped with each session's id on
+    the way out.
 
     ``supervisors`` is the handle on the supervisor the backend
     process shares — the registry the watcher panel reads and the
@@ -58,6 +60,7 @@ class PoolWiring:
     gate: RunGate
     contributions: PromptContributions = field(default_factory=PromptContributions)
     prompt_loader: PromptLoader = field(default_factory=lambda: PromptLoader(PromptFragments()))
+    tool_hints: ToolHintsRegistry = field(default_factory=ToolHintsRegistry.shared)
     extensions: ExtensionRpc = field(default_factory=_no_extensions)
     origins: Any = None
     extension_store: ExtensionStore | None = None
