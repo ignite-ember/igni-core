@@ -114,10 +114,8 @@ def test_the_mcp_panel_is_empty_for_a_project_with_no_servers(backend):
 
 
 async def test_connecting_an_mcp_server_nobody_configured_says_so(backend):
-    reply = await backend.mcp_connect("nobody-configured-this")
-
-    assert isinstance(reply, msg.Info)
-    assert "nobody-configured-this" in reply.text
+    with pytest.raises(ValueError, match="nobody-configured-this: No config found"):
+        await backend.mcp_connect("nobody-configured-this")
 
 
 def test_the_plugin_panel_lists_nothing_and_a_missing_plugin_is_an_error(backend):
@@ -181,8 +179,8 @@ async def test_an_event_recorded_is_an_event_the_session_replays(backend):
     assert backend.session_events("workflow_event") == []
 
 
-def test_an_attachment_uploaded_can_be_read_back(backend):
-    upload = backend.controllers.files.upload_attachment(
+async def test_an_attachment_uploaded_can_be_read_back(backend):
+    upload = await backend.controllers.files.upload_attachment(
         "note.txt", base64.b64encode(b"hello").decode()
     )
 
@@ -193,8 +191,8 @@ def test_an_attachment_uploaded_can_be_read_back(backend):
     assert read.contents == "hello"
 
 
-def test_code_search_on_an_empty_project_finds_nothing(backend):
-    result = backend.controllers.search.search_code("def nowhere():")
+async def test_code_search_on_an_empty_project_finds_nothing(backend):
+    result = await backend.controllers.search.search_code("def nowhere():")
 
     assert result.matches == []
 
@@ -294,9 +292,8 @@ async def test_a_paused_loop_is_not_cancelled_by_a_new_message_and_resumes(backe
 
 async def test_the_scheduler_starts_with_no_tasks(backend):
     assert await backend.get_scheduled_tasks() == []
-    reply = await backend.controllers.loop.scheduler.cancel("no-such-task")
-
-    assert isinstance(reply, msg.Info)
+    with pytest.raises(ValueError, match="no scheduled task 'no-such-task'"):
+        await backend.controllers.loop.scheduler.cancel("no-such-task")
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────

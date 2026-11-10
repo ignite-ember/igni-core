@@ -19,7 +19,12 @@ from igni_core.core.scheduler.recurrence import Recurrence
 
 
 class TaskStatus(str, Enum):
-    """Lifecycle of one scheduled task."""
+    """Lifecycle of one scheduled task.
+
+    ``pending`` (waiting for its time), ``running`` (executing now),
+    ``completed`` (finished successfully), ``failed`` (finished with an
+    error) or ``cancelled`` (cancelled before it ran).
+    """
 
     pending = "pending"
     running = "running"
@@ -38,26 +43,41 @@ class TaskStatus(str, Enum):
         return self in (TaskStatus.pending, TaskStatus.running)
 
 
+# ``recurrence`` accepts only the canonical ``every N <unit>`` form (the
+# field validator below enforces it). User-facing phrases ("daily",
+# "weekly") must go through Recurrence.parse and be stored as
+# ``.canonical()``. After completion, the runner creates the next
+# occurrence automatically.
 class ScheduledTask(BaseModel):
-    """A task scheduled for deferred execution.
+    """A prompt scheduled to run at a later time, once or repeatedly.
 
-    For recurring tasks, ``recurrence`` holds the repeat pattern in the
-    canonical ``every N <minutes|hours|days|weeks>`` form ("every 1
-    hours", "every 1 days", "every 7 days") — that is the only form the
-    field validator below accepts. User-facing phrases ("daily",
-    "weekly") are not valid here; run them through
-    :meth:`Recurrence.parse` and persist ``.canonical()``. After
-    completion, the runner creates the next occurrence automatically.
+    When a recurring task completes, igni schedules its next occurrence
+    as a new task.
     """
 
-    id: str
-    description: str
-    scheduled_at: datetime
-    created_at: datetime = Field(default_factory=datetime.now)
-    status: TaskStatus = TaskStatus.pending
-    result: str = ""
-    error: str = ""
-    recurrence: str = ""  # empty = one-shot, otherwise repeat pattern
+    id: str = Field(description="Short identifier of the task (8 hex characters).")
+    description: str = Field(description="What the task does: the prompt igni runs when it is due.")
+    scheduled_at: datetime = Field(
+        description="When the task is due to run, in the machine's local time."
+    )
+    created_at: datetime = Field(
+        default_factory=datetime.now,
+        description="When the task was scheduled, in the machine's local time.",
+    )
+    status: TaskStatus = Field(
+        default=TaskStatus.pending, description="Where the task is in its lifecycle."
+    )
+    result: str = Field(
+        default="", description="Output of the run once it completed. Empty until then."
+    )
+    error: str = Field(
+        default="", description="Error message when the run failed. Empty otherwise."
+    )
+    recurrence: str = Field(
+        default="",
+        description="Repeat pattern in the form `every N <minutes|hours|days|weeks>` (e.g. "
+        "`every 1 days`, `every 7 days`). Empty for a one-time task.",
+    )
 
     @classmethod
     def new(

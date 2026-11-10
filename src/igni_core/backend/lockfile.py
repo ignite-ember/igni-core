@@ -37,9 +37,11 @@ Module contents:
 from __future__ import annotations
 
 import contextlib
+import getpass
 import json
 import logging
 import os
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -55,6 +57,29 @@ from igni_core.backend.schemas_lockfile import (
 from igni_core.core.paths import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
+
+#: Where file mode bits do not keep other users out.
+_WINDOWS = os.name == "nt"
+
+
+def _owner_only_on_windows(path: Path) -> None:
+    """Let only the current user read or write ``path``: inherited entries
+    removed, full control granted to the user and to nobody else.
+
+    Raises ``OSError`` when the access list cannot be set, so a token is
+    never written to a file others might read.
+    """
+    user = getpass.getuser()
+    # By its full path: a folder on PATH must not supply its own icacls.
+    icacls = os.path.join(os.environ.get("SYSTEMROOT", r"C:\Windows"), "System32", "icacls.exe")
+    done = subprocess.run(  # noqa: S603 — fixed program, arguments are not a shell line
+        [icacls, str(path), "/inheritance:r", "/grant:r", f"{user}:(F)"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if done.returncode != 0:
+        raise OSError(f"could not make {path} owner-only: {done.stderr or done.stdout}".strip())
 
 
 LOCKFILE_NAME = "backend.lock"
@@ -182,9 +207,20 @@ class Lockfile:
         # Owner-only from creation: the file can carry the WS token.
         with contextlib.suppress(FileNotFoundError):
             tmp.unlink()
+        # On Windows the mode bits are ignored: the file would inherit the
+        # folder's access list, which on a project outside the user's profile
+        # (``C:\\work``) lets every signed-in user read it. Its access list
+        # is made owner-only before anything is written to it.
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(data)
+        try:
+            if _WINDOWS:
+                _owner_only_on_windows(tmp)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                tmp.unlink()
+            raise
         os.replace(tmp, self._path)
 
 

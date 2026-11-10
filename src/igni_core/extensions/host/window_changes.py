@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from igni_core.extensions.host.window_values import Dialog, Toast, WindowInfo
+from igni_core.protocol.json_value import WireJson
 
 logger = logging.getLogger(__name__)
 
@@ -22,20 +23,37 @@ logger = logging.getLogger(__name__)
 class WindowChange(BaseModel):
     """One change to one window's model, as listeners are told it."""
 
-    window: str
-    field: str
-    value: Any = None
+    window: str = Field(description="The window whose model changed.")
+    field: str = Field(description="Which of the window's fields changed.")
+    value: WireJson | None = Field(default=None, description="The field's new value, as JSON.")
     #: The window's revision after the change.
-    rev: int
+    rev: int = Field(description="The window's revision after the change.")
     #: The writer's token, echoed so the window that wrote it knows its
     #: own write; empty for an extension's.
-    token: str = ""
+    token: str = Field(
+        default="",
+        description=(
+            "The writer's own name for the write, echoed so the window that wrote it knows its "
+            "own write; empty for an extension's."
+        ),
+    )
     #: For the list- and dialog-shaped fields: what happened —
     #: ``toast_shown``, ``toast_dismissed``, ``dialog_opened``,
     #: ``dialog_closed`` — and to which one.
-    event: str = ""
-    item: Toast | Dialog | None = None
-    answer: Any = None
+    event: str = Field(
+        default="",
+        description=(
+            "What happened, for the fields that hold a list or a dialog: `toast_shown`, "
+            "`toast_dismissed`, `dialog_opened` or `dialog_closed`; empty otherwise."
+        ),
+    )
+    item: Annotated[Toast | Dialog, Field(discriminator="type")] | None = Field(
+        default=None, description="The toast or the dialog the event is about."
+    )
+    answer: WireJson | None = Field(
+        default=None,
+        description="The answer given to the dialog, as JSON; null when it was dismissed.",
+    )
 
 
 ChangeListener = Callable[[WindowChange], None]

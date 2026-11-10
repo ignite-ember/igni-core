@@ -36,12 +36,13 @@ record's — goes out through :func:`push_on`.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
+from igni_core.protocol.json_value import WireJson
 from igni_core.protocol.schemas.enums import PushChannel
-from igni_core.protocol.schemas.envelope import Message
+from igni_core.protocol.schemas.envelope import Direction, Message
 from igni_core.protocol.schemas.push_payloads import (
     BackgroundProcessDonePayload,
     FileEditedPayload,
@@ -62,9 +63,15 @@ PushPayload = Mapping[str, Any]
 
 
 class PushNotification(Message):
-    """BE→FE push — the channel, and the payload that channel carries.
+    """A push — the channel, and the payload that channel carries.
 
-    The ``channel`` field says which kind of event this is; the FE
+    Something happened that a client may want to show, sent without
+    being asked. Scheduled tasks, login status, permission-mode
+    changes, background processes, file edits and more each have a
+    ``channel``; the shape of ``payload`` depends on it. Ignore a
+    channel you do not know.
+
+    The ``channel`` field says which kind of event this is; a client
     routes on it to render or dispatch. See :class:`PushChannel` for
     the catalogue of known channels — the producer set is open, so
     treat anything unlisted as a channel this module simply hasn't
@@ -74,7 +81,7 @@ class PushNotification(Message):
     :class:`PushChannel` enum field) so a producer emitting a channel
     the catalogue does not name yet survives verbatim — a strict enum
     with ``_missing_`` → ``UNKNOWN`` would rewrite the value to
-    ``"unknown"`` and lose the routing information the FE keys on.
+    ``"unknown"`` and lose the routing information a client keys on.
 
     Producers should build their pushes with the ``push_*`` factories
     below rather than by hand: each takes that channel's payload
@@ -82,8 +89,18 @@ class PushNotification(Message):
     """
 
     type: Literal["push_notification"] = "push_notification"
-    channel: str = ""
-    payload: PushPayload = Field(default_factory=dict)
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    channel: str = Field(
+        default="", description="What kind of push this is; it decides the shape of `payload`."
+    )
+    payload: dict[str, WireJson] = Field(
+        default_factory=dict, description="The push's data, shaped by `channel`."
+    )
+    # Today: a scheduled task run (``execute_scheduled_task``'s ``run_id``).
+    run_id: str = Field(
+        default="",
+        description="The run whose work sent this push, when igni chose that run's id; empty otherwise.",
+    )
 
 
 def _push(channel: PushChannel, payload: BaseModel) -> PushNotification:

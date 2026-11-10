@@ -48,7 +48,7 @@ class Host:
         self.center = NotificationCenter(
             server=signed_in(session=session),
             local=LocalNotificationStore(tmp_path / "notifications.db"),
-            announce=self.announced.append,
+            announce=lambda change: self.announced.append(change.counts),
             transport=server.transport,
             backoff=Backoff(base=1.0, ceiling=8.0, rng=lambda: 0.5),
             sleep=self.sleep,

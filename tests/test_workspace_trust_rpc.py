@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import yaml
 
+from igni_core.backend.rpc_binding import RpcArgsError
 from igni_core.backend.rpc_handlers.workspace_trust import WorkspaceTrustRpcHandler
 from igni_core.backend.workspace_trust_controller import (
     WorkspaceTrustController,
@@ -56,7 +57,7 @@ def test_both_rpcs_are_registered(tmp_path: Path) -> None:
 
 def test_a_fresh_folder_asks(tmp_path: Path) -> None:
     handler, _ = _handler(tmp_path)
-    status = handler.get_workspace_trust({})
+    status = handler.methods()[RpcMethod.GET_WORKSPACE_TRUST]({})
     assert status.state == "ask"
     assert status.can_trust is True
     assert status.path == str(tmp_path.resolve())
@@ -67,9 +68,9 @@ def test_a_fresh_folder_asks(tmp_path: Path) -> None:
 
 async def test_trust_is_recorded_pushed_and_applied(tmp_path: Path) -> None:
     handler, ctx = _handler(tmp_path)
-    status = await handler.set_workspace_trust({"decision": "trust"})
+    status = await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "trust"})
     assert status.state == "trusted"
-    assert handler.get_workspace_trust({}).state == "trusted"
+    assert handler.methods()[RpcMethod.GET_WORKSPACE_TRUST]({}).state == "trusted"
     assert _stored(tmp_path) == "trusted"
     ctx.backend.apply_workspace_trust.assert_awaited_once()
     ctx.push.workspace_trust.assert_called_once()
@@ -78,7 +79,7 @@ async def test_trust_is_recorded_pushed_and_applied(tmp_path: Path) -> None:
 
 async def test_this_time_only_trusts_without_recording(tmp_path: Path) -> None:
     handler, ctx = _handler(tmp_path)
-    status = await handler.set_workspace_trust({"decision": "once"})
+    status = await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "once"})
     assert status.state == "trusted"
     assert _stored(tmp_path) is None
     ctx.backend.apply_workspace_trust.assert_awaited_once()
@@ -86,7 +87,7 @@ async def test_this_time_only_trusts_without_recording(tmp_path: Path) -> None:
 
 async def test_dont_trust_is_recorded_and_changes_nothing_running(tmp_path: Path) -> None:
     handler, ctx = _handler(tmp_path)
-    status = await handler.set_workspace_trust({"decision": "distrust"})
+    status = await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "distrust"})
     assert status.state == "untrusted"
     assert _stored(tmp_path) == "untrusted"
     # Untrusted before (unset) and after: nothing to rebuild.
@@ -96,30 +97,30 @@ async def test_dont_trust_is_recorded_and_changes_nothing_running(tmp_path: Path
 
 async def test_distrusting_a_trusted_folder_rebuilds(tmp_path: Path) -> None:
     handler, ctx = _handler(tmp_path)
-    await handler.set_workspace_trust({"decision": "trust"})
-    await handler.set_workspace_trust({"decision": "distrust"})
-    assert handler.get_workspace_trust({}).state == "untrusted"
+    await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "trust"})
+    await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "distrust"})
+    assert handler.methods()[RpcMethod.GET_WORKSPACE_TRUST]({}).state == "untrusted"
     assert ctx.backend.apply_workspace_trust.await_count == 2
 
 
 async def test_policy_never_refuses_with_its_reason(tmp_path: Path) -> None:
     process_trust().set_policy(WorkspaceTrustConfig(mode="never"))
     handler, ctx = _handler(tmp_path)
-    status = handler.get_workspace_trust({})
+    status = handler.methods()[RpcMethod.GET_WORKSPACE_TRUST]({})
     assert status.state == "untrusted"
     assert status.can_trust is False
     with pytest.raises(WorkspaceTrustRefusedError, match="never"):
-        await handler.set_workspace_trust({"decision": "trust"})
+        await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "trust"})
     with pytest.raises(WorkspaceTrustRefusedError):
-        await handler.set_workspace_trust({"decision": "once"})
+        await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "once"})
     assert _stored(tmp_path) is None
     ctx.backend.apply_workspace_trust.assert_not_awaited()
 
 
 async def test_an_unknown_answer_is_refused(tmp_path: Path) -> None:
     handler, _ = _handler(tmp_path)
-    with pytest.raises(WorkspaceTrustRefusedError, match="Unknown answer"):
-        await handler.set_workspace_trust({"decision": "maybe"})
+    with pytest.raises(RpcArgsError, match="'trust', 'distrust' or 'once'"):
+        await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "maybe"})
 
 
 # ── A running session picks the change up ─────────────────────────

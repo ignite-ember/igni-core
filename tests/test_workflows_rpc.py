@@ -83,7 +83,7 @@ async def test_list_workflows_returns_discovery_output() -> None:
         _envelope("beta", f"{CONFIG_DIR}/workflows/beta.mjs"),
     ]
 
-    out = RpcResult.serialize(await handler.list_workflows({}))
+    out = RpcResult.serialize(await handler.methods()[RpcMethod.LIST_WORKFLOWS]({}))
 
     assert out == [
         {
@@ -107,7 +107,7 @@ async def test_list_workflows_ignores_the_routing_session_id() -> None:
     handler, runner = _make_handler()
     runner.list_workflows.return_value = [_envelope("alpha")]
 
-    out = await handler.list_workflows({"session_id": "s"})
+    out = await handler.methods()[RpcMethod.LIST_WORKFLOWS]({"session_id": "s"})
 
     assert [item.name for item in out] == ["alpha"]
 
@@ -119,7 +119,7 @@ async def test_run_workflow_returns_workflow_run_id_without_blocking() -> None:
     handler, runner = _make_handler(session)
     runner.run.return_value = _started("wf_abc123def456", "refactor-to-standards")
 
-    out = await handler.run_workflow(
+    out = await handler.methods()[RpcMethod.RUN_WORKFLOW](
         {
             "name": "refactor-to-standards",
             "args": {"file": "src/example.py"},
@@ -147,7 +147,7 @@ async def test_run_workflow_runs_in_the_routed_session_whatever_the_session_id()
     runner.run.return_value = _started("wf_1", "smoke")
 
     for session_id in ("", "sess_known", "sess_unknown"):
-        await handler.run_workflow({"name": "smoke", "session_id": session_id})
+        await handler.methods()[RpcMethod.RUN_WORKFLOW]({"name": "smoke", "session_id": session_id})
         assert runner.run.await_args.kwargs["session"] is session
 
 
@@ -155,7 +155,7 @@ async def test_run_workflow_defaults_args_to_empty_dict() -> None:
     handler, runner = _make_handler()
     runner.run.return_value = _started("wf_q", "smoke")
 
-    await handler.run_workflow({"name": "smoke", "args": None})
+    await handler.methods()[RpcMethod.RUN_WORKFLOW]({"name": "smoke", "args": None})
 
     assert runner.run.await_args.kwargs["request"].args == {}
 
@@ -166,7 +166,7 @@ async def test_run_workflow_surfaces_file_not_found() -> None:
     runner.run.return_value = WorkflowStartResult.not_found("workflow 'missing' not found")
 
     with pytest.raises(FileNotFoundError, match="missing"):
-        await handler.run_workflow({"name": "missing"})
+        await handler.methods()[RpcMethod.RUN_WORKFLOW]({"name": "missing"})
 
 
 async def test_run_workflow_surfaces_runtime_error() -> None:
@@ -176,7 +176,7 @@ async def test_run_workflow_surfaces_runtime_error() -> None:
     )
 
     with pytest.raises(RuntimeError, match="workflow runtime missing"):
-        await handler.run_workflow({"name": "smoke"})
+        await handler.methods()[RpcMethod.RUN_WORKFLOW]({"name": "smoke"})
 
 
 @pytest.mark.parametrize("args", [{}, {"name": ""}, {"session_id": "sess_x"}])
@@ -186,7 +186,7 @@ async def test_run_workflow_rejects_a_missing_name(args: dict) -> None:
     handler, runner = _make_handler()
 
     with pytest.raises(ValueError) as caught:
-        await handler.run_workflow(args)
+        await handler.methods()[RpcMethod.RUN_WORKFLOW](args)
 
     assert str(caught.value) == "run_workflow: 'name' is required"
     runner.run.assert_not_called()
@@ -196,7 +196,7 @@ async def test_run_workflow_rejects_non_dict_args() -> None:
     handler, runner = _make_handler()
 
     with pytest.raises(ValueError) as caught:
-        await handler.run_workflow({"name": "smoke", "args": "oops"})
+        await handler.methods()[RpcMethod.RUN_WORKFLOW]({"name": "smoke", "args": "oops"})
 
     assert str(caught.value) == "run_workflow: 'args' must be a dict, got str"
     runner.run.assert_not_called()
@@ -206,7 +206,7 @@ async def test_run_workflow_takes_a_numeric_name_as_text() -> None:
     handler, runner = _make_handler()
     runner.run.return_value = _started("wf_n", "7")
 
-    out = await handler.run_workflow({"name": 7})
+    out = await handler.methods()[RpcMethod.RUN_WORKFLOW]({"name": 7})
 
     assert out.name == "7"
 
@@ -215,7 +215,9 @@ async def test_cancel_workflow_returns_cancelled_true_when_run_exists() -> None:
     handler, runner = _make_handler()
     runner.cancel.return_value = WorkflowCancelOutcome.CANCELLED
 
-    out = await handler.cancel_workflow({"workflow_run_id": "wf_abc", "session_id": "s"})
+    out = await handler.methods()[RpcMethod.CANCEL_WORKFLOW](
+        {"workflow_run_id": "wf_abc", "session_id": "s"}
+    )
 
     assert RpcResult.serialize(out) == {"cancelled": True, "workflow_run_id": "wf_abc"}
     runner.cancel.assert_awaited_once_with("wf_abc")
@@ -227,7 +229,7 @@ async def test_cancel_workflow_returns_cancelled_false_when_no_run() -> None:
     handler, runner = _make_handler()
     runner.cancel.return_value = WorkflowCancelOutcome.NOT_LIVE
 
-    out = await handler.cancel_workflow({"workflow_run_id": "wf_unknown"})
+    out = await handler.methods()[RpcMethod.CANCEL_WORKFLOW]({"workflow_run_id": "wf_unknown"})
 
     assert RpcResult.serialize(out) == {"cancelled": False, "workflow_run_id": "wf_unknown"}
 
@@ -237,7 +239,7 @@ async def test_cancel_workflow_surfaces_runtime_error() -> None:
     runner.cancel.side_effect = RuntimeError("subprocess gone")
 
     with pytest.raises(RuntimeError, match="subprocess gone"):
-        await handler.cancel_workflow({"workflow_run_id": "wf_x"})
+        await handler.methods()[RpcMethod.CANCEL_WORKFLOW]({"workflow_run_id": "wf_x"})
 
 
 @pytest.mark.parametrize("args", [{}, {"workflow_run_id": ""}])
@@ -245,7 +247,7 @@ async def test_cancel_workflow_rejects_a_missing_id(args: dict) -> None:
     handler, runner = _make_handler()
 
     with pytest.raises(ValueError) as caught:
-        await handler.cancel_workflow(args)
+        await handler.methods()[RpcMethod.CANCEL_WORKFLOW](args)
 
     assert str(caught.value) == "cancel_workflow: 'workflow_run_id' is required"
     runner.cancel.assert_not_called()

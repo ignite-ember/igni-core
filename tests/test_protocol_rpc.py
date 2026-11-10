@@ -3,13 +3,15 @@
 The wire shape is fixed by the frontend — the ``"rpc_response"``
 discriminator plus the ``result`` / ``error`` fields — so these tests
 pin that shape, and pin the rule it rests on: a response answers with
-a result or with an error, never with both.
+a result or with an error, never with both. A failure also carries the
+code that says what kind of failure it was, so a client can branch on
+it without reading the sentence.
 """
 
 import pytest
 from pydantic import ValidationError
 
-from igni_core.protocol.schemas.rpc import RPCRequest, RPCResponse
+from igni_core.protocol.schemas.rpc import RpcErrorCode, RPCRequest, RPCResponse
 
 
 class TestTheResponseAnswersOnce:
@@ -54,15 +56,22 @@ class TestTheFactoriesBuildTheTwoShapes:
         assert response.result is None
         assert response.error is None
 
-    def test_fail_carries_the_error_and_no_result(self):
-        response = RPCResponse.fail("r1", "boom")
+    def test_fail_carries_the_error_the_code_and_no_result(self):
+        response = RPCResponse.fail("r1", "boom", RpcErrorCode.FAILED)
         assert response.id == "r1"
         assert response.error == "boom"
+        assert response.code == RpcErrorCode.FAILED
         assert response.result is None
 
     def test_fail_needs_an_error_to_fail_with(self):
         with pytest.raises(TypeError):
             RPCResponse.fail("r1")  # type: ignore[call-arg]
+
+    def test_fail_needs_to_say_what_kind_of_failure_it_was(self):
+        """A failure without a code leaves a client reading the
+        sentence to find out whether to retry, refuse or give up."""
+        with pytest.raises(TypeError):
+            RPCResponse.fail("r1", "boom")  # type: ignore[call-arg]
 
 
 class TestTheWireShapeIsUnchanged:
@@ -75,10 +84,12 @@ class TestTheWireShapeIsUnchanged:
         assert RPCRequest().type == "rpc_request"
 
     def test_a_response_round_trips_through_json(self):
-        restored = RPCResponse.model_validate_json(RPCResponse.fail("r1", "boom").model_dump_json())
+        original = RPCResponse.fail("r1", "boom", RpcErrorCode.REFUSED)
+        restored = RPCResponse.model_validate_json(original.model_dump_json())
         assert restored.type == "rpc_response"
         assert restored.id == "r1"
         assert restored.error == "boom"
+        assert restored.code == RpcErrorCode.REFUSED
         assert restored.result is None
 
     def test_a_request_round_trips_through_json(self):

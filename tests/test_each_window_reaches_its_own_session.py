@@ -235,8 +235,10 @@ class _Inbox:
 
 
 class _Credential(BaseModel):
-    signed_in: bool
-    organisation: str | None
+    """The VM's credential state, as a layer's credential keeper answers it."""
+
+    state: str
+    message: str = ""
 
 
 class _PooledRuntimes(SessionRuntimeFactory):
@@ -390,12 +392,16 @@ async def test_attaching_shows_the_session_s_waiting_approvals_again(tmp_path):
 
     await orchestrator.dispatch(_rpc(RpcMethod.ATTACH_SESSION, "a", session_id="boot"))
 
-    reply, paused, resumed = transport.sent
+    reply, paused, resumed, end = transport.sent
     assert reply.result == {"session_id": "boot", "project_dir": str(tmp_path / "project")}
     assert paused.run_id == "r-1"
     assert resumed.text == "resuming r-1"
     # Through the session's stamped transport: the window knows whose it is.
     assert paused.session_id == "boot"
+    # Each carries the attach's id, and a stream_end of it ends them: the
+    # client that attached can tell what its attach brought back.
+    assert [m.id for m in (paused, resumed, end)] == ["a", "a", "a"]
+    assert isinstance(end, msg.StreamEnd)
 
 
 # ── Routing ───────────────────────────────────────────────────────
@@ -513,11 +519,13 @@ async def test_the_host_model_answers_only_an_extension_s_page(tmp_path):
     orchestrator.extensions.registry.install(manifest("acme.reviewer"))
 
     await orchestrator.dispatch(_rpc(RpcMethod.HOST_MODEL, "1", path="host.sessions"))
-    await orchestrator.dispatch(_rpc(RpcMethod.HOST_MODEL, "2", caller="acme.reviewer", path="x"))
+    await orchestrator.dispatch(
+        _rpc(RpcMethod.HOST_MODEL, "2", caller="acme.reviewer", op="get", path="x")
+    )
 
     refused, answered = transport.sent
     assert refused.error == "host_model: only an extension's page reaches the host model"
-    assert answered.result == {"caller": "acme.reviewer", "args": {"path": "x"}}
+    assert answered.result == {"caller": "acme.reviewer", "args": {"op": "get", "path": "x"}}
 
 
 async def test_nothing_speaks_for_an_extension_that_is_not_installed(tmp_path):
@@ -566,7 +574,7 @@ async def test_the_vm_signs_in_with_the_person_s_session(tmp_path):
 
     async def sign_in(token: str, organisation: str | None) -> _Credential:
         calls.append((token, organisation))
-        return _Credential(signed_in=True, organisation=organisation)
+        return _Credential(state="ready", message=organisation or "")
 
     await orchestrator.dispatch(_rpc(RpcMethod.VM_SIGN_IN, "0", session_token="tok"))
     orchestrator.mount(VmSignInRpc(sign_in))
@@ -581,8 +589,8 @@ async def test_the_vm_signs_in_with_the_person_s_session(tmp_path):
     no_keeper, no_token, with_org, bad_org = transport.sent
     assert "a producer's VM takes the person's session_token" in no_keeper.error
     assert no_token.error == no_keeper.error
-    assert with_org.result == {"signed_in": True, "organisation": "acme"}
-    assert bad_org.result == {"signed_in": True, "organisation": None}
+    assert with_org.result == {"state": "ready", "message": "acme"}
+    assert bad_org.result == {"state": "ready", "message": ""}
     assert calls == [("tok", "acme"), ("tok", None)]
 
 
@@ -658,3 +666,21 @@ async def test_serve_stops_once_shutdown_is_set(tmp_path):
     await orchestrator.serve(stop)
 
     assert backend.handled == []
+
+
+async def test_a_pool_level_call_that_breaks_is_answered_with_its_error(tmp_path):
+    """A pool-level call that raised used to reach the crash boundary: no
+    answer for the caller, who waited out its timeout, and "session routing
+    failed" for every window. It is answered, to the caller, with the error."""
+    orchestrator, _, transport = _orchestrator(tmp_path)
+
+    async def sign_in(token: str, organisation: str | None) -> _Credential:
+        raise OSError("disk full")
+
+    orchestrator.mount(VmSignInRpc(sign_in))
+    await orchestrator.dispatch(_rpc(RpcMethod.VM_SIGN_IN, "b1", session_token="tok"))
+
+    (answer,) = transport.sent
+    assert isinstance(answer, msg.RPCResponse)
+    assert answer.id == "b1"
+    assert answer.error == "vm_sign_in: disk full"

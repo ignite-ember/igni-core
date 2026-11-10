@@ -1,4 +1,4 @@
-.PHONY: help install test lint format typecheck check clean contracts
+.PHONY: help install test lint format typecheck check clean contracts rpc-contract
 
 VENV := .venv/bin
 
@@ -45,10 +45,14 @@ fix: ## Auto-fix linting and formatting issues
 	$(VENV)/ruff format src/ tests/
 
 # What igni-core publishes for the other repositories: the host object
-# model igni-sdk generates both SDKs from, and the wire schema igni-app's
-# web client tests its reads against. A test fails while either is stale.
-contracts: ## Write the contracts igni-core publishes (docs/host-schema.json, docs/wire-schema.json)
+# model igni-sdk generates both SDKs from, the RPC contract igni-sdk
+# generates its typed client from, and the wire schema igni-app's web
+# client tests its reads against. A test fails while any is stale.
+contracts: ## Write the contracts igni-core publishes (docs/host-schema.json, docs/rpc-contract.json, docs/wire-schema.json)
 	$(VENV)/python scripts/export_contracts.py
+
+rpc-contract: ## Write docs/rpc-contract.json, the RPC contract igni-sdk generates its client from
+	$(VENV)/python -c "from igni_core.protocol import rpc_contract; print('wrote', rpc_contract.write()[0])"
 
 clean: ## Remove build artifacts and caches
 	rm -rf build/ dist/ *.egg-info src/*.egg-info

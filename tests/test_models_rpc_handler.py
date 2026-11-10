@@ -12,11 +12,12 @@ with ``ValueError``, which the host gateway maps to ``refused``.
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic import ValidationError
 
+from igni_core.backend.rpc_binding import RpcArgsError
 from igni_core.backend.rpc_handlers import models as models_module
 from igni_core.backend.rpc_handlers.models import ModelsRpcHandler
 from igni_core.backend.schemas_hitl import ToolCallArgs
@@ -61,7 +62,7 @@ def test_check_permission_gets_typed_tool_args() -> None:
 
 def test_check_permission_without_tool_name_is_refused() -> None:
     handler, _ = _handler()
-    with pytest.raises(ValidationError, match="tool_name"):
+    with pytest.raises(RpcArgsError, match="tool_name"):
         _call(handler, RpcMethod.CHECK_PERMISSION, {"func_name": "f", "tool_args": {}})
 
 
@@ -73,7 +74,7 @@ def test_save_permission_rule_saves_a_known_level() -> None:
 
 def test_save_permission_rule_refuses_an_unknown_level() -> None:
     handler, ctx = _handler()
-    with pytest.raises(ValidationError, match="level"):
+    with pytest.raises(RpcArgsError, match="level"):
         _call(handler, RpcMethod.SAVE_PERMISSION_RULE, {"rule": "Bash(ls)", "level": "sometimes"})
     ctx.backend.controllers.hitl.permissions.save_rule.assert_not_called()
 
@@ -134,4 +135,39 @@ async def test_missing_package_metadata_is_refused(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(models_module.PackageMetadata, "load", classmethod(_missing))
 
     with pytest.raises(ValueError, match="package metadata"):
+        await _call(handler, RpcMethod.CHECK_FOR_UPDATE, {})
+
+
+async def test_an_update_check_with_no_package_metadata_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A missing distribution must not reach the caller as a raw import error.
+
+    The check reads the installed package's metadata before it can ask
+    PyPI; a distribution that is not installed made that probe raise
+    ``PackageNotFoundError`` past the update check's "never raises", so
+    the call failed with a raw import error instead of the refusal every
+    other failed check is. The checker now turns the failure into a
+    typed error of its own, and the handler turns that into the refusal.
+    """
+    from igni_core.core.config.settings import Settings
+    from igni_core.core.utils import update_checker
+
+    def no_package() -> object:
+        raise PackageNotFoundError("igni-core")
+
+    # The checker is built by the handler, so the world it runs in is
+    # set here: the check is on, the cache is empty, and the installed
+    # distribution cannot be found.
+    monkeypatch.setattr(
+        update_checker.SettingsLoader,
+        "load",
+        classmethod(lambda cls: Settings(update_check_ttl=86400, air_gapped=False)),
+    )
+    monkeypatch.setattr(update_checker, "default_cache_path", lambda: tmp_path / ".update-check")
+    monkeypatch.setattr(update_checker.PackageMetadata, "load", staticmethod(no_package))
+    handler, _ = _handler()
+
+    with pytest.raises(ValueError, match=r"update check failed \(unknown\)"):
         await _call(handler, RpcMethod.CHECK_FOR_UPDATE, {})

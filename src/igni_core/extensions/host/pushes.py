@@ -9,31 +9,37 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from igni_core.extensions.host.window_changes import WindowChange
 from igni_core.extensions.host.wire import SignalMessage
 from igni_core.protocol import messages as msg
+from igni_core.protocol.json_value import WireJson
 from igni_core.protocol.schemas.enums import PushChannel
 
 Broadcast = Callable[[msg.Message], None]
 
 
 class ExternalOpen(BaseModel):
-    """The ``open_external`` push: which window opens which link, for whom."""
+    """An extension asked for a link to be opened in the person's browser."""
 
-    window: str
-    url: str
-    #: The extension that asked.
-    source: str
+    window: str = Field(
+        description="The id of the window that should open it; other windows ignore it."
+    )
+    url: str = Field(description="The link to open.")
+    source: str = Field(description="The id of the extension that asked.")
 
 
 class HostSignalPush(BaseModel):
-    """The ``host_signal`` push: one signal for one extension's pages."""
+    """A signal for one extension's pages: pass it to every page of that extension you show."""
 
-    extension_id: str
-    signal: str
-    value: Any = None
+    extension_id: str = Field(description="The id of the extension whose pages it is for.")
+    signal: str = Field(
+        description="The signal's name, e.g. `chat.run_completed` or `session.switched`."
+    )
+    value: WireJson = Field(
+        default=None, description="The signal's value; its shape depends on `signal`."
+    )
 
 
 class WindowPushes:

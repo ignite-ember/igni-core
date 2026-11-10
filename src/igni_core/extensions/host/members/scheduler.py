@@ -37,7 +37,8 @@ class SchedulerMembers(Members):
         if task is None:
             raise HostModelError(ErrorCode.NOT_FOUND, f"no scheduled task {task_id!r}")
         args = ExecuteTaskArgs(description=task.description)
-        return str(await self.rpc(RpcMethod.EXECUTE_SCHEDULED_TASK, args, c=c))
+        ran = await self.rpc(RpcMethod.EXECUTE_SCHEDULED_TASK, args, c=c)
+        return str(ran["result"])
 
     @call("scheduler.cancel")
     async def cancel(self, c: Call) -> None:

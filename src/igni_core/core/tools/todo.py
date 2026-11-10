@@ -52,21 +52,25 @@ TodoStatus = Literal["pending", "in_progress", "completed"]
 VALID_STATUSES: frozenset[str] = frozenset(get_args(TodoStatus))
 
 
+# The canonical todo row: the one shape every boundary carries. The
+# camelCase alias keeps Claude Code parity: every model_dump() emits
+# ``activeForm``.
 class TodoItemWire(BaseModel):
-    """The canonical todo row — the one shape every boundary carries.
-
-    ``activeForm`` is the verb-noun gerund the UI shows while the
-    item is ``in_progress`` — e.g. ``"Running tests"`` (active)
-    paired with ``content`` ``"Run tests"`` (imperative). The
-    camelCase alias keeps CC parity: every ``.model_dump()`` emits
-    ``activeForm``.
-    """
+    """One item in the agent's todo checklist."""
 
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
-    content: str
-    status: TodoStatus
-    active_form: str = Field("", alias="activeForm")
+    content: str = Field(description="What the item is, in imperative form, e.g. `Run tests`.")
+    status: TodoStatus = Field(
+        description="Progress of the item: `pending` (not started), `in_progress` (being "
+        "worked on now) or `completed`."
+    )
+    active_form: str = Field(
+        default="",
+        alias="activeForm",
+        description="Present-tense form shown while the item is in progress, e.g. "
+        "`Running tests`. Empty when the agent gave none.",
+    )
 
     @classmethod
     def parse_snapshot(cls, raw: object) -> list[TodoItemWire]:
@@ -92,11 +96,15 @@ class TodoItemInput(BaseModel):
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    content: str = Field("", description="Imperative description of the work, e.g. 'Run tests'.")
-    status: str = Field(
-        "", description="One of: pending, in_progress, completed (default pending)."
+    content: str = Field(
+        default="", description="Imperative description of the work, e.g. 'Run tests'."
     )
-    active_form: str = Field("", alias="activeForm", description="Gerund shown while in progress.")
+    status: str = Field(
+        default="", description="One of: pending, in_progress, completed (default pending)."
+    )
+    active_form: str = Field(
+        default="", alias="activeForm", description="Gerund shown while in progress."
+    )
 
     #: Set when the row was not an object at all — not a validation
     #: error yet, but a row the batch validator has to name.
@@ -178,11 +186,13 @@ class TodoBatch(BaseModel):
 
 
 class TodosUpdatedEvent(BroadcastEvent):
-    """The ``todos_updated`` broadcast: the full todo snapshot in
-    its :class:`TodoItemWire` camelCase shape."""
+    """The agent's todo checklist changed; carries the whole new list."""
 
     channel: Literal["todos_updated"] = "todos_updated"
-    todos: list[TodoItemWire]
+    todos: list[TodoItemWire] = Field(
+        description="The full checklist, in order. Replaces any list received before; empty "
+        "when the agent cleared it."
+    )
 
 
 class TodoStore:

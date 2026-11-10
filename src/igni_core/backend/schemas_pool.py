@@ -6,9 +6,9 @@ one of them returns, success or the reason it was not done, and
 :class:`~igni_core.backend.pool_replier.PoolReplier` is the one place
 that turns it into an ``RPCResponse``.
 
-The argument models are lenient on purpose: a window or the platform
-that leaves a value out, or sends ``null``, gets the same answer it got
-when these were read off a dict.
+The argument models are lenient about values on purpose: a window or the
+platform that leaves a value out, or sends ``null``, gets the same answer
+it got when these were read off a dict. A key they do not name is refused.
 """
 
 from __future__ import annotations
@@ -18,15 +18,23 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, SerializeAsAny, field_validator
 
+from igni_core.backend.rpc_binding import RpcArgs
 from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.service_events import DeliveryReceipt, NotHandled, ServiceEvent
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 
-class AttachSessionParams(BaseModel):
-    """``attach_session``: which session, and in which directory; empty for neither."""
+class AttachSessionParams(RpcArgs):
+    """Which session to attach a connection to, and in which folder."""
 
-    session_id: str = ""
-    project_dir: str = ""
+    session_id: str = Field(
+        default="",
+        description="The session to attach to; empty for the default one, or a new one "
+        "when `project_dir` is given.",
+    )
+    project_dir: str = Field(
+        default="", description="The folder the session works in; empty for igni's own."
+    )
 
     @field_validator("session_id", "project_dir", mode="before")
     @classmethod
@@ -40,11 +48,14 @@ class AttachRefused(BaseModel):
     reason: str
 
 
-class VmSignInParams(BaseModel):
-    """``vm_sign_in``: the person's session, and the organisation it signs in for."""
+class VmSignInParams(RpcArgs):
+    """A person's igni server session, for a cloud VM to sign in with."""
 
-    session_token: str = ""
-    organisation: str | None = None
+    session_token: str = Field(default="", description="The person's igni server session token.")
+    organisation: str | None = Field(
+        default=None,
+        description="The organisation the VM signs in for; `null` for the person's own.",
+    )
 
     @field_validator("session_token", mode="before")
     @classmethod
@@ -57,20 +68,30 @@ class VmSignInParams(BaseModel):
         return value if isinstance(value, str) else None
 
 
-class ServiceEventsParams(BaseModel):
-    """``deliver_service_events``: the platform's batch."""
+class ServiceEventsParams(RpcArgs):
+    """A batch of events from extension services, to deliver to sessions."""
 
-    events: list[ServiceEvent] = Field(default_factory=list)
+    events: list[ServiceEvent] = Field(default_factory=list, description="The events to deliver.")
 
 
 class ServiceEventsAck(BaseModel):
-    """What became of a batch, and which events the platform may forget."""
+    """What became of each event in a batch, and which events the sender
+    may now forget. Each list holds event ids."""
 
-    delivered: list[str]
-    duplicate: list[str]
-    failed: list[str]
-    not_handled: list[NotHandled]
-    acknowledge: list[str]
+    delivered: list[str] = Field(description="Events delivered now.")
+    duplicate: list[str] = Field(description="Events delivered before; nothing else happened.")
+    failed: list[str] = Field(
+        description="Events not delivered because the session could not take them. They "
+        "are not acknowledged, so send them again."
+    )
+    not_handled: list[NotHandled] = Field(
+        description="Events that no handler took, and why. They are acknowledged, since "
+        "sending them again would not change that."
+    )
+    acknowledge: list[str] = Field(
+        description="Every event the sender may forget: `delivered`, `not_handled` and "
+        "`duplicate` together."
+    )
 
     @classmethod
     def of(cls, receipt: DeliveryReceipt) -> ServiceEventsAck:
@@ -83,16 +104,34 @@ class ServiceEventsAck(BaseModel):
         )
 
 
-class ApproverTokenMinted(BaseModel):
-    """``mint_approver_token``'s answer: the token, for the window that asked."""
+class VmCredentialState(BaseModel):
+    """The state of a cloud VM's own credential after it signed in."""
 
-    token: str
+    # The credential keeper answers with its own model; it is read into
+    # this one, so what goes on the wire is what is published.
+    state: Literal["ready", "needs_sign_in", "needs_reissue", "unreachable"] = Field(
+        description="`ready`: the VM holds a credential and a token from it. "
+        "`needs_sign_in`: the person must sign in through the gateway again. "
+        "`needs_reissue`: an app VM's credential is gone and an organisation admin must "
+        "re-issue it. `unreachable`: igni server could not be reached; the last token "
+        "holds until it expires."
+    )
+    message: str = Field(default="", description="What went wrong; empty when nothing did.")
+
+
+class ApproverTokenMinted(BaseModel):
+    """A new token that lets a program answer the agent's approval requests."""
+
+    token: str = Field(
+        description="The token. A program that connects with it may answer approval "
+        "requests and approve plans. It is valid until igni exits or the tokens are revoked."
+    )
 
 
 class ApproverTokensRevoked(BaseModel):
-    """``revoke_approver_tokens``'s answer: how many were forgotten."""
+    """How many approver tokens were revoked."""
 
-    revoked: int
+    revoked: int = Field(description="The number of tokens revoked.")
 
 
 class ExtensionPost(BaseModel):
@@ -133,6 +172,8 @@ class PoolAnswer(BaseModel):
 
     result: SerializeAsAny[BaseModel] | None = None
     error: str = ""
+    #: Why there is no result, when there is none.
+    code: RpcErrorCode | None = None
     dump_mode: Literal["python", "json"] = "python"
 
     @classmethod
@@ -142,8 +183,8 @@ class PoolAnswer(BaseModel):
         return cls(result=result, dump_mode=dump_mode)
 
     @classmethod
-    def failed(cls, reason: str) -> PoolAnswer:
-        return cls(error=reason)
+    def failed(cls, reason: str, code: RpcErrorCode) -> PoolAnswer:
+        return cls(error=reason, code=code)
 
     def wire_result(self) -> Any:
         """The result as the response carries it."""

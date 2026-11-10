@@ -235,3 +235,19 @@ class TestFuncNameCanonicalization:
 
         saved = _load_saved_rules(tmp_path)
         assert "WebFetch(domain:github.com)" in saved.get("allow", [])
+
+
+def test_a_rule_saved_through_the_rpc_holds_the_running_session_at_once(tmp_path: Path):
+    """``save_permission_rule`` wrote the rule to the project's settings and
+    left the session's live evaluator alone, so the running session went
+    on deciding by the old rules until its next settings reload."""
+    evaluator = PermissionEvaluator()
+    hitl = _make_hitl(tmp_path, evaluator)
+
+    hitl.save_rule("Bash(rm -rf build)", "deny")
+    hitl.save_rule("Bash(git push)", "ask")
+    hitl.save_rule("Read", "allow")
+
+    assert evaluator.evaluate("Bash", {"command": "rm -rf build"}) is PermissionDecision.DENY
+    assert [r.tool for r in evaluator.ask] == ["Bash"]
+    assert [r.tool for r in evaluator.allow] == ["Read"]

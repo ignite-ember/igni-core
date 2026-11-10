@@ -311,8 +311,8 @@ class BackendServer:
         async for proto in self.controllers.runs.run_message(text, media):
             yield proto
 
-    def cancel_run(self) -> None:
-        self.controllers.runs.cancel_run()
+    def cancel_run(self) -> bool:
+        return self.controllers.runs.cancel_run()
 
     def consume_plan_research_flag(self) -> bool:
         return self._session.plan.consume_research_flag()
@@ -320,13 +320,15 @@ class BackendServer:
     async def resolve_hitl_batch(
         self, decisions: list[msg.HITLDecision]
     ) -> AsyncIterator[msg.Message]:
-        async for proto in self.controllers.hitl.resolve_batch(decisions):
+        resumed = self.controllers.hitl.resolve_batch(decisions)
+        async for proto in self.controllers.runs.continue_run(resumed):
             yield proto
 
     async def resolve_hitl(
         self, requirement_id: str, action: str, choice: str = "once"
     ) -> AsyncIterator[msg.Message]:
-        async for proto in self.controllers.hitl.resolve_single(requirement_id, action, choice):
+        resumed = self.controllers.hitl.resolve_single(requirement_id, action, choice)
+        async for proto in self.controllers.runs.continue_run(resumed):
             yield proto
 
     async def handle_command(self, text: str) -> msg.CommandResult:

@@ -19,7 +19,7 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
@@ -38,23 +38,43 @@ TrustAnswer = Literal["trust", "distrust", "once"]
 
 
 class WorkspaceTrustStatus(BaseModel):
-    """What ``get_workspace_trust`` returns and ``workspace_trust_required`` carries."""
+    """Whether the project folder is trusted, and why.
 
-    #: ``trusted`` / ``untrusted`` / ``ask`` (nobody has decided; runs untrusted).
-    state: Literal["trusted", "untrusted", "ask"]
-    #: False when the organisation's policy forbids trusting this folder.
-    can_trust: bool
-    reason: str
-    #: Canonical folder path.
-    path: str
-    #: The folder's git remote (canonical, credentials removed), or ``None``.
-    remote: str | None = None
-    #: ``ask`` / ``trusted_remotes`` / ``never``.
-    policy_mode: str
-    #: What an untrusted folder does not get, for the dialog.
-    gated: str = GATED_SUMMARY
-    #: How the answer was reached: ``policy`` / ``run`` / ``store`` / ``unset``.
-    source: str = ""
+    Until a folder is trusted, its own tools, hooks, plugins and
+    configuration are not loaded."""
+
+    state: Literal["trusted", "untrusted", "ask"] = Field(
+        description=(
+            "`trusted`, `untrusted`, or `ask` when nobody has decided yet "
+            "(the folder is treated as untrusted meanwhile)."
+        )
+    )
+    can_trust: bool = Field(
+        description="`false` when the organisation's policy forbids trusting this folder."
+    )
+    reason: str = Field(description="Human-readable explanation of the current state.")
+    path: str = Field(description="The folder's full canonical path.")
+    remote: str | None = Field(
+        default=None,
+        description="The folder's git remote URL, with any credentials removed; `null` if none.",
+    )
+    policy_mode: str = Field(
+        description=(
+            "The organisation's trust policy: `ask` (the user decides), `trusted_remotes` "
+            "(only folders whose git remote is approved) or `never` (no folder is trusted)."
+        )
+    )
+    gated: str = Field(
+        default=GATED_SUMMARY,
+        description="Short summary of what an untrusted folder does not get, for showing to the user.",
+    )
+    source: str = Field(
+        default="",
+        description=(
+            "How the state was reached: `policy` (organisation policy), `run` (trusted "
+            "once, until igni exits), `store` (the user's saved answer) or `unset` (no answer yet)."
+        ),
+    )
 
     @classmethod
     def of(cls, decision: TrustDecision) -> WorkspaceTrustStatus:

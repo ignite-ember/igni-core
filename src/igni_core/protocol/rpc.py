@@ -182,6 +182,9 @@ class RpcMethod(StrEnum):
     DISCOVER_SERVER = "discover_server"
     # Write that server down, so the next launch knows it.
     SET_SERVER = "set_server"
+    # Who is signed in, and their organisation's plan, read from igni
+    # server: the account menu's name and badge.
+    GET_CLOUD_PLAN = "get_cloud_plan"
     RELOAD_CLOUD_CREDENTIALS = "reload_cloud_credentials"
     CLEAR_CLOUD_CREDENTIALS = "clear_cloud_credentials"
     SWITCH_MODEL = "switch_model"
@@ -328,6 +331,107 @@ class RpcMethod(StrEnum):
     # it, held in memory (``backend/standing_policy.py``).
     MINT_APPROVER_TOKEN = "mint_approver_token"  # noqa: S105 — an RPC method's name, not a secret
     REVOKE_APPROVER_TOKENS = "revoke_approver_tokens"  # noqa: S105 — an RPC method's name, not a secret
+
+
+class RpcScope(StrEnum):
+    """What one call acts on.
+
+    ``SESSION``: the session the request is routed to — the envelope's
+    ``session_id``, or the default session when it is empty — or one it
+    names in its arguments. ``IGNI``: igni as a whole (the machine, the
+    account, every session), whichever session the request is routed to.
+    """
+
+    SESSION = "session"
+    IGNI = "igni"
+
+
+class RpcDuration(StrEnum):
+    """How long a call takes to answer, as a class a client sets its
+    timeout by (:attr:`timeout_seconds`)."""
+
+    INSTANT = "instant"
+    IO = "io"
+    NETWORK = "network"
+    LONG = "long"
+    PERSON = "person"
+
+    @property
+    def doc(self) -> str:
+        return _DURATION_DOCS[self][0]
+
+    @property
+    def timeout_seconds(self) -> int | None:
+        """A timeout that leaves a healthy call room; ``None``: none."""
+        return _DURATION_DOCS[self][1]
+
+
+_DURATION_DOCS: dict[RpcDuration, tuple[str, int | None]] = {
+    RpcDuration.INSTANT: ("Answered from what igni holds in memory, at once.", 10),
+    RpcDuration.IO: (
+        "Reads or writes the project, the session's database or the disk; a few seconds at most.",
+        30,
+    ),
+    RpcDuration.NETWORK: (
+        "Asks a server — igni server, an MCP server, PyPI — and waits for its answer.",
+        60,
+    ),
+    RpcDuration.LONG: (
+        "Runs something that takes as long as it takes: a git clone, the agent, a shell "
+        "command, a model summarising.",
+        600,
+    ),
+    RpcDuration.PERSON: ("Waits for the person, who may take their time.", None),
+}
+
+
+class RpcAccess(StrEnum):
+    """Who may make a call, as igni enforces it.
+
+    * ``client`` — any connection igni admitted.
+    * ``approver`` — igni's window, or a connection standing as an approver.
+    * ``window`` — a connection standing as igni's window only.
+    * ``page`` — an extension's page, through a window that sets the
+      request's ``caller``, where the deployment lets a connection speak
+      for an extension.
+    * ``platform`` — the platform. Where the deployment requires it (the
+      cloud), only on the gateway's control connection; elsewhere any
+      connection.
+
+    A connection's standing is decided once, at the WebSocket handshake,
+    by the token it offers:
+
+    * **Local client, on the desktop.** igni's desktop app launches igni
+      with a per-launch secret that only the app holds, so only the app's
+      own window stands as the window. A client attaching with the token
+      igni publishes in its owner-only lockfile stands as a *program*: it
+      reaches every ``client`` call and the ``platform`` calls (the
+      desktop does not require a control connection for them), and is
+      refused every ``window`` and ``approver`` call, every approval
+      answer (``hitl_response``), any ``caller``, and the window-only
+      slash commands. A client given an approver token (minted in igni's
+      window with ``mint_approver_token``) stands as an *approver*: it
+      also answers approval requests and calls ``approve_plan``, each
+      time once — no saved rule, no permission-mode change. It still
+      reaches no ``window`` call.
+    * **Local client, igni started without a secret** (by hand, or with
+      the development switch): every connection stands as the window, so
+      it reaches ``client``, ``approver`` and ``window`` calls.
+    * **Through Fleet's gateway** (a cloud VM): the gateway authenticates
+      the client — with a person's key or an app's — and igni on the VM
+      takes no token, so every connection stands as the window and
+      reaches ``client``, ``approver`` and ``window`` calls alike; igni
+      cannot tell a person's key from an app's. No connection there may
+      speak for an extension, so ``page`` calls are refused, and the
+      ``platform`` calls are taken only from the gateway's control
+      connection, which a client never has.
+    """
+
+    CLIENT = "client"
+    APPROVER = "approver"
+    WINDOW = "window"
+    PAGE = "page"
+    PLATFORM = "platform"
 
 
 def validate_rpc_table(registered_keys: Iterable[str]) -> None:

@@ -39,7 +39,6 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, Field
 from sqlalchemy import BigInteger, PrimaryKeyConstraint, String, select
@@ -50,41 +49,68 @@ from igni_core.core.db.database import Database
 from igni_core.core.db.scope import ScopedColumns
 from igni_core.extensions.service_items import ChatAction, ItemAttachment, ItemKind
 from igni_core.extensions.service_landing import Lander
+from igni_core.protocol.json_value import WireJson
 
 logger = logging.getLogger(__name__)
 
 
 class ServiceEvent(BaseModel):
-    """One item, as the platform hands it out (``/events/pull``): an event unless ``kind`` says otherwise."""
+    """One item an extension's service sent: an event for the extension, unless ``kind`` says otherwise."""
 
-    event_id: str
-    extension_id: str
-    client_id: str = ""
-    kind: ItemKind = ItemKind.EVENT
-    #: An event's type, the extension's own word: ``index.ready``. For any
-    #: other kind, the kind.
-    type: str = ""
-    payload: dict[str, Any] = Field(default_factory=dict)
-    #: The service's key for the chat it goes to; none: the extension's own chat.
-    thread: str | None = None
-    #: A message's text, or a new chat's first message.
-    text: str | None = None
-    #: The title of the chat it opens.
-    title: str | None = None
-    #: False: queued for the chat's next run, starting nothing.
-    start_run: bool = True
-    action: ChatAction | None = None
-    attachments: list[ItemAttachment] = Field(default_factory=list)
-    event_key: str | None = None
-    created_at: datetime | None = None
-    expires_at: datetime | None = None
+    # As the platform hands it out (``/events/pull``).
+
+    event_id: str = Field(description="The item's id, unique per item.")
+    extension_id: str = Field(description="The id of the extension whose service sent it.")
+    client_id: str = Field(default="", description="The client id of the service that sent it.")
+    kind: ItemKind = Field(default=ItemKind.EVENT, description="What kind of item it is.")
+    type: str = Field(
+        default="",
+        description=(
+            "For an event, its type, in the extension's own words (e.g. `index.ready`). "
+            "For any other kind, the kind."
+        ),
+    )
+    payload: dict[str, WireJson] = Field(
+        default_factory=dict, description="The event's data, as the service sent it."
+    )
+    thread: str | None = Field(
+        default=None,
+        description="The service's key for the chat the item goes to; null for the extension's own chat.",
+    )
+    text: str | None = Field(
+        default=None,
+        description="A message's text, or a new chat's first message; null when there is none.",
+    )
+    title: str | None = Field(
+        default=None, description="The title of the chat a `chat` item opens."
+    )
+    start_run: bool = Field(
+        default=True,
+        description=(
+            "True to start a run with the message; false to queue it for the chat's next run "
+            "without starting one."
+        ),
+    )
+    action: ChatAction | None = Field(
+        default=None, description="For an `action` item: what to do to the chat."
+    )
+    attachments: list[ItemAttachment] = Field(
+        default_factory=list, description="Files the service uploaded with the item."
+    )
+    event_key: str | None = Field(
+        default=None, description="The service's own key for the item, when it gave one."
+    )
+    created_at: datetime | None = Field(default=None, description="When the service sent it.")
+    expires_at: datetime | None = Field(
+        default=None, description="When it stops being worth delivering; null for never."
+    )
 
 
 class NotHandled(BaseModel):
-    """An event no handler took, and why: what its service reads."""
+    """An event no handler took, and why; reported back to the service that sent it."""
 
-    event_id: str
-    reason: str
+    event_id: str = Field(description="The event's id.")
+    reason: str = Field(description="Why it was not handled, as a sentence.")
 
 
 class EventHandling(BaseModel):

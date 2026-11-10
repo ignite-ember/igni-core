@@ -23,6 +23,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from igni_core.backend.browser_sign_in import BrowserSignIn, StatusCallback
+from igni_core.backend.cloud_sign_out import switch_off_cloud
 from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.backend.schemas_auth import ServerChoice, ServerFound
 from igni_core.backend.schemas_rpc import CloudPlan, LoginResult
@@ -99,8 +100,13 @@ class AuthController:
         return self._status_provider()
 
     def clear_cloud_credentials(self) -> msg.StatusUpdate:
-        """Clear cloud credentials on logout."""
+        """Sign out of igni server, as ``/logout`` does: the saved
+        credentials are deleted — so no session, and no later launch,
+        signs in from them — the session forgets its own, and a model
+        that routes through igni server gives way to one that does not."""
+        self._store.clear()
         self._session.cloud_auth.clear()
+        switch_off_cloud(self._session)
         return self._status_provider()
 
     async def get_cloud_plan(self) -> CloudPlan | None:
@@ -160,8 +166,9 @@ class AuthController:
         # config file the running process disagrees with is the
         # confusing half of this operation.
         self._settings.api_url = chosen
-        if portal:
-            self._settings.portal_url = portal
+        # Empty: derived from the new server, never the old server's.
+        self._settings.portal_url = portal
+        self._session.cloud_auth.use_server(chosen)
         self._portal = PortalClient(api_url=chosen, portal_url=portal or None)
         self._group_policy.use_portal(self._portal)
         logger.info("server set to %s", chosen)

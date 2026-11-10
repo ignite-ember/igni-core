@@ -8,7 +8,7 @@ so a window's change and an extension's are one change. One method per
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -29,51 +29,102 @@ class WindowRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    op: Literal["hydrate", "write", "toast", "dismiss_toast", "open_dialog", "answer_dialog"]
-    window: str = Field(min_length=1)
-    field: str = ""
-    value: Any = None
-    token: str = ""
-    dialog_id: str = ""
-    connection_id: str = ""
-    kind: str = ""
+    op: Literal["hydrate", "write", "toast", "dismiss_toast", "open_dialog", "answer_dialog"] = (
+        Field(description="What the window asks for.")
+    )
+    window: str = Field(min_length=1, description="The window's own stable id.")
+    field: str = Field(default="", description="The field to write, for ``write``.")
+    value: Any = Field(default=None, description="The value to write, or the answer to a dialog.")
+    token: str = Field(
+        default="",
+        description="The window's own name for this write, echoed on the push it gets back.",
+    )
+    dialog_id: str = Field(default="", description="The dialog to answer, for ``answer_dialog``.")
+    connection_id: str = Field(
+        default="",
+        description=(
+            "The connection the window came in on, for transports without connections; ignored "
+            "over a WebSocket, where the request's own connection is the window's."
+        ),
+    )
+    kind: str = Field(
+        default="", description="What kind of window this is, recorded when it opens."
+    )
 
 
 class Hydrated(BaseModel):
-    """The whole model, its revision, and the fields nobody set."""
+    """The answer to ``hydrate``: the window's whole model, its revision, and the fields nobody has set."""
 
-    state: WindowModelState
-    rev: int
-    unset: list[str]
+    op: Literal["hydrate"] = Field(
+        default="hydrate", description="Always `hydrate`: the request this answers."
+    )
+    state: WindowModelState = Field(
+        description="Every field of the window's model, as the model holds it."
+    )
+    rev: int = Field(description="The window's revision.")
+    unset: list[str] = Field(description="The fields still at their defaults, never set.")
 
 
 class Written(BaseModel):
-    rev: int
+    """The answer to ``write``: the window's revision after it, and whether the value changed."""
+
+    op: Literal["write"] = Field(
+        default="write", description="Always `write`: the request this answers."
+    )
+    rev: int = Field(description="The window's revision after the write.")
+    changed: bool = Field(
+        default=True,
+        description="False when the field already held the value: nothing changed and no change was sent.",
+    )
 
 
 class ToastAdded(BaseModel):
-    toast: Toast
-    rev: int
+    """The answer to ``toast``: the toast as shown, with its id, and the window's revision."""
+
+    op: Literal["toast"] = Field(
+        default="toast", description="Always `toast`: the request this answers."
+    )
+    toast: Toast = Field(description="The toast as shown, its `id` included.")
+    rev: int = Field(description="The window's revision after showing it.")
 
 
 class Revised(BaseModel):
-    """A change that answers nothing but the window's new revision."""
+    """The answer to ``dismiss_toast``: the window's new revision."""
 
-    rev: int
+    op: Literal["dismiss_toast"] = Field(
+        default="dismiss_toast", description="Always `dismiss_toast`: the request this answers."
+    )
+
+    rev: int = Field(description="The window's revision after the toast was dismissed.")
 
 
 class DialogShown(BaseModel):
-    dialog: Dialog
-    rev: int
+    """The answer to ``open_dialog``: the dialog as shown, with its id, and the window's revision."""
+
+    op: Literal["open_dialog"] = Field(
+        default="open_dialog", description="Always `open_dialog`: the request this answers."
+    )
+    dialog: Dialog = Field(description="The dialog as shown, its `id` included.")
+    rev: int = Field(description="The window's revision after opening it.")
 
 
 class DialogAnswered(BaseModel):
-    #: ``False`` when that dialog is not the one open any more.
-    answered: bool
-    rev: int
+    """The answer to ``answer_dialog``: whether the dialog was still the open one, and the window's revision."""
+
+    op: Literal["answer_dialog"] = Field(
+        default="answer_dialog", description="Always `answer_dialog`: the request this answers."
+    )
+    answered: bool = Field(
+        description="False when that dialog was no longer the open one, so the answer was not taken."
+    )
+    rev: int = Field(description="The window's revision after the answer.")
 
 
-WindowReply = Hydrated | Written | ToastAdded | Revised | DialogShown | DialogAnswered
+#: One ``window_model`` answer, told apart by the ``op`` it answers.
+WindowReply: TypeAlias = Annotated[
+    Hydrated | Written | ToastAdded | Revised | DialogShown | DialogAnswered,
+    Field(discriminator="op"),
+]
 
 
 class WindowModelRpc:
@@ -115,10 +166,11 @@ class WindowModelRpc:
         )
 
     def _write(self, request: WindowRequest) -> WindowReply:
+        before = self._windows.rev(request.window)
         change = self._windows.write(
             request.window, request.field, request.value, token=request.token
         )
-        return Written(rev=change.rev)
+        return Written(rev=change.rev, changed=change.rev != before)
 
     def _toast(self, request: WindowRequest) -> WindowReply:
         window = request.window

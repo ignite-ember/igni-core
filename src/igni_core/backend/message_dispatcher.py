@@ -30,6 +30,7 @@ from typing import Any
 
 from igni_core.backend.agent_framing import ExtensionMessage, PlanResearchHint
 from igni_core.backend.login_coordinator import LoginCoordinator
+from igni_core.backend.rpc_errors import code_of
 from igni_core.backend.rpc_result import RpcResult
 from igni_core.backend.schemas_sessions import DispatchedBackend, TransportLike
 from igni_core.core.activity import BusyKind, background
@@ -39,6 +40,7 @@ from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Message
 from igni_core.protocol.schemas.push_payloads import SessionNamedPayload
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +318,10 @@ class MessageDispatcher:
         handler = self._rpc_table.get(message.method)
         if handler is None:
             await self._reply(
-                message, msg.RPCResponse.fail(req_id, f"Unknown RPC method: {message.method}")
+                message,
+                msg.RPCResponse.fail(
+                    req_id, f"Unknown RPC method: {message.method}", RpcErrorCode.UNKNOWN_METHOD
+                ),
             )
             return
         try:
@@ -350,11 +355,13 @@ class MessageDispatcher:
             logger.error("RPC %s failed: missing argument %s", message.method, exc)
             await self._reply(
                 message,
-                msg.RPCResponse.fail(req_id, f"{message.method}: {exc} is a required argument"),
+                msg.RPCResponse.fail(
+                    req_id, f"{message.method}: {exc} is a required argument", RpcErrorCode.INVALID
+                ),
             )
         except Exception as exc:
             logger.error("RPC %s failed: %s", message.method, exc, exc_info=True)
-            await self._reply(message, msg.RPCResponse.fail(req_id, str(exc)))
+            await self._reply(message, msg.RPCResponse.fail(req_id, str(exc), code_of(exc)))
 
     async def _on_extension_rpc(self, message: msg.RPCRequest, req_id: str) -> None:
         """Serve one ``ext.<id>.<method>`` call.
@@ -374,6 +381,7 @@ class MessageDispatcher:
                     req_id,
                     f"{message.method}: this backend has no extension support, "
                     "so nothing can answer the 'ext.' namespace.",
+                    RpcErrorCode.UNAVAILABLE,
                 ),
             )
             return
@@ -388,22 +396,25 @@ class MessageDispatcher:
             # system working. Logged at info so an administrator
             # chasing "why can it not call this" has a record.
             logger.info("extension rpc %s refused: %s", message.method, exc)
-            await self._reply(message, msg.RPCResponse.fail(req_id, str(exc)))
+            await self._reply(
+                message, msg.RPCResponse.fail(req_id, str(exc), RpcErrorCode.FORBIDDEN)
+            )
             return
         except Exception as exc:
             logger.error("extension rpc %s failed: %s", message.method, exc, exc_info=True)
-            await self._reply(message, msg.RPCResponse.fail(req_id, str(exc)))
+            await self._reply(message, msg.RPCResponse.fail(req_id, str(exc), code_of(exc)))
             return
         await self._reply(message, msg.RPCResponse.ok(req_id, RpcResult.serialize(result)))
 
     async def _reply(self, request: msg.RPCRequest, response: Message) -> None:
-        """Answer a call; one made for an extension, on its window's connection only.
+        """Answer a call on the connection that made it, and no other.
 
-        A call made for an extension (``caller``) answers with that
-        extension's data — its service's replies, base data its manifest was
-        granted — and every other client attached would read it if it were
-        broadcast. igni's own calls are broadcast as before.
+        An answer is the caller's: a file's contents, a shell command's
+        output, an extension's data, a status. Broadcast, every client
+        attached — another window, a program with the lockfile's token —
+        read it too. A request from a transport without connections (the
+        terminal's) has no ``from_client``, and its answer goes out as
+        before.
         """
-        if request.caller:
-            response.address_to(request.from_client)
+        response.address_to(request.from_client)
         await self._transport.send(response)

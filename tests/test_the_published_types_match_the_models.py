@@ -17,10 +17,11 @@ fails the schema check in strict mode, and the SDKs are generated with a
 field that is never there. If the model carries a field the published
 type does not name, the extension silently loses it.
 
-The one projection that is not equality is deliberate: a model registry
-row carries the credential the model is reached with, and that is not
-published. :data:`~igni_core.extensions.host.members.models.WITHHELD`
-names it, and the check below holds the projection to exactly that.
+The projections are equalities: a member answers with the model the
+wire already carries, field for field. The one thing the wire does not
+carry is the credential a model is reached with —
+:data:`~igni_core.extensions.host.members.models.WITHHELD` names it, and
+the check below holds the model to never growing it.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ import typing
 
 from pydantic import BaseModel
 
-from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.backend.schemas_rpc import ModelRegistryEntryView
 from igni_core.extensions.host.definition import HOST_SCHEMA
 from igni_core.extensions.host.members import ALL_MEMBERS
 from igni_core.extensions.host.members.models import WITHHELD, ModelEntry
@@ -174,20 +175,18 @@ def test_the_untyped_members_are_the_ones_listed() -> None:
     assert untyped == NOT_YET_TYPED
 
 
-def test_the_model_row_hides_exactly_the_credential() -> None:
-    """The registry row an extension sees is the row igni keeps, less the
-    key — and nothing else."""
-    registry_fields = set(ModelRegistryEntry.model_fields)
+def test_the_model_row_is_the_row_igni_answered_with() -> None:
+    """The registry row an extension sees is the row igni answered with,
+    field for field — and no credential, for none of them is on the wire."""
+    wire_fields = set(ModelRegistryEntryView.model_fields)
     assert {"api_key", "api_key_cmd"} == WITHHELD
-    assert registry_fields >= WITHHELD, "the credential moved; the guard is stale"
-    assert set(ModelEntry.model_fields) == registry_fields - WITHHELD
+    assert not wire_fields & WITHHELD, "the credential reached the wire"
+    assert set(ModelEntry.model_fields) == wire_fields
 
 
 def test_the_projected_row_keeps_the_field_names() -> None:
-    """The projection renames nothing: a field's name in the registry is its
+    """The projection renames nothing: a field's name on the wire is its
     name in the projection."""
-    for name, field in ModelRegistryEntry.model_fields.items():
-        if name in WITHHELD:
-            continue
+    for name, field in ModelRegistryEntryView.model_fields.items():
         assert name in ModelEntry.model_fields
         assert ModelEntry.model_fields[name].annotation == field.annotation

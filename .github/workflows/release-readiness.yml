@@ -216,3 +216,36 @@ jobs:
           path: ${{ steps.smoke.outputs.log-dir }}
           if-no-files-found: warn
           retention-days: 7
+
+  # The extension sandbox's real Windows path: an AppContainer per run,
+  # a job object, and the named pipes winbridge.py relays the egress
+  # proxy and igni's endpoints through
+  # (tests/test_an_extension_process_is_confined_on_windows.py). Those
+  # tests start a real confined process and skip everywhere but Windows,
+  # so this is the one place they run. They fail rather than skip when
+  # the sandbox cannot be set up here, and a skip naming AppContainer
+  # fails the job, so it cannot go green having run nothing it exists for.
+  sandbox-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version-file: .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Sandbox tests under a real AppContainer
+        shell: pwsh
+        run: |
+          uv run --no-sync pytest tests/test_an_extension_process_is_confined_on_windows.py -q -rs -s 2>&1 | Tee-Object -FilePath sandbox.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Select-String -Path sandbox.log -Pattern "SKIPPED.*AppContainer" -Quiet) {
+            Write-Error "A Windows sandbox test skipped on a Windows runner"
+            exit 1
+          }

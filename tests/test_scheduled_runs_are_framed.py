@@ -76,7 +76,7 @@ class TestTheControllerUsesIt:
         this row was filed about, one level down."""
         sent: list[str] = []
 
-        async def _arun(prompt, stream=False):  # noqa: ARG001
+        async def _arun(prompt, stream=False, run_id=None):  # noqa: ARG001
             sent.append(prompt)
             return "done"
 

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -382,6 +383,30 @@ class TestUpdateCheckerBoundaries:
             info = await checker.check()
         assert info.error is UpdateError.UNKNOWN
         assert "something broke" in (info.error_detail or "")
+
+    @pytest.mark.asyncio
+    async def test_a_distribution_that_is_not_installed_is_reported_not_raised(self, tmp_path):
+        """The check reads the installed distribution's metadata to know
+        which project to ask about. A distribution that is not installed
+        makes that probe raise — and the check's promise is that it never
+        raises, so the failure comes back as a typed error instead."""
+        checker = UpdateChecker(
+            settings=Settings(update_check_ttl=86400, air_gapped=False),
+            cache_path=tmp_path / ".update-check",
+        )
+        with (
+            patch.object(
+                PackageMetadata,
+                "load",
+                side_effect=PackageNotFoundError("igni-core"),
+            ),
+            patch("igni_core.core.utils.update_checker.httpx.AsyncClient") as client,
+        ):
+            info = await checker.check()
+        assert client.called is False
+        assert info.available is False
+        assert info.error is UpdateError.UNKNOWN
+        assert "igni-core" in (info.error_detail or "")
 
     @pytest.mark.asyncio
     async def test_a_cancellation_is_not_a_failed_check(self, tmp_path):

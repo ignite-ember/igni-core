@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -58,9 +59,10 @@ class LoginCoordinator:
         and ack immediately. The actual login result arrives
         asynchronously via a ``login_result`` push notification."""
         await self.cancel()
+        flow_id = f"login-{uuid.uuid4().hex[:12]}"
         # Waits on a person signing in: not busy.
-        self._task = background.daemon(self._run_login(), name="login")
-        return LoginStarted(started=True)
+        self._task = background.daemon(self._run_login(flow_id), name="login")
+        return LoginStarted(started=True, flow_id=flow_id)
 
     async def cancel(self) -> None:
         """Cancel the in-flight login task (if any). Awaits the
@@ -75,20 +77,23 @@ class LoginCoordinator:
 
     # ── Internals ────────────────────────────────────────────────
 
-    async def _run_login(self) -> None:
+    async def _run_login(self, flow_id: str = "") -> None:
+        async def on_status(text: str) -> None:
+            await self._push.on_login_status(text, flow_id=flow_id)
+
         try:
-            res: LoginResult = await self._backend.controllers.auth.login(
-                on_status=self._push.on_login_status
-            )
+            res: LoginResult = await self._backend.controllers.auth.login(on_status=on_status)
             if res.ok:
                 self._backend.controllers.auth.reload_cloud_credentials()
                 self._notify_signed_in()
-            await self._push.on_login_result(success=res.ok, result=res.wire_result_string())
+            await self._push.on_login_result(
+                success=res.ok, result=res.wire_result_string(), flow_id=flow_id
+            )
         except asyncio.CancelledError:
             # Cancelled via ``CancelLogin`` — no result to push.
             pass
         except Exception as exc:  # pragma: no cover — defensive
-            await self._push.on_login_result(success=False, result=str(exc))
+            await self._push.on_login_result(success=False, result=str(exc), flow_id=flow_id)
 
     def _notify_signed_in(self) -> None:
         for callback in list(self._signed_in):

@@ -518,6 +518,12 @@
       "doc": "A transient message on screen.",
       "fields": [
         {
+          "name": "type",
+          "type": "str",
+          "doc": "Always `toast`: what this is.",
+          "optional": false
+        },
+        {
           "name": "id",
           "type": "str",
           "doc": "",
@@ -577,6 +583,12 @@
       "name": "Dialog",
       "doc": "A dialog on screen: igni's own (`spec.kind` is `update`) or an extension's (`show_dialog`). One at a time; a new one replaces the last, which closes unanswered.",
       "fields": [
+        {
+          "name": "type",
+          "type": "str",
+          "doc": "Always `dialog`: what this is.",
+          "optional": false
+        },
         {
           "name": "id",
           "type": "str",
@@ -2459,7 +2471,7 @@
     },
     {
       "name": "ModelEntry",
-      "doc": "One model in the registry — and never its credential: only where the key comes from.",
+      "doc": "One model in the registry — and never its credential: only whether it has a key.",
       "fields": [
         {
           "name": "model_id",
@@ -2480,9 +2492,9 @@
           "optional": false
         },
         {
-          "name": "api_key_env",
-          "type": "str | None",
-          "doc": "The environment variable the key is read from — its name, never the key.",
+          "name": "has_api_key",
+          "type": "bool",
+          "doc": "Whether the entry says where its key comes from. Never the key, never the environment variable, never the command.",
           "optional": false
         },
         {
@@ -2531,6 +2543,12 @@
           "name": "prompt_caching",
           "type": "bool",
           "doc": "",
+          "optional": false
+        },
+        {
+          "name": "source",
+          "type": "str",
+          "doc": "Where the entry came from: `cloud` or the local configuration.",
           "optional": false
         }
       ]
@@ -3110,9 +3128,9 @@
           "optional": false
         },
         {
-          "name": "headers",
-          "type": "dict[str, str]",
-          "doc": "",
+          "name": "header_names",
+          "type": "list[str]",
+          "doc": "The names of the headers an `http` hook sends. Never their values, which may be credentials.",
           "optional": false
         }
       ]
@@ -3749,6 +3767,18 @@
           "name": "exit_code",
           "type": "int",
           "doc": "",
+          "optional": false
+        },
+        {
+          "name": "pid",
+          "type": "int | None",
+          "doc": "The process's id, once it started; `null` when it could not.",
+          "optional": false
+        },
+        {
+          "name": "backgrounded",
+          "type": "bool",
+          "doc": "`true` when the command is still running, in the background.",
           "optional": false
         }
       ]

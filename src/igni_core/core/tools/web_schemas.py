@@ -27,7 +27,7 @@ Consumers:
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core import __version__
 from igni_core.core.broadcast_schema import BroadcastEvent
@@ -124,18 +124,20 @@ class FetchResult(BaseModel):
 
 
 class HttpRetryAttemptEvent(BroadcastEvent):
-    """The ``http_retry_attempt`` broadcast, sent before each retry."""
+    """A web fetch failed with a temporary error and igni is about to retry it."""
 
     channel: Literal["http_retry_attempt"] = "http_retry_attempt"
-    attempt: int
-    delay_seconds: float
+    attempt: int = Field(
+        description="Number of the attempt about to be made, counting the first request as 1 "
+        "(so the first retry is 2)."
+    )
+    delay_seconds: float = Field(description="Seconds igni waits before making this attempt.")
 
 
 class HttpRetrySucceededEvent(BroadcastEvent):
-    """The ``http_retry_succeeded`` broadcast, sent when a fetch
-    succeeds after at least one retry."""
+    """A web fetch succeeded after at least one retry."""
 
     channel: Literal["http_retry_succeeded"] = "http_retry_succeeded"
-    url: str
-    attempt_count: int
-    delay_seconds: float
+    url: str = Field(description="URL that was fetched.")
+    attempt_count: int = Field(description="Total number of requests made, including the first.")
+    delay_seconds: float = Field(description="Total seconds spent waiting between attempts.")

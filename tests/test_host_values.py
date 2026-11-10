@@ -202,11 +202,23 @@ def test_a_dialog_opened_carries_no_answer_and_a_dialog_closed_always_does():
         WindowChange(window="w", field="dialog", rev=2, event="dialog_closed", item=dialog)
     )
 
+    # The dialog says what it is (`type`), so a client can tell a dialog
+    # from a toast without reading the event's name.
     assert bus.told == [
-        ("ui.dialog_opened", {"window": "w", "dialog": {"id": "d-1", "spec": {}, "source": None}}),
+        (
+            "ui.dialog_opened",
+            {
+                "window": "w",
+                "dialog": {"type": "dialog", "id": "d-1", "spec": {}, "source": None},
+            },
+        ),
         (
             "ui.dialog_closed",
-            {"window": "w", "dialog": {"id": "d-1", "spec": {}, "source": None}, "answer": None},
+            {
+                "window": "w",
+                "dialog": {"type": "dialog", "id": "d-1", "spec": {}, "source": None},
+                "answer": None,
+            },
         ),
     ]
 

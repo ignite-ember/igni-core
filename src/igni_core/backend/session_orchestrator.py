@@ -185,7 +185,11 @@ class SessionOrchestrator:
         """Read from the windows until shutdown, each message its own task, then
         let the ones in flight finish."""
         async for message in self._pool_rpcs.replier.incoming():
-            if isinstance(message, msg.Shutdown) or shutdown_event.is_set():
+            if shutdown_event.is_set():
+                break
+            if isinstance(message, msg.Shutdown) and self._admission.refusal(message) is None:
+                # Only a connection that may stop igni stops it; another's
+                # ``shutdown`` is refused like any message it may not send.
                 break
             self._tasks.spawn(self.dispatch(message))
         await self._tasks.drain()

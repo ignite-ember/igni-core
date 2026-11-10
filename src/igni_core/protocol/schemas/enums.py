@@ -35,20 +35,13 @@ from enum import StrEnum
 
 
 class CommandResultKind(StrEnum):
-    """How the FE should render a ``CommandResult.content`` payload.
+    """How a client should show a command result's ``content``.
 
-    Was a free-string field so producers and consumers had to agree
-    on literals like ``"info"`` / ``"markdown"`` without any
-    type-checker help. Wire format stays string-compatible via
-    ``StrEnum``.
-
-    * ``MARKDOWN`` — render as rich markdown (default for slash
-      commands that emit long-form help text).
-    * ``INFO`` — single-line dim chat line (status updates,
-      confirmations).
-    * ``ERROR`` — single-line red chat line.
-    * ``ACTION`` — no content to render directly; the FE
-      dispatches off ``action`` to open a panel / picker / etc.
+    * ``markdown``: render as Markdown (long-form text such as help).
+    * ``info``: a single, quiet line (status, confirmations).
+    * ``error``: a single line shown as an error.
+    * ``action``: nothing to show; act on the result's ``action``
+      instead (open a panel, a picker, ...).
     """
 
     MARKDOWN = "markdown"
@@ -58,24 +51,30 @@ class CommandResultKind(StrEnum):
 
 
 class CommandAction(StrEnum):
-    """Closed set of actions a ``CommandResult`` can request.
+    """What a command result asks the client to do.
 
-    Was an unconstrained ``str`` field — comparisons in
-    ``app.py``/``commands.py`` used string literals like
-    ``"quit"``, ``"clear"``, which made typos silent (mismatched
-    arm would never fire) and made it hard to know the full
-    surface from one place. ``StrEnum`` keeps wire compatibility
-    (Pydantic serialises enum values to their strings) while
-    giving the dispatch sites a single authoritative list.
-
-    There is deliberately no ``UNKNOWN`` member and no ``_missing_``
-    override here (unlike the ingest-side enums — see the module
-    docstring). Every ``CommandAction`` is stamped in-process by this
-    backend's own command handlers; nothing parses one back off the
-    wire on the Python side, so an unlisted value means a producer
-    typo and should raise at construction rather than degrade into a
-    silent no-op. ``NONE`` (``""``) is the real "no action" value.
+    * empty: nothing; just show ``content``.
+    * ``quit``: close the client.
+    * ``clear``: clear the conversation view.
+    * ``fork``: the session was duplicated; ``content`` is the new session's id.
+    * ``sessions``: show the saved sessions.
+    * ``model``: show the model picker.
+    * ``model_switched``: the model changed; refresh what shows it.
+    * ``login`` / ``logout``: start signing in / out of igni cloud.
+    * ``help``: show help.
+    * ``mcp``, ``plugins``, ``extensions``, ``agents``, ``skills``,
+      ``hooks``, ``loop``, ``schedule``: open the page that manages them.
+    * ``watcher``: open the background-process panel.
+    * ``compact``: compact the conversation.
+    * ``ctx``: open the context-breakdown page.
+    * ``programs``: open the approver-token page.
+    * ``run_prompt``: send ``content`` to the agent as a prompt.
     """
+
+    # Deliberately no ``UNKNOWN`` member and no ``_missing_`` override
+    # (unlike the ingest-side enums): every ``CommandAction`` is stamped
+    # in-process by this backend's own command handlers, so an unlisted
+    # value is a producer typo and should raise at construction.
 
     NONE = ""  # default — no action, just render content
     QUIT = "quit"
@@ -103,27 +102,13 @@ class CommandAction(StrEnum):
 
 
 class OrchestrationTaskStatus(StrEnum):
-    """Status of one orchestration task inside a team run.
+    """Status of one task inside a team run.
 
-    Named ``OrchestrationTaskStatus`` — *not* ``TaskStatus`` — to
-    avoid collision with
-    :class:`igni_core.core.scheduler.models.TaskStatus`, which
-    tracks a different domain (scheduled cron-style tasks vs.
-    within-turn agent orchestration).
-
-    Values match the wire strings emitted by
-    :mod:`igni_core.protocol.event_handlers` /
-    :class:`igni_core.protocol.messages.TaskSnapshot.from_agno`,
-    so this is a drop-in retype of the previous free-string
-    ``status`` field on
-    :class:`~igni_core.protocol.messages.TaskCreated`,
-    :class:`~igni_core.protocol.messages.TaskUpdated`, and
-    :class:`~igni_core.protocol.messages.TaskSnapshot`.
-
-    ``UNKNOWN`` catches any value Agno emits that we don't
-    recognise; :meth:`_missing_` routes unknown wire strings here
-    rather than raising ``ValueError`` on ingest.
+    ``unknown`` stands for any status this version does not recognise.
     """
+
+    # Named ``OrchestrationTaskStatus`` (not ``TaskStatus``) to avoid
+    # colliding with ``core.scheduler.models.TaskStatus``.
 
     PENDING = "pending"
     RUNNING = "running"
@@ -162,20 +147,13 @@ class OrchestrationTaskStatus(StrEnum):
 
 
 class HITLAction(StrEnum):
-    """Domain enum for the user's HITL decision — confirm or reject.
+    """The person's answer to an approval request: ``confirm`` runs the tool call, ``reject`` refuses it.
 
-    Was a free-string field ``msg.HITLResponse.action`` /
-    ``msg.HITLDecision.action`` with a ``"confirm" | "reject"``
-    comment. ``StrEnum`` keeps wire compatibility while giving
-    the dispatch sites a real type.
-
-    See :class:`~igni_core.backend.schemas_hitl.HitlAction` for
-    the domain-internal twin used by
-    :class:`~igni_core.backend.agno_decision_applier.AgnoDecisionApplier`;
-    they carry the same string values, so
-    ``HitlAction(msg.HITLDecision.action)`` still works whether
-    the wire arm is a ``str`` or the new ``HITLAction`` member.
+    ``unknown`` stands for any value this version does not recognise.
     """
+
+    # Same string values as ``backend.schemas_hitl.HitlAction``, the
+    # domain-internal twin.
 
     CONFIRM = "confirm"
     REJECT = "reject"
@@ -192,18 +170,13 @@ class HITLAction(StrEnum):
 
 
 class HITLChoice(StrEnum):
-    """Domain enum for the persistence-scope of a HITL decision.
+    """How long the answer to an approval request stands.
 
-    Was a free-string field ``msg.HITLResponse.choice`` /
-    ``msg.HITLDecision.choice`` with a ``"once" | "always" |
-    "similar"`` comment.
-
-    * ``ONCE`` — decision applies to this invocation only; no
-      permission rule persisted.
-    * ``ALWAYS`` — persist an exact rule (same tool + args).
-    * ``SIMILAR`` — persist a pattern rule (matches similar args).
-    * ``DENY`` — user actively denied and wants to persist a deny
-      rule.
+    * ``once``: this call only; no rule is saved.
+    * ``always``: save a rule allowing this exact call (same tool and arguments).
+    * ``similar``: save a rule allowing calls like it.
+    * ``deny``: save a rule refusing it.
+    * ``unknown``: a value this version does not recognise.
     """
 
     ONCE = "once"
@@ -227,19 +200,16 @@ class HITLChoice(StrEnum):
 
 
 class SchedulerEventType(StrEnum):
-    """Notification kind for a scheduled task.
+    """What happened to a scheduled task.
 
-    Was a free-string ``event_type`` field on
-    :class:`~igni_core.protocol.messages.SchedulerEvent` with a
-    ``"started" | "completed" | "failed"`` comment. Wire values
-    match the previous string literals.
-
-    ``ERROR`` is retained as an alias for the older ``"error"``
-    literal that
-    :meth:`igni_core.backend.server_scheduler.SchedulerController._TaskHookBridge.on_completed`
-    used to emit on failure — kept so a mixed cluster (old FE +
-    new BE) doesn't drop the event.
+    * ``started``: it began.
+    * ``completed``: it finished.
+    * ``failed``: it failed. ``error`` means the same.
+    * ``unknown``: a value this version does not recognise.
     """
+
+    # ``ERROR`` is kept as an alias for the older ``"error"`` literal
+    # some paths still emit on failure.
 
     STARTED = "started"
     COMPLETED = "completed"
@@ -258,16 +228,19 @@ class SchedulerEventType(StrEnum):
 
 
 class PermissionModeName(StrEnum):
-    """Mirror of :class:`~igni_core.core.config.permission_eval.PermissionMode`
-    for the wire layer.
+    """When igni asks the person before running a tool.
 
-    Kept string-compatible with the domain enum so
-    :attr:`~igni_core.protocol.messages.StatusUpdate.permission_mode`
-    can be typed here without importing the domain layer into
-    the protocol leaf module. The two enums MUST stay in sync;
-    :mod:`tests.protocol.test_permission_mode_mirror` asserts
-    that at import time.
+    * ``default``: ask for anything not already allowed by a rule.
+    * ``dontAsk``: never ask; refuse anything not already allowed.
+    * ``acceptEdits``: allow file edits without asking.
+    * ``bypassPermissions``: run everything without asking, unless a rule
+      says to refuse or to ask.
+    * ``plan``: plan only; source files are not edited.
+    * ``unknown``: a value this version does not recognise.
     """
+
+    # Mirror of ``core.config.permission_eval.PermissionMode``; the two
+    # MUST stay in sync (tests/protocol/test_permission_mode_mirror).
 
     DEFAULT = "default"
     DONT_ASK = "dontAsk"
@@ -282,42 +255,17 @@ class PermissionModeName(StrEnum):
 
 
 class PushChannel(StrEnum):
-    """The known channels a
-    :class:`~igni_core.protocol.messages.PushNotification` can
-    carry — a *catalogue*, not a closed set.
+    """Every channel a push notification is sent on; each has its own payload.
 
-    Was the free-string ``channel`` field with a
-    ``"scheduler_event", "orchestrate_progress", "login_status"``
-    comment that didn't match every producer callsite (the actual
-    channels emitted include ``scheduler_started`` /
-    ``scheduler_completed`` / ``login_result`` /
-    ``session_named`` / ``permission_mode_changed`` /
-    ``file_edited`` / ``process_started`` / etc.).
-
-    The producer set is genuinely open, and this docstring used to
-    deny it: besides the :func:`~igni_core.protocol.schemas.push`
-    factories, ``push_bridge`` forwards raw channel strings and
-    bridges the whole session broadcast bus into pushes, and
-    the channel set is open by subclassing
-    :class:`~igni_core.core.broadcast_schema.BroadcastEvent`, so a
-    new tool introduces one with its own event class. Claiming closure here
-    bought nothing and went stale — six live channels
-    (``workflow_event``, ``todos_updated``, ``plan_decided``,
-    ``http_retry_attempt``, ``http_retry_succeeded``,
-    ``visualization_action_dispatched``) were missing from the
-    "authoritative" list while the FE routed on all of them.
-
-    So: ``PushNotification.channel`` stays a raw ``str`` on the wire,
-    ``_missing_`` maps anything unlisted to ``UNKNOWN``, and this
-    enum's job is to give the producer sites we *do* control a
-    symbol to reference. Add a member when you add a channel; the
-    wire keeps working either way.
+    ``unknown`` stands for any channel this version does not recognise.
     """
+
+    # Each channel has one payload model (``backend.push_payloads.PUSH_PAYLOADS``).
+    # A broadcast-bus event names its channel as a ``Literal``; a test
+    # holds each one to a member here.
 
     SCHEDULER_STARTED = "scheduler_started"
     SCHEDULER_COMPLETED = "scheduler_completed"
-    SCHEDULER_EVENT = "scheduler_event"
-    ORCHESTRATE_PROGRESS = "orchestrate_progress"
     ORCHESTRATE_EVENT = "orchestrate_event"
     LOGIN_STATUS = "login_status"
     LOGIN_RESULT = "login_result"
@@ -366,6 +314,10 @@ class PushChannel(StrEnum):
     #: ``ask``. The payload is
     #: :class:`~igni_core.backend.workspace_trust_controller.WorkspaceTrustStatus`.
     WORKSPACE_TRUST_REQUIRED = "workspace_trust_required"
+    #: A cloud VM's own credential changed state (``vm_sign_in``, its
+    #: renewals): the layer's credential keeper pushes it. The payload is
+    #: :class:`~igni_core.backend.schemas_pool.VmCredentialState`.
+    VM_CREDENTIAL = "vm_credential"
     UNKNOWN = "unknown"
 
     @classmethod

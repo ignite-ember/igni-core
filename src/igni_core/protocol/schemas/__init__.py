@@ -124,7 +124,7 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerStartedPayload,
     SessionNamedPayload,
 )
-from igni_core.protocol.schemas.rpc import RPCRequest, RPCResponse
+from igni_core.protocol.schemas.rpc import RpcErrorCode, RPCRequest, RPCResponse
 
 __all__ = [
     # Envelope + shared value objects
@@ -188,6 +188,7 @@ __all__ = [
     "StreamEnd",
     "UserMessage",
     # RPC
+    "RpcErrorCode",
     "RPCRequest",
     "RPCResponse",
     # Push

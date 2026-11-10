@@ -31,7 +31,7 @@ class CompactResult(BaseModel):
     @classmethod
     def from_rpc(cls, session_id: str, cleared: Any) -> CompactResult | None:
         """``compact_if_needed``'s answer; nothing when nothing was compacted."""
-        if not cleared:
+        if not cleared or not cleared.get("compacted"):
             return None
         return cls(
             session_id=session_id,

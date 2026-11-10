@@ -18,12 +18,12 @@ import logging
 import os
 import shlex
 import subprocess
-from typing import Any
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict
 
 from igni_core.core.paths import DEFAULT_DATA_DIR
+from igni_core.protocol.json_value import JSON_OBJECT_EXTRA, WireJson
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,9 @@ class ModelRegistryEntry(BaseModel):
     # Allow arbitrary extra keys so we tolerate cloud-server payload
     # additions (``source: 'cloud'`` from ``cloud_models`` etc.)
     # without breaking config load.
-    model_config = ConfigDict(extra="allow", protected_namespaces=())
+    model_config = ConfigDict(
+        extra="allow", protected_namespaces=(), json_schema_extra=JSON_OBJECT_EXTRA
+    )
 
     model_id: str
     provider: str = "openai_like"
@@ -82,7 +84,7 @@ class ModelRegistryEntry(BaseModel):
     context_window: int | None = None
     #: Sent as the Messages API's ``thinking`` object, unchanged — for
     #: example ``{"type": "adaptive"}``. ``anthropic`` only.
-    thinking: dict[str, Any] | None = None
+    thinking: dict[str, WireJson] | None = None
     #: ``output_config.effort`` (``low`` .. ``max``). ``anthropic`` only.
     effort: str | None = None
     #: ``cache_control`` on the system prompt and the tool list, so a

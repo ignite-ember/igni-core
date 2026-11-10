@@ -1,8 +1,4 @@
-"""BE → FE messages — run / tool / task / status / command events.
-
-Every message here retypes previously-free-string fields into
-:mod:`.enums` StrEnum members. Wire strings are unchanged; the
-producers gain type-checker help.
+"""Messages igni sends a client — run / tool / task / status / command events.
 
 Run-scoped events inherit :class:`RunScopedMessage` from
 :mod:`.envelope` so ``run_id`` + ``parent_run_id`` live on one
@@ -17,16 +13,17 @@ deferred until Agno's tool-arg schema stabilises.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from igni_core.protocol.json_value import JSON_OBJECT_EXTRA, WireJson
 from igni_core.protocol.schemas.enums import (
     CommandAction,
     CommandResultKind,
     OrchestrationTaskStatus,
 )
-from igni_core.protocol.schemas.envelope import Message, RunScopedMessage
+from igni_core.protocol.schemas.envelope import Direction, Message, RunScopedMessage
 
 # Note: :class:`PermissionModeName` (for ``StatusUpdate.permission_mode``)
 # and :class:`SchedulerEventType` (for ``SchedulerEvent.event_type``)
@@ -36,140 +33,194 @@ from igni_core.protocol.schemas.envelope import Message, RunScopedMessage
 
 
 class ContentDelta(Message):
-    """Streamed text chunk from the model."""
+    """A chunk of the model's reply, streamed as it is written.
+
+    Append each chunk's ``text`` to what came before to build the reply.
+    """
 
     type: Literal["content_delta"] = "content_delta"
-    text: str = ""
-    is_thinking: bool = False
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    text: str = Field(
+        default="", description="The next piece of text, to append to the earlier ones."
+    )
+    is_thinking: bool = Field(
+        default=False,
+        description="True when the text is the model's reasoning rather than its visible reply.",
+    )
 
 
 class ToolStarted(RunScopedMessage):
     """A tool call has begun."""
 
     type: Literal["tool_started"] = "tool_started"
-    tool_name: str = ""
-    friendly_name: str = ""
-    args_summary: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    tool_name: str = Field(default="", description="The tool's name, as the model called it.")
+    friendly_name: str = Field(
+        default="",
+        description="A human-readable name for the tool, for display; empty when there is none.",
+    )
+    args_summary: str = Field(
+        default="", description="A short, human-readable summary of the call's arguments."
+    )
 
 
 class ToolCompleted(RunScopedMessage):
     """A tool call has finished."""
 
     type: Literal["tool_completed"] = "tool_completed"
-    summary: str = ""
-    full_result: str = ""
-    has_markup: bool = False
-    diff_rows: list[tuple[str, str]] | None = None  # (text, style) pairs for diff table
-    # True when the tool returned an error payload (raised exception,
-    # or returned a string starting with ``"Error:"`` — the convention
-    # used by igni's own tools). The TUI renders ``✗`` with red
-    # styling instead of ``✓`` so the user can see at a glance which
-    # calls in a batch actually failed. Without this, an ``Edit`` that
-    # returned ``"Error: old_string not found"`` was displayed with
-    # a green checkmark, the user assumed success, and only the LLM
-    # saw the failure — and tried to retry silently.
-    is_error: bool = False
-    # The call never ran: the person rejected it in the approval dialog,
-    # or nobody could be asked. The card shows "rejected", not ✓ or ✗.
-    is_rejected: bool = False
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    summary: str = Field(default="", description="A short, one-line summary of the result.")
+    full_result: str = Field(default="", description="The tool's full output.")
+    has_markup: bool = Field(
+        default=False,
+        description="True when `full_result` contains rich-text markup rather than plain text.",
+    )
+    diff_rows: list[tuple[str, str]] | None = Field(
+        default=None,
+        description=(
+            "For a tool that changed a file: the diff to show, as `[text, style]` pairs, one per "
+            "line. Null when the tool produced no diff."
+        ),
+    )
+    # The TUI renders ``✗`` with red styling instead of ``✓`` so the user
+    # can see at a glance which calls in a batch actually failed.
+    is_error: bool = Field(
+        default=False,
+        description=(
+            "True when the tool failed: it raised, or returned text starting with `Error:`."
+        ),
+    )
+    is_rejected: bool = Field(
+        default=False,
+        description=(
+            "True when the call never ran: the person rejected it when asked for approval, "
+            "or nobody could be asked."
+        ),
+    )
 
 
 class ToolError(RunScopedMessage):
     """A tool call failed."""
 
     type: Literal["tool_error"] = "tool_error"
-    error: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    error: str = Field(default="", description="What went wrong, as a human-readable message.")
 
 
 class ModelCompleted(RunScopedMessage):
-    """Model finished — token counts available."""
+    """One model call within a run has finished; its token counts are known."""
 
     type: Literal["model_completed"] = "model_completed"
-    input_tokens: int = 0
-    output_tokens: int = 0
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    input_tokens: int = Field(default=0, description="Tokens sent to the model in this call.")
+    output_tokens: int = Field(default=0, description="Tokens the model produced in this call.")
 
 
 class RunStarted(RunScopedMessage):
-    """An agent/team run has begun."""
+    """An agent or team run has begun."""
 
     type: Literal["run_started"] = "run_started"
-    agent_name: str = ""
-    model: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    agent_name: str = Field(
+        default="", description="The name of the agent (or team) doing the run."
+    )
+    model: str = Field(default="", description="The id of the model the run uses.")
 
 
 class RunCompleted(RunScopedMessage):
-    """An agent/team run has finished."""
+    """An agent or team run has finished."""
 
     type: Literal["run_completed"] = "run_completed"
-    input_tokens: int = 0
-    output_tokens: int = 0
-    reasoning_tokens: int = 0
-    """Subset of ``output_tokens`` consumed by the model's reasoning
-    chain (e.g. MiniMax-M2.7 'thinking'). The visible reply tokens are
-    ``output_tokens - reasoning_tokens``. Surfaced as a separate field
-    so the FE can split the stats line into ``N think · M out`` rather
-    than conflating both as a single ``out`` number."""
-    duration: float = 0.0
-    """Run wall-clock seconds, from Agno's run metrics."""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    input_tokens: int = Field(default=0, description="Tokens sent to the model over the whole run.")
+    output_tokens: int = Field(
+        default=0, description="Tokens the model produced over the whole run, reasoning included."
+    )
+    reasoning_tokens: int = Field(
+        default=0,
+        description=(
+            "The part of `output_tokens` spent on the model's reasoning. The visible reply is "
+            "`output_tokens - reasoning_tokens`."
+        ),
+    )
+    duration: float = Field(default=0.0, description="How long the run took, in seconds.")
 
 
 class StreamingDone(RunScopedMessage):
-    """Emitted by the BE when the model's content stream has finished
-    but the run's post-stream tail (compression, memory, persistence,
-    metrics) is still draining inside Agno. The FE uses this to
-    optimistically unblock user input — the agent is *logically* done
-    from the user's POV even though the backend stream stays open for
-    several more seconds. Without this event, ``_processing`` stays
-    True for the entire Agno tail and the queue panel hangs around
-    long after the response is visible.
+    """The model's reply is complete, though the run is still wrapping up.
 
-    The BE still serialises subsequent ``run_message`` calls behind an
-    internal lock so the next run can't start until the previous tail
-    finishes — but that wait is invisible to the user, who sees the
-    normal "Thinking" UI as soon as they submit.
+    igni may spend a few more seconds saving and summarising before
+    ``run_completed``. A client can let the person type and send their
+    next message as soon as this arrives: igni starts the next run once
+    the current one has fully finished.
     """
 
+    # The BE serialises the next ``run_message`` behind an internal lock
+    # until the post-stream tail (compression, memory, persistence,
+    # metrics) drains inside Agno.
+
     type: Literal["streaming_done"] = "streaming_done"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
 
 
 class RunError(Message):
-    """Run-level error."""
+    """The run failed and has stopped."""
 
     type: Literal["run_error"] = "run_error"
-    error: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    error: str = Field(default="", description="What went wrong, as a human-readable message.")
 
 
 class ReasoningStarted(RunScopedMessage):
-    """Model entered reasoning/thinking phase."""
+    """The model has started reasoning ("thinking") before it replies."""
 
     type: Literal["reasoning_started"] = "reasoning_started"
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
 
 
 class HITLRequest(Message):
-    """Permission dialog needed — BE pauses until FE responds."""
+    """A tool call that needs the person's approval before it runs.
+
+    The run waits until a client answers with ``hitl_response`` (or
+    ``hitl_response_batch``), quoting ``requirement_id``.
+    """
 
     type: Literal["hitl_request"] = "hitl_request"
-    requirement_id: str = ""
-    tool_name: str = ""
-    friendly_name: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    requirement_id: str = Field(default="", description="The request's id; quote it in the answer.")
+    tool_name: str = Field(default="", description="The tool's name, as the model called it.")
+    friendly_name: str = Field(
+        default="",
+        description="A human-readable name for the tool, for display; empty when there is none.",
+    )
     # ``tool_args`` stays ``dict[str, Any]`` because it carries
     # tool-invocation payloads produced by Agno / third-party MCP
     # servers that we don't control the schema of. Tightening this
     # to a shared ``ToolInvocationArgs`` model is a follow-up (would
     # need to be shared with ``ToolStarted`` / ``ToolCompleted``
     # and depends on a closed Agno tool-arg surface — deferred).
-    tool_args: dict[str, Any] = Field(default_factory=dict)
-    details: str = ""
-    # ``details`` is still being written — the Bypass safety check asks
-    # the model to describe the call — and arrives as a
-    # ``RequirementDetails``. The dialog shows a spinner until then.
-    details_pending: bool = False
-    # Chain of agents that produced this request, parent → leaf.
-    # Empty / single-entry means it's from the main agent. For sub-agent
-    # HITL it's the dispatch path, e.g. ["architect"] when the main agent
-    # spawned the architect, or ["architect", "reviewer"] if the architect
-    # then spawned a reviewer that asked for shell access.
-    agent_path: list[str] = Field(default_factory=list)
+    tool_args: dict[str, WireJson] = Field(
+        default_factory=dict, description="The arguments the tool would be called with."
+    )
+    details: str = Field(
+        default="",
+        description="Why approval is being asked, for the person; empty when there is no reason given.",
+    )
+    details_pending: bool = Field(
+        default=False,
+        description=(
+            "True when `details` is still being written; it arrives later in a "
+            "`requirement_details` message. Show a placeholder until then."
+        ),
+    )
+    agent_path: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The chain of agents that made the call, outermost first. Empty (or one entry) "
+            'for the main agent; for example `["architect", "reviewer"]` when a reviewer '
+            "started by an architect asked."
+        ),
+    )
 
     @classmethod
     def from_agno_requirement(
@@ -196,61 +247,73 @@ class HITLRequest(Message):
 
 
 class TaskCreated(Message):
-    """Orchestration task created.
+    """A team run has created a task for one of its members."""
 
-    ``status`` is a raw ``str`` on the wire; producers SHOULD use
-    :class:`OrchestrationTaskStatus` members (which coerce to their
-    string values via ``StrEnum``). Kept as ``str`` rather than a
-    strict enum so an Agno-emitted status we haven't yet enumerated
-    survives verbatim through Pydantic instead of being rewritten
-    to ``"unknown"`` by the enum's ``_missing_`` fallback.
-    """
+    # ``status`` is a raw ``str`` on the wire; producers SHOULD use
+    # ``OrchestrationTaskStatus`` members. Kept as ``str`` so an
+    # Agno-emitted status we haven't yet enumerated survives verbatim.
 
     type: Literal["task_created"] = "task_created"
-    task_id: str = ""
-    title: str = ""
-    assignee: str = ""
-    status: str = OrchestrationTaskStatus.PENDING.value
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    task_id: str = Field(default="", description="The task's id.")
+    title: str = Field(default="", description="What the task is, in a few words.")
+    assignee: str = Field(
+        default="", description="The name of the member doing it; empty when unassigned."
+    )
+    status: str = Field(
+        default=OrchestrationTaskStatus.PENDING.value,
+        description=(
+            "The task's status: `pending`, `running`, `completed`, `failed` or `cancelled`. "
+            "Other values may appear; treat them as unknown."
+        ),
+    )
 
 
 class TaskUpdated(Message):
-    """Orchestration task status changed.
-
-    See :class:`TaskCreated` — ``status`` is a raw ``str`` for
-    forward-compat with un-enumerated Agno statuses.
-    """
+    """A team run's task changed status or assignee."""
 
     type: Literal["task_updated"] = "task_updated"
-    task_id: str = ""
-    status: str = ""
-    assignee: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    task_id: str = Field(default="", description="The task's id, as in `task_created`.")
+    status: str = Field(
+        default="",
+        description=(
+            "The task's new status: `pending`, `running`, `completed`, `failed` or "
+            "`cancelled`. Other values may appear; treat them as unknown."
+        ),
+    )
+    assignee: str = Field(
+        default="", description="The name of the member doing it; empty when unassigned."
+    )
 
 
 class TaskIteration(Message):
-    """Task iteration progress."""
+    """A team run has started another round of work on its tasks."""
 
     type: Literal["task_iteration"] = "task_iteration"
-    iteration: int = 0
-    max_iterations: int = 0
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    iteration: int = Field(default=0, description="The number of the round now under way.")
+    max_iterations: int = Field(default=0, description="The most rounds the run will take.")
 
 
 class TaskSnapshot(BaseModel):
-    """One task row inside a :class:`TaskStateUpdated` batch.
+    """One task of a team run, as it stands now."""
 
-    Pre-refactor, ``TaskStateUpdated.tasks`` was
-    ``list[dict[str, Any]]`` — an untyped bag that every callsite
-    had to remember the keys of (``task_id`` / ``title`` /
-    ``status`` / ``assignee``). Tightening it to this schema is
-    wire-compatible: Pydantic serialises ``TaskSnapshot`` to the
-    exact same JSON dict, and Pydantic's dict-coercion means
-    ``TaskStateUpdated(tasks=[{...}])`` still works for callers
-    that pass raw dicts.
-    """
+    # Pydantic's dict-coercion means ``TaskStateUpdated(tasks=[{...}])``
+    # still works for callers that pass raw dicts.
 
-    task_id: str = ""
-    title: str = ""
-    status: str = ""
-    assignee: str = ""
+    task_id: str = Field(default="", description="The task's id.")
+    title: str = Field(default="", description="What the task is, in a few words.")
+    status: str = Field(
+        default="",
+        description=(
+            "The task's status: `pending`, `running`, `completed`, `failed` or `cancelled`. "
+            "Other values may appear; treat them as unknown."
+        ),
+    )
+    assignee: str = Field(
+        default="", description="The name of the member doing it; empty when unassigned."
+    )
 
     @classmethod
     def from_agno(cls, task: Any) -> TaskSnapshot:
@@ -273,180 +336,209 @@ class TaskSnapshot(BaseModel):
 
 
 class TaskStateUpdated(Message):
-    """Batch task state update."""
+    """Every task of a team run, as they stand now."""
 
     type: Literal["task_state_updated"] = "task_state_updated"
-    tasks: list[TaskSnapshot] = Field(default_factory=list)
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    tasks: list[TaskSnapshot] = Field(
+        default_factory=list, description="All the run's tasks; replaces any earlier list."
+    )
 
 
 class CommandResult(Message):
-    """Result of a slash command.
+    """The result of a slash command: text to show, an action for the client to take, or both."""
 
-    Canonical wire model. The single Python subclass
-    :class:`igni_core.backend.command_result.CommandResult` inherits
-    from this class, adds the semantic + generic classmethod factories
-    (``markdown`` / ``info`` / ``error`` / ``fork`` / ``for_action``),
-    and hangs the behaviour methods (``is_error`` / ``is_action`` /
-    ``render_line``) on it — the backend class IS the wire model, so
-    ``server.handle_command`` returns it directly instead of rebuilding
-    a twin. See that module for the layering rationale (protocol is
-    the leaf layer; backend depends on protocol, never vice versa).
-
-    Fields are enum-typed (``CommandResultKind`` / ``CommandAction``)
-    rather than free strings — Pydantic still serialises them to their
-    string values on the wire, so FE parsers that key off literals
-    like ``"markdown"`` / ``"quit"`` are unaffected. Producers gain
-    autocompletion and typo-checking; a raw ``kind="markdon"`` now
-    fails Pydantic validation instead of silently rendering as
-    generic-info on the FE.
-
-    ``display_content`` is the optional chat-render override for the
-    ``run_prompt`` action: the loop slash command sets it to the
-    unwrapped prompt while ``content`` carries the wrapped form
-    (with the ``<loop-iteration>`` meta tag) for the agent. When
-    empty, the FE displays ``content`` directly — the normal case
-    for skill prompts and any other ``run_prompt`` action.
-    """
+    # The single Python subclass ``igni_core.backend.command_result.CommandResult``
+    # inherits from this class and adds the factories and behaviour
+    # methods; the backend class IS the wire model.
 
     type: Literal["command_result"] = "command_result"
-    kind: CommandResultKind = CommandResultKind.INFO
-    content: str = ""
-    action: CommandAction = CommandAction.NONE
-    display_content: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    kind: CommandResultKind = Field(
+        default=CommandResultKind.INFO, description="How to show `content`."
+    )
+    content: str = Field(
+        default="",
+        description=(
+            "The text to show. For some actions it carries the action's value instead: the "
+            "new session id for `fork`, the prompt to send for `run_prompt`."
+        ),
+    )
+    action: CommandAction = Field(
+        default=CommandAction.NONE,
+        description="What the client should do in response; empty for nothing but showing `content`.",
+    )
+    display_content: str = Field(
+        default="",
+        description=(
+            "For `run_prompt`: the text to show in the chat in place of `content`, when the "
+            "prompt sent to the agent differs from what the person should see. Empty to show "
+            "`content`."
+        ),
+    )
 
 
 class StatusUpdate(Message):
-    """Status bar data pushed from BE."""
+    """The session's current state, for a status bar: token use, model, account and permission mode."""
 
     type: Literal["status_update"] = "status_update"
-    input_tokens: int = 0
-    output_tokens: int = 0
-    context_tokens: int = 0
-    max_context: int = 0
-    model: str = ""
-    #: Whether a run would reach a real model rather than the
-    #: ``NoModelConfigured`` placeholder. The frontend used to infer
-    #: this by comparing ``model`` against the placeholder's id string,
-    #: which made a sentinel into an undeclared contract between two
-    #: files. Defaults True so an older client, which never read the
-    #: field, keeps its previous behaviour.
-    model_configured: bool = True
-    cloud_connected: bool = False
-    cloud_org: str = ""
-    #: The signed-in account, for the header. Read from the
-    #: credentials file, so it is present on the first status push
-    #: rather than after a call to the cloud.
-    cloud_email: str = ""
-    #: Display name, once ``/portal/me`` has been asked. Empty
-    #: until then — the address is the fallback, and it is better
-    #: than showing nothing while waiting.
-    cloud_name: str = ""
-    # Active ``PermissionEvaluator`` mode (``default`` / ``plan`` /
-    # ``acceptEdits`` / ``bypassPermissions`` / ``dontAsk``). The
-    # FE renders a badge when this is ``plan`` (row 50 — plan-mode
-    # UI). Pushed on every status update + via the
-    # ``permission_mode_changed`` push when the slash command
-    # toggles it mid-session.
-    # ``permission_mode`` stays a raw ``str`` on the wire; producers
-    # SHOULD use :class:`PermissionModeName` members (which mirror
-    # :class:`igni_core.core.config.permission_eval.PermissionMode`).
-    # Kept as ``str`` for forward-compat with any future mode we
-    # haven't yet enumerated.
-    permission_mode: str = "default"
-    # Brand overrides from the signed-in user's group, straight off the
-    # group pack. ``None`` is igni's own palette, which is also what a
-    # session with no cloud connection gets.
-    #
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    input_tokens: int = Field(
+        default=0, description="Tokens sent to the model so far in this session."
+    )
+    output_tokens: int = Field(
+        default=0, description="Tokens the model has produced so far in this session."
+    )
+    context_tokens: int = Field(
+        default=0, description="Tokens the conversation currently takes up in the model's context."
+    )
+    max_context: int = Field(
+        default=0, description="The model's context window, in tokens; 0 when unknown."
+    )
+    model: str = Field(default="", description="The id of the model in use.")
+    # Defaults True so an older client, which never read the field,
+    # keeps its previous behaviour.
+    model_configured: bool = Field(
+        default=True,
+        description="False when no model is set up, so a run could not reach one.",
+    )
+    cloud_connected: bool = Field(default=False, description="True when signed in to igni cloud.")
+    cloud_org: str = Field(
+        default="",
+        description="The igni cloud organisation signed in to; empty when not signed in.",
+    )
+    cloud_email: str = Field(
+        default="", description="The signed-in account's email address; empty when not signed in."
+    )
+    cloud_name: str = Field(
+        default="",
+        description=(
+            "The signed-in account's display name. Empty until igni has fetched it; show "
+            "`cloud_email` meanwhile."
+        ),
+    )
+    # Producers SHOULD use ``PermissionModeName`` members; kept as
+    # ``str`` for forward-compat with any future mode.
+    permission_mode: str = Field(
+        default="default",
+        description=(
+            "The active permission mode: `default`, `plan`, `acceptEdits`, "
+            "`bypassPermissions` or `dontAsk`. Other values may appear; treat them as unknown."
+        ),
+    )
     # Passed through untyped: the BE has no use for these values, and
-    # the FE validates every one of them against its own allowlist
-    # before any of it reaches a stylesheet. Typing it here would add a
-    # second place to update per token without adding a check.
-    theme: dict | None = None
+    # the client validates every one against its own allowlist.
+    theme: dict[str, WireJson] | None = Field(
+        default=None,
+        description=(
+            "Brand colour overrides from the signed-in account's group, keyed by theme token. "
+            "Null for igni's own palette."
+        ),
+    )
 
 
 class SessionListEntry(BaseModel):
-    """One row of :attr:`SessionListResult.sessions`.
+    """One saved session, as listed by ``session_list``.
 
-    Wire shape produced by
-    :meth:`~igni_core.core.session.schemas.SessionListRow.from_agno`:
-    ``{session_id, name, created_at, updated_at, run_count, summary,
-    agent_name}``. Kept permissive (``extra='allow'``) so a future
-    field on the persistence side lands on the wire without a
-    schema-drift error at the boundary — the FE tolerates unknown
-    keys.
-
-    Named ``SessionListEntry`` rather than ``SessionSummary`` to
-    avoid collision with Agno's ``agno.session.summary.SessionSummary``,
-    which is used in
-    :mod:`igni_core.core.session.compaction`. Defined in this
-    module (not ``backend/schemas_history.py``) because ``protocol``
-    is the leaf layer — the backend depends on protocol, never
-    the reverse — and :class:`SessionListResult` needs to reference
-    this schema at the wire boundary.
+    More fields may be present than those listed here; ignore any you
+    do not know.
     """
 
-    model_config = ConfigDict(extra="allow")
+    # Produced by ``SessionListRow.from_agno``. Permissive
+    # (``extra='allow'``) so a new persistence-side field reaches the
+    # wire without a schema-drift error. Named ``SessionListEntry`` to
+    # avoid colliding with Agno's ``SessionSummary``.
 
-    session_id: str = ""
-    name: str = ""
-    created_at: int = 0
-    updated_at: int = 0
-    run_count: int = 0
-    summary: str = ""
-    agent_name: str = ""
+    model_config = ConfigDict(extra="allow", json_schema_extra=JSON_OBJECT_EXTRA)
+
+    session_id: str = Field(default="", description="The session's id.")
+    name: str = Field(default="", description="The session's name; empty when it has none.")
+    created_at: int = Field(default=0, description="When the session was created, in Unix seconds.")
+    updated_at: int = Field(
+        default=0, description="When the session last changed, in Unix seconds."
+    )
+    run_count: int = Field(default=0, description="How many runs the session holds.")
+    summary: str = Field(
+        default="", description="A short summary of the conversation; empty when there is none."
+    )
+    agent_name: str = Field(default="", description="The agent the session talks to.")
 
 
 class SessionListResult(Message):
-    """Response to session_list request."""
+    """The answer to ``session_list``: the saved sessions."""
 
     type: Literal["session_list_result"] = "session_list_result"
-    sessions: list[SessionListEntry] = Field(default_factory=list)
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    sessions: list[SessionListEntry] = Field(
+        default_factory=list, description="The saved sessions."
+    )
 
 
 class SessionCleared(Message):
-    """Session was compacted or cleared."""
+    """The session's conversation was cleared or compacted (replaced by a summary) to free context."""
 
     type: Literal["session_cleared"] = "session_cleared"
-    new_session_id: str = ""
-    summary: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    new_session_id: str = Field(
+        default="", description="The session's id from now on; it may be the same as before."
+    )
+    summary: str = Field(
+        default="",
+        description="The summary that now stands in for the earlier conversation; empty when there is none.",
+    )
 
 
 class Info(Message):
-    """Informational message."""
+    """A short informational message to show the person."""
 
     type: Literal["info"] = "info"
-    text: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    text: str = Field(default="", description="The message.")
 
 
 class Error(Message):
-    """Error message."""
+    """An error message to show the person."""
 
     type: Literal["error"] = "error"
-    text: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    text: str = Field(default="", description="What went wrong.")
 
 
 class SchedulerEvent(Message):
-    """Notification about a scheduled task.
+    """A scheduled task started or finished."""
 
-    ``event_type`` stays a raw ``str`` on the wire; producers
-    SHOULD use :class:`SchedulerEventType` members (``STARTED`` /
-    ``COMPLETED`` / ``FAILED`` / ``ERROR``). Kept as ``str`` for
-    forward-compat with any un-enumerated event kind Agno / a
-    future scheduler emits.
-    """
+    # ``event_type`` stays a raw ``str``; producers SHOULD use
+    # ``SchedulerEventType`` members.
 
     type: Literal["scheduler_event"] = "scheduler_event"
-    task_id: str = ""
-    description: str = ""
-    event_type: str = ""  # see :class:`SchedulerEventType`
-    result: str = ""
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    task_id: str = Field(default="", description="The scheduled task's id.")
+    description: str = Field(default="", description="What the task does, as it was scheduled.")
+    event_type: str = Field(
+        default="",
+        description=(
+            "What happened: `started`, `completed`, or `failed` (sometimes sent as `error`). "
+            "Other values may appear; treat them as unknown."
+        ),
+    )
+    result: str = Field(
+        default="",
+        description="The task's output when it finished, or the error when it failed; empty when it started.",
+    )
 
 
 class RunPaused(RunScopedMessage):
-    """Run paused for HITL — wraps hitl_request with run context."""
+    """The run is paused until the person approves or rejects one or more tool calls.
+
+    Answer every request with ``hitl_response_batch`` (or each one with
+    ``hitl_response``) to let the run continue.
+    """
 
     type: Literal["run_paused"] = "run_paused"
-    requirements: list[HITLRequest] = Field(default_factory=list)
+    direction: ClassVar[Direction] = Direction.TO_CLIENT
+    requirements: list[HITLRequest] = Field(
+        default_factory=list, description="The tool calls waiting for an answer."
+    )
 
 
 __all__ = [

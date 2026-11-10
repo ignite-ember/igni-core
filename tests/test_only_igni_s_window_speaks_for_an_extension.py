@@ -31,6 +31,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from websockets.asyncio.client import connect
 
 from igni_core.extensions.host.wire import Reply
@@ -194,14 +195,29 @@ async def test_an_extension_call_s_answer_reaches_only_the_window_that_asked(tmp
         await rig.stop()
 
 
-async def test_igni_s_own_calls_are_still_broadcast(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("method", "args"),
+    [
+        (RpcMethod.GET_SESSION_ID, {}),
+        (RpcMethod.READ_FILE, {"path": "notes.txt"}),
+        (RpcMethod.RUN_SHELL, {"command": "echo secret"}),
+        # Answered with a message, not an ``rpc_response``.
+        (RpcMethod.GET_STATUS, {}),
+    ],
+)
+async def test_igni_s_own_calls_are_answered_only_to_the_connection_that_asked(
+    tmp_path: Path, method: RpcMethod, args: dict[str, Any]
+):
+    """A file's contents or a shell command's output, broadcast, reached
+    every client attached — another window, a program with the lockfile's
+    token. An answer goes to the connection that asked."""
     rig = await HostRig(tmp_path).start()
     try:
         assert rig.orchestrator is not None
 
-        await rig.orchestrator.dispatch(_from("ws-a", RpcMethod.GET_SESSION_ID))
+        await rig.orchestrator.dispatch(_from("ws-a", method, **args))
 
-        assert _answer(rig, "get_session_id-ws-a").to_client == ""
+        assert _answer(rig, f"{method.value}-ws-a").to_client == "ws-a"
     finally:
         await rig.stop()
 

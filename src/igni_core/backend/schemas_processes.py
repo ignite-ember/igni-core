@@ -22,36 +22,46 @@ seeing the same dict shapes it always has.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProcessRow(BaseModel):
-    """One row of :meth:`ProcessesController.list`.
+    """A background process the agent started, running or recently
+    finished."""
 
-    ``is_running`` / ``exit_code`` default to "running" so an older
-    client that predates them — and the test fixtures that build rows
-    by hand — read a listed row the way they always did.
-    """
-
-    pid: int
-    cmd: str
-    elapsed_seconds: float
-    is_running: bool = True
-    exit_code: int | None = None
+    # ``is_running`` / ``exit_code`` default to "running" so an older
+    # client that predates them — and the test fixtures that build rows
+    # by hand — read a listed row the way they always did.
+    pid: int = Field(description="Operating-system process id.")
+    cmd: str = Field(description="The command line that started the process.")
+    elapsed_seconds: float = Field(description="How long the process has run (or ran), in seconds.")
+    is_running: bool = Field(default=True, description="`true` while the process is still running.")
+    exit_code: int | None = Field(
+        default=None,
+        description="The process's exit code once it has finished; `null` while running.",
+    )
 
 
 class ProcessTailResult(BaseModel):
-    """Wire shape for :meth:`ProcessesController.read_tail`."""
+    """The latest output of a background process."""
 
-    pid: int
-    output: str
-    is_running: bool
-    exit_code: int | None
+    pid: int = Field(description="Operating-system process id that was asked for.")
+    output: str = Field(
+        description="The last lines of the process's combined stdout and stderr; empty for an unknown pid."
+    )
+    is_running: bool = Field(
+        description="`true` while the process is still running; `false` for an unknown pid."
+    )
+    exit_code: int | None = Field(
+        description="The exit code once the process has finished; `null` while running or if unknown."
+    )
 
 
 class StopProcessResult(BaseModel):
-    """Wire shape for :meth:`ProcessesController.stop`."""
+    """Result of stopping a background process."""
 
-    pid: int
-    killed: bool
-    message: str
+    pid: int = Field(description="Operating-system process id that was asked for.")
+    killed: bool = Field(
+        description="`true` when the process was stopped; `false` if it was unknown or had already exited."
+    )
+    message: str = Field(description="Human-readable explanation of what happened.")

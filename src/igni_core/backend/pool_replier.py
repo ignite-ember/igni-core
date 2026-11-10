@@ -17,6 +17,7 @@ from igni_core.backend.schemas_pool import PoolAnswer
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Message
 from igni_core.protocol.schemas.enums import CommandResultKind
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 
 class WindowsTransport(Protocol):
@@ -40,7 +41,9 @@ class PoolReplier:
     async def reply(self, request: Message, answer: PoolAnswer) -> None:
         """``answer`` as the response to ``request``: the one place one is built."""
         if answer.error:
-            response = msg.RPCResponse.fail(request.id, answer.error)
+            response = msg.RPCResponse.fail(
+                request.id, answer.error, answer.code or RpcErrorCode.FAILED
+            )
         else:
             response = msg.RPCResponse.ok(request.id, answer.wire_result())
         await self._answer(request, response)
@@ -53,7 +56,7 @@ class PoolReplier:
         resumed, so a client following that stream stops waiting.
         """
         if isinstance(message, msg.RPCRequest):
-            await self.reply(message, PoolAnswer.failed(reason))
+            await self.reply(message, PoolAnswer.failed(reason, RpcErrorCode.FORBIDDEN))
             return
         if isinstance(message, msg.Command):
             await self._answer(

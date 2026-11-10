@@ -31,7 +31,8 @@ from igni_core.backend.schemas_scheduler import (
 from igni_core.core.activity import background
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.hooks.events import HookEvent
-from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
+from igni_core.core.run_context import CURRENT_RUN_ID
+from igni_core.core.scheduler.models import ScheduledTask
 from igni_core.core.scheduler.prompt import wrap_scheduled_prompt
 from igni_core.core.scheduler.runner import SchedulerRunner
 from igni_core.core.scheduler.store import TaskStore
@@ -46,6 +47,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+#: Runs one piece of agent work as the session's run (``RunController.run_unstreamed``).
+AsRun = Callable[[Callable[[], Awaitable[str]]], Awaitable[str]]
 
 TaskStartedCallback = Callable[[str, str], None] | None
 TaskCompletedCallback = Callable[[str, str, bool, str], None] | None
@@ -71,11 +75,16 @@ class SchedulerController:
         *,
         gate: RunGate,
         execute_fn: Callable[[str], Awaitable[str]] | None = None,
+        as_run: AsRun | None = None,
     ) -> None:
         self._session = session
         # The run gate of the backend process: no scheduled task runs
         # while it is closed.
         self._gate = gate
+        # How a task's work becomes the session's run: one at a time with
+        # the person's turns, seen by ``get_processing``, stopped by
+        # ``cancel_run``. Fixtures without a run controller run it bare.
+        self._as_run: AsRun = as_run or (lambda work: work())
         # ``settings`` may be ``None`` in loop-pump-only test
         # fixtures that only care about the loop pump. Every
         # method that actually consults settings raises the natural
@@ -94,7 +103,7 @@ class SchedulerController:
 
     # ── Per-task RPCs ─────────────────────────────────────────────
 
-    async def execute(self, description: str) -> str:
+    async def execute(self, description: str, run_id: str = "") -> str:
         """Run one scheduled task through the agent. Returns result text.
 
         The description is wrapped before it reaches the model. Passed raw it
@@ -109,14 +118,34 @@ class SchedulerController:
             # Raised, not returned: a returned string would be recorded as
             # the task's successful result.
             raise RuntimeError(refusal)
-        team = self._session.main_team
-        response = await team.arun(wrap_scheduled_prompt(description), stream=False)
-        return extract_response_text(response)
+
+        async def work() -> str:
+            team = self._session.main_team
+            token = CURRENT_RUN_ID.set(run_id)
+            try:
+                response = await team.arun(
+                    wrap_scheduled_prompt(description), stream=False, run_id=run_id or None
+                )
+            finally:
+                CURRENT_RUN_ID.reset(token)
+            return extract_response_text(response)
+
+        return await self._as_run(work)
 
     async def cancel(self, task_id: str) -> msg.Info:
-        """Mark a scheduled task as cancelled in the store."""
+        """Mark a scheduled task as cancelled in the store.
+
+        Refused for a task the store does not have, and for one that has
+        already finished — its result stays as it was.
+        """
         store = TaskStore(project_dir=self._session.project_dir)
-        await store.update_status(task_id, TaskStatus.cancelled)
+        before = await store.cancel(task_id)
+        if before is None:
+            raise ValueError(f"no scheduled task {task_id!r}")
+        if not before.is_active:
+            raise ValueError(
+                f"task {task_id} has already {before.value}; there is nothing to cancel"
+            )
         return msg.Info(text=f"Cancelled task {task_id}")
 
     async def list_all(self, include_done: bool = True) -> list[ScheduledTask]:
@@ -273,6 +302,7 @@ class SchedulerController:
 
 
 __all__ = [
+    "AsRun",
     "SchedulerController",
     "TaskStartedCallback",
     "TaskCompletedCallback",

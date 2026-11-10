@@ -452,3 +452,16 @@ async def test_a_full_stack_of_toasts_lets_the_oldest_go_and_says_so(rig: HostRi
     on_screen = ok(await rig.ask(ext, "get", "ui.toasts"))
     assert [t["text"] for t in on_screen] == [f"#{n}" for n in range(1, 7)]
     assert [v["toast"]["id"] for v in sink.values("ui.toast_dismissed")] == [shown[0]["id"]]
+
+
+async def test_a_write_that_changes_nothing_says_so(rig: HostRig) -> None:
+    """A write of the value already there pushes nothing; its answer says
+    it changed nothing, so a client does not wait for a push."""
+    await rig.window_model("w-9", "hydrate", connection_id="ws-9", kind="web")
+    panel = {"kind": "search", "params": {}}
+    first = await rig.window_model("w-9", "write", field="panel", value=panel, token="t1")
+    again = await rig.window_model("w-9", "write", field="panel", value=panel, token="t2")
+
+    assert (first["op"], first["changed"]) == ("write", True)
+    assert (again["op"], again["changed"]) == ("write", False)
+    assert [p["token"] for p in await rig.window_pushes("w-9")] == ["t1"]

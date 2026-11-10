@@ -123,13 +123,6 @@ class PlanCoordinator:
                 ok=False,
                 error="plan_store not initialised on this session",
             )
-        store.set_decision(run_id, decision)
-        # Persist BEFORE flipping mode so a crash mid-flip doesn't
-        # leave the user with mode=default but no recorded approval —
-        # the original bug that motivated persisting these decisions.
-        # ``decisions_snapshot`` returns a typed :class:`PlanDecisionsBlob`
-        # which persistence dumps at its own boundary — the caller-side
-        # dict comprehension is gone (Rule 1).
         persistence = deps.persistence
         if persistence is None:
             return PlanDecisionResult(
@@ -138,6 +131,14 @@ class PlanCoordinator:
                 ok=False,
                 error="persistence not initialised on this session",
             )
+        previous = store.decisions.get(run_id)
+        store.set_decision(run_id, decision)
+        # Persist BEFORE flipping mode so a crash mid-flip doesn't
+        # leave the user with mode=default but no recorded approval —
+        # the original bug that motivated persisting these decisions.
+        # ``decisions_snapshot`` returns a typed :class:`PlanDecisionsBlob`
+        # which persistence dumps at its own boundary — the caller-side
+        # dict comprehension is gone (Rule 1).
         blob = store.decisions_snapshot()
         result = await persistence.save_plan_decisions(blob)
         if not result.ok:
@@ -148,6 +149,8 @@ class PlanCoordinator:
             # and surface the error via the Pattern-3 envelope.
             reason = result.error or "persist failed"
             if flip_mode:
+                # Not recorded, so not decided: the plan stays pending.
+                store.forget_decision(run_id, previous)
                 logger.warning(
                     "plan decision persist failed on approve path — "
                     "mode flip aborted to preserve invariant: %s",

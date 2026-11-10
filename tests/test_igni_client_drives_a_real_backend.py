@@ -188,9 +188,9 @@ async def test_igni_client_drives_a_session_on_the_real_backend(project: Path) -
                 # The rest of the surface, as igni answers it.
                 listed = await igni.sessions.list()
                 assert session.id in [entry.session_id for entry in listed]
-                catalogue = await igni.models.list()
-                assert isinstance(catalogue.models, dict)
-                assert isinstance(await igni.rpc("get_session_id"), str)
+                catalogue = await session.models.list()
+                assert isinstance(catalogue.registry, dict)
+                assert isinstance(await session.current_id(), str)
         finally:
             if not running.done():
                 app.request_shutdown()
@@ -222,13 +222,13 @@ async def test_a_program_approves_only_with_the_token_the_window_made(project: P
                 with pytest.raises(NotAllowed, match="approver token"):
                     await _approve_the_file(igni)
                 with pytest.raises(Exception, match="only igni's window"):
-                    await igni.rpc("mint_approver_token")
+                    await igni.approvers.mint_token()
             assert not (project / "done.txt").exists()
 
             # igni's window makes an approver token; with it, the program approves.
             window = Local(url=f"ws://127.0.0.1:{port}", token="the-launch-secret")
             async with IgniClient(window) as igni:
-                token = (await igni.rpc("mint_approver_token"))["token"]
+                token = (await igni.approvers.mint_token()).token
             async with IgniClient(Local(project_dir=project, approver_token=token)) as igni:
                 await _approve_the_file(igni)
             assert (project / "done.txt").exists()

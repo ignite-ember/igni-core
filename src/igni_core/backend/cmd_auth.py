@@ -26,8 +26,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from igni_core.backend.cloud_sign_out import switch_off_cloud
 from igni_core.backend.command_result import CommandResult
-from igni_core.backend.schemas_auth import CloudSwitchOutcome, LogoutOutcome
+from igni_core.backend.schemas_auth import LogoutOutcome
 from igni_core.core.auth.credentials import CredentialsStore
 from igni_core.protocol.messages import CommandAction
 
@@ -72,7 +73,7 @@ class AuthCommand:
         self._store.clear()
         self._session.cloud_auth.clear()
 
-        switch = self._switch_off_cloud_if_needed()
+        switch = switch_off_cloud(self._session)
         outcome = LogoutOutcome(
             identity_message=self._identity_message(load_result),
             fallback_model=switch.fallback_model,
@@ -105,28 +106,6 @@ class AuthCommand:
         if creds is None:
             return "Not logged in."
         return f"Logged out ({creds.email})."
-
-    def _switch_off_cloud_if_needed(self) -> CloudSwitchOutcome:
-        """If the currently-selected model routes through cloud, swap
-        the default to a non-cloud entry and rebuild the main team.
-        The returned :class:`CloudSwitchOutcome` names the three
-        possible states (`no_switch_needed`, `switched_to`, or
-        `cloud_but_no_fallback`) so the invariant lives on the type.
-        """
-        models = self._session.settings.models
-        if not models.current_uses_cloud_token():
-            return CloudSwitchOutcome.no_switch_needed()
-
-        fallback = models.find_non_cloud_fallback()
-        if fallback is None:
-            return CloudSwitchOutcome.cloud_but_no_fallback(
-                "Warning: no models with API keys configured. "
-                "Add a model with an api_key or /login again."
-            )
-
-        models.default = fallback
-        self._session.rebuild_main_team()
-        return CloudSwitchOutcome.switched_to(fallback)
 
 
 async def cmd_login(handler: CommandHandler) -> CommandResult:

@@ -28,6 +28,7 @@ from igni_core.notifications.schemas import (
     MarkReadRequest,
     NotificationCounts,
     NotificationOrigin,
+    NotificationsChanged,
     NotificationTarget,
 )
 from igni_core.notifications.server_client import (
@@ -65,7 +66,7 @@ class Floor:
         self.center = NotificationCenter(
             server=signed_in(**kwargs),
             local=self.store,
-            announce=self.announced.append,
+            announce=lambda change: self.announced.append(change.counts),
             transport=self.server.transport,
         )
         self.handler = NotificationsRpcHandler(
@@ -315,11 +316,19 @@ def test_the_counts_reach_the_client_on_their_own_channel():
     bridge = PushNotificationBridge(transport=MagicMock(), loop=None, queue=[])
     bridge._schedule_push = lambda push: sent.append(push)  # type: ignore[method-assign]
 
-    bridge.notifications_changed(NotificationCounts(unread=2, by_source={"igni.artifacts": 2}))
+    bridge.notifications_changed(
+        NotificationsChanged(
+            counts=NotificationCounts(unread=2, by_source={"igni.artifacts": 2}),
+            cause="marked_read",
+        )
+    )
 
     assert len(sent) == 1
     assert sent[0].channel == PushChannel.NOTIFICATIONS_CHANGED
-    assert sent[0].payload == {"counts": {"unread": 2, "by_source": {"igni.artifacts": 2}}}
+    assert sent[0].payload == {
+        "counts": {"unread": 2, "by_source": {"igni.artifacts": 2}},
+        "cause": "marked_read",
+    }
 
 
 def test_the_three_rpcs_are_the_handlers():

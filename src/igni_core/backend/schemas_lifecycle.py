@@ -229,7 +229,6 @@ class ShutdownResult(BaseModel):
     pool_cleaned: bool = False
     mcp_disconnected: bool = False
     scheduler_stopped: bool = False
-    shell_processes_killed: int = 0
     errors: list[str] = Field(default_factory=list)
 
     def mark_hook_fired(self) -> None:
@@ -247,10 +246,6 @@ class ShutdownResult(BaseModel):
     def mark_scheduler_stopped(self) -> None:
         """Record that the scheduler background runner stopped."""
         self.scheduler_stopped = True
-
-    def record_shell_kills(self, killed: int) -> None:
-        """Record how many background shell processes were killed."""
-        self.shell_processes_killed = int(killed)
 
     def record_error(self, label: str, exc: BaseException) -> None:
         """Append a labelled error string for a failed shutdown step."""

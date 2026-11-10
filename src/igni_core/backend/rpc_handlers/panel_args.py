@@ -5,47 +5,64 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 
 class PanelArgs(BaseModel):
-    """Base for every panel RPC's arguments: keys a newer frontend adds
+    """Base for every panel RPC's arguments: keys a newer client adds
     are ignored rather than refused."""
 
     model_config = ConfigDict(extra="ignore")
 
 
 class CompleteFilesArgs(PanelArgs):
-    """``complete_files``: the typed prefix and how many matches to return."""
+    """Arguments for completing a file path typed after ``@``."""
 
-    query: str = ""
-    limit: int = 50
+    query: str = Field(default="", description="What was typed so far; empty matches every file.")
+    limit: int = Field(default=50, description="Maximum number of matches to return.")
 
 
 class ReadFileArgs(PanelArgs):
-    """``read_file``: the project file to read."""
+    """Arguments for reading a file to preview it."""
 
-    path: str
+    path: str = Field(
+        description="The file: relative to the project, absolute, or an `attachment:<id>` reference."
+    )
 
 
 class SearchCodeArgs(PanelArgs):
-    """``search_code``: the snippet to find across the project."""
+    """Arguments for finding where a code snippet appears in the project.
 
-    query: str
+    Unknown keys are refused."""
+
+    # A key it does not name is refused, not ignored: a call that sent the
+    # snippet under another name (``snippet``) was told only that ``query``
+    # was missing, and searched for nothing.
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(
+        description="The snippet, matched exactly; shorter than 5 characters finds nothing."
+    )
 
 
 class RunShellArgs(PanelArgs):
-    """``run_shell``: the ``$``-prefixed command line."""
+    """Arguments for running a shell command in the project folder."""
 
-    command: str = ""
+    command: str = Field(
+        default="",
+        description="The command line to run (without a leading `$`); blank runs nothing.",
+    )
 
 
 class ListDirsArgs(PanelArgs):
-    """``list_dirs``: the folder to list (the home folder when absent or
-    empty) and whether dot-dirs are shown."""
+    """Arguments for listing the folders inside a folder."""
 
-    path: str | None = None
-    show_hidden: bool = False
+    path: str | None = Field(
+        default=None, description="The folder to list; the home folder when absent or empty."
+    )
+    show_hidden: bool = Field(
+        default=False, description="Include folders whose names start with a dot."
+    )
 
     @property
     def root(self) -> Path:
@@ -53,10 +70,12 @@ class ListDirsArgs(PanelArgs):
 
 
 class PickDirArgs(PanelArgs):
-    """``pick_dir_native``: where the OS picker opens (the project folder
-    when absent or empty)."""
+    """Arguments for opening the operating system's folder picker."""
 
-    start: str | None = None
+    start: str | None = Field(
+        default=None,
+        description="Folder the picker opens in; the session's project folder when absent or empty.",
+    )
 
     def start_dir(self, project_dir: Path) -> str:
         """The folder the picker opens in, or ``""`` when the asked one
@@ -66,11 +85,16 @@ class PickDirArgs(PanelArgs):
 
 
 class PromoteAgentArgs(PanelArgs):
-    """``promote_ephemeral_agent``: the agent, and ``"project"`` (the
-    default) or ``"personal"``."""
+    """Arguments for keeping an agent created during the session."""
 
-    name: str
-    target: str | None = None
+    name: str = Field(description="Name of the agent created during the session.")
+    target: str | None = Field(
+        default=None,
+        description=(
+            "Where to save it: `project` (the project's agents; the default) or "
+            "`personal` (the user's own agents)."
+        ),
+    )
 
     @property
     def destination(self) -> str:
@@ -78,27 +102,32 @@ class PromoteAgentArgs(PanelArgs):
 
 
 class AgentNameArgs(PanelArgs):
-    """``discard_ephemeral_agent``: the ephemeral agent to drop."""
+    """Arguments naming an agent created during the session."""
 
-    name: str
+    name: str = Field(description="Name of the agent created during the session.")
 
 
 class VisualizationActionArgs(PanelArgs):
-    """``dispatch_visualization_action``: a component action and the
-    JSON params the view attached to it."""
+    """Arguments for reporting that the user used a control in a
+    visualization the agent drew."""
 
-    action: str = ""
-    params: dict[str, JsonValue] | None = None
+    action: str = Field(default="", description="The control's action name.")
+    params: dict[str, JsonValue] | None = Field(
+        default=None, description="Values the visualization attached to the action; omit for none."
+    )
 
 
 class ProcessTailArgs(PanelArgs):
-    """``read_process_tail``: the background process and how many lines."""
+    """Arguments for reading the latest output of a background process."""
 
-    pid: int
-    tail: int = 200
+    # ``tail`` is at least one: ``0`` used to answer the whole output.
+    pid: int = Field(description="Operating-system process id of the background process.")
+    tail: int = Field(
+        default=200, ge=1, description="How many of the last lines to return (at least 1)."
+    )
 
 
 class ProcessArgs(PanelArgs):
-    """``stop_background_process``: the background process to stop."""
+    """Arguments naming a background process."""
 
-    pid: int
+    pid: int = Field(description="Operating-system process id of the background process.")

@@ -152,9 +152,9 @@ class TestRecordPlanDecision:
         out = await s.plan._record("run-1", PlanDecision.APPROVED, flip_mode=True)
         assert out.ok is False
         assert out.error is not None and "persistence" in out.error
-        # Store IS updated (the decision was recorded in memory)
-        # but no flip and no broadcast happened.
-        s.plan_store.set_decision.assert_called_once()
+        # Nothing is recorded — a decision that cannot be kept is not
+        # one — and no flip and no broadcast happened.
+        s.plan_store.set_decision.assert_not_called()
         s.mode.set_permission_mode.assert_not_called()
 
     @pytest.mark.asyncio

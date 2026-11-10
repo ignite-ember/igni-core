@@ -36,7 +36,8 @@ NOT_REACHABLE: tuple[Unreachable, ...] = (
         key="credentials",
         what="The person's igni session and any credential (`login`, "
         "`reload_cloud_credentials`, `clear_cloud_credentials`, `set_server`, "
-        "`discover_server` values, `cancel_login`)",
+        "`discover_server` values, `get_cloud_plan`, `cancel_login`, `vm_sign_in` and the "
+        "`vm_credential` push)",
         why="An extension never holds the session (service-identity §9). It can start "
         "or end the person's sign-in through `host.account`, but never read what it "
         "produces.",
@@ -198,6 +199,7 @@ RPC: dict[RpcMethod, str] = {
 RPC_UNREACHABLE: dict[RpcMethod, str] = {
     RpcMethod.LOGIN: "credentials",
     RpcMethod.DISCOVER_SERVER: "credentials",
+    RpcMethod.GET_CLOUD_PLAN: "credentials",
     RpcMethod.SET_SERVER: "credentials",
     RpcMethod.RELOAD_CLOUD_CREDENTIALS: "credentials",
     RpcMethod.CLEAR_CLOUD_CREDENTIALS: "credentials",
@@ -323,8 +325,7 @@ PUSH_UNREACHABLE: dict[PushChannel, str] = {
     PushChannel.OPEN_EXTERNAL: "channel",
     PushChannel.WINDOW_MODEL_CHANGED: "channel",
     PushChannel.WORKSPACE_TRUST_REQUIRED: "workspace_trust",
-    PushChannel.ORCHESTRATE_PROGRESS: "dead_channel",
-    PushChannel.SCHEDULER_EVENT: "dead_channel",
+    PushChannel.VM_CREDENTIAL: "credentials",
 }
 
 #: ``UNKNOWN`` is the enum's catch-all for a channel nobody listed,

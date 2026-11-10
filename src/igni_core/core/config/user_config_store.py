@@ -94,10 +94,10 @@ class UserConfigStore:
     def set_server(self, api_url: str, portal_url: str = "") -> None:
         """Persist the server this install talks to.
 
-        Sets ``api_url`` and, when given, ``portal_url``; every other key
-        in the file is kept — it is the user's config, not ours to
-        rewrite. An empty ``portal_url`` leaves any stored one alone, so
-        it keeps meaning "derive it" wherever nothing was stored. Raises
+        Sets ``api_url`` and ``portal_url``; every other key in the file
+        is kept — it is the user's config, not ours to rewrite. An empty
+        ``portal_url`` means "derive it from ``api_url``", so a stored one
+        — the previous server's portal — is removed. Raises
         on an unreadable or unwritable file: unlike a remembered model,
         a server that was not written down is not a choice to shrug off.
         """
@@ -105,4 +105,6 @@ class UserConfigStore:
         config["api_url"] = api_url
         if portal_url:
             config["portal_url"] = portal_url
+        else:
+            config.pop("portal_url", None)
         self.write(config)

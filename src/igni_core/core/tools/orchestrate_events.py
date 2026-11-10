@@ -32,6 +32,11 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 class OrchestrateEventBase(BaseModel):
     """What every orchestrate event carries.
 
+    Every event names the agent that emitted it (``agent_path``) and
+    carries a fixed ``type`` discriminator. ``card_id`` groups all the
+    events of one spawn so a client can show them on the same
+    team-progress card across page refreshes and concurrent spawns.
+
     The ``type`` is left open here and narrowed to a ``Literal`` on
     each subclass, which is what makes the union discriminated.
     """
@@ -39,84 +44,123 @@ class OrchestrateEventBase(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     type: str
-    agent_path: str
-    card_id: str | None = None
+    agent_path: str = Field(
+        description="Dot-joined names of the agent that emitted the event, from the outermost "
+        "spawning agent down to the emitter (`root` for the top level)."
+    )
+    card_id: str | None = Field(
+        default=None,
+        description="Identifier of the team-progress card this event belongs to. All events "
+        "of one spawn share it. Null when the event is not tied to a card.",
+    )
 
 
 class ToolStartedEvent(OrchestrateEventBase):
-    """A tool call started."""
+    """A tool call started: a sub-agent began calling a tool."""
 
     type: Literal["tool_started"] = Field(default="tool_started", frozen=True)
-    tool: str
-    tool_call_id: str | None = None
-    args: str = ""
+    tool: str = Field(description="Name of the tool being called.")
+    tool_call_id: str | None = Field(
+        default=None,
+        description="Identifier of this tool call; matches the `tool_completed` event for "
+        "the same call. Null when the model did not supply one.",
+    )
+    args: str = Field(
+        default="",
+        description="Preview of the tool arguments as text (usually JSON, may be truncated). Empty when none.",
+    )
 
 
 class ToolCompletedEvent(OrchestrateEventBase):
-    """A tool call finished — or failed, which is what ``is_error``
-    says."""
+    """A sub-agent's tool call finished — or failed, which is what
+    ``is_error`` says."""
 
     type: Literal["tool_completed"] = Field(default="tool_completed", frozen=True)
-    tool: str
-    tool_call_id: str | None = None
-    result: str = ""
-    is_error: bool = False
+    tool: str = Field(description="Name of the tool that was called.")
+    tool_call_id: str | None = Field(
+        default=None,
+        description="Identifier of this tool call; matches the earlier `tool_started` event. "
+        "Null when the model did not supply one.",
+    )
+    result: str = Field(
+        default="",
+        description="Preview of the tool output, or the error message when `is_error` is true; may be truncated. Empty when none.",
+    )
+    is_error: bool = Field(default=False, description="True when the tool call failed.")
 
 
 class AgentStartedEvent(OrchestrateEventBase):
-    """A member of the run started."""
+    """A member of the run started: a sub-agent began running a task."""
 
     type: Literal["agent_started"] = Field(default="agent_started", frozen=True)
-    agent: str
-    parent: str | None = None
-    run_id: str | None = None
-    task: str | None = None
+    agent: str = Field(description="Name of the sub-agent that started.")
+    parent: str | None = Field(
+        default=None, description="Path of the agent that spawned it. Null for a top-level spawn."
+    )
+    run_id: str | None = Field(
+        default=None, description="Identifier of the sub-agent's run, when known."
+    )
+    task: str | None = Field(
+        default=None, description="Task text given to the sub-agent, when known."
+    )
 
 
 class AgentPausedEvent(OrchestrateEventBase):
-    """The run paused, waiting for someone to answer its approvals."""
+    """A sub-agent paused because it needs user input (e.g. a tool
+    approval): the run waits for someone to answer its approvals."""
 
     type: Literal["agent_paused"] = Field(default="agent_paused", frozen=True)
-    count: int = 1
+    count: int = Field(default=1, description="Number of pending requests the agent is waiting on.")
 
 
 class AgentCompletedEvent(OrchestrateEventBase):
-    """The run finished."""
+    """A sub-agent finished its run, with its token usage."""
 
     type: Literal["agent_completed"] = Field(default="agent_completed", frozen=True)
-    is_error: bool = False
-    input_tokens: int = 0
-    output_tokens: int = 0
-    reasoning_tokens: int = 0
+    is_error: bool = Field(
+        default=False, description="True when the sub-agent ended with an error."
+    )
+    input_tokens: int = Field(default=0, description="Input (prompt) tokens the sub-agent used.")
+    output_tokens: int = Field(
+        default=0, description="Output (completion) tokens the sub-agent produced."
+    )
+    reasoning_tokens: int = Field(
+        default=0, description="Reasoning tokens the sub-agent used; 0 when the model reports none."
+    )
 
 
 class RunErrorEvent(OrchestrateEventBase):
-    """The run failed."""
+    """A sub-agent's run failed."""
 
     type: Literal["run_error"] = Field(default="run_error", frozen=True)
-    error: str
+    error: str = Field(description="Error message describing the failure.")
 
 
 class ContentPreviewEvent(OrchestrateEventBase):
-    """A preview of what the agent is writing, mid-stream."""
+    """A short preview of what the agent is writing, mid-stream."""
 
     type: Literal["content_preview"] = Field(default="content_preview", frozen=True)
-    text: str
+    text: str = Field(description="Preview text of the sub-agent's latest output.")
 
 
 class TaskCreatedEvent(OrchestrateEventBase):
-    """A team task was created."""
+    """A task was added to a team's task list."""
 
     type: Literal["task_created"] = Field(default="task_created", frozen=True)
-    title: str = ""
-    assignee: str = ""
+    title: str = Field(default="", description="Task title. Empty when not given.")
+    assignee: str = Field(
+        default="", description="Name of the team member assigned the task. Empty when unassigned."
+    )
 
 
 class TaskUpdatedEvent(OrchestrateEventBase):
-    """A team task changed status."""
+    """A task in a team's task list changed status."""
 
     type: Literal["task_updated"] = Field(default="task_updated", frozen=True)
-    status: str = ""
+    status: str = Field(
+        default="",
+        description="New task status, such as `running`, `completed` or `failed`. Empty when unknown.",
+    )
 
 
 class VisualizationDeltaEvent(OrchestrateEventBase):
@@ -143,7 +187,11 @@ class VisualizationDeltaEvent(OrchestrateEventBase):
     #: event's, but it is not part of this event's wire shape: the
     #: frontend routes a visualisation by its ``spec_id``, and the
     #: persisted log entry has to keep the shape it always had.
-    card_id: str | None = Field(default=None, exclude=True)
+    card_id: str | None = Field(
+        default=None,
+        exclude=True,
+        description="The card this delta belongs to; it is not part of the event's wire shape.",
+    )
 
     @classmethod
     def from_partial_args(

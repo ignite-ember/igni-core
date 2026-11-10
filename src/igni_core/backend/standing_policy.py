@@ -16,7 +16,8 @@ sessions but not decide for the person:
   permission rule, no trusted workspace, no plugin, marketplace or
   extension setting, no shell command outside a run, no change of whom
   igni signs in to;
-* it mints no approver token.
+* it mints no approver token;
+* it stops nothing: no ``shutdown`` message, no ``shutdown`` call.
 
 An approver is a program in every other respect. What a program may not do
 it is told plainly, so the SDK can say why.
@@ -71,6 +72,7 @@ WINDOW_ONLY_RPCS: frozenset[str] = frozenset(
         RpcMethod.EXTENSION_SERVICE_TOKEN,
         RpcMethod.MINT_APPROVER_TOKEN,
         RpcMethod.REVOKE_APPROVER_TOKENS,
+        RpcMethod.SHUTDOWN,
     }
 )
 
@@ -108,6 +110,8 @@ def refusal(message: Any) -> str | None:
         if standing is not Standing.APPROVER:
             return f"{message.type}: {_NOT_AN_APPROVER}"
         return _beyond_this_once(message)
+    if isinstance(message, msg.Shutdown):
+        return f"{message.type}: only igni's window may stop igni"
     if isinstance(message, msg.Command):
         name = _command_name(message.text)
         if name in WINDOW_ONLY_COMMANDS:

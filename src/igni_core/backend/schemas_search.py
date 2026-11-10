@@ -23,27 +23,34 @@ Wire schemas (RPC-returned Pydantic models):
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SearchCodeMatch(BaseModel):
-    """One hit in :attr:`SearchCodeResult.matches`."""
+    """One place in the project where the searched text occurs."""
 
-    path: str
-    line: int
-    end_line: int
-    preview: str
+    path: str = Field(description="File path, relative to the project root.")
+    line: int = Field(description="1-based line where the match starts.")
+    end_line: int = Field(description="1-based line where the match ends (inclusive).")
+    preview: str = Field(description="The first matching line, trimmed of surrounding whitespace.")
 
 
 class SearchCodeResult(BaseModel):
-    """Wire shape for :meth:`SearchController.search_code` —
-    composer paste decoration. ``truncated`` is True whenever the
-    max-results cap was hit (or a search timed out) so the FE can
-    render "and N more…". ``error`` is empty on success paths."""
+    """Where a piece of text (e.g. pasted code) occurs in the project.
 
-    matches: list[SearchCodeMatch] = []
-    truncated: bool = False
-    error: str = ""
+    Text shorter than 5 characters is not searched and gives an empty
+    result."""
+
+    matches: list[SearchCodeMatch] = Field(
+        default=[], description="The matches found, up to the limit."
+    )
+    truncated: bool = Field(
+        default=False,
+        description="`true` when the result limit was hit or the search timed out, so there may be more matches.",
+    )
+    error: str = Field(
+        default="", description="Why the search failed, e.g. `search timed out`; empty on success."
+    )
 
     @classmethod
     def timed_out(cls) -> SearchCodeResult:

@@ -271,6 +271,7 @@ TYPES = (
     typedef(
         "Toast",
         "A transient message on screen.",
+        field("type", "str", "Always `toast`: what this is."),
         field("id", "str"),
         field("text", "str", "Its first line."),
         field("kind", "str", "`info`, `success`, `warning` or `error`."),
@@ -291,6 +292,7 @@ TYPES = (
         "A dialog on screen: igni's own (`spec.kind` is `update`) or an extension's "
         "(`show_dialog`). One at a time; a new one replaces the last, which closes "
         "unanswered.",
+        field("type", "str", "Always `dialog`: what this is."),
         field("id", "str"),
         field("spec", "json"),
         field("source", "str | None", "The extension that asked; `None` for igni.", optional=True),
@@ -916,14 +918,15 @@ TYPES = (
     ),
     typedef(
         "ModelEntry",
-        "One model in the registry — and never its credential: only where the key comes from.",
+        "One model in the registry — and never its credential: only whether it has a key.",
         field("model_id", "str"),
         field("provider", "str"),
         field("url", "str | None", "The endpoint, when the provider names one."),
         field(
-            "api_key_env",
-            "str | None",
-            "The environment variable the key is read from — its name, never the key.",
+            "has_api_key",
+            "bool",
+            "Whether the entry says where its key comes from. Never the key, "
+            "never the environment variable, never the command.",
         ),
         field("temperature", "float | None"),
         field("max_tokens", "int | None"),
@@ -933,6 +936,7 @@ TYPES = (
         field("thinking", "dict[str, json] | None", "How it is asked to think."),
         field("effort", "str | None"),
         field("prompt_caching", "bool"),
+        field("source", "str", "Where the entry came from: `cloud` or the local configuration."),
     ),
     typedef(
         "McpServer",
@@ -1085,7 +1089,12 @@ TYPES = (
         field("matcher", "str", "What it matches, when it matches something."),
         field("timeout_ms", "int"),
         field("background", "bool"),
-        field("headers", "dict[str, str]"),
+        field(
+            "header_names",
+            "list[str]",
+            "The names of the headers an `http` hook sends. Never their values, "
+            "which may be credentials.",
+        ),
     ),
     typedef(
         "PolicyPack",
@@ -1252,6 +1261,10 @@ TYPES = (
         "What a command in the project printed.",
         field("output", "str"),
         field("exit_code", "int"),
+        field("pid", "int | None", "The process's id, once it started; `null` when it could not."),
+        field(
+            "backgrounded", "bool", "`true` when the command is still running, in the background."
+        ),
     ),
 )
 

@@ -134,14 +134,27 @@ class HttpClientCloseResult(BaseModel):
     reason: str = ""
 
 
-class CancelAgentRunResult(BaseModel):
-    """Wire shape for :meth:`RunCoordinator.cancel_agent_run` —
-    the FE renders a toast on ``ok=False`` so ``error``
-    differentiates the unknown-run-id case from a live cancel
-    error."""
+class CancelRunResult(BaseModel):
+    """Result of cancelling the current turn: whether one was running."""
 
-    ok: bool
-    error: str = ""
+    cancelled: bool = Field(
+        description=(
+            "`true` when a turn was running and is being stopped: its stream "
+            "ends with an `info` and a `stream_end`. `false` when nothing was running."
+        )
+    )
+
+
+class CancelAgentRunResult(BaseModel):
+    """Result of cancelling one background agent run."""
+
+    ok: bool = Field(description="`true` when the agent run was found and cancelled.")
+    error: str = Field(
+        default="",
+        description=(
+            "Why the cancel failed, e.g. the run id is unknown; empty when `ok` is `true`."
+        ),
+    )
 
 
 class HookGateResult(BaseModel):

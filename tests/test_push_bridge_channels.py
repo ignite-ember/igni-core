@@ -90,7 +90,18 @@ class TestTheAwaitedChannels:
 
         [push] = bridge.transport.sent
         assert push.channel == PushChannel.LOGIN_STATUS
-        assert push.payload == {"text": "checking your credentials"}
+        assert push.payload == {"text": "checking your credentials", "flow_id": ""}
+
+    async def test_the_login_status_carries_the_sign_in_it_is_about(self):
+        """The sign-in a status is about is named by the ``flow_id``
+        the ``login`` call returned, so a client can tell two sign-ins
+        apart."""
+        bridge = _Bridge()
+
+        await bridge.bridge.on_login_status("checking your credentials", "flow-7")
+
+        [push] = bridge.transport.sent
+        assert push.payload["flow_id"] == "flow-7"
 
     async def test_the_login_result_carries_the_outcome(self):
         bridge = _Bridge()
@@ -99,7 +110,15 @@ class TestTheAwaitedChannels:
 
         [push] = bridge.transport.sent
         assert push.channel == PushChannel.LOGIN_RESULT
-        assert push.payload == {"success": True, "result": "logged in"}
+        assert push.payload == {"success": True, "result": "logged in", "flow_id": ""}
+
+    async def test_the_login_result_carries_the_sign_in_it_ends(self):
+        bridge = _Bridge()
+
+        await bridge.bridge.on_login_result(True, "logged in", "flow-7")
+
+        [push] = bridge.transport.sent
+        assert push.payload["flow_id"] == "flow-7"
 
     async def test_the_session_named_carries_the_session_and_the_name(self):
         bridge = _Bridge()

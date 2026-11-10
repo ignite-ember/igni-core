@@ -62,7 +62,8 @@ class PoolDirectories:
         """The session an attach gets, or why it is refused.
 
         With a directory, the session is recorded there before it is
-        created, so the runtime opens in it; a new one gets an id. With an
+        created, so the runtime opens in it; a new one gets an id, and an
+        existing one recorded in another directory is refused. With an
         id alone, the caller is restoring a session it was bound to (a
         window reloading), and a session of another project is refused:
         opening it would read that project's database inside this backend.
@@ -72,8 +73,18 @@ class PoolDirectories:
             wanted = Path(project_dir).expanduser()
             if not wanted.is_dir():
                 return AttachRefused(reason=f"not a directory: {project_dir}")
+            wanted = wanted.resolve()
+            if session_id:
+                existing = self._store.get_dir(session_id)
+                if existing and Path(existing).resolve() != wanted:
+                    # Recording it here would move the session to another
+                    # folder: its history would be read from one project and
+                    # its tools run in another.
+                    return AttachRefused(
+                        reason=f"session {session_id} belongs to {existing}, not to {project_dir}"
+                    )
             session_id = session_id or self._new_id()
-            self.record(session_id, wanted.resolve())
+            self.record(session_id, wanted)
             return session_id
         if not session_id:
             return self._new_id()

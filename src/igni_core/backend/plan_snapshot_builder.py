@@ -29,9 +29,9 @@ class PlanSnapshotBuilder:
         """Snapshot of the plan store + todos + display state for
         the FE panel.
 
-        ``state`` is ``"pending"`` when a plan exists (the FE
-        proves otherwise via ``approve_plan`` / ``dismiss_plan``)
-        and empty when no plan has been submitted yet. Never
+        ``state`` is the decision made on the latest plan
+        (``approved`` / ``dismissed``), ``pending`` while there is
+        none, and empty when no plan has been submitted yet. Never
         inferred from permission mode — a mode flip without an
         explicit user click leaves the plan pending.
         """
@@ -41,7 +41,7 @@ class PlanSnapshotBuilder:
             latest=latest,
             history=list(snap.history),
             tasks=self._session.todo_store.items,
-            state="pending" if latest else "",
+            state=self._session.plan_store.latest_state(),
         )
 
     def todos(self) -> list[TodoItemWire]:

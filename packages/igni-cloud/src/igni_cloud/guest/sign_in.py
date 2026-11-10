@@ -26,6 +26,7 @@ from igni_cloud.guest.ports import GuestTransport
 from igni_cloud.guest.resume import Restored, RestoreStep, RestoreWatch
 from igni_core.core.activity import background
 from igni_core.protocol import messages as msg
+from igni_core.protocol.schemas.enums import PushChannel
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,9 @@ class GuestCredential:
         if self._transport is not None:
             background.daemon(
                 self._transport.send(
-                    msg.PushNotification(channel="vm_credential", payload=change.model_dump())
+                    msg.PushNotification(
+                        channel=PushChannel.VM_CREDENTIAL, payload=change.model_dump()
+                    )
                 ),
                 name="push-vm-credential",
             )

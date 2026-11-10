@@ -27,6 +27,7 @@ from igni_core.backend.server import BackendServer
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
 from igni_core.core.activity import background
 from igni_core.core.broadcast_schema import BroadcastEvent
+from igni_core.core.run_context import CURRENT_RUN_ID
 from igni_core.core.tools.edit import (
     FileEditNotifier,
     default_file_edit_notifier,
@@ -144,12 +145,16 @@ class PushNotificationBridge:
 
     # ── Login channel ────────────────────────────────────────────
 
-    async def on_login_status(self, text: str) -> None:
-        await self._transport.send(msg.push_login_status(LoginStatusPayload(text=text)))
-
-    async def on_login_result(self, success: bool, result: str) -> None:
+    async def on_login_status(self, text: str, flow_id: str = "") -> None:
         await self._transport.send(
-            msg.push_login_result(LoginResultPayload(success=success, result=result))
+            msg.push_login_status(LoginStatusPayload(text=text, flow_id=flow_id))
+        )
+
+    async def on_login_result(self, success: bool, result: str, flow_id: str = "") -> None:
+        await self._transport.send(
+            msg.push_login_result(
+                LoginResultPayload(success=success, result=result, flow_id=flow_id)
+            )
         )
 
     # ── Scheduler channel ────────────────────────────────────────
@@ -356,14 +361,20 @@ class PushNotificationBridge:
         backend.wire_orchestrate_progress(self.on_orchestrate_progress)
         self.bind_to_broadcast_bus(backend)
 
-    def notifications_changed(self, counts: NotificationCounts) -> None:
-        """The floor's unread counts, after either path moved them."""
-        self._schedule_push(
-            msg.push_on(
-                PushChannel.NOTIFICATIONS_CHANGED,
-                NotificationsChanged(counts=counts).model_dump(),
-            )
+    def notifications_changed(self, change: NotificationsChanged | NotificationCounts) -> None:
+        """The floor's unread counts, after either path moved them, and why.
+
+        The floor's centre hands over the whole change — the counts and
+        what moved them — so a client can say *why* its badge moved and
+        not only that it did. A caller that holds the counts alone hands
+        those over instead, and the counts alone are what goes out.
+        """
+        payload = (
+            {"counts": change.model_dump()}
+            if isinstance(change, NotificationCounts)
+            else change.model_dump()
         )
+        self._schedule_push(msg.push_on(PushChannel.NOTIFICATIONS_CHANGED, payload))
 
     def workspace_trust(self, status: WorkspaceTrustStatus) -> None:
         """The folder's workspace-trust status, after an answer (or when a
@@ -387,6 +398,14 @@ class PushNotificationBridge:
         The push arrives already built: the channel and its payload
         were bound together by the factory that made it, so there is
         nothing left to pair up here."""
+
+        # Read here, in the caller's context: the hop onto the loop loses it.
+        run_id = CURRENT_RUN_ID.get()
+        if run_id and not push.run_id:
+            # The push belongs to the run that raised it, so a client can
+            # fold it into that run's item. A push that already names a
+            # run keeps the one it names.
+            push = push.model_copy(update={"run_id": run_id})
 
         def _send() -> None:
             # A message to the windows: too short to count as busy.

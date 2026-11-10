@@ -187,9 +187,12 @@ class FakeScheduler:
         self.executed: list[str] = []
         self.cancelled: list[str] = []
         self.stopped = False
+        #: The run id each execution was asked for, in the order they came.
+        self.run_ids: list[str] = []
 
-    async def execute(self, description: str) -> str:
+    async def execute(self, description: str, run_id: str = "") -> str:
         self.executed.append(description)
+        self.run_ids.append(run_id)
         return f"ran {description}"
 
     async def cancel(self, task_id: str) -> str:

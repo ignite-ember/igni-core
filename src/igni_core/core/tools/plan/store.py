@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -97,6 +97,10 @@ class PlanStore:
     # source of truth for plan state — never inferred from mode,
     # never from message content.
     decisions: dict[str, PlanDecision] = field(default_factory=dict)
+    #: The run that submitted :attr:`latest`, when it is known (a plan
+    #: read back from history knows it; a fresh submission learns it from
+    #: the decision made on it).
+    latest_run_id: str = ""
     #: Submissions rejected since the agent last entered plan mode —
     #: what a ``PlanSubmit`` hook is told as ``attempt``.
     rejected: int = 0
@@ -106,12 +110,21 @@ class PlanStore:
     # indefinitely.
     _max_history: int = 10
 
-    def set_plan(self, plan: str) -> None:
+    def set_plan(self, plan: str, run_id: str = "") -> None:
         if self.latest:
             self.history.append(self.latest)
             if len(self.history) > self._max_history:
                 self.history = self.history[-self._max_history :]
         self.latest = plan
+        self.latest_run_id = run_id
+
+    def latest_state(self) -> Literal["", "pending", "approved", "dismissed"]:
+        """The latest plan's state: empty with no plan, the decision made
+        on it, or ``pending`` while there is none."""
+        if not self.latest:
+            return ""
+        decision = self.decisions.get(self.latest_run_id) if self.latest_run_id else None
+        return decision.value if decision is not None else "pending"
 
     def reset_rejections(self) -> None:
         """Forget the rejections — the count belongs to one plan.
@@ -150,6 +163,18 @@ class PlanStore:
             valid = tuple(d.value for d in PlanDecision)
             raise ValueError(f"decision must be one of {valid}, got {decision!r}") from exc
         self.decisions[run_id] = value
+        # A decision is made on the plan the person sees, the latest:
+        # a fresh submission's run is known from here on.
+        if self.latest and not self.latest_run_id:
+            self.latest_run_id = run_id
+
+    def forget_decision(self, run_id: str, previous: PlanDecision | None) -> None:
+        """Put ``run_id``'s decision back to ``previous`` — a decision that
+        could not be kept is not one."""
+        if previous is None:
+            self.decisions.pop(run_id, None)
+        else:
+            self.decisions[run_id] = previous
 
     def get_decision(self, run_id: str) -> str | None:
         """Return the recorded decision (as its wire string) or

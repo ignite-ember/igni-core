@@ -28,8 +28,10 @@ class VisualizationActionDispatchedEvent(BroadcastEvent):
     and dev tools can observe component interactions."""
 
     channel: Literal["visualization_action_dispatched"] = "visualization_action_dispatched"
-    action: str
-    params: dict[str, JsonValue]
+    action: str = Field(description="Name of the action the user triggered in the visualization.")
+    params: dict[str, JsonValue] = Field(
+        description="Parameters the visualization attached to the action."
+    )
 
     @classmethod
     def of(cls, entry: VisualizationAction) -> VisualizationActionDispatchedEvent:
@@ -37,13 +39,16 @@ class VisualizationActionDispatchedEvent(BroadcastEvent):
 
 
 class VisualizationActionResult(BaseModel):
-    """Wire shape for :meth:`VisualizationActionBus.dispatch` —
-    the FE's tool result echo of the action name + user-supplied
-    params so it can render "you clicked X" in the conversation."""
+    """Confirmation that a visualization action was dispatched.
 
-    ok: bool
-    action: str
-    params: dict[str, JsonValue] = Field(default_factory=dict)
+    Echoes the action and its parameters, e.g. to show "you clicked X"
+    in the conversation."""
+
+    ok: bool = Field(description="`true` when the action was dispatched.")
+    action: str = Field(description="Name of the action.")
+    params: dict[str, JsonValue] = Field(
+        default_factory=dict, description="Parameters attached to the action."
+    )
 
     @classmethod
     def echo(cls, entry: VisualizationAction) -> VisualizationActionResult:

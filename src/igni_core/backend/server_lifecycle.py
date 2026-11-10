@@ -76,6 +76,10 @@ class LifecycleController:
             session=session,
             scheduler_stop=scheduler_stop,
         )
+        # The first teardown's outcome. A session is torn down once: the
+        # ``shutdown`` call, the pool evicting it and igni exiting can each
+        # ask, and ``SessionEnd`` must not fire twice.
+        self._shutdown: ShutdownResult | None = None
 
     async def startup(self) -> None:
         """Async post-construction hook.
@@ -116,7 +120,10 @@ class LifecycleController:
         return summary
 
     async def shutdown(self) -> ShutdownResult:
-        """Graceful shutdown — disconnect MCP, fire hooks, kill bg processes.
+        """Graceful shutdown — fire hooks, clean the agent pool, disconnect
+        MCP, stop the scheduler. Once: a later call answers the first
+        teardown's outcome and runs nothing again. Background processes
+        are igni's, and end when igni does (``BackendSupervisor.teardown``).
 
         Returns a typed :class:`ShutdownResult` so cleanup failures
         are observable outcomes rather than silent swallows. The
@@ -124,4 +131,6 @@ class LifecycleController:
         best-effort (an exception in one step is recorded and the
         runner moves on).
         """
-        return await self._shutdown_pipeline.run()
+        if self._shutdown is None:
+            self._shutdown = await self._shutdown_pipeline.run()
+        return self._shutdown

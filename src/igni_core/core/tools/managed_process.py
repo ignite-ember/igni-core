@@ -288,7 +288,10 @@ class ManagedProcess:
             self._log_file = None
 
     def read(self, tail: int = 100) -> str:
-        """Return the last ``tail`` lines of output."""
+        """Return the last ``tail`` lines of output; none for ``tail`` below one
+        (``output[-0:]`` is all of it)."""
+        if tail < 1:
+            return ""
         with self.lock:
             lines = self.output[-tail:]
         return "\n".join(lines)

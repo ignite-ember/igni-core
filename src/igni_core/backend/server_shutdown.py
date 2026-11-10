@@ -122,20 +122,6 @@ class SchedulerStopStep(ShutdownStep):
         result.mark_scheduler_stopped()
 
 
-class ShellCleanupStep(ShutdownStep):
-    """Kill any orphan background processes left by shell tools."""
-
-    label: ClassVar[str] = "shell_cleanup"
-
-    async def _run(self, session: Session, result: ShutdownResult) -> None:
-        # The session's supervisor — the one the backend process
-        # shares — holds every process the shell tools registered.
-        killed = session.supervisor.registry.kill_all()
-        result.record_shell_kills(killed)
-        if killed:
-            logger.info("Shutdown: killed %d background process(es)", killed)
-
-
 class ShutdownPipeline:
     """Ordered driver for a fixed set of :class:`ShutdownStep`.
 
@@ -160,7 +146,6 @@ class ShutdownPipeline:
         ]
         if scheduler_stop is not None:
             steps.append(SchedulerStopStep(scheduler_stop))
-        steps.append(ShellCleanupStep())
         self._steps: list[ShutdownStep] = steps
 
     async def run(self) -> ShutdownResult:
@@ -176,7 +161,6 @@ __all__ = [
     "PoolCleanupStep",
     "SchedulerStopStep",
     "SessionEndHookStep",
-    "ShellCleanupStep",
     "ShutdownPipeline",
     "ShutdownStep",
 ]

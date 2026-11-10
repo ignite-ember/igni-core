@@ -45,14 +45,17 @@ def refused(reply: Any, code: str) -> str:
 
 class TestTheModelRegistryRow:
     async def test_the_key_is_not_published(self, rig: HostRig) -> None:
-        """The row names the variable the key is read from, never the key."""
+        """The row says whether the entry has a key, and never the key,
+        nor where it comes from."""
         ext = rig.install(host=EVERYTHING, workspace="read")
         registry = ok(await rig.ask(ext, "get", "models.registry"))
         large = registry["registry"]["large"]
         assert "api_key" not in large
         assert "api_key_cmd" not in large
-        assert large["api_key_env"] == "LARGE_KEY"
+        assert "api_key_env" not in large
+        assert large["has_api_key"] is True
         assert "sk-secret" not in str(registry)
+        assert "LARGE_KEY" not in str(registry)
 
     async def test_an_unknown_model_is_refused(self, rig: HostRig) -> None:
         """A model igni does not have is refused by name, not switched to."""

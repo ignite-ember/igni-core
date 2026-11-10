@@ -21,6 +21,21 @@ from igni_core.extensions.registry import ExtensionRefused
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Message
+from igni_core.protocol.rpc import RpcAccess, RpcMethod
+
+
+def access_of(method: RpcMethod) -> RpcAccess:
+    """Who may call ``method``, as the sets this gate and the standing
+    policy enforce: the narrowest that applies."""
+    if method in PLATFORM_RPCS:
+        return RpcAccess.PLATFORM
+    if method in PAGE_RPCS:
+        return RpcAccess.PAGE
+    if method in standing_policy.WINDOW_ONLY_RPCS:
+        return RpcAccess.WINDOW
+    if method in standing_policy.APPROVAL_RPCS:
+        return RpcAccess.APPROVER
+    return RpcAccess.CLIENT
 
 
 class MessageAdmission:

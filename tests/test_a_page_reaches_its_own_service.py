@@ -397,8 +397,7 @@ async def test_the_rpc_answers_the_caller_s_own_service(two_pages, exchange):
     request = msg.RPCRequest(
         id="r1",
         method=RpcMethod.EXTENSION_SERVICE_TOKEN,
-        # An audience in the arguments is not read: the caller decides.
-        args={"audience": LEDGER},
+        args={},
         caller="acme.notes",
     )
     request.mark_from("ws-page")
@@ -425,3 +424,16 @@ async def test_the_rpc_says_when_there_is_no_service(two_pages, exchange):
     result = (await rpc.answer(request)).wire_result()
     assert result["ok"] is False
     assert "no service" in result["error"]
+
+
+async def test_the_rpc_takes_no_audience(two_pages, exchange):
+    """The caller decides the audience: a page naming one is refused, not obeyed."""
+    rpc = PageTokenRpc(PageServiceTokens(origins=two_pages, exchange=exchange))
+    request = msg.RPCRequest(
+        id="r1",
+        method=RpcMethod.EXTENSION_SERVICE_TOKEN,
+        args={"audience": LEDGER},
+        caller="acme.notes",
+    )
+    answer = await rpc.answer(request)
+    assert "'audience' is not an argument" in answer.error

@@ -187,7 +187,7 @@ class RehydrateController:
         if found is None:
             return RehydrateOutcome(ok=True, step="plan_store", reason="no plan in history")
         plan_args, run_id = found
-        store.set_plan(plan_args.plan)
+        store.set_plan(plan_args.plan, run_id=run_id or "")
         if plan_args.tasks is not None:
             # The plan's rows go through the same validation the
             # todo tool uses — a row that cannot be used is

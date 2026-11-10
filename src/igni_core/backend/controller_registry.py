@@ -206,6 +206,7 @@ class ControllerRegistry:
         loop = LoopController(
             session=session,
             settings=settings,
+            as_run=runs.run_unstreamed,
             gate=gate,
         )
 

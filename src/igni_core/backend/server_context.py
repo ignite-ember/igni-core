@@ -259,8 +259,10 @@ class ContextController:
 
         Idempotent: deleting a row that no longer exists returns
         ``ok=True`` so the FE can stop polling / re-trying. The
-        row is matched by ``message_id`` (the wire-level id we
-        exposed via :meth:`get_interrupted_runs`).
+        row is matched by ``session_id`` and ``message_id`` (the
+        wire-level id we exposed via :meth:`get_interrupted_runs`),
+        and only an interrupted run is deleted. A storage failure is
+        ``ok=False`` with the error.
 
         Does NOT touch other interrupted rows for the session —
         only the one the user picked. The "discard all" semantics
@@ -270,7 +272,7 @@ class ContextController:
         if not message_id:
             return DiscardInterruptedRunResult(ok=False, error="message_id is required")
         try:
-            await self._pending_store.adiscard(message_id)
+            await self._pending_store.adiscard_interrupted(session_id, message_id)
         except SQLAlchemyError as exc:
             logger.warning("discard_interrupted_run failed: %s", exc)
             return DiscardInterruptedRunResult(ok=False, error=str(exc))

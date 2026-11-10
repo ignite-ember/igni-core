@@ -226,7 +226,7 @@ class PluginController:
 
     # ── Install / update / remove ──────────────────────────────────
 
-    def install(
+    async def install(
         self,
         ref: str,
         install_ref: str | None = None,
@@ -238,7 +238,35 @@ class PluginController:
         refs may carry a default ``branch`` in the catalog; honored
         only when ``install_ref`` is omitted so explicit user choice
         wins.
+
+        The clone runs in a worker thread — on the event loop it held up
+        every session — and the session reloads its plugins on the loop.
         """
+        fetched = await asyncio.to_thread(self._fetch_install, ref, install_ref)
+        if isinstance(fetched, msg.Info):
+            return fetched
+        manifest = fetched
+        version = f" v{manifest.version}" if manifest.version else ""
+        # Hot-reload — pull the new plugin's skills / agents / hooks /
+        # MCP configs / custom tools into the running session so the
+        # user can use them immediately. ``reload_plugins`` rebuilds
+        # the main team at the end, and auto-connects any new MCP
+        # servers in the background (the existing approval prompt
+        # gates first-use, so consent is still required).
+        counts = self._session.reload_plugins()
+        return msg.Info(
+            text=(
+                f"Installed plugin '{manifest.name}'{version}. "
+                f"Active now — {counts.skills} skill(s), "
+                f"{counts.agents} agent(s), {counts.hooks} hook(s). "
+                f"Any bundled MCP servers are starting in the background."
+            )
+        )
+
+    def _fetch_install(
+        self, ref: str, install_ref: str | None
+    ) -> _plugin_installer.PluginManifest | msg.Info:
+        """Resolve and clone the plugin; its manifest, or the refusal to show."""
         data_dir = self._session.settings.storage.data_dir
         installer = _plugin_installer.PluginInstaller(
             data_dir=data_dir,
@@ -268,35 +296,29 @@ class PluginController:
             return msg.Info(text=policy.refusal(url))
 
         try:
-            manifest = installer.install(url, ref=install_ref, subdir=subdir)
+            return installer.install(url, ref=install_ref, subdir=subdir)
         except GitError as e:
             return msg.Info(text=f"git error: {e}")
         except _plugin_installer.PluginError as e:
             return msg.Info(text=str(e))
 
-        version = f" v{manifest.version}" if manifest.version else ""
-        # Hot-reload — pull the new plugin's skills / agents / hooks /
-        # MCP configs / custom tools into the running session so the
-        # user can use them immediately. ``reload_plugins`` rebuilds
-        # the main team at the end, and auto-connects any new MCP
-        # servers in the background (the existing approval prompt
-        # gates first-use, so consent is still required).
-        counts = self._session.reload_plugins()
-        return msg.Info(
-            text=(
-                f"Installed plugin '{manifest.name}'{version}. "
-                f"Active now — {counts.skills} skill(s), "
-                f"{counts.agents} agent(s), {counts.hooks} hook(s). "
-                f"Any bundled MCP servers are starting in the background."
-            )
-        )
-
-    def update(
+    async def update(
         self,
         name: str,
         install_ref: str | None = None,
     ) -> msg.Info:
-        """Fetch + reset to ``install_ref`` (default: origin's HEAD)."""
+        """Fetch + reset to ``install_ref`` (default: origin's HEAD); the
+        fetch in a worker thread, the reload on the loop."""
+        fetched = await asyncio.to_thread(self._fetch_update, name, install_ref)
+        if isinstance(fetched, msg.Info):
+            return fetched
+        # Hot-reload so the updated plugin's contents replace the
+        # old ones in the live session.
+        self._session.reload_plugins()
+        return msg.Info(text=f"Updated '{name}' to {fetched[:12]}. Active now.")
+
+    def _fetch_update(self, name: str, install_ref: str | None) -> str | msg.Info:
+        """The plugin moved to ``install_ref``: its new commit, or the refusal."""
         installer = _plugin_installer.PluginInstaller(
             data_dir=self._session.settings.storage.data_dir,
             source_policy=PluginSourcePolicy.from_settings(self._session.settings),
@@ -304,23 +326,19 @@ class PluginController:
         if not installer.is_git_available():
             return msg.Info(text="git not found on PATH.")
         try:
-            new_sha = installer.update(name, ref=install_ref)
+            return installer.update(name, ref=install_ref)
         except GitError as e:
             return msg.Info(text=f"git error: {e}")
         except _plugin_installer.PluginError as e:
             return msg.Info(text=str(e))
-        # Hot-reload so the updated plugin's contents replace the
-        # old ones in the live session.
-        self._session.reload_plugins()
-        return msg.Info(text=f"Updated '{name}' to {new_sha[:12]}. Active now.")
 
-    def remove(self, name: str) -> msg.Info:
-        """Delete the plugin directory and clear its pin."""
+    async def remove(self, name: str) -> msg.Info:
+        """Delete the plugin directory (in a worker thread) and clear its pin."""
         installer = _plugin_installer.PluginInstaller(
             data_dir=self._session.settings.storage.data_dir,
         )
         try:
-            installer.remove(name)
+            await asyncio.to_thread(installer.remove, name)
         except _plugin_installer.PluginError as e:
             return msg.Info(text=str(e))
         # Hot-reload so the removed plugin's skills/agents/hooks

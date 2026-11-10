@@ -186,8 +186,17 @@ class TestBroadcastSinkShape:
         await asyncio.sleep(0.01)
 
         assert [p.channel for p in transport.sent] == ["permission_mode_changed"] * 2
-        assert transport.sent[0].payload == {"mode": "plan", "previous": "default"}
-        assert transport.sent[1].payload == {"mode": "plan", "source": "agent", "reason": "r"}
+        assert transport.sent[0].payload == {
+            "kind": "switched",
+            "mode": "plan",
+            "previous": "default",
+        }
+        assert transport.sent[1].payload == {
+            "kind": "plan_mode_entered",
+            "mode": "plan",
+            "source": "agent",
+            "reason": "r",
+        }
 
     async def test_zero_subscribers_drops_silently(self) -> None:
         # The pre-fix behavior: no callback registered → broadcast
