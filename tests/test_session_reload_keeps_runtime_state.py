@@ -62,7 +62,7 @@ def test_output_style_survives_a_plugin_reload(session, tmp_path: Path) -> None:
     PluginBuilder(session).build_plugins_and_styles()
     assert session.output_style.active == "default"
 
-    assert "Error" not in session.mode.set_output_style("terse")
+    assert session.mode.set_output_style("terse").refused is False
     assert session.output_style.active == "terse"
 
     session.reload_plugins()

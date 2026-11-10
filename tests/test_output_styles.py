@@ -150,23 +150,27 @@ class TestSetOutputStyle:
 
     def test_switch_to_known_style(self):
         session = self._session()
-        msg = session.mode.set_output_style("explanatory")
-        assert "default" in msg and "explanatory" in msg
+        switch = session.mode.set_output_style("explanatory")
+        assert "default" in switch.text and "explanatory" in switch.text
+        assert switch.refused is False
+        assert switch.changed is True
         assert session.output_style.active == "explanatory"
 
     def test_switch_to_unknown_returns_available_list(self):
         session = self._session()
-        msg = session.mode.set_output_style("nonexistent")
-        assert "Error" in msg
-        assert "default" in msg  # listed as available
-        assert "explanatory" in msg
+        switch = session.mode.set_output_style("nonexistent")
+        assert switch.refused is True
+        assert "Error" in switch.text
+        assert "default" in switch.text  # listed as available
+        assert "explanatory" in switch.text
         # State unchanged.
         assert session.output_style.active == "default"
 
     def test_no_op_when_already_active(self):
         session = self._session()
-        msg = session.mode.set_output_style("default")
-        assert "already" in msg.lower()
+        switch = session.mode.set_output_style("default")
+        assert switch.changed is False
+        assert "already" in switch.text.lower()
 
     def test_hot_patches_team_instructions(self):
         """When the main team exists, switching styles strips

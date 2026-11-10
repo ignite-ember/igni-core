@@ -97,7 +97,7 @@ class BackendServer:
         supervisors: SupervisorLocator | None = None,
         gate: RunGate | None = None,
         tool_hints: ToolHintsRegistry | None = None,
-    ):
+    ) -> None:
         # The supervisor this backend process shares. The backend's
         # composition root builds one locator per process and hands it
         # here; a server built on its own gets a locator of its own,
@@ -291,13 +291,15 @@ class BackendServer:
         Before the hook so the hook and the first turn see the same
         configuration. A failed revalidation leaves the cached pack in
         place: a session that will not start is worse than one running a
-        slightly stale pack.
+        slightly stale pack. The failure comes back in the result — the
+        pack is stale, not the session broken — so it is read here, not
+        caught.
         """
-        try:
-            await self.controllers.group_policy.revalidate_for_new_dialogue()
-        except Exception:
+        outcome = await self.controllers.group_policy.revalidate_for_new_dialogue()
+        if outcome.error:
             logger.warning(
-                "group-policy revalidation failed; continuing with cached pack", exc_info=True
+                "group-policy revalidation failed; continuing with the cached pack: %s",
+                outcome.error,
             )
         await self._session.fire_session_start_hook()
 

@@ -50,10 +50,10 @@ receive the same ``db`` and ``session_id``.
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
 
 from igni_core.backend.schemas_model import ModelSwitchResult
 from igni_core.core.broadcast_schema import BroadcastEvent, BroadcastSink
+from igni_core.core.config.group_policy.revalidation import PolicyRevalidation
 from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
 from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.events import HookEvent
@@ -91,7 +91,10 @@ class Session(SessionSurface):
     #: Fired when a new dialogue begins — set by the backend, the only
     #: layer that can reach the portal. ``/clear`` rotates the session id
     #: in-process and never passes through the session-start RPC.
-    on_new_dialogue: Callable[[], Awaitable[Any]] | None
+    #: The hook revalidates the group pack, so it answers with what
+    #: that attempt did: the portal being unreachable is an expected
+    #: failure and comes back in the result, not as an exception.
+    on_new_dialogue: Callable[[], Awaitable[PolicyRevalidation]] | None
 
     def __init__(
         self,

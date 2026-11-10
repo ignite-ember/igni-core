@@ -152,10 +152,10 @@ class ContextCommand:
             return CommandResult.error(
                 "Usage: /output-style <name> (or `/output-style list` to see options)."
             )
-        status_line = self._session.mode.set_output_style(target_name)
-        if status_line.startswith("Error"):
-            return CommandResult.error(status_line)
-        return CommandResult.info(status_line)
+        switch = self._session.mode.set_output_style(target_name)
+        if switch.refused:
+            return CommandResult.error(switch.text)
+        return CommandResult.info(switch.text)
 
 
 # ── Public shim entry points ─────────────────────────────────────

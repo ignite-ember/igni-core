@@ -24,6 +24,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine, MutableSequence
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from igni_core.backend.schemas_rpc import SessionPoolConfig
@@ -34,11 +35,6 @@ from igni_core.backend.schemas_sessions import (
     ShutdownReport,
     TransportLike,
 )
-
-# Re-export for one release cycle so any lagging in-tree importer of
-# ``session_pool.SessionStampingTransport`` keeps working. New code
-# should import from :mod:`session_stamping_transport` directly.
-from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.core.activity import BusyKind, background
 
 if TYPE_CHECKING:
@@ -130,6 +126,15 @@ class SessionRuntime:
         """
         return self.last_used_at < cutoff
 
+    def idle_seconds(self, now: float) -> float:
+        """How long this runtime has been idle, as of ``now``.
+
+        The eviction report says how long a session sat untouched
+        before it was dropped. The timestamp is the runtime's to
+        read: the pool asks, rather than reaching for the field.
+        """
+        return now - self.last_used_at
+
     # ── State mutations ──────────────────────────────────────────
 
     def touch(self, now: float) -> None:
@@ -153,11 +158,15 @@ class SessionRuntime:
         if target:
             self.known_ids.add(target)
 
-    def record_dir_registered(self, session_id: str, project_dir: object) -> bool:
+    def record_dir_registered(self, session_id: str, project_dir: str | Path) -> bool:
         """Compare-and-swap the (session_id, project_dir) dedupe key.
 
         Returns ``True`` when the key changed (caller writes the
         dir registry), ``False`` on a repeat call.
+
+        The key is the directory as a string, so a backend that
+        reports a ``Path`` and one that reports a ``str`` for the
+        same folder agree on it.
         """
         key = (session_id, str(project_dir))
         if key == self.last_dir_registered:
@@ -316,7 +325,7 @@ class SessionPool:
         async with self._create_lock:
             now = self._clock()
             cutoff = now - self._idle_timeout
-            keep: list[SessionRuntime] = [self._runtimes[0]]
+            keep: list[SessionRuntime] = [self.default]
             evicted: list[EvictedRuntimeReport] = []
             for rt in self._runtimes[1:]:
                 if not rt.is_idle_since(cutoff):
@@ -327,7 +336,7 @@ class SessionPool:
                     # up once the run finishes and idle time grows.
                     keep.append(rt)
                     continue
-                idle_seconds = now - rt.last_used_at
+                idle_seconds = rt.idle_seconds(now)
                 report = await rt.shutdown_safely()
                 if not report.ok:
                     logger.debug(
@@ -368,5 +377,4 @@ class SessionPool:
 __all__ = [
     "SessionPool",
     "SessionRuntime",
-    "SessionStampingTransport",
 ]

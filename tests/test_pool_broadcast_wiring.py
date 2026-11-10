@@ -27,8 +27,8 @@ from igni_core.backend.pool_directories import PoolDirectories
 from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.schemas_pool import ProjectDirs
-from igni_core.backend.session_pool import SessionStampingTransport
 from igni_core.backend.session_runtime_factory import SessionRuntimeFactory
+from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.core.broadcast_schema import BroadcastEvent
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.settings import Settings

@@ -298,7 +298,8 @@ class TestRevalidationCannotStopASessionStarting:
         ctrl.hydrate = never_returns  # type: ignore[method-assign]
 
         result = await asyncio.wait_for(ctrl.revalidate_for_new_dialogue(), timeout=2)
-        assert result is False, "a timeout is not a refresh"
+        assert result.changed is False, "a timeout is not a refresh"
+        assert result.error is not None, "the timeout is reported, not hidden"
 
     @pytest.mark.asyncio
     async def test_a_raising_server_does_not_propagate(self, tmp_path: Path):
@@ -308,7 +309,9 @@ class TestRevalidationCannotStopASessionStarting:
             raise RuntimeError("portal is down")
 
         ctrl.hydrate = boom  # type: ignore[method-assign]
-        assert await ctrl.revalidate_for_new_dialogue() is False
+        result = await ctrl.revalidate_for_new_dialogue()
+        assert result.changed is False
+        assert "portal is down" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_no_token_means_no_request(self, tmp_path: Path):
@@ -317,7 +320,9 @@ class TestRevalidationCannotStopASessionStarting:
         called = AsyncMock()
         ctrl.hydrate = called  # type: ignore[method-assign]
 
-        assert await ctrl.revalidate_for_new_dialogue() is False
+        result = await ctrl.revalidate_for_new_dialogue()
+        assert result.changed is False
+        assert result.error is None, "nothing was asked, so nothing failed"
         called.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -331,7 +336,9 @@ class TestRevalidationCannotStopASessionStarting:
             return True
 
         ctrl.hydrate = record  # type: ignore[method-assign]
-        assert await ctrl.revalidate_for_new_dialogue() is True
+        result = await ctrl.revalidate_for_new_dialogue()
+        assert result.changed is True
+        assert result.error is None
         assert seen.get("force") is True
 
 
@@ -353,5 +360,7 @@ class TestTheTokenComesFromTheSignedInSession:
         )
         sync.hydrate = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
-        assert await sync.revalidate_for_new_dialogue() is True
+        result = await sync.revalidate_for_new_dialogue()
+        assert result.changed is True
+        assert result.error is None
         sync.hydrate.assert_awaited_once_with("t", force=True)

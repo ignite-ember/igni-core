@@ -29,6 +29,7 @@ list itself.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
@@ -40,12 +41,15 @@ from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.output_style_selection import OutputStyleSelection
 from igni_core.core.session.schemas import (
     OutputStyleChangedEvent,
+    OutputStyleSwitch,
     PermissionModeChangedEvent,
     PermissionModeSwitch,
 )
 
 if TYPE_CHECKING:
     from agno.agent import Agent
+
+logger = logging.getLogger(__name__)
 
 
 class OutputStyleInstructionsPatcher:
@@ -122,14 +126,34 @@ class RuntimeModeCoordinator:
         # (where ``off`` returns to) and the organisation's mode policy
         # (the floor and ``allow_bypass``).
         perms = deps.permissions
-        self._starting_mode: PermissionMode | None = None
-        if perms is not None:
-            try:
-                self._starting_mode = PermissionMode(perms.mode)
-            except ValueError:
-                self._starting_mode = None
+        self._starting_mode = self._resolve_starting_mode(perms)
         policy = perms.mode_policy if perms is not None else None
         self._policy: ModePolicy = policy if isinstance(policy, ModePolicy) else ModePolicy()
+
+    def _resolve_starting_mode(self, perms: PermissionsConfig | None) -> PermissionMode:
+        """The mode the session started in — where ``/accept off`` and
+        friends return to.
+
+        Resolved once, here, so the answer cannot drift as the mode
+        changes: reading :attr:`starting_mode` is a read, not a
+        decision that writes what it read.
+
+        A configured mode that is not a mode is named in a warning: a
+        setting the user wrote and that never applies is one they
+        believe is protecting them. The session starts in the default
+        mode instead.
+        """
+        if perms is None:
+            return PermissionMode.DEFAULT
+        try:
+            return PermissionMode(perms.mode)
+        except ValueError:
+            logger.warning(
+                "configured permission mode %r is not a known mode; starting in %s",
+                perms.mode,
+                PermissionMode.DEFAULT.value,
+            )
+            return PermissionMode.DEFAULT
 
     @property
     def policy(self) -> ModePolicy:
@@ -139,27 +163,31 @@ class RuntimeModeCoordinator:
     @property
     def starting_mode(self) -> PermissionMode:
         """The mode this session started in — where ``/accept off`` and
-        friends return to."""
-        if self._starting_mode is None:
-            mode = self._deps.evaluator_ref().mode
-            self._starting_mode = (
-                mode if isinstance(mode, PermissionMode) else PermissionMode.DEFAULT
-            )
+        friends return to.
+
+        Fixed at session start: the mode a session begins in is a fact
+        about that session, not a reading of wherever the mode is now.
+        """
         return self._starting_mode
 
-    def set_output_style(self, name: str) -> str:
+    def set_output_style(self, name: str) -> OutputStyleSwitch:
         """Switch the active output style at runtime.
 
-        Returns a short status string for the slash command to echo.
-        Unknown style names produce a list of available options.
+        Returns an :class:`OutputStyleSwitch`: whether the switch was
+        refused or changed anything, and the status line for the
+        caller (the slash command) to surface. An unknown style name
+        is refused, and the refusal lists the names that do exist.
         """
         selection = self._deps.output_style
         clean = (name or "").strip()
         if clean not in selection.styles:
             available = sorted(selection.styles)
-            return (
-                f"Error: unknown output style {clean!r}. "
-                f"Available: {', '.join(available) if available else '(none configured)'}"
+            return OutputStyleSwitch(
+                refused=True,
+                text=(
+                    f"Error: unknown output style {clean!r}. "
+                    f"Available: {', '.join(available) if available else '(none configured)'}"
+                ),
             )
         prev = selection.active
         selection.select(clean)
@@ -172,8 +200,8 @@ class RuntimeModeCoordinator:
         # chip (parallel to permission_mode_changed).
         self._deps.bus.emit(OutputStyleChangedEvent(style=clean, previous=prev))
         if prev == clean:
-            return f"Output style already {clean}."
-        return f"Output style: {prev or '(none)'} → {clean}."
+            return OutputStyleSwitch(text=f"Output style already {clean}.")
+        return OutputStyleSwitch(changed=True, text=f"Output style: {prev or '(none)'} → {clean}.")
 
     def set_permission_mode(self, mode: str) -> PermissionModeSwitch:
         """Flip the live ``PermissionEvaluator`` mode (e.g. into or
@@ -199,9 +227,6 @@ class RuntimeModeCoordinator:
         refusal = self._policy.refusal(new_mode)
         if refusal is not None:
             return PermissionModeSwitch(refused=True, text=refusal)
-        # Pin the starting mode before the first switch changes what the
-        # evaluator would report.
-        _ = self.starting_mode
         evaluator = self._deps.evaluator_ref()
         prev = evaluator.mode
         evaluator.set_mode(new_mode)
