@@ -22,13 +22,13 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.backend.schemas_run import (
-    MediaAttachments,
     ModelConfig,
     PromptBuildResult,
 )
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.utils.attachment_store import AttachmentReferences, Attachments
 from igni_core.core.utils.media import MediaResolver
+from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.core.utils.mentions import process_file_mentions
 from igni_core.protocol import messages as msg
 

@@ -13,11 +13,12 @@ Consumers:
   ``is_active`` is what the FE's "processing?" question maps to.
 * :class:`MediaAttachments` — the ``media`` argument to
   ``run_message`` used to be ``dict[str, Any]``; now a typed model.
-  Moved down to :mod:`igni_core.core.utils.media_schemas` so
-  :class:`~igni_core.core.utils.media.MediaResolver` can produce
-  it directly (previously ``core/utils`` returned a raw dict and
-  ``backend`` validated it — a layer inversion). Re-exported from
-  here for wire-compat with pre-refactor importers.
+  It lives in :mod:`igni_core.core.utils.media_schemas` so
+  :class:`~igni_core.core.utils.media.MediaResolver` can produce it
+  directly (previously ``core/utils`` returned a raw dict and
+  ``backend`` validated it — a layer inversion). This module
+  imports it because :class:`PromptBuildResult` annotates it; every
+  other importer reads it from ``core.utils.media_schemas``.
 * :class:`UserPromptSubmitPayload` / :class:`StopHookPayload` — the
   hook fire payloads. Consumers include both the RunController
   natural-end path and :meth:`HitlController.resolve_batch` after
@@ -41,8 +42,9 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Re-export so ``from igni_core.backend.schemas_run import MediaAttachments``
-# still works after the media schema moved down into ``core/utils``.
+# ``PromptBuildResult`` annotates the media bundle, so this module
+# needs the class itself. Everyone else imports it from
+# ``igni_core.core.utils.media_schemas`` — the one home for it.
 from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.protocol import messages as msg
 
@@ -50,7 +52,6 @@ __all__ = [
     "CancelAgentRunResult",
     "HookGateResult",
     "HttpClientCloseResult",
-    "MediaAttachments",
     "ModelConfig",
     "PromptBuildResult",
     "RunPhase",
