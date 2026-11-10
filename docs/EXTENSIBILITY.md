@@ -349,7 +349,7 @@ There is no extension marketplace and no group policy that pushes one.
 **Never in the way.** The sync runs in the background. Not signed in,
 igni unreachable, a bundle that does not verify — each is logged and
 whatever is installed keeps running; a failed listing removes nothing.
-(`extensions/distribution.py`)
+(`extensions/distribution/`)
 
 **Trust is provenance.** A bundle igni distributed is trusted because
 its signature verified against the approved service's key, and the
@@ -931,7 +931,7 @@ These three are a promise. **Everything else about igni's appearance is not**, a
 | Prompt fragments, prompt overrides and edits as contributions | **shipped** (`extensions/contributions.py`, tied to `READY` rather than to being installed) |
 | Impact, and collisions settled by priority | **shipped** (`extensions/impact.py`; igni server's Services page) |
 | Manifest + validation | **shipped** (`docs/extension-manifest.schema.json` for the author's editor, `extensions/manifest.py` for the installer, held to each other by `tests/test_the_manifest_model_and_its_schema_agree.py`) |
-| Distribution from services (signed bundle, JWS verified against the approved service's key, sync at start-up and sign-in) | **shipped** (`extensions/distribution.py`, `extensions/bundle_signature.py`) — the manifest `signature` field and the Ed25519 trust store are removed |
+| Distribution from services (signed bundle, JWS verified against the approved service's key, sync at start-up and sign-in) | **shipped** (`extensions/distribution/`, `extensions/bundle_signature.py`) — the manifest `signature` field and the Ed25519 trust store are removed |
 | `python` packaging, offline from the bundle's wheelhouse | **shipped** (`extensions/python_env.py`) |
 | Service tokens by exchange, served on loopback | **shipped** (`extensions/service_token.py`) |
 | `ext.<id>.*` RPC namespace | **shipped** (`extensions/registry.py`, `extensions/rpc.py`, `extensions/service.py`) |

@@ -21,7 +21,7 @@ from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoa
 from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.core.prompts import PromptFragments, PromptLoader
 from igni_core.core.prompts.contributions import PromptContributions
-from igni_core.extensions.distribution import OneShotSync
+from igni_core.extensions.distribution.once import OneShotSync
 from igni_core.extensions.store import ExtensionStore
 from tests.extension_distribution_helpers import (
     API_URL,
@@ -52,7 +52,19 @@ class World:
             storage=SimpleNamespace(data_dir=str(tmp_path / "data")),
             group_policy=SimpleNamespace(trusted_keys=[], required=False),
         )
-        monkeypatch.setattr(OneShotSync, "transport", self.igni.transport())
+        # The transport goes in where the sync is built: the CLI's
+        # command and the headless run's, so igni server's answers
+        # come from this test rather than from the network.
+        transport = self.igni.transport()
+        monkeypatch.setattr(
+            ext_cli,
+            "OneShotSync",
+            lambda store, settings: OneShotSync(store, settings, transport=transport),
+        )
+        monkeypatch.setattr(
+            "igni_core.backend.headless_extensions.OneShotSync",
+            lambda store, settings: OneShotSync(store, settings, transport=transport),
+        )
         monkeypatch.setattr(PolicySettingsLoader, "load", lambda _self: self.settings)
 
     def sign_in(self, *, ttl: int = 3600) -> None:

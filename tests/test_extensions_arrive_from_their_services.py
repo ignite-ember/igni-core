@@ -24,7 +24,7 @@ import pytest
 
 from igni_core.core.mcp.schemas import MCPConnectResult
 from igni_core.extensions.bundle_signature import BundleSignatureError, PublisherKeys
-from igni_core.extensions.distribution import ExtensionDistribution
+from igni_core.extensions.distribution.sync import ExtensionDistribution
 from igni_core.extensions.install_errors import InstallError
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.launcher import ExtensionLauncher
