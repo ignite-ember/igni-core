@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from igni_core.backend.rpc_router import RpcRouter
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.protocol.rpc import RpcMethod
@@ -26,6 +27,10 @@ def _table(project_dir: Path) -> dict:
         project_dir=project_dir,
         session=MagicMock(),
         supervisor=ProcessSupervisor(),
+        # Whether this backend process may run agent sessions. The real
+        # ``BackendServer`` carries one; the RPC router reads it to build
+        # the workflow runner. This one is open, so a run starts.
+        gate=RunGate(),
     )
     router = RpcRouter(backend=backend, login=MagicMock(), push=MagicMock())
     return router.build_table()

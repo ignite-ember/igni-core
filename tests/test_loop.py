@@ -25,6 +25,7 @@ import pytest
 
 from igni_core.backend import server_loop
 from igni_core.backend.command_handler import CommandHandler
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.loop.limits import LOOP_DEFAULT_MAX_ITERATIONS, LOOP_HARD_CAP
 from igni_core.core.loop.models import LoopState
 from igni_core.core.loop.store import LoopProgressStore
@@ -499,7 +500,7 @@ async def test_slash_and_tool_share_session_state():
 
 def _pump(session: SimpleNamespace) -> server_loop.LoopController:
     """The backend's ``/loop`` pump over a duck-typed session."""
-    return server_loop.LoopController(session=session, settings=None)
+    return server_loop.LoopController(session=session, settings=None, gate=RunGate())
 
 
 @pytest.mark.asyncio

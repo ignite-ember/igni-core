@@ -56,6 +56,7 @@ from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
 from igni_core.core.broadcast_schema import BroadcastSink
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.settings import Settings
 from igni_core.core.layer import layers
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
@@ -88,6 +89,10 @@ class _Backend:
         # The supervisor the backend process shares — the RPC router
         # reads it to build the shell runner.
         self.supervisor = ProcessSupervisor()
+        # Whether this backend process may run agent sessions. The real
+        # ``BackendServer`` carries one; the RPC router reads it to build
+        # the workflow runner. This one is open, so a run starts.
+        self.gate = RunGate()
         self.processing = False
         self.runtime: Any = None
         self.message_queue: list[str] = []
@@ -151,12 +156,16 @@ class _Pooled(_Backend):
         contributions: Any = None,
         prompt_loader: Any = None,
         supervisors: SupervisorLocator | None = None,
+        gate: RunGate | None = None,
     ) -> None:
         super().__init__(resume_session_id, project_dir)
         # The resumed session's processes land on the supervisor the
         # backend process shares — the one the pool wiring carries.
         if supervisors is not None:
             self.supervisor = supervisors.supervisor
+        # So do its runs ask the gate of the backend process.
+        if gate is not None:
+            self.gate = gate
         _Pooled.made.append(self)
 
 
@@ -257,6 +266,7 @@ def _orchestrator(
             push_bridge=push,
             login=login,
             supervisors=SupervisorLocator(backend.supervisor),
+            gate=backend.gate,
         ),
         settings=settings,
         dirs=ProjectDirs(project_dir=project),

@@ -106,7 +106,9 @@ class RpcRouter:
             project_dir=backend.project_dir,
             supervisor=backend.supervisor,
         )
-        self._workflows = WorkflowRunner.for_project(project_dir=backend.project_dir, push=push)
+        self._workflows = WorkflowRunner.for_project(
+            project_dir=backend.project_dir, push=push, gate=backend.gate
+        )
 
         ctx = RpcHandlerContext(
             backend=backend,

@@ -23,6 +23,7 @@ import pytest
 
 from igni_core.backend.schemas_workflows import WorkflowRunRequest
 from igni_core.backend.workflow_runner import WorkflowRunner
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.session.event_log_schema import SessionEventAppendResult
 
 pytestmark = pytest.mark.skipif(
@@ -55,7 +56,7 @@ return { ok: true }
     # main_team is unused here (no agent() calls in the workflow).
     session.main_team = MagicMock()
 
-    runner = WorkflowRunner.for_project(project_dir=tmp_path, push=push)
+    runner = WorkflowRunner.for_project(project_dir=tmp_path, push=push, gate=RunGate())
     result = await runner.run(request=WorkflowRunRequest(name="smoke"), session=session)
     run_id = result.workflow_run_id
     assert run_id.startswith("wf_")

@@ -12,6 +12,7 @@ from igni_core.backend.rpc_router import RpcRouter
 from igni_core.backend.schemas_sessions import BackendLike
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
@@ -42,12 +43,19 @@ class PoolWiring:
     process shares — the registry the watcher panel reads and the
     foreground slot the cancel path kills. Every session of the pool
     is wired to it, so one backend process shows one watcher panel.
+
+    ``gate`` is the same kind of thing: the one gate of the backend
+    process, saying whether an agent run may start. It is wired here
+    because a session the pool resumes is a session of that process,
+    and a resumed session that asked a gate of its own would answer
+    a question the process has already answered.
     """
 
     transport: Any
     push_bridge: PushNotificationBridge
     login: LoginCoordinator
     supervisors: SupervisorLocator
+    gate: RunGate
     contributions: PromptContributions = field(default_factory=PromptContributions)
     prompt_loader: PromptLoader = field(default_factory=lambda: PromptLoader(PromptFragments()))
     extensions: ExtensionRpc = field(default_factory=_no_extensions)

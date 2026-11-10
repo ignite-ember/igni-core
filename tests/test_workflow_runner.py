@@ -50,6 +50,7 @@ from igni_core.backend.workflow_runtime_process import (
     CANCEL_GRACE_SECONDS,
     WorkflowRuntimeProcess,
 )
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.event_log_schema import SessionEventAppendResult
 
@@ -115,7 +116,7 @@ def _run(proc: object, session: object, push: object, run_id: str = "wf_abc") ->
         identity=WorkflowRunIdentity(workflow_run_id=run_id, name="smoke"),
         process=WorkflowRuntimeProcess(proc),
         sink=WorkflowEventSink(session, push),  # type: ignore[arg-type]
-        bridge=WorkflowAgentBridge(session),  # type: ignore[arg-type]
+        bridge=WorkflowAgentBridge(session, RunGate()),  # type: ignore[arg-type]
     )
 
 
@@ -389,7 +390,7 @@ async def test_agent_request_bridges_to_team(tmp_path: Path) -> None:
     event = WorkflowRuntimeEventReader.parse_line(raw)
     assert isinstance(event, AgentRequestEvent)
 
-    reply = await WorkflowAgentBridge(session).answer(event)
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(event)
 
     team.arun.assert_awaited_once()
     assert team.arun.await_args.args[0] == "do the thing"
@@ -424,7 +425,7 @@ async def test_agent_timeout_of_zero_means_no_timeout() -> None:
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(asyncio, "wait_for", spy_wait_for)
-        reply = await WorkflowAgentBridge(session).answer(
+        reply = await WorkflowAgentBridge(session, RunGate()).answer(
             _agent_request({"id": "req_0", "prompt": "p", "timeout_seconds": 0})
         )
 
@@ -440,7 +441,7 @@ async def test_a_dict_prompt_and_a_null_label_reach_team_arun() -> None:
     session.main_team.arun = AsyncMock(return_value="done")
     prompt = {"role": "user", "content": "hi"}
 
-    reply = await WorkflowAgentBridge(session).answer(
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(
         _agent_request({"id": "req_dict", "prompt": prompt, "label": None})
     )
 
@@ -453,7 +454,7 @@ async def test_a_malformed_agent_request_is_refused_not_left_waiting() -> None:
     session = MagicMock()
     session.main_team.arun = AsyncMock(return_value="never")
 
-    reply = await WorkflowAgentBridge(session).answer(
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(
         _agent_request({"id": "req_bad", "timeout_seconds": "soon"})
     )
 
@@ -467,7 +468,7 @@ async def test_an_unserialisable_agent_result_is_refused() -> None:
     session = MagicMock()
     session.main_team.arun = AsyncMock(return_value=MagicMock(content=object()))
 
-    reply = await WorkflowAgentBridge(session).answer(_agent_request({"id": "req_obj"}))
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(_agent_request({"id": "req_obj"}))
 
     assert reply.ok is False
     assert "not JSON-serialisable" in (reply.error or "")
@@ -552,7 +553,7 @@ async def test_runner_spawns_user_layer_workflow_with_cwd_relative_path(
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(asyncio, "create_subprocess_exec", fake_exec)
-        runner = WorkflowRunner.for_project(project_dir=tmp_path, push=MagicMock())
+        runner = WorkflowRunner.for_project(project_dir=tmp_path, push=MagicMock(), gate=RunGate())
         session = MagicMock()
         session.id = "sess_x"
         result = await runner.run(request=WorkflowRunRequest(name="personal"), session=session)
@@ -732,7 +733,7 @@ async def test_runner_passes_args_to_subprocess_as_json_string(
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(asyncio, "create_subprocess_exec", fake_exec)
-        runner = WorkflowRunner.for_project(project_dir=tmp_path, push=MagicMock())
+        runner = WorkflowRunner.for_project(project_dir=tmp_path, push=MagicMock(), gate=RunGate())
         session = MagicMock()
         session.id = "sess_x"
         await runner.run(

@@ -33,7 +33,6 @@ from igni_core.core.config.group_policy.answers import SignedAbsence
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
 from igni_core.core.config.group_policy.entry import GroupPolicyEntry
 from igni_core.core.config.group_policy.environment import GroupPolicyEnvironment
-from igni_core.core.config.group_policy.gate import GroupPolicyGate
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.group_policy.materializer import EntryMaterializer
 from igni_core.core.config.group_policy.pack import GroupPolicyPack
@@ -57,9 +56,7 @@ def _clean(monkeypatch):
     monkeypatch.delenv(GroupPolicyEnvironment.TRUSTED_KEYS_VAR, raising=False)
     monkeypatch.delenv(GroupPolicyEnvironment.REQUIRED_VAR, raising=False)
     monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: None))
-    GroupPolicyGate.reset()
     yield
-    GroupPolicyGate.reset()
 
 
 def _home() -> Path:

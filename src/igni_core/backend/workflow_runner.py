@@ -24,6 +24,7 @@ from igni_core.backend.workflow_run import WorkflowRun
 from igni_core.backend.workflow_run_registry import WorkflowRunRegistry
 from igni_core.backend.workflow_runtime_process import RUNTIME_PATH, WorkflowRuntime
 from igni_core.core.activity.background import BackgroundTasks
+from igni_core.core.config.group_policy.gate import RunGate
 
 if TYPE_CHECKING:
     from igni_core.backend.push_bridge import PushNotificationBridge
@@ -45,20 +46,27 @@ class WorkflowRunner:
         runtime: WorkflowRuntime,
         push: PushNotificationBridge,
         registry: WorkflowRunRegistry,
+        gate: RunGate,
     ) -> None:
         self._discovery = discovery
         self._runtime = runtime
         self._push = push
         self._registry = registry
+        # The run gate of the backend process: while it is closed, no
+        # workflow run may start an agent call.
+        self._gate = gate
 
     @classmethod
-    def for_project(cls, *, project_dir: Path, push: PushNotificationBridge) -> WorkflowRunner:
+    def for_project(
+        cls, *, project_dir: Path, push: PushNotificationBridge, gate: RunGate
+    ) -> WorkflowRunner:
         runtime = WorkflowRuntime(runtime_path=RUNTIME_PATH, cwd=project_dir)
         return cls(
             discovery=WorkflowDiscovery.for_project(project_dir, runtime=runtime),
             runtime=runtime,
             push=push,
             registry=WorkflowRunRegistry(tasks=BackgroundTasks.shared()),
+            gate=gate,
         )
 
     async def list_workflows(self) -> list[WorkflowMetaEnvelope]:
@@ -89,7 +97,11 @@ class WorkflowRunner:
         )
         self._registry.admit(
             WorkflowRun.for_session(
-                identity=identity, process=process, session=session, push=self._push
+                identity=identity,
+                process=process,
+                session=session,
+                push=self._push,
+                gate=self._gate,
             )
         )
         return WorkflowStartResult.started(identity)

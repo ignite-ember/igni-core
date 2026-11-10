@@ -62,6 +62,10 @@ class SessionRuntimeFactory:
             # resumed session's processes land on the same registry
             # the watcher panel reads.
             supervisors=self._wiring.supervisors,
+            # The gate of the whole backend process — a resumed session
+            # asks the same gate the boot session does, because it is a
+            # session of that process.
+            gate=self._wiring.gate,
         )
         await backend.startup()
         queue = backend.message_queue

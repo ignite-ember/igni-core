@@ -37,6 +37,7 @@ from igni_core.backend.schemas_run import (
     PromptBuildResult,
     RunPhase,
 )
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.utils.media_schemas import MediaAttachments, ResolvedText
 from igni_core.protocol import messages as msg
 
@@ -131,7 +132,24 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
     # The supervisor the controller cancels the foreground slot of.
     # A fake one keeps the test off the real registry.
     controller._supervisor = _FakeSupervisor()
+    # The run gate of the backend process — open, so the run starts.
+    controller._gate = RunGate()
     return controller
+
+
+async def _wait_for_streaming(controller: RunController) -> None:
+    """Wait until the controller is streaming — or fail instead of hanging.
+
+    A controller that never reaches the streaming phase is a broken
+    controller, and a bare spin loop would turn that into a hung test
+    rather than a failed one.
+    """
+
+    async def _until_streaming() -> None:
+        while controller.phase is not RunPhase.streaming:
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_until_streaming(), timeout=5)
 
 
 async def _drain(controller: RunController) -> list[msg.Message]:
@@ -152,8 +170,7 @@ class TestACancelledRunIsOver:
                 collected.append(proto)
 
         task = asyncio.create_task(_consume())
-        while controller.phase is not RunPhase.streaming:
-            await asyncio.sleep(0)
+        await _wait_for_streaming(controller)
 
         controller.cancel_run()
         with contextlib.suppress(asyncio.CancelledError):
@@ -173,8 +190,7 @@ class TestACancelledRunIsOver:
                 pass
 
         task = asyncio.create_task(_consume())
-        while controller.phase is not RunPhase.streaming:
-            await asyncio.sleep(0)
+        await _wait_for_streaming(controller)
 
         controller.cancel_run()
         with contextlib.suppress(asyncio.CancelledError):
@@ -191,8 +207,7 @@ class TestACancelledRunIsOver:
                 pass
 
         task = asyncio.create_task(_consume())
-        while controller.phase is not RunPhase.streaming:
-            await asyncio.sleep(0)
+        await _wait_for_streaming(controller)
 
         controller.cancel_run()
         with contextlib.suppress(asyncio.CancelledError):
