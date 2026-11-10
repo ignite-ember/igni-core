@@ -34,7 +34,7 @@ from igni_core.core.session.client_state import ClientStateRead, ClientStateResu
 from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
 from igni_core.core.session.schemas import PersistResult
 from igni_core.extensions.contributions import ExtensionContributions
-from igni_core.extensions.distribution import OneShotSync
+from igni_core.extensions.distribution.once import OneShotSync
 from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.host.broadcasts.views import ViewShown
 from igni_core.extensions.host.channel import HostChannel
@@ -268,7 +268,7 @@ class HeadlessExtensions:
                 logger.warning("extension %s is %s: %s", extension_id, entry.state, entry.reason)
         session.reload_group_agents()
 
-    async def _sync(self, store: ExtensionStore, settings: Any) -> None:
+    async def _sync(self, store: ExtensionStore, settings: Settings) -> None:
         """Bring the store in step with igni server first, bounded.
 
         The app's backend syncs once a window attaches; a headless run

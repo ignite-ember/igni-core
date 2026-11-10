@@ -44,7 +44,7 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.plugins.git import GitClient
 from igni_core.extensions.bundle_source import BundleSource, BundleSourceError
-from igni_core.extensions.distribution import OneShotSync
+from igni_core.extensions.distribution.once import OneShotSync
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.profile import DEV_FLAG, DevelopmentFlag
 from igni_core.extensions.store import ExtensionStore

@@ -22,7 +22,7 @@ from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.pool_rpcs import PageTokenRpc
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.core.config.settings import Settings
-from igni_core.extensions.distribution import ExtensionDistribution
+from igni_core.extensions.distribution.sync import ExtensionDistribution
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.installer import ExtensionInstaller
 from igni_core.extensions.launcher import ExtensionLauncher
