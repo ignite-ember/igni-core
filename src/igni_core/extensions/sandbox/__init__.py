@@ -12,8 +12,11 @@ This package confines the process to the same grants:
   route out;
 * :mod:`.mechanism` — the one interface the platform sandboxes answer
   through;
-* :mod:`.seatbelt` (macOS) and :mod:`.bubblewrap` (Linux, with
-  :mod:`.bridge` inside its network namespace) — the platform profiles;
+* :mod:`.seatbelt` (macOS), :mod:`.bubblewrap` (Linux, with
+  :mod:`.bridge` inside its network namespace) and :mod:`.appcontainer`
+  (Windows, with :mod:`.winapi` for igni's Win32 calls and
+  :mod:`.winbridge` for the runner and the shim inside) — the platform
+  sandboxes;
 * :mod:`.settings` — ``extensions.sandbox`` and
   ``extensions.require_sandbox``, from the tiers allowed to set them.
 """
@@ -26,7 +29,9 @@ from igni_core.extensions.sandbox.launcher import (
     SandboxRefused,
 )
 from igni_core.extensions.sandbox.mechanism import (
+    MechanismDeps,
     MechanismName,
+    MechanismRun,
     SandboxAvailability,
     SandboxMechanism,
 )
@@ -42,7 +47,9 @@ __all__ = [
     "EgressProxy",
     "ExtensionSandbox",
     "HostAllowList",
+    "MechanismDeps",
     "MechanismName",
+    "MechanismRun",
     "SandboxAvailability",
     "SandboxMechanism",
     "SandboxPlan",

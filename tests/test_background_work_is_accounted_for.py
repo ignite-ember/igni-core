@@ -50,6 +50,10 @@ ALLOWED: dict[tuple[str, str], str] = {
         "runs inside an extension's Linux sandbox under igni's interpreter with -I, "
         "importing nothing of igni's; its relay threads are not igni's work"
     ),
+    ("extensions/sandbox/winbridge.py", "run_in_executor"): (
+        "the Windows sandbox's runner, a process of its own under igni's interpreter "
+        "with -I, importing nothing of igni's; it waits there for the extension's process"
+    ),
 }
 
 
