@@ -88,7 +88,7 @@ class LifecycleController:
         :class:`RehydrateOutcome`; the batch is handed to
         :class:`RehydrateOutcomeSet` which owns the summary log.
         """
-        await self._session.load_persisted_loop_state()
+        await self._session.loop.load_persisted_loop_state()
         await self.detect_interrupted_run()
         outcomes = RehydrateOutcomeSet.of(
             await self._rehydrate.plan_store(),

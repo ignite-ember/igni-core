@@ -348,8 +348,10 @@ class FakeSession:
         )
         #: The session the backend drives: the plan decisions go through it.
         self.session = SimpleNamespace(
-            approve_plan=self.approve_plan,
-            dismiss_plan=self.dismiss_plan,
+            plan=SimpleNamespace(
+                approve=self.approve_plan,
+                dismiss=self.dismiss_plan,
+            ),
         )
 
     # ── Lifecycle the pool and dispatcher touch ───────────────────

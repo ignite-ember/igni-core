@@ -1,7 +1,7 @@
 """RPC dispatch wiring for ``approve_plan`` / ``dismiss_plan``.
 
 The fixture-FE Playwright suite proves the FE puts the right
-envelope on the wire. The unit suite proves ``Session.approve_plan``
+envelope on the wire. The unit suite proves ``Session.plan.approve``
 does the right thing once called. This file pins the missing
 middle: that the dispatch lambdas in ``RpcRouter.build_table`` route
 the wire envelope to the right ``Session`` method with ``run_id``
@@ -11,7 +11,7 @@ The kind of bug this guards against:
 
 * ``args.get("runId")`` (camelCase) when the FE sent
   ``run_id`` — silent ``""`` extraction → ``ValueError("run_id
-  must be non-empty")`` from ``Session.approve_plan``, which the
+  must be non-empty")`` from ``Session.plan.approve``, which the
   fixture-FE spec wouldn't catch because the fixture replies
   with whatever the stub returns.
 * Pool runtime's RPC table closing over the boot ``backend``
@@ -43,12 +43,12 @@ from tests.rpc_tables import rpc_table_for
 def _make_backend_with_recording_session() -> tuple[MagicMock, MagicMock]:
     """Construct a backend stub whose session's ``approve_plan`` /
     ``dismiss_plan`` are :class:`AsyncMock` so the test can introspect
-    call args. The RPC handler calls ``backend.session.approve_plan``."""
+    call args. The RPC handler calls ``backend.session.plan.approve``."""
     backend = MagicMock()
-    backend.session.approve_plan = AsyncMock(
+    backend.session.plan.approve = AsyncMock(
         return_value={"run_id": "R", "decision": "approved", "mode_status": ""}
     )
-    backend.session.dismiss_plan = AsyncMock(
+    backend.session.plan.dismiss = AsyncMock(
         return_value={"run_id": "R", "decision": "dismissed", "mode_status": ""}
     )
     return backend, backend.session
@@ -63,13 +63,13 @@ class TestApprovePlanRouting:
         # Lambdas return the coroutine — await it to drive the call.
         out = await result if asyncio.iscoroutine(result) else result
 
-        session.approve_plan.assert_called_once_with(run_id="R-123")
+        session.plan.approve.assert_called_once_with(run_id="R-123")
         assert out == {"run_id": "R", "decision": "approved", "mode_status": ""}
 
     async def test_run_id_coerced_to_string(self):
         # If the wire envelope arrives with a non-string (e.g.
         # FE bug, MCP client sending an int by accident), the
-        # dispatch must coerce so ``Session.approve_plan`` gets
+        # dispatch must coerce so ``Session.plan.approve`` gets
         # the type it asserts on.
         backend, session = _make_backend_with_recording_session()
         table = rpc_table_for(backend, MagicMock())
@@ -77,7 +77,7 @@ class TestApprovePlanRouting:
         result = table[RpcMethod.APPROVE_PLAN]({"run_id": 42})
         await result if asyncio.iscoroutine(result) else result
 
-        session.approve_plan.assert_called_once_with(run_id="42")
+        session.plan.approve.assert_called_once_with(run_id="42")
 
     async def test_missing_run_id_passes_empty_string(self):
         # ``args.get("run_id", "")`` is the contract — the
@@ -91,7 +91,7 @@ class TestApprovePlanRouting:
         result = table[RpcMethod.APPROVE_PLAN]({})
         await result if asyncio.iscoroutine(result) else result
 
-        session.approve_plan.assert_called_once_with(run_id="")
+        session.plan.approve.assert_called_once_with(run_id="")
 
 
 class TestDismissPlanRouting:
@@ -102,7 +102,7 @@ class TestDismissPlanRouting:
         result = table[RpcMethod.DISMISS_PLAN]({"run_id": "R-789"})
         out = await result if asyncio.iscoroutine(result) else result
 
-        session.dismiss_plan.assert_called_once_with(run_id="R-789")
+        session.plan.dismiss.assert_called_once_with(run_id="R-789")
         assert out["decision"] == "dismissed"
 
     async def test_routes_to_dismiss_NOT_approve(self):
@@ -117,8 +117,8 @@ class TestDismissPlanRouting:
         result = table[RpcMethod.DISMISS_PLAN]({"run_id": "R-xyz"})
         await result if asyncio.iscoroutine(result) else result
 
-        session.approve_plan.assert_not_called()
-        session.dismiss_plan.assert_called_once()
+        session.plan.approve.assert_not_called()
+        session.plan.dismiss.assert_called_once()
 
 
 class TestPoolRuntimeRouting:
@@ -150,8 +150,8 @@ class TestPoolRuntimeRouting:
         # Only the pool session saw the call. The boot session
         # is completely untouched — if the lambda was sharing a
         # closure, the boot session would have been hit too.
-        pool_session.approve_plan.assert_called_once_with(run_id="pool-run")
-        boot_session.approve_plan.assert_not_called()
+        pool_session.plan.approve.assert_called_once_with(run_id="pool-run")
+        boot_session.plan.approve.assert_not_called()
 
     async def test_boot_and_pool_tables_are_independent(self):
         # Reverse direction — boot RPC must not reach the pool
@@ -165,8 +165,8 @@ class TestPoolRuntimeRouting:
         result = boot_table[RpcMethod.APPROVE_PLAN]({"run_id": "boot-run"})
         await result if asyncio.iscoroutine(result) else result
 
-        boot_session.approve_plan.assert_called_once_with(run_id="boot-run")
-        pool_session.approve_plan.assert_not_called()
+        boot_session.plan.approve.assert_called_once_with(run_id="boot-run")
+        pool_session.plan.approve.assert_not_called()
 
 
 # ── Startup wires RehydrateController.plan_decisions ─────────
@@ -200,7 +200,7 @@ class TestStartupRehydratesPlanDecisions:
 
     async def test_startup_calls_rehydrate_plan_decisions(self):
         session = SimpleNamespace(
-            load_persisted_loop_state=AsyncMock(),
+            loop=SimpleNamespace(load_persisted_loop_state=AsyncMock()),
             plan_store=PlanStore(),
             todo_store=TodoStore(),
             persistence=SimpleNamespace(
@@ -223,7 +223,7 @@ class TestStartupRehydratesPlanDecisions:
         # survive restart, which means startup has to load it.
         todo_store = TodoStore()
         session = SimpleNamespace(
-            load_persisted_loop_state=AsyncMock(),
+            loop=SimpleNamespace(load_persisted_loop_state=AsyncMock()),
             plan_store=PlanStore(),
             todo_store=todo_store,
             persistence=SimpleNamespace(
@@ -244,7 +244,7 @@ class TestStartupRehydratesPlanDecisions:
         # a session that pretends no decisions were ever made
         # — degraded but functional, same as a fresh boot.
         session = SimpleNamespace(
-            load_persisted_loop_state=AsyncMock(),
+            loop=SimpleNamespace(load_persisted_loop_state=AsyncMock()),
             plan_store=PlanStore(),
             todo_store=TodoStore(),
             persistence=SimpleNamespace(

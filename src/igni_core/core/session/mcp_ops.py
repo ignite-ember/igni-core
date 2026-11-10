@@ -71,7 +71,7 @@ class McpLifecycleDeps:
       reassigned after ``Session.__init__`` populates it.
     * ``rebuild`` — a zero-arg callable that rebuilds the main
       team. Held as a lambda (not a bound method) so callers can
-      preserve the "look up ``session.rebuild_mcp`` late" semantics
+      preserve the "look up ``session.startup.rebuild_mcp`` late" semantics
       of the pre-refactor implementation.
     """
 

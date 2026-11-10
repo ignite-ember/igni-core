@@ -262,7 +262,7 @@ class BackendServer:
         await self.controllers.lifecycle.shutdown()
 
     def start_boot_background_services(self) -> None:
-        self._session.start_marketplace_refresh_background()
+        self._session.startup.start_marketplace_refresh_background()
 
     def register_broadcast(self, subscriber: BroadcastSink) -> None:
         self._session.broadcast_bus.register(subscriber)

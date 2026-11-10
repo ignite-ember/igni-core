@@ -14,6 +14,7 @@ do — treat an MCP name as a mistake, or stop a session from starting.
 from __future__ import annotations
 
 from igni_core.core.agents.tool_check import UnresolvedAgentTools
+from igni_core.core.session.parts.agents import AgentsBuilder
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.tool_spec import ToolResolutionRequest
 
@@ -94,4 +95,4 @@ class TestThePoolCheck:
         session.project_dir = tmp_path
         session.pool = Exploding()
 
-        assert session._check_agent_tools().by_agent() == {}
+        assert AgentsBuilder(session).check_tools().by_agent() == {}

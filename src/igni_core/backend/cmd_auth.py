@@ -70,7 +70,7 @@ class AuthCommand:
         """
         load_result = self._store.load()
         self._store.clear()
-        self._session.clear_cloud_credentials()
+        self._session.cloud_auth.clear()
 
         switch = self._switch_off_cloud_if_needed()
         outcome = LogoutOutcome(

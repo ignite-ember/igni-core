@@ -41,7 +41,8 @@ def _bare_session(*, has_persistence: bool = True, has_plan_store: bool = True):
     if has_persistence:
         session.persistence = SimpleNamespace()
         session.persistence.save_plan_decisions = AsyncMock(return_value=PersistResult(ok=True))
-    session.set_permission_mode = MagicMock(
+    session.mode = SimpleNamespace()
+    session.mode.set_permission_mode = MagicMock(
         return_value=PermissionModeSwitch(changed=True, text="mode → default")
     )
     session.broadcast_bus = BroadcastBus()
@@ -51,7 +52,7 @@ def _bare_session(*, has_persistence: bool = True, has_plan_store: bool = True):
             persistence=getattr(session, "persistence", None),
             bus=session.broadcast_bus,
             # Read per call, so a test can swap the stub's method afterwards.
-            set_permission_mode=lambda mode: session.set_permission_mode(mode),
+            set_permission_mode=lambda mode: session.mode.set_permission_mode(mode),
             starting_mode=lambda: PermissionMode.DEFAULT,
         )
     )
@@ -66,7 +67,7 @@ class TestApprovePlan:
         # The coordinator now hands :class:`PlanDecision` to the
         # store, not a raw string — type-precision matters here.
         s.plan_store.set_decision.assert_called_once_with("run-1", PlanDecision.APPROVED)
-        s.set_permission_mode.assert_called_once_with("default")
+        s.mode.set_permission_mode.assert_called_once_with("default")
         assert out.decision == PlanDecision.APPROVED
         assert out.run_id == "run-1"
         assert out.ok is True
@@ -96,7 +97,7 @@ class TestApprovePlan:
         s.persistence.save_plan_decisions = AsyncMock(
             side_effect=lambda _: (order.append("save"), PersistResult(ok=True))[1]
         )
-        s.set_permission_mode = MagicMock(
+        s.mode.set_permission_mode = MagicMock(
             side_effect=lambda _: order.append("flip") or PermissionModeSwitch(text="ok")
         )
         await s.plan.approve("run-1")
@@ -114,7 +115,7 @@ class TestDismissPlan:
         s = _bare_session()
         out = await s.plan.dismiss("run-1")
         s.plan_store.set_decision.assert_called_once_with("run-1", PlanDecision.DISMISSED)
-        s.set_permission_mode.assert_not_called()
+        s.mode.set_permission_mode.assert_not_called()
         assert out.decision == PlanDecision.DISMISSED
         assert out.mode_status == ""
         assert out.ok is True
@@ -131,7 +132,7 @@ class TestRecordPlanDecision:
         assert out.error is not None and "non-empty" in out.error
         # Guardrail: no side effects on the refusal path.
         s.plan_store.set_decision.assert_not_called()
-        s.set_permission_mode.assert_not_called()
+        s.mode.set_permission_mode.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_missing_plan_store_returns_error_envelope(self):
@@ -139,7 +140,7 @@ class TestRecordPlanDecision:
         out = await s.plan._record("run-1", PlanDecision.APPROVED, flip_mode=True)
         assert out.ok is False
         assert out.error is not None and "plan_store" in out.error
-        s.set_permission_mode.assert_not_called()
+        s.mode.set_permission_mode.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_missing_persistence_returns_error_envelope(self):
@@ -154,7 +155,7 @@ class TestRecordPlanDecision:
         # Store IS updated (the decision was recorded in memory)
         # but no flip and no broadcast happened.
         s.plan_store.set_decision.assert_called_once()
-        s.set_permission_mode.assert_not_called()
+        s.mode.set_permission_mode.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_persist_failure_aborts_flip(self):
@@ -170,7 +171,7 @@ class TestRecordPlanDecision:
             return_value=PersistResult(ok=False, error="db down")
         )
         out = await s.plan._record("run-1", PlanDecision.APPROVED, flip_mode=True)
-        s.set_permission_mode.assert_not_called()
+        s.mode.set_permission_mode.assert_not_called()
         assert out.ok is False
         assert out.error is not None and "persist failed" in out.error
 

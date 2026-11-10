@@ -67,10 +67,10 @@ class McpController:
 
         Returns the Pattern-3 :class:`McpInitResult` envelope
         (``connected`` / ``failed`` / ``rebuilt`` / ``skipped_reason``)
-        surfaced by :meth:`Session.ensure_mcp` — the RPC layer
+        surfaced by :meth:`McpLifecycleCoordinator.ensure_mcp` — the RPC layer
         serialises via ``.model_dump()`` so the wire payload stays
         dict-shaped for legacy consumers that used to see ``None``."""
-        return await self._session.ensure_mcp()
+        return await self._session.startup.ensure_mcp()
 
     async def toggle(self, server_name: str, connect: bool) -> msg.Info:
         """Connect or disconnect an MCP server."""
@@ -81,7 +81,7 @@ class McpController:
         else:
             await mgr.disconnect_one(server_name)
             self._session.mcp_failures.record(server_name, None)
-        self._session.rebuild_mcp()
+        self._session.startup.rebuild_mcp()
         return msg.Info(text=f"MCP {'connected' if connect else 'disconnected'}: {server_name}")
 
     def status(self) -> list[McpServerStatus]:
@@ -121,12 +121,12 @@ class McpController:
         """Connect a single MCP server."""
         result = await self._session.mcp_manager.connect(server_name)
         self._session.mcp_failures.record(server_name, result)
-        self._session.rebuild_mcp()
+        self._session.startup.rebuild_mcp()
         return msg.Info(text=f"Connected MCP: {server_name}")
 
     async def disconnect(self, server_name: str) -> msg.Info:
         """Disconnect a single MCP server."""
         await self._session.mcp_manager.disconnect_one(server_name)
         self._session.mcp_failures.record(server_name, None)
-        self._session.rebuild_mcp()
+        self._session.startup.rebuild_mcp()
         return msg.Info(text=f"Disconnected MCP: {server_name}")

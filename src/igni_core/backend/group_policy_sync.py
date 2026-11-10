@@ -64,7 +64,7 @@ class GroupPolicySync:
         loop (a bare CLI utility) there is nothing to schedule on, so
         this does nothing.
         """
-        token = self._session.cloud_access_token
+        token = self._session.cloud_auth.access_token
         if not token:
             return
         try:
@@ -127,7 +127,7 @@ class GroupPolicySync:
         while True:
             try:
                 await asyncio.sleep(interval)
-                token = self._session.cloud_access_token
+                token = self._session.cloud_auth.access_token
                 if token:
                     await self.hydrate(token)
             except asyncio.CancelledError:
@@ -150,7 +150,7 @@ class GroupPolicySync:
         offline, and this must not undo that. On timeout or failure the
         cached pack stands and the background poller catches up.
         """
-        token = self._session.cloud_access_token
+        token = self._session.cloud_auth.access_token
         if not token:
             return False
         try:

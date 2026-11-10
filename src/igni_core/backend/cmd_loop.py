@@ -28,7 +28,7 @@ coordinator constructs a view model and returns its
 ``.to_command_result()``. Mirrors the sibling ``cmd_context.py`` +
 ``schemas_context.py`` pattern.
 
-``Session.start_loop`` / ``advance_loop`` / ``cancel_loop`` /
+``LoopController.start_loop`` / ``advance_loop`` / ``cancel_loop`` /
 ``resume_loop`` live in ``session/loop_ops.py``; this module is
 the slash-command surface for those.
 """
@@ -162,21 +162,21 @@ class LoopCommand:
         The TUI's live panel polls ``loop_status`` on the session
         directly."""
         sess = self._session
-        if sess.pending_loop_prompt is None:
+        if sess.loop.pending_loop_prompt is None:
             return LoopUsageView.to_command_result()
         return LoopStatusView(
-            iteration_index=sess.loop_iteration_index,
-            iterations_remaining=sess.loop_iterations_remaining,
-            pending_prompt=sess.pending_loop_prompt,
+            iteration_index=sess.loop.loop_iteration_index,
+            iterations_remaining=sess.loop.loop_iterations_remaining,
+            pending_prompt=sess.loop.pending_loop_prompt,
         ).to_command_result()
 
     async def stop(self) -> CommandResult:
         """Cancel the active loop."""
         sess = self._session
-        if sess.pending_loop_prompt is None:
+        if sess.loop.pending_loop_prompt is None:
             return CommandResult.info("No loop is running.")
-        done = sess.loop_iteration_index
-        await sess.cancel_loop()
+        done = sess.loop.loop_iteration_index
+        await sess.loop.cancel_loop()
         return LoopStoppedView(iterations_done=done).to_command_result()
 
     async def _start(self, parsed: LoopCapArgs) -> CommandResult:
@@ -185,10 +185,10 @@ class LoopCommand:
         sess = self._session
         # Refuse to start a second loop on top of an active one —
         # the user almost certainly wants to /loop stop first.
-        if sess.pending_loop_prompt is not None:
+        if sess.loop.pending_loop_prompt is not None:
             return LoopAlreadyRunningView(
-                iteration_index=sess.loop_iteration_index,
-                iterations_remaining=sess.loop_iterations_remaining,
+                iteration_index=sess.loop.loop_iteration_index,
+                iterations_remaining=sess.loop.loop_iterations_remaining,
             ).to_command_result()
 
         # Slash-command path: iteration 1 fires immediately via the
@@ -196,7 +196,7 @@ class LoopCommand:
         # which initializes ``index=1, remaining=max-1``. Subsequent
         # iterations are driven by ``_check_loop_continuation`` →
         # ``advance_loop`` in the run controller.
-        await sess.start_loop(
+        await sess.loop.start_loop(
             parsed.prompt,
             parsed.max_iter,
             immediate=True,
@@ -206,7 +206,7 @@ class LoopCommand:
         # Wrap iteration 1's prompt with the autonomous-loop meta-
         # instruction so the agent doesn't ask the user questions
         # between iterations. Iterations 2+ get wrapped inside
-        # ``Session.advance_loop``; this branch handles iteration 1
+        # ``LoopController.advance_loop``; this branch handles iteration 1
         # because the slash command fires it directly via
         # ``run_prompt`` rather than through ``advance_loop``.
         # ``total`` is only included when the user explicitly capped.
@@ -228,11 +228,11 @@ class LoopCommand:
         directly, re-running the interrupted iteration.
         """
         sess = self._session
-        if sess.pending_loop_prompt is None:
+        if sess.loop.pending_loop_prompt is None:
             return CommandResult.error("No loop to resume.")
-        if not sess.loop_paused:
+        if not sess.loop.paused:
             return CommandResult.info("Loop is already running — no resume needed.")
-        prompt = await sess.resume_loop()
+        prompt = await sess.loop.resume_loop()
         if prompt is None:
             # Race: another caller flipped ``paused`` False between
             # the checks above and the resume call. Treat as already

@@ -73,13 +73,35 @@ def _session_patches(**overrides):
 
 
 #: Where each patched name is looked up, when not only in ``session.core``.
+#:
+#: The session's construction lives in ``core/session/parts/`` — one
+#: module per concern — so a name is patched where the builder that
+#: uses it imports it.
 _PATCH_MODULES: dict[str, tuple[str, ...]] = {
     "HookLoader": ("igni_core.core.session.hooks",),
     "HookExecutor": ("igni_core.core.session.hooks",),
     "ModelRegistry": (
-        "igni_core.core.session.core",
+        "igni_core.core.session.parts.agents",
+        "igni_core.core.session.parts.plugins",
         "igni_core.core.session.compaction.context_budget",
     ),
+    "ProjectInitializer": ("igni_core.core.session.parts.project",),
+    "RulesContextLoader": ("igni_core.core.session.parts.project",),
+    "StorageManager": ("igni_core.core.session.parts.persistence",),
+    "SessionPersistence": ("igni_core.core.session.parts.persistence",),
+    "SessionMemoryManager": ("igni_core.core.session.parts.persistence",),
+    "create_learning_machine": ("igni_core.core.session.parts.persistence",),
+    "AuditLogger": ("igni_core.core.session.parts.runtime",),
+    "CloudCredentials": ("igni_core.core.session.parts.runtime",),
+    "AgentPool": ("igni_core.core.session.parts.agents",),
+    "SkillPool": ("igni_core.core.session.parts.agents",),
+    "ToolRegistry": ("igni_core.core.session.parts.agents",),
+    "ToolPermissions": ("igni_core.core.session.parts.agents",),
+    "MeasuredCompression": ("igni_core.core.session.parts.agents",),
+    "create_reasoning_tools": ("igni_core.core.session.parts.agents",),
+    "create_guardrails": ("igni_core.core.session.parts.agents",),
+    "Agent": ("igni_core.core.session.parts.agents",),
+    "MCPClientManager": ("igni_core.core.session.parts.mcp",),
 }
 
 
@@ -168,15 +190,15 @@ class TestSessionConstruction:
 
     def test_cloud_connected_false_by_default(self, tmp_path, _patch_deps):
         session = Session(Settings(), project_dir=tmp_path)
-        assert session.cloud_connected is False
-        assert session.cloud_org_id is None
-        assert session.cloud_org_name is None
+        assert session.cloud_auth.connected is False
+        assert session.cloud_auth.org_id is None
+        assert session.cloud_auth.org_name is None
 
     def test_cloud_connected_true_with_token(self, tmp_path):
         patches = _session_patches()
         _start_patches(patches)
         try:
-            from igni_core.core.session.core import CloudCredentials as cc_patched
+            from igni_core.core.session.parts.runtime import CloudCredentials as cc_patched
 
             cc = cc_patched.return_value
             cc.is_authenticated = True
@@ -185,9 +207,9 @@ class TestSessionConstruction:
             cc.org_name = "Acme"
 
             session = Session(Settings(), project_dir=tmp_path)
-            assert session.cloud_connected is True
-            assert session.cloud_org_id == "org_42"
-            assert session.cloud_org_name == "Acme"
+            assert session.cloud_auth.connected is True
+            assert session.cloud_auth.org_id == "org_42"
+            assert session.cloud_auth.org_name == "Acme"
         finally:
             _stop_patches(patches)
 
@@ -279,7 +301,7 @@ class TestSessionCompaction:
 
     @pytest.mark.asyncio
     async def test_no_compaction_below_threshold(self, session):
-        result = await session.compact_if_needed(1000, 10000)  # 10%
+        result = await session.compaction.compact_if_needed(1000, 10000)  # 10%
         assert result is False
 
     @pytest.mark.asyncio
@@ -300,7 +322,7 @@ class TestSessionCompaction:
         # at all. (Pinned in
         # tests/test_compaction_keeps_history_without_summary.py.)
         session.compaction._fallback.summarise = AsyncMock(return_value="a recap")
-        result = await session.compact_if_needed(8500, 10000)  # 85%
+        result = await session.compaction.compact_if_needed(8500, 10000)  # 85%
         assert result is True
         # Runs should have been cleared
         session.main_team.asave_session.assert_called_once()
@@ -323,7 +345,7 @@ class TestSessionCompaction:
         veto.should_continue = False
         veto.message = "blocked"
         session.hook_executor.execute = AsyncMock(return_value=veto)
-        result = await session.compact_if_needed(8500, 10000)
+        result = await session.compaction.compact_if_needed(8500, 10000)
         assert result is False
         # _compact never ran → no save call
         session.main_team.asave_session.assert_not_called()
@@ -339,7 +361,7 @@ class TestSessionLearning:
             settings = Settings()
             settings.learning.enabled = False
             session = Session(settings, project_dir=tmp_path)
-            assert session.learning is None
+            assert session.learning_mgr.machine is None
         finally:
             _stop_patches(patches)
 
@@ -351,7 +373,7 @@ class TestSessionLearning:
             settings = Settings()
             settings.learning.enabled = True
             session = Session(settings, project_dir=tmp_path)
-            assert session.learning is fake_lm
+            assert session.learning_mgr.machine is fake_lm
         finally:
             _stop_patches(patches)
 
@@ -379,13 +401,13 @@ class TestSessionLearning:
             agent_cls = mocks["Agent"]
             assert agent_cls.called
             call_kwargs = agent_cls.call_args[1]
-            assert call_kwargs["learning"] is session.learning
+            assert call_kwargs["learning"] is session.learning_mgr.machine
             assert call_kwargs["add_learnings_to_context"] is True
         finally:
             _stop_patches(patches)
 
     def test_learning_not_passed_when_disabled(self, tmp_path):
-        """With learning disabled, ``session.learning`` stays ``None`` and the
+        """With learning disabled, ``session.learning_mgr.machine`` stays ``None`` and the
         Agent receives ``learning=None`` — no ``update_user_memory`` tool."""
         patches = _session_patches()
         mocks = {}

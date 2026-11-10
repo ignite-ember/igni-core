@@ -192,7 +192,7 @@ class OutputStyleStatusView(BaseModel):
     (or ``show``) info card.
 
     ``active`` is the raw string returned by
-    :attr:`Session.active_output_style`; the empty-string sentinel
+    :attr:`OutputStyleSelection.active`; the empty-string sentinel
     the session emits when no style has been picked yet is
     rendered as ``(none)`` in the info card, preserving the
     original ``active or '(none)'`` behavior.

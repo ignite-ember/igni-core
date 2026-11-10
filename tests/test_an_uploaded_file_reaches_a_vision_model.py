@@ -109,7 +109,7 @@ class Workspace:
                     },
                 ),
             ),
-            inject_learnings=self._nothing_learned,
+            learning_mgr=SimpleNamespace(inject=self._nothing_learned),
             reminders=PendingReminderQueue(),
         )
         self.endpoint = RecordedRequests()

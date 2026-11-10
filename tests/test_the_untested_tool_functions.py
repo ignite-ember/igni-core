@@ -12,7 +12,7 @@ itself implements had no direct test at all:
   single test file.
 * ``ArtifactTools`` — all four. Likewise. The names appear in tests,
   but at the session and slash-command layers, not the toolkit.
-* ``LoopTools.loop_resume`` — only ``Session.resume_loop`` was
+* ``LoopTools.loop_resume`` — only ``Session.loop.resume_loop`` was
   covered, not the function the model calls.
 
 Three more gaps are agno's code, not ours — ``PythonTools`` (7),
@@ -32,6 +32,7 @@ answers unintelligibly has failed.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -205,7 +206,10 @@ class _Store:
 
 class _LoopSession:
     def __init__(self, run_id: str | None) -> None:
-        self.loop_run_id = run_id
+        # The tool reads ``session.loop.loop_run_id`` — the controller
+        # owns the run id, so the stub carries a controller-shaped
+        # holder rather than the flat attribute it used to.
+        self.loop = SimpleNamespace(loop_run_id=run_id)
         self.loop_progress_store = _Store()
 
 
@@ -307,7 +311,7 @@ class TestLoopProgressRoundTrip:
         DB but are invisible. A loop that reads the last loop's verdicts
         skips work it never did."""
         await progress.loop_progress_set("shared", "from run-1")
-        progress._session.loop_run_id = "run-2"
+        progress._session.loop.loop_run_id = "run-2"
 
         assert await progress.loop_progress_get("shared") == ""
         assert await progress.loop_progress_list() == "No progress recorded."

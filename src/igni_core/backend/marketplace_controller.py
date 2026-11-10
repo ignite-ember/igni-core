@@ -21,7 +21,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from igni_core.core.plugins.models import MarketplaceInfo
-from igni_core.core.plugins.source_policy import PluginSourcePolicy
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
@@ -44,10 +43,7 @@ class MarketplaceController:
         # (tests/test_commands_load_on_first_use.py).
         from igni_core.backend.cmd_plugin.gateway import PluginBackendGateway
 
-        return PluginBackendGateway(
-            data_dir=self._session.plugin_data_dir,
-            source_policy=PluginSourcePolicy.from_settings(self._session.settings),
-        )
+        return PluginBackendGateway.from_settings(self._session.settings)
 
     def list_registered(self) -> list[MarketplaceInfo]:
         """Snapshot of every registered marketplace for the panel."""

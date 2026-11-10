@@ -281,7 +281,7 @@ async def test_with_no_loop_running_there_is_nothing_to_advance_or_cancel(backen
 
 
 async def test_a_paused_loop_is_not_cancelled_by_a_new_message_and_resumes(backend):
-    await backend._session.start_loop("check the build", 3, immediate=False, cap_explicit=True)
+    await backend._session.loop.start_loop("check the build", 3, immediate=False, cap_explicit=True)
     assert await backend.loop_pause() is True
 
     assert await backend.controllers.loop.cancel_pending() is False

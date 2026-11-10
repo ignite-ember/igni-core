@@ -84,7 +84,7 @@ def _make_server_against_db(db, session_id: str) -> _Boot:
         # → plan_store.latest stays empty, which is fine for
         # tests that don't write through a real Agno run.
         main_team=MagicMock(aget_session=AsyncMock(return_value=None)),
-        load_persisted_loop_state=AsyncMock(),
+        loop=SimpleNamespace(load_persisted_loop_state=AsyncMock()),
         # ``RehydrateController.event_log`` calls
         # ``session.restore_event_log(events)`` — the public method
         # that owns the ``event_log`` + ``_event_seq`` atomic write.

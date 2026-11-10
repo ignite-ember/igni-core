@@ -51,7 +51,7 @@ from igni_core.extensions.impact import ExtensionImpact, ImpactHook
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.registry import ExtensionRegistry, ExtensionState
 from tests.host_model_helpers import HostRig, manifest
-from tests.session_coordinators import plan_session
+from tests.session_coordinators import plan_session, wire_coordinators
 
 CALL = PreToolUseValue(session_id="s-1", tool_name="run_shell_command", tool_args={"command": "ls"})
 
@@ -489,8 +489,8 @@ def _plan_session(executor: HookExecutor | None = None) -> Session:
     and the id. The mode switch is answered here too — the enter
     transaction flips it.
     """
-    return plan_session(
-        hook_executor=executor or HookExecutor({}),
+    return wire_coordinators(
+        plan_session(hook_executor=executor or HookExecutor({})),
         set_permission_mode=lambda mode: PermissionModeSwitch(text=mode),
     )
 

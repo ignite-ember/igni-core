@@ -16,8 +16,8 @@ class HookEvent(str, Enum):
     SUBAGENT_START = "SubagentStart"
     SUBAGENT_STOP = "SubagentStop"
     NOTIFICATION = "Notification"
-    # Compaction lifecycle — fired around ``Session.force_compact``
-    # (manual ``/compact``) and ``Session.compact_if_needed`` (auto
+    # Compaction lifecycle — fired around ``CompactionCoordinator.force_compact``
+    # (manual ``/compact``) and ``CompactionCoordinator.compact_if_needed`` (auto
     # trigger when input tokens approach the model's context
     # window). Payload contract:
     #   PreCompact  → {scope: "manual"|"auto", tokens_before: int}

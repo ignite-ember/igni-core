@@ -56,7 +56,7 @@ def _fake_session() -> MagicMock:
     only touches ``set_permission_mode``, ``main_team``, ``session_id``,
     ``hook_executor``, ``sub_agent_hitl`` on the resume path."""
     session = MagicMock()
-    session.set_permission_mode = MagicMock(
+    session.mode.set_permission_mode = MagicMock(
         return_value=PermissionModeSwitch(
             changed=True, text="Permission mode: default → acceptEdits"
         )
@@ -127,8 +127,8 @@ class TestAtomicModeFlip:
         await drain()
 
         # Both calls happened exactly once.
-        assert session.set_permission_mode.call_count == 1
-        assert session.set_permission_mode.call_args == call("acceptEdits")
+        assert session.mode.set_permission_mode.call_count == 1
+        assert session.mode.set_permission_mode.call_args == call("acceptEdits")
         assert session.main_team.acontinue_run.call_count == 1
 
         # Order matters — the flip must precede the resume.
@@ -162,7 +162,7 @@ class TestAtomicModeFlip:
                 pass
 
         await drain()
-        assert session.set_permission_mode.call_count == 0
+        assert session.mode.set_permission_mode.call_count == 0
 
     @pytest.mark.asyncio
     async def test_no_op_when_set_permission_mode_is_empty(self) -> None:
@@ -185,7 +185,7 @@ class TestAtomicModeFlip:
                 pass
 
         await drain()
-        assert session.set_permission_mode.call_count == 0
+        assert session.mode.set_permission_mode.call_count == 0
 
     @pytest.mark.asyncio
     async def test_first_non_empty_value_wins(self) -> None:
@@ -221,8 +221,8 @@ class TestAtomicModeFlip:
         await drain()
 
         # Only the first one was applied.
-        assert session.set_permission_mode.call_count == 1
-        assert session.set_permission_mode.call_args == call("acceptEdits")
+        assert session.mode.set_permission_mode.call_count == 1
+        assert session.mode.set_permission_mode.call_args == call("acceptEdits")
 
     @pytest.mark.asyncio
     async def test_unknown_mode_is_forwarded_as_is(self) -> None:
@@ -256,8 +256,8 @@ class TestAtomicModeFlip:
         # Forwarded as-is to the session; the session's own validator
         # would surface the error in the response. We don't second-
         # guess the session here.
-        assert session.set_permission_mode.call_count == 1
-        assert session.set_permission_mode.call_args == call("notARealMode")
+        assert session.mode.set_permission_mode.call_count == 1
+        assert session.mode.set_permission_mode.call_args == call("notARealMode")
 
 
 class TestHitlDecisionSchema:

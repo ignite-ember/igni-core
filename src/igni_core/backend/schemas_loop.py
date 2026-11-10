@@ -200,17 +200,17 @@ class LoopStatusSnapshot(BaseModel):
         into a class-private constant to spell it correctly.
         """
         announced_total: int | None = None
-        if session.loop_run_id:
+        if session.loop.loop_run_id:
             announced_total = await session.loop_progress_store.get_announced_total(
-                session.loop_run_id
+                session.loop.loop_run_id
             )
         return cls(
-            active=session.pending_loop_prompt is not None,
-            paused=session.loop_paused,
-            prompt=session.pending_loop_prompt or "",
-            iteration_index=session.loop_iteration_index,
-            iterations_remaining=session.loop_iterations_remaining,
-            cap_explicit=session.loop_cap_explicit,
+            active=session.loop.pending_loop_prompt is not None,
+            paused=session.loop.paused,
+            prompt=session.loop.pending_loop_prompt or "",
+            iteration_index=session.loop.loop_iteration_index,
+            iterations_remaining=session.loop.loop_iterations_remaining,
+            cap_explicit=session.loop.loop_cap_explicit,
             announced_total=announced_total,
         )
 

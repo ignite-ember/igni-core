@@ -288,14 +288,14 @@ class TestTheSessionWiresTheRefsThrough:
         handler unchanged."""
         import inspect
 
-        from igni_core.core.session.core import Session
+        from igni_core.core.session.parts.runtime import RuntimeBuilder
 
-        source = inspect.getsource(Session.__init__)
+        source = inspect.getsource(RuntimeBuilder.build_message_handler)
         construction = source.split("SessionMessageHandler(")[1]
 
-        assert "session_id_ref=lambda: self.session_id" in construction
-        assert "budget=self.context_budget" in construction
-        assert "hooks=self.hooks" in construction
+        assert "session_id_ref=lambda: session.session_id" in construction
+        assert "budget=session.context_budget" in construction
+        assert "hooks=session.hooks" in construction
 
     def test_rebuilding_the_team_reresolves_the_window(self):
         """``/model`` reaches the window only through
@@ -361,8 +361,11 @@ class TestTheUserMemoryCapabilityIsGateable:
         from igni_core.core.session.agent_builder.coordinator import MainAgentBuilder
 
         source = inspect.getsource(MainAgentBuilder.build_prompt)
+        # The condition wraps across two lines in the source, so compare
+        # on the flattened text rather than the layout.
+        flat = " ".join(source.split())
 
         assert (
-            "user_memory_available=s.learning is not None and s.settings.learning.user_memory"
-            in source
+            "user_memory_available=s.learning_mgr.machine is not None "
+            "and s.settings.learning.user_memory" in flat
         )

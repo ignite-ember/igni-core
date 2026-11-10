@@ -5,7 +5,7 @@ Three layers:
 
 * :class:`PlanStore` and :class:`PlanTool` — the per-session
   store + agent-facing ``exit_plan_mode`` tool.
-* :class:`Session.set_permission_mode` — the runtime mode
+* :class:`Session.mode.set_permission_mode` — the runtime mode
   flipper consumed by the slash command and the tool. (The
   ENFORCEMENT side — denying file edits when ``mode == plan`` —
   is already covered by ``test_permission_eval.py``; this file
@@ -250,7 +250,7 @@ class TestTheFloorJudgesNoPlan:
             permission_evaluator=PermissionEvaluator.from_strings(mode="default"),
             main_team=None,  # no spawn target, enter_plan_mode falls through
         )
-        session._contributions = contributions
+        session.prompt_contributions = contributions
         wire_coordinators(session)
         return session
 
@@ -480,7 +480,7 @@ class TestEnterPlanMode:
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
 
-# ── Session.set_permission_mode ───────────────────────────
+# ── Session.mode.set_permission_mode ───────────────────────────
 
 
 class TestSetPermissionMode:
@@ -493,19 +493,19 @@ class TestSetPermissionMode:
 
     def test_flips_mode_to_plan(self):
         session = self._session_with_evaluator("default")
-        msg = session.set_permission_mode("plan").text
+        msg = session.mode.set_permission_mode("plan").text
         assert "default" in msg and "plan" in msg
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     def test_idempotent_when_already_in_mode(self):
         session = self._session_with_evaluator("plan")
-        msg = session.set_permission_mode("plan").text
+        msg = session.mode.set_permission_mode("plan").text
         assert "already" in msg.lower()
         assert session.permission_evaluator.mode is PermissionMode.PLAN
 
     def test_rejects_unknown_mode(self):
         session = self._session_with_evaluator()
-        msg = session.set_permission_mode("turbo").text
+        msg = session.mode.set_permission_mode("turbo").text
         assert "Error" in msg
         # Mode unchanged.
         assert session.permission_evaluator.mode is PermissionMode.DEFAULT
@@ -519,7 +519,7 @@ class TestSetPermissionMode:
         session.broadcast_bus = _BroadcastBus()
         wire_coordinators(session)
         with pytest.raises(AttributeError):
-            session.set_permission_mode("plan")
+            session.mode.set_permission_mode("plan")
 
 
 # ── /plan slash command ───────────────────────────────────

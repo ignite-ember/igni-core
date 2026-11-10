@@ -5,7 +5,7 @@ Replaces the god-coordinator's ``_handler`` / ``_session`` /
 dataclass carrying the three collaborators a verb actually needs:
 the :class:`Session` (for hot-reload + plugin_loader / plugin_state),
 the resolved plugin data directory (snapshotted at command entry
-from ``session.plugin_data_dir``), and the
+from ``session.settings.storage.data_dir``), and the
 :class:`PluginBackendGateway` seam every git-/marketplace-backed
 call routes through.
 

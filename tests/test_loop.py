@@ -88,7 +88,7 @@ class _FakeSession:
     the ``CommandHandler`` / ``LoopTools`` / ``BackendServer``
     tests exercise the same code path production does.
 
-    Test hooks that write directly to ``sess.pending_loop_prompt``
+    Test hooks that write directly to ``sess.loop.pending_loop_prompt``
     et al. are still supported via the property setters below —
     they seed the underlying :class:`LoopState` in one shot so
     downstream calls see a consistent controller state.
@@ -265,15 +265,15 @@ async def test_loop_start_via_slash_sets_session_state():
     assert result.display_content == "fix the typo in foo.py, bar.py"
     # The session's cap_explicit reflects the absence of a leading
     # number — auto-extend behavior kicks in at cap-hit.
-    assert sess.loop_cap_explicit is False
+    assert sess.loop.loop_cap_explicit is False
     # The session keeps the *unwrapped* prompt so the panel can
     # render it cleanly — only FE-bound prompts are wrapped.
-    assert sess.pending_loop_prompt == "fix the typo in foo.py, bar.py"
+    assert sess.loop.pending_loop_prompt == "fix the typo in foo.py, bar.py"
     # Slash path uses ``immediate=True`` — iteration 1 is already
     # firing via the ``run_prompt`` action, so index=1, remaining=29
     # (sum is the configured cap).
-    assert sess.loop_iteration_index == 1
-    assert sess.loop_iterations_remaining == 29  # cap=30, iter 1 already in flight
+    assert sess.loop.loop_iteration_index == 1
+    assert sess.loop.loop_iterations_remaining == 29  # cap=30, iter 1 already in flight
 
 
 @pytest.mark.asyncio
@@ -283,15 +283,15 @@ async def test_loop_start_with_explicit_cap():
 
     result = await handler.handle("/loop 5 do the thing")
 
-    assert sess.pending_loop_prompt == "do the thing"
+    assert sess.loop.pending_loop_prompt == "do the thing"
     # Same off-by-one as the default-cap test: iteration 1 has
     # already been booked via ``immediate=True`` so ``remaining``
     # is cap-1.
-    assert sess.loop_iteration_index == 1
-    assert sess.loop_iterations_remaining == 4
+    assert sess.loop.loop_iteration_index == 1
+    assert sess.loop.loop_iterations_remaining == 4
     # ``/loop N <prompt>`` is the *explicit* path — auto-extend
     # doesn't apply, and the wrapper carries the total.
-    assert sess.loop_cap_explicit is True
+    assert sess.loop.loop_cap_explicit is True
     assert '<loop-iteration index="1" total="5">' in result.content
 
 
@@ -302,9 +302,9 @@ async def test_loop_start_with_explicit_cap_x_suffix():
 
     await handler.handle("/loop 7x do the thing")
 
-    assert sess.pending_loop_prompt == "do the thing"
-    assert sess.loop_iteration_index == 1
-    assert sess.loop_iterations_remaining == 6  # cap=7, iter 1 in flight
+    assert sess.loop.pending_loop_prompt == "do the thing"
+    assert sess.loop.loop_iteration_index == 1
+    assert sess.loop.loop_iterations_remaining == 6  # cap=7, iter 1 in flight
 
 
 @pytest.mark.asyncio
@@ -341,7 +341,7 @@ async def test_loop_refuses_starting_on_active_loop():
     assert result.kind == "error"
     assert "already" in result.content.lower()
     # First loop's state must be intact.
-    assert sess.pending_loop_prompt == "first prompt"
+    assert sess.loop.pending_loop_prompt == "first prompt"
 
 
 @pytest.mark.asyncio
@@ -357,8 +357,8 @@ async def test_loop_stop_clears_state():
 
     assert result.kind == "info"
     assert "3" in result.content
-    assert sess.pending_loop_prompt is None
-    assert sess.loop_iterations_remaining == 0
+    assert sess.loop.pending_loop_prompt is None
+    assert sess.loop.loop_iterations_remaining == 0
 
 
 @pytest.mark.asyncio
@@ -390,9 +390,9 @@ async def test_loop_start_tool_sets_state():
     msg = await tools.loop_start("repeat me", max_iterations=5)
 
     assert "armed" in msg.lower() or "5" in msg
-    assert sess.pending_loop_prompt == "repeat me"
-    assert sess.loop_iterations_remaining == 5
-    assert sess.loop_iteration_index == 0
+    assert sess.loop.pending_loop_prompt == "repeat me"
+    assert sess.loop.loop_iterations_remaining == 5
+    assert sess.loop.loop_iteration_index == 0
 
 
 @pytest.mark.asyncio
@@ -405,7 +405,7 @@ async def test_loop_start_tool_rejects_active_loop():
     msg = await tools.loop_start("second", max_iterations=3)
 
     assert msg.startswith("ERROR")
-    assert sess.pending_loop_prompt == "first"  # untouched
+    assert sess.loop.pending_loop_prompt == "first"  # untouched
 
 
 @pytest.mark.asyncio
@@ -434,8 +434,8 @@ async def test_loop_stop_tool_clears_state():
     msg = await tools.loop_stop()
 
     assert "4" in msg
-    assert sess.pending_loop_prompt is None
-    assert sess.loop_iterations_remaining == 0
+    assert sess.loop.pending_loop_prompt is None
+    assert sess.loop.loop_iterations_remaining == 0
 
 
 @pytest.mark.asyncio
@@ -473,9 +473,9 @@ async def test_slash_and_tool_share_session_state():
 
     # Start via slash, stop via tool.
     await handler.handle("/loop 8 repeat me")
-    assert sess.pending_loop_prompt == "repeat me"
+    assert sess.loop.pending_loop_prompt == "repeat me"
     msg = await tools.loop_stop()
-    assert sess.pending_loop_prompt is None
+    assert sess.loop.pending_loop_prompt is None
     # Slash-path start counts the immediately-firing iteration as
     # iteration 1 (immediate=True) so stopping right after start
     # reports ``1 iteration``, not zero.
@@ -483,9 +483,9 @@ async def test_slash_and_tool_share_session_state():
 
     # Start via tool, stop via slash.
     await tools.loop_start("again", max_iterations=4)
-    assert sess.pending_loop_prompt == "again"
+    assert sess.loop.pending_loop_prompt == "again"
     result = await handler.handle("/loop stop")
-    assert sess.pending_loop_prompt is None
+    assert sess.loop.pending_loop_prompt is None
     assert result.kind == "info"
 
 
@@ -532,10 +532,10 @@ async def test_pop_iteration_returns_descriptor_and_decrements():
     assert "do X" in desc.prompt
     assert '<loop-iteration index="1" total="3">' in desc.prompt
     assert desc.display_prompt == "do X"
-    assert sess.loop_iterations_remaining == 2
-    assert sess.loop_iteration_index == 1
+    assert sess.loop.loop_iterations_remaining == 2
+    assert sess.loop.loop_iteration_index == 1
     # Session keeps the *unwrapped* prompt for the panel display.
-    assert sess.pending_loop_prompt == "do X"
+    assert sess.loop.pending_loop_prompt == "do X"
 
 
 @pytest.mark.asyncio
@@ -567,8 +567,8 @@ async def test_pop_iteration_full_lifecycle_to_cap():
     d4 = await backend.pop_pending_iteration()
     assert d4.completed is True
     assert d4.total_iterations == 3
-    assert sess.pending_loop_prompt is None
-    assert sess.loop_iterations_remaining == 0
+    assert sess.loop.pending_loop_prompt is None
+    assert sess.loop.loop_iterations_remaining == 0
 
     # 5th pop: state is cleared, so we get None (the FE renders
     # nothing — no double "Loop completed" message).
@@ -614,8 +614,8 @@ async def test_cancel_pending_loop_clears_state_and_returns_true():
     backend = _pump(sess)
 
     assert await backend.cancel_pending() is True
-    assert sess.pending_loop_prompt is None
-    assert sess.loop_iterations_remaining == 0
+    assert sess.loop.pending_loop_prompt is None
+    assert sess.loop.loop_iterations_remaining == 0
 
 
 # ── End-to-end: command → RPC → cap exhaustion ─────────────────────
@@ -639,9 +639,9 @@ async def test_full_flow_command_arms_rpc_drains_cap_terminates():
     assert armed.action == "run_prompt"
     assert "ping" in armed.content
     assert '<loop-iteration index="1" total="2">' in armed.content
-    assert sess.loop_iteration_index == 1
-    assert sess.loop_iterations_remaining == 1
-    assert sess.loop_cap_explicit is True
+    assert sess.loop.loop_iteration_index == 1
+    assert sess.loop.loop_iterations_remaining == 1
+    assert sess.loop.loop_cap_explicit is True
 
     # 2. The continuation RPC fires iteration 2 (1 was already
     # booked by ``immediate=True``). After this, remaining=0.
@@ -657,7 +657,7 @@ async def test_full_flow_command_arms_rpc_drains_cap_terminates():
     assert completion is not None
     assert completion.completed is True
     assert completion.total_iterations == 2
-    assert sess.pending_loop_prompt is None
+    assert sess.loop.pending_loop_prompt is None
 
     # 4. A subsequent tick returns None — completion is one-shot.
     assert await backend.pop_pending_iteration() is None
@@ -672,7 +672,7 @@ async def test_full_flow_command_arms_rpc_drains_cap_terminates():
     assert panel_action.action == "loop"
     fresh = await handler.handle("/loop new prompt")
     assert fresh.action == "run_prompt"
-    assert sess.pending_loop_prompt == "new prompt"
+    assert sess.loop.pending_loop_prompt == "new prompt"
 
 
 @pytest.mark.asyncio
@@ -687,7 +687,7 @@ async def test_user_input_cancellation_via_rpc():
 
     await handler.handle("/loop 5 keep going")
     # Slash command already booked iteration 1 (immediate=True).
-    assert sess.loop_iteration_index == 1
+    assert sess.loop.loop_iteration_index == 1
     # The next continuation pop produces iteration 2.
     desc = await backend.pop_pending_iteration()
     assert desc is not None and desc.iteration == 2
@@ -697,7 +697,7 @@ async def test_user_input_cancellation_via_rpc():
 
     # No more iterations.
     assert await backend.pop_pending_iteration() is None
-    assert sess.pending_loop_prompt is None
+    assert sess.loop.pending_loop_prompt is None
 
 
 # ── Resume + paused-loop semantics ─────────────────────────────────
@@ -719,14 +719,14 @@ async def test_cancel_skips_paused_loop():
     # every non-/loop input. For a paused loop it must be a no-op.
     cancelled = await backend.cancel_pending()
     assert cancelled is False
-    assert sess.pending_loop_prompt == "interrupted work"
-    assert sess.loop_paused is True
+    assert sess.loop.pending_loop_prompt == "interrupted work"
+    assert sess.loop.loop_paused is True
 
 
 class TestLoopResumeTool:
     """``loop_resume`` — the one ``LoopTools`` function with no test.
 
-    ``Session.resume_loop`` was covered; the tool the model actually
+    ``Session.loop.resume_loop`` was covered; the tool the model actually
     calls was not, and it is a different function with three answers
     of its own. Each is a different instruction to the model: try
     something else, do nothing, or wait for the next iteration.
@@ -770,13 +770,13 @@ class TestLoopResumeTool:
         # asked to "pick up where we left off" and has no other way to
         # know where that was.
         assert "4" in result
-        assert sess.loop_paused is False
+        assert sess.loop.loop_paused is False
 
 
 @pytest.mark.asyncio
 async def test_resume_returns_wrapped_prompt_and_unpauses():
     """``/loop resume`` (and the panel ``R`` key, and the agent's
-    ``loop_resume`` tool) all funnel through ``Session.resume_loop``.
+    ``loop_resume`` tool) all funnel through ``Session.loop.resume_loop``.
     The returned prompt must be wrapped so the resumed iteration
     carries the same autonomous-loop instructions every other
     iteration does."""
@@ -787,11 +787,11 @@ async def test_resume_returns_wrapped_prompt_and_unpauses():
     sess.loop_paused = True
     sess.loop_cap_explicit = True  # Explicit cap → wrapper has total.
 
-    prompt = await sess.resume_loop()
+    prompt = await sess.loop.resume_loop()
     assert prompt is not None
     assert "verify each section" in prompt
     assert '<loop-iteration index="4" total="30">' in prompt
-    assert sess.loop_paused is False
+    assert sess.loop.loop_paused is False
 
 
 @pytest.mark.asyncio
@@ -806,7 +806,7 @@ async def test_resume_implicit_cap_omits_total_in_wrapper() -> None:
     sess.loop_paused = True
     sess.loop_cap_explicit = False
 
-    prompt = await sess.resume_loop()
+    prompt = await sess.loop.resume_loop()
     assert prompt is not None
     assert '<loop-iteration index="2">' in prompt
     assert "total=" not in prompt
@@ -822,13 +822,13 @@ async def test_resume_returns_none_when_not_paused():
     sess.loop_iterations_remaining = 8
     sess.loop_paused = False
 
-    assert await sess.resume_loop() is None
+    assert await sess.loop.resume_loop() is None
 
 
 @pytest.mark.asyncio
 async def test_resume_returns_none_when_no_loop():
     sess = _fake_session()
-    assert await sess.resume_loop() is None
+    assert await sess.loop.resume_loop() is None
 
 
 # ── loop_set_total tool ───────────────────────────────────────────
@@ -914,7 +914,7 @@ async def test_implicit_cap_auto_extends_at_cap_hit() -> None:
     assert desc.auto_extended is True
     # The loop didn't terminate — iteration 4 is firing.
     assert desc.iteration == 4
-    assert sess.pending_loop_prompt == "p"
+    assert sess.loop.pending_loop_prompt == "p"
 
 
 @pytest.mark.asyncio
@@ -933,7 +933,7 @@ async def test_explicit_cap_terminates_at_cap_hit() -> None:
 
     assert desc.completed is True
     assert desc.total_iterations == 3
-    assert sess.pending_loop_prompt is None
+    assert sess.loop.pending_loop_prompt is None
 
 
 @pytest.mark.asyncio
@@ -954,11 +954,11 @@ async def test_implicit_cap_pauses_at_hard_cap() -> None:
 
     assert desc.safety_cap_paused is True
     assert desc.iteration == LOOP_HARD_CAP
-    assert sess.loop_paused is True
+    assert sess.loop.loop_paused is True
     # Loop state survives — prompt + counter unchanged so resume
     # picks up exactly where the cap stopped it.
-    assert sess.pending_loop_prompt == "p"
-    assert sess.loop_iteration_index == LOOP_HARD_CAP
+    assert sess.loop.pending_loop_prompt == "p"
+    assert sess.loop.loop_iteration_index == LOOP_HARD_CAP
 
 
 @pytest.mark.asyncio
@@ -977,9 +977,9 @@ async def test_paused_loop_short_circuits_advance() -> None:
     desc = await backend.pop_pending_iteration()
     assert desc is None
     # Counters untouched.
-    assert sess.loop_iteration_index == 5
-    assert sess.loop_iterations_remaining == 25
-    assert sess.loop_paused is True
+    assert sess.loop.loop_iteration_index == 5
+    assert sess.loop.loop_iterations_remaining == 25
+    assert sess.loop.loop_paused is True
 
 
 @pytest.mark.asyncio
@@ -992,13 +992,13 @@ async def test_pause_loop_does_not_advance_counter() -> None:
     sess.loop_iteration_index = 7
     sess.loop_iterations_remaining = 3
 
-    ok = await sess.pause_loop()
+    ok = await sess.loop.pause_loop()
 
     assert ok is True
-    assert sess.loop_paused is True
+    assert sess.loop.loop_paused is True
     # Counter untouched — resume retries iteration 7.
-    assert sess.loop_iteration_index == 7
-    assert sess.loop_iterations_remaining == 3
+    assert sess.loop.loop_iteration_index == 7
+    assert sess.loop.loop_iterations_remaining == 3
 
 
 @pytest.mark.asyncio

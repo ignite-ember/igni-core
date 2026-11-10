@@ -56,7 +56,7 @@ class TestBackendRunMessageErrors:
         # The run path checks guardrails before handing the message to the
         # model; a bare MagicMock returns something unawaitable.
         session.guardrail_runner.warning_prefix = AsyncMock(return_value="")
-        session.inject_learnings = AsyncMock()
+        session.learning_mgr.inject = AsyncMock()
         session.hook_executor = MagicMock()
         session.hook_executor.execute = AsyncMock(
             return_value=MagicMock(should_continue=True, message="")
@@ -80,7 +80,7 @@ class TestBackendRunMessageErrors:
         # The run path checks guardrails before handing the message to the
         # model; a bare MagicMock returns something unawaitable.
         session.guardrail_runner.warning_prefix = AsyncMock(return_value="")
-        session.inject_learnings = AsyncMock()
+        session.learning_mgr.inject = AsyncMock()
         session.hook_executor = MagicMock()
         session.hook_executor.execute = AsyncMock(
             return_value=MagicMock(should_continue=False, message="Blocked by hook")

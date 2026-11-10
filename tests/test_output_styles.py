@@ -150,22 +150,22 @@ class TestSetOutputStyle:
 
     def test_switch_to_known_style(self):
         session = self._session()
-        msg = session.set_output_style("explanatory")
+        msg = session.mode.set_output_style("explanatory")
         assert "default" in msg and "explanatory" in msg
-        assert session.active_output_style == "explanatory"
+        assert session.output_style.active == "explanatory"
 
     def test_switch_to_unknown_returns_available_list(self):
         session = self._session()
-        msg = session.set_output_style("nonexistent")
+        msg = session.mode.set_output_style("nonexistent")
         assert "Error" in msg
         assert "default" in msg  # listed as available
         assert "explanatory" in msg
         # State unchanged.
-        assert session.active_output_style == "default"
+        assert session.output_style.active == "default"
 
     def test_no_op_when_already_active(self):
         session = self._session()
-        msg = session.set_output_style("default")
+        msg = session.mode.set_output_style("default")
         assert "already" in msg.lower()
 
     def test_hot_patches_team_instructions(self):
@@ -181,7 +181,7 @@ class TestSetOutputStyle:
             "trailing block",
         ]
         session.main_team = team
-        session.set_output_style("explanatory")
+        session.mode.set_output_style("explanatory")
         # Old style block stripped.
         assert not any(
             isinstance(s, str) and s.startswith("# Output style: default")
@@ -197,7 +197,7 @@ class TestSetOutputStyle:
         session = self._session()
         captured: list[tuple[str, dict]] = []
         session.register_broadcast_callback(lambda e: captured.append((e.channel, e.to_payload())))
-        session.set_output_style("explanatory")
+        session.mode.set_output_style("explanatory")
         evt = next(p for ch, p in captured if ch == "output_style_changed")
         assert evt["style"] == "explanatory"
         assert evt["previous"] == "default"
@@ -265,14 +265,14 @@ class TestOutputStyleSlashCommand:
         session = self._make_session()
         handler = CommandHandler(session)
         await handler.handle("/output-style explanatory")
-        assert session.active_output_style == "explanatory"
+        assert session.output_style.active == "explanatory"
 
     @pytest.mark.asyncio
     async def test_set_with_explicit_set_keyword(self):
         session = self._make_session()
         handler = CommandHandler(session)
         await handler.handle("/output-style set explanatory")
-        assert session.active_output_style == "explanatory"
+        assert session.output_style.active == "explanatory"
 
     @pytest.mark.asyncio
     async def test_unknown_style_returns_error(self):
@@ -281,7 +281,7 @@ class TestOutputStyleSlashCommand:
         result = await handler.handle("/output-style nonexistent")
         assert "Error" in result.content
         # State unchanged.
-        assert session.active_output_style == "default"
+        assert session.output_style.active == "default"
 
     @pytest.mark.asyncio
     async def test_empty_styles_dir_explains_how(self):
@@ -301,7 +301,7 @@ class TestOutputStyleSlashCommand:
 class TestGetOutputStylesRpc:
     def test_returns_active_plus_listing(self):
         session = MagicMock()
-        session.output_styles = {
+        session.output_style.styles = {
             "default": OutputStyle(
                 name="default",
                 path=Path("/dev/null"),
@@ -315,7 +315,7 @@ class TestGetOutputStylesRpc:
                 body="y",
             ),
         }
-        session.active_output_style = "learning"
+        session.output_style.active = "learning"
         backend = make_backend(session)
         out = backend.get_output_styles()
         assert out.active == "learning"
@@ -323,16 +323,16 @@ class TestGetOutputStylesRpc:
         assert names == ["default", "learning"]  # sorted
 
     def test_returns_empty_when_no_styles(self):
-        session = MagicMock(spec=["output_styles", "active_output_style"])
-        session.output_styles = {}
-        session.active_output_style = ""
+        session = MagicMock(spec=["output_style"])
+        session.output_style.styles = {}
+        session.output_style.active = ""
         out = PanelsController(session).output_styles()
         assert out.active == ""
         assert out.styles == []
 
     def test_dispatch_table_routes_get_output_styles(self):
         session = MagicMock()
-        session.output_styles = {
+        session.output_style.styles = {
             "default": OutputStyle(
                 name="default",
                 path=Path("/dev/null"),
@@ -340,7 +340,7 @@ class TestGetOutputStylesRpc:
                 body="",
             )
         }
-        session.active_output_style = "default"
+        session.output_style.active = "default"
         backend = make_backend(session)
 
         table = rpc_table_for(backend, transport=MagicMock())

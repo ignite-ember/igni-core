@@ -251,7 +251,7 @@ class AirGappedInstall:
 
     async def _start_and_answer(self, settings: Settings, message: str) -> str:
         session = Session(settings, project_dir=self.project_dir)
-        session.start_marketplace_refresh_background()  # D11, as BackendApp does after ready
+        session.startup.start_marketplace_refresh_background()  # D11, as BackendApp does after ready
         await UpdateChecker().check()  # D9, as the banner and the RPC do
         await session.fire_session_start_hook()
         response = await session.handle_message(message)

@@ -128,7 +128,7 @@ def test_session_loads_plugin_state(tmp_path: Path) -> None:
     session, patches = _session_under_test(tmp_path)
     try:
         assert session.plugin_state.disabled == ["alpha"]
-        assert "alpha" in session._disabled_plugins
+        assert "alpha" in session.disabled_plugins
     finally:
         _stop_patches(patches)
 

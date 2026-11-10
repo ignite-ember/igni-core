@@ -141,7 +141,7 @@ class PermissionEvaluator:
     @mode.setter
     def mode(self, value: PermissionMode) -> None:
         """Direct setter — preserved for back-compat with the
-        ``Session.set_permission_mode`` callers (which mutate
+        ``RuntimeModeCoordinator.set_permission_mode`` callers (which mutate
         the attribute directly). Holds ``_mode_lock`` so the read
         in :meth:`evaluate_outcome` sees the new value."""
         with self._mode_lock:

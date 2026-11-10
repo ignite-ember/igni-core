@@ -95,12 +95,12 @@ class AuthController:
         """Reload cloud credentials after login."""
         # Share the controller's :class:`CredentialsStore` so the
         # session sees the exact file the login flow just wrote.
-        self._session.replace_cloud_credentials(CloudCredentials(store=self._store))
+        self._session.cloud_auth.replace(CloudCredentials(store=self._store))
         return self._status_provider()
 
     def clear_cloud_credentials(self) -> msg.StatusUpdate:
         """Clear cloud credentials on logout."""
-        self._session.clear_cloud_credentials()
+        self._session.cloud_auth.clear()
         return self._status_provider()
 
     async def get_cloud_plan(self) -> CloudPlan | None:
@@ -109,7 +109,7 @@ class AuthController:
         Hits ``/portal/me`` with the stored JWT. Returns ``None``
         when logged out or the call fails.
         """
-        token = self._session.cloud_access_token
+        token = self._session.cloud_auth.access_token
         if not token:
             return None
         result = await self._portal.validate_token(token)

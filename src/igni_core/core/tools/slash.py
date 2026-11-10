@@ -18,7 +18,7 @@ Threat model and why we still block a small list:
   ``/bypass``) ARE blocked, and for a different reason: they
   work. ``CommandHandler`` dispatches them to
   :class:`~igni_core.backend.cmd_modes.ModesCommand`, which
-  calls ``Session.set_permission_mode`` on the live evaluator —
+  calls ``RuntimeModeCoordinator.set_permission_mode`` on the live evaluator —
   so ``slash_command("/bypass")`` took effect on the agent's
   very next tool call. ``bypassPermissions`` is the mode that
   removes the HITL dialog standing between the model and

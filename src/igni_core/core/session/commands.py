@@ -158,7 +158,7 @@ class InteractiveCommandDispatcher:
         Refreshes the cloud-discovered entries first so a key added on
         the portal shows up without restarting the CLI.
         """
-        self.session.refresh_cloud_models()
+        self.session.cloud_auth.refresh_models()
         registry = self.session.settings.models.registry
         current = self.session.settings.models.default
         lines = ["## Models"]
