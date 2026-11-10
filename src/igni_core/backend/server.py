@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, MutableSequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from igni_core.backend.activity import SessionActivity
 from igni_core.backend.backend_bootstrap import BackendBootstrap
@@ -64,8 +64,10 @@ if TYPE_CHECKING:
     )
     from igni_core.backend.server_files import ReadFileResult
     from igni_core.backend.server_processes import ProcessRow
+    from igni_core.backend.session_pool import SessionRuntime
     from igni_core.core.agents import AgentInfo
     from igni_core.core.config.settings import Settings
+    from igni_core.core.mcp.client import MCPClientManager
     from igni_core.core.plugins.models import MarketplaceInfo, PluginInfo
     from igni_core.core.scheduler.models import ScheduledTask
     from igni_core.core.session.core import Session
@@ -173,19 +175,19 @@ class BackendServer:
         self.controllers = controllers
         #: Messages typed during a run, durable — the runtime's queue.
         self.message_queue = message_queue
-        self._runtime: Any = None
+        self._runtime: SessionRuntime | None = None
         # A new dialogue should pick up an admin's change.
         session.on_new_dialogue = controllers.group_policy.revalidate_for_new_dialogue
 
     # ── Runtime + session identity ────────────────────────────────
 
-    def attach_runtime(self, runtime: Any) -> None:
+    def attach_runtime(self, runtime: SessionRuntime) -> None:
         """Called by :class:`SessionRuntimeFactory` once the runtime
         that owns this backend is built."""
         self._runtime = runtime
 
     @property
-    def runtime(self) -> Any:
+    def runtime(self) -> SessionRuntime | None:
         return self._runtime
 
     @property
@@ -193,7 +195,7 @@ class BackendServer:
         return self._session.project_dir
 
     @property
-    def mcp_manager(self) -> Any:
+    def mcp_manager(self) -> MCPClientManager:
         """The session's MCP client manager, for the extension installer
         and health monitor."""
         return self._session.mcp_manager

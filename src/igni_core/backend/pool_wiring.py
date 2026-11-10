@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.message_dispatcher import MessageDispatcher
+from igni_core.backend.observed_transport import ObservedTransport
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.rpc_router import RpcRouter
 from igni_core.backend.schemas_sessions import BackendLike
@@ -18,9 +18,11 @@ from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
+from igni_core.extensions.origin import ExtensionOrigins
 from igni_core.extensions.registry import ExtensionRegistry
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.store import ExtensionStore
+from igni_core.notifications.center import NotificationCenter
 
 
 def _no_extensions() -> ExtensionRpc:
@@ -53,7 +55,7 @@ class PoolWiring:
     a question the process has already answered.
     """
 
-    transport: Any
+    transport: ObservedTransport
     push_bridge: PushNotificationBridge
     login: LoginCoordinator
     supervisors: SupervisorLocator
@@ -62,15 +64,15 @@ class PoolWiring:
     prompt_loader: PromptLoader = field(default_factory=lambda: PromptLoader(PromptFragments()))
     tool_hints: ToolHintsRegistry = field(default_factory=ToolHintsRegistry.shared)
     extensions: ExtensionRpc = field(default_factory=_no_extensions)
-    origins: Any = None
+    origins: ExtensionOrigins | None = None
     extension_store: ExtensionStore | None = None
-    notifications: Any = None
+    notifications: NotificationCenter | None = None
 
     def stamped(self, backend: BackendLike) -> SessionStampingTransport:
         """The root transport, stamping ``backend``'s session id on everything it sends."""
         return SessionStampingTransport(self.transport, backend)
 
-    def router_for(self, backend: Any, bridge: PushNotificationBridge) -> RpcRouter:
+    def router_for(self, backend: BackendLike, bridge: PushNotificationBridge) -> RpcRouter:
         """A runtime's RPC router: its own backend and bridge, the shared rest."""
         return RpcRouter(
             backend=backend,

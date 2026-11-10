@@ -9,6 +9,7 @@ from typing import Any, ClassVar
 from igni_core.backend.pool_directories import PoolDirectories
 from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.rpc_router import RpcRouter
+from igni_core.backend.schemas_sessions import BackendLike
 from igni_core.backend.server import BackendServer
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
@@ -19,7 +20,7 @@ from igni_core.core.config.settings import Settings
 class BootRuntime:
     """The session the backend booted with, wired before the pool exists."""
 
-    backend: Any
+    backend: BackendLike
     rpc_table: dict[str, Any]
     router: RpcRouter
     queue: MutableSequence[str]
@@ -91,7 +92,7 @@ class SessionRuntimeFactory:
     @staticmethod
     def bind(
         *,
-        backend: Any,
+        backend: BackendLike,
         rpc_table: dict[str, Any],
         queue: MutableSequence[str],
         transport: SessionStampingTransport,

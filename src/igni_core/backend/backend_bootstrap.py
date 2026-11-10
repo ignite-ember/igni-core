@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING
 
 from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
+from igni_core.core import session as session_module
 from igni_core.core.approvals.journal import ApprovalJournal
 from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.core.db.locator import StorageLocator
@@ -84,13 +85,11 @@ class BackendBootstrap:
             if persisted_model and persisted_model in settings.models.registry:
                 settings.models.default = persisted_model
 
-        # Late-import ``Session`` — resolved at call time so
-        # ``patch('igni_core.core.session.Session', ...)`` in
-        # ``tests/test_model_persistence.py`` continues to
-        # intercept construction.
-        from igni_core.core.session import Session  # noqa: PLC0415 — mock-patch target
-
-        self.session = Session(
+        # The session is read off the module, not bound by name: a
+        # test that patches ``igni_core.core.session.Session`` still
+        # intercepts the construction. The package is imported at the
+        # top of this file already, so nothing is deferred here.
+        self.session = session_module.Session(
             settings,
             project_dir=project_dir,
             resume_session_id=resume_session_id,

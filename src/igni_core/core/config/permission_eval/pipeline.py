@@ -108,9 +108,6 @@ class PermissionEvaluator:
     automatic mode, so an ALLOW from its mode step still yields to a
     matching ask rule (:meth:`PermissionModeStrategy.ask_rules_bind_allows`).
     Plan mode is therefore never looser than ``default``.
-      5. ``allow`` — any matching allow rule → ``ALLOW``.
-      6. ``defer`` — return ``DEFER`` so the caller routes to its
-         interactive/UI/canUseTool fallback.
 
     ``mode`` is a read-through property backed by ``_mode`` so
     every read pairs with any concurrent ``set_mode`` write via
