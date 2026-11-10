@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+import json
+from typing import ClassVar
 
-from igni_core.extensions.host.broadcasts.push_payloads import ViewActionPush, VisualizationDelta
+from pydantic import JsonValue
+
+from igni_core.backend.schemas_visualization import VisualizationActionDispatchedEvent
+from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
 from igni_core.extensions.host.signal_values import Signal
+
+#: Where a view came from, when the card named no source: igni's own
+#: visualizer.
+DEFAULT_VIEW_SOURCE = "visualizer"
 
 
 class ViewShown(Signal):
@@ -17,23 +25,19 @@ class ViewShown(Signal):
     session_id: str
     title: str
     #: A json-render spec, as the visualizer wrote it.
-    spec: Any
+    spec: JsonValue
     source: str
 
     @classmethod
-    def shown(cls, session_id: str, delta: VisualizationDelta) -> ViewShown:
+    def shown(cls, session_id: str, delta: VisualizationDeltaPayload) -> ViewShown:
+        """A finished card, as the visualizer's own model describes it."""
         return cls(
             view_id=delta.spec_id,
             session_id=session_id,
             title=delta.title,
-            spec=delta.spec(),
-            source=delta.source,
+            spec=_spec(delta.spec_json),
+            source=delta.source or DEFAULT_VIEW_SOURCE,
         )
-
-    @classmethod
-    def from_payload(cls, session_id: str, payload: dict[str, Any]) -> ViewShown:
-        """A ``visualization_delta`` payload, as pushed or as kept in the event log."""
-        return cls.shown(session_id, VisualizationDelta.model_validate(payload))
 
 
 class ViewAction(Signal):
@@ -42,11 +46,20 @@ class ViewAction(Signal):
     session_id: str
     action: str
     #: The action's parameters, as the view sent them.
-    params: Any
+    params: dict[str, JsonValue]
 
     @classmethod
-    def from_payload(cls, session_id: str, push: ViewActionPush) -> ViewAction:
-        return cls(session_id=session_id, action=push.action, params=push.params)
+    def dispatched(cls, session_id: str, event: VisualizationActionDispatchedEvent) -> ViewAction:
+        """An action, as the broadcast that carried it describes it."""
+        return cls(session_id=session_id, action=event.action, params=event.params)
+
+
+def _spec(spec_json: str) -> JsonValue:
+    """The spec the card carries; empty when what was streamed is not JSON."""
+    try:
+        return json.loads(spec_json)
+    except json.JSONDecodeError:
+        return {}
 
 
 __all__ = ["ViewAction", "ViewShown"]

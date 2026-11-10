@@ -155,9 +155,7 @@ class OrchestratorHostBackend:
                 continue
             if not payload.final or not payload.spec_id:
                 continue
-            latest[payload.spec_id] = ViewShown.from_payload(
-                session_id, payload.model_dump(by_alias=True)
-            )
+            latest[payload.spec_id] = ViewShown.shown(session_id, payload)
         return list(latest.values())
 
     def activity(self) -> Activity:
