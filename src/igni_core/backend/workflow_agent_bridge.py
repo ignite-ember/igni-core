@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic_core import PydanticSerializationError
 
 from igni_core.backend.schemas_workflow_events import AgentRequestEvent, AgentResponseMessage
-from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.config.group_policy.gate import RunGate
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session
@@ -24,8 +24,11 @@ class WorkflowAgentBridge:
     the script is blocked on it.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, gate: RunGate) -> None:
         self._session = session
+        # The run gate of the backend process: no agent call answers
+        # while it is closed.
+        self._gate = gate
 
     async def answer(self, request: AgentRequestEvent) -> AgentResponseMessage:
         payload = request.payload
@@ -33,7 +36,7 @@ class WorkflowAgentBridge:
             return AgentResponseMessage.refusal(
                 payload.id, f"agent request invalid: {payload.rejected_because}"
             )
-        refusal = GroupPolicyGate.reason()
+        refusal = self._gate.reason
         if refusal:
             return AgentResponseMessage.refusal(payload.id, refusal)
         team = self._session.main_team

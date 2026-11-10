@@ -14,11 +14,9 @@ Naming mirrors the ``PushNotification.channel`` value one-for-one so
 the wire contract stays greppable.
 
 A payload model here is the *producer's* model — strict about the
-fields it names. The extension host reads pushes through its own
-deliberately lenient readers
-(:mod:`igni_core.extensions.host.broadcasts.push_payloads`), which
-accept a producer's partial payload and keep its extra fields; those
-are a separate set on purpose.
+fields it names. The extension host reads a push through the model
+that produced it (:mod:`igni_core.extensions.host.broadcasts.push_reads`),
+so a producer and its reader cannot drift apart.
 """
 
 from __future__ import annotations

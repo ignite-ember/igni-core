@@ -29,7 +29,7 @@ from igni_core.backend.schemas_scheduler import (
     TaskCreatedPayload,
 )
 from igni_core.core.activity import background
-from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.run_context import CURRENT_RUN_ID
 from igni_core.core.scheduler.models import ScheduledTask
@@ -73,10 +73,14 @@ class SchedulerController:
         session: Session,
         settings: Settings | None,
         *,
+        gate: RunGate,
         execute_fn: Callable[[str], Awaitable[str]] | None = None,
         as_run: AsRun | None = None,
     ) -> None:
         self._session = session
+        # The run gate of the backend process: no scheduled task runs
+        # while it is closed.
+        self._gate = gate
         # How a task's work becomes the session's run: one at a time with
         # the person's turns, seen by ``get_processing``, stopped by
         # ``cancel_run``. Fixtures without a run controller run it bare.
@@ -109,7 +113,7 @@ class SchedulerController:
         :class:`SchedulerRunner` covers both callers: the poller and the
         "run it now" RPC. Both are a stored task firing, not a live turn.
         """
-        refusal = GroupPolicyGate.reason()
+        refusal = self._gate.reason
         if refusal:
             # Raised, not returned: a returned string would be recorded as
             # the task's successful result.

@@ -26,6 +26,7 @@ from igni_core.backend.controller_registry import ControllerRegistry, Controller
 from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustController, reload_settings
 from igni_core.core.broadcast_schema import BroadcastSink
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.session.event_log_schema import (
@@ -91,12 +92,18 @@ class BackendServer:
         contributions: PromptContributions | None = None,
         prompt_loader: PromptLoader | None = None,
         supervisors: SupervisorLocator | None = None,
+        gate: RunGate | None = None,
     ):
         # The supervisor this backend process shares. The backend's
         # composition root builds one locator per process and hands it
         # here; a server built on its own gets a locator of its own,
         # with its own supervisor.
         self._supervisors = supervisors if supervisors is not None else SupervisorLocator()
+        # Whether this process may run agent sessions. The composition
+        # root builds one gate and hands it over, so the settings loader
+        # that closes it and the controllers that read it are looking at
+        # the same one; a server built on its own gets an open gate.
+        self._gate = gate if gate is not None else RunGate()
         bootstrap = BackendBootstrap(
             settings=settings,
             project_dir=project_dir,
@@ -116,6 +123,7 @@ class BackendServer:
             hitl_tracer=bootstrap.hitl_tracer,
             message_queue=bootstrap.message_queue,
             supervisor=self._supervisors.supervisor,
+            gate=self._gate,
         )
         self._adopt(bootstrap.session, bootstrap.settings, controllers, bootstrap.message_queue)
 
@@ -128,6 +136,7 @@ class BackendServer:
         controllers: Controllers,
         message_queue: DurableMessageQueue | None,
         supervisors: SupervisorLocator,
+        gate: RunGate,
     ) -> BackendServer:
         """Assemble a server from collaborators that are already built.
 
@@ -140,9 +149,12 @@ class BackendServer:
         passes the locator it built them with. A default would let the
         server talk to one supervisor and its controllers to another —
         the watcher panel would then read a registry nothing writes to.
+        ``gate`` is required for the same reason: it is the gate the
+        controllers were built with, and the one the server answers with.
         """
         server = cls.__new__(cls)
         server._supervisors = supervisors
+        server._gate = gate
         server._adopt(session, settings, controllers, message_queue)
         return server
 
@@ -194,6 +206,16 @@ class BackendServer:
     @property
     def settings(self) -> Settings:
         return self._settings
+
+    @property
+    def gate(self) -> RunGate:
+        """Whether this process may run agent sessions.
+
+        The composition root builds one gate per backend process, closes
+        it when the group's policy could not be had, and hands it to
+        every part that starts an agent run.
+        """
+        return self._gate
 
     @property
     def supervisors(self) -> SupervisorLocator:

@@ -26,7 +26,7 @@ import json
 from typing import Annotated, Literal
 
 import jiter
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 
 class OrchestrateEventBase(BaseModel):
@@ -255,8 +255,14 @@ OrchestrateEvent = Annotated[
     Field(discriminator="type"),
 ]
 
+#: Parses one wire payload into the event it names. The producer dumps
+#: the event; whoever reads it back — the extension host, above all —
+#: parses it through this, so the shape is named in one place.
+ORCHESTRATE_EVENT_ADAPTER: TypeAdapter[OrchestrateEvent] = TypeAdapter(OrchestrateEvent)
+
 
 __all__ = [
+    "ORCHESTRATE_EVENT_ADAPTER",
     "AgentCompletedEvent",
     "AgentPausedEvent",
     "AgentStartedEvent",

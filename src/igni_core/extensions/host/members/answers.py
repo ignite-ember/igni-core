@@ -40,22 +40,4 @@ class CompactResult(BaseModel):
         )
 
 
-class PlanSnapshot(BaseModel):
-    """``plan.latest``: the newest plan, its history, tasks and state."""
-
-    latest: str
-    history: list[Any]
-    tasks: list[Any]
-    state: str
-
-    @classmethod
-    def from_rpc(cls, found: dict[str, Any]) -> PlanSnapshot:
-        return cls(
-            latest=str(found.get("latest", "")),
-            history=list(found.get("history") or []),
-            tasks=list(found.get("tasks") or []),
-            state=str(found.get("state", "")),
-        )
-
-
-__all__ = ["CompactResult", "ContextUsage", "PlanSnapshot"]
+__all__ = ["CompactResult", "ContextUsage"]

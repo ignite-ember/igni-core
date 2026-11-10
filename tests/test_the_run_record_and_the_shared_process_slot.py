@@ -33,6 +33,7 @@ from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.backend.run_controller import RunController
 from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.tools.process_events import ProcessExitEvent
@@ -112,6 +113,8 @@ def _controller(stream_messages: list[msg.Message]) -> tuple[RunController, _Jou
     controller._message_queue = None
     controller.periodic_checkpoint = _forever  # type: ignore[method-assign]
     controller._http_client_manager = SimpleNamespace(close_and_replace=_noop_async)
+    # The run gate of the backend process — open, so the run starts.
+    controller._gate = RunGate()
     return controller, journal
 
 

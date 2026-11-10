@@ -36,6 +36,7 @@ from igni_core.backend.session_runtime_factory import BootRuntime
 from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.backend.supervisor import BackendSupervisor
 from igni_core.backend.transport_builder import TransportBuilder
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.settings import Settings
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.layer import BackendHooks, layers
@@ -108,14 +109,18 @@ class BackendApp:
 
     async def _boot_and_serve(self) -> None:
         transport = await self._listen()
-        settings = BackendSettingsLoader(self._launch.project_dir).load()
+        # Whether this process may run agent sessions. Built here, at the
+        # composition root, so the settings loader that closes it and the
+        # controllers that read it share one gate.
+        gate = RunGate()
+        settings = BackendSettingsLoader(self._launch.project_dir, gate).load()
         store = ExtensionStore()
         ProcessEnvironment.enter(
             settings,
             tenant=self._guest.tenant,
             person=SignedInPerson(settings.auth.credentials_file, store),
         )
-        parts = await self._assemble(transport, settings, store)
+        parts = await self._assemble(transport, settings, store, gate)
         await ServingBackend(parts).serve()
 
     async def _listen(self) -> ObservedTransport:
@@ -135,7 +140,11 @@ class BackendApp:
         return transport
 
     async def _assemble(
-        self, transport: ObservedTransport, settings: Settings, store: ExtensionStore
+        self,
+        transport: ObservedTransport,
+        settings: Settings,
+        store: ExtensionStore,
+        gate: RunGate,
     ) -> BackendParts:
         launch = self._launch
         builder = self._transport_builder
@@ -160,6 +169,7 @@ class BackendApp:
             contributions=contributions,
             prompt_loader=prompt_loader,
             supervisors=supervisors,
+            gate=gate,
         )
         # Hydrates any persisted ``/loop`` state from the project's ``state.db``.
         await backend.startup()
@@ -225,6 +235,7 @@ class BackendApp:
                 push_bridge=push_bridge,
                 login=login,
                 supervisors=supervisors,
+                gate=gate,
                 contributions=contributions,
                 prompt_loader=prompt_loader,
                 extensions=extensions.rpc,

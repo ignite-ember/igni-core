@@ -22,6 +22,7 @@ from igni_core.backend.workflow_run import WorkflowRun
 from igni_core.backend.workflow_run_registry import WorkflowRunRegistry
 from igni_core.backend.workflow_runtime_process import WorkflowRuntime, WorkflowRuntimeProcess
 from igni_core.core.activity import ActivityRegistry, BackgroundTasks
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.session.event_log_schema import SessionEventAppendResult
 
 
@@ -86,6 +87,7 @@ def _run(proc: _Process, run_id: str, session: MagicMock | None = None) -> Workf
         process=WorkflowRuntimeProcess(proc),
         session=session or _session(),  # type: ignore[arg-type]
         push=MagicMock(),
+        gate=RunGate(),
     )
 
 

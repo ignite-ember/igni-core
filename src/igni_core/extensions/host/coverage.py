@@ -88,6 +88,13 @@ NOT_REACHABLE: tuple[Unreachable, ...] = (
         why="The person's decision, made in igni's own window: an extension that could "
         "mint the token could approve its own agent's calls (SECURITY §10).",
     ),
+    Unreachable(
+        key="dead_channel",
+        what="The push channels nothing produces (`orchestrate_progress`, `scheduler_event`)",
+        why="No producer sends them: a run's progress goes on `orchestrate_event`, and a "
+        "scheduled task's outcome on `scheduler_completed` (the scheduler's own "
+        "`scheduler.event` is a broadcast, and it is in the model).",
+    ),
 )
 
 _ROWS = {row.key for row in NOT_REACHABLE}

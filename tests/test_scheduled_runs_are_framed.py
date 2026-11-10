@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from igni_core.backend.server_scheduler import SchedulerController
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.scheduler.prompt import wrap_scheduled_prompt
 
 _DESCRIPTION = "check the error rate on the payments dashboard and summarise it"
@@ -81,7 +82,7 @@ class TestTheControllerUsesIt:
 
         session = MagicMock()
         session.main_team.arun = _arun
-        controller = SchedulerController(session, settings=None)
+        controller = SchedulerController(session, settings=None, gate=RunGate())
 
         await controller.execute(_DESCRIPTION)
 
@@ -95,6 +96,6 @@ class TestTheControllerUsesIt:
         ``execute``. If that binding is ever re-pointed at something rawer,
         the framing silently stops applying to the path that fires most."""
         session = MagicMock()
-        controller = SchedulerController(session, settings=None)
+        controller = SchedulerController(session, settings=None, gate=RunGate())
 
         assert controller._execute_fn.__func__ is SchedulerController.execute

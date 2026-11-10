@@ -343,6 +343,7 @@ def test_a_server_from_parts_answers_like_the_one_it_was_built_from(backend):
         controllers=backend.controllers,
         message_queue=backend.message_queue,
         supervisors=backend.supervisors,
+        gate=backend.gate,
     )
 
     assert set(vars(rebuilt)) == set(vars(backend))

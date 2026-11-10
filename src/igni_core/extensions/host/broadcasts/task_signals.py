@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import ClassVar
 
-from igni_core.extensions.host.broadcasts.push_payloads import SchedulerPush, TodosPush
+from igni_core.core.tools.todo import TodoItemWire, TodosUpdatedEvent
+from igni_core.extensions.host.broadcasts.push_reads import read_push
 from igni_core.extensions.host.broadcasts.signal import Handler, PushHandler
 from igni_core.extensions.host.signal_values import Emitter, Signal
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.be_events import TaskSnapshot
 from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.push_payloads import (
+    SchedulerCompletedPayload,
+    SchedulerStartedPayload,
+)
 
 
 class TaskSignal(Signal):
@@ -49,7 +54,7 @@ class TodosChanged(Signal):
 
     session_id: str
     #: The todo items, as the todo tool writes them.
-    todos: list[Any]
+    todos: list[TodoItemWire]
 
 
 class SchedulerSignal(Signal):
@@ -67,24 +72,12 @@ class SchedulerSignal(Signal):
         return cls(kind=m.event_type, task_id=m.task_id, description=m.description, result=m.result)
 
     @classmethod
-    def from_push(cls, kind: str, push: SchedulerPush) -> SchedulerSignal:
-        return cls(
-            kind=kind, task_id=push.task_id, description=push.description, result=push.outcome()
-        )
-
-    @classmethod
     def cancelled(cls, task_id: str) -> SchedulerSignal:
         return cls(kind="cancelled", task_id=task_id, description="", result="")
 
 
 class TaskSignals:
     """Translates the task and scheduler traffic."""
-
-    #: The scheduler pushes, by the kind each one tells.
-    SCHEDULER_KINDS: ClassVar[dict[PushChannel, str]] = {
-        PushChannel.SCHEDULER_STARTED: "started",
-        PushChannel.SCHEDULER_COMPLETED: "completed",
-    }
 
     def __init__(self, emitter: Emitter) -> None:
         self._emitter = emitter
@@ -100,19 +93,45 @@ class TaskSignals:
 
     def push_handlers(self) -> dict[PushChannel, PushHandler]:
         return {
-            PushChannel.SCHEDULER_STARTED: self.scheduler,
-            PushChannel.SCHEDULER_COMPLETED: self.scheduler,
+            PushChannel.SCHEDULER_STARTED: self.scheduler_started,
+            PushChannel.SCHEDULER_COMPLETED: self.scheduler_completed,
             PushChannel.TODOS_UPDATED: self.todos,
         }
 
-    def scheduler(self, m: msg.PushNotification) -> None:
-        push = SchedulerPush.model_validate(m.payload)
-        kind = self.SCHEDULER_KINDS[PushChannel(m.channel)]
-        self._emitter.send(SchedulerSignal.from_push(kind, push))
+    def scheduler_started(self, m: msg.PushNotification) -> None:
+        """A scheduled task started."""
+        payload = read_push(SchedulerStartedPayload, m.payload, channel=m.channel)
+        if payload is None:
+            return
+        self._emitter.send(
+            SchedulerSignal(
+                kind="started",
+                task_id=payload.task_id,
+                description=payload.description,
+                result="",
+            )
+        )
+
+    def scheduler_completed(self, m: msg.PushNotification) -> None:
+        """A scheduled task finished; its result is what it left behind."""
+        payload = read_push(SchedulerCompletedPayload, m.payload, channel=m.channel)
+        if payload is None:
+            return
+        self._emitter.send(
+            SchedulerSignal(
+                kind="completed",
+                task_id=payload.task_id,
+                description=payload.description,
+                result=payload.result,
+            )
+        )
 
     def todos(self, m: msg.PushNotification) -> None:
-        push = TodosPush.model_validate(m.payload)
-        self._emitter.send(TodosChanged(session_id=m.session_id, todos=push.todos))
+        """The todo list changed."""
+        payload = read_push(TodosUpdatedEvent, m.payload, channel=m.channel)
+        if payload is None:
+            return
+        self._emitter.send(TodosChanged(session_id=m.session_id, todos=payload.todos))
 
     def cancelled(self, task_id: str) -> None:
         """A scheduled task cancelled through RPC, which pushes nothing of its own."""

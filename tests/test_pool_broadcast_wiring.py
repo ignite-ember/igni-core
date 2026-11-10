@@ -30,6 +30,7 @@ from igni_core.backend.schemas_pool import ProjectDirs
 from igni_core.backend.session_pool import SessionStampingTransport
 from igni_core.backend.session_runtime_factory import SessionRuntimeFactory
 from igni_core.core.broadcast_schema import BroadcastEvent
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.settings import Settings
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.session.broadcast import BroadcastBus
@@ -55,6 +56,7 @@ class _PooledBackend:
         contributions: Any = None,
         prompt_loader: Any = None,
         supervisors: SupervisorLocator | None = None,
+        gate: RunGate | None = None,
     ) -> None:
         self.session_id = resume_session_id
         self.project_dir = project_dir
@@ -63,6 +65,10 @@ class _PooledBackend:
         # The supervisor the backend process shares — the factory
         # hands the same locator the pool wiring carries.
         self._supervisors = supervisors if supervisors is not None else SupervisorLocator()
+        # Whether this backend process may run agent sessions. The real
+        # ``BackendServer`` carries one; the RPC router reads it to build
+        # the workflow runner. This one is open, so a run starts.
+        self.gate = gate if gate is not None else RunGate()
 
     @property
     def supervisor(self) -> ProcessSupervisor:
@@ -281,6 +287,7 @@ class TestOrchestratorAndAppWiring:
                 push_bridge=push,
                 login=LoginCoordinator(backend=boot, push_bridge=push),
                 supervisors=SupervisorLocator(),
+                gate=RunGate(),
             ),
             settings=settings,
             dirs=directories,

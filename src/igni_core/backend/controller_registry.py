@@ -37,6 +37,7 @@ from igni_core.backend.team_wiring import TeamWiring
 from igni_core.backend.visualization_action_bus import VisualizationActionBus
 from igni_core.core.auth.discovery import ServerDiscovery
 from igni_core.core.auth.portal_client import PortalClient
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.group_policy.meta import PackMetaStore
 from igni_core.core.config.models import ModelRegistry
@@ -125,6 +126,7 @@ class ControllerRegistry:
         hitl_tracer: HITLTracer | None,
         message_queue: DurableMessageQueue | None,
         supervisor: ProcessSupervisor,
+        gate: RunGate,
     ) -> Controllers:
         """Full production wiring — every controller built eagerly.
 
@@ -132,7 +134,9 @@ class ControllerRegistry:
         the registry the watcher panel reads and the foreground slot
         the cancel path kills. It is injected rather than looked up,
         so every controller of one backend process talks to the same
-        one.
+        one. ``gate`` is injected for the same reason: it is the one
+        gate of the process, and every controller that starts an agent
+        run asks it before it starts one.
         """
         # ── Foundation controllers (session-only deps) ──────────────
         mcp = McpController(session)
@@ -161,6 +165,7 @@ class ControllerRegistry:
             message_queue=message_queue,
             stream_factory=hitl.stream_with_subagent,
             supervisor=supervisor,
+            gate=gate,
         )
 
         # Context needs pending_store for the crash-survival RPC.
@@ -202,6 +207,7 @@ class ControllerRegistry:
             session=session,
             settings=settings,
             as_run=runs.run_unstreamed,
+            gate=gate,
         )
 
         lifecycle = LifecycleController(

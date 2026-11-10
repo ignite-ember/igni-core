@@ -52,7 +52,7 @@ from igni_core.backend.schemas_run import CancelAgentRunResult, RunPhase
 from igni_core.backend.session_checkpointer import SessionCheckpointer
 from igni_core.backend.stream_event_dispatcher import StreamEventDispatcher
 from igni_core.core.activity import background
-from igni_core.core.config.group_policy.gate import GroupPolicyGate
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.session.pending_messages import InterruptedReason
 from igni_core.core.session.queued_messages import DurableMessageQueue
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
@@ -87,6 +87,8 @@ class RunController:
     production). ``message_queue`` is the durable queue settled
     after each run. ``supervisor`` is the supervisor the backend
     process shares — its foreground slot is what a cancel kills.
+    ``gate`` is the run gate of the backend process: no run starts
+    while it is closed.
     """
 
     def __init__(
@@ -96,12 +98,14 @@ class RunController:
         message_queue: DurableMessageQueue | None,
         stream_factory: StreamFactory,
         supervisor: ProcessSupervisor,
+        gate: RunGate,
         http_client_manager: ModelHttpClientManager | None = None,
     ) -> None:
         self._session = session
         self._message_queue = message_queue
         self._stream_factory = stream_factory
         self._supervisor = supervisor
+        self._gate = gate
         self._pending_journal = PendingMessageJournal(pending_store, session.session_id)
         self._http_client_manager = http_client_manager or ModelHttpClientManager()
         self._prompt_builder = PromptBuilder(session)
@@ -460,8 +464,8 @@ class RunController:
         self._transition_to(RunPhase.starting)
 
         # ``group_policy.required`` and no verified pack at start-up: no
-        # agent run, and the person is told how to get one (``GroupPolicyGate``).
-        refusal = GroupPolicyGate.reason()
+        # agent run, and the person is told how to get one (the run gate).
+        refusal = self._gate.reason
         if refusal:
             yield msg.Error(text=refusal)
             self._transition_to(RunPhase.done)

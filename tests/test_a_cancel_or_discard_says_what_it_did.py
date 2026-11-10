@@ -19,6 +19,7 @@ import pytest
 
 from igni_core.backend.run_controller import RunController
 from igni_core.backend.server_scheduler import SchedulerController
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
 from igni_core.core.scheduler.store import TaskStore
 from igni_core.core.session.pending_messages import PendingMessageStore
@@ -28,7 +29,12 @@ from igni_core.core.session.pending_messages import PendingMessageStore
 def tasks(tmp_path):
     store = TaskStore(db_path=tmp_path / "state.db")
     with patch("igni_core.backend.server_scheduler.TaskStore", lambda project_dir: store):
-        yield store, SchedulerController(SimpleNamespace(project_dir=tmp_path), None)  # type: ignore[arg-type]
+        yield (
+            store,
+            SchedulerController(  # type: ignore[arg-type]
+                SimpleNamespace(project_dir=tmp_path), None, gate=RunGate()
+            ),
+        )
 
 
 async def test_cancelling_an_unknown_task_is_refused(tasks) -> None:

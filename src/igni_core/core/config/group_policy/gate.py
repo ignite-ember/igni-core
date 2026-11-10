@@ -1,33 +1,58 @@
-"""Whether this process may run agent sessions."""
+"""Whether this process may run agent sessions.
+
+One gate per backend process, built by the composition root and handed
+to the parts that start agent runs — the run controller, the scheduler
+and the workflow agent bridge. It is closed at start-up when the
+organisation's policy is required and no verified pack could be had,
+and it is the gate's own object that says so: nothing reads a class
+attribute to find out whether a run may start.
+"""
 
 from __future__ import annotations
 
+from enum import StrEnum
 
-class GroupPolicyGate:
+
+class GatePhase(StrEnum):
+    """Whether this process may run agent sessions."""
+
+    open = "open"
+    closed = "closed"
+
+
+class RunGate:
     """Whether this process may run agent sessions.
 
-    Closed by the backend when ``group_policy.required`` is set and no
-    verified pack could be applied at start-up. The backend still boots —
+    Closed by the backend at start-up when ``group_policy.required`` is
+    set and no verified pack could be applied. The backend still boots —
     the person has to be able to sign in, which is how a valid pack is
-    fetched — but every place that starts an agent run asks here first and
-    refuses with :meth:`reason`. Stays closed until the process restarts:
-    the settings this process loaded were built without the policy, so a
-    pack that arrives later cannot make *them* compliant.
+    fetched — but every place that starts an agent run asks here first
+    and refuses with :attr:`reason`.
 
-    TODO(pass 2): a class-level singleton; becomes an injected ``RunGate``
-    instance with a typed phase.
+    Stays closed for the life of the process: the settings this process
+    loaded were built without the policy, so a pack that arrives later
+    cannot make *them* compliant. Restarting the backend with
+    compliant settings is the way out.
     """
 
-    _reason: str | None = None
+    def __init__(self) -> None:
+        self._phase = GatePhase.open
+        self._reason: str | None = None
 
-    @classmethod
-    def close(cls, reason: str) -> None:
-        cls._reason = reason
+    @property
+    def phase(self) -> GatePhase:
+        """Whether an agent run may start."""
+        return self._phase
 
-    @classmethod
-    def reason(cls) -> str | None:
-        return cls._reason
+    @property
+    def reason(self) -> str | None:
+        """Why an agent run is refused; ``None`` while the gate is open."""
+        return self._reason
 
-    @classmethod
-    def reset(cls) -> None:
-        cls._reason = None
+    def close(self, reason: str) -> None:
+        """Refuse every agent run from now on, and say why."""
+        self._phase = GatePhase.closed
+        self._reason = reason
+
+
+__all__ = ["GatePhase", "RunGate"]
