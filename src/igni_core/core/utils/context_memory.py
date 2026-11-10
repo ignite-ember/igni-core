@@ -9,19 +9,21 @@ memory-index concern only.
 
 ## OOP shape
 
-The dominant subject of this file is ``project_dir`` — every helper
-took it as first arg and either derived paths from it or read files
-under those paths. That's the classic Rule 6 "implicit subject
-cluster" audit flag. The refactor promotes ``project_dir`` to
-constructor state on :class:`ProjectMemoryBank`, with the three
-public verbs (``ensure`` / ``load_index`` / ``writeback_instructions``)
-as instance methods. The class is the module's API — there are no
-free-function delegations back to it.
+The subject of this file is a project's memory bank: where its files
+live, what its index says, and what the agent is told about writing
+back into it. :class:`ProjectMemoryBank` owns that subject — the
+project directory is constructor state, and the three public verbs
+(``ensure`` / ``load_index`` / ``writeback_instructions``) are its
+methods. There are no free-function delegations back to it.
+
+Where the bank keeps its files is a collaborator
+(:class:`~igni_core.core.utils.context_memory_paths.MemoryPaths`),
+passed in or built from the project directory. That is the seam a
+caller with a different layout uses — nothing in the bank reads a
+module global to find out where memory lives.
 
 ## What lives here
 
-- **Path resolution** — encode a project dir as a CC-compatible slug,
-  resolve the ember-native + Claude Code cross-tool memory dirs.
 - **``MEMORY.md`` reading** — with the 200-line / 25-KB cap Claude Code
   publishes, so a runaway memory file can never blow up the session
   prompt.
@@ -32,93 +34,18 @@ free-function delegations back to it.
 - **Bootstrap** — :meth:`ProjectMemoryBank.ensure` creates the per-
   project memory directory idempotently so the agent's first
   ``save_file`` doesn't fail on a missing parent.
-
-The path helpers stay at module level because
-:class:`ProjectMemoryBank` resolves them on the module namespace at
-call time — see the module-late-binding pattern in
-:meth:`ProjectMemoryBank.igni_dir`.
 """
 
 from __future__ import annotations
 
 import logging
-import sys
 from pathlib import Path
 
-from igni_core.core.paths import CONFIG_DIR
+from igni_core.core.utils.context_memory_paths import MemoryPaths, ProjectMemoryPaths
 from igni_core.core.utils.context_memory_prompt import MemoryWritebackPrompt
 from igni_core.core.utils.memory_files import DirectoryMemoryFiles, MemoryFiles, MemoryMirror
 
 logger = logging.getLogger(__name__)
-
-
-# ── Module-level path helpers ─────────────────────────────────────
-#
-# Kept as module-level free functions (not class methods) because
-# :class:`ProjectMemoryBank` resolves them on the module namespace at
-# call time — see :meth:`ProjectMemoryBank.igni_dir`.
-
-
-#: Filename of the per-project memory INDEX. Individual memory files
-#: are separate ``<name>.md`` files in the same directory; the index
-#: is a one-line-per-memory table of contents.
-_MEMORY_INDEX_NAME = "MEMORY.md"
-
-#: Prefix line cap Claude Code publishes. Loaded into the session
-#: prompt at start; the rest of the file survives untouched but is
-#: not visible until the agent explicitly reads it.
-_MEMORY_INDEX_MAX_LINES = 200
-
-#: Byte cap that runs alongside the line cap — whichever hits first
-#: wins. Matches Claude Code's 25 KB published cap.
-_MEMORY_INDEX_MAX_BYTES = 25_000
-
-
-def _project_memory_slug(project_dir: Path) -> str:
-    """Encode an absolute project path as a directory-safe slug.
-
-    Mirrors Claude Code's convention: the absolute path with every
-    ``/`` replaced by ``-`` (and the leading ``/`` becomes a
-    leading ``-``). So ``/Users/x/proj`` → ``-Users-x-proj``.
-    Matching CC's encoding means a user who already has a CC
-    memory bank for this repo automatically lights up the cross-
-    tool fallback below — no migration step required.
-    """
-    return str(project_dir.resolve()).replace("/", "-")
-
-
-def _igni_project_memory_dir(project_dir: Path) -> Path:
-    """Ember-native per-project memory dir
-    (``~/.igni/projects/<slug>/memory/``)."""
-    return Path.home() / CONFIG_DIR / "projects" / _project_memory_slug(project_dir) / "memory"
-
-
-def _claude_project_memory_dir(project_dir: Path) -> Path:
-    """Claude Code's per-project memory dir
-    (``~/.claude/projects/<slug>/memory/``). Read only — we never
-    write here."""
-    return Path.home() / ".claude" / "projects" / _project_memory_slug(project_dir) / "memory"
-
-
-def _read_memory_index(memory_dir: Path) -> str:
-    """Read ``MEMORY.md`` from a memory dir, applying the 200-line /
-    25-KB cap. Returns ``""`` when the file doesn't exist or can't
-    be read."""
-    return _cap_memory_index(DirectoryMemoryFiles(memory_dir).read(_MEMORY_INDEX_NAME) or "")
-
-
-def _cap_memory_index(content: str) -> str:
-    """The first 200 lines or 25 KB of an index, whichever is less."""
-    lines = content.splitlines(keepends=True)
-    if len(lines) > _MEMORY_INDEX_MAX_LINES:
-        lines = lines[:_MEMORY_INDEX_MAX_LINES]
-    text = "".join(lines)
-    if len(text.encode("utf-8")) > _MEMORY_INDEX_MAX_BYTES:
-        # Byte cap kicks in second — trim the trailing partial
-        # text. ``errors="ignore"`` drops any byte chopped mid-
-        # codepoint so we never emit invalid UTF-8.
-        text = text.encode("utf-8")[:_MEMORY_INDEX_MAX_BYTES].decode("utf-8", errors="ignore")
-    return text
 
 
 # ── The bank ──────────────────────────────────────────────────────
@@ -127,47 +54,40 @@ def _cap_memory_index(content: str) -> str:
 class ProjectMemoryBank:
     """One project's auto-memory bank — the OOP core of this module.
 
-    Owns a ``project_dir`` and a cross-tool fallback flag; exposes
-    the three verbs the caller actually cares about
-    (``ensure`` / ``load_index`` / ``writeback_instructions``) as
-    methods. Replaces the pre-refactor free-function trio that
-    threaded ``project_dir`` through five signatures as an
-    implicit subject (Rule 6 "implicit subject cluster" audit
-    flag).
-
-    ## Late-binding lookup of the path helpers
-
-    The instance methods do NOT capture the module-level
-    ``_igni_project_memory_dir`` / ``_claude_project_memory_dir``
-    names at method-definition time. Instead, they re-read them
-    off ``sys.modules[__name__]`` at call time. That's the only
-    way tests that ``monkeypatch.setattr(context_memory,
-    "_igni_project_memory_dir", ...)`` — or the equivalent patch
-    on the :mod:`context` re-export — take effect on subsequent
-    method calls. A naive ``from … import`` at method scope would
-    freeze the reference and silently ignore the monkeypatch.
+    Owns a ``project_dir``, the paths that follow from it, and a
+    cross-tool fallback flag; exposes the three verbs the caller
+    actually cares about (``ensure`` / ``load_index`` /
+    ``writeback_instructions``) as methods. Replaces the pre-refactor
+    free-function trio that threaded ``project_dir`` through five
+    signatures as an implicit subject (Rule 6 "implicit subject
+    cluster" audit flag).
     """
 
-    #: Filename of the per-project memory INDEX — mirrors module
-    #: constant so callers with a bank instance can read it off
-    #: ``self.MEMORY_INDEX_NAME``.
-    MEMORY_INDEX_NAME: str = _MEMORY_INDEX_NAME
+    #: Filename of the per-project memory INDEX — the index is a
+    #: one-line-per-memory table of contents; the individual memory
+    #: files are separate ``<name>.md`` files beside it.
+    MEMORY_INDEX_NAME: str = "MEMORY.md"
 
-    #: Prefix line cap — see module-level constant.
-    MAX_LINES: int = _MEMORY_INDEX_MAX_LINES
+    #: Prefix line cap Claude Code publishes. Loaded into the session
+    #: prompt at start; the rest of the file survives untouched but is
+    #: not visible until the agent explicitly reads it.
+    MAX_LINES: int = 200
 
-    #: Byte cap — see module-level constant.
-    MAX_BYTES: int = _MEMORY_INDEX_MAX_BYTES
+    #: Byte cap that runs alongside the line cap — whichever hits
+    #: first wins. Matches Claude Code's 25 KB published cap.
+    MAX_BYTES: int = 25_000
 
     def __init__(
         self,
         project_dir: Path,
         read_claude_fallback: bool = True,
         files: MemoryFiles | None = None,
+        paths: MemoryPaths | None = None,
     ) -> None:
         self._project_dir = project_dir
         self._read_claude_fallback = read_claude_fallback
         self._files = files
+        self._paths: MemoryPaths = paths if paths is not None else ProjectMemoryPaths(project_dir)
 
     def mirror(self) -> MemoryMirror | None:
         """The write-through mirror of the memory directory, filled —
@@ -201,23 +121,12 @@ class ProjectMemoryBank:
         return self._read_claude_fallback
 
     def igni_dir(self) -> Path:
-        """Resolve the ember-native memory dir for this project.
-
-        Reads the module-level ``_igni_project_memory_dir`` name
-        off ``sys.modules[__name__]`` at call time so test
-        monkeypatches take effect. Do NOT inline this to
-        ``_igni_project_memory_dir(self._project_dir)`` — that
-        captures the reference at method-definition time and
-        silently ignores patched replacements.
-        """
-        return sys.modules[__name__]._igni_project_memory_dir(self._project_dir)
+        """Resolve the igni-owned memory dir for this project."""
+        return self._paths.igni_dir()
 
     def claude_dir(self) -> Path:
-        """Resolve the Claude Code cross-tool memory dir for this project.
-
-        See :meth:`igni_dir` — same late-binding rationale.
-        """
-        return sys.modules[__name__]._claude_project_memory_dir(self._project_dir)
+        """Resolve the Claude Code memory dir for this project."""
+        return self._paths.claude_dir()
 
     # ── Verbs ───────────────────────────────────────────────────
 
@@ -235,14 +144,14 @@ class ProjectMemoryBank:
         try:
             target.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            logger.debug("ensure_memory_dir %s failed: %s", target, exc)
+            logger.warning("memory dir %s could not be created: %s", target, exc)
         return target
 
     def load_index(self) -> str:
         """Load the per-project ``MEMORY.md`` index for the session.
 
-        Tries the ember-native location first; when
-        ``read_claude_fallback`` is set and no ember-native file
+        Tries the igni-owned location first; when
+        ``read_claude_fallback`` is set and no igni-owned file
         exists, falls back to the equivalent CC path so a user
         mid-migration keeps their existing memory bank without
         copying files. The first 200 lines OR 25 KB (whichever cap
@@ -255,13 +164,12 @@ class ProjectMemoryBank:
         """
         files = self.files()
         if not isinstance(files, DirectoryMemoryFiles):
-            return _cap_memory_index(files.read(self.MEMORY_INDEX_NAME) or "")
-        reader = sys.modules[__name__]._read_memory_index
-        text = reader(self.igni_dir())
+            return self.cap_index(files.read(self.MEMORY_INDEX_NAME) or "")
+        text = self._index_at(self.igni_dir())
         if text:
             return text
         if self._read_claude_fallback:
-            text = reader(self.claude_dir())
+            text = self._index_at(self.claude_dir())
             if text:
                 return text
         return ""
@@ -274,7 +182,30 @@ class ProjectMemoryBank:
         Delegates the actual template rendering to
         :class:`context_memory_prompt.MemoryWritebackPrompt` so the
         79-line prose lives in its own file (Pattern 8). This
-        method's job is to wire the resolved ember-dir path into
+        method's job is to wire the resolved igni-dir path into
         the prompt.
         """
         return MemoryWritebackPrompt(self.igni_dir()).render()
+
+    # ── Reading ────────────────────────────────────────────────
+
+    def _index_at(self, memory_dir: Path) -> str:
+        """The index text in one memory directory, capped."""
+        files = DirectoryMemoryFiles(memory_dir)
+        return self.cap_index(files.read(self.MEMORY_INDEX_NAME) or "")
+
+    @classmethod
+    def cap_index(cls, content: str) -> str:
+        """The first 200 lines or 25 KB of an index, whichever is less.
+
+        The line cap comes first; the byte cap then trims the
+        trailing partial text. ``errors="ignore"`` drops any byte
+        chopped mid-codepoint so we never emit invalid UTF-8.
+        """
+        lines = content.splitlines(keepends=True)
+        if len(lines) > cls.MAX_LINES:
+            lines = lines[: cls.MAX_LINES]
+        text = "".join(lines)
+        if len(text.encode("utf-8")) > cls.MAX_BYTES:
+            text = text.encode("utf-8")[: cls.MAX_BYTES].decode("utf-8", errors="ignore")
+        return text
