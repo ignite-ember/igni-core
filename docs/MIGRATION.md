@@ -20,14 +20,14 @@ Cross-tool support is **enabled by default** — igni reads `CLAUDE.md` files, `
 
 ```bash
 brew install ignite-ember/tap/ignite-ember
-# or: pip install ignite-ember
+# or: pip install 'igni-core[decisions]==1.0.4'
 
 igni login                            # sign in to your igni server account
 igni -m "explain this repository"      # run one task from the terminal
 ```
 
-That installs the last pre-split release (v1.0.3); the igni in this
-repository is not on PyPI yet — see
+That installs v1.0.4 — this repository's build, published as `igni-core`
+(the old `ignite-ember` name installs the same package). See
 [Quickstart](../README.md#quick-start) for how to run it from a checkout.
 
 The chat itself lives in the desktop app or the web client — `igni` on its

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "igni-cloud"
-version = "1.0.3"
+version = "1.0.4"
 description = "igni's cloud layer: igni in a producer's microVM, with its state in PostgreSQL"
 readme = "README.md"
 license = "Apache-2.0"
@@ -12,7 +12,7 @@ requires-python = ">=3.12,<3.13"
 authors = [{ name = "Ignite Ember" }]
 dependencies = [
     # The core, at the same version: the layer plugs into its seams.
-    "igni-core==1.0.3",
+    "igni-core==1.0.4",
     # PostgreSQL: psycopg 3 is one driver with a sync and an async API, so
     # alembic, igni's stores and Agno's AsyncPostgresDb all speak through it.
     "psycopg[binary]~=3.3.6",

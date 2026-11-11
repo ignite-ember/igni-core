@@ -355,7 +355,10 @@ async def test_a_renewal_due_during_a_pause_waits_for_the_first_answer(tmp_path:
     assert len(vm.igni.grants) == 1, "nothing sent beside the request that woke the VM"
     wake.through.set()
     for _ in range(100):
-        if len(vm.igni.grants) == 2:
+        # The exchange is counted when it is asked for, and the token is
+        # written when its answer is back: waiting for the count alone
+        # is waiting for the question, not for the renewal.
+        if len(vm.igni.grants) == 2 and vm.token.read_text() == "token-2":
             break
         await asyncio.sleep(0.01)
     assert len(vm.igni.grants) == 2, "renewed once the first answer is through"
