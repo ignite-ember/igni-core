@@ -77,3 +77,11 @@ def test_the_help_says_a_timed_out_case_is_retried(smoke, monkeypatch, capsys):
     text = _help_text(smoke, monkeypatch, capsys)
     assert "Does NOT retry on case_timeout" not in text
     assert "and on case_timeout" in text
+
+
+def test_the_help_says_a_timed_out_case_is_reported_as_env(smoke, monkeypatch, capsys):
+    """The suite prints a timeout as ENV, not FAIL (it is the environment's
+    failure, not the eval's); the help must say the same."""
+    text = _help_text(smoke, monkeypatch, capsys)
+    assert "marked FAIL" not in text
+    assert "reported as ENV with reason=case_timeout" in text

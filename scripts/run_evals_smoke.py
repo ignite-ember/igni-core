@@ -594,11 +594,12 @@ async def main():
         type=int,
         default=60,
         help=(
-            "hard cap (seconds) on a single eval case. A case that doesn't "
-            "finish in this window is marked FAIL with reason=case_timeout. "
-            "60s is enough for any healthy multi-agent flow; longer means a "
-            "retry storm or a stuck stream — neither is what we want to "
-            "report as a partial PASS."
+            "hard cap (seconds) on one attempt of an eval case. A case "
+            "that doesn't finish in this window is retried (see "
+            "--case-retries) and, when the attempts run out, reported as "
+            "ENV with reason=case_timeout — an environment problem, not an "
+            "eval FAIL. 60s is enough for any healthy multi-agent flow; "
+            "longer means a retry storm or a stuck stream."
         ),
     )
     args = parser.parse_args()
