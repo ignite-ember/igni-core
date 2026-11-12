@@ -578,3 +578,51 @@ async def test_a_clone_runs_off_the_event_loop_and_the_reload_on_it(tmp_path: Pa
 
     assert seen["clone"] is not loop_thread
     assert seen["reload"] is loop_thread
+
+
+async def test_an_update_says_the_first_twelve_characters_of_the_new_commit(tmp_path: Path) -> None:
+    backend = _make_backend(tmp_path)
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
+        installer = mock_cls.return_value
+        installer.is_git_available.return_value = True
+        installer.update.return_value = "0123456789abcdef" * 2
+        result = await backend.controllers.plugins.update("foo")
+    assert result.text == "Updated 'foo' to 0123456789ab. Active now."
+
+
+async def test_an_update_and_a_remove_run_off_the_event_loop_and_reload_on_it(
+    tmp_path: Path,
+) -> None:
+    """The fetch of an update and the deletion of a plugin were moved into
+    worker threads with the clone; the reload that follows each stays on the
+    loop, where the live session is rebuilt."""
+    import threading
+
+    loop_thread = threading.current_thread()
+    seen: dict[str, threading.Thread] = {}
+    backend = _make_backend(tmp_path)
+
+    def reload() -> PluginReloadCounts:
+        seen["reload"] = threading.current_thread()
+        return PluginReloadCounts(plugins=0, skills=0, agents=0, hooks=0)
+
+    backend._session.reload_plugins.side_effect = reload
+    with patch("igni_core.core.plugins.installer.PluginInstaller") as mock_cls:
+        installer = mock_cls.return_value
+        installer.is_git_available.return_value = True
+
+        def fetch(*args: object, **kwargs: object) -> str:
+            seen["fetch"] = threading.current_thread()
+            return "c" * 40
+
+        def delete(*args: object, **kwargs: object) -> None:
+            seen["delete"] = threading.current_thread()
+
+        installer.update.side_effect = fetch
+        installer.remove.side_effect = delete
+        await backend.controllers.plugins.update("foo")
+        await backend.controllers.plugins.remove("foo")
+
+    assert seen["fetch"] is not loop_thread
+    assert seen["delete"] is not loop_thread
+    assert seen["reload"] is loop_thread
