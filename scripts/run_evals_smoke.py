@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import sys
 import tempfile
 from collections import defaultdict
@@ -80,8 +81,8 @@ async def _auto_approve_loop(coord) -> None:
         try:
             await coord.new_arrival.wait()
             entries = coord.list_new_pending()
-            for req_id, _entry in entries:
-                coord.resolve(req_id, "confirm")
+            for handle in entries:
+                coord.resolve(handle.requirement_id, "confirm")
         except asyncio.CancelledError:
             return
         except Exception as exc:
@@ -232,7 +233,7 @@ def _build_mcp_test_agent(model, project_dir: Path):
         base_dir=str(project_dir),
         permissions=ToolPermissions(project_dir=project_dir),
     )
-    tools = registry.resolve(["Write", "Edit", "Bash", "Read"])
+    tools = registry.resolve(["Write", "Edit", "Bash"])
     tools.append(MCPStubTools())
 
     instructions = (
@@ -256,37 +257,19 @@ def _build_mcp_test_agent(model, project_dir: Path):
     )
 
 
-def _build_main_agent(model, project_dir: Path):
-    """Build the main orchestrator agent.
+def _use_live_model(settings) -> None:
+    """Point ``settings`` at the live test endpoint as its default model."""
+    from igni_core.core.config.model_entry import ModelRegistryEntry
 
-    Heavier — needs the full Session because OrchestrateTools depends on a
-    populated AgentPool to dispatch to specialists. We point Session at a
-    temp project_dir so we don't touch the real .igni/ workspace.
-    """
-    from igni_core.core.config.settings import load_settings
-    from igni_core.core.session.core import Session
-
-    # Override the default model to use our live test model
-    os.environ["IGNI_TEST_LLM_API_KEY_OVERRIDE"] = os.environ["IGNI_TEST_LLM_API_KEY"]
-
-    settings = load_settings(project_dir=project_dir)
-    # Patch settings to redirect the default model at our test endpoint
-    test_model_id = os.getenv("IGNI_TEST_LLM_MODEL") or "gpt-4o-mini"
-    test_base_url = os.getenv("IGNI_TEST_LLM_BASE_URL") or "https://api.openai.com/v1"
-    test_api_key = os.environ["IGNI_TEST_LLM_API_KEY"]
-
-    settings.models.registry["MiniMax-M2.7"] = {
-        "provider": "openai_like",
-        "model_id": test_model_id,
-        "url": test_base_url,
-        "api_key": test_api_key,
-        "context_window": 128_000,
-        "vision": False,
-    }
+    settings.models.registry["MiniMax-M2.7"] = ModelRegistryEntry(
+        provider="openai_like",
+        model_id=os.getenv("IGNI_TEST_LLM_MODEL") or "gpt-4o-mini",
+        url=os.getenv("IGNI_TEST_LLM_BASE_URL") or "https://api.openai.com/v1",
+        api_key=os.environ["IGNI_TEST_LLM_API_KEY"],
+        context_window=128_000,
+        vision=False,
+    )
     settings.models.default = "MiniMax-M2.7"
-
-    session = Session(settings=settings, project_dir=project_dir)
-    return session.main_team
 
 
 async def _run_case(
@@ -316,7 +299,7 @@ async def _run_case(
     """
     import uuid as _uuid
 
-    from igni_core.core.evals.runner import CaseResult, run_eval_case
+    from igni_core.core.evals.runner import CaseResult, CaseRunner
 
     last_error: str | None = None
     attempts = 1 + max(0, case_retries)
@@ -328,13 +311,13 @@ async def _run_case(
     for attempt in range(1, attempts + 1):
         try:
             return await asyncio.wait_for(
-                run_eval_case(
+                CaseRunner(
                     case,
                     agent,
                     judge_model,
                     session_id=f"eval-{_uuid.uuid4().hex[:8]}",
                     work_dir=work_dir,
-                ),
+                ).run(),
                 timeout=effective_timeout,
             )
         except asyncio.TimeoutError:
@@ -386,10 +369,8 @@ async def _run_suite(
     Per-case isolation also keeps file mutations from contaminating
     other cases when they run in parallel.
     """
-    import shutil
-
     from igni_core.core.evals.loader import load_eval_file
-    from igni_core.core.evals.runner import _setup_fixtures
+    from igni_core.core.evals.workspace import EvalWorkspace
 
     suite = load_eval_file(suite_path)
     if not suite:
@@ -406,12 +387,17 @@ async def _run_suite(
 
     async def _one(idx: int, case):
         async with sem:
-            case_work = Path(tempfile.mkdtemp(prefix=f"igni-eval-c{idx:02d}-"))
-            if suite.fixtures and fixtures_root and fixtures_root.is_dir():
-                _setup_fixtures(suite.fixtures, fixtures_root, work_dir=case_work)
+            with_fixtures = bool(suite.fixtures and fixtures_root and fixtures_root.is_dir())
+            workspace = EvalWorkspace(
+                suite.fixtures if with_fixtures else None,
+                fixtures_root or Path.cwd(),
+                None,
+                Path.cwd(),
+            )
+            case_work = await workspace.setup()
             try:
-                agent = agent_factory(case_work)
                 try:
+                    agent = agent_factory(case_work)
                     r = await _run_case(
                         case,
                         agent,
@@ -424,10 +410,9 @@ async def _run_suite(
                 except Exception as exc:
                     return idx, case, None, exc
             finally:
-                shutil.rmtree(case_work, ignore_errors=True)
+                await workspace.teardown()
 
     tasks = [asyncio.create_task(_one(i, c)) for i, c in enumerate(cases, 1)]
-    completed = 0
     pending_print: dict[int, tuple] = {}
     next_to_print = 1
 
@@ -435,7 +420,6 @@ async def _run_suite(
     # order — easier to read, easier to compare across runs.
     for fut in asyncio.as_completed(tasks):
         idx, case, r, exc = await fut
-        completed += 1
         pending_print[idx] = (case, r, exc)
         while next_to_print in pending_print:
             c, rr, ex = pending_print.pop(next_to_print)
@@ -504,7 +488,7 @@ def _dump_summary(results_dir: Path, suite, results) -> None:
                 "unexpected_detail": r.unexpected_detail,
                 "accuracy_score": r.accuracy_score,
                 "accuracy_passed": r.accuracy_passed,
-                "tools_called": [t["name"] for t in r.tool_trace],
+                "tools_called": [t.name for t in r.tool_trace],
                 "error": r.error,
             }
         )
@@ -659,8 +643,9 @@ async def main():
         """
         import json as _json
 
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
         from igni_core.core.session.core import Session
+        from igni_core.core.workspace_trust import process_trust
 
         igni_dir = project_dir / ".igni"
         igni_dir.mkdir(parents=True, exist_ok=True)
@@ -688,19 +673,12 @@ async def main():
             )
         )
 
-        settings = load_settings(project_dir=project_dir)
-        test_model_id = os.getenv("IGNI_TEST_LLM_MODEL") or "gpt-4o-mini"
-        test_base_url = os.getenv("IGNI_TEST_LLM_BASE_URL") or "https://api.openai.com/v1"
-        test_api_key = os.environ["IGNI_TEST_LLM_API_KEY"]
-        settings.models.registry["MiniMax-M2.7"] = {
-            "provider": "openai_like",
-            "model_id": test_model_id,
-            "url": test_base_url,
-            "api_key": test_api_key,
-            "context_window": 128_000,
-            "vision": False,
-        }
-        settings.models.default = "MiniMax-M2.7"
+        # The per-case dir is the runner's own scratch space: trust it for
+        # this process only, or the permissive settings written above would
+        # be ignored as an untrusted project's.
+        process_trust().trust(project_dir, remember=False)
+        settings = SettingsLoader.load(project_dir=project_dir)
+        _use_live_model(settings)
         if spawn_timeout_override is not None:
             settings.orchestration.sub_team_timeout = spawn_timeout_override
         # Disable Agno's retry-on-exception so we get deterministic
@@ -778,15 +756,22 @@ async def main():
         # Specialist agent — build a fresh Session per case and pull
         # the named specialist out of its pool. Same isolation reason
         # as the main agent: avoid cross-case state leakage.
+        probe_dir = Path(tempfile.mkdtemp(prefix="igni-eval-probe-"))
         try:
             # Probe once with a throwaway session_dir to confirm the
             # specialist exists in the pool before the suite runs;
             # gives a clean error message instead of a per-case crash.
-            probe_dir = Path(tempfile.mkdtemp(prefix="igni-eval-probe-"))
+            # ``pool.get`` answers ``None`` for a name it has no
+            # definition for.
             probe_sess = _build_session_for(probe_dir)
-            probe_sess.pool.get(target_agent)
+            found = probe_sess.pool.get(target_agent) is not None
+            reason = "no definition has that name"
         except (KeyError, ValueError) as exc:
-            print(f"  ! agent '{target_agent}' not in pool ({exc}) — skipping")
+            found, reason = False, str(exc)
+        finally:
+            shutil.rmtree(probe_dir, ignore_errors=True)
+        if not found:
+            print(f"  ! agent '{target_agent}' not in pool ({reason}) — skipping")
             return None, None
 
         def specialist_factory(base_dir: Path):
