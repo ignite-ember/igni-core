@@ -169,3 +169,14 @@ async def test_the_default_strategy_is_the_one_picked_for_the_host(project) -> N
     result = await _controller(project).search_code("def greet(name):")
 
     assert [(m.path, m.line) for m in result.matches] == [("pkg/mod.py", 3)]
+
+
+@pytest.mark.parametrize("make", STRATEGIES)
+async def test_a_multi_line_snippet_is_one_match_spanning_its_lines(project, make) -> None:
+    result = await _controller(project, make()).search_code(
+        "def greet(name):\n    print('hello', name)\n    return name"
+    )
+
+    [match] = result.matches
+    assert (match.path, match.line, match.end_line) == ("pkg/mod.py", 3, 5)
+    assert match.preview == "def greet(name):"

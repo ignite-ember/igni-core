@@ -121,6 +121,9 @@ class RgSearchStrategy(SearchStrategy):
         except subprocess.TimeoutExpired:
             return SearchCodeResult.timed_out()
         result = SearchCodeResult()
+        # A multi-line match is printed one row per line it covers; only
+        # the first row starts a match, the rest are inside the last one.
+        covered_to: dict[str, int] = {}
         last_rel: str | None = None
         last_line = 0
         for raw_line in (proc.stdout or "").splitlines():
@@ -132,6 +135,9 @@ class RgSearchStrategy(SearchStrategy):
                 line = int(line_str)
             except ValueError:
                 continue
+            if line <= covered_to.get(abs_path, 0):
+                continue
+            covered_to[abs_path] = line + snippet_lines - 1
             try:
                 rel = str(Path(abs_path).resolve().relative_to(project_root))
             except ValueError:
