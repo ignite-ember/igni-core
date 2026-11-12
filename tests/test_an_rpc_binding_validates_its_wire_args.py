@@ -11,13 +11,15 @@ import pytest
 from pydantic import field_validator, model_validator
 
 from igni_core.backend.rpc_binding import (
+    Correlation,
     NoArgs,
     RpcArgs,
     RpcArgsError,
     RpcBinding,
     rpc,
 )
-from igni_core.protocol.rpc import RpcMethod, RpcScope
+from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
+from igni_core.protocol.schemas.enums import PushChannel
 
 
 class _Inner(RpcArgs):
@@ -200,6 +202,34 @@ class TestTheTag:
             RpcScope.SESSION,
         )
         assert binding.streams == () and binding.may_stream == () and binding.correlate is None
+
+    def test_how_long_what_it_streams_and_how_to_follow_it_are_carried(self):
+        follow = Correlation(by="payload.flow_id", source="result.flow_id")
+
+        @rpc(
+            RpcMethod.LOGIN,
+            args=NoArgs,
+            scope=RpcScope.IGNI,
+            streams=(PushChannel.LOGIN_STATUS,),
+            duration=RpcDuration.IO,
+            correlate=follow,
+            may_stream=(PushChannel.FILE_EDITED,),
+        )
+        def login(self, args: NoArgs) -> None: ...
+
+        binding = RpcBinding.of(login)
+
+        assert binding is not None
+        assert binding.streams == (PushChannel.LOGIN_STATUS,)
+        assert binding.duration is RpcDuration.IO
+        assert binding.correlate == follow
+        assert binding.may_stream == (PushChannel.FILE_EDITED,)
+
+    def test_a_binding_that_declares_no_duration_answers_instantly(self):
+        binding = RpcBinding.of(_Handler.tasks)
+
+        assert binding is not None
+        assert binding.duration is RpcDuration.INSTANT
 
     @pytest.mark.parametrize("attr", [_Handler.plain, _Handler.not_callable, None, "text"])
     def test_something_not_bound_has_no_binding(self, attr):
