@@ -129,7 +129,7 @@ def _rss_mb(proc: subprocess.Popen) -> float:
 
 
 async def _drive(n_sessions: int) -> None:
-    project = Path(tempfile.mkdtemp(prefix="ember-prof-"))
+    project = Path(tempfile.mkdtemp(prefix="igni-prof-"))
     print(f"# Project dir: {project}")
 
     print("# Spawning BE…")
