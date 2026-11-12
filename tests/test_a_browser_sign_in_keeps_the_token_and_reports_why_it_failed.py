@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import webbrowser
-from types import SimpleNamespace
 
 import pytest
 
@@ -160,7 +159,9 @@ async def test_a_browser_that_will_not_open_still_prints_the_address(store, monk
 
     assert result.ok is True
     waiting = [line for line in lines if line.startswith("Waiting for login")]
-    assert waiting == [f"Waiting for login in browser...\nIf the browser didn't open, go to:\n{URL}"]
+    assert waiting == [
+        f"Waiting for login in browser...\nIf the browser didn't open, go to:\n{URL}"
+    ]
 
 
 async def test_progress_lines_come_in_order_to_a_sync_callback(store, opened):

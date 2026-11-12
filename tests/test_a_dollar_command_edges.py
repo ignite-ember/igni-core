@@ -138,9 +138,9 @@ async def test_a_quick_command_is_never_announced_to_the_watcher(tmp_path, super
 
 async def test_a_backgrounded_command_s_output_is_capped_too(tmp_path, supervisor):
     try:
-        result = await _runner(
-            tmp_path, supervisor, timeout_seconds=1, max_output_bytes=40
-        ).run("echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; sleep 30")
+        result = await _runner(tmp_path, supervisor, timeout_seconds=1, max_output_bytes=40).run(
+            "echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; sleep 30"
+        )
 
         assert result.backgrounded is True
         assert len(result.output) <= 40
