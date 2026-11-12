@@ -224,6 +224,8 @@ def test_an_empty_registry_is_an_empty_result():
         ("nan", None),
         ("90", 90.0),
         ("0.5", 0.5),
+        ("inf", float("inf")),
+        ("-inf", None),
     ],
 )
 def test_the_idle_timeout_is_a_positive_number_of_seconds_or_the_pool_default(
