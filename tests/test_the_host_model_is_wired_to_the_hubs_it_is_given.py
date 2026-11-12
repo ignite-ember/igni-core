@@ -32,7 +32,7 @@ from tests.host_model_helpers import CapturingTransport, Sink, manifest
 
 
 class _Windows(CapturingTransport):
-    """The windows, remembering who watches their connections."""
+    """The windows, keeping a list of who watches their connections."""
 
     def __init__(self) -> None:
         super().__init__()

@@ -1,7 +1,7 @@
 """How the backend reaches igni server: the URL and the session, read fresh.
 
 Signing in can change which server it is, and signing out must stop the
-session being sent, so neither is remembered by the clients
+session being sent, so neither is kept by the clients
 :class:`IgniServerAccess` hands out.
 """
 
