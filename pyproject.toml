@@ -75,7 +75,7 @@ dependencies = [
     # dependencies: a machine that never installs it never installs a
     # PDF parser. Nothing left in igni imports any of them.
     "dateparser~=1.4.0",
-    "websockets~=16.0",
+    "websockets>=16,<18",
     # Server discovery reads a TXT record in the customer's own zone,
     # for deployments that would rather publish DNS than serve a file
     # at their email domain's web root. Pure Python, no system
