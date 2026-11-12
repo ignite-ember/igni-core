@@ -60,7 +60,7 @@ dependencies = [
     # and refuses an ``httpx`` client, which Agno 2.6 would hand it; igni
     # builds an ``httpx2`` one (``core/activity/http2.py``) and gives it to
     # the SDK itself (``LoggingClaude.get_async_client``).
-    "anthropic~=2.3.0",
+    "anthropic>=2.3,<2.7",
     "tokenizers~=0.23.3",
     "ripgrep~=15.1.0",
     # Ed25519 verification of extension bundle signatures
@@ -74,7 +74,7 @@ dependencies = [
     # lived here. It is the Artifacts extension now, and they are its
     # dependencies: a machine that never installs it never installs a
     # PDF parser. Nothing left in igni imports any of them.
-    "dateparser~=1.4.0",
+    "dateparser>=1.4,<1.6",
     "websockets~=16.0",
     # Server discovery reads a TXT record in the customer's own zone,
     # for deployments that would rather publish DNS than serve a file
@@ -127,7 +127,7 @@ gemini = [
     "google-genai~=2.34.0",
 ]
 anthropic = [
-    "anthropic~=2.3.0",
+    "anthropic>=2.3,<2.7",
 ]
 web = [
     "duckduckgo-search~=8.1",
