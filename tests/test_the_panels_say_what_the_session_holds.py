@@ -337,7 +337,7 @@ def test_claude_commands_are_listed_only_when_cross_tool_support_is_on(catalog_s
 
 def test_a_failing_markdown_discovery_empties_that_source_only(catalog_session, caplog):
     catalog_session.settings = None  # reading the setting raises
-    with caplog.at_level("DEBUG"):
+    with caplog.at_level("DEBUG", logger="igni_core.backend.panels.slash_commands_catalog"):
         entries = SlashCommandsCatalog(catalog_session, ContributedCommands()).entries()  # type: ignore[arg-type]
     assert [e for e in entries if e.source == "markdown"] == []
     assert [e for e in entries if e.source == "builtin"]
@@ -349,7 +349,7 @@ def test_a_failing_skill_pool_empties_that_source_only(catalog_session, caplog):
     catalog_session.skill_pool = SimpleNamespace(
         list_skills=MagicMock(side_effect=RuntimeError("boom"))
     )
-    with caplog.at_level("DEBUG"):
+    with caplog.at_level("DEBUG", logger="igni_core.backend.panels.slash_commands_catalog"):
         entries = SlashCommandsCatalog(catalog_session, ContributedCommands()).entries()  # type: ignore[arg-type]
     assert [e for e in entries if e.source == "skill"] == []
     assert [e for e in entries if e.source == "builtin"]

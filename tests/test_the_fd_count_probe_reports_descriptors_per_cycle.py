@@ -79,6 +79,8 @@ def test_the_breakdown_counts_real_descriptors_by_kind_largest_first(rig):
 
 
 def test_without_lsof_the_profile_reports_no_descriptors(rig, tmp_path):
+    # The system's own lsof (a Linux runner has one) must not stand in.
+    rig.system_dirs = []
     (rig.bin / "lsof").unlink()
     result = rig.run(SCRIPT, "--sessions", "1", "--cycles", "1", "--requests-per-cycle", "1", *FAST)
     assert result.returncode == 0, result.stderr
