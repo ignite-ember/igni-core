@@ -219,6 +219,27 @@ class TestANameIsOnlyAName:
         assert sorted(p for p in tmp_path.rglob("*") if p.is_file()) == before
 
 
+class TestBothEndsStayWhereTheyBelong:
+    @pytest.mark.asyncio
+    async def test_a_shipped_entry_that_links_out_of_the_group_is_not_copied(self, tmp_path: Path):
+        """A group entry that is a symlink to a file elsewhere — a key in
+        the user's home — would be read and written into the project."""
+        session = _session(tmp_path, {"agents": {"reviewer": "theirs"}})
+        secret = tmp_path / "home" / "id_rsa"
+        secret.parent.mkdir()
+        secret.write_text("PRIVATE KEY")
+        subdir, filename = EJECTABLE["agents"]
+        (tmp_path / "group-policy" / subdir / filename.format(name="key")).symlink_to(secret)
+
+        result = await EjectCommand(session).run("agents key")
+
+        assert result.is_error()
+        assert "Nothing was copied" in result.content
+        assert "PRIVATE KEY" not in "".join(
+            p.read_text() for p in (session.project_dir / CONFIG_DIR).rglob("*") if p.is_file()
+        )
+
+
 class TestWhatCanGoWrong:
     @pytest.mark.asyncio
     async def test_a_write_that_fails_is_an_error_and_claims_no_copy(

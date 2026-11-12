@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping, MutableSequence
+from collections.abc import AsyncIterator, Callable, Mapping, MutableSequence
 from typing import Any
 
 from igni_core.backend.agent_framing import ExtensionMessage, PlanResearchHint
@@ -151,15 +151,34 @@ class MessageDispatcher:
         """
         if files:
             logger.debug("message carries %d file(s) of text", len(files))
-        async for proto in self._backend.run_message(agent_text, media=None):
-            if req_id:
-                proto = proto.model_copy(update={"id": req_id})
-            await self._transport.send(proto)
-        await self._transport.send(msg.StreamEnd(id=req_id))
+        if not await self._stream(self._backend.run_message(agent_text, media=None), req_id):
+            return
 
         # First completed run: name the session in the background so
         # a queued follow-up isn't blocked on the naming model call.
         self._spawn_auto_name()
+
+    async def _stream(self, frames: AsyncIterator[Any], req_id: str) -> bool:
+        """Send ``frames`` to every view under ``req_id``, then ``StreamEnd``.
+
+        ``StreamEnd`` is what a window waits for to finish the reply, and it
+        waits without a timeout: a run that raised midway used to skip it,
+        so the window spun forever while the error went out under the
+        request's id after the fact. A failure is now an ``Error`` inside
+        the stream, and the stream still ends. False when the run failed.
+        """
+        try:
+            async for proto in frames:
+                if req_id:
+                    proto = proto.model_copy(update={"id": req_id})
+                await self._transport.send(proto)
+        except Exception as exc:
+            logger.error("the run failed mid-stream: %s", exc, exc_info=True)
+            await self._transport.send(msg.Error(id=req_id, text=f"The run failed: {exc}"))
+            return False
+        finally:
+            await self._transport.send(msg.StreamEnd(id=req_id))
+        return True
 
     # ── An extension's messages ──────────────────────────────────
 
@@ -242,24 +261,17 @@ class MessageDispatcher:
         # Mirroring: dismiss the now-stale permission dialog on
         # every other view before the resumed run starts streaming.
         await self._transport.send(msg.RequirementResolved(requirement_id=message.requirement_id))
-        async for proto in self._backend.resolve_hitl(
-            message.requirement_id, message.action, message.choice
-        ):
-            if req_id:
-                proto = proto.model_copy(update={"id": req_id})
-            await self._transport.send(proto)
-        await self._transport.send(msg.StreamEnd(id=req_id))
+        await self._stream(
+            self._backend.resolve_hitl(message.requirement_id, message.action, message.choice),
+            req_id,
+        )
 
     async def _on_hitl_response_batch(self, message: msg.HITLResponseBatch, req_id: str) -> None:
         for decision in message.decisions:
             await self._transport.send(
                 msg.RequirementResolved(requirement_id=decision.requirement_id)
             )
-        async for proto in self._backend.resolve_hitl_batch(message.decisions):
-            if req_id:
-                proto = proto.model_copy(update={"id": req_id})
-            await self._transport.send(proto)
-        await self._transport.send(msg.StreamEnd(id=req_id))
+        await self._stream(self._backend.resolve_hitl_batch(message.decisions), req_id)
 
     async def _on_command(self, message: msg.Command, req_id: str) -> None:
         result = await self._backend.handle_command(message.text)

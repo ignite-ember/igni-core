@@ -109,13 +109,40 @@ class TestARun:
 
 
 class TestWhereItWrites:
-    def test_it_overwrites_a_suite_that_is_already_there(self, tmp_path):
+    def test_it_keeps_a_suite_whose_content_was_edited_by_hand(self, tmp_path):
         (tmp_path / "evals").mkdir()
         (tmp_path / "evals" / "qa.yaml").write_text("hand edited\n")
 
-        assert _generate(tmp_path).returncode == 0
+        run = _generate(tmp_path)
 
+        assert run.returncode == 0, run.stderr
+        assert (tmp_path / "evals" / "qa.yaml").read_text() == "hand edited\n"
+        assert "skipped evals/qa.yaml" in run.stdout
+        assert "--force" in run.stdout
+        assert "wrote evals/explorer.yaml" in run.stdout
+
+    def test_force_overwrites_a_suite_that_is_already_there(self, tmp_path):
+        (tmp_path / "evals").mkdir()
+        (tmp_path / "evals" / "qa.yaml").write_text("hand edited\n")
+
+        run = subprocess.run(
+            [sys.executable, str(SCRIPT), "--force"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        assert run.returncode == 0, run.stderr
         assert yaml.safe_load((tmp_path / "evals" / "qa.yaml").read_text())["agent"] == "qa"
+
+    def test_an_identical_suite_is_rewritten_without_a_skip(self, tmp_path):
+        (tmp_path / "evals").mkdir()
+        _generate(tmp_path)
+
+        run = _generate(tmp_path)
+
+        assert "skipped" not in run.stdout
 
     def test_without_an_evals_directory_it_fails_and_writes_nothing(self, tmp_path):
         run = _generate(tmp_path)

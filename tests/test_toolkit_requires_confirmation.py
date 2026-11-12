@@ -28,6 +28,15 @@ from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.shell import IgniShellTools
 
 
+def test_the_shell_toolkit_is_registered_as_igni_shell() -> None:
+    """The toolkit's name is igni's, not the old product's. The model sees
+    the tool names, never the toolkit's, so this changes nothing it reads."""
+    toolkit = IgniShellTools(supervisor=ProcessSupervisor())
+
+    assert toolkit.name == "igni_shell"
+    assert "run_shell_command" in {**toolkit.functions, **toolkit.async_functions}
+
+
 class TestShellToolkitConfirmation:
     def test_run_shell_command_has_requires_confirmation_flag(self) -> None:
         # ``run_shell_command`` is async — used to be routed to

@@ -43,8 +43,11 @@ class LruSearchCache:
     def put(self, key: str, value: SearchCodeResult) -> None:
         """Insert ``value`` under ``key`` and trim to ``max_entries``.
 
-        Oldest entries (front of the dict) fall off first.
+        Oldest entries (front of the dict) fall off first. Writing a key
+        that is already there makes it the newest, as reading it does —
+        otherwise a fresh value could be the first to be dropped.
         """
+        self._entries.pop(key, None)
         self._entries[key] = value
         while len(self._entries) > self._max_entries:
             self._entries.pop(next(iter(self._entries)))

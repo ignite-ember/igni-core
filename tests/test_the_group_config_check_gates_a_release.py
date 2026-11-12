@@ -104,6 +104,23 @@ class TestWhenALoaderMissesAnEntry:
         assert "checks passed" in run.stdout
 
 
+class TestAHookThatIsNotJson:
+    def test_it_is_a_named_failure_and_the_other_checks_still_run(self):
+        entries = [
+            entry("hooks", "broken", "this is { not json", "json"),
+            entry("skills", "group-skill", SKILL),
+        ]
+        with group_pack_server(entries) as server:
+            run = _run(server.url)
+
+        assert run.returncode == 1, run.stdout + run.stderr
+        assert "Traceback" not in run.stderr
+        assert "FAIL  hooks/broken is not valid JSON" in run.stdout
+        assert "ok    1 skills load" in run.stdout
+        assert "checks passed" in run.stdout
+        assert "  failed: hooks/broken is not valid JSON" in run.stdout
+
+
 class TestAThinGroup:
     def test_kinds_the_group_does_not_ship_are_skipped(self):
         with group_pack_server([entry("skills", "group-skill", SKILL)]) as server:
@@ -112,9 +129,9 @@ class TestAThinGroup:
         assert run.returncode == 0, run.stdout + run.stderr
         assert "ok    1 skills load" in run.stdout
         for skipped in ("agents", "commands", "output styles", "hooks", "rule", "workflows"):
-            assert skipped not in run.stdout.split("Loading, as a session would")[1].split(
-                "Second"
-            )[0]
+            assert (
+                skipped not in run.stdout.split("Loading, as a session would")[1].split("Second")[0]
+            )
         # Materialised check + skills + the two second-pass checks.
         assert "4/4 checks passed" in run.stdout
 

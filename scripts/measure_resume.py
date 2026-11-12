@@ -850,6 +850,8 @@ class Summary:
     @staticmethod
     def of(resumes: list[dict[str, Any]]) -> dict[str, Any]:
         out: dict[str, Any] = {"n": len(resumes)}
+        if not resumes:
+            return out
         for key in (
             "handshake_ms",
             "first_rpc_ms",
@@ -911,6 +913,17 @@ class Summary:
         return found
 
 
+def _env_pairs(
+    ctx: click.Context, param: click.Parameter, items: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Reject a ``--env`` item that is not KEY=VALUE as a usage error, not a traceback."""
+    for item in items:
+        key, sep, _ = item.partition("=")
+        if not sep or not key:
+            raise click.BadParameter(f"{item!r} is not KEY=VALUE", ctx=ctx, param=param)
+    return items
+
+
 @click.command()
 @click.option("--out", type=click.Path(path_type=Path), required=True)
 @click.option("--database-url", default=None, help="A migrated database; SQLite by default")
@@ -946,6 +959,7 @@ class Summary:
     "--env",
     "igni_env",
     multiple=True,
+    callback=_env_pairs,
     help="KEY=VALUE for igni's process (MALLOC_ARENA_MAX=2, LD_PRELOAD=...)",
 )
 @click.option(

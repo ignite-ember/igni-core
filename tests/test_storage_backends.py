@@ -379,9 +379,42 @@ def test_the_desktop_has_no_mirror(tmp_path: Path):
 def test_the_desktop_store_reads_paths_and_knows_no_cloud_references(tmp_path: Path):
     store = DirectoryAttachments(tmp_path)
     stored = store.save("s1", "a.txt", [b"hello"])
-    assert store.local_path(stored.ref) == Path(stored.ref)
+    assert store.local_path(stored.ref) == Path(stored.ref).resolve()
     assert b"".join(store.open(stored.ref)) == b"hello"
     assert store.local_path("attachment:" + "1" * 32) is None
+
+
+@pytest.mark.parametrize("session_id", ["../../outside", "a/../../b", "..", "/abs/path"])
+def test_a_hostile_session_id_keeps_the_desktop_upload_inside_the_attachments_directory(
+    tmp_path: Path, session_id: str
+):
+    project = tmp_path / "project"
+    stored = DirectoryAttachments(project).save(session_id, "a.txt", [b"x"])
+    path = Path(stored.ref).resolve()
+    assert path.read_bytes() == b"x"
+    assert path.parent.parent == Attachments.directory(project).resolve()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["project"], "nothing written outside"
+
+
+def test_a_plain_session_id_is_its_own_directory(tmp_path: Path):
+    assert Attachments.session_directory("0b6c-42_x.y") == "0b6c-42_x.y"
+    stored = DirectoryAttachments(tmp_path).save("s1", "a.txt", [b"x"])
+    assert Path(stored.ref).parent == Attachments.directory(tmp_path) / "s1"
+
+
+def test_the_desktop_store_reads_only_its_own_uploads(tmp_path: Path):
+    project = tmp_path / "project"
+    store = DirectoryAttachments(project)
+    stored = store.save("s1", "a.txt", [b"mine"])
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not an upload")
+    (project / "own.txt").write_text("the project's own file")
+    climbing = Attachments.directory(project) / "s1" / ".." / ".." / ".." / ".." / "secret.txt"
+    assert store.local_path(stored.ref) == Path(stored.ref).resolve()
+    for ref in (str(secret), str(project / "own.txt"), str(climbing)):
+        assert store.local_path(ref) is None, ref
+        with pytest.raises(FileNotFoundError):
+            store.open(ref)
 
 
 def test_extension_settings_are_per_producer_in_the_cloud(

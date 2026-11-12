@@ -142,6 +142,11 @@ class SessionCommand:
             logger.warning("/fork failed: %s", result.error)
             return CommandResult.error(f"Fork failed: {result.error or 'unknown error'}")
         new_id = result.new_session_id
+        if not new_id:
+            # A success with no id to switch to would rotate every
+            # component onto an empty session id; stay where we are.
+            logger.warning("/fork reported success without a new session id")
+            return CommandResult.error("Fork failed: no new session id was returned")
         # Re-bind every component that holds the active session id
         # so the next user turn lands in the fork, not the source.
         self._session.rotate_id(new_id)

@@ -62,8 +62,15 @@ class TestTheMeasurementEndToEnd:
         assert proc.returncode == 0, proc.stderr[-2000:]
         result = json.loads(out.read_text())
         assert set(result) == {
-            "warm", "database", "start_to_ready_s", "rss_at_ready_mb", "bind_latency_ms",
-            "bind_to_first_answer_s", "first_turn_s", "rss_after_turn_mb", "last_event",
+            "warm",
+            "database",
+            "start_to_ready_s",
+            "rss_at_ready_mb",
+            "bind_latency_ms",
+            "bind_to_first_answer_s",
+            "first_turn_s",
+            "rss_after_turn_mb",
+            "last_event",
             "imported_after_ready",
         }
         assert result["warm"] is warm
@@ -84,6 +91,14 @@ class TestTheMeasurementEndToEnd:
         summary = json.loads(proc.stderr.strip().splitlines()[-1])
         assert summary["imported_after_ready"] == len(full["imported_after_ready"])
         assert summary == {**full, "imported_after_ready": len(full["imported_after_ready"])}
+
+    def test_a_ready_file_that_never_comes_ends_the_run_with_a_message(self, tmp_path):
+        proc = _run(tmp_path, "--out", str(tmp_path / "r.json"), "--ready-timeout", "0.001")
+
+        assert proc.returncode == 1
+        assert "error: igni wrote no ready file" in proc.stderr
+        assert "--ready-timeout" in proc.stderr
+        assert not (tmp_path / "r.json").exists()
 
     def test_the_output_file_is_required(self, tmp_path):
         proc = _run(tmp_path)
@@ -167,3 +182,34 @@ class TestTheNodeAgentsPieces:
 
         assert [r["id"] for r in window.sent] == ["r1", "r2", "r3"]
         assert all(r["method"] == "get_status" and r["type"] == "rpc_request" for r in window.sent)
+
+
+class TestTheWaitsHaveTheirOwnTimeout:
+    def test_an_igni_that_only_ever_refuses_ends_the_retry_with_a_message(self, measure):
+        import asyncio
+
+        class Refuser:
+            def __init__(self):
+                self.pending = []
+
+            async def send(self, raw):
+                self.pending.append(json.dumps({"id": json.loads(raw)["id"], "error": "no"}))
+
+            async def recv(self):
+                return self.pending.pop(0)
+
+        with pytest.raises(measure.MeasurementTimeout, match="get_status within 0.2s"):
+            asyncio.run(measure.WarmBaseMeasurement._first_answer(Refuser(), 0.2))
+
+    def test_an_igni_that_never_replies_ends_the_wait_with_a_message(self, measure):
+        import asyncio
+
+        class Silent:
+            async def send(self, raw):
+                pass
+
+            async def recv(self):
+                await asyncio.sleep(3600)
+
+        with pytest.raises(measure.MeasurementTimeout, match="did not reply to get_status"):
+            asyncio.run(measure.WarmBaseMeasurement._first_answer(Silent(), 0.2))

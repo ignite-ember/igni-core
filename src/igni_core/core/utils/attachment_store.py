@@ -97,12 +97,21 @@ class Attachments(ABC):
     CHUNK: ClassVar[int] = 64 * 1024
     #: How an upload kept in a database is named, rather than by a path.
     REF_PREFIX: ClassVar[str] = "attachment:"
+    #: The project whose uploads these are.
+    _project_dir: Path
     #: How a file name is made safe to keep.
     _SAFE_NAME_RE: ClassVar[re.Pattern[str]] = re.compile(r"[^A-Za-z0-9._-]+")
 
     @classmethod
     def safe_name(cls, filename: str) -> str:
         return cls._SAFE_NAME_RE.sub("_", filename) or "file"
+
+    @classmethod
+    def session_directory(cls, session_id: str) -> str:
+        """The session's directory name under :meth:`directory`: one plain
+        path segment, so a session id carrying ``/`` or ``..`` can never
+        put a file outside the attachments directory."""
+        return cls._SAFE_NAME_RE.sub("_", session_id).strip(".") or "session"
 
     @staticmethod
     def directory(project_dir: Path) -> Path:
@@ -123,6 +132,20 @@ class Attachments(ABC):
     def local_path(self, ref: str) -> Path | None:
         """A readable file with the attachment's bytes, or ``None`` when
         there is no such attachment."""
+
+    def _kept_file(self, ref: str) -> Path | None:
+        """The file a plain-path reference names, but only when it is an
+        upload this store keeps: a file inside the project's attachments
+        directory. Any other path — the project's own files, ``/etc``, a
+        ``..`` that climbs out — is no attachment of this store's."""
+        root = self.directory(self._project_dir).resolve()
+        try:
+            path = Path(ref).resolve()
+        except (OSError, RuntimeError, ValueError):
+            return None
+        if not path.is_relative_to(root) or not path.is_file():
+            return None
+        return path
 
     @staticmethod
     def _file_chunks(path: Path) -> Iterator[bytes]:
@@ -151,7 +174,7 @@ class DirectoryAttachments(Attachments):
 
     def _destination(self, session_id: str, filename: str) -> Path:
         safe = self.safe_name(filename)
-        dest_dir = self.directory(self._project_dir) / session_id
+        dest_dir = self.directory(self._project_dir) / self.session_directory(session_id)
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / safe
         if dest.exists():
@@ -180,13 +203,15 @@ class DirectoryAttachments(Attachments):
     def open(self, ref: str) -> Iterator[bytes]:
         if ref.startswith(Attachments.REF_PREFIX):
             raise FileNotFoundError(f"{ref}: the desktop keeps attachments as files")
-        return self._file_chunks(Path(ref))
+        path = self._kept_file(ref)
+        if path is None:
+            raise FileNotFoundError(f"{ref}: not an upload this project keeps")
+        return self._file_chunks(path)
 
     def local_path(self, ref: str) -> Path | None:
         if ref.startswith(Attachments.REF_PREFIX):
             return None
-        path = Path(ref)
-        return path if path.is_file() else None
+        return self._kept_file(ref)
 
 
 class AttachmentReferences:

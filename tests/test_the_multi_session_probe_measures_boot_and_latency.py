@@ -161,3 +161,39 @@ def test_the_command_line_defaults():
     finally:
         sys.argv = old
     assert seen == [6]
+
+
+def _load(name):
+    spec = importlib.util.spec_from_file_location(name, REPO / "scripts" / SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_the_p95_of_fifteen_calls_is_the_slowest_one(rig):
+    # Each call takes 10 ms longer than the last: nearest-rank p95 of 15 is the 15th.
+    rig.env["RIG_RPC_DELAY_STEP"] = "0.01"
+    result = rig.run(SCRIPT, "--sessions", "1")
+    line = re.search(
+        r"# 1 session  ·  RPC RTT  p50=([\d.]+)ms  p95=([\d.]+)ms  max=([\d.]+)ms", result.stdout
+    )
+    assert line, result.stdout
+    assert line.group(2) == line.group(3)
+
+
+@pytest.mark.parametrize(
+    ("count", "p", "rank"),
+    [(15, 0.95, 15), (20, 0.95, 19), (20, 0.5, 10), (10, 0.99, 10), (1, 0.95, 1), (100, 0.99, 99)],
+)
+def test_a_percentile_is_the_nearest_rank_value(count, p, rank):
+    values = list(range(1, count + 1))[::-1]
+    assert _load("multi_percentile")._percentile(values, p) == rank
+
+
+@pytest.mark.parametrize("sessions", ["0", "-3"])
+def test_fewer_than_one_session_is_refused_before_anything_starts(rig, sessions):
+    result = rig.run(SCRIPT, "--sessions", sessions)
+    assert result.returncode == 2
+    assert "--sessions must be at least 1" in result.stderr
+    assert not (rig.dir / "start").exists()
+    assert "0 sessions" not in result.stdout

@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import re
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -136,6 +137,18 @@ def test_no_sessions_is_a_run_with_nothing_attached_not_a_crash(rig):
     assert result.returncode == 0, result.stderr
     assert "ZeroDivisionError" not in result.stderr
     assert not [r for r in rig.rpcs() if r["method"] == "get_status"]
+
+
+def test_a_chatty_backend_does_not_block_on_its_output(rig):
+    # 400 kB after ready: well past what a pipe holds when nothing reads it.
+    rig.env["RIG_CHATTY_KB"] = "400"
+    result = rig.run(SCRIPT, "--sessions", "1", "--cycles", "1", "--requests-per-cycle", "1", *FAST)
+    assert result.returncode == 0, result.stderr
+    shown = re.search(r"# Project dir: (\S+)", result.stdout).group(1)
+    log = Path(shown) / "backend.log"
+    assert f"# Backend log: {log}" in result.stdout
+    text = log.read_text()
+    assert "chatter 399 " in text and "chatter 398 " in text  # both stdout and stderr land there
 
 
 def test_a_backend_that_exits_before_it_is_ready_aborts_the_run(rig):

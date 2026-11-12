@@ -375,6 +375,19 @@ async def test_a_failed_save_reports_the_error_and_keeps_the_latched_count(
     assert session.context_budget.last_input_tokens == 500
 
 
+async def test_a_session_that_cannot_be_read_is_an_error_result_not_an_exception(
+    tmp_path: Path,
+) -> None:
+    session = _session(main_team=_team(error=SQLAlchemyError("db down")))
+    session.context_budget.latch(500)
+
+    result = await _controller(tmp_path, session=session).truncate_history(SESSION, "run-1")
+
+    assert result.removed == 0
+    assert result.error == "could not read the session: db down"
+    assert session.context_budget.last_input_tokens == 500
+
+
 # ── pending and interrupted rows ────────────────────────────────────
 
 

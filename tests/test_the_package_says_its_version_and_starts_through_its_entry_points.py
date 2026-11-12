@@ -35,6 +35,17 @@ def test_both_commands_start_the_same_main():
     assert scripts["ignite-ember"] == "igni_core.__main__:main"
 
 
+def test_every_project_link_points_at_this_repository():
+    """igni-core stands on its own: its package page sends a reader, and a
+    bug report, to igni-core, never to a repository that builds on it."""
+    urls = _pyproject()["project"]["urls"]
+
+    assert urls["Issues"] == "https://github.com/ignite-ember/igni-core/issues"
+    for name, url in urls.items():
+        if url.startswith("https://github.com/"):
+            assert url.startswith("https://github.com/ignite-ember/igni-core"), name
+
+
 def _run(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home)}
     return subprocess.run(

@@ -41,6 +41,9 @@ import websockets
 REC = Path(os.environ["RIG_DIR"])
 MODE = os.environ.get("RIG_MODE", "normal")
 DELAY = float(os.environ.get("RIG_RPC_DELAY", "0"))
+# Each get_status takes STEP longer than the one before it.
+STEP = float(os.environ.get("RIG_RPC_DELAY_STEP", "0"))
+STATUS_CALLS = [0]
 
 
 def note(name, value):
@@ -87,8 +90,10 @@ async def handler(ws):
         if MODE == "hangup" and msg["method"] == "get_status":
             await ws.close()
             return
-        if DELAY:
-            await asyncio.sleep(DELAY)
+        if msg["method"] == "get_status":
+            STATUS_CALLS[0] += 1
+        if DELAY or STEP:
+            await asyncio.sleep(DELAY + STEP * STATUS_CALLS[0])
         await ws.send(json.dumps({"type": "rpc_response", "id": msg["id"], "result": {}}))
 
 
@@ -97,6 +102,10 @@ async def main():
         port = server.sockets[0].getsockname()[1]
         print("not json at all", flush=True)
         print(json.dumps({"status": "ready", "ws_url": f"ws://127.0.0.1:{port}"}), flush=True)
+        # A chatty backend: more output after ready than a pipe buffer holds.
+        # If the probe left a pipe undrained this blocks the whole loop.
+        for i in range(int(os.environ.get("RIG_CHATTY_KB", "0"))):
+            print(f"chatter {i} " + "x" * 1000, file=sys.stderr if i % 2 else sys.stdout, flush=True)
         await asyncio.Future()
 
 
@@ -218,6 +227,7 @@ class Rig:
         self._exe(self.bin / "lsof", _LSOF.format(python=sys.executable))
         self.env: dict[str, str] = {}
         self.path_dirs = [str(self.bin)]
+        self.system_dirs = ["/usr/bin", "/bin"]
 
     @staticmethod
     def _exe(path: Path, text: str) -> None:
@@ -226,7 +236,7 @@ class Rig:
 
     def run(self, script: str, *args: str, timeout: float = 120) -> subprocess.CompletedProcess:
         env = {k: v for k, v in os.environ.items() if not k.startswith(("IGNI_", "RIG_"))}
-        env["PATH"] = os.pathsep.join([*self.path_dirs, "/usr/bin", "/bin"])
+        env["PATH"] = os.pathsep.join([*self.path_dirs, *self.system_dirs])
         env["RIG_DIR"] = str(self.dir)
         env.update(self.env)
         return subprocess.run(

@@ -170,6 +170,16 @@ class TestIdleEviction:
         assert pool.default is pool.runtimes[0]
 
     @pytest.mark.asyncio
+    async def test_an_infinite_timeout_never_evicts(self, fake_clock):
+        """``IGNI_SESSION_IDLE_TIMEOUT=inf`` keeps every session loaded."""
+        pool, _ = self._build_pool(fake_clock, idle_timeout=float("inf"))
+        rt = await pool.get_or_create("alpha")
+        fake_clock.advance(10**12)
+        report = await pool.evict_idle()
+        assert report.evicted_ids == []
+        assert any(r is rt for r in pool.runtimes)
+
+    @pytest.mark.asyncio
     async def test_idle_runtime_evicted_and_backend_shut_down(self, fake_clock):
         pool, created = self._build_pool(fake_clock, idle_timeout=60.0)
         rt = await pool.get_or_create("alpha")

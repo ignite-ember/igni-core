@@ -220,6 +220,17 @@ async def test_a_failed_fork_says_why_and_stays_on_the_source_session(caplog):
 
 
 @pytest.mark.asyncio
+async def test_a_fork_that_succeeds_without_an_id_stays_on_the_source_session():
+    """Switching to an empty id would rebind every component to no session."""
+    session = FakeSession()
+    session.persistence.fork = AsyncMock(return_value=ForkResult(ok=True, new_session_id=""))
+    result = await _run(session, "/fork")
+    assert result.is_error()
+    assert "no new session id" in result.content
+    assert session.session_id == "old00000"
+
+
+@pytest.mark.asyncio
 async def test_a_failed_fork_with_no_reason_says_unknown_error():
     session = FakeSession()
     session.persistence.fork = AsyncMock(return_value=ForkResult(ok=False, error=None))

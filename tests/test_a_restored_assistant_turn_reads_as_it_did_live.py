@@ -77,6 +77,13 @@ class TestFormatToolArgs:
     def test_a_container_is_compact_json(self):
         assert fmt({"o": {"a": [1, 2], "b": "x"}}) == 'o={"a":[1,2],"b":"x"}'
 
+    def test_non_ascii_in_a_container_is_shown_as_written(self):
+        """A plain string value shows ``日本`` raw, so a list or dict holding
+        it must too, not ``\\u65e5\\u672c`` (six characters each against
+        the cap)."""
+        assert fmt({"o": {"name": "日本"}}) == 'o={"name":"日本"}'
+        assert fmt(["héllo"]) == '["héllo"]'
+
     def test_an_empty_dict_is_empty(self):
         assert fmt({}) == ""
 

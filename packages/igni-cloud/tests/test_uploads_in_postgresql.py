@@ -55,9 +55,7 @@ def test_it_refuses_a_database_that_is_not_postgresql(tmp_path: Path):
         LargeObjectAttachments(db, tmp_path)
 
 
-def test_an_upload_without_bytes_is_an_empty_object_of_size_zero(
-    postgres_url: str, tmp_path: Path
-):
+def test_an_upload_without_bytes_is_an_empty_object_of_size_zero(postgres_url: str, tmp_path: Path):
     store, db = _store(postgres_url, tmp_path)
     for chunks in ([], [b"", b""]):
         stored = store.save("s1", "empty.txt", chunks)
@@ -68,9 +66,7 @@ def test_an_upload_without_bytes_is_an_empty_object_of_size_zero(
         assert path is not None and path.read_bytes() == b""
 
 
-def test_empty_chunks_are_skipped_and_only_real_bytes_counted(
-    postgres_url: str, tmp_path: Path
-):
+def test_empty_chunks_are_skipped_and_only_real_bytes_counted(postgres_url: str, tmp_path: Path):
     store, db = _store(postgres_url, tmp_path)
     stored = store.save("s1", "a.txt", [b"ab", b"", b"cde", b""])
     assert stored.size == 5
@@ -93,6 +89,20 @@ def test_a_hostile_filename_is_stored_safe_and_the_copy_stays_in_its_directory(
     unicode_ref = store.save("s1", "résumé 日本.txt", [b"u"]).ref
     unicode_path = store.local_path(unicode_ref)
     assert unicode_path is not None and unicode_path.read_bytes() == b"u"
+
+
+@pytest.mark.parametrize("session_id", ["../../outside", "a/../../b", "..", "/abs/path"])
+def test_a_hostile_session_id_keeps_the_copy_inside_the_attachments_directory(
+    postgres_url: str, tmp_path: Path, session_id: str
+):
+    project = tmp_path / "project"
+    store, _ = _store(postgres_url, project)
+    stored = store.save(session_id, "a.txt", [b"x"])
+    path = store.local_path(stored.ref)
+    assert path is not None and path.read_bytes() == b"x"
+    attachments = (project / ".igni" / "attachments").resolve()
+    assert path.resolve().parent.parent == attachments, "one directory per session, inside"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["project"], "nothing written outside"
 
 
 def test_the_copy_is_reused_when_its_size_matches_and_rewritten_when_not(
@@ -134,9 +144,10 @@ def test_a_path_or_a_reference_that_is_not_there_has_no_local_path(
     postgres_url: str, tmp_path: Path
 ):
     store, _ = _store(postgres_url, tmp_path)
-    mine = tmp_path / "mine.txt"
-    mine.write_text("on disk")
-    assert store.local_path(str(mine)) == mine
+    kept = tmp_path / ".igni" / "attachments" / "s1" / "mine.txt"
+    kept.parent.mkdir(parents=True)
+    kept.write_text("on disk")
+    assert store.local_path(str(kept)) == kept.resolve()
     assert store.local_path(str(tmp_path / "missing.txt")) is None
     assert store.local_path(str(tmp_path)) is None, "a directory is no file"
     assert store.local_path(LargeObjectAttachments.REF_PREFIX + "0" * 32) is None
@@ -145,6 +156,22 @@ def test_a_path_or_a_reference_that_is_not_there_has_no_local_path(
     foreign = other.save("s1", "a.txt", [b"secret"]).ref
     assert store.local_path(foreign) is None
     assert other.local_path(foreign) is not None
+
+
+def test_a_plain_path_outside_the_attachments_directory_is_no_upload(
+    postgres_url: str, tmp_path: Path
+):
+    project = tmp_path / "project"
+    store, _ = _store(postgres_url, project)
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not an upload")
+    (project / "own.txt").parent.mkdir(parents=True)
+    (project / "own.txt").write_text("the project's own file")
+    climbing = project / ".igni" / "attachments" / ".." / ".." / ".." / "secret.txt"
+    for ref in (str(secret), str(project / "own.txt"), str(climbing)):
+        assert store.local_path(ref) is None, ref
+        with pytest.raises(FileNotFoundError):
+            store.open(ref)
 
 
 def test_a_delete_frees_the_large_object_and_the_row(postgres_url: str, tmp_path: Path):

@@ -75,6 +75,18 @@ class TestReadingTheCap:
         assert parsed.cap_explicit is False
         assert parsed.prompt == text
 
+    @pytest.mark.parametrize("text", ["5xx fix the errors", "5xxx go"])
+    def test_only_one_trailing_x_marks_a_cap(self, text: str):
+        """``5xx`` is the HTTP error class, not "5, times": the prompt is
+        kept whole and the default cap applies."""
+        parsed = LoopCapArgs.parse(text)
+        assert parsed.ok
+        assert (parsed.max_iter, parsed.cap_explicit, parsed.prompt) == (
+            LOOP_DEFAULT_MAX_ITERATIONS,
+            False,
+            text,
+        )
+
     def test_a_lone_x_is_text(self):
         parsed = LoopCapArgs.parse("x marks the spot")
         assert not parsed.cap_explicit and parsed.prompt == "x marks the spot"

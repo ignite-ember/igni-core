@@ -202,8 +202,9 @@ def test_a_message_names_a_cloud_upload_and_it_is_read_through_the_store(
     assert Path(path).is_relative_to(tmp_path / ".igni" / "attachments" / "s1")
     assert AttachmentReferences.localize(text, store) == localized, "the copy is reused"
 
-    # The same store reads a desktop path, and an unknown reference stays as written.
-    plain = tmp_path / "plain.txt"
+    # The same store reads a desktop upload by its path, and an unknown
+    # reference stays as written.
+    plain = tmp_path / ".igni" / "attachments" / "s1" / "plain.txt"
     plain.write_text("on disk")
     assert b"".join(store.open(str(plain))) == b"on disk"
     unknown = "attachment:" + "0" * 32

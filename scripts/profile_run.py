@@ -18,7 +18,7 @@ visible queue lag.
 Run with::
 
     .venv/bin/python scripts/profile_run.py \\
-        --project ~/PycharmProjects/isora/code-index-test \\
+        --project /path/to/a/project \\
         --runs 3 \\
         --prompt "summarize what you see in this directory" \\
         --output /tmp/profile_run.jsonl
@@ -60,9 +60,7 @@ async def _ensure_cloud_models(settings) -> None:
 
     token = CloudCredentials(settings.auth.credentials_file).access_token
     if not token:
-        raise RuntimeError(
-            "No cloud token found. Run `/login` in igni to authenticate first."
-        )
+        raise RuntimeError("No cloud token found. Run `/login` in igni to authenticate first.")
     client = CloudModelCatalogClient(settings.api_url, token)
     loop = asyncio.get_event_loop()
     fetch_result = await loop.run_in_executor(None, client.fetch)
@@ -73,9 +71,7 @@ async def _ensure_cloud_models(settings) -> None:
             "Make sure the API is reachable and your credentials are valid."
         )
     client.merge_into(settings.models.registry, entries=fetch_result.entries)
-    logger.info(
-        "loaded %d cloud model(s) from %s", len(fetch_result.entries), settings.api_url
-    )
+    logger.info("loaded %d cloud model(s) from %s", len(fetch_result.entries), settings.api_url)
 
 
 async def _profile_raw_agno(
@@ -130,7 +126,10 @@ async def _profile_raw_agno(
         "events_total": len(events),
         "histogram": dict(histogram),
         "tail_events": (
-            [{"i": e["i"], "t": round(e["t"], 3), "type": e["type"], "gap": round(e["gap"], 3)} for e in events[last_content_idx + 1 :]]
+            [
+                {"i": e["i"], "t": round(e["t"], 3), "type": e["type"], "gap": round(e["gap"], 3)}
+                for e in events[last_content_idx + 1 :]
+            ]
             if last_content_idx >= 0
             else []
         ),
@@ -217,20 +216,24 @@ def _summarize(records: list[dict]) -> dict:
         "runs": len(records),
         "total_s": _stats([r["total_s"] for r in records if r.get("total_s") is not None]),
         "time_to_first_event_s": _stats(
-            [r["time_to_first_event_s"] for r in records if r.get("time_to_first_event_s") is not None]
+            [
+                r["time_to_first_event_s"]
+                for r in records
+                if r.get("time_to_first_event_s") is not None
+            ]
         ),
         "time_to_last_content_s": _stats(
-            [r["time_to_last_content_s"] for r in records if r.get("time_to_last_content_s") is not None]
+            [
+                r["time_to_last_content_s"]
+                for r in records
+                if r.get("time_to_last_content_s") is not None
+            ]
         ),
         "tail_s": _stats([r["tail_s"] for r in records if r.get("tail_s") is not None]),
         # Tail-event types aggregated across all runs — tells us *what*
         # the backend keeps emitting after the visible response is done.
         "tail_event_types": dict(
-            Counter(
-                ev["type"]
-                for r in records
-                for ev in r.get("tail_events", [])
-            )
+            Counter(ev["type"] for r in records for ev in r.get("tail_events", []))
         ),
     }
 
@@ -280,9 +283,7 @@ async def main(args: argparse.Namespace) -> int:
     records: list[dict] = []
     for i in range(args.runs):
         print(f"\n=== run {i + 1}/{args.runs} ===")
-        record = await _profile_one_run(
-            backend, args.prompt, i, verbose=args.verbose_events
-        )
+        record = await _profile_one_run(backend, args.prompt, i, verbose=args.verbose_events)
         records.append(record)
         print(
             f"  total={record['total_s']}s  "

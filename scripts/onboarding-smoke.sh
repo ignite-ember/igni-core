@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Onboarding smoke test — exercises the exact path a new user takes
 # the first time they install the desktop app. Replicates what the
-# Tauri shell's bootstrap (igni-app's ``clients/tauri/src-tauri/src/runtime.rs``)
-# does at first launch.
+# desktop shell's bootstrap does at first launch.
 #
 # Steps:
 #

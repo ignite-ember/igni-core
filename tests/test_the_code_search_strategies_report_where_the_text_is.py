@@ -225,6 +225,38 @@ def test_ripgrep_leaves_out_what_the_project_ignores(tmp_path: Path) -> None:
     assert [m.path for m in result.matches] == ["open.txt"]
 
 
+def test_ripgrep_that_has_gone_since_it_was_picked_falls_back_to_the_walk(tmp_path: Path) -> None:
+    root = tmp_path.resolve()
+    _write(root, "a.txt", "x\nneedle here\n")
+
+    result = RgSearchStrategy(str(root / "no-such-rg")).search(root, "needle here", 1, 20)
+
+    assert [(m.path, m.line) for m in result.matches] == [("a.txt", 2)]
+    assert result.error in (None, "")
+
+
+@pytest.mark.parametrize("snippet", ["", "\n", "   \n\t"])
+def test_the_walk_finds_nothing_for_a_snippet_with_nothing_in_it(
+    tmp_path: Path, snippet: str
+) -> None:
+    root = tmp_path.resolve()
+    _write(root, "a.txt", "every line\nof every file\n")
+
+    assert PythonWalkSearchStrategy().search(root, snippet, _lines(snippet), 20).matches == []
+
+
+def test_a_snippet_that_starts_with_a_newline_previews_its_first_real_line(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path.resolve()
+    _write(root, "a.txt", "x\nneedle here\n")
+    snippet = "\nneedle here"
+
+    [match] = PythonWalkSearchStrategy().search(root, snippet, _lines(snippet), 20).matches
+
+    assert (match.path, match.line, match.preview) == ("a.txt", 1, "needle here")
+
+
 def test_ripgrep_that_takes_too_long_is_a_timed_out_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

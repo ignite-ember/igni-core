@@ -181,6 +181,33 @@ def test_a_backend_that_exits_before_it_is_ready_aborts_the_run(rig):
     assert "RuntimeError: BE exited before ready" in result.stderr
 
 
+def test_a_backend_that_dies_before_ready_shows_the_tail_of_its_output(rig):
+    rig.env["RIG_MODE"] = "die"
+    rig.env["RIG_STDERR"] = "\n".join(f"line {n}" for n in range(30)) + "\nboom: no port"
+    result = rig.run(SCRIPT)
+    assert result.returncode != 0
+    assert "RuntimeError: BE exited before ready" in result.stderr
+    assert "boom: no port" in result.stderr and "line 29" in result.stderr
+    assert "line 5\n" not in result.stderr  # only the tail
+
+
+def test_a_chatty_backend_does_not_block_on_its_output(rig):
+    rig.env["RIG_CHATTY_KB"] = "400"
+    result = rig.run(SCRIPT, *SHORT)
+    assert result.returncode == 0, result.stderr
+    log = re.search(r"# Backend log: (\S+)", result.stdout).group(1)
+    assert "chatter 399 " in open(log).read()
+
+
+def test_without_ps_every_reading_is_zero_and_the_run_still_ends(rig):
+    rig.system_dirs = []
+    (rig.bin / "ps").unlink()
+    result = rig.run(SCRIPT, *SHORT)
+    assert result.returncode == 0, result.stderr
+    assert "FileNotFoundError" not in result.stderr
+    assert "RSS =     0.0 MiB" in result.stdout
+
+
 def test_the_backend_is_stopped_when_the_run_ends(rig):
     result = rig.run(SCRIPT, *SHORT)
     assert result.returncode == 0, result.stderr

@@ -6,6 +6,9 @@ deliberately phrased differently from any prompt example to avoid
 overfit. Allowlists use display names ("Bash", "Edit") that the runner
 expands to actual function names.
 """
+
+import argparse
+import sys
 from pathlib import Path
 
 import yaml
@@ -647,8 +650,16 @@ CASE_GENERATORS = {
 }
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Write the specialist eval suites into ./evals.")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite committed suite files whose content differs from what would be written",
+    )
+    args = parser.parse_args(argv)
     out_dir = Path("evals")
+    skipped: list[Path] = []
     for name, gen in CASE_GENERATORS.items():
         cases = gen()
         for c in cases:
@@ -662,11 +673,24 @@ def main() -> None:
             "cases": cases,
         }
         out = out_dir / f"{name}.yaml"
-        out.write_text(
-            yaml.dump(suite, sort_keys=False, default_flow_style=False, width=10000, allow_unicode=True)
+        text = yaml.dump(
+            suite, sort_keys=False, default_flow_style=False, width=10000, allow_unicode=True
         )
+        if out.exists() and not args.force and out.read_text() != text:
+            skipped.append(out)
+            print(
+                f"  skipped {out} — it differs from the generated suite (hand edits); use --force to overwrite"
+            )
+            continue
+        out.write_text(text)
         print(f"  wrote {out} — {len(cases)} cases")
+    if skipped:
+        print(
+            f"{len(skipped)} file(s) skipped to keep their hand edits: "
+            + ", ".join(str(p) for p in skipped)
+        )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

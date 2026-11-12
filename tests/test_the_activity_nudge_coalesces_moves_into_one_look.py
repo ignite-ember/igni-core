@@ -64,3 +64,31 @@ def test_a_closed_loop_is_tolerated_silently():
     ActivityNudge(_model(watch), loop)()
 
     assert watch.looks == []
+
+
+class _LoopThatRefusesOnce:
+    """A loop whose first ``call_soon_threadsafe`` fails as a closing loop's
+    does, after ``is_closed`` said it was open; later calls are kept."""
+
+    def __init__(self) -> None:
+        self.scheduled: list[object] = []
+        self._refused = False
+
+    def is_closed(self) -> bool:
+        return False
+
+    def call_soon_threadsafe(self, callback: object) -> None:
+        if not self._refused:
+            self._refused = True
+            raise RuntimeError("Event loop is closed")
+        self.scheduled.append(callback)
+
+
+def test_a_move_the_loop_refused_does_not_swallow_the_next_one():
+    loop = _LoopThatRefusesOnce()
+    nudge = ActivityNudge(_model(_Watch()), loop)  # type: ignore[arg-type]
+
+    nudge()
+    nudge()
+
+    assert len(loop.scheduled) == 1, "the second move is scheduled"

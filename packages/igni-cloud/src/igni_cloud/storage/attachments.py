@@ -18,7 +18,6 @@ from sqlalchemy import delete, select, text
 
 from igni_core.core.db.database import Database
 from igni_core.core.db.urls import Dialect
-from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.utils.attachment_store import AttachmentModel, Attachments, StoredAttachment
 
 
@@ -76,16 +75,13 @@ class LargeObjectAttachments(Attachments):
 
     def local_path(self, ref: str) -> Path | None:
         if not ref.startswith(self.REF_PREFIX):
-            path = Path(ref)
-            return path if path.is_file() else None
+            return self._kept_file(ref)
         row = self._row(ref)
         if row is None:
             return None
         cache = (
-            self._project_dir
-            / CONFIG_DIR
-            / "attachments"
-            / row.session_id
+            self.directory(self._project_dir)
+            / self.session_directory(row.session_id)
             / f"{row.id}-{row.filename}"
         )
         if cache.is_file() and cache.stat().st_size == row.size:
@@ -100,7 +96,10 @@ class LargeObjectAttachments(Attachments):
 
     def open(self, ref: str) -> Iterator[bytes]:
         if not ref.startswith(self.REF_PREFIX):
-            return self._file_chunks(Path(ref))
+            path = self._kept_file(ref)
+            if path is None:
+                raise FileNotFoundError(f"{ref}: not an upload this project keeps")
+            return self._file_chunks(path)
         return self._read_object(ref)
 
     def _read_object(self, ref: str) -> Iterator[bytes]:

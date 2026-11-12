@@ -654,17 +654,12 @@ async def main():
                 {
                     "permissions": {
                         "allow": [
-                            "Glob",
-                            "Grep",
-                            "LS",
-                            "Read",
                             "WebSearch",
                             "WebFetch",
                             "Bash",
                             "BashOutput",
                             "Write",
                             "Edit",
-                            "Python",
                             "Schedule",
                         ],
                         "ask": [],
