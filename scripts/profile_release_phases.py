@@ -105,7 +105,7 @@ async def _watch_phase(label: str, pid: int, t0: float, seconds: float,
 
 
 async def _drive(args) -> None:
-    project = Path(tempfile.mkdtemp(prefix="ember-release-"))
+    project = Path(tempfile.mkdtemp(prefix="igni-release-"))
     env_overrides = {**os.environ, "IGNI_PARENT_PID": str(os.getpid())}
     if args.idle_timeout > 0:
         env_overrides["IGNI_SESSION_IDLE_TIMEOUT"] = str(args.idle_timeout)
@@ -152,7 +152,8 @@ async def _drive(args) -> None:
         rss_attached = _print_phase("ATTACHED", pid, t0)
 
         # ── Phase 3: LOAD ──
-        per_session_sleep = args.sessions / args.rate
+        # A rate that is not positive paces at 10 ms, as the sibling probes do.
+        per_session_sleep = args.sessions / args.rate if args.rate > 0 else 0.01
         stop = asyncio.Event()
 
         async def driver(ws):
