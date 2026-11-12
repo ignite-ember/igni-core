@@ -144,9 +144,10 @@ def test_a_path_or_a_reference_that_is_not_there_has_no_local_path(
     postgres_url: str, tmp_path: Path
 ):
     store, _ = _store(postgres_url, tmp_path)
-    mine = tmp_path / "mine.txt"
-    mine.write_text("on disk")
-    assert store.local_path(str(mine)) == mine
+    kept = tmp_path / ".igni" / "attachments" / "s1" / "mine.txt"
+    kept.parent.mkdir(parents=True)
+    kept.write_text("on disk")
+    assert store.local_path(str(kept)) == kept.resolve()
     assert store.local_path(str(tmp_path / "missing.txt")) is None
     assert store.local_path(str(tmp_path)) is None, "a directory is no file"
     assert store.local_path(LargeObjectAttachments.REF_PREFIX + "0" * 32) is None
@@ -155,6 +156,22 @@ def test_a_path_or_a_reference_that_is_not_there_has_no_local_path(
     foreign = other.save("s1", "a.txt", [b"secret"]).ref
     assert store.local_path(foreign) is None
     assert other.local_path(foreign) is not None
+
+
+def test_a_plain_path_outside_the_attachments_directory_is_no_upload(
+    postgres_url: str, tmp_path: Path
+):
+    project = tmp_path / "project"
+    store, _ = _store(postgres_url, project)
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not an upload")
+    (project / "own.txt").parent.mkdir(parents=True)
+    (project / "own.txt").write_text("the project's own file")
+    climbing = project / ".igni" / "attachments" / ".." / ".." / ".." / "secret.txt"
+    for ref in (str(secret), str(project / "own.txt"), str(climbing)):
+        assert store.local_path(ref) is None, ref
+        with pytest.raises(FileNotFoundError):
+            store.open(ref)
 
 
 def test_a_delete_frees_the_large_object_and_the_row(postgres_url: str, tmp_path: Path):

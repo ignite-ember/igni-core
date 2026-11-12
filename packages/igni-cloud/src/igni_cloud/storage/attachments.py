@@ -75,8 +75,7 @@ class LargeObjectAttachments(Attachments):
 
     def local_path(self, ref: str) -> Path | None:
         if not ref.startswith(self.REF_PREFIX):
-            path = Path(ref)
-            return path if path.is_file() else None
+            return self._kept_file(ref)
         row = self._row(ref)
         if row is None:
             return None
@@ -97,7 +96,10 @@ class LargeObjectAttachments(Attachments):
 
     def open(self, ref: str) -> Iterator[bytes]:
         if not ref.startswith(self.REF_PREFIX):
-            return self._file_chunks(Path(ref))
+            path = self._kept_file(ref)
+            if path is None:
+                raise FileNotFoundError(f"{ref}: not an upload this project keeps")
+            return self._file_chunks(path)
         return self._read_object(ref)
 
     def _read_object(self, ref: str) -> Iterator[bytes]:
