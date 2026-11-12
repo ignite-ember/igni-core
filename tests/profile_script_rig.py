@@ -181,11 +181,17 @@ cap = float(os.environ.get("RIG_REAL_SLEEP_CAP", "0.01"))
 
 
 async def fast_sleep(seconds, *a, **k):
-    offset[0] += max(0.0, seconds)
-    await real_sleep(min(max(0.0, seconds), cap))
+    # A phase or sampling wait (a second or more) is skipped on the virtual
+    # clock; a short pacing pause stays real, so concurrent drivers do not
+    # make the clock run away.
+    if seconds >= 1:
+        offset[0] += seconds
+        await real_sleep(min(seconds, cap))
+    else:
+        await real_sleep(seconds)
 
 
-asyncio.sleep = fast_sleep
+mod.asyncio = types.SimpleNamespace(**{**vars(asyncio), "sleep": fast_sleep})
 mod.time = types.SimpleNamespace(
     monotonic=lambda: time.monotonic() + offset[0],
     monotonic_ns=time.monotonic_ns,
