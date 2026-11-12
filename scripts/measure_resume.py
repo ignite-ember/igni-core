@@ -568,7 +568,10 @@ class Window:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            message = json.loads(await asyncio.wait_for(self.ws.recv(), timeout=remaining))
+            try:
+                message = json.loads(await asyncio.wait_for(self.ws.recv(), timeout=remaining))
+            except TimeoutError:
+                break
             kind, session = message.get("type"), message.get("session_id", "")
             if session in sessions and kind in ("stream_end", "run_error"):
                 ended[session] = kind
