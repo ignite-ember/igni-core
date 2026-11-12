@@ -43,7 +43,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from igni_core.backend.server import BackendServer  # noqa: E402
-from igni_core.core.config.settings import load_settings  # noqa: E402
+from igni_core.core.config.settings_loader import SettingsLoader  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +246,7 @@ async def main(args: argparse.Namespace) -> int:
         print(f"project dir not found: {project_dir}", file=sys.stderr)
         return 2
 
-    settings = load_settings(project_dir=project_dir)
+    settings = SettingsLoader.load(project_dir=project_dir)
     if args.model:
         settings.models.default = args.model
     print(f"project_dir={project_dir}")
