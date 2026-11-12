@@ -220,7 +220,13 @@ class FilesController:
                 path=str(requested), contents="", size=0, error="Path is a directory."
             )
 
-        size = requested.stat().st_size
+        try:
+            size = requested.stat().st_size
+        except OSError as exc:
+            # The file went between the checks above and here.
+            return ReadFileResult(
+                path=str(requested), contents="", size=0, error=f"read failed: {exc}"
+            )
         if size > _READ_FILE_MAX_BYTES:
             return ReadFileResult(
                 path=str(requested),
