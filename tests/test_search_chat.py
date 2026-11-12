@@ -339,3 +339,17 @@ class TestSnippetHalfWidth:
 
     def test_an_empty_history_has_no_hits(self):
         assert ChatHistorySearcher([]).search("x", limit=5) == []
+
+
+class TestACharacterWhoseLowercaseIsLonger:
+    """``"İ".lower()`` is two characters. The highlight must still land on the match."""
+
+    def test_the_match_offsets_point_at_the_match_in_the_snippet(self):
+        hit = _search([_turn("İİİ the needle")], "needle", limit=5)[0]
+
+        assert hit.snippet[hit.match_start : hit.match_end] == "needle"
+
+    def test_a_match_that_is_itself_such_a_character_spans_one_character(self):
+        hit = _search([_turn("x İ y")], "İ", limit=5)[0]
+
+        assert hit.snippet[hit.match_start : hit.match_end] == "İ"
