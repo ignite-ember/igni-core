@@ -66,6 +66,16 @@ def test_a_model_switch_answers_the_info_the_switcher_gave() -> None:
     switched.assert_called_once_with("fast")
 
 
+def test_a_refused_model_switch_fails_the_call_with_the_reason() -> None:
+    refused = MagicMock(return_value=msg.Error(text="Model 'nope' is not in the registry"))
+    handler = _handler(switch_model=refused)
+
+    with pytest.raises(ValueError, match="'nope' is not in the registry"):
+        handler.methods()[RpcMethod.SWITCH_MODEL]({"model_name": "nope"})
+
+    refused.assert_called_once_with("nope")
+
+
 def test_a_model_switch_without_a_name_is_refused() -> None:
     from igni_core.backend.rpc_binding import RpcArgsError
 
