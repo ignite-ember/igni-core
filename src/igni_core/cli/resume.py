@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from igni_core.core.config.settings import Settings
 from igni_core.core.memory.manager import StorageManager
-from igni_core.core.session.persistence import SessionPersistence
+from igni_core.core.session.persistence.listing import SessionListing
 
 
 class ResumeLookup(BaseModel):
@@ -35,7 +35,7 @@ class ResumeLookup(BaseModel):
 
 
 class ResumeResolver:
-    """Resolve the most-recent session id for ``ember --continue``.
+    """Resolve the most-recent session id for ``igni --continue``.
 
     Constructed with a :class:`Settings` snapshot so the DB path
     honours the same 5-tier merge the caller performed. Kept as a
@@ -60,11 +60,19 @@ class ResumeResolver:
         """
         try:
             db = StorageManager.build_db(self._settings)
-            persistence = SessionPersistence(db, session_id="")
-            sessions = asyncio.run(persistence.list_sessions(limit=1))
+            listing = SessionListing(db).list_sessions(limit=1)
+            try:
+                listed = asyncio.run(listing)
+            except BaseException:
+                listing.close()  # not awaited when a loop is already running
+                raise
         except Exception as exc:
             return ResumeLookup(error=str(exc))
 
-        if not sessions:
+        # The listing reports a read the database failed as ``ok=False`` rather
+        # than raising; that is the error state, not "no previous sessions".
+        if not listed.ok:
+            return ResumeLookup(error=listed.error or "the session list could not be read")
+        if not listed.value:
             return ResumeLookup()
-        return ResumeLookup(session_id=sessions[0].session_id)
+        return ResumeLookup(session_id=listed.value[0].session_id)
