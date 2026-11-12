@@ -45,7 +45,7 @@ def _load_dotenv() -> None:
     for line in p.read_text().splitlines():
         if "=" in line and not line.lstrip().startswith("#"):
             k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip())
+            os.environ.setdefault(k.strip(), v.strip().strip("\"'"))
 
 
 def _make_prompt(target_tokens: int) -> str:
