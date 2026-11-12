@@ -110,7 +110,12 @@ class WorkflowDiscovery:
         return None
 
     async def _meta_for(self, path: Path) -> WorkflowMetaEnvelope | None:
-        mtime = path.stat().st_mtime
+        try:
+            mtime = path.stat().st_mtime
+        except OSError as exc:
+            # Deleted between the directory listing and now: nothing to read.
+            logger.debug("workflow %s is gone: %s", path, exc)
+            return None
         cached = self._cache.get(path, mtime)
         if cached is not None:
             return cached
