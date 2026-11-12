@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from igni_core.backend.rpc_binding import Correlation, NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.schemas_auth import (
@@ -14,6 +16,8 @@ from igni_core.backend.schemas_rpc import CloudPlan, LoginStarted
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.enums import PushChannel
+
+logger = logging.getLogger(__name__)
 
 
 class AuthRpcHandler(RpcHandler):
@@ -80,8 +84,13 @@ class AuthRpcHandler(RpcHandler):
         status = self._controllers.auth.clear_cloud_credentials()
         # Signed out: the last person's notifications stop arriving and
         # leave the badges.
+        # The sign-out already happened: a center that cannot tell its
+        # follower to stop must not turn it into a failed call.
         if self._ctx.notifications is not None:
-            await self._ctx.notifications.signed_out()
+            try:
+                await self._ctx.notifications.signed_out()
+            except Exception:
+                logger.warning("Notification center failed after sign-out", exc_info=True)
         return status
 
     @rpc(
