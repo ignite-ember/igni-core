@@ -9,6 +9,8 @@ display, so the chat bubble shows only the text itself:
 
 from __future__ import annotations
 
+from html import escape
+
 
 class ExtensionMessage:
     """How a message an extension posts reads to the agent.
@@ -23,12 +25,16 @@ class ExtensionMessage:
 
     @classmethod
     def wrap(cls, extension_id: str, text: str) -> str:
+        # A manifest id never holds a quote or a bracket, so for a real id
+        # this changes nothing; an id that does could otherwise close the
+        # attribute or the block and write the agent a context of its own.
+        sender = escape(extension_id, quote=True)
         return (
             "<system-context>\n"
-            f"The message below was posted by the igni extension '{extension_id}', "
+            f"The message below was posted by the igni extension '{sender}', "
             "not typed by the person. Answer it in the chat as you would answer them.\n"
             "</system-context>\n"
-            f'<{cls.TAG} from="{extension_id}">\n{text}\n</{cls.TAG}>'
+            f'<{cls.TAG} from="{sender}">\n{text}\n</{cls.TAG}>'
         )
 
 
