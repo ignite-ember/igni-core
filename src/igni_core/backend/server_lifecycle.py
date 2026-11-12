@@ -25,6 +25,7 @@ holds no reference back to ``BackendServer``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
@@ -79,7 +80,10 @@ class LifecycleController:
         # The first teardown's outcome. A session is torn down once: the
         # ``shutdown`` call, the pool evicting it and igni exiting can each
         # ask, and ``SessionEnd`` must not fire twice.
+        # Callers that arrive while the first is still tearing down wait for
+        # it, rather than starting a second teardown of their own.
         self._shutdown: ShutdownResult | None = None
+        self._shutdown_lock = asyncio.Lock()
 
     async def startup(self) -> None:
         """Async post-construction hook.
@@ -131,6 +135,7 @@ class LifecycleController:
         best-effort (an exception in one step is recorded and the
         runner moves on).
         """
-        if self._shutdown is None:
-            self._shutdown = await self._shutdown_pipeline.run()
-        return self._shutdown
+        async with self._shutdown_lock:
+            if self._shutdown is None:
+                self._shutdown = await self._shutdown_pipeline.run()
+            return self._shutdown
