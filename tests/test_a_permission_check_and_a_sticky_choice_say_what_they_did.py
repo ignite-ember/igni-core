@@ -151,7 +151,7 @@ def test_the_rule_is_written_under_the_catalog_name_whichever_name_the_requireme
 # ── what the running session holds ────────────────────────────────
 
 
-def test_a_rule_that_does_not_parse_is_kept_on_disk_and_left_out_of_the_evaluator(tmp_path: Path):
+def test_a_rule_that_does_not_parse_is_left_out_of_the_evaluator(tmp_path: Path):
     evaluator = PermissionEvaluator()
     permissions = _permissions(tmp_path, evaluator)
 
