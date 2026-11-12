@@ -820,6 +820,13 @@ def test_each_case_session_gets_a_permissive_project_and_the_live_model(
     assert agent.name == "explorer"
     settings = json.loads((work / ".igni" / "settings.local.json").read_text())
     assert "Bash" in settings["permissions"]["allow"]
+    # every name it allows is a tool the registry still has
+    from igni_core.core.tools.tool_spec import ToolSpecCatalog
+
+    real = set(ToolSpecCatalog.default().by_name)
+    assert set(settings["permissions"]["allow"]) <= real, (
+        set(settings["permissions"]["allow"]) - real
+    )
     assert settings["permissions"]["ask"] == []
     assert agent.model.id == "model-x"
     assert str(agent.model.base_url) == "http://127.0.0.1:9/v1"
