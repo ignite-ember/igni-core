@@ -93,6 +93,15 @@ def migrate(project_dir: Path | None, data_dir: Path | None, database_url: str |
             # why, not a SQLAlchemy traceback. The URL is the redacted one.
             where = url.file if url.file is not None else url.redacted
             raise click.ClickException(f"could not migrate {where}: {exc.orig or exc}") from exc
+        except ImportError as exc:
+            # The URL names a database whose driver is not installed (a
+            # PostgreSQL URL on an install without psycopg): say so, not a
+            # ModuleNotFoundError traceback.
+            where = url.file if url.file is not None else url.redacted
+            driver = exc.name or "its driver"
+            raise click.ClickException(
+                f"could not migrate {where}: {driver} is not installed"
+            ) from exc
         click.echo(report)
 
 
