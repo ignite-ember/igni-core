@@ -471,6 +471,16 @@ runInContext(wrapper, ctx, { filename: workflowPath })
     exit(0)
   })
   .catch((err) => {
+    if (cancelRequested.value) {
+      // The cancel itself rejected the script's pending agent() call;
+      // that is how a cancelled run ends, not a failure of the script.
+      flushPhases("cancelled")
+      emit("workflow_completed", {
+        status: "cancelled",
+        duration_ms: Date.now() - started_at_ms,
+      })
+      exit(0)
+    }
     flushPhases("failed")
     emit("workflow_failed", {
       error: err.message,
