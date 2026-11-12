@@ -50,6 +50,7 @@ from igni_core.protocol import messages as msg
 
 __all__ = [
     "CancelAgentRunResult",
+    "CancelRunResult",
     "HookGateResult",
     "HttpClientCloseResult",
     "ModelConfig",

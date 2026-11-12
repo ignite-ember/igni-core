@@ -20,7 +20,6 @@ import importlib.util
 import json
 import os
 import pathlib
-import shutil
 import stat
 import sys
 import types
@@ -47,7 +46,7 @@ def claude(tmp_path, monkeypatch):
     exe = bin_dir / "claude"
     exe.write_text(_FAKE_CLAUDE)
     exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("PATH", str(bin_dir), prepend=os.pathsep)
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("FAKE_CLAUDE_ARGV", str(state / "argv"))

@@ -79,7 +79,8 @@ class AssistantContentRestorer:
         Matches the live ``args_summary`` shape: ``key=value`` pairs
         joined by spaces, with long values truncated. Strings are shown
         raw (not JSON-quoted) so a shell ``command="ls -la"`` reads
-        like a command, not like JSON.
+        like a command, not like JSON; non-ASCII text inside a dict or a
+        list is shown as written, not as ``\\uXXXX`` escapes.
 
         Handles the four shapes the walker sees in practice: dict
         (structured args), list (positional arg-list), scalars, and
@@ -96,7 +97,7 @@ class AssistantContentRestorer:
                     v_str = str(v)
                 else:
                     try:
-                        v_str = json.dumps(v, separators=(",", ":"))
+                        v_str = json.dumps(v, separators=(",", ":"), ensure_ascii=False)
                     except Exception:
                         v_str = str(v)
                     if len(v_str) > cap:
@@ -105,7 +106,7 @@ class AssistantContentRestorer:
             return " ".join(parts)
         if isinstance(args, list):
             try:
-                return json.dumps(args, separators=(",", ":"))
+                return json.dumps(args, separators=(",", ":"), ensure_ascii=False)
             except Exception:
                 return str(args)
         return str(args)

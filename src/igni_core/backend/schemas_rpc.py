@@ -349,7 +349,11 @@ class SessionPoolConfig(BaseModel):
 
     @classmethod
     def from_env(cls) -> SessionPoolConfig:
-        """``IGNI_SESSION_IDLE_TIMEOUT``, when it is a positive number of seconds."""
+        """``IGNI_SESSION_IDLE_TIMEOUT``, when it is a positive number of seconds.
+
+        ``inf`` is a positive number: a session is then never evicted for
+        being idle. Anything else — empty, zero, negative, ``nan``, not a
+        number — keeps the pool's default."""
         raw = os.environ.get("IGNI_SESSION_IDLE_TIMEOUT", "")
         try:
             seconds = float(raw) if raw else 0.0

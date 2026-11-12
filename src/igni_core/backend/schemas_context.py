@@ -259,6 +259,7 @@ __all__ = [
     "TruncateHistoryResult",
     "PendingMessage",
     "InterruptedRun",
+    "CompactionOutcome",
     "DiscardInterruptedRunResult",
     "OutputStylesListView",
     "OutputStyleStatusView",

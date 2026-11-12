@@ -645,7 +645,7 @@ def claude_on_path(tmp_path, monkeypatch):
     exe = bin_dir / "claude"
     exe.write_text('#!/bin/sh\necho \'{"result": "ok"}\'\n')
     exe.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    monkeypatch.setenv("PATH", str(bin_dir), prepend=os.pathsep)
 
 
 def _load_real(monkeypatch):
