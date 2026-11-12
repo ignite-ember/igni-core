@@ -124,7 +124,7 @@ async def _rpc(ws, method: str, args=None, timeout=10.0):
 
 
 async def _drive(args) -> None:
-    project = Path(tempfile.mkdtemp(prefix="ember-fd-"))
+    project = Path(tempfile.mkdtemp(prefix="igni-fd-"))
     print(f"# Project dir: {project}")
 
     env = {
@@ -179,8 +179,8 @@ async def _drive(args) -> None:
             fds_attached = sample(f"cycle{cycle} ATTACHED")
 
             # ── Drive a small burst so any per-RPC FDs get exercised ──
-            for _ in range(args.requests_per_cycle):
-                await _rpc(clients[_ % len(clients)], "get_status")
+            for n in range(args.requests_per_cycle if clients else 0):
+                await _rpc(clients[n % len(clients)], "get_status")
             fds_after_load = sample(f"cycle{cycle} AFTER LOAD")
 
             # ── Disconnect ──
