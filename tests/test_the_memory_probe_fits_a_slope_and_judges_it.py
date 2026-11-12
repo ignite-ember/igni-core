@@ -198,3 +198,14 @@ def test_the_command_line_defaults():
     finally:
         sys.argv = old
     assert seen == {"sessions": 4, "duration": 60.0, "interval": 3.0, "rate": 400.0}
+
+
+@pytest.mark.parametrize(
+    ("count", "p", "rank"),
+    [(15, 0.95, 15), (20, 0.95, 19), (20, 0.5, 10), (10, 0.99, 10), (1, 0.95, 1), (100, 0.99, 99)],
+)
+def test_a_percentile_is_the_nearest_rank_value(count, p, rank):
+    spec = importlib.util.spec_from_file_location("memory_percentile", REPO / "scripts" / SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod._percentile(list(range(1, count + 1))[::-1], p) == rank

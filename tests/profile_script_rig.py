@@ -41,6 +41,9 @@ import websockets
 REC = Path(os.environ["RIG_DIR"])
 MODE = os.environ.get("RIG_MODE", "normal")
 DELAY = float(os.environ.get("RIG_RPC_DELAY", "0"))
+# Each get_status takes STEP longer than the one before it.
+STEP = float(os.environ.get("RIG_RPC_DELAY_STEP", "0"))
+STATUS_CALLS = [0]
 
 
 def note(name, value):
@@ -87,8 +90,10 @@ async def handler(ws):
         if MODE == "hangup" and msg["method"] == "get_status":
             await ws.close()
             return
-        if DELAY:
-            await asyncio.sleep(DELAY)
+        if msg["method"] == "get_status":
+            STATUS_CALLS[0] += 1
+        if DELAY or STEP:
+            await asyncio.sleep(DELAY + STEP * STATUS_CALLS[0])
         await ws.send(json.dumps({"type": "rpc_response", "id": msg["id"], "result": {}}))
 
 

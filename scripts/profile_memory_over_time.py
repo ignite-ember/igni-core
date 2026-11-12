@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import subprocess
 import sys
@@ -46,6 +47,12 @@ async def _connect_and_welcome(port: int):
     welcome = json.loads(raw)
     assert welcome["type"] == "welcome", welcome
     return ws, welcome["client_id"]
+
+
+def _percentile(values: list[float], p: float) -> float:
+    """Nearest-rank percentile: the ceil(p * n)-th smallest value, clamped to the list."""
+    ordered = sorted(values)
+    return ordered[min(max(math.ceil(p * len(ordered)) - 1, 0), len(ordered) - 1)]
 
 
 async def _rpc(ws, method: str, args: dict | None = None, timeout: float = 5.0):
@@ -142,7 +149,7 @@ def _child_count(pid: int) -> int:
 async def _run(sessions: int, duration: float, interval: float, rate: float) -> None:
     # Convert global rate (req/s) to per-session sleep between requests.
     per_session_sleep = sessions / rate if rate > 0 else 0.01
-    print(f"# Target rate: {rate:.0f} req/s total  ({per_session_sleep*1000:.0f}ms/req/session)")
+    print(f"# Target rate: {rate:.0f} req/s total  ({per_session_sleep * 1000:.0f}ms/req/session)")
     project = Path(tempfile.mkdtemp(prefix="igni-memprof-"))
     print(f"# Project dir: {project}")
 
@@ -180,9 +187,7 @@ async def _run(sessions: int, duration: float, interval: float, rate: float) -> 
         boot_secs = time.monotonic() - t_spawn
         port = int(ws_url.rsplit(":", 1)[-1])
         rss_initial = _rss_mb(proc.pid)
-        print(
-            f"# Cold boot: {boot_secs:.2f}s  ·  RSS at ready: {rss_initial:.1f} MiB"
-        )
+        print(f"# Cold boot: {boot_secs:.2f}s  ·  RSS at ready: {rss_initial:.1f} MiB")
 
         # Open N sessions.
         clients = []
@@ -219,10 +224,7 @@ async def _run(sessions: int, duration: float, interval: float, rate: float) -> 
                 # Pacing: ``--rate`` total RPCs/s across all sessions.
                 await asyncio.sleep(per_session_sleep)
 
-        print(
-            f"# Driving for {duration:.0f}s ({sessions} sessions, sample every "
-            f"{interval:.0f}s)…"
-        )
+        print(f"# Driving for {duration:.0f}s ({sessions} sessions, sample every {interval:.0f}s)…")
         print(
             f"# {'t (s)':>6}  {'RSS (MiB)':>10}  {'Δ (MiB)':>8}  "
             f"{'rps':>6}  {'p95 ms':>7}  {'kids':>5}"
@@ -245,7 +247,7 @@ async def _run(sessions: int, duration: float, interval: float, rate: float) -> 
                 window = rtt_window[:]
                 rtt_window.clear()
             if window:
-                p95 = sorted(window)[int(len(window) * 0.95) - 1]
+                p95 = _percentile(window, 0.95)
             else:
                 p95 = 0.0
             delta = rss - rss_attached
@@ -276,14 +278,8 @@ async def _run(sessions: int, duration: float, interval: float, rate: float) -> 
             last_rss = samples[-1][1]
             peak = max(ys)
             print()
-            print(
-                f"# RSS: start={first_rss:.1f} MiB  end={last_rss:.1f} MiB  "
-                f"peak={peak:.1f} MiB"
-            )
-            print(
-                f"# Slope: {slope_mb_per_min:+.2f} MiB/min  "
-                f"({slope_mb_per_s * 1024:+.0f} KiB/s)"
-            )
+            print(f"# RSS: start={first_rss:.1f} MiB  end={last_rss:.1f} MiB  peak={peak:.1f} MiB")
+            print(f"# Slope: {slope_mb_per_min:+.2f} MiB/min  ({slope_mb_per_s * 1024:+.0f} KiB/s)")
             # Verdict thresholds chosen from local-IPC scale: a real leak
             # producing N bytes/request at 100 req/s would show double-digit
             # MiB/min. Single-digit MiB/min on a 60-90 s window is noise.
@@ -326,8 +322,9 @@ def main() -> int:
     ap.add_argument("--sessions", type=int, default=4)
     ap.add_argument("--duration", type=float, default=60.0)
     ap.add_argument("--interval", type=float, default=3.0)
-    ap.add_argument("--rate", type=float, default=400.0,
-                    help="Target req/s across all sessions (default 400)")
+    ap.add_argument(
+        "--rate", type=float, default=400.0, help="Target req/s across all sessions (default 400)"
+    )
     args = ap.parse_args()
     asyncio.run(
         _run(
