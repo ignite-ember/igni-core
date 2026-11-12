@@ -71,7 +71,7 @@ async def test_cancelling_a_pending_task_cancels_it(tasks) -> None:
 def test_cancelling_a_run_that_is_not_running_is_not_ok() -> None:
     controller = RunController.__new__(RunController)
 
-    result = controller.cancel_agent_run("run-nobody-started")
+    result = controller.cancel_agent_run("run-never-started-by-the-controller-test")
 
     assert not result.ok
     assert "is running" in result.error

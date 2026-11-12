@@ -215,7 +215,7 @@ async def test_cancelling_with_no_turn_running_says_nothing_was_cancelled(table)
     assert answer == CancelRunResult(cancelled=False)
 
 
-@pytest.mark.parametrize("wire", [{}, {"run_id": ""}, {"run_id": "run-nobody-started"}])
+@pytest.mark.parametrize("wire", [{}, {"run_id": ""}, {"run_id": "run-never-started-by-the-wire-test"}])
 async def test_cancelling_a_sub_agent_run_that_is_not_running_is_not_ok(table, wire):
     answer = await _ask(table, RpcMethod.CANCEL_AGENT_RUN, wire)
 
