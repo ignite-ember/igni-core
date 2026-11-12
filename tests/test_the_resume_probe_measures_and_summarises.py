@@ -52,8 +52,8 @@ def proc(mod, monkeypatch, tmp_path):
     monkeypatch.setattr(
         mod,
         "open",
-        lambda name, *a, **k: open(redirect(name), *a, **k),
-        raising=False,  # noqa: SIM115 - handed back to the caller
+        lambda name, *a, **k: open(redirect(name), *a, **k),  # noqa: SIM115 - handed back to the caller
+        raising=False,
     )
 
     def put(pid, name, text):
