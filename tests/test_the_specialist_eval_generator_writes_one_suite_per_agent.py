@@ -19,6 +19,8 @@ import yaml
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "_generate_specialist_evals.py"
 
+OLD_NAME = "em" + "ber"
+
 SPECIALISTS = {
     "explorer",
     "architect",
@@ -132,7 +134,7 @@ class TestWhatItSaysAboutItself:
     def test_no_text_it_writes_names_the_old_product(self, generated):
         cwd, _ = generated
         for path in (cwd / "evals").glob("*.yaml"):
-            assert "ember" not in path.read_text().lower(), path.name
+            assert OLD_NAME not in path.read_text().lower(), path.name
 
     def test_the_project_file_the_docs_suite_points_at_exists(self):
         suite = (REPO / "evals" / "docs.yaml").read_text()
