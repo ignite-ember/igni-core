@@ -42,7 +42,7 @@ async def main() -> None:
 
     try:
         agent_session = AgentSession(
-            session_id="diag", agent_id=agent.id or "ember", session_data={}, runs=[]
+            session_id="diag", agent_id=agent.id or "igni", session_data={}, runs=[]
         )
     except TypeError:
         agent_session = AgentSession.__new__(AgentSession)
