@@ -58,3 +58,22 @@ def test_every_editor_case_lands_in_the_category_its_name_asks_for(smoke):
     assert by_name["follows_igni_md_conventions"] == "E. verification"
     assert by_name["conflicting_igni_md_vs_request"] == "F. judgement"
     assert not [n for n in by_name if "ember" in n]
+
+
+# ── What --help promises about timeouts ────────────────────────────
+
+
+def _help_text(smoke, monkeypatch, capsys) -> str:
+    monkeypatch.setattr(sys, "argv", ["run_evals_smoke.py", "--help"])
+    with pytest.raises(SystemExit) as exit_info:
+        asyncio.run(smoke.main())
+    assert exit_info.value.code == 0
+    return " ".join(capsys.readouterr().out.split())
+
+
+def test_the_help_says_a_timed_out_case_is_retried(smoke, monkeypatch, capsys):
+    """``_run_case`` retries a timeout like a model error; the help must not
+    tell the person a stuck case is run only once."""
+    text = _help_text(smoke, monkeypatch, capsys)
+    assert "Does NOT retry on case_timeout" not in text
+    assert "and on case_timeout" in text

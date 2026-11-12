@@ -573,9 +573,10 @@ async def main():
         default=2,
         help=(
             "harness-level retries on transient model errors (e.g. 429, "
-            "connection reset). Does NOT retry on case_timeout — those "
-            "indicate a stuck case, not a flake. Total attempts = 1 + "
-            "case_retries (default: 1+2=3)."
+            "connection reset) and on case_timeout — a timeout is often "
+            "contention between parallel cases, which a retry after they "
+            "finish can clear. Total attempts = 1 + case_retries "
+            "(default: 1+2=3)."
         ),
     )
     parser.add_argument(
