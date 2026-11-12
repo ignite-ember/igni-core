@@ -100,9 +100,7 @@ def test_a_blank_commit_line_is_not_a_head(tmp_path: Path, monkeypatch: pytest.M
 
 def test_head_is_read_in_one_git_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     log = tmp_path / "calls"
-    project = _fake_git(
-        tmp_path, monkeypatch, f"echo x >> {log}; echo deadbeef; echo feature/x"
-    )
+    project = _fake_git(tmp_path, monkeypatch, f"echo x >> {log}; echo deadbeef; echo feature/x")
     assert GitWorkspace(project).head() == Head(commit_sha="deadbeef", branch="feature/x")
     assert log.read_text().count("x") == 1
 
@@ -199,7 +197,8 @@ async def test_a_file_listener_leaving_drops_the_files_baseline():
     workspace = _Workspace()
     listening = {"on": True}
     watch, _, files = _watch(
-        workspace, wants=lambda topic: listening["on"] and topic is HostTopic.WORKSPACE_FILES_CHANGED
+        workspace,
+        wants=lambda topic: listening["on"] and topic is HostTopic.WORKSPACE_FILES_CHANGED,
     )
     await watch.poll_once()
     listening["on"] = False
