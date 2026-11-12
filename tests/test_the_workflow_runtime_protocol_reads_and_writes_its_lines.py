@@ -102,7 +102,7 @@ def test_a_good_line_with_surrounding_whitespace_is_parsed():
     assert isinstance(event, WorkflowProgressEvent)
 
 
-def test_a_refusal_names_the_union_member_it_came_from():
+def test_a_refusal_names_the_kind_of_event_it_came_from():
     with pytest.raises(ValidationError) as caught:
         Reader.parse(_line("workflow_meta", {"meta": {"name": "n", "bogus": 1}}))
     assert Reader.failed_type(caught.value) == "meta"
@@ -111,7 +111,7 @@ def test_a_refusal_names_the_union_member_it_came_from():
     assert Reader.failed_type(caught.value) == "progress"
 
 
-def test_a_refusal_before_any_member_was_chosen_names_none():
+def test_a_refusal_before_any_kind_was_chosen_names_none():
     with pytest.raises(ValidationError) as caught:
         Reader.parse(_line(3))
     assert Reader.failed_type(caught.value) is None
