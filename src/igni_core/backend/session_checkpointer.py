@@ -82,17 +82,20 @@ class SessionCheckpointer:
 
         Cancellation is the normal stop signal — the caller cancels
         this task in its ``finally``. We swallow ``CancelledError``
-        cleanly; any other exception is logged but never
-        propagated.
+        cleanly; any other exception is logged for that tick, never
+        propagated, and the loop carries on.
         """
         try:
             while True:
                 await asyncio.sleep(interval)
-                if checkpoint_hook is not None:
-                    await checkpoint_hook(self._team)
-                else:
-                    await self.snapshot()
+                try:
+                    if checkpoint_hook is not None:
+                        await checkpoint_hook(self._team)
+                    else:
+                        await self.snapshot()
+                except Exception as exc:
+                    # One failed save must not end the run's durability:
+                    # the next tick tries again.
+                    logger.debug("periodic checkpoint failed: %s", exc)
         except asyncio.CancelledError:
             return
-        except Exception as exc:
-            logger.debug("periodic checkpoint task crashed: %s", exc)

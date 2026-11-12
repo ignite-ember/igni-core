@@ -66,11 +66,23 @@ class ServingBackend:
         except Exception as exc:
             logger.error("Backend error: %s", exc, exc_info=True)
         finally:
-            for stop in self._teardown():
+            await self._tear_down()
+
+    async def _tear_down(self) -> None:
+        """Every stop runs, so one that fails does not leave the supervisor's
+        processes behind; the first failure is raised once all have run."""
+        first: Exception | None = None
+        for stop in self._teardown():
+            try:
                 await stop()
+            except Exception as exc:
+                logger.error("Backend teardown step failed: %s", exc, exc_info=True)
+                first = first or exc
+        if first is not None:
+            raise first
 
     def _teardown(self) -> list[Callable[[], Awaitable[None]]]:
-        """In order. A stop that raises skips the rest, as it always has."""
+        """In order."""
         parts = self._parts
         return [
             parts.ingress.stop,
