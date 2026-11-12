@@ -75,8 +75,8 @@ async def test_a_name_that_lower_cases_longer_keeps_its_arguments_whole(tmp_path
         seen.append(args)
         return "ok"
 
-    extensions.register("i̇x", owner="ext", description="d", invoke=invoke)
-    result = await _handler(tmp_path).handle("/İx  hello world")
+    extensions.register("i̇i̇x", owner="ext", description="d", invoke=invoke)
+    result = await _handler(tmp_path).handle("/İİx hello world")
     assert result.content == "ok"
     assert seen == ["hello world"]
 
