@@ -217,11 +217,11 @@ class Lockfile:
                 _owner_only_on_windows(tmp)
             with os.fdopen(fd, "wb") as fh:
                 fh.write(data)
+            os.replace(tmp, self._path)
         except BaseException:
             with contextlib.suppress(OSError):
                 tmp.unlink()
             raise
-        os.replace(tmp, self._path)
 
 
 class BackendDiscovery:

@@ -167,3 +167,22 @@ def test_the_discovery_exposes_the_lockfile_path(tmp_path: Path) -> None:
 
     assert discovery.lockfile_path == Lockfile(tmp_path).path
     assert discovery.lockfile_path == tmp_path.resolve() / lockfile.CONFIG_DIR / "backend.lock"
+
+
+def test_a_write_that_fails_half_way_keeps_the_old_lock_and_leaves_no_temp_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = Lockfile(tmp_path)
+    assert lock.write(_payload()).ok
+    before = lock.path.read_text()
+
+    def refuse(src: object, dst: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(lockfile.os, "replace", refuse)
+    result = lock.write(LockfilePayload.now(pid=9, port=9, wire_version="2", ws_token="new"))
+
+    assert result.ok is False and "disk full" in (result.reason or "")
+    assert result.payload is None
+    assert lock.path.read_text() == before
+    assert not list(lock.path.parent.glob("*.tmp"))
