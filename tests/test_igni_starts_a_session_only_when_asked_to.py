@@ -32,6 +32,17 @@ from igni_core.core.observability import OtelRuntime
 from igni_core.core.worktree import WorktreeManager
 
 
+@pytest.fixture(autouse=True)
+def _environment_is_put_back(monkeypatch: pytest.MonkeyPatch):
+    """The CLI writes into ``os.environ`` (the air-gap decision, Agno's
+    telemetry switch), as it must for the processes it starts; the next
+    test starts from what this one found."""
+    before = dict(os.environ)
+    yield
+    os.environ.clear()
+    os.environ.update(before)
+
+
 class Session:
     """Stands in for the session a run would start, and records the asks."""
 
