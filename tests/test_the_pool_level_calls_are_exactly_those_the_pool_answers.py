@@ -22,7 +22,7 @@ from igni_core.protocol.rpc import RpcMethod
 
 
 def test_the_pool_level_calls_are_exactly_these_eight():
-    assert POOL_LEVEL_RPCS == {
+    assert {
         RpcMethod.ATTACH_SESSION,
         RpcMethod.HOST_MODEL,
         RpcMethod.WINDOW_MODEL,
@@ -31,15 +31,15 @@ def test_the_pool_level_calls_are_exactly_these_eight():
         RpcMethod.VM_SIGN_IN,
         RpcMethod.MINT_APPROVER_TOKEN,
         RpcMethod.REVOKE_APPROVER_TOKENS,
-    }
+    } == POOL_LEVEL_RPCS
 
 
 def test_an_extension_page_may_reach_only_the_host_model_and_the_service_token():
-    assert PAGE_RPCS == {RpcMethod.HOST_MODEL, RpcMethod.EXTENSION_SERVICE_TOKEN}
+    assert {RpcMethod.HOST_MODEL, RpcMethod.EXTENSION_SERVICE_TOKEN} == PAGE_RPCS
 
 
 def test_only_the_platform_makes_service_event_delivery_and_vm_sign_in():
-    assert PLATFORM_RPCS == {RpcMethod.DELIVER_SERVICE_EVENTS, RpcMethod.VM_SIGN_IN}
+    assert {RpcMethod.DELIVER_SERVICE_EVENTS, RpcMethod.VM_SIGN_IN} == PLATFORM_RPCS
 
 
 def test_the_subsets_stay_inside_the_pool_level_calls_and_never_overlap():
