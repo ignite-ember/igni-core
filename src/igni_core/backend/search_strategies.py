@@ -105,6 +105,9 @@ class RgSearchStrategy(SearchStrategy):
             "--max-filesize=2M",
             "--multiline",
             "--multiline-dotall",
+            # ``--``: a snippet that begins with a dash (``- item``,
+            # ``--flag``) is a pattern, not an option of rg's.
+            "--",
             snippet,
             str(project_root),
         ]
@@ -118,6 +121,8 @@ class RgSearchStrategy(SearchStrategy):
         except subprocess.TimeoutExpired:
             return SearchCodeResult.timed_out()
         result = SearchCodeResult()
+        last_rel: str | None = None
+        last_line = 0
         for raw_line in (proc.stdout or "").splitlines():
             parts = raw_line.split(":", 2)
             if len(parts) < 3:
@@ -131,6 +136,11 @@ class RgSearchStrategy(SearchStrategy):
                 rel = str(Path(abs_path).resolve().relative_to(project_root))
             except ValueError:
                 rel = abs_path
+            # rg prints every line of a multi-line match; the lines after
+            # the first belong to the match already reported.
+            if rel == last_rel and last_line <= line <= last_line + snippet_lines - 1:
+                continue
+            last_rel, last_line = rel, line
             match = SearchCodeMatch(
                 path=rel,
                 line=line,
