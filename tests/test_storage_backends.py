@@ -384,6 +384,24 @@ def test_the_desktop_store_reads_paths_and_knows_no_cloud_references(tmp_path: P
     assert store.local_path("attachment:" + "1" * 32) is None
 
 
+@pytest.mark.parametrize("session_id", ["../../outside", "a/../../b", "..", "/abs/path"])
+def test_a_hostile_session_id_keeps_the_desktop_upload_inside_the_attachments_directory(
+    tmp_path: Path, session_id: str
+):
+    project = tmp_path / "project"
+    stored = DirectoryAttachments(project).save(session_id, "a.txt", [b"x"])
+    path = Path(stored.ref).resolve()
+    assert path.read_bytes() == b"x"
+    assert path.parent.parent == Attachments.directory(project).resolve()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["project"], "nothing written outside"
+
+
+def test_a_plain_session_id_is_its_own_directory(tmp_path: Path):
+    assert Attachments.session_directory("0b6c-42_x.y") == "0b6c-42_x.y"
+    stored = DirectoryAttachments(tmp_path).save("s1", "a.txt", [b"x"])
+    assert Path(stored.ref).parent == Attachments.directory(tmp_path) / "s1"
+
+
 def test_extension_settings_are_per_producer_in_the_cloud(
     database_url: DatabaseUrl, tmp_path: Path
 ):

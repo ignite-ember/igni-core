@@ -104,6 +104,13 @@ class Attachments(ABC):
     def safe_name(cls, filename: str) -> str:
         return cls._SAFE_NAME_RE.sub("_", filename) or "file"
 
+    @classmethod
+    def session_directory(cls, session_id: str) -> str:
+        """The session's directory name under :meth:`directory`: one plain
+        path segment, so a session id carrying ``/`` or ``..`` can never
+        put a file outside the attachments directory."""
+        return cls._SAFE_NAME_RE.sub("_", session_id).strip(".") or "session"
+
     @staticmethod
     def directory(project_dir: Path) -> Path:
         """Where a project's uploads are kept as files: each session's
@@ -151,7 +158,7 @@ class DirectoryAttachments(Attachments):
 
     def _destination(self, session_id: str, filename: str) -> Path:
         safe = self.safe_name(filename)
-        dest_dir = self.directory(self._project_dir) / session_id
+        dest_dir = self.directory(self._project_dir) / self.session_directory(session_id)
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / safe
         if dest.exists():

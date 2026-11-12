@@ -18,7 +18,6 @@ from sqlalchemy import delete, select, text
 
 from igni_core.core.db.database import Database
 from igni_core.core.db.urls import Dialect
-from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.utils.attachment_store import AttachmentModel, Attachments, StoredAttachment
 
 
@@ -82,10 +81,8 @@ class LargeObjectAttachments(Attachments):
         if row is None:
             return None
         cache = (
-            self._project_dir
-            / CONFIG_DIR
-            / "attachments"
-            / row.session_id
+            self.directory(self._project_dir)
+            / self.session_directory(row.session_id)
             / f"{row.id}-{row.filename}"
         )
         if cache.is_file() and cache.stat().st_size == row.size:
