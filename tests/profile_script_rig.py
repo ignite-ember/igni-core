@@ -97,6 +97,10 @@ async def main():
         port = server.sockets[0].getsockname()[1]
         print("not json at all", flush=True)
         print(json.dumps({"status": "ready", "ws_url": f"ws://127.0.0.1:{port}"}), flush=True)
+        # A chatty backend: more output after ready than a pipe buffer holds.
+        # If the probe left a pipe undrained this blocks the whole loop.
+        for i in range(int(os.environ.get("RIG_CHATTY_KB", "0"))):
+            print(f"chatter {i} " + "x" * 1000, file=sys.stderr if i % 2 else sys.stdout, flush=True)
         await asyncio.Future()
 
 

@@ -94,9 +94,7 @@ def _format_breakdown(b: Counter[str]) -> str:
     """Compact one-line render — only kinds with count > 0."""
     if not b:
         return "(none)"
-    return "  ".join(
-        f"{k}={v}" for k, v in sorted(b.items(), key=lambda kv: (-kv[1], kv[0]))
-    )
+    return "  ".join(f"{k}={v}" for k, v in sorted(b.items(), key=lambda kv: (-kv[1], kv[0])))
 
 
 async def _connect_and_welcome(port: int):
@@ -108,10 +106,7 @@ async def _connect_and_welcome(port: int):
 async def _rpc(ws, method: str, args=None, timeout=10.0):
     req_id = f"rpc-{time.monotonic_ns()}"
     await ws.send(
-        json.dumps(
-            {"type": "rpc_request", "id": req_id, "method": method,
-             "args": args or {}}
-        )
+        json.dumps({"type": "rpc_request", "id": req_id, "method": method, "args": args or {}})
     )
     deadline = time.monotonic() + timeout
     while True:
@@ -133,25 +128,43 @@ async def _drive(args) -> None:
         # 1s timeout so each cycle's evict is fast.
         "IGNI_SESSION_IDLE_TIMEOUT": "1",
     }
-    proc = subprocess.Popen(
-        [str(PYTHON), "-m", "igni_core.backend",
-         "--ws-port", "0", "--project-dir", str(project)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT, env=env,
-    )
+    # The backend's output goes to a file next to the project, not a PIPE:
+    # nothing reads a pipe after ready, so a chatty backend would block on it.
+    log_path = project / "backend.log"
+    print(f"# Backend log: {log_path}")
+    with log_path.open("wb") as log:
+        proc = subprocess.Popen(
+            [
+                str(PYTHON),
+                "-m",
+                "igni_core.backend",
+                "--ws-port",
+                "0",
+                "--project-dir",
+                str(project),
+            ],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            cwd=REPO_ROOT,
+            env=env,
+        )
 
     # Read ready line.
     ws_url = None
-    while True:
-        line = proc.stdout.readline()
-        if not line:
-            raise RuntimeError("BE exited before ready")
-        try:
-            envelope = json.loads(line.decode().strip())
-            if envelope.get("status") == "ready":
-                ws_url = envelope["ws_url"]
-                break
-        except Exception:
-            continue
+    while ws_url is None:
+        exited = proc.poll() is not None
+        for line in log_path.read_text(errors="replace").splitlines():
+            try:
+                envelope = json.loads(line.strip())
+                if envelope.get("status") == "ready":
+                    ws_url = envelope["ws_url"]
+                    break
+            except Exception:
+                continue
+        if ws_url is None:
+            if exited:
+                raise RuntimeError(f"BE exited before ready (see {log_path})")
+            await asyncio.sleep(0.05)
     port = int(ws_url.rsplit(":", 1)[-1])
     pid = proc.pid
 
