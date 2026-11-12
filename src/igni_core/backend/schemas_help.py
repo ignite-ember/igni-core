@@ -1,7 +1,7 @@
 """Typed data + view models for the ``/help`` slash command.
 
 Extracted from :mod:`igni_core.backend.cmd_help` — the old
-``_help_topics()`` returned a raw ``dict[str, str]`` of 10
+``_help_topics()`` returned a raw ``dict[str, str]`` of 8
 markdown blocks and the "unknown topic" error was ad-hoc string
 glue at the call site. Both live here now as Pydantic-owned
 classes so the topic corpus and the error view are single-concern
@@ -61,7 +61,7 @@ class TopicNotFoundResult(BaseModel):
 class HelpTopicCatalog(BaseModel):
     """Class-owned corpus of ``/help`` topics.
 
-    Instantiate via :meth:`default` for the canonical 10-entry
+    Instantiate via :meth:`default` for the canonical 8-entry
     catalog; query with :meth:`get` / :meth:`contains` / :meth:`names`;
     render via :meth:`render` (dispatches to a topic or to
     :class:`TopicNotFoundResult`).
@@ -85,7 +85,7 @@ class HelpTopicCatalog(BaseModel):
 
     @classmethod
     def default(cls) -> HelpTopicCatalog:
-        """Build the canonical 10-entry topic corpus.
+        """Build the canonical 8-entry topic corpus.
 
         Markdown blocks are moved verbatim from the old
         ``_help_topics()`` dict; the ``shortcuts`` block pulls
@@ -158,7 +158,7 @@ class HelpTopicCatalog(BaseModel):
                         "built for Claude Code work in igni unchanged.\n\n"
                         "**Discovery roots (highest priority last):**\n"
                         "- `~/.claude/plugins/` (Claude user-global)\n"
-                        f"- `{DEFAULT_DATA_DIR}/plugins/` (ember user-global — where `/plugin install` lands)\n"
+                        f"- `{DEFAULT_DATA_DIR}/plugins/` (igni user-global — where `/plugin install` lands)\n"
                         "- `<project>/.claude/plugins/`\n"
                         f"- `<project>/{CONFIG_DIR}/plugins/`\n\n"
                         "**Daily commands:**\n"
