@@ -196,9 +196,9 @@ async def main() -> int:
     if str(igni_core_dir) not in sys.path:
         sys.path.insert(0, str(igni_core_dir))
 
+    from igni_core.core.config.models import ModelRegistry
     from igni_core.core.config.settings import Settings
     from igni_core.core.evals.loader import load_eval_file
-    from igni_core.core.session.core import ModelRegistry
 
     suite = load_eval_file(yaml_path)
     if suite is None:
