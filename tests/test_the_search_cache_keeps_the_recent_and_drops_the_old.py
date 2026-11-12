@@ -46,6 +46,19 @@ def test_reading_an_entry_saves_it_from_the_next_eviction() -> None:
     assert cache.get("b") is None
 
 
+def test_writing_an_entry_again_saves_it_from_the_next_eviction() -> None:
+    """A fresh value is the newest entry, not the first to be dropped."""
+    cache = LruSearchCache(max_entries=2)
+    cache.put("a", _result("a"))
+    cache.put("b", _result("b"))
+
+    cache.put("a", _result("a2"))
+    cache.put("c", _result("c"))
+
+    assert cache.get("a") is not None
+    assert cache.get("b") is None
+
+
 def test_a_cache_of_one_keeps_only_the_latest() -> None:
     cache = LruSearchCache(max_entries=1)
     cache.put("a", _result("a"))

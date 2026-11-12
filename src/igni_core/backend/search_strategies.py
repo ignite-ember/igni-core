@@ -120,6 +120,12 @@ class RgSearchStrategy(SearchStrategy):
             )
         except subprocess.TimeoutExpired:
             return SearchCodeResult.timed_out()
+        except OSError:
+            # rg was found when the strategy was picked and is gone now
+            # (uninstalled, PATH changed): search without it.
+            return PythonWalkSearchStrategy().search(
+                project_root, snippet, snippet_lines, max_results
+            )
         result = SearchCodeResult()
         last_rel: str | None = None
         last_line = 0
@@ -174,7 +180,13 @@ class PythonWalkSearchStrategy(SearchStrategy):
         max_results: int,
     ) -> SearchCodeResult:
         result = SearchCodeResult()
-        first_line = snippet.splitlines()[0]
+        # A snippet with nothing in it would "match" at the top of every
+        # file (and used to raise IndexError taking its first line).
+        lines = [line for line in snippet.splitlines() if line.strip()]
+        if not lines:
+            return result
+        # The preview is the first line that shows something.
+        first_line = lines[0]
         for dirpath, dirnames, filenames in os.walk(project_root):
             dirnames[:] = [d for d in dirnames if d not in self._skip_dirs]
             for name in filenames:
