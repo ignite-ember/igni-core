@@ -25,7 +25,9 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "measure_warm_base.py"
+# packages/igni-cloud/tests/ → the repository root: the script imports igni_cloud,
+# so its test lives with the cloud layer's, where igni_cloud is installed.
+_SCRIPT = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "measure_warm_base.py"
 
 
 @pytest.fixture(scope="module")
