@@ -116,12 +116,12 @@ class TestTheExplorerAgent:
     def test_it_is_named_explorer(self, agent):
         assert agent.name == "explorer"
 
-    def test_it_has_the_web_and_shell_tools_and_no_editor(self, agent):
-        functions = {
-            name for toolkit in agent.tools for name in getattr(toolkit, "functions", {})
-        }
-        assert functions, "no tools resolved"
-        assert not {"Edit", "Write"} & functions
+    def test_it_has_the_web_and_shell_toolkits_and_nothing_that_edits(self, agent):
+        assert [type(toolkit).__name__ for toolkit in agent.tools] == [
+            "WebTools",
+            "DuckDuckGoTools",
+            "IgniShellTools",
+        ]
 
     def test_a_prompt_without_front_matter_is_used_whole(self, tmp_path, monkeypatch, clean_env):
         monkeypatch.setenv("IGNI_TEST_LLM_MODEL", "m")
