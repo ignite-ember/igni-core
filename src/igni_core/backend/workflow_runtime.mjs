@@ -62,7 +62,19 @@ if (!workflowPath) {
 
 const runId = cli["workflow-run-id"] || "wf_local"
 const sessionId = cli["session-id"] || ""
-const workflowArgs = cli.args ? JSON.parse(cli.args) : {}
+let workflowArgs = {}
+if (cli.args) {
+  try {
+    workflowArgs = JSON.parse(cli.args)
+  } catch (err) {
+    process.stderr.write(`workflow_runtime: --args is not valid JSON: ${err.message}\n`)
+    exit(2)
+  }
+  if (workflowArgs === null || typeof workflowArgs !== "object" || Array.isArray(workflowArgs)) {
+    process.stderr.write("workflow_runtime: --args must be a JSON object\n")
+    exit(2)
+  }
+}
 const discovery = !!cli.discovery
 
 // ── Event emission ──────────────────────────────────────────────────
@@ -459,6 +471,16 @@ runInContext(wrapper, ctx, { filename: workflowPath })
     exit(0)
   })
   .catch((err) => {
+    if (cancelRequested.value) {
+      // The cancel itself rejected the script's pending agent() call;
+      // that is how a cancelled run ends, not a failure of the script.
+      flushPhases("cancelled")
+      emit("workflow_completed", {
+        status: "cancelled",
+        duration_ms: Date.now() - started_at_ms,
+      })
+      exit(0)
+    }
     flushPhases("failed")
     emit("workflow_failed", {
       error: err.message,
