@@ -72,12 +72,18 @@ class McpController:
         dict-shaped for legacy consumers that used to see ``None``."""
         return await self._session.startup.ensure_mcp()
 
-    async def toggle(self, server_name: str, connect: bool) -> msg.Info:
-        """Connect or disconnect an MCP server."""
+    async def toggle(self, server_name: str, connect: bool) -> msg.Info | msg.Error:
+        """Connect or disconnect an MCP server.
+
+        A connect that failed answers with the reason, as :meth:`connect`
+        does, and rebuilds nothing; it used to answer "MCP connected".
+        """
         mgr = self._session.mcp_manager
         if connect:
             result = await mgr.connect(server_name)
             self._session.mcp_failures.record(server_name, result)
+            if not result.ok:
+                return msg.Error(text=f"Could not connect MCP {server_name}: {result.reason}")
         else:
             await mgr.disconnect_one(server_name)
             self._session.mcp_failures.record(server_name, None)
