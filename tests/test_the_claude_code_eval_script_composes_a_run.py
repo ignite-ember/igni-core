@@ -355,3 +355,67 @@ def test_no_judge_skips_the_judge_even_with_a_key_and_says_nothing_about_it(home
     assert seen == {}
     assert "Judge model" not in err
     assert "WARNING" not in err
+
+
+# -- the project .env --------------------------------------------------------
+
+
+def _run_quietly(home, monkeypatch):
+    suite = _suite(home, [{"name": "a", "input": "a"}])
+    _fake_claude(home, monkeypatch, {})
+    return _run(home, monkeypatch, "--suite", suite, "--target-project-dir", str(home.target), "--out", str(_out(home)), "--no-judge")
+
+
+def test_the_project_env_supplies_the_judge_settings_and_skips_comments_and_bare_lines(
+    home, monkeypatch
+):
+    (home.root / ".env").write_text(
+        "# a comment\n"
+        "\n"
+        "no equals sign here\n"
+        "IGNI_TEST_LLM_API_KEY=abc\n"
+        "IGNI_TEST_LLM_MODEL = judge-2 \n"
+    )
+
+    _run_quietly(home, monkeypatch)
+
+    import os
+
+    assert os.environ["IGNI_TEST_LLM_API_KEY"] == "abc"
+    assert os.environ["IGNI_TEST_LLM_MODEL"] == "judge-2"
+
+
+def test_a_quoted_value_in_the_project_env_is_stored_without_its_quotes(home, monkeypatch):
+    (home.root / ".env").write_text(
+        'IGNI_TEST_LLM_API_KEY="abc"\nIGNI_TEST_LLM_BASE_URL=\'https://judge.example/v1\'\n'
+    )
+
+    _run_quietly(home, monkeypatch)
+
+    import os
+
+    assert os.environ["IGNI_TEST_LLM_API_KEY"] == "abc"
+    assert os.environ["IGNI_TEST_LLM_BASE_URL"] == "https://judge.example/v1"
+
+
+def test_the_project_env_never_overrides_what_the_environment_already_sets(home, monkeypatch):
+    (home.root / ".env").write_text("IGNI_TEST_LLM_MODEL=from-file\nIGNI_TEST_LLM_BASE_URL=https://file/v1\n")
+    monkeypatch.setenv("IGNI_TEST_LLM_MODEL", "from-shell")
+
+    _run_quietly(home, monkeypatch)
+
+    import os
+
+    assert os.environ["IGNI_TEST_LLM_MODEL"] == "from-shell"
+    assert os.environ["IGNI_TEST_LLM_BASE_URL"] == "https://file/v1"
+
+
+def test_the_project_env_is_not_read_when_the_key_is_already_set(home, monkeypatch):
+    (home.root / ".env").write_text("IGNI_TEST_LLM_MODEL=from-file\n")
+    monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "shell-key")
+
+    _run_quietly(home, monkeypatch)
+
+    import os
+
+    assert "IGNI_TEST_LLM_MODEL" not in os.environ

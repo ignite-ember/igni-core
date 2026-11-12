@@ -215,7 +215,7 @@ async def main() -> int:
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 k, v = line.split("=", 1)
-                os.environ.setdefault(k, v)
+                os.environ.setdefault(k.strip(), v.strip().strip("\"'"))
 
     # Build a judge model from the same IGNI_TEST_LLM_* triple the
     # igni eval runner uses. Keeps the judge model independent of
