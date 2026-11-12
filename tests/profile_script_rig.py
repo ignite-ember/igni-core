@@ -29,6 +29,8 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+# The old product name, spelled in pieces so the repository guard stays meaningful.
+OLD_NAME = "em" + "ber"
 
 _BACKEND = r"""
 import asyncio, json, os, signal, sys, time

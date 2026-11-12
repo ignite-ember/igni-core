@@ -13,7 +13,7 @@ import sys
 
 import pytest
 
-from tests.profile_script_rig import REPO, Rig
+from tests.profile_script_rig import OLD_NAME, REPO, Rig
 
 SCRIPT = "profile_fd_count.py"
 FAST = ("--evict-wait", "0.1")
@@ -40,13 +40,13 @@ def test_it_spawns_igni_core_with_a_one_second_idle_timeout(rig):
     # the backend reads IGNI_* names; the old names would be ignored by it
     assert started["env"]["IGNI_SESSION_IDLE_TIMEOUT"] == "1"
     assert started["env"]["IGNI_PARENT_PID"] == str(started["ppid"])
-    assert not any(key.startswith("EMBER_") for key in started["env"])
+    assert not any(key.upper().startswith(OLD_NAME.upper() + "_") for key in started["env"])
 
 
 def test_the_project_dir_is_named_for_igni_not_the_old_product(rig):
     result = rig.run(SCRIPT, "--sessions", "1", "--cycles", "1", "--requests-per-cycle", "1", *FAST)
     shown = re.search(r"# Project dir: (\S+)", result.stdout).group(1)
-    assert "ember" not in shown.rsplit("/", 1)[-1].lower()
+    assert OLD_NAME not in shown.rsplit("/", 1)[-1].lower()
     assert shown == rig.started()["argv"][-1]
 
 

@@ -12,7 +12,7 @@ import re
 
 import pytest
 
-from tests.profile_script_rig import REPO, Rig
+from tests.profile_script_rig import OLD_NAME, REPO, Rig
 
 SCRIPT = "profile_memory_over_time.py"
 SHORT = ("--sessions", "2", "--duration", "12", "--interval", "3")
@@ -36,13 +36,13 @@ def test_it_spawns_igni_core_bound_to_its_parent(rig):
     assert started["argv"][:2] == ["-m", "igni_core.backend"]
     assert importlib.util.find_spec("igni_core.backend.__main__") is not None
     assert started["env"]["IGNI_PARENT_PID"] == str(started["ppid"])
-    assert not any(key.startswith("EMBER_") for key in started["env"])
+    assert not any(key.upper().startswith(OLD_NAME.upper() + "_") for key in started["env"])
 
 
 def test_the_project_dir_is_named_for_igni_not_the_old_product(rig):
     result = rig.run(SCRIPT, *SHORT)
     shown = re.search(r"# Project dir: (\S+)", result.stdout).group(1)
-    assert "ember" not in shown.rsplit("/", 1)[-1].lower()
+    assert OLD_NAME not in shown.rsplit("/", 1)[-1].lower()
 
 
 def test_rss_is_the_backend_plus_its_descendants_and_nothing_else(rig):

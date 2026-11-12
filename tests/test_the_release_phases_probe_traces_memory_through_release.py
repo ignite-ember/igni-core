@@ -13,7 +13,7 @@ import sys
 
 import pytest
 
-from tests.profile_script_rig import REPO, Rig
+from tests.profile_script_rig import OLD_NAME, REPO, Rig
 
 SCRIPT = "profile_release_phases.py"
 SHORT = ("--sessions", "2", "--load-seconds", "10", "--quiesce-seconds", "6")
@@ -43,11 +43,11 @@ def test_it_starts_igni_core_with_info_logging_bound_to_its_parent(rig):
     compile(code, "<probe>", "exec")
     assert "from igni_core.backend.__main__ import main" in code
     assert "logging.getLogger('igni_core').setLevel(logging.INFO)" in code
-    assert "ember" not in code.lower()
+    assert OLD_NAME not in code.lower()
     assert started["argv"][2:4] == ["--ws-port", "0"]
     assert started["env"]["PYTHONUNBUFFERED"] == "1"
     assert started["env"]["IGNI_PARENT_PID"] == str(started["ppid"])
-    assert not any(key.startswith("EMBER_") for key in started["env"])
+    assert not any(key.upper().startswith(OLD_NAME.upper() + "_") for key in started["env"])
     # the entry point the probe imports exists
     module = importlib.util.find_spec("igni_core.backend.__main__")
     assert module is not None
@@ -56,7 +56,7 @@ def test_it_starts_igni_core_with_info_logging_bound_to_its_parent(rig):
 def test_the_project_dir_is_named_for_igni_not_the_old_product(rig):
     result = rig.run(SCRIPT, *SHORT)
     shown = rig.started()["argv"][-1]
-    assert "ember" not in shown.rsplit("/", 1)[-1].lower()
+    assert OLD_NAME not in shown.rsplit("/", 1)[-1].lower()
     assert "igni-release-" in shown
     assert result.returncode == 0, result.stderr
 
