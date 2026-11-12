@@ -192,6 +192,48 @@ async def test_a_user_message_is_mirrored_then_streamed_under_its_id():
     backend.runtime.spawned[0].close()
 
 
+class _FailingBackend(_Backend):
+    """A run that sends one frame and then raises, as a provider error does."""
+
+    async def run_message(self, text: str, media: MediaAttachments | None) -> AsyncIterator[Any]:
+        self.calls.append(("run_message", (text, media)))
+        yield msg.Info(text="thinking")
+        raise RuntimeError("the provider hung up")
+
+    async def resolve_hitl(
+        self, requirement_id: str, action: str, choice: str
+    ) -> AsyncIterator[Any]:
+        self.calls.append(("resolve_hitl", (requirement_id, action, choice)))
+        raise RuntimeError("the provider hung up")
+        yield  # pragma: no cover - makes this an async generator
+
+
+async def test_a_run_that_fails_midway_still_ends_its_stream_with_the_error_inside():
+    """A window waits for ``stream_end`` without a timeout: a run that raised
+    used to skip it, and the window spun forever."""
+    backend = _FailingBackend(runtime=_Runtime())
+    dispatcher, transport, _, _ = _dispatcher(backend)
+
+    await dispatcher.dispatch(msg.UserMessage(id="r1", text="hello"))
+
+    assert _types(transport.sent) == ["user_message_received", "info", "error", "stream_end"]
+    assert all(m.id == "r1" for m in transport.sent[1:])
+    assert "the provider hung up" in transport.sent[2].text
+    assert backend.runtime.spawned == [], "a failed run is not a completed one to name"
+
+
+async def test_a_resumed_run_that_fails_still_ends_its_stream():
+    backend = _FailingBackend(runtime=_Runtime())
+    dispatcher, transport, _, _ = _dispatcher(backend)
+
+    await dispatcher.dispatch(
+        msg.HITLResponse(id="r2", requirement_id="q1", action="confirm", choice="once")
+    )
+
+    assert _types(transport.sent)[-2:] == ["error", "stream_end"]
+    assert transport.sent[-1].id == "r2"
+
+
 async def test_a_message_without_an_id_streams_unstamped():
     dispatcher, transport, _, backend = _dispatcher()
 
