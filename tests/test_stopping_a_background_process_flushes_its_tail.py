@@ -128,3 +128,33 @@ def test_the_tail_is_the_last_lines_asked_for(supervisor) -> None:
     assert processes.read_tail(7).exit_code == 3
     [row] = processes.list()
     assert (row.pid, row.is_running, row.exit_code) == (7, False, 3)
+
+
+def test_a_running_process_has_no_exit_code_yet(supervisor) -> None:
+    # A handle may already carry a return code while the process is still
+    # reported running; the panel must not show it as an exit.
+    supervisor.registry.add(FakeTrackedProcess(pid=8, output=["x"], running=True, returncode=9))
+
+    tail = ProcessesController(supervisor).read_tail(8)
+
+    assert (tail.is_running, tail.exit_code) == (True, None)
+
+
+class _Orphan(FakeTrackedProcess):
+    """A process re-adopted after a restart: nothing reads it, nobody reaps it."""
+
+    @property
+    def is_orphan(self) -> bool:
+        return True
+
+
+async def test_stopping_an_orphan_takes_it_out_of_the_registry(supervisor) -> None:
+    orphan = _Orphan(pid=504)
+    supervisor.registry.add(orphan)
+    processes = ProcessesController(supervisor)
+
+    result = await processes.stop(504)
+
+    assert (result.killed, result.message) == (True, "pid 504 killed")
+    assert supervisor.registry.get(504) is None
+    assert processes.list() == []
