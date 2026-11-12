@@ -303,3 +303,327 @@ async def test_args_given_as_a_bare_flag_are_refused_rather_than_read_as_true(
     assert code == 2
     assert node.events == []
     assert "--args must be a JSON object" in stderr
+
+
+# ── Phases and log ──
+
+
+async def test_a_new_phase_closes_the_previous_one_and_every_phase_id_is_unique(
+    tmp_path: Path,
+) -> None:
+    node, code, _ = await run(tmp_path, "phase('one')\nphase('two')\nphase('three')\n")
+
+    assert code == 0
+    assert node.types() == [
+        "workflow_started",
+        "phase_started",
+        "phase_completed",
+        "phase_started",
+        "phase_completed",
+        "phase_started",
+        "phase_completed",  # the last, closed when the script ends
+        "workflow_completed",
+    ]
+    started = [e["payload"] for e in node.of("phase_started")]
+    assert [p["title"] for p in started] == ["one", "two", "three"]
+    assert len({p["phase_id"] for p in started}) == 3
+    completed = [e["payload"] for e in node.of("phase_completed")]
+    assert [c["phase_id"] for c in completed] == [p["phase_id"] for p in started]
+    assert {c["status"] for c in completed} == {"completed"}
+    assert all(c["duration_ms"] >= 0 for c in completed)
+
+
+async def test_log_and_console_log_become_log_events_inside_the_open_phase(
+    tmp_path: Path,
+) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "log('before')\nphase('p')\nlog(42)\nconsole.log('a', {b: [1]}, 7, 'c')\n",
+    )
+
+    assert code == 0
+    logs = node.of("log")
+    assert [e["payload"]["text"] for e in logs] == ["before", "42", 'a {"b":[1]} 7 c']
+    phase_id = node.of("phase_started")[0]["payload"]["phase_id"]
+    assert [e["payload"]["phase_id"] for e in logs] == [None, phase_id, phase_id]
+
+
+async def test_the_script_sandbox_has_no_process_or_fs(tmp_path: Path) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "return [typeof process, typeof require, typeof setTimeout, typeof URL, "
+        "typeof TextEncoder, typeof args]\n",
+    )
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] == [
+        "undefined",
+        "undefined",
+        "function",
+        "function",
+        "function",
+        "object",
+    ]
+
+
+# ── agent() ──
+
+
+async def test_an_agent_call_emits_its_events_and_resolves_with_the_response(
+    tmp_path: Path,
+) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "phase('p')\n"
+        "const r = await agent('say hi', {label: 'greeter', schema: {a: 1, b: 2}})\n"
+        "return r\n",
+        on_event=answer,
+    )
+
+    assert code == 0
+    assert node.types() == [
+        "workflow_started",
+        "phase_started",
+        "agent_started",
+        "agent_request",
+        "agent_completed",
+        "phase_completed",
+        "workflow_completed",
+    ]
+    phase_id = node.of("phase_started")[0]["payload"]["phase_id"]
+    started = node.of("agent_started")[0]["payload"]
+    request = node.of("agent_request")[0]["payload"]
+    completed = node.of("agent_completed")[0]["payload"]
+    assert started["id"] == request["id"] == completed["id"]
+    assert started["label"] == "greeter"
+    assert started["phase_id"] == phase_id
+    assert started["prompt_preview"] == "say hi"
+    assert started["schema_keys"] == ["a", "b"]
+    assert request == {
+        "id": request["id"],
+        "prompt": "say hi",
+        "label": "greeter",
+        "phase": None,
+        "timeout_seconds": 600,
+    }
+    assert completed["status"] == "completed"
+    assert node.events[-1]["payload"]["result"] == "echo:say hi"
+
+
+async def test_an_agent_call_without_options_is_labelled_agent_with_no_schema(
+    tmp_path: Path,
+) -> None:
+    node, code, _ = await run(tmp_path, "return await agent('p')\n", on_event=answer)
+
+    assert code == 0
+    started = node.of("agent_started")[0]["payload"]
+    assert started["label"] == "agent"
+    assert started["schema_keys"] is None
+    assert started["phase_id"] is None
+
+
+async def test_the_prompt_preview_is_cut_at_240_characters_and_empty_for_a_non_string(
+    tmp_path: Path,
+) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "const long = 'é'.repeat(300)\n"
+        "await agent(long)\n"
+        "await agent({structured: true}, {schema: 'not an object'})\n",
+        on_event=answer,
+    )
+
+    assert code == 0
+    first, second = (e["payload"] for e in node.of("agent_started"))
+    assert first["prompt_preview"] == "é" * 240
+    assert second["prompt_preview"] == ""
+    assert second["schema_keys"] is None
+    # The request itself carries the whole prompt, structured as given.
+    first_request, second_request = (e["payload"] for e in node.of("agent_request"))
+    assert first_request["prompt"] == "é" * 300
+    assert second_request["prompt"] == {"structured": True}
+
+
+async def test_a_failed_agent_response_rejects_the_call_with_its_error(tmp_path: Path) -> None:
+    async def refuse(event: Event, node: _Node) -> None:
+        if event["type"] == "agent_request":
+            await node.send(
+                {"type": "agent_response", "id": event["payload"]["id"], "ok": False, "error": "no"}
+            )
+
+    node, code, _ = await run(
+        tmp_path,
+        "try { await agent('x') } catch (e) { return 'caught ' + e.message }\n",
+        on_event=refuse,
+    )
+
+    assert code == 0
+    completed = node.of("agent_completed")[0]["payload"]
+    assert completed["status"] == "failed"
+    assert completed["error"] == "no"
+    assert node.events[-1]["payload"]["result"] == "caught no"
+
+
+async def test_a_failed_response_without_an_error_says_agent_call_failed(tmp_path: Path) -> None:
+    async def refuse(event: Event, node: _Node) -> None:
+        if event["type"] == "agent_request":
+            await node.send({"type": "agent_response", "id": event["payload"]["id"], "ok": False})
+
+    node, code, _ = await run(
+        tmp_path, "try { await agent('x') } catch (e) { return e.message }\n", on_event=refuse
+    )
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] == "agent call failed"
+
+
+async def test_a_response_for_an_unknown_id_and_junk_lines_are_ignored(tmp_path: Path) -> None:
+    async def noisy(event: Event, node: _Node) -> None:
+        if event["type"] == "agent_request":
+            await node.send({"type": "agent_response", "id": "req_other", "ok": True, "result": 1})
+            await node.send("this is not json")
+            await node.send({"type": "mystery"})
+            await answer(event, node)
+
+    node, code, _ = await run(tmp_path, "return await agent('q')\n", on_event=noisy)
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] == "echo:q"
+
+
+async def test_a_response_split_across_writes_is_buffered_until_the_line_is_whole(
+    tmp_path: Path,
+) -> None:
+    async def split(event: Event, node: _Node) -> None:
+        if event["type"] == "agent_request":
+            line = json.dumps(
+                {"type": "agent_response", "id": event["payload"]["id"], "ok": True, "result": "ü"}
+            )
+            node.proc.stdin.write(line[:20].encode())
+            await node.proc.stdin.drain()
+            await asyncio.sleep(0.1)
+            node.proc.stdin.write(line[20:].encode("utf-8") + b"\n")
+            await node.proc.stdin.drain()
+
+    node, code, _ = await run(tmp_path, "return await agent('q')\n", on_event=split)
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] == "ü"
+
+
+async def test_an_agent_call_that_times_out_emits_timeout_and_rejects(tmp_path: Path) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "try { await agent('slow', {label: 'slowpoke', timeoutSeconds: 0.2}) }\n"
+        "catch (e) { return e.message }\n",
+    )
+
+    assert code == 0
+    completed = node.of("agent_completed")[0]["payload"]
+    assert completed["status"] == "timeout"
+    assert completed["label"] == "slowpoke"
+    assert completed["error"] == "agent timed out after 0.2s"
+    assert node.of("agent_request")[0]["payload"]["timeout_seconds"] == 0.2
+    assert node.events[-1]["payload"]["result"] == "agent 'slowpoke' timed out after 0.2s"
+
+
+@pytest.mark.parametrize("timeout", [0, -5])
+async def test_a_zero_or_negative_timeout_means_the_call_waits_for_its_answer(
+    tmp_path: Path, timeout: int
+) -> None:
+    async def late(event: Event, node: _Node) -> None:
+        if event["type"] == "agent_request":
+            await asyncio.sleep(0.5)
+            await answer(event, node)
+
+    node, code, _ = await run(
+        tmp_path, f"return await agent('q', {{timeoutSeconds: {timeout}}})\n", on_event=late
+    )
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] == "echo:q"
+
+
+async def test_a_closed_stdin_rejects_pending_agent_calls(tmp_path: Path) -> None:
+    async def hang_up(event: Event, node: _Node) -> None:
+        if event["type"] == "agent_request":
+            node.close_stdin()
+
+    node, code, _ = await run(
+        tmp_path,
+        "try { await agent('x') } catch (e) { return e.message }\n",
+        on_event=hang_up,
+    )
+
+    assert code == 0
+    completed = node.of("agent_completed")[0]["payload"]
+    assert completed["status"] == "failed"
+    assert completed["error"] == "subprocess stdin closed"
+    assert node.events[-1]["payload"]["result"] == "subprocess stdin closed"
+
+
+# ── cancel ──
+
+
+async def cancel_on_request(event: Event, node: _Node) -> None:
+    if event["type"] == "agent_request":
+        await node.send({"type": "cancel"})
+
+
+async def test_a_cancel_line_rejects_the_pending_agent_and_a_script_that_returns_ends_cancelled(
+    tmp_path: Path,
+) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "phase('work')\n"
+        "try { await agent('x') } catch (e) { log('caught ' + e.message) }\n"
+        "return 'ignored result'\n",
+        on_event=cancel_on_request,
+    )
+
+    assert code == 0
+    assert node.of("agent_completed")[0]["payload"]["status"] == "failed"
+    assert node.of("agent_completed")[0]["payload"]["error"] == "workflow cancelled"
+    assert node.of("log")[0]["payload"]["text"] == "caught workflow cancelled"
+    assert node.of("phase_completed")[0]["payload"]["status"] == "cancelled"
+    final = node.events[-1]
+    assert final["type"] == "workflow_completed"
+    assert final["payload"]["status"] == "cancelled"
+    assert "result" not in final["payload"]
+    assert node.types().count("workflow_failed") == 0
+
+
+async def test_a_cancel_that_rejects_an_uncaught_agent_call_ends_cancelled_not_failed(
+    tmp_path: Path,
+) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "phase('work')\nawait agent('x')\nreturn 'never'\n",
+        on_event=cancel_on_request,
+    )
+
+    assert code == 0
+    assert node.of("phase_completed")[0]["payload"]["status"] == "cancelled"
+    assert node.types()[-1] == "workflow_completed"
+    assert node.events[-1]["payload"]["status"] == "cancelled"
+    assert "workflow_failed" not in node.types()
+
+
+async def test_a_cancel_with_no_agent_pending_marks_the_next_phase_close_cancelled(
+    tmp_path: Path,
+) -> None:
+    async def cancel_on_log(event: Event, node: _Node) -> None:
+        if event["type"] == "log":
+            await node.send({"type": "cancel"})
+
+    node, code, _ = await run(
+        tmp_path,
+        "phase('a')\nlog('go')\nawait new Promise((r) => setTimeout(r, 300))\n"
+        "phase('b')\nreturn 1\n",
+        on_event=cancel_on_log,
+    )
+
+    assert code == 0
+    statuses = [e["payload"]["status"] for e in node.of("phase_completed")]
+    assert statuses == ["cancelled", "cancelled"]
+    assert node.events[-1]["payload"]["status"] == "cancelled"
