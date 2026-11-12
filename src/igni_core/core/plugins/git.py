@@ -98,6 +98,21 @@ class GitClient:
         """``git fetch --tags origin`` in *repo*."""
         self._run(["git", "fetch", "--tags", "origin"], cwd=repo)
 
+    def fetch_ref(self, repo: Path, ref: str) -> None:
+        """``git fetch origin <ref>`` — leaves the commit at ``FETCH_HEAD``.
+
+        Asks the remote for *ref* itself, which a clone made at a tag
+        (single-branch) cannot reach through :meth:`fetch`."""
+        self._run(["git", "fetch", "origin", ref], cwd=repo)
+
+    def has_ref(self, repo: Path, ref: str) -> bool:
+        """Whether *ref* names a commit in *repo*. Local: contacts nothing."""
+        try:
+            self._run(["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], cwd=repo)
+        except GitError:
+            return False
+        return True
+
     def reset_hard(self, repo: Path, ref: str) -> None:
         """``git reset --hard <ref>`` — used after fetch for updates."""
         self._run(["git", "reset", "--hard", ref], cwd=repo)
