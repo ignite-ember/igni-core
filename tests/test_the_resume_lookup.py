@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from agno.session.agent import AgentSession
 
 from igni_core.cli.resume import ResumeLookup, ResumeResolver
 from igni_core.core.config.settings import Settings
-from igni_core.core.db.urls import DatabaseUrl
 from igni_core.core.memory.manager import StorageManager
 
 
@@ -63,19 +63,23 @@ def test_a_database_that_cannot_be_built_is_an_error_not_a_crash(settings: Setti
     assert lookup.error
 
 
-def test_a_database_that_cannot_be_read_is_an_error_not_no_sessions(
-    settings: Settings, tmp_path: Path
-):
-    """An unreachable server is not a fresh install: the CLI must say it could
-    not look, not that there was nothing to resume."""
-    settings.storage.database_url = DatabaseUrl(
-        url="postgresql+psycopg://nobody:pw@127.0.0.1:1/none"
-    ).url
+def test_a_database_that_cannot_be_read_is_an_error_not_no_sessions(settings: Settings):
+    """A database that builds but fails on the read is not a fresh install: the
+    CLI must say it could not look, not that there was nothing to resume."""
+    db = StorageManager.build_db(settings)
+    original = db.get_sessions
 
-    lookup = ResumeResolver(settings).latest_id()
+    async def failing(*args, **kwargs):
+        raise RuntimeError("disk I/O error")
 
-    assert lookup.session_id is None
-    assert lookup.error
+    db.get_sessions = failing
+    try:
+        with patch.object(StorageManager, "build_db", return_value=db):
+            lookup = ResumeResolver(settings).latest_id()
+    finally:
+        db.get_sessions = original
+
+    assert lookup == ResumeLookup(error="disk I/O error")
 
 
 @pytest.mark.asyncio
