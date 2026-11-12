@@ -88,7 +88,9 @@ class LoopCapArgs(BaseModel):
         """Parse a leading ``<N>``/``<N>x`` token as the iteration cap."""
         first, _, rest = text.partition(" ")
         first_num = first.rstrip("x")
-        if not first_num.isdigit():
+        # ``str.isdigit`` is also true for superscripts and other scripts'
+        # digits, which ``int`` cannot read: ``/loop ² fix it`` crashed.
+        if not (first_num.isascii() and first_num.isdigit()):
             return cls(
                 max_iter=LOOP_DEFAULT_MAX_ITERATIONS,
                 cap_explicit=False,
