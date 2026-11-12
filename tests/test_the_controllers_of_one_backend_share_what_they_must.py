@@ -25,11 +25,29 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.session.pending_messages import PendingMessageStore
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
-SLOTS = (
-    "mcp hitl context auth group_policy files search panels loop processes sessions "
-    "rehydrate lifecycle plan_snapshots viz_actions team_wiring model_switcher plugins "
-    "marketplaces runs chat_history"
-).split()
+SLOTS = [
+    "mcp",
+    "hitl",
+    "context",
+    "auth",
+    "group_policy",
+    "files",
+    "search",
+    "panels",
+    "loop",
+    "processes",
+    "sessions",
+    "rehydrate",
+    "lifecycle",
+    "plan_snapshots",
+    "viz_actions",
+    "team_wiring",
+    "model_switcher",
+    "plugins",
+    "marketplaces",
+    "runs",
+    "chat_history",
+]
 
 
 def _settings(tmp_path: Path, **overrides) -> Settings:
