@@ -181,6 +181,18 @@ def test_raw_mode_takes_the_last_run_content_or_tool_call_completed_as_visible_e
     assert record["tail_events"] == [{"i": 3, "t": 0.8, "type": "RunCompleted", "gap": 0.2}]
 
 
+def test_raw_mode_reports_a_content_event_at_offset_zero_as_zero_not_as_missing(
+    prof, monkeypatch, tmp_path
+):
+    _raw_session(monkeypatch, ["RunContent"])
+    monkeypatch.setattr(prof, "time", _clock(5.0, 5.0, 5.5))
+
+    record = _run(prof._profile_raw_agno(object(), tmp_path, "p"))
+
+    assert record["time_to_last_content_s"] == 0.0
+    assert record["tail_s"] == 0.5
+
+
 def test_raw_mode_without_content_has_no_tail(prof, monkeypatch, tmp_path):
     _raw_session(monkeypatch, ["RunStarted"])
     monkeypatch.setattr(prof, "time", _clock(0.0, 0.1, 0.2))

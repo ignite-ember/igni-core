@@ -125,7 +125,7 @@ async def _profile_raw_agno(
     return {
         "mode": "raw_agno",
         "total_s": round(total, 3),
-        "time_to_last_content_s": round(t_last_content, 3) if t_last_content else None,
+        "time_to_last_content_s": round(t_last_content, 3) if t_last_content is not None else None,
         "tail_s": round(tail, 3) if tail is not None else None,
         "events_total": len(events),
         "histogram": dict(histogram),
