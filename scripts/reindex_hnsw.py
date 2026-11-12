@@ -60,7 +60,7 @@ def _copy_collection(client: object, src_name: str) -> int:
     should leave the source intact and surface the error.
     """
     # Pass the same EmbeddingFunction the runtime uses so the
-    # destination collection inherits the runtime's sentence-transformer
+    # destination collection inherits the right ``ember-sentence-transformer``
     # name, not chroma's "default" placeholder.
     ef = EmbeddingFunction()
     src = client.get_collection(name=src_name, embedding_function=ef)  # type: ignore[attr-defined]
@@ -223,7 +223,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project_dir", help="The project whose index to rebuild")
     parser.add_argument(
-        "--data-dir", default="~/.igni", help="Igni data dir (default: ~/.igni)"
+        "--data-dir", default="~/.igni", help="Ember data dir (default: ~/.igni)"
     )
     parser.add_argument(
         "--keep-backup",

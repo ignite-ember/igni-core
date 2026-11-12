@@ -15,7 +15,7 @@ result can sit next to ``v10-with.json`` for side-by-side comparison.
 Usage:
 
     python scripts/run_claude_code_eval.py \\
-        --suite main_agent \\
+        --suite ember_server_v6 \\
         --target-project-dir /path/to/igni__server \\
         --out /tmp/eval-comparison/claude-code-with.json
 """
@@ -98,11 +98,9 @@ def _run_claude_code(prompt: str, cwd: Path, timeout: int) -> tuple[str, float, 
         "duration_api_ms": payload.get("duration_api_ms"),
         "total_cost_usd": payload.get("total_cost_usd"),
         "model": payload.get("model")
-        or (
-            payload["modelUsage"].get("model")
-            if isinstance(payload.get("modelUsage"), dict)
-            else None
-        ),
+        or payload.get("modelUsage", {}).get("model")
+        if isinstance(payload.get("modelUsage"), dict)
+        else None,
     }
     return response_text, elapsed, meta
 
@@ -160,8 +158,8 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--suite",
-        default="main_agent",
-        help="Eval suite YAML name (without .yaml). Default: main_agent.",
+        default="ember_server_v6",
+        help="Eval suite YAML name (without .yaml). Default: ember_server_v6.",
     )
     parser.add_argument(
         "--target-project-dir",
