@@ -198,3 +198,12 @@ async def test_a_search_that_timed_out_is_not_remembered(project) -> None:
 
     assert first.error == "search timed out"
     assert (second.error, [m.line for m in second.matches]) == ("", [3])
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+async def test_a_limit_below_one_gives_no_matches(project, limit) -> None:
+    result = await _controller(project, PythonWalkSearchStrategy()).search_code(
+        "def greet(name):", max_results=limit
+    )
+
+    assert result.matches == []
