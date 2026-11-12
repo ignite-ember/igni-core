@@ -42,3 +42,25 @@ async def test_a_server_that_connected_says_so() -> None:
 
     assert info.text == "Connected MCP: github"
     session.startup.rebuild_mcp.assert_called_once_with()
+
+
+async def test_the_panel_toggle_does_not_say_connected_when_it_did_not() -> None:
+    """The toggle path answered "MCP connected" and rebuilt the tools after
+    a connect that failed, the same defect ``connect`` had."""
+    controller, session = _controller(MCPConnectResult.failure("refused by policy"))
+
+    reply = await controller.toggle("github", connect=True)
+
+    assert reply.type == "error"
+    assert reply.text == "Could not connect MCP github: refused by policy"
+    session.mcp_failures.record.assert_called_once()
+    session.startup.rebuild_mcp.assert_not_called()
+
+
+async def test_the_panel_toggle_says_connected_when_it_did() -> None:
+    controller, session = _controller(MCPConnectResult.success(MagicMock()))
+
+    reply = await controller.toggle("github", connect=True)
+
+    assert (reply.type, reply.text) == ("info", "MCP connected: github")
+    session.startup.rebuild_mcp.assert_called_once_with()
