@@ -19,6 +19,10 @@ _NAMES = [
     "debug_prompt_size.py",
     "dump_wire_schema.py",
     "export_contracts.py",
+    "measure_warm_base.py",
+    "onboarding-smoke.ps1",
+    "onboarding-smoke.sh",
+    "probe_rate_limits.py",
 ]
 
 
