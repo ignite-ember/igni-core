@@ -224,10 +224,12 @@ $BeProc = Start-Process -FilePath $VenvPython `
     -NoNewWindow `
     -PassThru
 
-# Poll for the ready line for up to 60s.
+# Poll for the ready line. 60s by default; SMOKE_READY_TIMEOUT overrides it,
+# as in onboarding-smoke.sh.
+$ReadyTimeout = if ($env:SMOKE_READY_TIMEOUT) { [int]$env:SMOKE_READY_TIMEOUT } else { 60 }
 $Ready = $false
 $WsPort = $null
-for ($i = 0; $i -lt 60; $i++) {
+for ($i = 0; $i -lt $ReadyTimeout; $i++) {
     if (Test-Path $BeStdout) {
         $content = Get-Content $BeStdout -Raw -ErrorAction SilentlyContinue
         if ($content -match '"status":\s*"ready"') {
@@ -249,7 +251,7 @@ for ($i = 0; $i -lt 60; $i++) {
 
 if (-not $Ready) {
     if (-not $BeProc.HasExited) { Stop-Process -Id $BeProc.Id -Force }
-    throw "backend never reported ready within 60s"
+    throw "backend never reported ready within ${ReadyTimeout}s"
 }
 
 $Elapsed = [int]((Get-Date) - $StepStart).TotalSeconds

@@ -30,8 +30,16 @@ def _assigned(text: str, pattern: str) -> str:
 
 
 def test_both_install_the_same_package_with_the_same_extra():
-    assert _assigned(PS1, r'^\$Package = "([^"]+)"') == _assigned(SH, r'^PACKAGE="([^"]+)"') == "igni-core"
-    assert _assigned(PS1, r'^\$Extras = "([^"]+)"') == _assigned(SH, r'^EXTRAS="([^"]+)"') == "decisions"
+    assert (
+        _assigned(PS1, r'^\$Package = "([^"]+)"')
+        == _assigned(SH, r'^PACKAGE="([^"]+)"')
+        == "igni-core"
+    )
+    assert (
+        _assigned(PS1, r'^\$Extras = "([^"]+)"')
+        == _assigned(SH, r'^EXTRAS="([^"]+)"')
+        == "decisions"
+    )
 
 
 def test_both_install_that_package_in_both_modes_from_the_same_places():
@@ -56,7 +64,7 @@ def test_both_fetch_the_same_uv_release_and_python():
 
 
 def test_an_unpublished_version_exits_77_as_a_success_so_the_logs_are_swept():
-    skip = PS1[PS1.index("is not on PyPI"):]
+    skip = PS1[PS1.index("is not on PyPI") :]
     skip = skip[: skip.index("exit 77") + len("exit 77")]
 
     assert "$script:Succeeded = $true" in skip
@@ -71,9 +79,16 @@ def test_both_keep_logs_outside_the_cache_under_the_same_names_and_report_the_di
     assert 'Filter "be-*.log"' in PS1
 
 
+def test_both_read_the_ready_timeout_from_the_same_variable_with_the_same_default():
+    assert "${SMOKE_READY_TIMEOUT:-60}" in SH
+    assert "if ($env:SMOKE_READY_TIMEOUT) { [int]$env:SMOKE_READY_TIMEOUT } else { 60 }" in PS1
+    assert "$i -lt $ReadyTimeout" in PS1
+    assert "$i -lt 60" not in PS1
+
+
 def test_step_six_fails_on_an_early_exit_and_on_never_ready_and_stops_the_backend():
     assert 'throw "backend exited early"' in PS1
-    assert 'throw "backend never reported ready within 60s"' in PS1
+    assert 'throw "backend never reported ready within ${ReadyTimeout}s"' in PS1
     assert "Stop-Process -Id $BeProc.Id -Force" in PS1
     assert PS1.index("never reported ready") < PS1.index("OK Onboarding smoke passed")
 
@@ -81,20 +96,28 @@ def test_step_six_fails_on_an_early_exit_and_on_never_ready_and_stops_the_backen
 def test_cleanup_runs_from_the_trap_and_the_finally_and_keeps_logs_after_a_failure():
     assert "trap { Cleanup; break }" in PS1
     assert re.search(r"\} finally \{\s*Cleanup\s*\}", PS1)
-    body = PS1[PS1.index("function Cleanup"): PS1.index("trap { Cleanup")]
+    body = PS1[PS1.index("function Cleanup") : PS1.index("trap { Cleanup")]
     assert "if (-not $script:Succeeded)" in body
     assert "Backend logs kept for diagnosis" in body
     assert PS1.rstrip().endswith("}")
-    assert PS1.index("$script:Succeeded = $true\n\n} finally") > PS1.index("OK Onboarding smoke passed")
+    assert PS1.index("$script:Succeeded = $true\n\n} finally") > PS1.index(
+        "OK Onboarding smoke passed"
+    )
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh required")
 def test_the_script_parses():
     proc = subprocess.run(
-        ["pwsh", "-NoProfile", "-Command",
-         f"$e=$null; [System.Management.Automation.Language.Parser]::ParseFile('{_SCRIPTS / 'onboarding-smoke.ps1'}', [ref]$null, [ref]$e); "
-         "if ($e) { $e | ForEach-Object { $_.Message }; exit 1 }"],
-        capture_output=True, text=True, timeout=60,
+        [
+            "pwsh",
+            "-NoProfile",
+            "-Command",
+            f"$e=$null; [System.Management.Automation.Language.Parser]::ParseFile('{_SCRIPTS / 'onboarding-smoke.ps1'}', [ref]$null, [ref]$e); "
+            "if ($e) { $e | ForEach-Object { $_.Message }; exit 1 }",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
 
     assert proc.returncode == 0, proc.stdout + proc.stderr
