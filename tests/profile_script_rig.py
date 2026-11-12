@@ -227,6 +227,7 @@ class Rig:
         self._exe(self.bin / "lsof", _LSOF.format(python=sys.executable))
         self.env: dict[str, str] = {}
         self.path_dirs = [str(self.bin)]
+        self.system_dirs = ["/usr/bin", "/bin"]
 
     @staticmethod
     def _exe(path: Path, text: str) -> None:
@@ -235,7 +236,7 @@ class Rig:
 
     def run(self, script: str, *args: str, timeout: float = 120) -> subprocess.CompletedProcess:
         env = {k: v for k, v in os.environ.items() if not k.startswith(("IGNI_", "RIG_"))}
-        env["PATH"] = os.pathsep.join([*self.path_dirs, "/usr/bin", "/bin"])
+        env["PATH"] = os.pathsep.join([*self.path_dirs, *self.system_dirs])
         env["RIG_DIR"] = str(self.dir)
         env.update(self.env)
         return subprocess.run(
