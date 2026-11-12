@@ -95,7 +95,7 @@ def test_the_path_can_be_pointed_somewhere_specific(tmp_path, monkeypatch):
     assert logging_setup.resolve_log_path() == tmp_path / "elsewhere.log"
 
 
-def test_the_default_location_is_under_the_ember_home(monkeypatch):
+def test_the_default_location_is_under_the_igni_home(monkeypatch):
     monkeypatch.delenv("IGNI_DEBUG_LOG_PATH", raising=False)
 
     path = logging_setup.resolve_log_path()
