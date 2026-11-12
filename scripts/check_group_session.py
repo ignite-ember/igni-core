@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -37,7 +38,21 @@ def check(ok: bool, what: str) -> None:
 
 
 async def main() -> int:
+    """Run the checks in a throwaway HOME, then put the environment back."""
+    saved = {k: os.environ.get(k) for k in ("HOME", "IGNI_NEO4J_DISABLED")}
     tmp = Path(tempfile.mkdtemp(prefix="igni-session-"))
+    try:
+        return await _run(tmp)
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+async def _run(tmp: Path) -> int:
     home = tmp / "home"
     project = tmp / "project"
     (home / ".igni").mkdir(parents=True)
@@ -68,10 +83,10 @@ async def main() -> int:
     cache.materialize(pack)
 
     print("\nBooting a Session")
-    from igni_core.core.config.settings import load_settings
+    from igni_core.core.config.settings_loader import SettingsLoader
     from igni_core.core.session.core import Session
 
-    settings = load_settings(project_dir=project)
+    settings = SettingsLoader.load(project_dir=project)
     settings.storage.data_dir = str(home / ".igni")
     session = Session(settings, project_dir=project)
     print(f"  built, session {session.identity.session_id}")
@@ -94,7 +109,7 @@ async def main() -> int:
 
     if "output-styles" in by_kind:
         check(
-            set(by_kind["output-styles"]) <= set(session.output_styles),
+            set(by_kind["output-styles"]) <= set(session.output_style.styles),
             "group output styles registered",
         )
 
@@ -124,6 +139,7 @@ async def main() -> int:
         found = MarkdownCommand.discover(
             session.project_dir,
             read_claude=settings.rules.cross_tool_support,
+            group_dir=session.group_policy.shipped_dir("commands"),
         )
         check(set(by_kind["commands"]) <= set(found), "group slash commands resolve")
 
