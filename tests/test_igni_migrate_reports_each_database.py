@@ -10,6 +10,7 @@ both migrated (once when they are one file), and ``IGNI_DATABASE_URL`` and
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -119,15 +120,22 @@ def test_the_flag_beats_the_environment(tmp_path: Path, monkeypatch: pytest.Monk
     assert not (tmp_path / "env.db").exists()
 
 
-def test_a_database_that_cannot_be_reached_is_a_message_and_exit_one(tmp_path: Path):
-    unreachable = "postgresql+psycopg://nobody:hunter2@127.0.0.1:1/none"
+def test_a_database_whose_driver_is_not_installed_is_a_message_and_exit_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The core install carries no PostgreSQL driver: a PostgreSQL URL is a
+    message naming what is missing, not a ModuleNotFoundError traceback.
+    (An unreachable server, with the driver installed, is pinned with the
+    cloud layer's tests.)"""
+    monkeypatch.setitem(sys.modules, "psycopg", None)
+    url = "postgresql+psycopg://nobody:hunter2@127.0.0.1:1/none"
 
-    result = _run("--database-url", unreachable, "--project-dir", str(tmp_path))
+    result = _run("--database-url", url, "--project-dir", str(tmp_path))
 
     assert result.exit_code == 1
     assert isinstance(result.exception, SystemExit), "a message, not a traceback"
     assert "could not migrate postgresql+psycopg://nobody:***@127.0.0.1:1/none" in result.output
-    assert "Connection refused" in result.output
+    assert "psycopg is not installed" in result.output
     assert "hunter2" not in result.output
 
 
