@@ -834,3 +834,30 @@ def test_the_probe_dir_of_a_specialist_suite_is_removed(run_main, repo_cwd, monk
     monkeypatch.setattr(tempfile, "tempdir", None)
     run_main("--suite", "explorer")
     assert not list(repo_cwd.glob("igni-eval-probe-*"))
+
+
+@pytest.mark.workspace_trust
+def test_the_permissions_a_case_dir_grants_are_honoured_because_the_runner_trusts_it(
+    run_main, repo_cwd, monkeypatch
+):
+    """The case dir is the runner's own scratch space. A project's
+    ``permissions`` count only in a trusted folder, so without the trust
+    the permissive file would be ignored and every Bash call would wait
+    for a confirmation nobody can give."""
+    from igni_core.core.config.settings_loader import SettingsLoader
+    from igni_core.core.workspace_trust import process_trust
+
+    monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "k")
+    suite = run_main("--suite", "debugger").suites[-1]
+    work = repo_cwd / "case"
+    work.mkdir()
+
+    async def build():
+        return suite["factory"](work)
+
+    asyncio.run(build())
+    try:
+        permissions = SettingsLoader.load(project_dir=work).permissions
+        assert "Bash" in permissions.allow and "Write" in permissions.allow
+    finally:
+        process_trust().revoke(work)
