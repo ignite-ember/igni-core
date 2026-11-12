@@ -177,10 +177,16 @@ class ContextController:
         """Drop the run with ``run_id`` and every later run from the
         session."""
         agent = self._session.main_team
-        agno_session = await agent.aget_session(
-            session_id=session_id,
-            user_id=self._session.user_id,
-        )
+        try:
+            agno_session = await agent.aget_session(
+                session_id=session_id,
+                user_id=self._session.user_id,
+            )
+        except SQLAlchemyError as exc:
+            # A store that cannot be read is a failure to report, like a
+            # save that fails below — not an exception out of the RPC.
+            logger.warning("truncate_history: reading the session failed", exc_info=True)
+            return TruncateHistoryResult(removed=0, error=f"could not read the session: {exc}")
         if agno_session is None:
             return TruncateHistoryResult(removed=0, error="session not found")
         runs = list(getattr(agno_session, "runs", None) or [])
