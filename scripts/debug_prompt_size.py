@@ -31,10 +31,11 @@ async def main() -> None:
         sys.exit(1)
 
     # Set up the same way the BE does at startup.
-    from igni_core.core.config.settings import Settings, load_settings
+    from igni_core.core.config.settings import Settings
+    from igni_core.core.config.settings_loader import SettingsLoader
     from igni_core.core.session.core import Session
 
-    settings: Settings = load_settings(project_dir=project)
+    settings: Settings = SettingsLoader.load(project_dir=project)
 
     sess = Session(
         project_dir=project,

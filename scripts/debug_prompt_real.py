@@ -25,10 +25,10 @@ def section(title: str) -> str:
 
 async def main() -> None:
     project = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
-    from igni_core.core.config.settings import load_settings
+    from igni_core.core.config.settings_loader import SettingsLoader
     from igni_core.core.session.core import Session
 
-    settings = load_settings(project_dir=project)
+    settings = SettingsLoader.load(project_dir=project)
     sess = Session(project_dir=project, settings=settings)
 
     await asyncio.sleep(0.5)
