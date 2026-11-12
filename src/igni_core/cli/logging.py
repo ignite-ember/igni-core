@@ -21,7 +21,7 @@ from igni_core.core.paths import CONFIG_DIR
 
 
 class DebugLogging:
-    """Bootstrap for the ``ember --debug`` file-log surface."""
+    """Bootstrap for the ``igni --debug`` file-log surface."""
 
     DEFAULT_PATH = Path.home() / CONFIG_DIR / "debug.log"
     _FORMAT = "%(asctime)s %(name)s %(levelname)s %(message)s"
