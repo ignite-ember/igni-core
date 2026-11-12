@@ -50,7 +50,7 @@ class ChatHistorySearcher:
         """
         needle_lower = needle.lower()
         needle_len = len(needle)
-        if needle_len == 0:
+        if needle_len == 0 or limit <= 0:
             return []
         matches: list[ChatSearchHit] = []
         for idx, turn in enumerate(self._history):
