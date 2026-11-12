@@ -967,6 +967,7 @@
         "limit": {
           "default": 50,
           "description": "Maximum number of matches to return.",
+          "minimum": 0,
           "title": "Limit",
           "type": "integer"
         },
