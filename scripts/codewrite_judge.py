@@ -246,7 +246,7 @@ async def main() -> int:
             for line in env_path.read_text().splitlines():
                 if line.startswith("IGNI_TEST_LLM_") and "=" in line:
                     k, v = line.split("=", 1)
-                    os.environ.setdefault(k, v)
+                    os.environ.setdefault(k.strip(), v.strip().strip("\"'"))
             api_key = os.environ.get("IGNI_TEST_LLM_API_KEY")
     if not api_key:
         print("IGNI_TEST_LLM_API_KEY not set", file=sys.stderr)
