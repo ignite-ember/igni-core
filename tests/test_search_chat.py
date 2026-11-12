@@ -315,3 +315,41 @@ class TestHitIndicesFollowTheRebuiltHistory:
 
         assert typed_hits == wire_hits
         assert [h.history_index for h in typed_hits] == [0, 3]
+
+
+class TestNoRoomForAnyHit:
+    """``limit`` is a cap: a cap of nothing returns nothing."""
+
+    @pytest.mark.parametrize("limit", [0, -3])
+    def test_a_limit_that_allows_nothing_returns_nothing(self, limit):
+        history = [_turn("needle here"), _turn("another needle")]
+
+        assert _search(history, "needle", limit=limit) == []
+
+
+class TestSnippetHalfWidth:
+    def test_a_custom_half_width_sets_the_context_on_both_sides(self):
+        content = "a" * 20 + "needle" + "b" * 20
+        hit = ChatHistorySearcher([_turn(content)], snippet_half_width=3).search("needle", limit=5)[
+            0
+        ]
+
+        assert hit.snippet == "…aaaneedlebbb…"
+        assert hit.snippet[hit.match_start : hit.match_end] == "needle"
+
+    def test_an_empty_history_has_no_hits(self):
+        assert ChatHistorySearcher([]).search("x", limit=5) == []
+
+
+class TestACharacterWhoseLowercaseIsLonger:
+    """``"İ".lower()`` is two characters. The highlight must still land on the match."""
+
+    def test_the_match_offsets_point_at_the_match_in_the_snippet(self):
+        hit = _search([_turn("İİİ the needle")], "needle", limit=5)[0]
+
+        assert hit.snippet[hit.match_start : hit.match_end] == "needle"
+
+    def test_a_match_that_is_itself_such_a_character_spans_one_character(self):
+        hit = _search([_turn("x İ y")], "İ", limit=5)[0]
+
+        assert hit.snippet[hit.match_start : hit.match_end] == "İ"

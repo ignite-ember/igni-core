@@ -39,15 +39,13 @@ view and returns its render, never a raw
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from pydantic import BaseModel
 
 from igni_core.backend.command_result import CommandResult
+from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
 from igni_core.protocol.messages import CommandAction, CommandResultKind
-
-if TYPE_CHECKING:
-    from igni_core.core.scheduler.models import ScheduledTask, TaskStatus
 
 
 class TaskCreatedPayload(BaseModel):

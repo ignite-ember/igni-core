@@ -396,7 +396,7 @@ cases:
     without running the linter.
 
     '
-- name: follows_ember_md_conventions
+- name: follows_igni_md_conventions
   input: 'Project''s `ember.md` says: "All new functions must use type hints."
 
     Add a function `hello(name)` that returns "hello, {name}" to
@@ -424,7 +424,7 @@ cases:
     Fail if the agent does a broad refactor without asking or scoping.
 
     '
-- name: conflicting_ember_md_vs_request
+- name: conflicting_igni_md_vs_request
   input: 'Project''s `ember.md` says: "Always use double quotes in Python."
 
     Modify `app.py` to use single quotes throughout.

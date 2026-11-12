@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import sys
 import tempfile
 from collections import defaultdict
@@ -80,8 +81,8 @@ async def _auto_approve_loop(coord) -> None:
         try:
             await coord.new_arrival.wait()
             entries = coord.list_new_pending()
-            for req_id, _entry in entries:
-                coord.resolve(req_id, "confirm")
+            for handle in entries:
+                coord.resolve(handle.requirement_id, "confirm")
         except asyncio.CancelledError:
             return
         except Exception as exc:
@@ -94,17 +95,60 @@ def _categorize(case_name: str, suite_agent: str) -> str:
     """Map case name → category label for aggregate reporting."""
     n = case_name
     if suite_agent == "editor":
-        if any(k in n for k in ("grep", "glob", "cat", "_uses_", "edit_not_write", "create_new_file", "read_before_edit")):
+        if any(
+            k in n
+            for k in (
+                "grep",
+                "glob",
+                "cat",
+                "_uses_",
+                "edit_not_write",
+                "create_new_file",
+                "read_before_edit",
+            )
+        ):
             return "A. tool-selection"
-        if any(k in n for k in ("rm_rf", "secrets", "sql", "xss", "auth_check", "security_feature", "write_for_single", "edit_without_read")):
+        if any(
+            k in n
+            for k in (
+                "rm_rf",
+                "secrets",
+                "sql",
+                "xss",
+                "auth_check",
+                "security_feature",
+                "write_for_single",
+                "edit_without_read",
+            )
+        ):
             return "B. anti-patterns"
-        if any(k in n for k in ("minimal_diff", "unrelated_tests", "retry_only", "no_docstrings", "impossible", "three_lines")):
+        if any(
+            k in n
+            for k in (
+                "minimal_diff",
+                "unrelated_tests",
+                "retry_only",
+                "no_docstrings",
+                "impossible",
+                "three_lines",
+            )
+        ):
             return "C. minimal-diff"
         if any(k in n for k in ("tabs", "quotes", "camelcase", "function_keyword")):
             return "D. style"
-        if any(k in n for k in ("runs_tests", "tests_fail", "linter", "ember_md_conv")):
+        if any(k in n for k in ("runs_tests", "tests_fail", "linter", "igni_md_conv")):
             return "E. verification"
-        if any(k in n for k in ("ambiguous", "conflicting_ember", "out_of_scope", "preexisting_security", "spawns_explorer", "spawn_for_simple")):
+        if any(
+            k in n
+            for k in (
+                "ambiguous",
+                "conflicting_igni",
+                "out_of_scope",
+                "preexisting_security",
+                "spawns_explorer",
+                "spawn_for_simple",
+            )
+        ):
             return "F. judgement"
         return "G. specific"
     if suite_agent == "main":
@@ -189,7 +233,7 @@ def _build_mcp_test_agent(model, project_dir: Path):
         base_dir=str(project_dir),
         permissions=ToolPermissions(project_dir=project_dir),
     )
-    tools = registry.resolve(["Write", "Edit", "Bash", "Read"])
+    tools = registry.resolve(["Write", "Edit", "Bash"])
     tools.append(MCPStubTools())
 
     instructions = (
@@ -213,37 +257,19 @@ def _build_mcp_test_agent(model, project_dir: Path):
     )
 
 
-def _build_main_agent(model, project_dir: Path):
-    """Build the main orchestrator agent.
+def _use_live_model(settings) -> None:
+    """Point ``settings`` at the live test endpoint as its default model."""
+    from igni_core.core.config.model_entry import ModelRegistryEntry
 
-    Heavier — needs the full Session because OrchestrateTools depends on a
-    populated AgentPool to dispatch to specialists. We point Session at a
-    temp project_dir so we don't touch the real .igni/ workspace.
-    """
-    from igni_core.core.config.settings import load_settings
-    from igni_core.core.session.core import Session
-
-    # Override the default model to use our live test model
-    os.environ["IGNI_TEST_LLM_API_KEY_OVERRIDE"] = os.environ["IGNI_TEST_LLM_API_KEY"]
-
-    settings = load_settings(project_dir=project_dir)
-    # Patch settings to redirect the default model at our test endpoint
-    test_model_id = os.getenv("IGNI_TEST_LLM_MODEL") or "gpt-4o-mini"
-    test_base_url = os.getenv("IGNI_TEST_LLM_BASE_URL") or "https://api.openai.com/v1"
-    test_api_key = os.environ["IGNI_TEST_LLM_API_KEY"]
-
-    settings.models.registry["MiniMax-M2.7"] = {
-        "provider": "openai_like",
-        "model_id": test_model_id,
-        "url": test_base_url,
-        "api_key": test_api_key,
-        "context_window": 128_000,
-        "vision": False,
-    }
+    settings.models.registry["MiniMax-M2.7"] = ModelRegistryEntry(
+        provider="openai_like",
+        model_id=os.getenv("IGNI_TEST_LLM_MODEL") or "gpt-4o-mini",
+        url=os.getenv("IGNI_TEST_LLM_BASE_URL") or "https://api.openai.com/v1",
+        api_key=os.environ["IGNI_TEST_LLM_API_KEY"],
+        context_window=128_000,
+        vision=False,
+    )
     settings.models.default = "MiniMax-M2.7"
-
-    session = Session(settings=settings, project_dir=project_dir)
-    return session.main_team
 
 
 async def _run_case(
@@ -273,7 +299,7 @@ async def _run_case(
     """
     import uuid as _uuid
 
-    from igni_core.core.evals.runner import CaseResult, run_eval_case
+    from igni_core.core.evals.runner import CaseResult, CaseRunner
 
     last_error: str | None = None
     attempts = 1 + max(0, case_retries)
@@ -285,13 +311,13 @@ async def _run_case(
     for attempt in range(1, attempts + 1):
         try:
             return await asyncio.wait_for(
-                run_eval_case(
+                CaseRunner(
                     case,
                     agent,
                     judge_model,
                     session_id=f"eval-{_uuid.uuid4().hex[:8]}",
                     work_dir=work_dir,
-                ),
+                ).run(),
                 timeout=effective_timeout,
             )
         except asyncio.TimeoutError:
@@ -343,10 +369,8 @@ async def _run_suite(
     Per-case isolation also keeps file mutations from contaminating
     other cases when they run in parallel.
     """
-    import shutil
-
     from igni_core.core.evals.loader import load_eval_file
-    from igni_core.core.evals.runner import _setup_fixtures
+    from igni_core.core.evals.workspace import EvalWorkspace
 
     suite = load_eval_file(suite_path)
     if not suite:
@@ -354,19 +378,26 @@ async def _run_suite(
         return None
 
     cases = suite.cases if n_cases is None else suite.cases[:n_cases]
-    print(f"\n=== {suite.agent} — running {len(cases)}/{len(suite.cases)} cases  "
-          f"(concurrency={concurrency}) ===")
+    print(
+        f"\n=== {suite.agent} — running {len(cases)}/{len(suite.cases)} cases  "
+        f"(concurrency={concurrency}) ==="
+    )
 
     sem = asyncio.Semaphore(concurrency)
 
     async def _one(idx: int, case):
         async with sem:
-            case_work = Path(tempfile.mkdtemp(prefix=f"ember-eval-c{idx:02d}-"))
-            if suite.fixtures and fixtures_root and fixtures_root.is_dir():
-                _setup_fixtures(suite.fixtures, fixtures_root, work_dir=case_work)
+            with_fixtures = bool(suite.fixtures and fixtures_root and fixtures_root.is_dir())
+            workspace = EvalWorkspace(
+                suite.fixtures if with_fixtures else None,
+                fixtures_root or Path.cwd(),
+                None,
+                Path.cwd(),
+            )
+            case_work = await workspace.setup()
             try:
-                agent = agent_factory(case_work)
                 try:
+                    agent = agent_factory(case_work)
                     r = await _run_case(
                         case,
                         agent,
@@ -379,10 +410,9 @@ async def _run_suite(
                 except Exception as exc:
                     return idx, case, None, exc
             finally:
-                shutil.rmtree(case_work, ignore_errors=True)
+                await workspace.teardown()
 
     tasks = [asyncio.create_task(_one(i, c)) for i, c in enumerate(cases, 1)]
-    completed = 0
     pending_print: dict[int, tuple] = {}
     next_to_print = 1
 
@@ -390,7 +420,6 @@ async def _run_suite(
     # order — easier to read, easier to compare across runs.
     for fut in asyncio.as_completed(tasks):
         idx, case, r, exc = await fut
-        completed += 1
         pending_print[idx] = (case, r, exc)
         while next_to_print in pending_print:
             c, rr, ex = pending_print.pop(next_to_print)
@@ -402,8 +431,7 @@ async def _run_suite(
                 # eval signal isn't muddied by infrastructure noise.
                 err = (rr.error or "").lower()
                 is_env_error = any(
-                    tag in err
-                    for tag in ("model_error", "case_timeout", "agent.arun failed")
+                    tag in err for tag in ("model_error", "case_timeout", "agent.arun failed")
                 )
                 if rr.passed:
                     status = "PASS"
@@ -420,7 +448,9 @@ async def _run_suite(
                     if rr.tool_arg_detail and rr.tool_arg_passed is False:
                         print(f"          arg: {rr.tool_arg_detail}")
                     if rr.accuracy_score is not None and rr.accuracy_passed is False:
-                        print(f"          acc: {rr.accuracy_score:.1f}/{rr.case.accuracy_threshold}")
+                        print(
+                            f"          acc: {rr.accuracy_score:.1f}/{rr.case.accuracy_threshold}"
+                        )
                     if rr.error:
                         print(f"          err: {rr.error}")
             next_to_print += 1
@@ -446,27 +476,27 @@ def _dump_summary(results_dir: Path, suite, results) -> None:
     for case, r in results:
         cat = _categorize(case.name, suite.agent)
         by_cat[cat].append(r.passed)
-        cases_summary.append({
-            "name": case.name,
-            "category": cat,
-            "passed": r.passed,
-            "elapsed": round(r.elapsed, 2),
-            "reliability_passed": r.reliability_passed,
-            "reliability_detail": r.reliability_detail,
-            "unexpected_passed": r.unexpected_passed,
-            "unexpected_detail": r.unexpected_detail,
-            "accuracy_score": r.accuracy_score,
-            "accuracy_passed": r.accuracy_passed,
-            "tools_called": [t["name"] for t in r.tool_trace],
-            "error": r.error,
-        })
+        cases_summary.append(
+            {
+                "name": case.name,
+                "category": cat,
+                "passed": r.passed,
+                "elapsed": round(r.elapsed, 2),
+                "reliability_passed": r.reliability_passed,
+                "reliability_detail": r.reliability_detail,
+                "unexpected_passed": r.unexpected_passed,
+                "unexpected_detail": r.unexpected_detail,
+                "accuracy_score": r.accuracy_score,
+                "accuracy_passed": r.accuracy_passed,
+                "tools_called": [t.name for t in r.tool_trace],
+                "error": r.error,
+            }
+        )
     summary = {
         "agent": suite.agent,
         "total": len(results),
         "passed": sum(1 for _, r in results if r.passed),
-        "by_category": {
-            cat: {"passed": sum(v), "total": len(v)} for cat, v in by_cat.items()
-        },
+        "by_category": {cat: {"passed": sum(v), "total": len(v)} for cat, v in by_cat.items()},
         "cases": cases_summary,
     }
     out = results_dir / f"{suite.agent}_summary.json"
@@ -486,13 +516,17 @@ def _summarize(suite, results):
     for cat in sorted(by_cat):
         vals = by_cat[cat]
         p = sum(vals)
-        print(f"    {cat:38s}  {p}/{len(vals)}  ({p/len(vals)*100:.0f}%)")
+        print(f"    {cat:38s}  {p}/{len(vals)}  ({p / len(vals) * 100:.0f}%)")
 
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cases", type=int, default=5,
-                        help="cases per suite (default 5; use 0 or negative for ALL)")
+    parser.add_argument(
+        "--cases",
+        type=int,
+        default=5,
+        help="cases per suite (default 5; use 0 or negative for ALL)",
+    )
     # The set of suites you can run. Each name maps to evals/<name>.yaml
     # (with `main` mapping to evals/main_agent.yaml). `all` runs every
     # *.yaml under evals/. You can also pass a comma-list of names.
@@ -514,17 +548,19 @@ async def main():
         default="all",
         help=f"one of {SUITE_CHOICES}, or a comma-list of names",
     )
-    parser.add_argument("--concurrency", type=int, default=5,
-                        help="parallel cases per suite (default 5)")
+    parser.add_argument(
+        "--concurrency", type=int, default=5, help="parallel cases per suite (default 5)"
+    )
     parser.add_argument(
         "--case-retries",
         type=int,
         default=2,
         help=(
             "harness-level retries on transient model errors (e.g. 429, "
-            "connection reset). Does NOT retry on case_timeout — those "
-            "indicate a stuck case, not a flake. Total attempts = 1 + "
-            "case_retries (default: 1+2=3)."
+            "connection reset) and on case_timeout — a timeout is often "
+            "contention between parallel cases, which a retry after they "
+            "finish can clear. Total attempts = 1 + case_retries "
+            "(default: 1+2=3)."
         ),
     )
     parser.add_argument(
@@ -542,11 +578,12 @@ async def main():
         type=int,
         default=60,
         help=(
-            "hard cap (seconds) on a single eval case. A case that doesn't "
-            "finish in this window is marked FAIL with reason=case_timeout. "
-            "60s is enough for any healthy multi-agent flow; longer means a "
-            "retry storm or a stuck stream — neither is what we want to "
-            "report as a partial PASS."
+            "hard cap (seconds) on one attempt of an eval case. A case "
+            "that doesn't finish in this window is retried (see "
+            "--case-retries) and, when the attempts run out, reported as "
+            "ENV with reason=case_timeout — an environment problem, not an "
+            "eval FAIL. 60s is enough for any healthy multi-agent flow; "
+            "longer means a retry storm or a stuck stream."
         ),
     )
     args = parser.parse_args()
@@ -606,8 +643,9 @@ async def main():
         """
         import json as _json
 
-        from igni_core.core.config.settings import load_settings
+        from igni_core.core.config.settings_loader import SettingsLoader
         from igni_core.core.session.core import Session
+        from igni_core.core.workspace_trust import process_trust
 
         igni_dir = project_dir / ".igni"
         igni_dir.mkdir(parents=True, exist_ok=True)
@@ -635,19 +673,12 @@ async def main():
             )
         )
 
-        settings = load_settings(project_dir=project_dir)
-        test_model_id = os.getenv("IGNI_TEST_LLM_MODEL") or "gpt-4o-mini"
-        test_base_url = os.getenv("IGNI_TEST_LLM_BASE_URL") or "https://api.openai.com/v1"
-        test_api_key = os.environ["IGNI_TEST_LLM_API_KEY"]
-        settings.models.registry["MiniMax-M2.7"] = {
-            "provider": "openai_like",
-            "model_id": test_model_id,
-            "url": test_base_url,
-            "api_key": test_api_key,
-            "context_window": 128_000,
-            "vision": False,
-        }
-        settings.models.default = "MiniMax-M2.7"
+        # The per-case dir is the runner's own scratch space: trust it for
+        # this process only, or the permissive settings written above would
+        # be ignored as an untrusted project's.
+        process_trust().trust(project_dir, remember=False)
+        settings = SettingsLoader.load(project_dir=project_dir)
+        _use_live_model(settings)
         if spawn_timeout_override is not None:
             settings.orchestration.sub_team_timeout = spawn_timeout_override
         # Disable Agno's retry-on-exception so we get deterministic
@@ -725,15 +756,22 @@ async def main():
         # Specialist agent — build a fresh Session per case and pull
         # the named specialist out of its pool. Same isolation reason
         # as the main agent: avoid cross-case state leakage.
+        probe_dir = Path(tempfile.mkdtemp(prefix="igni-eval-probe-"))
         try:
             # Probe once with a throwaway session_dir to confirm the
             # specialist exists in the pool before the suite runs;
             # gives a clean error message instead of a per-case crash.
-            probe_dir = Path(tempfile.mkdtemp(prefix="ember-eval-probe-"))
+            # ``pool.get`` answers ``None`` for a name it has no
+            # definition for.
             probe_sess = _build_session_for(probe_dir)
-            probe_sess.pool.get(target_agent)
+            found = probe_sess.pool.get(target_agent) is not None
+            reason = "no definition has that name"
         except (KeyError, ValueError) as exc:
-            print(f"  ! agent '{target_agent}' not in pool ({exc}) — skipping")
+            found, reason = False, str(exc)
+        finally:
+            shutil.rmtree(probe_dir, ignore_errors=True)
+        if not found:
+            print(f"  ! agent '{target_agent}' not in pool ({reason}) — skipping")
             return None, None
 
         def specialist_factory(base_dir: Path):
