@@ -82,7 +82,9 @@ async def test_a_wrapped_transport_is_practised_on_the_port_of_the_one_inside():
     server = await _serving(handler)
     try:
         inner = Listener(_port(server))
-        result = await FirstAnswerPractice(SimpleNamespace(inner=inner, receive=inner.receive)).run()
+        result = await FirstAnswerPractice(
+            SimpleNamespace(inner=inner, receive=inner.receive)
+        ).run()
     finally:
         server.close()
     assert result.ok, result.error

@@ -126,14 +126,18 @@ async def test_an_identical_search_is_answered_from_the_cache(project) -> None:
     assert len(strategy.calls) == 1
 
 
-async def test_a_different_limit_or_project_is_a_different_search(project, tmp_path_factory) -> None:
+async def test_a_different_limit_or_project_is_a_different_search(
+    project, tmp_path_factory
+) -> None:
     strategy = _Counting()
     cache = LruSearchCache()
     await _controller(project, strategy, cache).search_code("def greet(name):", max_results=5)
     await _controller(project, strategy, cache).search_code("def greet(name):", max_results=6)
     other = tmp_path_factory.mktemp("other")
     (other / "x.py").write_text("def greet(name):\n")
-    result = await _controller(other, strategy, cache).search_code("def greet(name):", max_results=6)
+    result = await _controller(other, strategy, cache).search_code(
+        "def greet(name):", max_results=6
+    )
 
     assert len(strategy.calls) == 3
     assert [m.path for m in result.matches] == ["x.py"]

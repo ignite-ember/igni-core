@@ -87,7 +87,9 @@ def endpoint():
 def _request(probe, url, timeout=5.0):
     async def go():
         async with httpx.AsyncClient() as client:
-            return await probe._one_request(client, url + "/chat/completions", {}, {"m": 1}, timeout)
+            return await probe._one_request(
+                client, url + "/chat/completions", {}, {"m": 1}, timeout
+            )
 
     return asyncio.run(go())
 
@@ -182,8 +184,13 @@ class TestRunCell:
         async def go():
             async with httpx.AsyncClient() as client:
                 return await probe._run_cell(
-                    client, e.url + "/chat/completions", {"Authorization": "Bearer k"},
-                    "the-model", "the prompt", 5, 5.0,
+                    client,
+                    e.url + "/chat/completions",
+                    {"Authorization": "Bearer k"},
+                    "the-model",
+                    "the prompt",
+                    5,
+                    5.0,
                 )
 
         outcomes = asyncio.run(go())
@@ -332,8 +339,15 @@ class TestMain:
         monkeypatch.setenv("IGNI_TEST_LLM_MODEL", "the-model")
 
         code = self._run(
-            probe, monkeypatch, tmp_path,
-            "--sizes", "10,", "--levels", "1,2,", "--cooldown", "0",
+            probe,
+            monkeypatch,
+            tmp_path,
+            "--sizes",
+            "10,",
+            "--levels",
+            "1,2,",
+            "--cooldown",
+            "0",
         )
 
         out = capsys.readouterr().out
@@ -346,7 +360,9 @@ class TestMain:
         assert all(r["model"] == "the-model" for r in e.requests)
         assert e.headers[0]["Authorization"] == "Bearer the-key"
 
-    def test_the_defaults_are_the_openai_endpoint_and_model(self, probe, monkeypatch, tmp_path, capsys):
+    def test_the_defaults_are_the_openai_endpoint_and_model(
+        self, probe, monkeypatch, tmp_path, capsys
+    ):
         monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "k")
         monkeypatch.setattr(probe, "_run_cell", _no_cells)
 
@@ -364,8 +380,17 @@ class TestMain:
         monkeypatch.setenv("IGNI_TEST_LLM_BASE_URL", e.url)
 
         self._run(
-            probe, monkeypatch, tmp_path,
-            "--sizes", "10,20", "--levels", "1,2,4", "--cooldown", "0", "--stop-rl-pct", "50",
+            probe,
+            monkeypatch,
+            tmp_path,
+            "--sizes",
+            "10,20",
+            "--levels",
+            "1,2,4",
+            "--cooldown",
+            "0",
+            "--stop-rl-pct",
+            "50",
         )
 
         out = capsys.readouterr().out
@@ -375,14 +400,23 @@ class TestMain:
         assert len(e.requests) == (1 + 2) * 2
         assert "rate: slow down" in out
 
-    def test_a_threshold_not_reached_keeps_climbing(self, probe, endpoint, monkeypatch, tmp_path, capsys):
+    def test_a_threshold_not_reached_keeps_climbing(
+        self, probe, endpoint, monkeypatch, tmp_path, capsys
+    ):
         e = endpoint(200, "{}")
         monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "k")
         monkeypatch.setenv("IGNI_TEST_LLM_BASE_URL", e.url)
 
         self._run(
-            probe, monkeypatch, tmp_path,
-            "--sizes", "10", "--levels", "1,2,4", "--cooldown", "0",
+            probe,
+            monkeypatch,
+            tmp_path,
+            "--sizes",
+            "10",
+            "--levels",
+            "1,2,4",
+            "--cooldown",
+            "0",
         )
 
         assert "stop:" not in capsys.readouterr().out
@@ -394,9 +428,15 @@ class TestMain:
         monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "k")
         monkeypatch.setattr(probe, "_run_cell", _no_cells)
 
-        self._run(probe, monkeypatch, tmp_path, "--sizes", "500,2000", "--levels", "1", "--cooldown", "0")
+        self._run(
+            probe, monkeypatch, tmp_path, "--sizes", "500,2000", "--levels", "1", "--cooldown", "0"
+        )
 
-        labels = [line.split()[0] for line in capsys.readouterr().out.splitlines() if line.strip().endswith(" -") and not line.startswith("-")]
+        labels = [
+            line.split()[0]
+            for line in capsys.readouterr().out.splitlines()
+            if line.strip().endswith(" -") and not line.startswith("-")
+        ]
         assert labels == ["500", "2k"]
 
     def test_a_size_that_is_not_a_number_is_refused(self, probe, monkeypatch, tmp_path):

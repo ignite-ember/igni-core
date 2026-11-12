@@ -121,9 +121,7 @@ class TestWhenTheSessionMissesAnEntry:
 
 
 class TestTheEnvironmentItBorrows:
-    def test_home_is_put_back_and_the_throwaway_directory_removed(
-        self, tmp_path, monkeypatch
-    ):
+    def test_home_is_put_back_and_the_throwaway_directory_removed(self, tmp_path, monkeypatch):
         real_home = tmp_path / "real-home"
         real_home.mkdir()
         monkeypatch.setenv("HOME", str(real_home))

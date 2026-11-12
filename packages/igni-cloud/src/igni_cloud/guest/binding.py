@@ -367,6 +367,12 @@ class ProducerBinding:
     def watch(self, on_changed: Callable[[ProducerEnv], None]) -> None:
         """After binding: be told if the file comes to name another producer or database."""
         if self._watch is None:
+            # Watch the directory from now, not from when the loop first
+            # runs: a bind that succeeded on its first look never started
+            # the watch, and a write before the loop got going raised no
+            # event for it to wait on.
+            if self._directory is not None:
+                self._directory.start()
             self._watch = background.daemon(self._watch_loop(on_changed), name="producer-env-watch")
 
     async def stop(self) -> None:
@@ -381,9 +387,11 @@ class ProducerBinding:
     async def _watch_loop(self, on_changed: Callable[[ProducerEnv], None]) -> None:
         assert self._bound is not None
         while True:
+            # Look before waiting: the file may have changed between the
+            # bind and the watch starting, and that change raised no event.
             # Bound, igni idles: no timer of its own, only the directory's events.
-            await self._next(fallback=None)
             if not self._changed():
+                await self._next(fallback=None)
                 continue
             try:
                 env = ProducerEnv.parse(self.path.read_text(encoding="utf-8"))

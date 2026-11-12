@@ -64,8 +64,11 @@ def test_a_proxy_is_not_asked_a_hostile_class_is_left_and_a_second_walk_finds_on
 
 @pytest.mark.parametrize(
     "platform_name, version, maxsize",
-    [("PyPy", sys.version_info, sys.maxsize), ("CPython", (3, 11, 9), sys.maxsize),
-     ("CPython", sys.version_info, 2**31 - 1)],
+    [
+        ("PyPy", sys.version_info, sys.maxsize),
+        ("CPython", (3, 11, 9), sys.maxsize),
+        ("CPython", sys.version_info, 2**31 - 1),
+    ],
 )
 def test_where_the_interpreter_is_not_one_it_knows_nothing_is_made_immortal(
     monkeypatch: pytest.MonkeyPatch, platform_name: str, version: tuple[int, ...], maxsize: int

@@ -181,7 +181,7 @@ def test_a_terminal_phase_is_the_status_string_the_window_reads(phase):
 @pytest.mark.parametrize("phase", [WorkflowRunPhase.RUNNING, WorkflowRunPhase.CANCELLING])
 def test_a_live_phase_has_no_terminal_status(phase):
     with pytest.raises(ValueError, match=f"{phase.value} is not a terminal phase"):
-        phase.terminal_status
+        _ = phase.terminal_status
 
 
 def test_a_new_identity_is_wf_and_twelve_hex_digits_and_never_repeats():

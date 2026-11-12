@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import re
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -196,7 +197,7 @@ def test_a_chatty_backend_does_not_block_on_its_output(rig):
     result = rig.run(SCRIPT, *SHORT)
     assert result.returncode == 0, result.stderr
     log = re.search(r"# Backend log: (\S+)", result.stdout).group(1)
-    assert "chatter 399 " in open(log).read()
+    assert "chatter 399 " in Path(log).read_text()
 
 
 def test_without_ps_every_reading_is_zero_and_the_run_still_ends(rig):
