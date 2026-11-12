@@ -116,11 +116,17 @@ async def main() -> int:
             # The loader also reads this machine's own settings, so
             # "some hook is registered" would pass without the group's.
             # Look for the command the group actually shipped.
-            shipped = {
-                entry.entry_name: json.loads(entry.content)
-                for entry in pack.entries
-                if entry.kind == "hooks"
-            }
+            shipped = {}
+            for entry in pack.entries:
+                if entry.kind != "hooks":
+                    continue
+                try:
+                    shipped[entry.entry_name] = json.loads(entry.content)
+                except json.JSONDecodeError as exc:
+                    check(
+                        False,
+                        f"hooks/{entry.entry_name} is not valid JSON ({exc.msg} at line {exc.lineno} column {exc.colno})",
+                    )
             wanted = {d.get("command") for d in shipped.values() if isinstance(d, dict)}
             result = HookLoader(
                 project, cross_tool_support=False, group_dir=cache.layout.dir_for("hooks")
