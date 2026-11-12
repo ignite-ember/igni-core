@@ -203,3 +203,40 @@ async def test_a_running_session_picks_up_trust_and_its_revocation(tmp_path: Pat
     await session.apply_workspace_trust(reload_settings(project))
     assert project_hooks() == 0
     assert not denies_make_deploy()
+
+
+@pytest.mark.parametrize("decision", ["Trust", " trust", "TRUST", "", None])
+async def test_a_decision_is_matched_exactly(decision: object, tmp_path: Path) -> None:
+    handler, ctx = _handler(tmp_path)
+    with pytest.raises(RpcArgsError):
+        await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": decision})
+    ctx.backend.apply_workspace_trust.assert_not_awaited()
+    assert _stored(tmp_path) is None
+
+
+async def test_the_answer_comes_back_without_a_push_channel(tmp_path: Path) -> None:
+    handler, ctx = _handler(tmp_path)
+    ctx.push = None
+    status = await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "trust"})
+    assert status.state == "trusted"
+    assert _stored(tmp_path) == "trusted"
+    ctx.backend.apply_workspace_trust.assert_awaited_once()
+
+
+async def test_a_failed_rebuild_surfaces_and_nothing_is_pushed(tmp_path: Path) -> None:
+    handler, ctx = _handler(tmp_path)
+    ctx.backend.apply_workspace_trust.side_effect = RuntimeError("rebuild failed")
+    with pytest.raises(RuntimeError, match="rebuild failed"):
+        await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "trust"})
+    ctx.push.workspace_trust.assert_not_called()
+
+
+async def test_repeating_a_decision_rebuilds_nothing_but_still_tells_the_windows(
+    tmp_path: Path,
+) -> None:
+    handler, ctx = _handler(tmp_path)
+    await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "trust"})
+    again = await handler.methods()[RpcMethod.SET_WORKSPACE_TRUST]({"decision": "trust"})
+    assert ctx.backend.apply_workspace_trust.await_count == 1
+    assert ctx.push.workspace_trust.call_count == 2
+    ctx.push.workspace_trust.assert_called_with(again)
