@@ -315,8 +315,10 @@ def _settings():
 def test_missing_credentials_tell_the_user_to_log_in(prof, monkeypatch):
     _cloud(monkeypatch, token=None)
 
-    with pytest.raises(RuntimeError, match="/login"):
+    with pytest.raises(RuntimeError) as err:
         _run(prof._ensure_cloud_models(_settings()))
+
+    assert "Run `/login` in igni" in str(err.value)
 
 
 def test_failed_discovery_names_the_api_url_and_the_reason(prof, monkeypatch):
