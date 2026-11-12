@@ -10,6 +10,7 @@ contradicts itself. Development packaging *requires* unsigned.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from igni_core.cli.ext_doctor import Findings
@@ -113,8 +114,11 @@ class ManifestCheck:
     def _dev_command(self, findings: Findings) -> None:
         if self._manifest.dev is None:
             return
-        command = Path(self._manifest.dev.command[0])
-        looks_local = command.parts and command.parts[0] in {".", ".."}
+        # The text as written: ``Path("./server")`` normalises to ``server``,
+        # which would make the most usual way to name a bundled command look
+        # like a PATH command and skip the check.
+        command = self._manifest.dev.command[0]
+        looks_local = re.split(r"[\\/]", command)[0] in {".", ".."}
         if looks_local and not (self._bundle / command).exists():
             findings.problems.append(f"its dev command {command} is not in the bundle")
 
