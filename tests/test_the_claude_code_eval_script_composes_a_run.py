@@ -111,9 +111,16 @@ def test_a_missing_claude_binary_says_so_and_exits_1(home, monkeypatch, tmp_path
     name = _suite(home, [{"name": "a"}])
 
     code = _run(
-        home, monkeypatch, "--suite", name, "--target-project-dir", str(home.target),
-        "--out", str(_out(home)), "--no-judge",
-    )  # fmt: skip
+        home,
+        monkeypatch,
+        "--suite",
+        name,
+        "--target-project-dir",
+        str(home.target),
+        "--out",
+        str(_out(home)),
+        "--no-judge",
+    )
 
     assert code == 1
     err = capsys.readouterr().err
