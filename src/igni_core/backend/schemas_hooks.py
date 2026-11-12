@@ -9,6 +9,8 @@ pattern.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from pydantic import BaseModel
 
 from igni_core.backend.command_result import CommandResult
@@ -41,8 +43,28 @@ class HooksListView(BaseModel):
         for event, hook_list in self.hooks_map.items():
             for h in hook_list:
                 matcher = f" (matcher: {h.matcher})" if h.matcher else ""
-                lines += f"- **{event}**: `{h.command or h.url}`{matcher}\n"
+                lines += f"- **{event}**: {self._what_it_does(h)}{matcher}\n"
         return CommandResult.markdown(lines)
+
+    #: How much of a ``prompt`` hook's text the list shows.
+    PROMPT_PREVIEW: ClassVar[int] = 60
+
+    @classmethod
+    def _what_it_does(cls, hook: HookDefinition) -> str:
+        """One line per handler type: a ``prompt`` or ``mcp_tool`` hook has
+        neither a command nor a url, and used to list as empty backticks."""
+        if hook.command:
+            return f"`{hook.command}`"
+        if hook.url:
+            return f"`{hook.url}`"
+        if hook.mcp_server or hook.mcp_tool:
+            return f"mcp: `{hook.mcp_server}/{hook.mcp_tool}`"
+        if hook.text:
+            text = " ".join(hook.text.split())
+            if len(text) > cls.PROMPT_PREVIEW:
+                text = text[: cls.PROMPT_PREVIEW - 1] + "…"
+            return f'prompt: "{text}"'
+        return f"({hook.type or 'no handler'})"
 
 
 __all__ = ["HooksReloadResult", "HooksListView"]

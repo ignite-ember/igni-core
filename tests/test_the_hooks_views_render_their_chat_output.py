@@ -53,6 +53,28 @@ def test_the_command_wins_over_the_url():
     assert "`run.sh`" in content and "h.example" not in content
 
 
+@pytest.mark.parametrize(
+    ("hook", "shown"),
+    [
+        (
+            HookDefinition(type="mcp_tool", mcp_server="linear", mcp_tool="log_event"),
+            "mcp: `linear/log_event`",
+        ),
+        (
+            HookDefinition(type="prompt", text="Run the tests\nbefore you stop."),
+            'prompt: "Run the tests before you stop."',
+        ),
+        (HookDefinition(type="prompt", text="x" * 80), 'prompt: "' + "x" * 59 + '…"'),
+        (HookDefinition(type="prompt"), "(prompt)"),
+    ],
+)
+def test_a_hook_with_no_command_or_url_says_what_it_does(hook, shown):
+    """A prompt or mcp_tool hook used to list as empty backticks."""
+    content = HooksListView(hooks_map={"Stop": [hook]}).to_command_result().content
+    assert content == f"## Hooks\n- **Stop**: {shown}\n"
+    assert "``" not in content
+
+
 def test_an_event_with_no_hooks_lists_only_the_header():
     result = HooksListView(hooks_map={"Stop": []}).to_command_result()
     assert result.content == "## Hooks\n"
