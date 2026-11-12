@@ -115,7 +115,18 @@ def test_a_repository_url_is_cloned_as_the_project(launched, monkeypatch, tmp_pa
     source.mkdir()
     for cmd in (
         ["git", "init", "-q", "-b", "main"],
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"],
+        [
+            "git",
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "x",
+        ],
     ):
         subprocess.run(cmd, cwd=source, check=True)
     (source / "hello.txt").write_text("hi")
