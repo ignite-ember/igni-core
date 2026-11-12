@@ -94,17 +94,60 @@ def _categorize(case_name: str, suite_agent: str) -> str:
     """Map case name → category label for aggregate reporting."""
     n = case_name
     if suite_agent == "editor":
-        if any(k in n for k in ("grep", "glob", "cat", "_uses_", "edit_not_write", "create_new_file", "read_before_edit")):
+        if any(
+            k in n
+            for k in (
+                "grep",
+                "glob",
+                "cat",
+                "_uses_",
+                "edit_not_write",
+                "create_new_file",
+                "read_before_edit",
+            )
+        ):
             return "A. tool-selection"
-        if any(k in n for k in ("rm_rf", "secrets", "sql", "xss", "auth_check", "security_feature", "write_for_single", "edit_without_read")):
+        if any(
+            k in n
+            for k in (
+                "rm_rf",
+                "secrets",
+                "sql",
+                "xss",
+                "auth_check",
+                "security_feature",
+                "write_for_single",
+                "edit_without_read",
+            )
+        ):
             return "B. anti-patterns"
-        if any(k in n for k in ("minimal_diff", "unrelated_tests", "retry_only", "no_docstrings", "impossible", "three_lines")):
+        if any(
+            k in n
+            for k in (
+                "minimal_diff",
+                "unrelated_tests",
+                "retry_only",
+                "no_docstrings",
+                "impossible",
+                "three_lines",
+            )
+        ):
             return "C. minimal-diff"
         if any(k in n for k in ("tabs", "quotes", "camelcase", "function_keyword")):
             return "D. style"
-        if any(k in n for k in ("runs_tests", "tests_fail", "linter", "ember_md_conv")):
+        if any(k in n for k in ("runs_tests", "tests_fail", "linter", "igni_md_conv")):
             return "E. verification"
-        if any(k in n for k in ("ambiguous", "conflicting_ember", "out_of_scope", "preexisting_security", "spawns_explorer", "spawn_for_simple")):
+        if any(
+            k in n
+            for k in (
+                "ambiguous",
+                "conflicting_igni",
+                "out_of_scope",
+                "preexisting_security",
+                "spawns_explorer",
+                "spawn_for_simple",
+            )
+        ):
             return "F. judgement"
         return "G. specific"
     if suite_agent == "main":
@@ -354,14 +397,16 @@ async def _run_suite(
         return None
 
     cases = suite.cases if n_cases is None else suite.cases[:n_cases]
-    print(f"\n=== {suite.agent} — running {len(cases)}/{len(suite.cases)} cases  "
-          f"(concurrency={concurrency}) ===")
+    print(
+        f"\n=== {suite.agent} — running {len(cases)}/{len(suite.cases)} cases  "
+        f"(concurrency={concurrency}) ==="
+    )
 
     sem = asyncio.Semaphore(concurrency)
 
     async def _one(idx: int, case):
         async with sem:
-            case_work = Path(tempfile.mkdtemp(prefix=f"ember-eval-c{idx:02d}-"))
+            case_work = Path(tempfile.mkdtemp(prefix=f"igni-eval-c{idx:02d}-"))
             if suite.fixtures and fixtures_root and fixtures_root.is_dir():
                 _setup_fixtures(suite.fixtures, fixtures_root, work_dir=case_work)
             try:
@@ -402,8 +447,7 @@ async def _run_suite(
                 # eval signal isn't muddied by infrastructure noise.
                 err = (rr.error or "").lower()
                 is_env_error = any(
-                    tag in err
-                    for tag in ("model_error", "case_timeout", "agent.arun failed")
+                    tag in err for tag in ("model_error", "case_timeout", "agent.arun failed")
                 )
                 if rr.passed:
                     status = "PASS"
@@ -420,7 +464,9 @@ async def _run_suite(
                     if rr.tool_arg_detail and rr.tool_arg_passed is False:
                         print(f"          arg: {rr.tool_arg_detail}")
                     if rr.accuracy_score is not None and rr.accuracy_passed is False:
-                        print(f"          acc: {rr.accuracy_score:.1f}/{rr.case.accuracy_threshold}")
+                        print(
+                            f"          acc: {rr.accuracy_score:.1f}/{rr.case.accuracy_threshold}"
+                        )
                     if rr.error:
                         print(f"          err: {rr.error}")
             next_to_print += 1
@@ -446,27 +492,27 @@ def _dump_summary(results_dir: Path, suite, results) -> None:
     for case, r in results:
         cat = _categorize(case.name, suite.agent)
         by_cat[cat].append(r.passed)
-        cases_summary.append({
-            "name": case.name,
-            "category": cat,
-            "passed": r.passed,
-            "elapsed": round(r.elapsed, 2),
-            "reliability_passed": r.reliability_passed,
-            "reliability_detail": r.reliability_detail,
-            "unexpected_passed": r.unexpected_passed,
-            "unexpected_detail": r.unexpected_detail,
-            "accuracy_score": r.accuracy_score,
-            "accuracy_passed": r.accuracy_passed,
-            "tools_called": [t["name"] for t in r.tool_trace],
-            "error": r.error,
-        })
+        cases_summary.append(
+            {
+                "name": case.name,
+                "category": cat,
+                "passed": r.passed,
+                "elapsed": round(r.elapsed, 2),
+                "reliability_passed": r.reliability_passed,
+                "reliability_detail": r.reliability_detail,
+                "unexpected_passed": r.unexpected_passed,
+                "unexpected_detail": r.unexpected_detail,
+                "accuracy_score": r.accuracy_score,
+                "accuracy_passed": r.accuracy_passed,
+                "tools_called": [t["name"] for t in r.tool_trace],
+                "error": r.error,
+            }
+        )
     summary = {
         "agent": suite.agent,
         "total": len(results),
         "passed": sum(1 for _, r in results if r.passed),
-        "by_category": {
-            cat: {"passed": sum(v), "total": len(v)} for cat, v in by_cat.items()
-        },
+        "by_category": {cat: {"passed": sum(v), "total": len(v)} for cat, v in by_cat.items()},
         "cases": cases_summary,
     }
     out = results_dir / f"{suite.agent}_summary.json"
@@ -486,13 +532,17 @@ def _summarize(suite, results):
     for cat in sorted(by_cat):
         vals = by_cat[cat]
         p = sum(vals)
-        print(f"    {cat:38s}  {p}/{len(vals)}  ({p/len(vals)*100:.0f}%)")
+        print(f"    {cat:38s}  {p}/{len(vals)}  ({p / len(vals) * 100:.0f}%)")
 
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cases", type=int, default=5,
-                        help="cases per suite (default 5; use 0 or negative for ALL)")
+    parser.add_argument(
+        "--cases",
+        type=int,
+        default=5,
+        help="cases per suite (default 5; use 0 or negative for ALL)",
+    )
     # The set of suites you can run. Each name maps to evals/<name>.yaml
     # (with `main` mapping to evals/main_agent.yaml). `all` runs every
     # *.yaml under evals/. You can also pass a comma-list of names.
@@ -514,8 +564,9 @@ async def main():
         default="all",
         help=f"one of {SUITE_CHOICES}, or a comma-list of names",
     )
-    parser.add_argument("--concurrency", type=int, default=5,
-                        help="parallel cases per suite (default 5)")
+    parser.add_argument(
+        "--concurrency", type=int, default=5, help="parallel cases per suite (default 5)"
+    )
     parser.add_argument(
         "--case-retries",
         type=int,
@@ -729,7 +780,7 @@ async def main():
             # Probe once with a throwaway session_dir to confirm the
             # specialist exists in the pool before the suite runs;
             # gives a clean error message instead of a per-case crash.
-            probe_dir = Path(tempfile.mkdtemp(prefix="ember-eval-probe-"))
+            probe_dir = Path(tempfile.mkdtemp(prefix="igni-eval-probe-"))
             probe_sess = _build_session_for(probe_dir)
             probe_sess.pool.get(target_agent)
         except (KeyError, ValueError) as exc:
