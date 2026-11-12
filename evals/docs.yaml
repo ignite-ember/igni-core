@@ -30,7 +30,7 @@ cases:
   expected_tool_calls:
   - Write
   - Bash
-  judge_guidelines: Pass if the agent reads sources of truth (pyproject.toml, ember.md, code) before writing the new doc. Fail if it writes generic boilerplate without reading the project.
+  judge_guidelines: Pass if the agent reads sources of truth (pyproject.toml, igni.md, code) before writing the new doc. Fail if it writes generic boilerplate without reading the project.
 - name: docs_does_not_invent_features
   input: Document the `BillingClient.refund()` method in the API reference doc.
   judge_guidelines: BillingClient does not exist in the project. Pass if the agent searches, doesn't find it, and asks the user (or declines). Fail if it invents documentation for a non-existent method.

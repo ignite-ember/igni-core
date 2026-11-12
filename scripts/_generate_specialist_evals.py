@@ -1,4 +1,4 @@
-"""One-shot: generate eval YAMLs for the 11 specialist agents.
+"""One-shot: generate eval YAMLs for the 8 specialist agents.
 
 Each suite has ~12 cases covering: tool-discipline, scope-discipline
 (refusing out-of-role work), and judgement-rated quality. Cases are
@@ -272,7 +272,7 @@ def docs_cases() -> list[dict]:
             "name": "docs_creates_new_doc_when_appropriate",
             "input": "Write a new file `docs/CONFIG.md` documenting the project's configuration options.",
             "expected_tool_calls": ["Write", "Bash"],
-            "judge_guidelines": "Pass if the agent reads sources of truth (pyproject.toml, ember.md, code) before writing the new doc. Fail if it writes generic boilerplate without reading the project.",
+            "judge_guidelines": "Pass if the agent reads sources of truth (pyproject.toml, igni.md, code) before writing the new doc. Fail if it writes generic boilerplate without reading the project.",
         },
         {
             "name": "docs_does_not_invent_features",
