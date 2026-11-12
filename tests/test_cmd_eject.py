@@ -196,3 +196,103 @@ class TestTheKindTable:
 
         assert "eject" in BUILTIN_REGISTRY.names()
         assert BUILTIN_REGISTRY.get("/eject") is not None
+
+
+class TestANameIsOnlyAName:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", ["../secret", "..", "sub/dir", "a\\b", "../../outside"])
+    async def test_a_name_that_is_a_path_is_refused_and_writes_nothing(
+        self, tmp_path: Path, name: str
+    ):
+        """``../secret`` used to resolve to a file next to the group's
+        agents directory and be copied to a path outside the project's
+        ``agents`` directory."""
+        session = _session(tmp_path, {"agents": {"reviewer": "theirs"}})
+        (tmp_path / "group-policy" / "secret.md").write_text("not an agent")
+        (tmp_path / "group-policy" / "secret").write_text("not an agent")
+        before = sorted(p for p in tmp_path.rglob("*") if p.is_file())
+
+        result = await EjectCommand(session).run(f"agents {name}")
+
+        assert result.is_error()
+        assert "not an entry name" in result.content
+        assert sorted(p for p in tmp_path.rglob("*") if p.is_file()) == before
+
+
+class TestWhatCanGoWrong:
+    @pytest.mark.asyncio
+    async def test_a_write_that_fails_is_an_error_and_claims_no_copy(
+        self, tmp_path: Path, monkeypatch
+    ):
+        session = _session(tmp_path, {"agents": {"reviewer": "theirs"}})
+        reloads: list[bool] = []
+        session.reload_group_agents = lambda: reloads.append(True) or True
+
+        def refuse(self, *args, **kwargs):
+            raise PermissionError("read-only file system")
+
+        monkeypatch.setattr(Path, "write_text", refuse)
+
+        result = await EjectCommand(session).run("agents reviewer")
+
+        assert result.is_error()
+        assert "Could not write" in result.content
+        assert "read-only file system" in result.content
+        assert "Copied" not in result.content
+        assert reloads == []
+
+    @pytest.mark.asyncio
+    async def test_a_kind_is_matched_in_any_case(self, tmp_path: Path):
+        session = _session(tmp_path, {"output-styles": {"terse": "short"}})
+        result = await EjectCommand(session).run("OUTPUT-Styles terse")
+        assert not result.is_error()
+        assert (session.project_dir / CONFIG_DIR / "output-styles" / "terse.md").is_file()
+
+    @pytest.mark.asyncio
+    async def test_a_shipped_directory_with_nothing_in_it_counts_as_shipping_nothing(
+        self, tmp_path: Path
+    ):
+        session = _session(tmp_path, {"agents": {"reviewer": "x"}})
+        (tmp_path / "group-policy" / "agents" / "reviewer.md").unlink()
+
+        result = await EjectCommand(session).run("agents reviewer")
+
+        assert result.is_error()
+        assert "ships no agents. Nothing to eject." in result.content
+
+    @pytest.mark.asyncio
+    async def test_a_skill_is_listed_by_its_directory_name(self, tmp_path: Path):
+        session = _session(tmp_path, {"skills": {"deploy": "body", "lint": "body"}})
+        result = await EjectCommand(session).run("skills nope")
+        assert "It ships: deploy, lint." in result.content
+
+    @pytest.mark.asyncio
+    async def test_a_rebuild_that_reports_nothing_asks_for_a_restart(self, tmp_path: Path):
+        session = _session(tmp_path, {"agents": {"reviewer": "theirs"}})
+        session.reload_group_agents = lambda: False
+
+        result = await EjectCommand(session).run("agents reviewer")
+
+        assert not result.is_error()
+        assert "Restart the session" in result.content
+
+    @pytest.mark.asyncio
+    async def test_a_rebuild_that_works_does_not_ask_for_a_restart(self, tmp_path: Path):
+        session = _session(tmp_path, {"agents": {"reviewer": "theirs"}})
+        result = await EjectCommand(session).run("agents reviewer")
+        assert "Restart" not in result.content
+
+    @pytest.mark.asyncio
+    async def test_unicode_survives_the_copy(self, tmp_path: Path):
+        session = _session(tmp_path, {"agents": {"reviewer": "héllo — 日本語"}})
+        await EjectCommand(session).run("agents reviewer")
+        target = session.project_dir / CONFIG_DIR / "agents" / "reviewer.md"
+        assert target.read_text(encoding="utf-8") == "héllo — 日本語"
+
+    @pytest.mark.asyncio
+    async def test_the_slash_shim_builds_the_command_from_the_handler(self, tmp_path: Path):
+        from igni_core.backend.cmd_eject import cmd_eject
+
+        session = _session(tmp_path, {"agents": {"reviewer": "theirs"}})
+        result = await cmd_eject(SimpleNamespace(session=session), "agents reviewer")
+        assert not result.is_error()

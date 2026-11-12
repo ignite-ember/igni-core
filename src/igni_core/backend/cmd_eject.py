@@ -83,6 +83,15 @@ class EjectCommand:
                 "take a copy of."
             )
 
+        # The name is formatted straight into a path on both sides, so a
+        # separator or ``..`` would read from, and write to, places that
+        # are not the group's entries or the project's config directory.
+        if name in {".", ".."} or "/" in name or "\\" in name:
+            return CommandResult.error(
+                f"{name!r} is not an entry name. Names are a single word, "
+                f"as listed by what your group ships."
+            )
+
         source_dir = self._session.group_policy.shipped_dir(kind)
         if source_dir is None:
             return CommandResult.error(f"Your group ships no {kind}. Nothing to eject.")
