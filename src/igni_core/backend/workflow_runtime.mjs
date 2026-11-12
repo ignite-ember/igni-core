@@ -62,7 +62,19 @@ if (!workflowPath) {
 
 const runId = cli["workflow-run-id"] || "wf_local"
 const sessionId = cli["session-id"] || ""
-const workflowArgs = cli.args ? JSON.parse(cli.args) : {}
+let workflowArgs = {}
+if (cli.args) {
+  try {
+    workflowArgs = JSON.parse(cli.args)
+  } catch (err) {
+    process.stderr.write(`workflow_runtime: --args is not valid JSON: ${err.message}\n`)
+    exit(2)
+  }
+  if (workflowArgs === null || typeof workflowArgs !== "object" || Array.isArray(workflowArgs)) {
+    process.stderr.write("workflow_runtime: --args must be a JSON object\n")
+    exit(2)
+  }
+}
 const discovery = !!cli.discovery
 
 // ── Event emission ──────────────────────────────────────────────────
