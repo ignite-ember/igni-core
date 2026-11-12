@@ -34,7 +34,12 @@ class AgentRefresh:
         if self._scheduled or self._loop.is_closed():
             return
         self._scheduled = True
-        self._loop.call_soon_threadsafe(self._run)
+        try:
+            self._loop.call_soon_threadsafe(self._run)
+        except RuntimeError:
+            # The loop closed between the check and the call: nothing was
+            # scheduled, so a later request must still be able to schedule.
+            self._scheduled = False
 
     def _run(self) -> None:
         self._scheduled = False

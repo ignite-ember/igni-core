@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import threading
 
 from igni_core.extensions.host.model import HostModel
@@ -27,8 +26,13 @@ class ActivityNudge:
             if self._pending:
                 return
             self._pending = True
-        with contextlib.suppress(RuntimeError):
+        try:
             self._loop.call_soon_threadsafe(self._look)
+        except RuntimeError:
+            # The loop is closed: no look was scheduled, so none is
+            # pending — a later move must not be swallowed by this one.
+            with self._lock:
+                self._pending = False
 
     def _look(self) -> None:
         with self._lock:
