@@ -23,6 +23,8 @@ _NAMES = [
     "onboarding-smoke.ps1",
     "onboarding-smoke.sh",
     "probe_rate_limits.py",
+    "profile_run.py",
+    "run_claude_code_eval.py",
 ]
 
 

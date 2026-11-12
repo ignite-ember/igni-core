@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 import pathlib
 import shutil
 import sys
@@ -419,3 +420,40 @@ def test_the_project_env_is_not_read_when_the_key_is_already_set(home, monkeypat
     import os
 
     assert "IGNI_TEST_LLM_MODEL" not in os.environ
+
+
+# -- the default suite -------------------------------------------------------
+
+
+@pytest.fixture
+def claude_on_path(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    exe = bin_dir / "claude"
+    exe.write_text("#!/bin/sh\necho '{\"result\": \"ok\"}'\n")
+    exe.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+
+def _load_real(monkeypatch):
+    spec = importlib.util.spec_from_file_location("claude_code_eval_real_under_test", _SOURCE)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_default_suite_is_one_the_repository_ships(tmp_path, monkeypatch, claude_on_path):
+    """Run the real script with no ``--suite``: it must find a suite and run its cases."""
+    from igni_core.core.evals.loader import load_eval_file
+
+    monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "set-so-the-repo-env-is-not-read")
+    module = _load_real(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["x", "--target-project-dir", str(tmp_path), "--out", str(tmp_path / "o.json"), "--no-judge"])
+
+    code = asyncio.run(module.main())
+
+    result = json.loads((tmp_path / "o.json").read_text())
+    shipped = load_eval_file(_SOURCE.parent.parent / "evals/main_agent.yaml")
+    assert code == 0
+    assert result["totals"]["total"] == len(shipped.cases) > 0
