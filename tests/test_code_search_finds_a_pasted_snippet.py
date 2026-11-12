@@ -180,3 +180,21 @@ async def test_a_multi_line_snippet_is_one_match_spanning_its_lines(project, mak
     [match] = result.matches
     assert (match.path, match.line, match.end_line) == ("pkg/mod.py", 3, 5)
     assert match.preview == "def greet(name):"
+
+
+async def test_a_search_that_timed_out_is_not_remembered(project) -> None:
+    class Slow(SearchStrategy):
+        def __init__(self) -> None:
+            self.answers = [SearchCodeResult.timed_out(), PythonWalkSearchStrategy()]
+
+        def search(self, *args):
+            answer = self.answers.pop(0)
+            return answer if isinstance(answer, SearchCodeResult) else answer.search(*args)
+
+    controller = _controller(project, Slow())
+
+    first = await controller.search_code("def greet(name):")
+    second = await controller.search_code("def greet(name):")
+
+    assert first.error == "search timed out"
+    assert (second.error, [m.line for m in second.matches]) == ("", [3])
