@@ -98,9 +98,11 @@ def _run_claude_code(prompt: str, cwd: Path, timeout: int) -> tuple[str, float, 
         "duration_api_ms": payload.get("duration_api_ms"),
         "total_cost_usd": payload.get("total_cost_usd"),
         "model": payload.get("model")
-        or payload.get("modelUsage", {}).get("model")
-        if isinstance(payload.get("modelUsage"), dict)
-        else None,
+        or (
+            payload["modelUsage"].get("model")
+            if isinstance(payload.get("modelUsage"), dict)
+            else None
+        ),
     }
     return response_text, elapsed, meta
 
