@@ -168,7 +168,9 @@ def _raw_session(monkeypatch, names):
 def test_raw_mode_takes_the_last_run_content_or_tool_call_completed_as_visible_end(
     prof, monkeypatch, tmp_path
 ):
-    _raw_session(monkeypatch, ["RunStarted", "RunContent", "ToolCallCompletedEvent", "RunCompleted"])
+    _raw_session(
+        monkeypatch, ["RunStarted", "RunContent", "ToolCallCompletedEvent", "RunCompleted"]
+    )
     monkeypatch.setattr(prof, "time", _clock(10.0, 10.1, 10.2, 10.6, 10.8, 11.0))
 
     record = _run(prof._profile_raw_agno(object(), tmp_path, "p"))
@@ -209,9 +211,24 @@ def test_raw_mode_without_content_has_no_tail(prof, monkeypatch, tmp_path):
 
 def test_the_summary_gives_n_min_max_mean_and_median_to_three_decimals(prof):
     records = [
-        {"total_s": 1.0, "time_to_first_event_s": 0.1, "time_to_last_content_s": 0.5, "tail_s": 0.5},
-        {"total_s": 2.0, "time_to_first_event_s": 0.2, "time_to_last_content_s": 1.5, "tail_s": 0.5},
-        {"total_s": 4.5, "time_to_first_event_s": 0.4, "time_to_last_content_s": 4.0, "tail_s": 0.5},
+        {
+            "total_s": 1.0,
+            "time_to_first_event_s": 0.1,
+            "time_to_last_content_s": 0.5,
+            "tail_s": 0.5,
+        },
+        {
+            "total_s": 2.0,
+            "time_to_first_event_s": 0.2,
+            "time_to_last_content_s": 1.5,
+            "tail_s": 0.5,
+        },
+        {
+            "total_s": 4.5,
+            "time_to_first_event_s": 0.4,
+            "time_to_last_content_s": 4.0,
+            "tail_s": 0.5,
+        },
     ]
 
     summary = prof._summarize(records)
@@ -430,7 +447,17 @@ def test_output_writes_one_json_line_per_run_then_the_summary_creating_parents(
 
     code = _run(
         prof.main(
-            _args(prof, "--project", str(tmp_path), "--runs", "2", "--prompt", "héllo", "--output", str(out))
+            _args(
+                prof,
+                "--project",
+                str(tmp_path),
+                "--runs",
+                "2",
+                "--prompt",
+                "héllo",
+                "--output",
+                str(out),
+            )
         )
     )
 
@@ -476,7 +503,9 @@ def test_raw_mode_returns_zero_prints_no_summary_and_writes_no_file(
     out = tmp_path / "raw.jsonl"
 
     code = _run(
-        prof.main(_args(prof, "--project", str(tmp_path), "--runs", "1", "--raw", "--output", str(out)))
+        prof.main(
+            _args(prof, "--project", str(tmp_path), "--runs", "1", "--raw", "--output", str(out))
+        )
     )
 
     text = capsys.readouterr().out

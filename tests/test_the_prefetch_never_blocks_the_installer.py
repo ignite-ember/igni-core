@@ -14,7 +14,11 @@ import textwrap
 
 
 def _run(tmp_path, code: str | None = None, **env: str):
-    argv = [sys.executable, "-c", code] if code else [sys.executable, "-m", "igni_core.prefetch_models"]
+    argv = (
+        [sys.executable, "-c", code]
+        if code
+        else [sys.executable, "-m", "igni_core.prefetch_models"]
+    )
     return subprocess.run(
         argv,
         capture_output=True,

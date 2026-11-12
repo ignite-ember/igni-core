@@ -137,7 +137,9 @@ async def test_a_due_task_runs_through_the_started_runner_and_fires_callbacks_an
     store, tmp_path
 ) -> None:
     team, hooks = _Team(reply="built"), _Hooks()
-    settings = SimpleNamespace(scheduler=SchedulerConfig(poll_interval=1, task_timeout=30, max_concurrent=2))
+    settings = SimpleNamespace(
+        scheduler=SchedulerConfig(poll_interval=1, task_timeout=30, max_concurrent=2)
+    )
     controller = SchedulerController(_session(team, hooks, tmp_path), settings, gate=RunGate())  # type: ignore[arg-type]
     task = ScheduledTask.new("build the site", datetime.now())
     await store.add(task)

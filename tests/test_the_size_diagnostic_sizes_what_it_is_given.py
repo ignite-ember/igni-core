@@ -137,7 +137,9 @@ def test_a_working_learning_context_is_sized(monkeypatch, capsys, tmp_path):
 
 
 @pytest.mark.parametrize("is_async", [False, True])
-def test_the_session_is_closed_whether_close_is_sync_or_async(monkeypatch, capsys, tmp_path, is_async):
+def test_the_session_is_closed_whether_close_is_sync_or_async(
+    monkeypatch, capsys, tmp_path, is_async
+):
     calls: list[str] = []
 
     if is_async:

@@ -73,7 +73,9 @@ class TestDumpWireSchema:
 
         assert exit_info.value.code == "the wire contract is empty: refusing to write it"
         assert "wrote" not in capsys.readouterr().out
-        assert (_ROOT / "docs/wire-schema.json").read_bytes() == docs_restored["docs/wire-schema.json"]
+        assert (_ROOT / "docs/wire-schema.json").read_bytes() == docs_restored[
+            "docs/wire-schema.json"
+        ]
 
 
 class TestExportContracts:
@@ -90,7 +92,8 @@ class TestExportContracts:
             f"({len(rpc['methods'])} methods, {len(rpc['messages'])} messages)"
         )
         assert re.fullmatch(
-            re.escape(f"wrote {_ROOT / 'docs/wire-schema.json'} ") + r"\(\d+ messages, \d+ rpc payloads\)",
+            re.escape(f"wrote {_ROOT / 'docs/wire-schema.json'} ")
+            + r"\(\d+ messages, \d+ rpc payloads\)",
             lines[2],
         )
 

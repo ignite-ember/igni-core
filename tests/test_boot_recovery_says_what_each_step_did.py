@@ -125,17 +125,13 @@ async def test_plan_decisions_come_back_keyed_by_run() -> None:
 
 
 async def test_the_persisted_todos_replace_the_plan_seed() -> None:
-    session = _session(
-        _Persistence(todos=[TodoItemWire(content="Ship", status="in_progress")])
-    )
+    session = _session(_Persistence(todos=[TodoItemWire(content="Ship", status="in_progress")]))
     session.todo_store.set([TodoItemWire(content="Seeded", status="pending")])
 
     outcome = await _controller(session).todos()
 
     assert outcome == RehydrateOutcome(ok=True, step="todos")
-    assert [(t.content, t.status) for t in session.todo_store.items] == [
-        ("Ship", "in_progress")
-    ]
+    assert [(t.content, t.status) for t in session.todo_store.items] == [("Ship", "in_progress")]
 
 
 async def test_with_no_snapshot_the_plan_seed_stays() -> None:
@@ -188,7 +184,11 @@ async def test_a_message_a_run_took_and_never_recorded_is_offered_again(tmp_path
 
     outcome = await _controller(session).queued_messages(queue)
 
-    assert (outcome.ok, outcome.step, outcome.reason) == (True, "queued_messages", "1 offered again")
+    assert (outcome.ok, outcome.step, outcome.reason) == (
+        True,
+        "queued_messages",
+        "1 offered again",
+    )
     assert list(queue) == ["lost"]
 
 
@@ -214,7 +214,11 @@ async def test_without_a_queue_there_is_nothing_to_recover() -> None:
 async def test_without_a_project_dir_no_orphans_are_looked_for() -> None:
     outcome = await _controller(_session()).orphan_processes()
 
-    assert (outcome.ok, outcome.step, outcome.reason) == (True, "orphan_processes", "no project_dir")
+    assert (outcome.ok, outcome.step, outcome.reason) == (
+        True,
+        "orphan_processes",
+        "no project_dir",
+    )
 
 
 async def test_a_clean_project_has_no_orphans_to_adopt(tmp_path) -> None:
@@ -265,7 +269,7 @@ async def test_a_rehydrator_that_raises_is_reported_not_raised(tmp_path, monkeyp
     session.project_dir = tmp_path
     monkeypatch.setattr(
         "igni_core.backend.server_rehydrate.build_rehydrator",
-        lambda supervisor, project_dir: RehydrateBuild(rehydrator=Boom(ProcessSupervisor(), None))  # type: ignore[arg-type],
+        lambda supervisor, project_dir: RehydrateBuild(rehydrator=Boom(ProcessSupervisor(), None)),  # type: ignore[arg-type],
     )
 
     outcome = await _controller(session).orphan_processes()

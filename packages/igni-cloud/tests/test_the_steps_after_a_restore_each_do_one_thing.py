@@ -11,8 +11,8 @@ import pytest
 from igni_cloud.guest.activity_file import ActivityFile
 from igni_cloud.guest.entropy import ProcessEntropy
 from igni_cloud.guest.files import AtomicFile
-from igni_cloud.guest.resume import Restored, RestoreWatch
 from igni_cloud.guest.restore_steps import RestoreSteps
+from igni_cloud.guest.resume import Restored, RestoreWatch
 from igni_cloud.logs import StdoutLog
 
 from igni_core.backend.activity import Activity
@@ -69,9 +69,7 @@ async def test_the_steps_run_in_their_order_with_notifications(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     rig = Rig(tmp_path, monkeypatch)
-    rig.steps.register(
-        rig.watch, activity=rig.activity, notifications=Notifications(rig.ran)
-    )
+    rig.steps.register(rig.watch, activity=rig.activity, notifications=Notifications(rig.ran))
     rig.watch.start()
     try:
         rig.restore()

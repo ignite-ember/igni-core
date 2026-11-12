@@ -169,9 +169,7 @@ class TestTheReport:
     def module(self, tmp_path, monkeypatch, clean_env):
         return _load(monkeypatch, tmp_path)
 
-    def test_it_sends_the_long_task_and_names_a_file_that_exists(
-        self, module, monkeypatch, capsys
-    ):
+    def test_it_sends_the_long_task_and_names_a_file_that_exists(self, module, monkeypatch, capsys):
         out, agent = _report(module, monkeypatch, capsys, SimpleNamespace(content="done"))
 
         assert agent.task == module.LONG_TASK
@@ -180,9 +178,7 @@ class TestTheReport:
         assert OLD_NAME not in agent.task.lower()
         assert "igni-repro-" in out and OLD_NAME not in out.lower()
 
-    def test_it_prints_the_response_and_every_tool_call_it_saw(
-        self, module, monkeypatch, capsys
-    ):
+    def test_it_prints_the_response_and_every_tool_call_it_saw(self, module, monkeypatch, capsys):
         response = SimpleNamespace(
             content="narration",
             tools=[
@@ -199,9 +195,7 @@ class TestTheReport:
         assert f"[0] Bash({json.dumps({'command': 'ls'})})  →  'a b'" in out
         assert "[1] WebFetch(null)  →  ''" in out
 
-    def test_a_long_tool_result_is_cut_to_two_hundred_characters(
-        self, module, monkeypatch, capsys
-    ):
+    def test_a_long_tool_result_is_cut_to_two_hundred_characters(self, module, monkeypatch, capsys):
         response = SimpleNamespace(
             content="x",
             tools=[SimpleNamespace(tool_name="Bash", tool_args={}, result="z" * 500)],
@@ -224,9 +218,7 @@ class TestTheReport:
         assert "response.tools (count=0):" in out
         assert "response.messages — turn-by-turn (count=0):" in out
 
-    def test_it_lists_each_turn_with_the_tools_the_model_called(
-        self, module, monkeypatch, capsys
-    ):
+    def test_it_lists_each_turn_with_the_tools_the_model_called(self, module, monkeypatch, capsys):
         messages = [
             SimpleNamespace(role="user", content="go", tool_calls=None),
             SimpleNamespace(
