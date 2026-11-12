@@ -20,7 +20,6 @@ import importlib.util
 import json
 import os
 import pathlib
-import shutil
 import stat
 import sys
 import types
@@ -47,7 +46,7 @@ def claude(tmp_path, monkeypatch):
     exe = bin_dir / "claude"
     exe.write_text(_FAKE_CLAUDE)
     exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("PATH", str(bin_dir), prepend=os.pathsep)
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("FAKE_CLAUDE_ARGV", str(state / "argv"))
@@ -209,7 +208,9 @@ def test_stdout_that_is_not_json_is_reported_with_the_first_1000_chars(ev, claud
     assert len(meta["raw"]) == 1000
 
 
-def test_a_run_past_its_timeout_gives_empty_text_and_a_timeout_error(ev, claude, tmp_path, monkeypatch):
+def test_a_run_past_its_timeout_gives_empty_text_and_a_timeout_error(
+    ev, claude, tmp_path, monkeypatch
+):
     claude.answers({"result": "too late"})
     monkeypatch.setenv("FAKE_CLAUDE_SLEEP", "5")
 

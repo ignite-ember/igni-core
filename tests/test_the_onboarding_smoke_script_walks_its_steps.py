@@ -111,9 +111,11 @@ def smoke(tmp_path):
     tmpdir.mkdir()
 
     def run(*args, backend="ready", pypi=True, os_name="Linux", arch="x86_64", **extra_env):
+        # The inherited environment with the stand-ins first on its PATH.
+        inherited = dict(os.environ)
         env = {
-            **os.environ,
-            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            **inherited,
+            "PATH": f"{bin_dir}{os.pathsep}{inherited['PATH']}",
             "TMPDIR": str(tmpdir),
             "CALLS": str(tmp_path / "calls"),
             "UV_TARBALL": str(tmp_path / "uv.tar.gz"),
@@ -130,7 +132,10 @@ def smoke(tmp_path):
         env.pop("GITHUB_OUTPUT", None) if "GITHUB_OUTPUT" not in extra_env else None
         proc = subprocess.run(
             ["bash", str(repo / "scripts" / "onboarding-smoke.sh"), *args],
-            capture_output=True, text=True, env=env, timeout=90,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=90,
         )
         return Run(proc, tmp_path)
 
@@ -167,7 +172,12 @@ class TestArguments:
         r = smoke("--version", "1.2.3")
 
         assert "Targeting igni-core version: 1.2.3" in r.out
-        assert "uv pip install --python " + str(r.cache_dir() / "venv/bin/python") + " igni-core[decisions]==1.2.3" in r.calls
+        assert (
+            "uv pip install --python "
+            + str(r.cache_dir() / "venv/bin/python")
+            + " igni-core[decisions]==1.2.3"
+            in r.calls
+        )
 
 
 class TestPlatforms:
@@ -183,9 +193,14 @@ class TestPlatforms:
         r = smoke(os_name=os_name, arch=arch)
 
         assert r.code == 0, r.err
-        assert f"curl https://github.com/astral-sh/uv/releases/download/0.5.7/uv-{triple}.tar.gz" in r.calls
+        assert (
+            f"curl https://github.com/astral-sh/uv/releases/download/0.5.7/uv-{triple}.tar.gz"
+            in r.calls
+        )
 
-    @pytest.mark.parametrize("os_name, arch", [("Darwin", "x86_64"), ("Windows_NT", "x86_64"), ("Linux", "riscv64")])
+    @pytest.mark.parametrize(
+        "os_name, arch", [("Darwin", "x86_64"), ("Windows_NT", "x86_64"), ("Linux", "riscv64")]
+    )
     def test_any_other_platform_exits_one_before_downloading_anything(self, smoke, os_name, arch):
         r = smoke(os_name=os_name, arch=arch)
 
@@ -257,7 +272,9 @@ class TestTheLogDirectory:
 
         assert r.code == 0, r.err
 
-    def test_logs_of_an_earlier_run_are_cleared_first_and_other_files_are_left(self, smoke, tmp_path):
+    def test_logs_of_an_earlier_run_are_cleared_first_and_other_files_are_left(
+        self, smoke, tmp_path
+    ):
         (tmp_path / "logs").mkdir()
         stale = tmp_path / "logs" / "be-earlier-run.log"
         stale.write_text("from a run that failed last week\n")
