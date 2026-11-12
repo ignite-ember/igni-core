@@ -40,8 +40,8 @@ class ModelSwitcher:
 
         * **User-level default** — ``~/.igni/config.yaml`` via
           :class:`UserConfigStore`, so the next launch opens on it.
-        * **Per-session preference** — ``state.db``'s
-          ``ember_session_preferences`` table, which ``--continue``
+        * **Per-session preference** — the session-preferences
+          table of ``state.db``, which ``--continue``
           consults on startup.
 
         A model the registry doesn't know is refused, as ``/model``
