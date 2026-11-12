@@ -8,7 +8,6 @@ subcommand's output.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -17,6 +16,7 @@ from click.testing import CliRunner
 from igni_core import cli as cli_module
 from igni_core.cli import trust as trust_module
 from igni_core.cli.trust import SessionTrust
+from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.workspace_trust import (
     GATED_SUMMARY,
     WorkspaceIdentity,
@@ -345,11 +345,16 @@ class TestTheTrustCommand:
             ]
         )
 
-    def test_the_organisations_policy_is_read_before_it_decides(
-        self, repo: Path, monkeypatch: pytest.MonkeyPatch
+    def test_a_managed_policy_is_read_before_the_command_decides(
+        self, repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """Settings load first, so the managed policy applies to ``igni trust``."""
-        assert os.environ.get(WorkspaceTrustConfig.MODE_ENV) is None
-        monkeypatch.setenv(WorkspaceTrustConfig.MODE_ENV, "never")
+        """Settings load first, so the managed file's ``workspace_trust`` applies."""
+        managed = tmp_path / "managed-settings.yaml"
+        managed.write_text("workspace_trust:\n  mode: never\n")
+        monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: managed))
 
-        assert _igni(str(repo)).exit_code == 1
+        result = _igni(str(repo))
+
+        assert result.exit_code == 1
+        assert result.output.startswith("Error: ")
+        assert not process_trust().is_trusted(repo)
