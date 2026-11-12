@@ -92,7 +92,9 @@ class PluginDirectoryScanner:
         if not hooks_json.is_file():
             return
         try:
-            hooks_file = PluginHooksFile.model_validate_json(hooks_json.read_text())
+            hooks_file = PluginHooksFile.model_validate_json(
+                hooks_json.read_text(encoding="utf-8", errors="replace")
+            )
         except (OSError, ValidationError) as exc:
             logger.warning("Plugin %s: skipping unreadable %s: %s", self._name, hooks_json, exc)
             return
@@ -106,7 +108,9 @@ class PluginDirectoryScanner:
             if not mcp_path.is_file():
                 continue
             try:
-                mcp_file = PluginMCPFile.model_validate_json(mcp_path.read_text())
+                mcp_file = PluginMCPFile.model_validate_json(
+                    mcp_path.read_text(encoding="utf-8", errors="replace")
+                )
             except (OSError, ValidationError) as exc:
                 logger.warning("Plugin %s: skipping unreadable %s: %s", self._name, mcp_path, exc)
                 return
