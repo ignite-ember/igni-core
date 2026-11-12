@@ -95,7 +95,7 @@ EXACTLY (no markdown fences, no commentary, no extra fields):
 Score scale: 0=missed entirely, 1=partial/weak, 2=mostly, 3=fully.
 "hallucinations" must list specific tokens (class names, file
 paths, API names) the agent referenced that aren't in the
-igni__server codebase, or be ``[]`` if none. Don't speculate —
+codebase under evaluation, or be ``[]`` if none. Don't speculate —
 only list things you can name.
 """
 
@@ -148,7 +148,10 @@ async def judge_one(
     payload = {
         "model": model_id,
         "messages": [
-            {"role": "system", "content": "You are a strict code-review judge. Respond with ONLY a JSON object."},
+            {
+                "role": "system",
+                "content": "You are a strict code-review judge. Respond with ONLY a JSON object.",
+            },
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.0,

@@ -144,6 +144,16 @@ class TestJudgeOne:
         assert result.located.score == 3 and result.not_duplicated.score == 1
         assert result.hallucinations == ["Foo.bar"] and result.overall == "PASS"
 
+    def test_the_prompt_names_no_other_repository(self, judge):
+        endpoint = _Endpoint([json.dumps(_GOOD)])
+
+        _judge_one(judge, endpoint)
+
+        prompt = endpoint.bodies()[0]["messages"][1]["content"]
+        assert "codebase under evaluation" in prompt
+        for other in ("igni__server", "igni-server", "igni-app", "code-index", "igni-sdk"):
+            assert other not in prompt
+
     def test_a_think_block_and_fences_around_the_answer_are_fine(self, judge):
         wrapped = "<think>hmm</think>\n```json\n" + json.dumps(_GOOD) + "\n```"
         endpoint = _Endpoint([wrapped])
@@ -230,7 +240,9 @@ def _write_runs(tmp_path, with_cases, without_cases):
 
 def _main(judge, monkeypatch, endpoint, *argv):
     real = httpx.AsyncClient
-    monkeypatch.setattr(judge.httpx, "AsyncClient", lambda: real(transport=httpx.MockTransport(endpoint)))
+    monkeypatch.setattr(
+        judge.httpx, "AsyncClient", lambda: real(transport=httpx.MockTransport(endpoint))
+    )
     monkeypatch.setattr(sys, "argv", ["codewrite_judge.py", *argv])
     return asyncio.run(judge.main())
 
@@ -240,7 +252,9 @@ class TestMain:
         with_path, without_path = _write_runs(tmp_path, [_case("a")], [_case("a")])
         endpoint = _Endpoint([])
 
-        code = _main(judge, monkeypatch, endpoint, "--with", str(with_path), "--without", str(without_path))
+        code = _main(
+            judge, monkeypatch, endpoint, "--with", str(with_path), "--without", str(without_path)
+        )
 
         assert code == 2
         assert "IGNI_TEST_LLM_API_KEY not set" in capsys.readouterr().err
@@ -258,7 +272,9 @@ class TestMain:
         with_path, without_path = _write_runs(tmp_path, [_case("a")], [])
         endpoint = _Endpoint([json.dumps(_GOOD)])
 
-        code = _main(judge, monkeypatch, endpoint, "--with", str(with_path), "--without", str(without_path))
+        code = _main(
+            judge, monkeypatch, endpoint, "--with", str(with_path), "--without", str(without_path)
+        )
 
         assert code == 0
         request = endpoint.requests[0]
@@ -267,12 +283,16 @@ class TestMain:
         assert endpoint.bodies()[0]["model"] == "file-model"
         assert "OTHER_SECRET" not in os.environ
 
-    def test_a_quoted_key_in_the_env_file_is_used_without_its_quotes(self, judge, monkeypatch, tmp_path):
+    def test_a_quoted_key_in_the_env_file_is_used_without_its_quotes(
+        self, judge, monkeypatch, tmp_path
+    ):
         (tmp_path / ".env").write_text('IGNI_TEST_LLM_API_KEY="quoted-key"\n')
         with_path, without_path = _write_runs(tmp_path, [_case("a")], [])
         endpoint = _Endpoint([json.dumps(_GOOD)])
 
-        _main(judge, monkeypatch, endpoint, "--with", str(with_path), "--without", str(without_path))
+        _main(
+            judge, monkeypatch, endpoint, "--with", str(with_path), "--without", str(without_path)
+        )
 
         assert endpoint.requests[0].headers["authorization"] == "Bearer quoted-key"
 
@@ -282,7 +302,9 @@ class TestMain:
         with_path, without_path = _write_runs(tmp_path, [_case("a")], [])
         endpoint = _Endpoint([json.dumps(_GOOD)])
 
-        _main(judge, monkeypatch, endpoint, "--with", str(with_path), "--without", str(without_path))
+        _main(
+            judge, monkeypatch, endpoint, "--with", str(with_path), "--without", str(without_path)
+        )
 
         request = endpoint.requests[0]
         assert request.headers["authorization"] == "Bearer from-env"
@@ -300,13 +322,22 @@ class TestMain:
             "hallucinations": [],
             "overall": "FAIL",
         }
-        with_path, without_path = _write_runs(tmp_path, [_case("one"), _case("two")], [_case("one")])
+        with_path, without_path = _write_runs(
+            tmp_path, [_case("one"), _case("two")], [_case("one")]
+        )
         endpoint = _Endpoint([json.dumps(_GOOD), json.dumps(_GOOD), json.dumps(weak)])
         out_path = tmp_path / "nested/deeper/judged.json"
 
         code = _main(
-            judge, monkeypatch, endpoint,
-            "--with", str(with_path), "--without", str(without_path), "--out", str(out_path),
+            judge,
+            monkeypatch,
+            endpoint,
+            "--with",
+            str(with_path),
+            "--without",
+            str(without_path),
+            "--out",
+            str(out_path),
         )
 
         assert code == 0
@@ -316,7 +347,9 @@ class TestMain:
         assert "PASS (WITH)" in out and "FAIL (WITHOUT)" in out
         saved = json.loads(out_path.read_text())
         assert [(j["case_name"], j["mode"]) for j in saved] == [
-            ("one", "WITH"), ("two", "WITH"), ("one", "WITHOUT"),
+            ("one", "WITH"),
+            ("two", "WITH"),
+            ("one", "WITHOUT"),
         ]
         assert saved[0]["located"] == {"score": 3, "reason": "looked"}
 
@@ -326,16 +359,37 @@ class TestMain:
         monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "k")
         with_path, without_path = _write_runs(tmp_path, [], [])
 
-        code = _main(judge, monkeypatch, _Endpoint([]), "--with", str(with_path), "--without", str(without_path))
+        code = _main(
+            judge,
+            monkeypatch,
+            _Endpoint([]),
+            "--with",
+            str(with_path),
+            "--without",
+            str(without_path),
+        )
 
         assert code == 0
         assert "totals" not in capsys.readouterr().out
 
-    def test_a_case_missing_its_optional_fields_is_judged_with_blanks(self, judge, monkeypatch, tmp_path):
+    def test_a_case_missing_its_optional_fields_is_judged_with_blanks(
+        self, judge, monkeypatch, tmp_path
+    ):
         monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "k")
         bare = {"case": {"name": "bare", "input": "task"}}
         with_path, without_path = _write_runs(tmp_path, [bare], [])
         endpoint = _Endpoint([json.dumps(_GOOD)])
 
-        assert _main(judge, monkeypatch, endpoint, "--with", str(with_path), "--without", str(without_path)) == 0
+        assert (
+            _main(
+                judge,
+                monkeypatch,
+                endpoint,
+                "--with",
+                str(with_path),
+                "--without",
+                str(without_path),
+            )
+            == 0
+        )
         assert len(endpoint.requests) == 1
