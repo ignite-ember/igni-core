@@ -461,6 +461,10 @@ def test_the_summary_gives_p50_and_max_per_metric(mod):
     assert "touched_to_welcome" not in got
 
 
+def test_a_summary_of_no_resumes_is_empty_rather_than_an_error(mod):
+    assert mod.Summary.of([]) == {"n": 0}
+
+
 def test_the_summary_takes_the_median_of_each_touched_kind(mod):
     got = mod.Summary.of(
         [
@@ -524,6 +528,15 @@ def test_timelines_are_read_from_resume_timeline_lines_and_the_rest_skipped(mod,
 def test_out_is_required(mod):
     result = CliRunner().invoke(mod.main, [])
     assert result.exit_code == 2 and "--out" in result.output
+
+
+@pytest.mark.parametrize("item", ["MALLOC_ARENA_MAX", "=2"])
+def test_an_env_item_without_a_key_and_equals_sign_is_a_usage_error(mod, tmp_path, item):
+    result = CliRunner().invoke(mod.main, ["--out", str(tmp_path / "r.json"), "--env", item])
+    assert result.exit_code == 2
+    assert "KEY=VALUE" in result.output and item in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert not (tmp_path / "r.json").exists()
 
 
 def test_a_pid_needs_a_websocket_url_and_a_restored_file(mod, tmp_path):
