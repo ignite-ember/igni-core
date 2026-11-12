@@ -196,6 +196,7 @@ async def main() -> int:
     if str(igni_core_dir) not in sys.path:
         sys.path.insert(0, str(igni_core_dir))
 
+    from igni_core.core.config.model_entry import ModelRegistryEntry
     from igni_core.core.config.models import ModelRegistry
     from igni_core.core.config.settings import Settings
     from igni_core.core.evals.loader import load_eval_file
@@ -233,15 +234,15 @@ async def main() -> int:
                 "IGNI_TEST_LLM_BASE_URL", "https://api.minimax.io/v1"
             )
             model_id = os.environ.get("IGNI_TEST_LLM_MODEL", "MiniMax-M2.7")
-            settings.models.registry["judge-model"] = {
-                "provider": "openai_like",
-                "model_id": model_id,
-                "url": base_url,
-                "api_key": api_key,
-                "context_window": 200_000,
-                "vision": False,
-                "timeout": 90,
-            }
+            settings.models.registry["judge-model"] = ModelRegistryEntry(
+                provider="openai_like",
+                model_id=model_id,
+                url=base_url,
+                api_key=api_key,
+                context_window=200_000,
+                vision=False,
+                timeout=90,
+            )
             settings.models.default = "judge-model"
             judge_model = ModelRegistry(settings).get_model()
             print(

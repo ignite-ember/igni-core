@@ -206,3 +206,152 @@ def test_an_empty_suite_writes_zero_totals_and_exits_0(home, monkeypatch):
     assert code == 0
     assert result["cases"] == []
     assert (result["totals"]["passed"], result["totals"]["failed"], result["totals"]["total"]) == (0, 0, 0)
+
+
+# -- the judge ---------------------------------------------------------------
+
+def _with_judge(home, monkeypatch, grade):
+    monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "key")
+    graded = []
+
+    async def grade_response(case, text, judge_model):
+        graded.append(case.name)
+        return grade(case, text)
+
+    monkeypatch.setattr(home.module, "_grade_response", grade_response)
+    return graded
+
+
+def test_with_a_judge_the_verdict_decides_and_its_score_and_reason_are_recorded(home, monkeypatch):
+    suite = _suite(
+        home,
+        [
+            {"name": "good", "input": "good", "expected_output": "x"},
+            {"name": "bad", "input": "bad", "expected_output": "x"},
+        ],
+    )
+    _fake_claude(home, monkeypatch, {})
+    graded = _with_judge(
+        home,
+        monkeypatch,
+        lambda case, text: (True, 9.0, "fine") if case.name == "good" else (False, 3.0, "wrong"),
+    )
+    out = _out(home)
+
+    code = _run(home, monkeypatch, "--suite", suite, "--target-project-dir", str(home.target), "--out", str(out))
+
+    good, bad = json.loads(out.read_text())["cases"]
+    assert graded == ["good", "bad"]
+    assert (good["passed"], good["accuracy_passed"], good["accuracy_score"], good["accuracy_reason"]) == (True, True, 9.0, "fine")
+    assert (bad["passed"], bad["accuracy_passed"], bad["accuracy_score"], bad["accuracy_reason"]) == (False, False, 3.0, "wrong")
+    assert code == 1
+
+
+def test_an_empty_response_is_not_sent_to_the_judge(home, monkeypatch):
+    suite = _suite(home, [{"name": "a", "input": "a", "expected_output": "x"}])
+    _fake_claude(home, monkeypatch, {"a": ("", {})})
+    graded = _with_judge(home, monkeypatch, lambda case, text: (True, 10.0, ""))
+
+    _run(home, monkeypatch, "--suite", suite, "--target-project-dir", str(home.target), "--out", str(_out(home)))
+
+    assert graded == []
+
+
+def test_a_judge_that_raises_is_recorded_and_the_case_falls_back_to_the_response(home, monkeypatch):
+    suite = _suite(home, [{"name": "a", "input": "a", "expected_output": "x"}])
+    _fake_claude(home, monkeypatch, {})
+
+    def explode(case, text):
+        raise RuntimeError("judge down")
+
+    _with_judge(home, monkeypatch, explode)
+    out = _out(home)
+
+    code = _run(home, monkeypatch, "--suite", suite, "--target-project-dir", str(home.target), "--out", str(out))
+
+    (case,) = json.loads(out.read_text())["cases"]
+    assert case["accuracy_reason"] == "judge exception: judge down"
+    assert case["accuracy_passed"] is None
+    assert case["passed"] is True
+    assert code == 0
+
+
+def test_a_judge_that_has_no_verdict_leaves_the_response_to_decide(home, monkeypatch):
+    suite = _suite(home, [{"name": "a", "input": "a"}])
+    _fake_claude(home, monkeypatch, {})
+    _with_judge(home, monkeypatch, lambda case, text: (None, None, ""))
+    out = _out(home)
+
+    _run(home, monkeypatch, "--suite", suite, "--target-project-dir", str(home.target), "--out", str(out))
+
+    (case,) = json.loads(out.read_text())["cases"]
+    assert case["passed"] is True
+    assert case["accuracy_score"] is None
+
+
+def _judge_seen(home, monkeypatch):
+    """Record the model the script builds for the judge instead of grading."""
+    seen = {}
+
+    async def grade_response(case, text, judge_model):
+        seen["model"] = judge_model
+        return True, 9.0, ""
+
+    monkeypatch.setattr(home.module, "_grade_response", grade_response)
+    return seen
+
+
+def test_the_judge_model_defaults_to_the_minimax_endpoint(home, monkeypatch, capsys):
+    suite = _suite(home, [{"name": "a", "input": "a", "expected_output": "x"}])
+    _fake_claude(home, monkeypatch, {})
+    monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "key")
+    seen = _judge_seen(home, monkeypatch)
+
+    _run(home, monkeypatch, "--suite", suite, "--target-project-dir", str(home.target), "--out", str(_out(home)))
+
+    assert "Judge model: MiniMax-M2.7 @ https://api.minimax.io/v1" in capsys.readouterr().err
+    assert seen["model"].id == "MiniMax-M2.7"
+    assert seen["model"].api_key == "key"
+    assert str(seen["model"].base_url) == "https://api.minimax.io/v1"
+
+
+def test_the_judge_model_follows_the_environment(home, monkeypatch, capsys):
+    suite = _suite(home, [{"name": "a", "input": "a", "expected_output": "x"}])
+    _fake_claude(home, monkeypatch, {})
+    monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "key")
+    monkeypatch.setenv("IGNI_TEST_LLM_BASE_URL", "https://judge.example/v1")
+    monkeypatch.setenv("IGNI_TEST_LLM_MODEL", "judge-1")
+    seen = _judge_seen(home, monkeypatch)
+
+    _run(home, monkeypatch, "--suite", suite, "--target-project-dir", str(home.target), "--out", str(_out(home)))
+
+    assert "Judge model: judge-1 @ https://judge.example/v1" in capsys.readouterr().err
+    assert seen["model"].id == "judge-1"
+    assert str(seen["model"].base_url) == "https://judge.example/v1"
+
+
+def test_without_a_key_the_run_warns_and_goes_on_without_a_judge(home, monkeypatch, capsys):
+    suite = _suite(home, [{"name": "a", "input": "a", "expected_output": "x"}])
+    _fake_claude(home, monkeypatch, {})
+    seen = _judge_seen(home, monkeypatch)
+    out = _out(home)
+
+    code = _run(home, monkeypatch, "--suite", suite, "--target-project-dir", str(home.target), "--out", str(out))
+
+    assert "WARNING: IGNI_TEST_LLM_API_KEY not set" in capsys.readouterr().err
+    assert seen == {}
+    assert code == 0
+
+
+def test_no_judge_skips_the_judge_even_with_a_key_and_says_nothing_about_it(home, monkeypatch, capsys):
+    suite = _suite(home, [{"name": "a", "input": "a", "expected_output": "x"}])
+    _fake_claude(home, monkeypatch, {})
+    monkeypatch.setenv("IGNI_TEST_LLM_API_KEY", "key")
+    seen = _judge_seen(home, monkeypatch)
+
+    _run(home, monkeypatch, "--suite", suite, "--target-project-dir", str(home.target), "--out", str(_out(home)), "--no-judge")
+
+    err = capsys.readouterr().err
+    assert seen == {}
+    assert "Judge model" not in err
+    assert "WARNING" not in err
