@@ -161,6 +161,17 @@ async def test_a_refused_approval_gets_an_error_then_the_end_of_its_stream():
     assert error.to_client == end.to_client == "w4"
 
 
+async def test_a_refused_rpc_is_an_error_even_when_no_reason_was_given():
+    wire = _Wire()
+
+    await PoolReplier(wire).refuse(_rpc(), "")
+
+    (sent,) = wire.sent
+    assert isinstance(sent, msg.RPCResponse)
+    assert sent.error, "a refusal must not read as a success with no payload"
+    assert sent.code == RpcErrorCode.FORBIDDEN
+
+
 async def test_a_broadcast_is_sent_to_every_window_unaddressed():
     wire = _Wire()
     note = msg.Info(text="hello")
