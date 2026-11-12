@@ -185,7 +185,7 @@ class TestFlagsThatRefuse:
             result = runner.invoke(cli_module.cli, ["--worktree"])
 
         assert result.exit_code != 0
-        assert "not a git repository" in str(result.exception).lower()
+        assert "not a git repository" in (result.output or "").lower()
 
     def test_pipe_with_no_input_says_where_input_should_come_from(self):
         """Pipe mode reads stdin. Told nothing, it must name both ways

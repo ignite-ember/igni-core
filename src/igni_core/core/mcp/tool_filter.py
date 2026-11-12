@@ -110,8 +110,10 @@ class MCPToolFilter:
             disabled.add(tool)
         if not disabled:
             self._disabled_tools.pop(server, None)
-        self._tool_state.save(self._disabled_tools)
+        # The live filter first: this session honours the choice even
+        # when the file that keeps it for the next one cannot be written.
         self.apply(server, client)
+        self._tool_state.save(self._disabled_tools)
 
     def list_disabled(self, name: str) -> list[str]:
         """Sorted list of tools the user has individually

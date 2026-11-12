@@ -195,13 +195,24 @@ class ProcessProbe:
         except FileNotFoundError:
             return Probe(error=f"its command {command!r} was not found{self._on_path(command)}")
         except BaseException as exc:  # noqa: BLE001 — anyio wraps a dead process in a group
-            if isinstance(exc, KeyboardInterrupt | SystemExit):
-                raise
+            # anyio's task group wraps what a task raised, an interrupt
+            # included, so look inside the group before calling it a failure.
+            for leaf in self._leaves(exc):
+                if isinstance(leaf, KeyboardInterrupt | SystemExit):
+                    raise leaf from None
             return Probe(
                 error=f"it exited before answering MCP ({self._reason(exc)})"
                 f"{self._stderr(stderr_path)}"
             )
         return Probe(tools=tools)
+
+    @staticmethod
+    def _leaves(exc: BaseException) -> list[BaseException]:
+        """What an exception group is made of, however deep it nests."""
+        inner = getattr(exc, "exceptions", None)
+        if not inner:
+            return [exc]
+        return [leaf for member in inner for leaf in ProcessProbe._leaves(member)]
 
     @staticmethod
     def _reason(exc: BaseException) -> str:
