@@ -23,6 +23,7 @@ the page it wrote never ran.
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import sys
@@ -182,6 +183,10 @@ class Scaffold:
         tokens = {
             "ID": self.id,
             "TITLE": self.title,
+            # The title is a directory name, so anything: where it lands in
+            # markup or in a Python docstring it is escaped for that.
+            "TITLE_HTML": html.escape(self.title, quote=False),
+            "TITLE_PY": self.title.replace("\\", "\\\\").replace('"', '\\"'),
             "MODULE": self.module,
             "DIST": self.distribution,
             **(parts or {}),
