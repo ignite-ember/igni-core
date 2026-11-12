@@ -187,7 +187,14 @@ class TestStatusAndTheShims:
         session = _session()
         await cmd_loop(_handler(session), "5 polish the docs")
         content = loop_status(_handler(session)).content
-        assert "polish the docs" in content
+        assert content == ("Loop active: 1 done, 4 remaining.\nPrompt: 'polish the docs'")
+
+    @pytest.mark.asyncio
+    async def test_stopping_reports_how_far_it_got(self):
+        session = _session()
+        await cmd_loop(_handler(session), "5 work")
+        result = await cmd_loop(_handler(session), "stop")
+        assert result.content == "Loop stopped after 1 iteration."
 
     @pytest.mark.asyncio
     async def test_the_stop_shim_cancels(self):
