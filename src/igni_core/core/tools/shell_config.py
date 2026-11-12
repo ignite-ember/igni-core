@@ -35,4 +35,4 @@ class ShellToolsConfig(BaseModel):
 
     # Toolkit name registered with Agno. Kept configurable so
     # sub-toolkits / plugin variants don't clash.
-    name: str = "ember_shell"
+    name: str = "igni_shell"
