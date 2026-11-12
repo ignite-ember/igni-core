@@ -257,7 +257,7 @@ async def main() -> int:
     case_results: list[dict] = []
     suite_t0 = time.monotonic()
     for i, case in enumerate(suite.cases, 1):
-        case_timeout = max(120, int(getattr(case, "case_timeout", 360)) + 60)
+        case_timeout = max(120, int(case.case_timeout or 360) + 60)
         print(f"  [case {i}/{len(suite.cases)}] {case.name} starting...", file=sys.stderr)
         sys.stderr.flush()
         response_text, elapsed, meta = _run_claude_code(
