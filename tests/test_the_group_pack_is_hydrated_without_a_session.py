@@ -80,7 +80,7 @@ class TestTheHydratorByItself:
         portal = _portal(_pack())
         hydrator = GroupPackHydrator(_settings(tmp_path), portal)
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger="igni_core.backend.group_pack_hydrator"):
             assert await hydrator.hydrate("") is False
 
         portal.fetch_group_pack.assert_not_awaited()
@@ -131,7 +131,7 @@ class TestTheHydratorByItself:
         monkeypatch.setattr(cache_module.GroupPolicyCache, "for_data_dir", unparsable)
         hydrator = GroupPackHydrator(_settings(tmp_path), _portal(_pack()))
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger="igni_core.backend.group_pack_hydrator"):
             assert await hydrator.hydrate(TOKEN) is False
 
         assert "cache entry is not valid" in caplog.text
@@ -148,7 +148,7 @@ class TestTheHydratorByItself:
         monkeypatch.setattr(cache_module.GroupPolicyCache, "materialize", full)
         hydrator = GroupPackHydrator(_settings(tmp_path), _portal(_pack()))
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger="igni_core.backend.group_pack_hydrator"):
             assert await hydrator.hydrate(TOKEN) is False
 
         assert "no space left on device" in caplog.text
