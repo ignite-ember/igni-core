@@ -209,7 +209,15 @@ def test_stdout_that_is_not_json_is_reported_with_the_first_1000_chars(ev, claud
     assert len(meta["raw"]) == 1000
 
 
-def test_a_run_past_its_timeout_gives_empty_text_and_a_timeout_error(ev, claude, tmp_path, monkeypatch):
+def test_a_missing_claude_binary_is_a_named_error_not_a_file_not_found(ev, tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(ev.ClaudeNotFound, match="claude CLI was not found on PATH"):
+        ev._run_claude_code("p", tmp_path, 30)
+
+
+def test_a_run_past_its_timeout_gives_empty_text_and_a_timeout_error(
+    ev, claude, tmp_path, monkeypatch
+):
     claude.answers({"result": "too late"})
     monkeypatch.setenv("FAKE_CLAUDE_SLEEP", "5")
 

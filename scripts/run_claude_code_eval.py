@@ -33,12 +33,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 for n in ("httpx", "httpcore", "urllib3", "agno", "chromadb", "asyncio"):
     logging.getLogger(n).setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
+
+
+class ClaudeNotFound(Exception):
+    """The ``claude`` CLI is not on PATH."""
 
 
 def _run_claude_code(prompt: str, cwd: Path, timeout: int) -> tuple[str, float, dict]:
@@ -66,6 +68,8 @@ def _run_claude_code(prompt: str, cwd: Path, timeout: int) -> tuple[str, float, 
             text=True,
             timeout=timeout,
         )
+    except FileNotFoundError as exc:
+        raise ClaudeNotFound("the claude CLI was not found on PATH") from exc
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - t0
         return "", elapsed, {"error": "timeout", "stderr": ""}
@@ -230,9 +234,7 @@ async def main() -> int:
             )
         else:
             settings = Settings()
-            base_url = os.environ.get(
-                "IGNI_TEST_LLM_BASE_URL", "https://api.minimax.io/v1"
-            )
+            base_url = os.environ.get("IGNI_TEST_LLM_BASE_URL", "https://api.minimax.io/v1")
             model_id = os.environ.get("IGNI_TEST_LLM_MODEL", "MiniMax-M2.7")
             settings.models.registry["judge-model"] = ModelRegistryEntry(
                 provider="openai_like",
@@ -261,9 +263,15 @@ async def main() -> int:
         case_timeout = max(120, int(case.case_timeout or 360) + 60)
         print(f"  [case {i}/{len(suite.cases)}] {case.name} starting...", file=sys.stderr)
         sys.stderr.flush()
-        response_text, elapsed, meta = _run_claude_code(
-            case.input, target_dir, case_timeout
-        )
+        try:
+            response_text, elapsed, meta = _run_claude_code(case.input, target_dir, case_timeout)
+        except ClaudeNotFound:
+            print(
+                "error: the claude CLI was not found on PATH — install Claude Code "
+                "or put `claude` on PATH, then run again.",
+                file=sys.stderr,
+            )
+            return 1
         verdict = "ERROR" if meta.get("error") else "ran"
         print(
             f"  [case {i}/{len(suite.cases)}] {case.name} → {verdict} in {elapsed:.1f}s "
