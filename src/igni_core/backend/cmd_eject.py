@@ -64,6 +64,15 @@ class EjectCommand:
     def __init__(self, session) -> None:
         self._session = session
 
+    @staticmethod
+    def _within(path: Path, root: Path) -> bool:
+        """``path``, with every symlink and ``..`` resolved, lies inside
+        ``root`` resolved the same way."""
+        try:
+            return path.resolve().is_relative_to(root.resolve())
+        except (OSError, RuntimeError, ValueError):
+            return False
+
     async def run(self, args: str) -> CommandResult:
         parts = args.split()
         if len(parts) != 2:
@@ -83,6 +92,15 @@ class EjectCommand:
                 "take a copy of."
             )
 
+        # The name is formatted straight into a path on both sides, so a
+        # separator or ``..`` would read from, and write to, places that
+        # are not the group's entries or the project's config directory.
+        if name in {".", ".."} or "/" in name or "\\" in name:
+            return CommandResult.error(
+                f"{name!r} is not an entry name. Names are a single word, "
+                f"as listed by what your group ships."
+            )
+
         source_dir = self._session.group_policy.shipped_dir(kind)
         if source_dir is None:
             return CommandResult.error(f"Your group ships no {kind}. Nothing to eject.")
@@ -90,6 +108,17 @@ class EjectCommand:
         subdir, filename = EJECTABLE[kind]
         relative = filename.format(name=name)
         source = source_dir / relative
+        target_root = Path(self._session.project_dir) / CONFIG_DIR / subdir
+        target = target_root / relative
+        # The name check above covers the separators; this covers what a
+        # character check cannot: a drive-relative name on Windows, or a
+        # shipped entry that is a symlink to a file outside the group's
+        # directory. Both ends must resolve to where they belong.
+        if not (self._within(source, source_dir) and self._within(target, target_root)):
+            return CommandResult.error(
+                f"{name!r} does not lead to your group's {kind} and to this "
+                f"project's {subdir} directory. Nothing was copied."
+            )
         if not source.is_file():
             available = sorted(
                 p.stem if kind != "skills" else p.parent.name
@@ -101,7 +130,6 @@ class EjectCommand:
                 + (f"It ships: {', '.join(available)}." if available else "")
             )
 
-        target = Path(self._session.project_dir) / CONFIG_DIR / subdir / relative
         if target.exists():
             return CommandResult.info(
                 f"{target} already exists — that copy is already the one that "

@@ -43,4 +43,5 @@ class SkillCommandDispatcher:
                 content=rendered,
                 action=CommandAction.RUN_PROMPT,
             )
-        return UnknownCommandResult.unknown(stripped.split()[0])
+        words = stripped.split()
+        return UnknownCommandResult.unknown(words[0] if words else "")

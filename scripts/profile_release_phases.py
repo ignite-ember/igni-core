@@ -48,9 +48,15 @@ PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 
 
 def _rss_mb(pid: int) -> float:
-    out = subprocess.run(
-        ["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True
-    ).stdout.strip()
+    try:
+        out = subprocess.run(
+            ["ps", "-o", "rss=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return 0.0
     return int(out) / 1024 if out.isdigit() else 0.0
 
 
@@ -63,10 +69,7 @@ async def _connect_and_welcome(port: int):
 async def _rpc(ws, method: str, args=None, timeout=5.0):
     req_id = f"rpc-{time.monotonic_ns()}"
     await ws.send(
-        json.dumps(
-            {"type": "rpc_request", "id": req_id, "method": method,
-             "args": args or {}}
-        )
+        json.dumps({"type": "rpc_request", "id": req_id, "method": method, "args": args or {}})
     )
     deadline = time.monotonic() + timeout
     while True:
@@ -85,8 +88,9 @@ def _print_phase(label: str, pid: int, t0: float) -> float:
     return rss
 
 
-async def _watch_phase(label: str, pid: int, t0: float, seconds: float,
-                        sample_every: float = 2.0) -> tuple[float, float]:
+async def _watch_phase(
+    label: str, pid: int, t0: float, seconds: float, sample_every: float = 2.0
+) -> tuple[float, float]:
     """Sample RSS through ``seconds`` of phase; return (start, end)."""
     start = _rss_mb(pid)
     elapsed_0 = time.monotonic() - t0
@@ -99,13 +103,14 @@ async def _watch_phase(label: str, pid: int, t0: float, seconds: float,
         elapsed = time.monotonic() - t0
         delta = last - start
         sign = "+" if delta >= 0 else ""
-        print(f"# [{elapsed:>5.1f}s]    sample            "
-              f"RSS = {last:>7.1f} MiB  ({sign}{delta:.1f})")
+        print(
+            f"# [{elapsed:>5.1f}s]    sample            RSS = {last:>7.1f} MiB  ({sign}{delta:.1f})"
+        )
     return start, last
 
 
 async def _drive(args) -> None:
-    project = Path(tempfile.mkdtemp(prefix="ember-release-"))
+    project = Path(tempfile.mkdtemp(prefix="igni-release-"))
     env_overrides = {**os.environ, "IGNI_PARENT_PID": str(os.getpid())}
     if args.idle_timeout > 0:
         env_overrides["IGNI_SESSION_IDLE_TIMEOUT"] = str(args.idle_timeout)
@@ -113,28 +118,48 @@ async def _drive(args) -> None:
     # lines reach us. Default config is WARNING — hides "session pool:
     # evicted …" lines, which is what we want to verify the drop.
     env_overrides["PYTHONUNBUFFERED"] = "1"
+    # Output goes to a file in the kept project dir, not a PIPE: nothing
+    # reads a pipe during the phases, so a long run would block the BE on it.
+    log_path = project / "backend.log"
+    print(f"# Backend log: {log_path}")
+    log = log_path.open("wb")
     proc = subprocess.Popen(
-        [str(PYTHON), "-c",
-         "import logging; logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s %(message)s'); "
-         "logging.getLogger('igni_core').setLevel(logging.INFO); "
-         "import sys; sys.argv = ['igni_core.backend'] + sys.argv[1:]; "
-         "from igni_core.backend.__main__ import main; main()",
-         "--ws-port", "0", "--project-dir", str(project)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=REPO_ROOT,
+        [
+            str(PYTHON),
+            "-c",
+            "import logging; logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s %(levelname)s %(message)s'); "
+            "logging.getLogger('igni_core').setLevel(logging.INFO); "
+            "import sys; sys.argv = ['igni_core.backend'] + sys.argv[1:]; "
+            "from igni_core.backend.__main__ import main; main()",
+            "--ws-port",
+            "0",
+            "--project-dir",
+            str(project),
+        ],
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        cwd=REPO_ROOT,
         env=env_overrides,
     )
+    log.close()
     ws_url = None
-    while True:
-        line = proc.stdout.readline()
-        if not line:
-            raise RuntimeError("BE exited before ready")
-        try:
-            env = json.loads(line.decode().strip())
-            if env.get("status") == "ready":
-                ws_url = env["ws_url"]
-                break
-        except Exception:
-            continue
+    while ws_url is None:
+        exited = proc.poll() is not None
+        for line in log_path.read_text(errors="replace").splitlines():
+            try:
+                env = json.loads(line.strip())
+                if env.get("status") == "ready":
+                    ws_url = env["ws_url"]
+                    break
+            except Exception:
+                continue
+        if ws_url is None:
+            if exited:
+                tail = "\n".join(log_path.read_text(errors="replace").splitlines()[-20:])
+                raise RuntimeError(
+                    f"BE exited before ready (log: {log_path}).\nlast lines of its output:\n{tail}"
+                )
+            await asyncio.sleep(0.05)
     port = int(ws_url.rsplit(":", 1)[-1])
     t0 = time.monotonic()
     pid = proc.pid
@@ -146,13 +171,13 @@ async def _drive(args) -> None:
         clients = []
         for i in range(args.sessions):
             ws = await _connect_and_welcome(port)
-            await _rpc(ws, "attach_session", {"session_id": f"s-{i}"},
-                       timeout=15)
+            await _rpc(ws, "attach_session", {"session_id": f"s-{i}"}, timeout=15)
             clients.append(ws)
         rss_attached = _print_phase("ATTACHED", pid, t0)
 
         # ── Phase 3: LOAD ──
-        per_session_sleep = args.sessions / args.rate
+        # A rate that is not positive paces at 10 ms, as the sibling probes do.
+        per_session_sleep = args.sessions / args.rate if args.rate > 0 else 0.01
         stop = asyncio.Event()
 
         async def driver(ws):
@@ -184,9 +209,7 @@ async def _drive(args) -> None:
         # Give the WS handler's ``finally`` block time to remove the
         # client from ``_conns`` on the BE side.
         await asyncio.sleep(0.5)
-        drop_start, drop_end = await _watch_phase(
-            "DROP", pid, t0, 10.0, sample_every=2.0
-        )
+        drop_start, drop_end = await _watch_phase("DROP", pid, t0, 10.0, sample_every=2.0)
 
         # ── Phase 6: explicit GC + evict_idle via SIGUSR1 ──
         # The handler schedules both ``gc.collect`` AND
@@ -203,36 +226,45 @@ async def _drive(args) -> None:
             await asyncio.sleep(2.0)
             rss_mid = _rss_mb(pid)
             elapsed_now = time.monotonic() - t0
-            print(f"# [{elapsed_now:>5.1f}s]    post-USR1 sample  "
-                  f"RSS = {rss_mid:>7.1f} MiB  (+{sec}s after signal)")
+            print(
+                f"# [{elapsed_now:>5.1f}s]    post-USR1 sample  "
+                f"RSS = {rss_mid:>7.1f} MiB  (+{sec}s after signal)"
+            )
         rss_gc = _print_phase("AFTER GC+EVICT", pid, t0)
 
         # ── Summary ──
         print()
         print("# Phase-by-phase deltas:")
         print(f"#   BOOT         {rss_boot:>7.1f} MiB")
-        print(f"#   ATTACHED     {rss_attached:>7.1f} MiB  "
-              f"({rss_attached-rss_boot:+.1f})")
+        print(f"#   ATTACHED     {rss_attached:>7.1f} MiB  ({rss_attached - rss_boot:+.1f})")
         print(f"#   LOAD start   {load_start:>7.1f} MiB")
-        print(f"#   LOAD end     {load_end:>7.1f} MiB     "
-              f"({load_end-load_start:+.1f})")
-        print(f"#   QUIESCE end  {quiesce_end:>7.1f} MiB     "
-              f"({quiesce_end-load_end:+.1f}, idle window)")
-        print(f"#   DROP end     {drop_end:>7.1f} MiB     "
-              f"({drop_end-quiesce_end:+.1f}, after disconnect)")
-        print(f"#   AFTER GC     {rss_gc:>7.1f} MiB     "
-              f"({rss_gc-drop_end:+.1f}, after gc.collect)")
+        print(f"#   LOAD end     {load_end:>7.1f} MiB     ({load_end - load_start:+.1f})")
+        print(
+            f"#   QUIESCE end  {quiesce_end:>7.1f} MiB     "
+            f"({quiesce_end - load_end:+.1f}, idle window)"
+        )
+        print(
+            f"#   DROP end     {drop_end:>7.1f} MiB     "
+            f"({drop_end - quiesce_end:+.1f}, after disconnect)"
+        )
+        print(
+            f"#   AFTER GC     {rss_gc:>7.1f} MiB     ({rss_gc - drop_end:+.1f}, after gc.collect)"
+        )
         print()
         # Verdict
         net = rss_gc - rss_attached
         if net <= 5:
             print("# verdict: HEALTHY — BE returns to attached-baseline RSS after release")
         elif net <= 20:
-            print(f"# verdict: OK — small persistent retention ({net:+.1f} MiB) "
-                  "from pools/caches that legitimately hold state")
+            print(
+                f"# verdict: OK — small persistent retention ({net:+.1f} MiB) "
+                "from pools/caches that legitimately hold state"
+            )
         else:
-            print(f"# verdict: WARN — {net:+.1f} MiB retained vs ATTACHED baseline; "
-                  "investigate what didn't release")
+            print(
+                f"# verdict: WARN — {net:+.1f} MiB retained vs ATTACHED baseline; "
+                "investigate what didn't release"
+            )
     finally:
         proc.terminate()
         try:
@@ -242,11 +274,14 @@ async def _drive(args) -> None:
         # Dump any "evicted" / "session pool" log lines from stderr —
         # makes it easy to confirm whether eviction actually ran.
         try:
-            stderr_tail = proc.stderr.read().decode()
+            stderr_tail = log_path.read_text(errors="replace")
             evict_lines = [
-                line for line in stderr_tail.splitlines()
-                if "evict" in line.lower() or "session pool" in line.lower()
-                or "SIGUSR1" in line or "gc.collect" in line.lower()
+                line
+                for line in stderr_tail.splitlines()
+                if "evict" in line.lower()
+                or "session pool" in line.lower()
+                or "SIGUSR1" in line
+                or "gc.collect" in line.lower()
             ]
             if evict_lines:
                 print()
@@ -260,8 +295,9 @@ async def _drive(args) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sessions", type=int, default=4)
-    ap.add_argument("--rate", type=float, default=300.0,
-                    help="Target req/s across all sessions during LOAD")
+    ap.add_argument(
+        "--rate", type=float, default=300.0, help="Target req/s across all sessions during LOAD"
+    )
     ap.add_argument("--load-seconds", type=float, default=20.0)
     ap.add_argument("--quiesce-seconds", type=float, default=15.0)
     ap.add_argument(
@@ -277,4 +313,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

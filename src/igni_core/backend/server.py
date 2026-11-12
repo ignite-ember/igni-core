@@ -404,7 +404,7 @@ class BackendServer:
 
     # ── MCP ───────────────────────────────────────────────────────
 
-    async def toggle_mcp(self, server_name: str, connect: bool) -> msg.Info:
+    async def toggle_mcp(self, server_name: str, connect: bool) -> msg.Info | msg.Error:
         return await self.controllers.mcp.toggle(server_name, connect)
 
     def get_mcp_status(self) -> list[McpServerStatus]:

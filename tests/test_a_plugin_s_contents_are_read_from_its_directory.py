@@ -161,3 +161,48 @@ def test_a_description_with_a_colon_keeps_its_full_text(tmp_path):
     contents = PluginDirectoryScanner(tmp_path, name="p").scan()
 
     assert contents.agents[0].description == "Use when: things break"
+
+
+def test_a_hooks_or_mcp_file_that_is_not_text_hides_its_section_instead_of_raising(tmp_path):
+    (tmp_path / "hooks").mkdir()
+    (tmp_path / "hooks" / "hooks.json").write_bytes(b'{"hooks": \xff\xfe}')
+    (tmp_path / ".mcp.json").write_bytes(b"\xff\xfe\x00\x01")
+    _write(tmp_path / "tools" / "t.py", "")
+
+    contents = PluginDirectoryScanner(tmp_path, name="binary").scan()
+
+    assert (contents.hooks, contents.mcp_servers) == ([], [])
+    assert [t.name for t in contents.tools] == ["t"]
+
+
+def test_json_with_a_stray_byte_inside_a_string_is_still_read(tmp_path):
+    (tmp_path / ".mcp.json").write_bytes(b'{"mcpServers": {"s": {"command": "run \xff"}}}')
+
+    contents = PluginDirectoryScanner(tmp_path, name="p").scan()
+
+    assert [m.name for m in contents.mcp_servers] == ["s"]
+
+
+def test_a_readme_exactly_at_the_cap_is_whole_and_one_over_is_cut(tmp_path):
+    _write(tmp_path / "README.md", "y" * 10)
+    assert PluginDirectoryScanner(tmp_path, name="p", readme_cap=10).scan().readme == "y" * 10
+
+    _write(tmp_path / "README.md", "y" * 11)
+    cut = PluginDirectoryScanner(tmp_path, name="p", readme_cap=10).scan().readme
+    assert cut.startswith("y" * 10 + "\n\n") and "y" * 11 not in cut
+    assert cut.endswith("README truncated — open the source repo for the rest._")
+
+
+def test_a_readme_with_undecodable_bytes_is_read_with_replacements(tmp_path):
+    (tmp_path / "README.md").write_bytes(b"ok \xff done")
+
+    assert PluginDirectoryScanner(tmp_path, name="p").scan().readme == "ok � done"
+
+
+def test_when_both_mcp_files_are_valid_the_dotted_one_is_read(tmp_path):
+    _write(tmp_path / ".mcp.json", json.dumps({"mcpServers": {"first": {"command": "a"}}}))
+    _write(tmp_path / "mcp.json", json.dumps({"mcpServers": {"second": {"command": "b"}}}))
+
+    contents = PluginDirectoryScanner(tmp_path, name="p").scan()
+
+    assert [m.name for m in contents.mcp_servers] == ["first"]

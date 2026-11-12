@@ -21,12 +21,12 @@ import os
 import tempfile
 from pathlib import Path
 
-from igni_core.core.init.group_agent_sync import SYNCED_KINDS, GroupAgentSync  # noqa: E402
-
 from igni_core.backend.workflow_discovery import WorkflowDiscovery  # noqa: E402
+from igni_core.core.agents.pool import AgentPool  # noqa: E402
 from igni_core.core.auth.portal_client import PortalClient  # noqa: E402
 from igni_core.core.config.group_policy.cache import GroupPolicyCache  # noqa: E402
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout  # noqa: E402
+from igni_core.core.config.settings import Settings  # noqa: E402
 from igni_core.core.hooks.loader import HookLoader  # noqa: E402
 from igni_core.core.output_styles.loader import discover_output_styles  # noqa: E402
 from igni_core.core.skills.loader import SkillPool  # noqa: E402
@@ -42,6 +42,10 @@ results: list[tuple[bool, str]] = []
 def check(ok: bool, what: str) -> None:
     results.append((ok, what))
     print(f"  {'ok  ' if ok else 'FAIL'}  {what}")
+
+
+def _snapshot(root: Path) -> dict[str, bytes]:
+    return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
 
 
 async def main() -> int:
@@ -77,46 +81,52 @@ async def main() -> int:
 
         print("\nLoading, as a session would")
 
-        # Everything a person can edit is synced into the project, and
-        # that is where the loaders read it.
-        for kind in SYNCED_KINDS:
-            if kind in by_kind and kind != "agents":
-                GroupAgentSync(
-                    project_dir=project, source_dir=cache.layout.dir_for(kind), kind=kind
-                ).run()
-
+        # Nothing is copied into the project: each loader is handed the
+        # group's directory and reads it where it lies.
         if "agents" in by_kind:
-            report = GroupAgentSync(project_dir=project, source_dir=cache.agents_dir).run()
-            check(
-                len(report.copied) == len(by_kind["agents"]),
-                f"{len(report.copied)} agents synced into the project",
+            pool = AgentPool(Settings.defaults(), project)
+            pool.load_definitions(
+                Settings.defaults(), project, group_dir=cache.layout.dir_for("agents")
             )
-            landed = {p.stem for p in (project / ".igni" / "agents").glob("*.md")}
-            check(landed == set(by_kind["agents"]), "every agent landed under its own name")
+            loaded = {d.name for d in pool.list_agents()}
+            check(
+                set(by_kind["agents"]) <= loaded,
+                "every agent loads under its own name",
+            )
 
         if "skills" in by_kind:
-            pool = SkillPool()
-            pool.load_directory(project / ".igni" / "skills")
-            loaded = {name for name in by_kind["skills"] if pool.get(name)}
+            skills = SkillPool()
+            skills.load_all(project, group_dir=cache.layout.dir_for("skills"))
+            loaded = {name for name in by_kind["skills"] if skills.get(name)}
             check(loaded == set(by_kind["skills"]), f"{len(loaded)} skills load")
 
         if "commands" in by_kind:
-            found = MarkdownCommand.discover(project, read_claude=False)
+            found = MarkdownCommand.discover(
+                project, read_claude=False, group_dir=cache.layout.dir_for("commands")
+            )
             check(set(by_kind["commands"]) <= set(found), "commands load")
 
         if "output-styles" in by_kind:
-            styles = discover_output_styles(project, read_claude=False)
+            styles = discover_output_styles(
+                project, read_claude=False, group_dir=cache.layout.dir_for("output-styles")
+            )
             check(set(by_kind["output-styles"]) <= set(styles), "output styles load")
 
         if "hooks" in by_kind:
             # The loader also reads this machine's own settings, so
             # "some hook is registered" would pass without the group's.
             # Look for the command the group actually shipped.
-            shipped = {
-                entry.entry_name: json.loads(entry.content)
-                for entry in pack.entries
-                if entry.kind == "hooks"
-            }
+            shipped = {}
+            for entry in pack.entries:
+                if entry.kind != "hooks":
+                    continue
+                try:
+                    shipped[entry.entry_name] = json.loads(entry.content)
+                except json.JSONDecodeError as exc:
+                    check(
+                        False,
+                        f"hooks/{entry.entry_name} is not valid JSON ({exc.msg} at line {exc.lineno} column {exc.colno})",
+                    )
             wanted = {d.get("command") for d in shipped.values() if isinstance(d, dict)}
             result = HookLoader(
                 project, cross_tool_support=False, group_dir=cache.layout.dir_for("hooks")
@@ -132,21 +142,29 @@ async def main() -> int:
             )
 
         if "rules" in by_kind:
-            index = RulesIndex(project, read_claude_md=False)
+            index = RulesIndex(
+                project, read_claude_md=False, group_rules_dir=cache.layout.dir_for("rules")
+            )
             # The seeded rule is scoped to **/*.py, so touching one is
             # what should surface it.
             matched = index.consume_path(project / "app" / "main.py")
             check(bool(matched), "a path-scoped rule fires on a matching file")
 
         if "workflows" in by_kind:
-            discovery = WorkflowDiscovery.for_project(project_dir=project)
+            discovery = WorkflowDiscovery.for_project(
+                project_dir=project, group_dir=cache.layout.dir_for("workflows")
+            )
             names = {p.stem for p in discovery.paths()}
             check(set(by_kind["workflows"]) <= names, "workflows are discovered")
 
-        print("\nSecond sync (nothing should move)")
-        again = GroupAgentSync(project_dir=project, source_dir=cache.agents_dir).run()
-        check(not again.changed_anything, "re-running the sync is a no-op")
-        check(again.conflicts == [], "and raises no questions")
+        print("\nSecond materialise (nothing should move)")
+        before = _snapshot(home)
+        cache.materialize(pack)
+        check(_snapshot(home) == before, "re-materialising the same pack is a no-op")
+        check(
+            not (project / ".igni" / "agents").exists(),
+            "and nothing of the group's was written into the project",
+        )
 
     failed = [w for ok, w in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} checks passed")

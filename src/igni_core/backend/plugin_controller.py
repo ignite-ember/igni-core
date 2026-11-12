@@ -93,7 +93,7 @@ class PluginController:
         if not git.is_available():
             return PluginContents.error_result("git is not installed on this machine.")
 
-        tmp = Path(tempfile.mkdtemp(prefix="ember-preview-"))
+        tmp = Path(tempfile.mkdtemp(prefix="igni-preview-"))
         try:
             await asyncio.to_thread(git.clone, clone_url, tmp, ref=branch or None, shallow=True)
             scan_root = tmp / subdir if subdir else tmp

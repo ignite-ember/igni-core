@@ -63,11 +63,10 @@ if (-not $Version) {
 # The package this script installs is the one the desktop app installs
 # (``clients/tauri/src-tauri/src/runtime/managed.rs`` runs ``uv pip
 # install igni-core[decisions]==X``) and the one this repository builds.
-# It is not ``ignite-ember``: since the split that name is a
+# It is not the old monolith name: since the split that name is a
 # metadata-only alias that depends on igni-core, and the last
-# ``ignite-ember`` on PyPI still carries the pre-split ``ember_code``
-# package, so installing it left the interpreter with no ``igni_core``
-# to import and the smoke failed on a package nobody ships any more.
+# release of it on PyPI still carries the pre-split monolith package, so
+# installing it left the interpreter with no ``igni_core`` to import and the smoke failed on a package nobody ships any more.
 $Package = "igni-core"
 $Extras = "decisions"
 
@@ -96,7 +95,7 @@ if ($env:GITHUB_OUTPUT) {
 Write-Host "-> Backend logs: $LogDir"
 
 # ── Temp cache ──────────────────────────────────────────────────────
-$CacheDir = Join-Path ([System.IO.Path]::GetTempPath()) "ember-onboarding-$(Get-Random)"
+$CacheDir = Join-Path ([System.IO.Path]::GetTempPath()) "igni-onboarding-$(Get-Random)"
 New-Item -ItemType Directory -Path $CacheDir | Out-Null
 Write-Host "-> Using temp cache: $CacheDir"
 
@@ -211,7 +210,7 @@ Write-Host "  model warmed (${Elapsed}s)"
 # ── Step 6: launch BE, await ready ──────────────────────────────────
 $StepStart = Get-Date
 Write-Host "-> Step 6: launching backend and waiting for ready line"
-$ProjectDir = Join-Path ([System.IO.Path]::GetTempPath()) "ember-be-test-$(Get-Random)"
+$ProjectDir = Join-Path ([System.IO.Path]::GetTempPath()) "igni-be-test-$(Get-Random)"
 New-Item -ItemType Directory -Path $ProjectDir | Out-Null
 
 # In $LogDir, not $CacheDir, so Cleanup can drop the cache on a failing
@@ -225,10 +224,12 @@ $BeProc = Start-Process -FilePath $VenvPython `
     -NoNewWindow `
     -PassThru
 
-# Poll for the ready line for up to 60s.
+# Poll for the ready line. 60s by default; SMOKE_READY_TIMEOUT overrides it,
+# as in onboarding-smoke.sh.
+$ReadyTimeout = if ($env:SMOKE_READY_TIMEOUT) { [int]$env:SMOKE_READY_TIMEOUT } else { 60 }
 $Ready = $false
 $WsPort = $null
-for ($i = 0; $i -lt 60; $i++) {
+for ($i = 0; $i -lt $ReadyTimeout; $i++) {
     if (Test-Path $BeStdout) {
         $content = Get-Content $BeStdout -Raw -ErrorAction SilentlyContinue
         if ($content -match '"status":\s*"ready"') {
@@ -250,7 +251,7 @@ for ($i = 0; $i -lt 60; $i++) {
 
 if (-not $Ready) {
     if (-not $BeProc.HasExited) { Stop-Process -Id $BeProc.Id -Force }
-    throw "backend never reported ready within 60s"
+    throw "backend never reported ready within ${ReadyTimeout}s"
 }
 
 $Elapsed = [int]((Get-Date) - $StepStart).TotalSeconds

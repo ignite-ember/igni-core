@@ -15,6 +15,7 @@ ship in any UI.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import sys
 from pathlib import Path
 
@@ -31,17 +32,18 @@ async def main() -> None:
         sys.exit(1)
 
     # Set up the same way the BE does at startup.
-    from igni_core.core.config.settings import Settings, load_settings
+    from igni_core.core.config.settings import Settings
+    from igni_core.core.config.settings_loader import SettingsLoader
     from igni_core.core.session.core import Session
 
-    settings: Settings = load_settings(project_dir=project)
+    settings: Settings = SettingsLoader.load(project_dir=project)
 
     sess = Session(
         project_dir=project,
         settings=settings,
     )
 
-    # Wait for any background warm-ups to settle so the codeindex /
+    # Wait for any background warm-ups to settle so the
     # learning context is fully assembled.
     await asyncio.sleep(0.5)
 
@@ -51,7 +53,7 @@ async def main() -> None:
 
     for i, ins in enumerate(instructions):
         s = ins if isinstance(ins, str) else str(ins)
-        first_line = s.lstrip().splitlines()[0][:60] if s else "(empty)"
+        first_line = (s.strip().splitlines() or ["(empty)"])[0][:60]
         sections.append((f"instructions[{i}]  {first_line!r}", len(s)))
 
     # Tools catalogue (each tool's schema goes into the model prompt).
@@ -91,16 +93,18 @@ async def main() -> None:
     width = max(len(k) for k, _ in sections)
     for name, n in sections:
         pct = (n / total * 100) if total else 0
-        print(
-            f"  {name.ljust(width)}  {n:>7,} chars  ~{chars_to_tokens(n):>6,} tok  ({pct:5.1f}%)"
-        )
+        print(f"  {name.ljust(width)}  {n:>7,} chars  ~{chars_to_tokens(n):>6,} tok  ({pct:5.1f}%)")
     print()
     print(f"  TOTAL{' ' * (width - 4)}    {total:>7,} chars  ~{chars_to_tokens(total):>6,} tok")
     print()
     print("Per-turn input also includes conversation history + the actual user")
     print("message — those grow with the chat, not visible here.")
 
-    await sess.close() if hasattr(sess, "close") else None
+    closer = getattr(sess, "close", None)
+    if callable(closer):
+        closed = closer()
+        if inspect.isawaitable(closed):
+            await closed
 
 
 asyncio.run(main())

@@ -1,7 +1,9 @@
 """The text ``igni ext init`` writes, as templates.
 
 Every ``{{TOKEN}}`` in them is filled by :class:`igni_core.cli.ext_scaffold.Scaffold`:
-``ID``, ``TITLE``, ``MODULE`` and ``DIST`` name the extension, and
+``ID``, ``TITLE``, ``MODULE`` and ``DIST`` name the extension
+(``TITLE_HTML`` and ``TITLE_PY`` are the title escaped for markup and for
+a Python docstring), and
 ``BODY`` and ``ON_HELLO`` are what one page puts in :data:`PAGE` and
 :data:`BRIDGE`. The manifests are not here: they are built as
 :class:`~igni_core.extensions.manifest.ExtensionManifest` models, so a
@@ -57,7 +59,7 @@ PAGE = """<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>{{TITLE}}</title>
+    <title>{{TITLE_HTML}}</title>
   </head>
   <body class="igni-root">
 {{BODY}}
@@ -185,7 +187,7 @@ person — a `PostToolUse` hook that keeps an audit line per tool call,
 and a page that calls `lookup_ticket`.
 """
 
-SERVICE_EXTENSION = '''"""{{TITLE}}: two tools, one hook, and a page that calls a tool.
+SERVICE_EXTENSION = '''"""{{TITLE_PY}}: two tools, one hook, and a page that calls a tool.
 
 The agent sees each tool as ``{{ID}}.<tool>`` in the manifest's
 ``permissions.tools``; the page calls it as ``ext.{{ID}}.<tool>``.
@@ -271,7 +273,7 @@ document.getElementById("lookup").addEventListener("submit", (event) => {
   lookUp();
 });"""
 
-SERVICE_APP = '''"""{{TITLE}}'s service.
+SERVICE_APP = '''"""{{TITLE_PY}}'s service.
 
 Registers with igni server, ships the extension bundle, answers erasure
 and export, and reports what became of the extension's VM profile

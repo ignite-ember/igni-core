@@ -19,7 +19,8 @@ class CompleteFilesArgs(PanelArgs):
     """Arguments for completing a file path typed after ``@``."""
 
     query: str = Field(default="", description="What was typed so far; empty matches every file.")
-    limit: int = Field(default=50, description="Maximum number of matches to return.")
+    # ``limit`` is not below zero: ``-1`` sliced the matches to all but the last.
+    limit: int = Field(default=50, ge=0, description="Maximum number of matches to return.")
 
 
 class ReadFileArgs(PanelArgs):

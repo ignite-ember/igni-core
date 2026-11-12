@@ -81,7 +81,7 @@ class SearchController:
         every session while it ran.
         """
         snippet = (snippet or "").strip()
-        if len(snippet) < 5:
+        if len(snippet) < 5 or max_results < 1:
             return SearchCodeResult()
 
         project_root = Path(self._session.project_dir).resolve()
@@ -97,5 +97,7 @@ class SearchController:
         payload = await asyncio.to_thread(
             self._strategy.search, project_root, snippet, snippet_lines, max_results
         )
-        self._cache.put(cache_key, payload)
+        if not payload.error:
+            # A timeout is this moment's answer, not the project's.
+            self._cache.put(cache_key, payload)
         return payload

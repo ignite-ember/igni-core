@@ -29,7 +29,7 @@ from igni_core.backend.builtin_command_registry import (
     BuiltinCommand,  # noqa: F401 — public re-export
     BuiltinCommandRegistry,
 )
-from igni_core.backend.command_result import CommandResult
+from igni_core.backend.command_result import CommandResult, UnknownCommandResult
 from igni_core.backend.markdown_command_dispatcher import (
     DiscoverMarkdownCommands,
     MarkdownCommandDispatcher,
@@ -97,8 +97,14 @@ class CommandHandler:
         up, and why declaring one did nothing.
         """
         stripped = command.strip()
-        cmd = stripped.split()[0].lower()
-        args = stripped[len(cmd) :].strip()
+        if not stripped:
+            return UnknownCommandResult.unknown("")
+        head = stripped.split()[0]
+        # Cut by the head as typed: lower-casing can change its length
+        # (``İ`` lowers to two characters), which would shift the cut
+        # into the arguments.
+        cmd = head.lower()
+        args = stripped[len(head) :].strip()
 
         builtin = await self._REGISTRY.dispatch(self, cmd, args)
         if builtin is not None:

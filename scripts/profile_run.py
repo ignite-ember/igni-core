@@ -18,7 +18,7 @@ visible queue lag.
 Run with::
 
     .venv/bin/python scripts/profile_run.py \\
-        --project ~/PycharmProjects/isora/code-index-test \\
+        --project /path/to/a/project \\
         --runs 3 \\
         --prompt "summarize what you see in this directory" \\
         --output /tmp/profile_run.jsonl
@@ -43,7 +43,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from igni_core.backend.server import BackendServer  # noqa: E402
-from igni_core.core.config.settings import load_settings  # noqa: E402
+from igni_core.core.config.settings_loader import SettingsLoader  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +60,7 @@ async def _ensure_cloud_models(settings) -> None:
 
     token = CloudCredentials(settings.auth.credentials_file).access_token
     if not token:
-        raise RuntimeError(
-            "No cloud token found. Run `/login` in igni to authenticate first."
-        )
+        raise RuntimeError("No cloud token found. Run `/login` in igni to authenticate first.")
     client = CloudModelCatalogClient(settings.api_url, token)
     loop = asyncio.get_event_loop()
     fetch_result = await loop.run_in_executor(None, client.fetch)
@@ -73,9 +71,7 @@ async def _ensure_cloud_models(settings) -> None:
             "Make sure the API is reachable and your credentials are valid."
         )
     client.merge_into(settings.models.registry, entries=fetch_result.entries)
-    logger.info(
-        "loaded %d cloud model(s) from %s", len(fetch_result.entries), settings.api_url
-    )
+    logger.info("loaded %d cloud model(s) from %s", len(fetch_result.entries), settings.api_url)
 
 
 async def _profile_raw_agno(
@@ -125,12 +121,15 @@ async def _profile_raw_agno(
     return {
         "mode": "raw_agno",
         "total_s": round(total, 3),
-        "time_to_last_content_s": round(t_last_content, 3) if t_last_content else None,
+        "time_to_last_content_s": round(t_last_content, 3) if t_last_content is not None else None,
         "tail_s": round(tail, 3) if tail is not None else None,
         "events_total": len(events),
         "histogram": dict(histogram),
         "tail_events": (
-            [{"i": e["i"], "t": round(e["t"], 3), "type": e["type"], "gap": round(e["gap"], 3)} for e in events[last_content_idx + 1 :]]
+            [
+                {"i": e["i"], "t": round(e["t"], 3), "type": e["type"], "gap": round(e["gap"], 3)}
+                for e in events[last_content_idx + 1 :]
+            ]
             if last_content_idx >= 0
             else []
         ),
@@ -217,20 +216,24 @@ def _summarize(records: list[dict]) -> dict:
         "runs": len(records),
         "total_s": _stats([r["total_s"] for r in records if r.get("total_s") is not None]),
         "time_to_first_event_s": _stats(
-            [r["time_to_first_event_s"] for r in records if r.get("time_to_first_event_s") is not None]
+            [
+                r["time_to_first_event_s"]
+                for r in records
+                if r.get("time_to_first_event_s") is not None
+            ]
         ),
         "time_to_last_content_s": _stats(
-            [r["time_to_last_content_s"] for r in records if r.get("time_to_last_content_s") is not None]
+            [
+                r["time_to_last_content_s"]
+                for r in records
+                if r.get("time_to_last_content_s") is not None
+            ]
         ),
         "tail_s": _stats([r["tail_s"] for r in records if r.get("tail_s") is not None]),
         # Tail-event types aggregated across all runs — tells us *what*
         # the backend keeps emitting after the visible response is done.
         "tail_event_types": dict(
-            Counter(
-                ev["type"]
-                for r in records
-                for ev in r.get("tail_events", [])
-            )
+            Counter(ev["type"] for r in records for ev in r.get("tail_events", []))
         ),
     }
 
@@ -246,7 +249,7 @@ async def main(args: argparse.Namespace) -> int:
         print(f"project dir not found: {project_dir}", file=sys.stderr)
         return 2
 
-    settings = load_settings(project_dir=project_dir)
+    settings = SettingsLoader.load(project_dir=project_dir)
     if args.model:
         settings.models.default = args.model
     print(f"project_dir={project_dir}")
@@ -280,9 +283,7 @@ async def main(args: argparse.Namespace) -> int:
     records: list[dict] = []
     for i in range(args.runs):
         print(f"\n=== run {i + 1}/{args.runs} ===")
-        record = await _profile_one_run(
-            backend, args.prompt, i, verbose=args.verbose_events
-        )
+        record = await _profile_one_run(backend, args.prompt, i, verbose=args.verbose_events)
         records.append(record)
         print(
             f"  total={record['total_s']}s  "

@@ -1,4 +1,4 @@
-"""igni CLI — the ``ember`` command-line entry point.
+"""igni CLI — the ``igni`` command-line entry point.
 
 Non-interactive command surface. The Textual TUI was removed in
 v0.9.7 — interactive chat now lives in the React clients
@@ -7,10 +7,10 @@ server started via ``python -m igni_core.backend --socket <path>``.
 
 Supported modes:
 
-* ``ember -m "<message>"`` — single-message non-interactive run.
-* ``ember -p`` — pipe mode: read stdin, run one message, write
+* ``igni -m "<message>"`` — single-message non-interactive run.
+* ``igni -p`` — pipe mode: read stdin, run one message, write
   stdout.
-* ``ember`` (no args) — prints help and pointer to the React
+* ``igni`` (no args) — prints help and pointer to the React
   clients; use ``python -m igni_core.backend --socket <path>`` to
   start the backend for a client to connect to.
 

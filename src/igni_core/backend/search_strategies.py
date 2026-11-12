@@ -105,6 +105,9 @@ class RgSearchStrategy(SearchStrategy):
             "--max-filesize=2M",
             "--multiline",
             "--multiline-dotall",
+            # ``--``: a snippet that begins with a dash (``- item``,
+            # ``--flag``) is a pattern, not an option of rg's.
+            "--",
             snippet,
             str(project_root),
         ]
@@ -117,7 +120,18 @@ class RgSearchStrategy(SearchStrategy):
             )
         except subprocess.TimeoutExpired:
             return SearchCodeResult.timed_out()
+        except OSError:
+            # rg was found when the strategy was picked and is gone now
+            # (uninstalled, PATH changed): search without it.
+            return PythonWalkSearchStrategy().search(
+                project_root, snippet, snippet_lines, max_results
+            )
         result = SearchCodeResult()
+        # A multi-line match is printed one row per line it covers; only
+        # the first row starts a match, the rest are inside the last one.
+        covered_to: dict[str, int] = {}
+        last_rel: str | None = None
+        last_line = 0
         for raw_line in (proc.stdout or "").splitlines():
             parts = raw_line.split(":", 2)
             if len(parts) < 3:
@@ -127,10 +141,18 @@ class RgSearchStrategy(SearchStrategy):
                 line = int(line_str)
             except ValueError:
                 continue
+            if line <= covered_to.get(abs_path, 0):
+                continue
+            covered_to[abs_path] = line + snippet_lines - 1
             try:
                 rel = str(Path(abs_path).resolve().relative_to(project_root))
             except ValueError:
                 rel = abs_path
+            # rg prints every line of a multi-line match; the lines after
+            # the first belong to the match already reported.
+            if rel == last_rel and last_line <= line <= last_line + snippet_lines - 1:
+                continue
+            last_rel, last_line = rel, line
             match = SearchCodeMatch(
                 path=rel,
                 line=line,
@@ -164,7 +186,13 @@ class PythonWalkSearchStrategy(SearchStrategy):
         max_results: int,
     ) -> SearchCodeResult:
         result = SearchCodeResult()
-        first_line = snippet.splitlines()[0]
+        # A snippet with nothing in it would "match" at the top of every
+        # file (and used to raise IndexError taking its first line).
+        lines = [line for line in snippet.splitlines() if line.strip()]
+        if not lines:
+            return result
+        # The preview is the first line that shows something.
+        first_line = lines[0]
         for dirpath, dirnames, filenames in os.walk(project_root):
             dirnames[:] = [d for d in dirnames if d not in self._skip_dirs]
             for name in filenames:

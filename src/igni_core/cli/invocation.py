@@ -111,7 +111,11 @@ class CliInvocation:
         see a clear stderr instead of a stack trace."""
         if not self._options.worktree:
             return
-        wm = WorktreeManager(Path.cwd())
+        try:
+            wm = WorktreeManager(Path.cwd())
+        except RuntimeError as exc:  # not a git repository
+            click.echo(f"worktree failed: {exc}", err=True)
+            raise SystemExit(1) from exc
         result = wm.create_result(session_id=self._resume_session_id)
         if not result.ok or result.info is None:
             click.echo(f"worktree failed: {result.message}", err=True)

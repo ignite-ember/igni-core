@@ -257,7 +257,7 @@ class BackendSupervisor:
     def start_evictor(self, sweep_interval_seconds: float = 5 * 60) -> None:
         """Kick off the periodic eviction sweep. Requires
         :meth:`set_pool` to have been called first."""
-        if self._pool is None:  # pragma: no cover — defensive
+        if self._pool is None:
             logger.warning("start_evictor called before set_pool; no sweeps will run")
             return
         self._evictor_task = background.daemon(
@@ -327,8 +327,8 @@ class BackendSupervisor:
         if self._pool is not None:
             try:
                 reports = await self._pool.shutdown()
-            except Exception as exc:  # pragma: no cover — defensive
-                logger.debug("pool shutdown crashed: %s", exc)
+            except Exception as exc:
+                logger.warning("pool shutdown crashed: %s", exc)
             else:
                 for report in reports:
                     if not report.ok:

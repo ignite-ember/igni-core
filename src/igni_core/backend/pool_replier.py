@@ -56,7 +56,11 @@ class PoolReplier:
         resumed, so a client following that stream stops waiting.
         """
         if isinstance(message, msg.RPCRequest):
-            await self.reply(message, PoolAnswer.failed(reason, RpcErrorCode.FORBIDDEN))
+            # An empty reason would make the answer a success with no payload:
+            # a refusal must always read as one.
+            await self.reply(
+                message, PoolAnswer.failed(reason or "Refused.", RpcErrorCode.FORBIDDEN)
+            )
             return
         if isinstance(message, msg.Command):
             await self._answer(

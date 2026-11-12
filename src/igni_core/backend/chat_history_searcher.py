@@ -19,6 +19,28 @@ from __future__ import annotations
 from igni_core.backend.schemas_history import ChatHistoryEntry, ChatSearchHit
 
 
+def _find_ignoring_case(content: str, needle_lower: str) -> tuple[int, int] | None:
+    """``(start, length)`` of the first case-insensitive match, in ``content``'s own characters.
+
+    Lower-casing can change a string's length (``"İ"`` becomes two
+    characters), so a position found in ``content.lower()`` is not a
+    position in ``content``; each lowered character is mapped back to the
+    character it came from.
+    """
+    lowered: list[str] = []
+    origin: list[int] = []
+    for i, ch in enumerate(content):
+        low = ch.lower()
+        lowered.append(low)
+        origin.extend([i] * len(low))
+    pos = "".join(lowered).find(needle_lower)
+    if pos < 0:
+        return None
+    start = origin[pos]
+    end = origin[pos + len(needle_lower) - 1] + 1
+    return start, end - start
+
+
 class ChatHistorySearcher:
     """Case-insensitive substring scan over a typed chat-history list.
 
@@ -50,7 +72,7 @@ class ChatHistorySearcher:
         """
         needle_lower = needle.lower()
         needle_len = len(needle)
-        if needle_len == 0:
+        if needle_len == 0 or limit <= 0:
             return []
         matches: list[ChatSearchHit] = []
         for idx, turn in enumerate(self._history):
@@ -76,17 +98,18 @@ class ChatHistorySearcher:
         content = turn.content
         if not isinstance(content, str) or not content:
             return None
-        pos = content.lower().find(needle_lower)
-        if pos < 0:
+        span = _find_ignoring_case(content, needle_lower)
+        if span is None:
             return None
-        snippet, match_start = self._build_snippet(content, pos, needle_len)
+        pos, match_len = span
+        snippet, match_start = self._build_snippet(content, pos, match_len)
         return ChatSearchHit(
             history_index=idx,
             role=str(turn.role or ""),
             run_id=str(turn.run_id or ""),
             snippet=snippet,
             match_start=match_start,
-            match_end=match_start + needle_len,
+            match_end=match_start + match_len,
             created_at=int(turn.created_at or 0),
         )
 

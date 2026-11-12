@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import statistics
 import subprocess
@@ -72,6 +73,12 @@ async def _rpc(ws, method: str, args: dict | None = None, timeout: float = 5.0):
             return msg
 
 
+def _percentile(values: list[float], p: float) -> float:
+    """Nearest-rank percentile: the ceil(p * n)-th smallest value, clamped to the list."""
+    ordered = sorted(values)
+    return ordered[min(max(math.ceil(p * len(ordered)) - 1, 0), len(ordered) - 1)]
+
+
 async def _measure_rpc_latency(ws, *, samples: int = 10) -> dict:
     times_ms: list[float] = []
     for _ in range(samples):
@@ -80,7 +87,7 @@ async def _measure_rpc_latency(ws, *, samples: int = 10) -> dict:
         times_ms.append((time.monotonic() - t0) * 1000)
     return {
         "p50_ms": round(statistics.median(times_ms), 2),
-        "p95_ms": round(sorted(times_ms)[int(len(times_ms) * 0.95) - 1], 2),
+        "p95_ms": round(_percentile(times_ms, 0.95), 2),
         "max_ms": round(max(times_ms), 2),
         "n": samples,
     }
@@ -129,7 +136,7 @@ def _rss_mb(proc: subprocess.Popen) -> float:
 
 
 async def _drive(n_sessions: int) -> None:
-    project = Path(tempfile.mkdtemp(prefix="ember-prof-"))
+    project = Path(tempfile.mkdtemp(prefix="igni-prof-"))
     print(f"# Project dir: {project}")
 
     print("# Spawning BE…")
@@ -168,9 +175,7 @@ async def _drive(n_sessions: int) -> None:
 
     port = int(ws_url.rsplit(":", 1)[-1])
     rss_at_ready = _rss_mb(proc)
-    print(
-        f"# Cold boot: {boot_secs:.2f}s  ·  RSS at ready: {rss_at_ready:.1f} MiB"
-    )
+    print(f"# Cold boot: {boot_secs:.2f}s  ·  RSS at ready: {rss_at_ready:.1f} MiB")
 
     try:
         # ── Single-session baseline ──
@@ -230,7 +235,7 @@ async def _drive(n_sessions: int) -> None:
         flat_sorted = sorted(flat)
 
         def pct(p: float) -> float:
-            return round(flat_sorted[int(len(flat_sorted) * p) - 1], 2)
+            return round(_percentile(flat_sorted, p), 2)
 
         print(
             f"# Under load ({n_sessions}× 10 RPCs in {stress_secs:.2f}s)  ·  "
@@ -271,6 +276,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sessions", type=int, default=6)
     args = ap.parse_args()
+    if args.sessions < 1:
+        ap.error("--sessions must be at least 1")
     asyncio.run(_drive(args.sessions))
     return 0
 

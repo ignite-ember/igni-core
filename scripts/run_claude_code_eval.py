@@ -9,14 +9,14 @@ runner uses, with a configurable judge model (default: the
 ``IGNI_TEST_LLM_*`` triple, which currently points at MiniMax-M2.7 — keep
 the judge separate from the agent's model to avoid self-grading bias).
 
-Output JSON shape mirrors ``run_codeindex_eval.py``'s ``--out`` so the
-result can sit next to ``v10-with.json`` for side-by-side comparison.
+The result is one JSON file (``--out``) with each case and the totals, so it
+can sit next to another run's file for side-by-side comparison.
 
 Usage:
 
     python scripts/run_claude_code_eval.py \\
-        --suite ember_server_v6 \\
-        --target-project-dir /path/to/igni__server \\
+        --suite main_agent \\
+        --target-project-dir /path/to/a/project \\
         --out /tmp/eval-comparison/claude-code-with.json
 """
 
@@ -33,12 +33,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 for n in ("httpx", "httpcore", "urllib3", "agno", "chromadb", "asyncio"):
     logging.getLogger(n).setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
+
+
+class ClaudeNotFound(Exception):
+    """The ``claude`` CLI is not on PATH."""
 
 
 def _run_claude_code(prompt: str, cwd: Path, timeout: int) -> tuple[str, float, dict]:
@@ -66,6 +68,8 @@ def _run_claude_code(prompt: str, cwd: Path, timeout: int) -> tuple[str, float, 
             text=True,
             timeout=timeout,
         )
+    except FileNotFoundError as exc:
+        raise ClaudeNotFound("the claude CLI was not found on PATH") from exc
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - t0
         return "", elapsed, {"error": "timeout", "stderr": ""}
@@ -98,9 +102,11 @@ def _run_claude_code(prompt: str, cwd: Path, timeout: int) -> tuple[str, float, 
         "duration_api_ms": payload.get("duration_api_ms"),
         "total_cost_usd": payload.get("total_cost_usd"),
         "model": payload.get("model")
-        or payload.get("modelUsage", {}).get("model")
-        if isinstance(payload.get("modelUsage"), dict)
-        else None,
+        or (
+            payload["modelUsage"].get("model")
+            if isinstance(payload.get("modelUsage"), dict)
+            else None
+        ),
     }
     return response_text, elapsed, meta
 
@@ -158,8 +164,8 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--suite",
-        default="ember_server_v6",
-        help="Eval suite YAML name (without .yaml). Default: ember_server_v6.",
+        default="main_agent",
+        help="Eval suite YAML name (without .yaml). Default: main_agent.",
     )
     parser.add_argument(
         "--target-project-dir",
@@ -194,16 +200,17 @@ async def main() -> int:
     if str(igni_core_dir) not in sys.path:
         sys.path.insert(0, str(igni_core_dir))
 
+    from igni_core.core.config.model_entry import ModelRegistryEntry
+    from igni_core.core.config.models import ModelRegistry
     from igni_core.core.config.settings import Settings
     from igni_core.core.evals.loader import load_eval_file
-    from igni_core.core.session.core import ModelRegistry
 
     suite = load_eval_file(yaml_path)
     if suite is None:
         print(f"failed to load suite from {yaml_path}", file=sys.stderr)
         return 1
 
-    # Auto-source .env so the judge can connect — same pattern as run_codeindex_eval.
+    # Auto-source .env so the judge can connect.
     if not os.environ.get("IGNI_TEST_LLM_API_KEY"):
         env_path = igni_core_dir / ".env"
         if env_path.exists():
@@ -212,7 +219,7 @@ async def main() -> int:
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 k, v = line.split("=", 1)
-                os.environ.setdefault(k, v)
+                os.environ.setdefault(k.strip(), v.strip().strip("\"'"))
 
     # Build a judge model from the same IGNI_TEST_LLM_* triple the
     # igni eval runner uses. Keeps the judge model independent of
@@ -227,19 +234,17 @@ async def main() -> int:
             )
         else:
             settings = Settings()
-            base_url = os.environ.get(
-                "IGNI_TEST_LLM_BASE_URL", "https://api.minimax.io/v1"
-            )
+            base_url = os.environ.get("IGNI_TEST_LLM_BASE_URL", "https://api.minimax.io/v1")
             model_id = os.environ.get("IGNI_TEST_LLM_MODEL", "MiniMax-M2.7")
-            settings.models.registry["judge-model"] = {
-                "provider": "openai_like",
-                "model_id": model_id,
-                "url": base_url,
-                "api_key": api_key,
-                "context_window": 200_000,
-                "vision": False,
-                "timeout": 90,
-            }
+            settings.models.registry["judge-model"] = ModelRegistryEntry(
+                provider="openai_like",
+                model_id=model_id,
+                url=base_url,
+                api_key=api_key,
+                context_window=200_000,
+                vision=False,
+                timeout=90,
+            )
             settings.models.default = "judge-model"
             judge_model = ModelRegistry(settings).get_model()
             print(
@@ -255,12 +260,18 @@ async def main() -> int:
     case_results: list[dict] = []
     suite_t0 = time.monotonic()
     for i, case in enumerate(suite.cases, 1):
-        case_timeout = max(120, int(getattr(case, "case_timeout", 360)) + 60)
+        case_timeout = max(120, int(case.case_timeout or 360) + 60)
         print(f"  [case {i}/{len(suite.cases)}] {case.name} starting...", file=sys.stderr)
         sys.stderr.flush()
-        response_text, elapsed, meta = _run_claude_code(
-            case.input, target_dir, case_timeout
-        )
+        try:
+            response_text, elapsed, meta = _run_claude_code(case.input, target_dir, case_timeout)
+        except ClaudeNotFound:
+            print(
+                "error: the claude CLI was not found on PATH — install Claude Code "
+                "or put `claude` on PATH, then run again.",
+                file=sys.stderr,
+            )
+            return 1
         verdict = "ERROR" if meta.get("error") else "ran"
         print(
             f"  [case {i}/{len(suite.cases)}] {case.name} → {verdict} in {elapsed:.1f}s "
@@ -308,7 +319,7 @@ async def main() -> int:
     total = len(case_results)
 
     payload = {
-        "mode": "claude-code (no CodeIndex)",
+        "mode": "claude-code",
         "target_project_dir": str(target_dir),
         "cases": case_results,
         "totals": {

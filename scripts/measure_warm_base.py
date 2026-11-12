@@ -45,6 +45,13 @@ from igni_core.backend.logging_setup import configure_logging
 from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.core.config.managed_policy import ManagedPolicySource
 
+READY_TIMEOUT_S = 60.0
+ANSWER_TIMEOUT_S = 60.0
+
+
+class MeasurementTimeout(Exception):
+    """A wait ran out; the message says which one and for how long."""
+
 
 class FakeModel(BaseHTTPRequestHandler):
     """Answers every chat completion with a streamed "hi"."""
@@ -73,7 +80,16 @@ class FakeModel(BaseHTTPRequestHandler):
 
 
 class WarmBaseMeasurement:
-    def __init__(self, *, database_url: str | None, warm: bool) -> None:
+    def __init__(
+        self,
+        *,
+        database_url: str | None,
+        warm: bool,
+        ready_timeout: float = READY_TIMEOUT_S,
+        answer_timeout: float = ANSWER_TIMEOUT_S,
+    ) -> None:
+        self.ready_timeout = ready_timeout
+        self.answer_timeout = answer_timeout
         self.tmp = Path(tempfile.mkdtemp(prefix="warm-base-"))
         self.run_dir = self.tmp / "run"
         self.project = self.tmp / "project"
@@ -146,6 +162,11 @@ class WarmBaseMeasurement:
         started = time.perf_counter()
         task = asyncio.create_task(app.run())
         while not (self.run_dir / "ready").exists():
+            if time.perf_counter() - started > self.ready_timeout:
+                raise MeasurementTimeout(
+                    f"igni wrote no ready file in {self.run_dir} within {self.ready_timeout:g}s"
+                    " (--ready-timeout)"
+                )
             await asyncio.sleep(0.005)
         ready_at = time.perf_counter()
         rss_ready = self.rss_mb()
@@ -156,13 +177,14 @@ class WarmBaseMeasurement:
         (self.run_dir / "token").write_text(self.token())
         (self.run_dir / "producer.env.tmp").write_text(
             f"IGNI_ACCESS_TOKEN_FILE={self.run_dir / 'token'}\nIGNI_ORG=org-acme\n"
-            f"IGNI_PRODUCER=person:u-ada\nIGNI_DATABASE_URL={self.database_url}\n"
+            f"IGNI_PRODUCER=person:u-ada\nIGNI_PRODUCER_INCARNATION=m-1\n"
+            f"IGNI_DATABASE_URL={self.database_url}\n"
         )
         async with connect(f"ws://127.0.0.1:{port}", max_size=None) as window:
             await window.recv()  # welcome
             handed_at = time.perf_counter()
             os.replace(self.run_dir / "producer.env.tmp", self.run_dir / "producer.env")
-            answered_at = await self._first_answer(window)
+            answered_at = await self._first_answer(window, self.answer_timeout)
             sent_at = time.perf_counter()
             await window.send(json.dumps({"type": "user_message", "id": "u1", "text": "say hi"}))
             last = ""
@@ -190,9 +212,16 @@ class WarmBaseMeasurement:
         }
 
     @staticmethod
-    async def _first_answer(window: Any) -> float:
+    async def _first_answer(window: Any, timeout: float = ANSWER_TIMEOUT_S) -> float:
+        deadline = time.perf_counter() + timeout
         attempt = 0
         while True:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                raise MeasurementTimeout(
+                    f"igni gave no answer without an error to get_status within {timeout:g}s"
+                    f" ({attempt} attempts; --answer-timeout)"
+                )
             attempt += 1
             request_id = f"r{attempt}"
             await window.send(
@@ -201,7 +230,16 @@ class WarmBaseMeasurement:
                 )
             )
             while True:
-                message = json.loads(await window.recv())
+                try:
+                    raw = await asyncio.wait_for(
+                        window.recv(), timeout=max(deadline - time.perf_counter(), 0.001)
+                    )
+                except TimeoutError:
+                    raise MeasurementTimeout(
+                        f"igni did not reply to get_status within {timeout:g}s"
+                        f" (attempt {attempt}; --answer-timeout)"
+                    ) from None
+                message = json.loads(raw)
                 if message.get("id") == request_id:
                     break
             if not message.get("error"):
@@ -213,11 +251,38 @@ class WarmBaseMeasurement:
 @click.option("--out", "out", type=click.Path(path_type=Path), required=True)
 @click.option("--pg", "database_url", default=None, help="A migrated PostgreSQL database URL.")
 @click.option("--no-warm", is_flag=True, default=False, help="Skip WarmImports, for a baseline.")
-def main(out: Path, database_url: str | None, no_warm: bool) -> None:
-    measurement = WarmBaseMeasurement(database_url=database_url, warm=not no_warm)
+@click.option(
+    "--ready-timeout",
+    default=READY_TIMEOUT_S,
+    show_default=True,
+    help="Seconds to wait for igni's ready file.",
+)
+@click.option(
+    "--answer-timeout",
+    default=ANSWER_TIMEOUT_S,
+    show_default=True,
+    help="Seconds to retry get_status for the first answer after binding.",
+)
+def main(
+    out: Path,
+    database_url: str | None,
+    no_warm: bool,
+    ready_timeout: float,
+    answer_timeout: float,
+) -> None:
+    measurement = WarmBaseMeasurement(
+        database_url=database_url,
+        warm=not no_warm,
+        ready_timeout=ready_timeout,
+        answer_timeout=answer_timeout,
+    )
     measurement.prepare()
     configure_logging(debug_flag=False)
-    result = asyncio.run(measurement.run())
+    try:
+        result = asyncio.run(measurement.run())
+    except MeasurementTimeout as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        os._exit(1)
     out.write_text(json.dumps(result, indent=1))
     summary = {k: v for k, v in result.items() if k != "imported_after_ready"}
     summary["imported_after_ready"] = len(result["imported_after_ready"])

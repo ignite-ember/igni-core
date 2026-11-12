@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Onboarding smoke test — exercises the exact path a new user takes
 # the first time they install the desktop app. Replicates what the
-# Tauri shell's bootstrap (igni-app's ``clients/tauri/src-tauri/src/runtime.rs``)
-# does at first launch.
+# desktop shell's bootstrap does at first launch.
 #
 # Steps:
 #
@@ -59,11 +58,10 @@ fi
 # The package this script installs is the one the desktop app installs
 # (``clients/tauri/src-tauri/src/runtime/managed.rs`` runs ``uv pip
 # install igni-core[decisions]==X``) and the one this repository
-# builds. It is not ``ignite-ember``: since the split that name is a
+# builds. It is not the old monolith name: since the split that name is a
 # metadata-only alias that depends on igni-core, and the last
-# ``ignite-ember`` on PyPI still carries the pre-split ``ember_code``
-# package, so installing it left the interpreter with no ``igni_core``
-# to import and the smoke failed on a package nobody ships any more.
+# release of it on PyPI still carries the pre-split monolith package, so
+# installing it left the interpreter with no ``igni_core`` to import and the smoke failed on a package nobody ships any more.
 PACKAGE="igni-core"
 EXTRAS="decisions"
 
@@ -80,7 +78,7 @@ echo "→ Targeting $PACKAGE version: $VERSION (local source: $LOCAL)"
 #      workflow's failure step went looking for them.
 #   2. ``mktemp -d -t`` honours $TMPDIR. On macOS that is
 #      /var/folders/<...>/T, not /tmp — so a workflow globbing
-#      /tmp/ember-onboarding-*/ was wrong on the macOS leg even when a
+#      /tmp/igni-onboarding-*/ was wrong on the macOS leg even when a
 #      directory did survive.
 #
 # A fixed, workspace-relative default kills both: the path is identical
@@ -101,7 +99,7 @@ fi
 echo "→ Backend logs: $LOG_DIR"
 
 # ── Temp cache ──────────────────────────────────────────────────────
-CACHE_DIR="$(mktemp -d -t ember-onboarding-XXXXXX)"
+CACHE_DIR="$(mktemp -d -t igni-onboarding-XXXXXX)"
 echo "→ Using temp cache: $CACHE_DIR"
 # Step 6 makes a second temp dir. It is declared here, empty, so the one
 # EXIT handler below owns every path this script creates: bash keeps a
@@ -225,7 +223,7 @@ STEP_START=$(date +%s)
 echo "→ Step 6: launching backend and waiting for ready line"
 # No ``trap`` here — cleanup() above already removes this dir. Adding a
 # second EXIT trap would replace the first one (see the note there).
-PROJECT_DIR="$(mktemp -d -t ember-be-test-XXXXXX)"
+PROJECT_DIR="$(mktemp -d -t igni-be-test-XXXXXX)"
 
 # Spawn BE in background, capture stdout, wait for ready JSON.
 # These live in $LOG_DIR, not $CACHE_DIR, so cleanup() can drop the

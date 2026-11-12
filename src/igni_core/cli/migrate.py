@@ -20,6 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import click
+from sqlalchemy.exc import OperationalError
 
 from igni_core.core.config.settings import Settings
 from igni_core.core.data_paths import canonical_project_dir
@@ -85,7 +86,23 @@ def migrate(project_dir: Path | None, data_dir: Path | None, database_url: str |
     project = canonical_project_dir(project_dir if project_dir is not None else Path.cwd())
     migration = SchemaMigration(locator, project)
     for url in migration.targets():
-        click.echo(migration.migrate(url))
+        try:
+            report = migration.migrate(url)
+        except OperationalError as exc:
+            # An unreachable server or a refused login: say which database and
+            # why, not a SQLAlchemy traceback. The URL is the redacted one.
+            where = url.file if url.file is not None else url.redacted
+            raise click.ClickException(f"could not migrate {where}: {exc.orig or exc}") from exc
+        except ImportError as exc:
+            # The URL names a database whose driver is not installed (a
+            # PostgreSQL URL on an install without psycopg): say so, not a
+            # ModuleNotFoundError traceback.
+            where = url.file if url.file is not None else url.redacted
+            driver = exc.name or "its driver"
+            raise click.ClickException(
+                f"could not migrate {where}: {driver} is not installed"
+            ) from exc
+        click.echo(report)
 
 
 __all__ = ["SchemaMigration", "migrate"]

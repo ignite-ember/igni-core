@@ -79,7 +79,7 @@ files and directories:
 3. Read src/igni_core/frontend/tui/ structure
 4. Read pyproject.toml
 5. Read README.md
-6. Read ember.md
+6. Read igni.md
 7. Read agents/architect.md to understand the architect agent
 8. List docs/ directory
 
@@ -94,7 +94,7 @@ Return a detailed architectural summary covering:
 
 
 async def main():
-    work_dir = Path(tempfile.mkdtemp(prefix="ember-repro-"))
+    work_dir = Path(tempfile.mkdtemp(prefix="igni-repro-"))
     agent = build_explorer_agent(work_dir)
 
     print(f"=== Running explorer with the long task in {work_dir} ===\n")

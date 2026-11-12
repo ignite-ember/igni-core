@@ -266,7 +266,7 @@ class PluginInstaller:
         except GitError as e:
             raise PluginError(f"Failed to fetch updates for plugin '{name}': {e}") from e
 
-        target = ref or f"origin/{self._git.head_branch(plugin_dir)}"
+        target = self._update_target(plugin_dir, ref)
         self._git.reset_hard(plugin_dir, target)
 
         new_sha = self._git.current_sha(plugin_dir)
@@ -281,6 +281,26 @@ class PluginInstaller:
             target,
         )
         return new_sha
+
+    def _update_target(self, plugin_dir: Path, ref: str | None) -> str:
+        """What to reset to: the remote's current commit for *ref* (its default
+        branch when ``None``), not a stale local branch.
+
+        A plugin installed at a tag was cloned single-branch, so the remote's
+        branches are not in the clone: the remote is asked for the ref."""
+        if ref is None:
+            try:
+                self._git.fetch_ref(plugin_dir, "HEAD")
+            except GitError:
+                return f"origin/{self._git.head_branch(plugin_dir)}"
+            return "FETCH_HEAD"
+        if self._git.has_ref(plugin_dir, f"origin/{ref}"):
+            return f"origin/{ref}"
+        try:
+            self._git.fetch_ref(plugin_dir, ref)
+        except GitError:
+            return ref
+        return "FETCH_HEAD"
 
     def source_of(self, name: str) -> str | None:
         """Where *name* updates from: the URL recorded at install, else its
