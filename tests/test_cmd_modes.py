@@ -46,11 +46,14 @@ class TestTheArgumentGrammar:
         session = _session()
         result = await CommandHandler(session).handle(f"{command} {token}")
         assert result.kind is CommandResultKind.MARKDOWN
-        assert _mode(session) is {
-            "/plan": PermissionMode.PLAN,
-            "/accept": PermissionMode.ACCEPT_EDITS,
-            "/bypass": PermissionMode.BYPASS_PERMISSIONS,
-        }[command]
+        assert (
+            _mode(session)
+            is {
+                "/plan": PermissionMode.PLAN,
+                "/accept": PermissionMode.ACCEPT_EDITS,
+                "/bypass": PermissionMode.BYPASS_PERMISSIONS,
+            }[command]
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
