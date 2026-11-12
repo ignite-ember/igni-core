@@ -9,14 +9,14 @@ runner uses, with a configurable judge model (default: the
 ``IGNI_TEST_LLM_*`` triple, which currently points at MiniMax-M2.7 — keep
 the judge separate from the agent's model to avoid self-grading bias).
 
-Output JSON shape mirrors ``run_codeindex_eval.py``'s ``--out`` so the
-result can sit next to ``v10-with.json`` for side-by-side comparison.
+The result is one JSON file (``--out``) with each case and the totals, so it
+can sit next to another run's file for side-by-side comparison.
 
 Usage:
 
     python scripts/run_claude_code_eval.py \\
         --suite main_agent \\
-        --target-project-dir /path/to/igni__server \\
+        --target-project-dir /path/to/a/project \\
         --out /tmp/eval-comparison/claude-code-with.json
 """
 
@@ -210,7 +210,7 @@ async def main() -> int:
         print(f"failed to load suite from {yaml_path}", file=sys.stderr)
         return 1
 
-    # Auto-source .env so the judge can connect — same pattern as run_codeindex_eval.
+    # Auto-source .env so the judge can connect.
     if not os.environ.get("IGNI_TEST_LLM_API_KEY"):
         env_path = igni_core_dir / ".env"
         if env_path.exists():
@@ -319,7 +319,7 @@ async def main() -> int:
     total = len(case_results)
 
     payload = {
-        "mode": "claude-code (no CodeIndex)",
+        "mode": "claude-code",
         "target_project_dir": str(target_dir),
         "cases": case_results,
         "totals": {

@@ -15,7 +15,7 @@ Plus a free-text ``hallucinations`` field for any invented file
 paths, class names, or APIs the response references that don't
 exist in the target codebase.
 
-Reads two run JSONs (WITH / WITHOUT codeindex), prompts the
+Reads two run JSONs (WITH / WITHOUT whatever is being compared), prompts the
 eval-model (same MiniMax-M2.7 used by the original eval) with each
 response + its judge_guidelines, parses structured JSON back,
 prints a per-case A/B/C comparison table and dumps a summary JSON.

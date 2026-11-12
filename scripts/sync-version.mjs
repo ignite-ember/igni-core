@@ -5,8 +5,6 @@
 // the files that carry their own copy: the package's ``__init__.py``, and
 // packages/ignite-ember (the old name), whose version and igni-core pins
 // are igni-core's.
-// igni-app's desktop shell is released under the same version, from its
-// own ``igni-core.version`` (its scripts/sync-version.mjs).
 //
 // Run from anywhere — the script resolves paths relative to itself.
 //

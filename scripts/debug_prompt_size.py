@@ -43,7 +43,7 @@ async def main() -> None:
         settings=settings,
     )
 
-    # Wait for any background warm-ups to settle so the codeindex /
+    # Wait for any background warm-ups to settle so the
     # learning context is fully assembled.
     await asyncio.sleep(0.5)
 
@@ -93,9 +93,7 @@ async def main() -> None:
     width = max(len(k) for k, _ in sections)
     for name, n in sections:
         pct = (n / total * 100) if total else 0
-        print(
-            f"  {name.ljust(width)}  {n:>7,} chars  ~{chars_to_tokens(n):>6,} tok  ({pct:5.1f}%)"
-        )
+        print(f"  {name.ljust(width)}  {n:>7,} chars  ~{chars_to_tokens(n):>6,} tok  ({pct:5.1f}%)")
     print()
     print(f"  TOTAL{' ' * (width - 4)}    {total:>7,} chars  ~{chars_to_tokens(total):>6,} tok")
     print()

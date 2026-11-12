@@ -34,3 +34,28 @@ def test_a_script_does_not_use_the_old_product_name(name):
     text = (_SCRIPTS / name).read_text().lower()
 
     assert "ember" not in text, f"{name} still names the product by its old name"
+
+
+# Other repositories, spelled in pieces so this guard does not trip on itself.
+_OTHER_REPOS = [
+    "igni" + "-server",
+    "igni" + "__",
+    "igni" + "-app",
+    "igni" + "-sdk",
+    "code" + "-index",
+    "code" + "index",
+]
+# reindex_hnsw.py is being moved out of the repository separately.
+_EXEMPT = {"reindex_hnsw.py"}
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted(p for p in _SCRIPTS.iterdir() if p.is_file() and p.name not in _EXEMPT),
+    ids=lambda p: p.name,
+)
+def test_a_script_names_no_other_repository(path):
+    text = path.read_text().lower()
+
+    found = [name for name in _OTHER_REPOS if name in text]
+    assert not found, f"{path.name} names another repository: {found}"

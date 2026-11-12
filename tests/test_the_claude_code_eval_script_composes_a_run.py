@@ -272,7 +272,7 @@ def test_the_output_file_has_the_mode_target_cases_and_totals_and_exit_0_when_al
     result = json.loads(out.read_text())
     assert code == 0
     assert list(result) == ["mode", "target_project_dir", "cases", "totals"]
-    assert result["mode"] == "claude-code (no CodeIndex)"
+    assert result["mode"] == "claude-code"
     assert result["target_project_dir"] == str(home.target.resolve())
     (case,) = result["cases"]
     assert case["case"]["name"] == "a"
