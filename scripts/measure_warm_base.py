@@ -156,7 +156,8 @@ class WarmBaseMeasurement:
         (self.run_dir / "token").write_text(self.token())
         (self.run_dir / "producer.env.tmp").write_text(
             f"IGNI_ACCESS_TOKEN_FILE={self.run_dir / 'token'}\nIGNI_ORG=org-acme\n"
-            f"IGNI_PRODUCER=person:u-ada\nIGNI_DATABASE_URL={self.database_url}\n"
+            f"IGNI_PRODUCER=person:u-ada\nIGNI_PRODUCER_INCARNATION=m-1\n"
+            f"IGNI_DATABASE_URL={self.database_url}\n"
         )
         async with connect(f"ws://127.0.0.1:{port}", max_size=None) as window:
             await window.recv()  # welcome
