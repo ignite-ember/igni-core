@@ -24,6 +24,7 @@ _NAMES = [
     "onboarding-smoke.sh",
     "probe_rate_limits.py",
     "profile_run.py",
+    "reindex_hnsw.py",
     "run_claude_code_eval.py",
 ]
 
