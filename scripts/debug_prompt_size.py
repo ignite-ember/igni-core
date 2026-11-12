@@ -15,6 +15,7 @@ ship in any UI.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import sys
 from pathlib import Path
 
@@ -52,7 +53,7 @@ async def main() -> None:
 
     for i, ins in enumerate(instructions):
         s = ins if isinstance(ins, str) else str(ins)
-        first_line = s.lstrip().splitlines()[0][:60] if s else "(empty)"
+        first_line = (s.strip().splitlines() or ["(empty)"])[0][:60]
         sections.append((f"instructions[{i}]  {first_line!r}", len(s)))
 
     # Tools catalogue (each tool's schema goes into the model prompt).
@@ -101,7 +102,11 @@ async def main() -> None:
     print("Per-turn input also includes conversation history + the actual user")
     print("message — those grow with the chat, not visible here.")
 
-    await sess.close() if hasattr(sess, "close") else None
+    closer = getattr(sess, "close", None)
+    if callable(closer):
+        closed = closer()
+        if inspect.isawaitable(closed):
+            await closed
 
 
 asyncio.run(main())
