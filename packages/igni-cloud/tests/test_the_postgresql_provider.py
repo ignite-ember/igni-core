@@ -9,6 +9,7 @@ Each test needs ``IGNI_TEST_DATABASE_URL``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from pathlib import Path
 
@@ -74,16 +75,12 @@ def test_a_table_that_was_never_prepared_is_not_made_by_a_producer():
 
         async def read() -> object:
             try:
-                return await _agno_db(PostgresStorage(), url).get_session(
-                    "s1", SessionType.AGENT
-                )
+                return await _agno_db(PostgresStorage(), url).get_session("s1", SessionType.AGENT)
             finally:
                 await engines.reset_pools()
 
-        try:
+        with contextlib.suppress(Exception):  # whatever Agno says of a missing table
             asyncio.run(read())
-        except Exception:  # noqa: BLE001 - whatever Agno says of a missing table
-            pass
         with engines.get_engine(url).connect() as connection:
             made = connection.scalar(
                 text("SELECT count(*) FROM pg_tables WHERE tablename = :name"),
