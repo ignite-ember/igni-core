@@ -81,14 +81,8 @@ def test_every_window_only_command_is_refused_to_a_program(command: str) -> None
 
 
 def test_the_window_only_commands_are_the_ones_that_loosen_or_sign_in() -> None:
-    assert standing_policy.WINDOW_ONLY_COMMANDS == {
-        "/bypass",
-        "/accept",
-        "/plugin",
-        "/eject",
-        "/login",
-        "/logout",
-    }
+    expected = {"/bypass", "/accept", "/plugin", "/eject", "/login", "/logout"}
+    assert expected == standing_policy.WINDOW_ONLY_COMMANDS
 
 
 @pytest.mark.parametrize("text", ["", "   ", "\n", "/", "/ plugin"])
