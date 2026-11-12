@@ -627,3 +627,113 @@ async def test_a_cancel_with_no_agent_pending_marks_the_next_phase_close_cancell
     statuses = [e["payload"]["status"] for e in node.of("phase_completed")]
     assert statuses == ["cancelled", "cancelled"]
     assert node.events[-1]["payload"]["status"] == "cancelled"
+
+
+# ── parallel() and pipeline() ──
+
+
+async def test_parallel_runs_every_lane_and_reports_each_and_the_group(tmp_path: Path) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "phase('p')\n"
+        "const r = await parallel([() => 'a', async () => 'b', () => Promise.resolve('c')])\n"
+        "return r\n",
+    )
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] == ["a", "b", "c"]
+    phase_id = node.of("phase_started")[0]["payload"]["phase_id"]
+    [group] = (e["payload"] for e in node.of("parallel_started"))
+    assert group["lane_count"] == 3
+    assert group["phase_id"] == phase_id
+    lanes = [e["payload"] for e in node.of("parallel_lane_started")]
+    assert [lane["index"] for lane in lanes] == [0, 1, 2]
+    assert [lane["lane_id"] for lane in lanes] == [
+        f"{group['group_id']}_lane_{i}" for i in range(3)
+    ]
+    done = sorted(
+        (e["payload"] for e in node.of("parallel_lane_completed")), key=lambda p: p["index"]
+    )
+    assert [(d["index"], d["status"]) for d in done] == [
+        (0, "completed"),
+        (1, "completed"),
+        (2, "completed"),
+    ]
+    [end] = (e["payload"] for e in node.of("parallel_completed"))
+    assert end["group_id"] == group["group_id"]
+    assert end["status"] == "completed"
+
+
+async def test_an_empty_parallel_resolves_to_an_empty_list(tmp_path: Path) -> None:
+    node, code, _ = await run(tmp_path, "return await parallel([])\n")
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] == []
+    assert node.of("parallel_started")[0]["payload"]["lane_count"] == 0
+    assert node.of("parallel_completed")[0]["payload"]["status"] == "completed"
+
+
+async def test_a_failing_lane_rejects_the_group_and_is_reported_failed(tmp_path: Path) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "try {\n"
+        "  await parallel([() => 'ok', () => { throw new Error('sync boom') }, async () => 'fine'])\n"
+        "} catch (e) { return 'caught ' + e.message }\n",
+    )
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] == "caught sync boom"
+    by_index = {e["payload"]["index"]: e["payload"] for e in node.of("parallel_lane_completed")}
+    assert by_index[1]["status"] == "failed"
+    assert by_index[1]["error"] == "sync boom"
+    assert by_index[0]["status"] == "completed"
+    end = node.of("parallel_completed")[0]["payload"]
+    assert end["status"] == "failed"
+    assert end["error"] == "sync boom"
+
+
+async def test_pipeline_passes_each_result_on_and_reports_steps_and_completion(
+    tmp_path: Path,
+) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "phase('p')\n"
+        "return await pipeline([(x) => [x], (x) => [...x, 'two'], async (x) => [...x, 'three']])\n",
+    )
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] == [None, "two", "three"]
+    phase_id = node.of("phase_started")[0]["payload"]["phase_id"]
+    [start] = (e["payload"] for e in node.of("pipeline_started"))
+    assert start["step_count"] == 3
+    assert start["phase_id"] == phase_id
+    steps = [e["payload"] for e in node.of("pipeline_step_completed")]
+    assert [s["index"] for s in steps] == [0, 1, 2]
+    assert {s["group_id"] for s in steps} == {start["group_id"]}
+    [end] = (e["payload"] for e in node.of("pipeline_completed"))
+    assert end["status"] == "completed"
+
+
+async def test_an_empty_pipeline_resolves_to_undefined(tmp_path: Path) -> None:
+    node, code, _ = await run(tmp_path, "return await pipeline([])\n")
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] is None
+    assert node.of("pipeline_completed")[0]["payload"]["status"] == "completed"
+
+
+async def test_a_failing_step_stops_the_pipeline_and_reports_it(tmp_path: Path) -> None:
+    node, code, _ = await run(
+        tmp_path,
+        "try {\n"
+        "  await pipeline([() => 1, () => { throw new Error('step broke') }, () => log('never')])\n"
+        "} catch (e) { return e.message }\n",
+    )
+
+    assert code == 0
+    assert node.events[-1]["payload"]["result"] == "step broke"
+    assert [e["payload"]["index"] for e in node.of("pipeline_step_completed")] == [0]
+    assert node.of("log") == []
+    end = node.of("pipeline_completed")[0]["payload"]
+    assert end["status"] == "failed"
+    assert end["error"] == "step broke"
