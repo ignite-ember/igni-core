@@ -67,7 +67,7 @@ class HeadlessRun:
         try:
             asyncio.run(self.drain_after(session))
         except SystemExit as exc:  # a hook or handler asked for a specific code
-            code = int(exc.code or 0)
+            code = self._exit_code(exc)
         except BaseException:  # noqa: BLE001 — report, then still exit cleanly
             traceback.print_exc()
             code = 1
@@ -88,6 +88,18 @@ class HeadlessRun:
             os._exit(code)
         if code:
             raise SystemExit(code)
+
+    @staticmethod
+    def _exit_code(exc: SystemExit) -> int:
+        """The status ``SystemExit`` means: none is 0, a number is itself, and
+        anything else (``sys.exit("message")``) is the message on stderr and 1,
+        as the interpreter itself treats it."""
+        if exc.code is None:
+            return 0
+        if isinstance(exc.code, int):
+            return exc.code
+        print(exc.code, file=sys.stderr)
+        return 1
 
     @staticmethod
     def _lingering_threads() -> list[threading.Thread]:
