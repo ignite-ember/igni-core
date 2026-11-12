@@ -57,16 +57,13 @@ class MCPToolStateStore:
     def save(self, disabled: dict[str, set[str]]) -> None:
         """Write the state file. Empty inner sets are pruned so the
         blob only carries servers with at least one disabled tool.
-        Silent on filesystem errors — a save that fails should not
-        crash the caller's tool-toggle path."""
+        Raises :class:`OSError` when the file cannot be written: a
+        choice that was not kept must not be reported as saved."""
         path = self.path()
         if not path:
             return
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "disabled": {server: sorted(tools) for server, tools in disabled.items() if tools}
-            }
-            path.write_text(json.dumps(payload, indent=2) + "\n")
-        except OSError as exc:
-            logger.warning("MCP tool state write failed (%s): %s", path, exc)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "disabled": {server: sorted(tools) for server, tools in disabled.items() if tools}
+        }
+        path.write_text(json.dumps(payload, indent=2) + "\n")

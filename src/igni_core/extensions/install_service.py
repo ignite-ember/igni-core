@@ -178,7 +178,12 @@ class ExtensionConnection:
         by_bare = {bare_tool_name(server, name): name for name in self._mcp.get_tools(server)}
         refused = permissions.tools.refused(by_bare)
         for tool in refused:
-            self._mcp.set_tool_enabled(server, by_bare[tool], False)
+            try:
+                self._mcp.set_tool_enabled(server, by_bare[tool], False)
+            except OSError as exc:
+                # Withheld for this session all the same; only the note
+                # that would keep it withheld for the next could not be written.
+                logger.warning("could not record %s's withheld tool %s: %s", server, tool, exc)
         if refused:
             logger.info(
                 "extension %s offered %d tools its manifest does not declare; not registering %s",
