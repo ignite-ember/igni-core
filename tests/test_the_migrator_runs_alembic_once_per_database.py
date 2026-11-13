@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from igni_core.core.db import migrations
-from igni_core.core.db.migrations import Migrator, upgrade_to_head
+from igni_core.core.db.migrations import Migrator, SchemaTooNew, upgrade_to_head
 from igni_core.core.db.urls import DatabaseUrl
 
 INI = """\
@@ -207,3 +207,19 @@ def test_the_module_level_upgrade_goes_through_whichever_migrator_is_current(
     monkeypatch.setattr(migrations, "migrator", Migrator(package(tmp_path / "pkg")))
     upgrade_to_head(tmp_path / "state.db")
     assert "made_by_the_migration" in tables(tmp_path / "state.db")
+
+
+def test_a_database_a_newer_igni_wrote_says_so_instead_of_alembics_own_words(tmp_path: Path):
+    path = tmp_path / "state.db"
+    root = package(tmp_path / "pkg")
+    migrator = Migrator(root)
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        connection.execute("INSERT INTO alembic_version VALUES ('ffffnewer')")
+    with pytest.raises(SchemaTooNew, match="newer igni") as refusal:
+        migrator.upgrade_to_head(path)
+    assert "ffffnewer" in str(refusal.value)
+    assert "Can't locate" not in str(refusal.value)
+    # Not remembered as upgraded: a retry asks again.
+    with pytest.raises(SchemaTooNew):
+        migrator.upgrade_to_head(path)

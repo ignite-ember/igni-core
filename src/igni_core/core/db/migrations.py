@@ -40,9 +40,14 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.util import CommandError
 
 from igni_core.core.db.engine_registry import DatabaseTarget
 from igni_core.core.db.urls import DatabaseUrl
+
+
+class SchemaTooNew(RuntimeError):
+    """The database was written by a newer igni than this one."""
 
 
 class Migrator:
@@ -110,7 +115,19 @@ class Migrator:
             # skips ``fileConfig``, which would otherwise replace the root
             # handlers on every single startup.
             cfg.attributes["configure_logging"] = False
-            command.upgrade(cfg, "head")
+            try:
+                command.upgrade(cfg, "head")
+            except CommandError as failure:
+                if "Can't locate revision" not in str(failure):
+                    raise
+                # The database's revision is not one of this igni's: a newer
+                # igni migrated it. Say so rather than alembic's own wording.
+                from igni_core.core.db.schema import SchemaRevision
+
+                raise SchemaTooNew(
+                    f"{url.redacted} was written by a newer igni (schema revision "
+                    f"{SchemaRevision.of(url)}): upgrade igni to open it"
+                ) from failure
             self._upgraded.add(url.url)
 
 
