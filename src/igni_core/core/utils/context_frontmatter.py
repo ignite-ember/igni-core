@@ -40,6 +40,7 @@ def parse_frontmatter(content: str) -> tuple[list[str], str]:
     forms:
     - Inline list: ``paths: ["docs/**", "tests/**"]``
     - Block list:  ``paths:\\n  - docs/**\\n  - tests/**``
+    - One value:   ``paths: docs/**``
 
     Other frontmatter keys are ignored — callers only care about
     ``paths`` here. A future extension (e.g. ``priority``) would
@@ -63,6 +64,13 @@ def parse_frontmatter(content: str) -> tuple[list[str], str]:
                     item = item.strip().strip('"').strip("'")
                     if item:
                         paths.append(item)
+                in_block = False
+            elif inline:
+                # A single value is that one glob; read as no paths, the rule
+                # applied everywhere, the opposite of what it asked for.
+                value = inline.strip('"').strip("'")
+                if value:
+                    paths.append(value)
                 in_block = False
             continue
         if in_block:
