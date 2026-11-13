@@ -31,7 +31,7 @@ def test_each_message_has_its_own_files() -> None:
     assert second.files == {} and not second.has_files()
 
 
-@pytest.mark.parametrize("content", [None, 3, b"bytes", ["x"]])
+@pytest.mark.parametrize("content", [None, 3, ["x"], {"a": 1}])
 def test_content_that_is_not_text_is_refused(content: object) -> None:
     with pytest.raises(ValidationError):
         ChatAttachments(files={"a.txt": content})  # type: ignore[dict-item]
