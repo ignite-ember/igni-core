@@ -174,7 +174,12 @@ class ContextWindowResolver:
             data = resp.json()
             for key in ("context_window", "context_length", "max_model_len"):
                 if key in data:
-                    return _FetchOutcome.ok(int(data[key]))
+                    value = int(data[key])
+                    if value <= 0:
+                        # A window of zero or less is no answer: cached, it
+                        # would leave nothing of the context to fill.
+                        raise ValueError(f"{key} must be positive, got {value}")
+                    return _FetchOutcome.ok(value)
             logger.debug(
                 "Context-window fetch for %s missing known keys in payload",
                 model_id,
