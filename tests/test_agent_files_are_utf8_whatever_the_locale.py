@@ -11,9 +11,15 @@ import os
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 
-def _run(script: str, arg: str) -> subprocess.CompletedProcess[str]:
+def _run(script: str, arg: str, where: Path) -> subprocess.CompletedProcess[str]:
+    # The script goes in a file in ``where``, not after -c: under an ASCII
+    # locale Linux cannot decode a non-ASCII command-line argument, while a
+    # source file is read as UTF-8 whatever the locale.
+    probe = where / "locale_probe.py"
+    probe.write_text(script, encoding="utf-8")
     env = {
         **os.environ,
         "LC_ALL": "C",
@@ -22,7 +28,12 @@ def _run(script: str, arg: str) -> subprocess.CompletedProcess[str]:
         "PYTHONCOERCECLOCALE": "0",
     }
     return subprocess.run(
-        [sys.executable, "-c", script, arg], env=env, capture_output=True, text=True, timeout=120
+        [sys.executable, str(probe), arg],
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
     )
 
 
@@ -48,7 +59,7 @@ def test_an_ephemeral_agent_with_unicode_survives_the_locale(tmp_path) -> None:
         assert definition.system_prompt == "Grüße ✓", definition.system_prompt
         """
     )
-    done = _run(script, str(tmp_path))
+    done = _run(script, str(tmp_path), tmp_path)
     assert done.returncode == 0, done.stderr
 
 
@@ -68,5 +79,5 @@ def test_an_agent_file_with_unicode_is_read_as_utf8_under_an_ascii_locale(tmp_pa
         assert definition.system_prompt == "Grüße ✓", definition.system_prompt
         """
     )
-    done = _run(script, str(tmp_path / "a.md"))
+    done = _run(script, str(tmp_path / "a.md"), tmp_path)
     assert done.returncode == 0, done.stderr

@@ -220,9 +220,22 @@ def test_every_mount_comes_after_the_tmpfs_that_would_hide_it(tmp_path):
     assert last_tmpfs < first_bind
 
 
+def _outside_the_hidden_directories() -> Path:
+    """An existing directory under none of ``HIDDEN``. pytest's ``tmp_path`` will
+    not do on Linux: it sits under /tmp, which is hidden, and a home inside a
+    hidden directory is rightly not hidden twice. Only the command line is
+    written here, so nothing is mounted over it."""
+    for candidate in ("/srv", "/opt", "/usr/local", "/usr"):
+        path = Path(candidate)
+        if path.is_dir() and not any(
+            path == Path(h) or Path(h) in path.parents for h in bubblewrap.HIDDEN
+        ):
+            return path
+    pytest.skip("no directory outside the hidden ones exists here")
+
+
 def test_what_the_person_keeps_in_home_run_and_tmp_is_replaced_by_an_empty_tmpfs(tmp_path):
-    elsewhere = tmp_path / "elsewhere-home"
-    elsewhere.mkdir()
+    elsewhere = _outside_the_hidden_directories()
     argv = _command(_plan(tmp_path), home=elsewhere)
     hidden = _mounts(argv, "--tmpfs")
     # Home is hidden wherever it lives; the fixed directories only if they exist.

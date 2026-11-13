@@ -185,7 +185,11 @@ def test_memory_is_utf8_on_a_machine_whose_locale_is_not(tmp_path: Path) -> None
         "PYTHONCOERCECLOCALE": "0",
         "PYTHONIOENCODING": "utf-8",
     }
+    # In a file, not after -c: under an ASCII locale Linux cannot decode a
+    # non-ASCII command-line argument; a source file is read as UTF-8.
+    probe = tmp_path / "locale_probe.py"
+    probe.write_text(code, encoding="utf-8")
     done = subprocess.run(
-        [sys.executable, "-c", code, str(tmp_path)], env=env, capture_output=True, check=True
+        [sys.executable, str(probe), str(tmp_path)], env=env, capture_output=True, check=True
     )
     assert done.stdout.decode("utf-8") == "naïve — “quoted” ✓|ünï|naïve — “quoted” ✓"
