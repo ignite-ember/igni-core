@@ -295,8 +295,11 @@ class VmCredentials:
                     await asyncio.sleep(self.FILE_POLL_SECONDS)
         finally:
             directory.close()
+        # Not forced: a sign-in writes this file too, and one seen before the
+        # sign-in had finished (at once, where inotify watches) must not renew
+        # the credential just issued. A file the node agent wrote is not fresh.
         if self._state is not CredentialState.READY:
-            await self.refresh()
+            await self.refresh(force=False)
 
     def expired(self) -> bool:
         """The token in the file may no longer be sent (wall clock)."""
