@@ -151,6 +151,29 @@ class TestEachCallIsLogged:
         assert kwargs == {"assistant_message": "a", "tools": None}
         assert [m["content"] for m in args[0]] == ["look", "plain"]
 
+    async def test_messages_passed_by_keyword_as_agno_does_are_flattened_on_all_four_calls(
+        self, monkeypatch, make, provider, url
+    ) -> None:
+        """Agno calls ``self.invoke(**kwargs)``; reading only the first positional argument,
+        the flattening never ran in production."""
+        logger = RecordingLogger()
+        seen = _install_recorders(monkeypatch, provider)
+        model = _build(make, url, logger)
+        history = _messages()
+
+        model.invoke(messages=history, assistant_message="a")
+        await model.ainvoke(messages=history, assistant_message="a")
+        stream = model.invoke_stream(messages=history, assistant_message="a")
+        next(stream)
+        stream.close()
+        astream = model.ainvoke_stream(messages=history, assistant_message="a")
+        await astream.__anext__()
+        await astream.aclose()
+
+        assert [[m["content"] for m in s[2]["messages"]] for s in seen] == [["look", "plain"]] * 4
+        assert all(s[1] == () and s[2]["assistant_message"] == "a" for s in seen)
+        assert history[0]["content"] == [{"type": "text", "text": "look"}, IMAGE]
+
     def test_a_vision_model_is_handed_the_content_as_it_was(
         self, monkeypatch, make, provider, url
     ) -> None:
