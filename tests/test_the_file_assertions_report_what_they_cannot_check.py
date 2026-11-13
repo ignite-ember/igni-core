@@ -90,6 +90,14 @@ class TestPathResolution:
         monkeypatch.chdir(tmp_path)
         assert FileExists(path="rel.txt").check(None).passed is True
 
+    def test_a_relative_path_is_looked_up_in_the_work_dir_not_the_cwd(self, tmp_path, monkeypatch):
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        (sandbox / "only_here.txt").write_text("x")
+        monkeypatch.chdir(tmp_path)
+        assert FileExists(path="only_here.txt").check(sandbox).passed is True
+        assert FileExists(path="only_here.txt").check(None).passed is False
+
     def test_an_empty_path_resolves_to_the_work_dir_itself(self, tmp_path):
         assert FileNotExists(path="").check(tmp_path).passed is False
 
