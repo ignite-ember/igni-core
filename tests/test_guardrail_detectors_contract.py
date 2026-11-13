@@ -107,6 +107,8 @@ class TestPIIFindings:
         ("text", "finding"),
         [
             ("write to a.b+tag@example.com now", "email: a.b+tag@example.com"),
+            ("write to a@mail.example.com now", "email: a@mail.example.com"),
+            ("write to a@mail.example.co.uk.", "email: a@mail.example.co.uk"),
             ("call 555-123-4567", "phone: 555-123-4567"),
             ("call 555.123.4567", "phone: 555.123.4567"),
             ("call 555 123 4567", "phone: 555 123 4567"),

@@ -9,7 +9,9 @@ from igni_core.core.guardrails.base import Guardrail, GuardrailResult
 
 # Patterns map: label -> compiled regex
 _PATTERNS: dict[str, re.Pattern[str]] = {
-    "email": re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}"),
+    # One or more domain labels before the top-level one, so a@mail.example.com
+    # is found whole rather than as a@mail.example.
+    "email": re.compile(r"[a-zA-Z0-9_.+-]+@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}"),
     "phone": re.compile(
         r"(?<!\d)"  # not preceded by digit
         r"(?:\+?1[-.\s]?)?"  # optional country code
