@@ -229,6 +229,20 @@ async def test_the_request_names_the_session_and_asks_for_an_event_stream(server
     assert "last-event-id" not in request.headers
 
 
+async def test_a_cursor_with_unusual_characters_is_sent_back_as_it_came(server, rig):
+    rig.follower.start()
+    await server.wait_connected()
+    await server.wake("c-é7")
+    await settle()
+    assert rig.follower.cursor == "c-é7"
+    await server.end()
+    await settle()
+    rig.sleep.release()
+    await server.wait_connections(2)
+
+    assert server.stream_cursors == [None, "c-é7"]
+
+
 async def test_an_event_with_an_id_and_no_data_moves_the_cursor_and_wakes_nobody(server, rig):
     rig.follower.start()
     await server.wait_connected()
