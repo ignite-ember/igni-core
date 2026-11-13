@@ -617,3 +617,153 @@ class TestTheEdgesOfAScan:
         assert [tk.name for tk in result.toolkits] == ["custom_b_fine"]
         assert "igni_custom_tools.a_quits" not in sys.modules
         assert loader._loaded_module_names == ["igni_custom_tools.b_fine"]
+
+    def test_a_path_importlib_cannot_make_a_spec_for_is_a_failed_file(
+        self, home, trust, project, monkeypatch
+    ):
+        _write_tool_file(home / CONFIG_DIR / "tools", "odd.py", _one_tool("odd"))
+        monkeypatch.setattr(
+            "igni_core.core.tools.custom_loader.importlib.util.spec_from_file_location",
+            lambda name, path: None,
+        )
+        loader = _loader(trust)
+
+        result = loader.discover(project)
+
+        [failed] = result.failed
+        assert failed.path.name == "odd.py"
+        assert failed.error == "importlib returned no spec/loader for this path"
+        assert failed.error_type == "ImportError"
+        assert not result.toolkits
+        assert loader._loaded_module_names == []
+
+    def test_with_no_project_dir_the_working_directory_is_the_project(
+        self, home, trust, project, monkeypatch
+    ):
+        _write_tool_file(project / CONFIG_DIR / "tools", "here.py", _one_tool("here"))
+        trust.trust(project)
+        monkeypatch.setattr(Path, "cwd", classmethod(lambda cls: project))
+
+        result = _loader(trust).discover()
+
+        assert [tk.name for tk in result.toolkits] == ["custom_here"]
+
+    def test_with_no_project_dir_an_untrusted_working_directory_loads_nothing(
+        self, home, trust, project, monkeypatch
+    ):
+        _write_tool_file(project / CONFIG_DIR / "tools", "here.py", _one_tool("here"))
+        monkeypatch.setattr(Path, "cwd", classmethod(lambda cls: project))
+
+        assert not _loader(trust).discover().toolkits
+
+    def test_only_python_files_in_the_folder_itself_are_looked_at(self, home, trust, project):
+        tools_dir = home / CONFIG_DIR / "tools"
+        _write_tool_file(tools_dir, "real.py", _one_tool("real"))
+        _write_tool_file(tools_dir, "notes.txt", _one_tool("notes"))
+        _write_tool_file(tools_dir, "tool.pyc", "garbage")
+        _write_tool_file(tools_dir / "nested", "deep.py", _one_tool("deep"))
+        (tools_dir / "dir.py").mkdir()
+
+        result = _loader(trust).discover(project)
+
+        assert [tk.name for tk in result.toolkits] == ["custom_real"]
+        assert [Path(f.path).name for f in result.loaded] == ["real.py"]
+        assert [s.path for s in result.skipped if s.reason != "not_a_directory"] == []
+
+    def test_an_empty_folder_is_a_directory_with_nothing_in_it_not_a_missing_one(
+        self, home, trust, project
+    ):
+        (home / CONFIG_DIR / "tools").mkdir(parents=True)
+
+        result = _loader(trust).discover(project)
+
+        assert not any(s.path == home / CONFIG_DIR / "tools" for s in result.skipped)
+        assert not result.toolkits
+
+    def test_a_file_name_with_unicode_loads_under_that_name(self, home, trust, project):
+        _write_tool_file(home / CONFIG_DIR / "tools", "größe.py", _one_tool("size"))
+
+        result = _loader(trust).discover(project)
+
+        assert [tk.name for tk in result.toolkits] == ["custom_größe"]
+
+    def test_functions_imported_from_another_module_count_as_the_file_s_tools(
+        self, home, trust, project
+    ):
+        tools_dir = home / CONFIG_DIR / "tools"
+        _write_tool_file(tools_dir, "helpers_src.py", _one_tool("shared"))
+        _write_tool_file(
+            tools_dir, "z_user.py", "from igni_custom_tools.helpers_src import shared\n"
+        )
+
+        result = _loader(trust).discover(project)
+
+        by_name = {tk.name: sorted(tk.functions) for tk in result.toolkits}
+        assert by_name == {"custom_helpers_src": ["shared"], "custom_z_user": ["shared"]}
+
+    def test_a_second_discover_adds_to_what_unload_will_drop(self, home, trust, project):
+        _write_tool_file(home / CONFIG_DIR / "tools", "greet.py", _one_tool("greet"))
+        loader = _loader(trust)
+
+        loader.discover(project)
+        loader.discover(project)
+
+        assert loader._loaded_module_names == ["igni_custom_tools.greet"] * 2
+        loader.unload()
+        assert "igni_custom_tools.greet" not in sys.modules
+
+    def test_the_same_file_name_in_two_sources_gives_two_toolkits_and_one_module(
+        self, home, trust, project
+    ):
+        _write_tool_file(home / CONFIG_DIR / "tools", "dup.py", _one_tool("from_home"))
+        group = project.parent / "group_tools"
+        _write_tool_file(group, "dup.py", _one_tool("from_group"))
+
+        loader = _loader(trust)
+
+        result = loader.discover(project, group_tools_dir=group)
+
+        assert [(tk.name, sorted(tk.functions)) for tk in result.toolkits] == [
+            ("custom_dup", ["from_home"]),
+            ("custom_dup", ["from_group"]),
+        ]
+        # Both are imported as ``igni_custom_tools.dup``: the later one is what
+        # ``sys.modules`` holds, and unload removes it once however often it was named.
+        assert hasattr(sys.modules["igni_custom_tools.dup"], "from_group")
+        loader.unload()
+        assert "igni_custom_tools.dup" not in sys.modules
+
+
+class TestTheLoadedLogLines:
+    def test_a_loaded_file_is_logged_with_its_count_and_path(self, home, trust, project, caplog):
+        path = _write_tool_file(home / CONFIG_DIR / "tools", "greet.py", _one_tool("greet"))
+
+        with caplog.at_level("INFO", logger="igni_core.core.tools.custom_loader"):
+            _loader(trust).discover(project)
+
+        assert [r.getMessage() for r in caplog.records if r.levelname == "INFO"] == [
+            f"Loaded 1 custom tool(s) from {path}"
+        ]
+
+    def test_a_plugin_file_is_logged_with_the_plugin_s_name(
+        self, home, trust, project, tmp_path, caplog
+    ):
+        path = _write_tool_file(tmp_path / "plug" / "tools", "t.py", _one_tool("t"))
+        plugin = PluginToolDir(plugin_name="acme", tools_dir=tmp_path / "plug" / "tools")
+
+        with caplog.at_level("INFO", logger="igni_core.core.tools.custom_loader"):
+            _loader(trust).discover(project, plugin_tool_dirs=[plugin])
+
+        assert [r.getMessage() for r in caplog.records if r.levelname == "INFO"] == [
+            f"Loaded 1 custom tool(s) from plugin 'acme' file {path}"
+        ]
+
+    def test_a_file_that_fails_is_logged_as_a_warning(self, home, trust, project, caplog):
+        path = _write_tool_file(home / CONFIG_DIR / "tools", "bad.py", "raise ValueError('nope')\n")
+
+        with caplog.at_level("INFO", logger="igni_core.core.tools.custom_loader"):
+            _loader(trust).discover(project)
+
+        assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+            ("WARNING", f"Failed to load custom tool file {path}: nope")
+        ]
