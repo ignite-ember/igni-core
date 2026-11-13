@@ -19,6 +19,13 @@ class GitError(RuntimeError):
     """A ``git`` command failed, timed out, or ``git`` is unavailable."""
 
 
+def _refuse_option(ref: str) -> None:
+    """Git reads an argument starting with ``-`` as an option, so a ref
+    that does is refused before any command runs."""
+    if ref.startswith("-"):
+        raise GitError(f"'{ref}' is not a valid ref: a ref cannot start with '-'.")
+
+
 class GitClient:
     """Subprocess wrapper around the ``git`` CLI.
 
@@ -86,6 +93,8 @@ class GitClient:
         are small + we keep the install fast. Disable for marketplaces
         or anything where history is needed.
         """
+        if ref:
+            _refuse_option(ref)
         args = ["git", "clone"]
         if shallow:
             args += ["--depth", "1"]
@@ -103,6 +112,7 @@ class GitClient:
 
         Asks the remote for *ref* itself, which a clone made at a tag
         (single-branch) cannot reach through :meth:`fetch`."""
+        _refuse_option(ref)
         self._run(["git", "fetch", "origin", ref], cwd=repo)
 
     def has_ref(self, repo: Path, ref: str) -> bool:
@@ -115,10 +125,12 @@ class GitClient:
 
     def reset_hard(self, repo: Path, ref: str) -> None:
         """``git reset --hard <ref>`` — used after fetch for updates."""
+        _refuse_option(ref)
         self._run(["git", "reset", "--hard", ref], cwd=repo)
 
     def checkout(self, repo: Path, ref: str) -> None:
         """``git checkout <ref>`` — for SHA / tag pins after clone."""
+        _refuse_option(ref)
         self._run(["git", "checkout", ref], cwd=repo)
 
     # ── Repo introspection ─────────────────────────────────────────
