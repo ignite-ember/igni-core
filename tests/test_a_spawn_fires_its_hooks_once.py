@@ -8,6 +8,7 @@ wires it on after the toolkit is built.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import pytest
@@ -60,6 +61,23 @@ class TestSubagentStopFiresOnce:
         assert executor.calls == [(HookEvent.SUBAGENT_STOP, first)]
         assert hooks.stop_fired is True
 
+    async def test_a_stop_asked_while_the_hook_runs_does_not_fire_it_again(self):
+        """The flag is set before the hook runs, so a stop that arrives
+        meanwhile (a cancellation racing the normal end) is the second."""
+        hooks: SpawnHooks
+
+        class _Reentrant(_Executor):
+            async def execute(self, *, event: HookEvent, payload: object) -> None:
+                await super().execute(event=event, payload=payload)
+                await hooks.fire_stop_once(_stop("raced"))
+
+        executor = _Reentrant()
+        hooks = SpawnHooks(executor, StreamSinks(), "card")
+
+        await hooks.fire_stop_once(_stop())
+
+        assert len(executor.calls) == 1
+
     async def test_it_has_not_fired_before_the_first_stop(self):
         assert SpawnHooks(_Executor(), StreamSinks(), "card").stop_fired is False
 
@@ -96,8 +114,6 @@ class TestAHookObservesTheSpawn:
         assert "spawn hook SubagentStart failed: hook broke" in caplog.text
 
     async def test_cancellation_inside_a_hook_is_not_swallowed(self):
-        import asyncio
-
         hooks = SpawnHooks(_Executor(asyncio.CancelledError()), StreamSinks(), "card")
 
         with pytest.raises(asyncio.CancelledError):
