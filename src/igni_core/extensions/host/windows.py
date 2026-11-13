@@ -142,7 +142,15 @@ class Windows:
             raise WindowModelError(f"{name!r} changes through its own operations, not a write")
         checked = handler.check(value)
         context = self._state.context(window_id)
-        if not handler.always_changes and handler.read(context) == checked:
+        if (
+            not handler.always_changes
+            and handler.read(context) == checked
+            and name not in self.unset(window_id)
+        ):
+            # A field never stored still keeps what is written, even
+            # when it equals the default: the window applies its own
+            # default to a field that is unset, and would apply it
+            # again on its next load over what the person chose.
             return WindowChange(
                 window=window_id, field=name, value=checked, rev=self.rev(window_id)
             )

@@ -109,6 +109,31 @@ def test_a_session_is_none_for_an_unbound_window_and_after_it_is_cleared() -> No
     assert rig.windows.session("w") is None
 
 
+def test_the_sidebar_is_unset_until_it_is_stored() -> None:
+    rig = Rig()
+    assert rig.windows.unset("w") == ["sidebar"]
+
+    rig.windows.write("w", "sidebar", {"open": False})
+
+    assert rig.windows.unset("w") == []
+    assert rig.windows.snapshot("w").sidebar.open is False
+
+
+def test_a_sidebar_closed_on_its_default_is_still_kept_as_the_persons_choice() -> None:
+    """A wide window opens an unset sidebar by itself: the person who
+    closes it has written the default, and must not see it open again."""
+    rig = Rig()
+
+    first = rig.windows.write("w", "sidebar", {"open": False})
+    again = rig.windows.write("w", "sidebar", {"open": False})
+
+    assert rig.store.get_for_client("w").values["sidebar-open"] == "false"
+    assert rig.windows.unset("w") == []
+    assert first.rev == 1
+    assert again.rev == 1
+    assert len(rig.pushed) == 1
+
+
 def test_two_windows_keep_their_own_model_and_revision() -> None:
     rig = Rig()
 
