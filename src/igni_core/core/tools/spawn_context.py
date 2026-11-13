@@ -120,6 +120,8 @@ class ParentCall(BaseModel):
                     arguments = json.loads(raw) if isinstance(raw, str) else dict(raw)
                 except (TypeError, ValueError):
                     continue
+                if not isinstance(arguments, dict):
+                    continue
                 if all(arguments.get(k) == v for k, v in tool_args.items() if v not in ("", None)):
                     return str(call.get("id") or "")
         return None
