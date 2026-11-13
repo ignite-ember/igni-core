@@ -25,10 +25,9 @@ from pydantic import BaseModel, ConfigDict, Field
 #: Where a plugin came from. User-visible: the plugins panel prints the
 #: root beside each entry.
 #:
-#: The igni tiers were spelled ``*-ember`` while the directories they
-#: name are ``.igni`` — so the panel labelled a plugin in
-#: ``~/.igni/plugins/`` as ``user-ember``. Renamed with the rest; not
-#: persisted anywhere, so there is nothing to migrate.
+#: The igni tiers are spelled ``*-igni``, matching the ``.igni``
+#: directories they name. Not persisted anywhere, so there is nothing
+#: to migrate.
 PluginRoot = Literal[
     "user-claude",  # ~/.claude/plugins/
     "user-igni",  # ~/.igni/plugins/
@@ -60,7 +59,7 @@ class PluginSource(BaseModel):
     """Where a plugin was discovered.
 
     ``priority`` follows the four-root convention: project beats user,
-    ember beats claude. Higher wins on same-name collisions across roots.
+    igni beats claude. Higher wins on same-name collisions across roots.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -176,6 +175,14 @@ class MarketplaceGitSubdirSource(BaseModel):
     sha: str | None = None
 
 
+def _stays_in_repo(subdir: str) -> bool:
+    """Whether a catalog's subdirectory stays inside the cloned repository:
+    not absolute and without a ``..`` segment."""
+    if subdir.startswith(("/", "\\")):
+        return False
+    return ".." not in subdir.replace("\\", "/").split("/")
+
+
 class MarketplaceCatalogEntry(BaseModel):
     """One row in a marketplace's catalog.
 
@@ -224,6 +231,8 @@ class MarketplaceCatalogEntry(BaseModel):
             ref = src.sha or src.ref or self.branch
             return ResolvedSource(kind="url", url=src.url, subdir=None, ref=ref)
         if isinstance(src, MarketplaceGitSubdirSource):
+            if not _stays_in_repo(src.path):
+                return None
             ref = src.sha or src.ref or self.branch
             return ResolvedSource(
                 kind="git-subdir",
@@ -235,11 +244,19 @@ class MarketplaceCatalogEntry(BaseModel):
         # Bare-string forms.
         if isinstance(src, str):
             if src.startswith("./") or src.startswith("../"):
-                # Plugin lives inside the marketplace repo itself.
+                # Plugin lives inside the marketplace repo itself. Only
+                # whole leading ``./`` segments are dropped (a character
+                # strip would turn ``./.hidden`` into ``hidden``); a path
+                # that climbs out of the repo is unresolvable.
+                subdir = src
+                while subdir.startswith("./"):
+                    subdir = subdir[2:]
+                if not _stays_in_repo(subdir):
+                    return None
                 return ResolvedSource(
                     kind="relative",
                     url=marketplace_url,
-                    subdir=src.lstrip("./"),
+                    subdir=subdir,
                     ref=self.branch,
                 )
             # Anything else is treated as a clonable URL — works
