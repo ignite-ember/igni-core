@@ -165,7 +165,9 @@ _SHELL_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         ),
         (r"\bsudo\s+rm\b", "deletes files as root"),
         (
-            r"\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f[a-z]*d|checkout\s+--\s+\.)\b",
+            r"\bgit\s+(reset\s+--hard\b"
+            r"|clean\b(?=[^;&|]*\s-[a-z]*f)(?=[^;&|]*\s-[a-z]*d)(?![^;&|]*(\s-[a-z]*n|--dry-run))"
+            r"|checkout\s+--\s+\.(/)?(?=\s|$|[;&|]))",
             "discards uncommitted work",
         ),
     )
