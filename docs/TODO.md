@@ -146,3 +146,59 @@ automated app.
 allow-list where the gateway and the VM report (igni__cloudvm, igni-core
 telemetry); the view in igni-server's portal. A section of the same
 design doc as the cloud switch above.
+
+---
+
+## A browser-testing VM profile
+
+**What.** A Fleet VM profile with Chromium and Playwright, a ceiling of
+about 2 GiB and 2+ vCPUs (the `standard` profile's 256 MiB and one vCPU
+cannot hold a browser), and the egress the tests need: `internet` for
+public sites, or the customer's staging hosts on `network.allow`.
+
+**Why.** Testing websites is the first thing people ask a cloud igni to
+do, and everything it needs exists already: profile layers
+(`image/profile/build_layer.sh` in igni__cloudvm, built from the
+customer's own mirror) and per-profile egress (`crates/node-agent/src/net.rs`).
+It wants only a tested profile and a measured memory ceiling.
+
+---
+
+## A recipe: igni drives a Windows machine elsewhere
+
+**What.** Fleet VMs are Linux Firecracker microVMs: no Windows guest, no
+display. To test a Windows desktop application, igni starts a Windows
+machine through its provider's API (Azure, AWS, GCP, Hyper-V), runs the
+tests remotely (WinAppDriver, SSH, RDP automation), fills the tables and
+reports, stops the machine, and its own VM suspends. A written, tested
+recipe for that, covering:
+
+- a key that may start and stop that one machine, and nothing else;
+- the provider's API, the machine, and the report's destination on the
+  profile's `network.allow`;
+- a backstop that does not depend on igni: provider-side auto-shutdown
+  or a budget alert, so a crashed run cannot leave the machine billing;
+- whether an active run keeps igni's VM from pausing
+  (`idle_before_pause_s`) through a long suite where igni only polls —
+  check this before promising it;
+- approvals: starting machines costs money, so a person approves once,
+  or the scheduled run carries a policy that allows only those calls.
+
+**Why not Windows in Fleet.** A Windows node pool means full VMs
+(QEMU/KVM), its own image, guest agent and licensing, and wakes in
+seconds rather than milliseconds — a separate product. Wine covers only
+simple programs.
+
+---
+
+## Fix the Bedrock and Vertex rows of the Claude Code comparison
+
+`docs/CONFIGURATION.md` says AWS Bedrock and Google Vertex work as "a
+BYOM registry entry with a Bedrock (Vertex) URL". They do not: both need
+requests signed with the cloud's own credentials (SigV4, Google OAuth),
+and igni signs nothing — the `anthropic` provider sends a key as
+`X-Api-Key`. The answer is igni server as the proxy (the item below in
+igni-server's plan): igni points `provider: anthropic` or `openai_like`
+at igni server with `cloud_token`, and the server holds the cloud
+credentials. Until that ships, the row should say "through a proxy that
+signs the requests".
