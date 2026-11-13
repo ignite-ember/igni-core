@@ -132,3 +132,22 @@ def test_an_empty_dot_git_file_has_no_remote(tmp_path):
 
 def test_a_folder_outside_a_repository_has_no_remote(tmp_path):
     assert GitConfigRemote.read(tmp_path) is None
+
+
+def test_a_dot_git_file_that_is_not_text_has_no_remote(tmp_path):
+    """A pointer file of bytes that are not UTF-8 is no pointer; no crash."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").write_bytes(b"\xff\xfe\x80gitdir")
+
+    assert GitConfigRemote.read(repo) is None
+
+
+def test_a_commondir_that_is_not_text_falls_back_to_the_git_dir_itself(tmp_path):
+    repo = tmp_path / "repo"
+    git_dir = tmp_path / "main" / ".git" / "worktrees" / "wt"
+    _write(git_dir / "config", _config_with("git@github.com:acme/app.git"))
+    (git_dir / "commondir").write_bytes(b"\xff\xfe\x80")
+    _write(repo / ".git", f"gitdir: {git_dir}\n")
+
+    assert GitConfigRemote.read(repo) == "git@github.com:acme/app.git"
