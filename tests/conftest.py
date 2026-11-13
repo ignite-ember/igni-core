@@ -18,6 +18,7 @@ from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.layer import Layers, layers
 from igni_core.core.paths import CONFIG_DIR
 from tests.egress_guard import EgressGuard, InternalNetwork
+from tests.logging_state import LoggingState
 from tests.root_guard import RootGuard
 from tests.storage_backends import ThrowawayPostgres
 
@@ -215,6 +216,19 @@ def _a_fresh_activity_registry():
     ActivityRegistry.reset_shared()
     yield
     ActivityRegistry.reset_shared()
+
+
+@pytest.fixture(autouse=True)
+def _loggers_put_back() -> Iterator[None]:
+    """Each test starts with the logging the process began with.
+
+    The code under test configures loggers as a process would (a file
+    handler on ``igni_core.llm_calls``, ``igni_core`` raised to WARNING);
+    left in place, a later test's ``caplog`` sees no DEBUG record at all.
+    """
+    state = LoggingState.take()
+    yield
+    state.restore()
 
 
 @pytest.fixture(autouse=True)
