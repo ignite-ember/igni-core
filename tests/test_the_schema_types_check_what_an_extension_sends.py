@@ -20,6 +20,9 @@ SCHEMA = HostSchema(
             field("tags", "list[str]", optional=True),
         ),
         typedef("Box", "A box.", field("note", "Note"), field("extra", "json", optional=True)),
+        typedef("Node", "A tree.", field("name", "str"), field("children", "list[Node]")),
+        typedef("Ping", "Ping.", field("pong", "Pong | None", optional=True)),
+        typedef("Pong", "Pong.", field("ping", "Ping | None", optional=True)),
     ),
     objects=(),
 )
@@ -126,3 +129,23 @@ def test_the_same_expression_is_one_adapter_and_the_same_name_one_model(types: S
     assert types.adapter("Note") is not types.adapter("list[Note]")
     assert types.python_type("Note") is types.python_type("Box").model_fields["note"].annotation
     assert types.python_type("Note") is types.python_type("Note")
+
+
+def test_a_type_that_names_itself_validates_a_tree(types: SchemaTypes):
+    tree = {
+        "name": "root",
+        "children": [
+            {"name": "a", "children": []},
+            {"name": "b", "children": [{"name": "c", "children": []}]},
+        ],
+    }
+
+    assert types.validate_plain("Node", tree) == tree
+    assert types.check("Node", {"name": "r", "children": [{"name": "a"}]}) is not None
+
+
+def test_two_types_that_name_each_other_validate(types: SchemaTypes):
+    value = {"pong": {"ping": {"pong": None}}}
+
+    assert types.validate_plain("Ping", value) == value
+    assert types.check("Pong", {"ping": {"pong": {"ping": 3}}}) is not None
