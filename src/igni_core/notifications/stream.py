@@ -80,7 +80,7 @@ class SseParser:
             self._data.append(value)
         elif name == "id" and "\0" not in value:
             self._id = value
-        elif name == "retry" and value.isdigit():
+        elif name == "retry" and value.isascii() and value.isdigit() and len(value) <= 12:
             self._retry = int(value)
         return None
 

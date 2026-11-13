@@ -81,7 +81,7 @@ class TestTheParserEdges:
         assert event is not None
         assert (event.id, event.data) == ("c4", "")
 
-    @pytest.mark.parametrize("value", ["abc", "-5", "1.5", "", " 7"])
+    @pytest.mark.parametrize("value", ["abc", "-5", "1.5", "", " 7", "²", "٣", "9" * 5000])
     def test_a_retry_that_is_not_plain_digits_is_ignored(self, value):
         event = feed_all(f"retry: {value}", "data: 1", "")
         assert event is not None
@@ -356,6 +356,18 @@ async def test_a_wake_that_raises_is_retried_not_fatal(server):
         assert rig.sleep.delays == [1.0]
     finally:
         await rig.follower.stop()
+
+
+async def test_a_retry_the_parser_cannot_read_does_not_stop_the_follower(server, rig):
+    rig.follower.start()
+    await server.wait_connected()
+    await server.send("retry: ²\ndata: 1\nid: c2\n\n")
+    await settle()
+    await server.wake("c3")
+    await settle()
+
+    assert rig.wakes == 2
+    assert rig.sleep.delays == []
 
 
 async def test_a_second_start_while_following_changes_nothing(server, rig):
