@@ -233,12 +233,12 @@ class ModelRegistryEntry(BaseModel):
         predicate — pair it with :meth:`matches_cloud_gateway` for
         the substring predicate used by credential routing.
         """
+        if not isinstance(url, str):
+            return False
         try:
             return urlparse(url).hostname == CLOUD_GATEWAY_HOST
-        except (ValueError, TypeError):
-            # ``urlparse`` raises ValueError for malformed inputs and
-            # TypeError when handed a non-string — anything else is a
-            # programming bug and should propagate.
+        except ValueError:
+            # ``urlparse`` raises ValueError for malformed inputs.
             return False
 
     @staticmethod
