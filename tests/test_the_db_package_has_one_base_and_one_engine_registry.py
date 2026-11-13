@@ -43,7 +43,6 @@ def test_a_model_declared_on_base_registers_its_table_there():
         assert "the_db_package_probe" in Base.metadata.tables
     finally:
         Base.metadata.remove(Probe.__table__)  # type: ignore[arg-type]
-        Base.registry.dispose()
 
 
 def test_the_base_docstring_uses_the_product_name():
