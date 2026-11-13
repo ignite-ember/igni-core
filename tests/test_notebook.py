@@ -384,9 +384,7 @@ class TestNotebookRoundTrip:
         assert saved["path"] == "colab/origin.ipynb"
         assert saved["cells"][0]["source"] == ["y"]
 
-    def test_saved_bytes_use_one_space_indent_unescaped_unicode_and_a_final_newline(
-        self, tmp_path
-    ):
+    def test_saved_bytes_use_one_space_indent_unescaped_unicode_and_a_final_newline(self, tmp_path):
         nb = _make_notebook([_md_cell("café")])
         path = tmp_path / "u.ipynb"
         _write_notebook(path, nb)
@@ -435,3 +433,268 @@ class TestNotebookRoundTrip:
         assert saved["id"] == "abc123"
         assert saved["execution_count"] is None
         assert saved["outputs"] == []
+
+
+class TestNotebookToolkit:
+    def test_toolkit_and_function_names(self):
+        tools = NotebookTools(base_dir="/tmp")
+
+        assert tools.name == "igni_notebook"
+        assert sorted(tools.functions) == [
+            "notebook_add_cell",
+            "notebook_edit_cell",
+            "notebook_read",
+            "notebook_read_cell",
+            "notebook_remove_cell",
+        ]
+
+    def test_base_dir_defaults_to_the_working_directory(self, tmp_path, monkeypatch):
+        _write_notebook(tmp_path / "cwd.ipynb", _make_notebook([_md_cell("hi")]))
+        # conftest redirects ``Path.cwd``; point it at the notebook's folder.
+        monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+
+        tools = NotebookTools()
+
+        assert tools.base_dir == tmp_path
+        assert "1 cells" in tools.notebook_read("cwd.ipynb")
+
+    def test_absolute_paths_ignore_base_dir(self, tmp_path):
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        path = elsewhere / "abs.ipynb"
+        _write_notebook(path, _make_notebook([_md_cell("hi")]))
+
+        result = NotebookTools(base_dir=str(tmp_path / "other")).notebook_read(str(path))
+
+        assert result.startswith(f"Notebook: {path} (1 cells")
+
+    def test_requires_confirmation_marks_only_the_named_functions(self):
+        tools = NotebookTools(
+            base_dir="/tmp",
+            requires_confirmation_tools=["notebook_edit_cell", "notebook_remove_cell", "nope"],
+        )
+
+        flagged = {n for n, f in tools.functions.items() if f.requires_confirmation}
+        assert flagged == {"notebook_edit_cell", "notebook_remove_cell"}
+        assert tools.requires_confirmation_tools == [
+            "notebook_edit_cell",
+            "notebook_remove_cell",
+            "nope",
+        ]
+
+    def test_no_confirmation_by_default(self):
+        tools = NotebookTools(base_dir="/tmp")
+
+        assert not any(f.requires_confirmation for f in tools.functions.values())
+
+    def test_toolkit_kwargs_reach_agno(self):
+        tools = NotebookTools(base_dir="/tmp", instructions="be careful")
+
+        assert tools.instructions == "be careful"
+
+
+class TestNotebookToolMessages:
+    def _nb(self, tmp_path, cells, name="m.ipynb", kernel="python3"):
+        _write_notebook(tmp_path / name, _make_notebook(cells, kernel=kernel))
+        return NotebookTools(base_dir=str(tmp_path))
+
+    def test_header_names_the_kernel(self, tmp_path):
+        tools = self._nb(tmp_path, [_code_cell("x")], kernel="Python 3.12")
+
+        header = tools.notebook_read("m.ipynb").splitlines()[0]
+
+        assert header == f"Notebook: {tmp_path / 'm.ipynb'} (1 cells, kernel: Python 3.12)"
+
+    def test_header_says_unknown_without_a_kernelspec(self, tmp_path):
+        nb = _make_notebook([_code_cell("x")])
+        nb["metadata"] = {}
+        _write_notebook(tmp_path / "k.ipynb", nb)
+
+        result = NotebookTools(base_dir=str(tmp_path)).notebook_read("k.ipynb")
+
+        assert "kernel: unknown)" in result
+
+    def test_empty_notebook_message(self, tmp_path):
+        tools = self._nb(tmp_path, [])
+
+        assert tools.notebook_read("m.ipynb") == f"Notebook {tmp_path / 'm.ipynb'} has no cells."
+
+    def test_success_messages(self, tmp_path):
+        tools = self._nb(tmp_path, [_code_cell("a"), _md_cell("b")])
+        path = tmp_path / "m.ipynb"
+
+        assert (
+            tools.notebook_edit_cell("m.ipynb", 1, "c") == f"Successfully edited cell [1] in {path}"
+        )
+        assert (
+            tools.notebook_add_cell("m.ipynb", 0, "raw", "r")
+            == f"Successfully added raw cell at [0] in {path}"
+        )
+        assert (
+            tools.notebook_add_cell("m.ipynb", -1, "code", "r")
+            == f"Successfully added code cell at [3] in {path}"
+        )
+        assert (
+            tools.notebook_remove_cell("m.ipynb", 0)
+            == f"Successfully removed raw cell [0] from {path}"
+        )
+
+    def test_add_out_of_range_names_the_inclusive_upper_bound_and_keeps_the_file(self, tmp_path):
+        tools = self._nb(tmp_path, [_code_cell("a")])
+        before = (tmp_path / "m.ipynb").read_text()
+
+        for bad in (2, -2):
+            assert (
+                tools.notebook_add_cell("m.ipynb", bad, "code", "x")
+                == f"Error: Cell index {bad} out of range (0-1)."
+            )
+        assert (tmp_path / "m.ipynb").read_text() == before
+
+    def test_invalid_cell_type_is_refused_before_the_file_is_read(self, tmp_path):
+        tools = NotebookTools(base_dir=str(tmp_path))
+
+        for bad in ("Code", "", "cell"):
+            assert (
+                tools.notebook_add_cell("missing.ipynb", 0, bad, "x")
+                == f"Error: Invalid cell_type '{bad}'. Must be 'code', 'markdown', or 'raw'."
+            )
+
+    def test_out_of_range_on_every_endpoint_keeps_the_file(self, tmp_path):
+        tools = self._nb(tmp_path, [_code_cell("a")])
+        before = (tmp_path / "m.ipynb").read_text()
+        expected = "Error: Cell index {} out of range (0-0)."
+
+        for bad in (-1, -2, 1, 10**9):
+            assert tools.notebook_read_cell("m.ipynb", bad) == expected.format(bad)
+            assert tools.notebook_edit_cell("m.ipynb", bad, "z") == expected.format(bad)
+            assert tools.notebook_remove_cell("m.ipynb", bad) == expected.format(bad)
+        assert (tmp_path / "m.ipynb").read_text() == before
+
+    def test_empty_notebook_range_message_and_adds(self, tmp_path):
+        tools = self._nb(tmp_path, [])
+
+        assert tools.notebook_read_cell("m.ipynb", 0) == "Error: Cell index 0 out of range (0--1)."
+        assert (
+            tools.notebook_remove_cell("m.ipynb", 0) == "Error: Cell index 0 out of range (0--1)."
+        )
+        assert tools.notebook_add_cell("m.ipynb", 1, "code", "x") == (
+            "Error: Cell index 1 out of range (0-0)."
+        )
+        assert "at [0]" in tools.notebook_add_cell("m.ipynb", 0, "code", "x")
+        assert "at [1]" in tools.notebook_add_cell("m.ipynb", 1, "code", "y")
+
+    def test_add_in_the_middle_and_at_the_end_index(self, tmp_path):
+        tools = self._nb(tmp_path, [_md_cell("a"), _md_cell("b")])
+
+        tools.notebook_add_cell("m.ipynb", 1, "markdown", "mid")
+        tools.notebook_add_cell("m.ipynb", 3, "markdown", "end")
+
+        sources = [
+            "".join(c["source"]) if isinstance(c["source"], list) else c["source"]
+            for c in json.loads((tmp_path / "m.ipynb").read_text())["cells"]
+        ]
+        assert sources == ["a", "mid", "b", "end"]
+
+    def test_read_cell_without_outputs_has_no_outputs_section(self, tmp_path):
+        tools = self._nb(tmp_path, [_code_cell("a\nb")])
+
+        assert tools.notebook_read_cell("m.ipynb", 0) == "Cell [0] (code):\n\na\nb"
+
+    def test_read_cell_lists_every_output_kind(self, tmp_path):
+        outputs = [
+            {"output_type": "stream", "name": "stderr", "text": ["a\n", "b"]},
+            {"output_type": "display_data", "data": {"image/png": "xx"}},
+            {"output_type": "error", "ename": "ValueError", "evalue": "bad"},
+            {"output_type": "weird"},
+        ]
+        tools = self._nb(tmp_path, [_code_cell("a", outputs)])
+
+        assert tools.notebook_read_cell("m.ipynb", 0) == (
+            "Cell [0] (code):\n\na\n\n--- Outputs (4) ---\n"
+            "[stream/stderr] a\nb\n"
+            "[display_data] keys: ['image/png']\n"
+            "[error] ValueError: bad\n"
+            "[weird] (unrenderable)"
+        )
+
+    def test_read_truncates_the_preview_and_escapes_newlines(self, tmp_path):
+        tools = self._nb(tmp_path, [_code_cell("x" * 130), _code_cell("a\nb"), _code_cell("")])
+
+        lines = tools.notebook_read("m.ipynb").splitlines()
+
+        assert lines[2] == f"[0] code (1 lines): {'x' * 120}..."
+        assert lines[3] == "[1] code (2 lines): a\\nb"
+        assert lines[4] == "[2] code (0 lines): "
+
+    def test_edit_keeps_list_shape_and_splits_lines(self, tmp_path):
+        tools = self._nb(tmp_path, [_code_cell("a"), _md_cell("string shaped")])
+
+        tools.notebook_edit_cell("m.ipynb", 0, "l1\nl2\n")
+        tools.notebook_edit_cell("m.ipynb", 1, "new\ntext")
+
+        cells = json.loads((tmp_path / "m.ipynb").read_text())["cells"]
+        assert cells[0]["source"] == ["l1\n", "l2\n", ""]
+        assert cells[1]["source"] == "new\ntext"
+
+    def test_added_cell_is_split_into_lines_with_empty_metadata(self, tmp_path):
+        tools = self._nb(tmp_path, [])
+
+        tools.notebook_add_cell("m.ipynb", -1, "code", "a\nb")
+
+        cell = json.loads((tmp_path / "m.ipynb").read_text())["cells"][0]
+        assert cell == {
+            "cell_type": "code",
+            "metadata": {},
+            "source": ["a\n", "b"],
+            "execution_count": None,
+            "outputs": [],
+        }
+
+    def test_empty_source_is_one_empty_line(self, tmp_path):
+        tools = self._nb(tmp_path, [])
+
+        tools.notebook_add_cell("m.ipynb", -1, "markdown", "")
+
+        cell = json.loads((tmp_path / "m.ipynb").read_text())["cells"][0]
+        assert cell["source"] == [""]
+        assert tools.notebook_read("m.ipynb").splitlines()[2] == "[0] markdown (0 lines): "
+
+    def test_source_of_any_other_type_is_coerced(self, tmp_path):
+        nb = _make_notebook(
+            [
+                {"cell_type": "markdown", "metadata": {}, "source": None},
+                {"cell_type": "markdown", "metadata": {}, "source": 5},
+            ]
+        )
+        _write_notebook(tmp_path / "s.ipynb", nb)
+
+        result = NotebookTools(base_dir=str(tmp_path)).notebook_read("s.ipynb")
+
+        assert result.splitlines()[2:] == ["[0] markdown (0 lines): ", "[1] markdown (1 lines): 5"]
+
+    def test_edit_of_a_markdown_cell_leaves_other_cell_fields(self, tmp_path):
+        cell = _md_cell("x")
+        cell["outputs"] = [{"output_type": "stream", "text": "keep?"}]
+        tools = self._nb(tmp_path, [cell])
+
+        tools.notebook_edit_cell("m.ipynb", 0, "y")
+
+        # Non-code cells never write outputs/execution_count.
+        saved = json.loads((tmp_path / "m.ipynb").read_text())["cells"][0]
+        assert "outputs" not in saved
+
+    def test_data_output_prefers_text_plain_and_caps_long_text(self, tmp_path):
+        outputs = [
+            {"output_type": "execute_result", "data": {"text/plain": ["1\n", "2"], "x": 1}},
+            {"output_type": "stream", "text": "y" * 600},
+            {"output_type": "execute_result", "data": {"text/plain": "z" * 600}},
+        ]
+        tools = self._nb(tmp_path, [_code_cell("a", outputs)])
+
+        lines = tools.notebook_read_cell("m.ipynb", 0).splitlines()
+
+        text = "\n".join(lines)
+        assert "[execute_result] 1\n2\n" in text
+        assert f"[stream/stdout] {'y' * 500}\n" in text
+        assert "y" * 501 not in text
+        assert "z" * 501 not in text

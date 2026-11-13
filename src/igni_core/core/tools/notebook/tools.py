@@ -51,7 +51,7 @@ class NotebookTools(Toolkit):
                 :class:`agno.tools.Toolkit` (``name``, ``tool_hooks``,
                 etc.). Explicit passthrough — no silent kwarg drop.
         """
-        super().__init__(name="ember_notebook", **toolkit_kwargs)
+        super().__init__(name="igni_notebook", **toolkit_kwargs)
         self.base_dir = Path(base_dir) if base_dir else Path.cwd()
         self.register(self.notebook_read)
         self.register(self.notebook_read_cell)
