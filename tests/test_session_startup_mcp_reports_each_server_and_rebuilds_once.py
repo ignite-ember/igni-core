@@ -137,52 +137,6 @@ def test_the_coordinator_hands_the_marketplace_start_to_its_phase():
     marketplace.start_background.assert_called_once_with()
 
 
-def test_rebuild_current_prefers_the_public_accessor_and_skips_a_missing_client():
-    pool = SimpleNamespace(build_agents=MagicMock())
-    a = MagicMock()
-    manager = _manager({})
-    manager.list_connected = lambda: ["a", "gone"]
-    manager.get_client = lambda n: {"a": a}.get(n)
-    manager._clients = {"a": "private", "gone": "private-too"}
-    phase, deps, _ = _phase(manager, pool)
-    phase.rebuild_current()
-    pool.build_agents.assert_called_once_with(mcp_clients={"a": a})
-    deps.rebuild_team.assert_called_once_with()
-
-
-def test_the_pool_is_read_when_a_rebuild_happens_so_a_replaced_pool_is_used():
-    manager = _manager({})
-    manager.list_connected = lambda: ["a"]
-    manager.get_client = lambda n: "client"
-    phase, _, holder = _phase(manager)
-    new_pool = SimpleNamespace(build_agents=MagicMock())
-    holder["pool"] = new_pool
-    phase.rebuild_current()
-    new_pool.build_agents.assert_called_once_with(mcp_clients={"a": "client"})
-
-
-async def test_the_coordinator_flag_round_trips_and_setting_it_false_rearms_ensure():
-    manager = _manager({"srv": MCPConnectResult.failure("x")})
-    phase, _, _ = _phase(manager)
-    coord = SessionStartupCoordinator(MagicMock(), phase)
-    assert coord.mcp_initialized is False
-    await coord.ensure_mcp()
-    assert coord.mcp_initialized is True and phase.initialized is True
-    coord.mcp_initialized = False
-    assert phase.initialized is False
-    await coord.ensure_mcp()
-    assert manager.connect.await_count == 2
-    coord.mcp_initialized = True
-    assert (await coord.ensure_mcp()).skipped_reason == "already_initialized"
-    assert manager.connect.await_count == 2
-
-
-def test_the_coordinator_hands_the_marketplace_start_to_its_phase():
-    marketplace = MagicMock()
-    SessionStartupCoordinator(marketplace, MagicMock()).start_marketplace_refresh_background()
-    marketplace.start_background.assert_called_once_with()
-
-
 async def test_a_connect_that_raises_propagates_and_lets_the_next_message_try_again():
     manager = _manager({"srv": MCPConnectResult.success(MagicMock())})
     calls = {"n": 0}
