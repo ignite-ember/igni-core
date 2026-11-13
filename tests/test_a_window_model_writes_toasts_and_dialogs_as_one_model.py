@@ -9,6 +9,7 @@ dialog hand back, what shutdown does to a waiting dialog, and what each
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -31,6 +32,11 @@ from igni_core.extensions.host.window_rpc import (
 )
 from igni_core.extensions.host.window_values import MAX_TOASTS, Dialog, Page, Toast
 from igni_core.extensions.host.windows import Windows
+
+
+async def soon(answer: asyncio.Future[Any]) -> Any:
+    """The answer a dialog's future carries, or a failure rather than a hang."""
+    return await asyncio.wait_for(answer, timeout=1)
 
 
 class Rig:
@@ -218,7 +224,7 @@ async def test_a_dialog_is_answered_once_and_the_waiting_future_gets_the_answer(
     assert dialog.source == "acme"
     assert not answer.done()
     assert rig.windows.answer_dialog("w", dialog.id, "yes") is True
-    assert await answer == "yes"
+    assert await soon(answer) == "yes"
     assert rig.windows.answer_dialog("w", dialog.id, "again") is False
     assert rig.windows.get("w", "dialog") is None
 
@@ -229,7 +235,7 @@ async def test_a_dialog_opened_over_another_closes_the_first_unanswered() -> Non
 
     second, _ = rig.windows.open_dialog("w", "two")
 
-    assert await first_answer is None
+    assert await soon(first_answer) is None
     assert [(c.event, c.item.id if c.item else None) for c in rig.pushed if c.event][-3:] == [
         ("dialog_opened", first.id),
         ("dialog_closed", first.id),
@@ -246,8 +252,8 @@ async def test_shutting_down_leaves_nobody_waiting_on_a_dialog() -> None:
 
     rig.windows.cancel_dialogs()
 
-    assert await one is None
-    assert await two is None
+    assert await soon(one) is None
+    assert await soon(two) is None
 
 
 # ── window_model ──────────────────────────────────────────────────
