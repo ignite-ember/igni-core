@@ -226,3 +226,20 @@ async def test_wait_exit_returns_the_code_or_none_when_never_launched(tmp_path):
     await h.start()
     assert await h.wait_exit() == 4
     await h.stop()
+
+
+@pytest.mark.asyncio
+async def test_the_child_never_inherits_our_stdin(tmp_path):
+    """Even when our own stdin is an open pipe, the monitor sees end-of-file."""
+    read_end, write_end = os.pipe()
+    saved = os.dup(0)
+    os.dup2(read_end, 0)
+    try:
+        h = _handle(tmp_path, "import sys; print(repr(sys.stdin.read()), flush=True)")
+        await h.start()
+        await _wait_for(lambda: h.output_tail() == ["''"], timeout=5)
+        await h.stop()
+    finally:
+        os.dup2(saved, 0)
+        for fd in (saved, read_end, write_end):
+            os.close(fd)
