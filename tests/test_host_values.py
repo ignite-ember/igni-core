@@ -292,9 +292,18 @@ def test_counts_with_no_sources_are_empty_and_a_count_that_is_not_a_number_is_re
 
 
 def test_a_session_entry_with_names_in_any_script_keeps_them_as_text():
-    info = SessionInfo.from_entry({"session_id": 7, "name": "Ünï ✓"})
+    info = SessionInfo.from_entry({"session_id": 7, "name": "Ünï ✓", "summary": None})
 
     assert (info.session_id, info.name, info.summary) == ("7", "Ünï ✓", "")
+
+
+def test_a_text_the_backend_left_null_is_empty_and_not_the_word_none():
+    row = NotificationEntry.from_row({"id": 0, "title": "T", "body": None, "source": None})
+    assert (row.id, row.title, row.body, row.source) == ("0", "T", "", "")
+    assert SessionInfo.from_entry({"name": None, "agent_name": None}).name == ""
+    assert SessionStatus.from_status({"model": None, "permission_mode": None}, "s").model == ""
+    outcome = CommandOutcome.from_answer(SimpleNamespace(kind=None, content=None))
+    assert outcome.model_dump() == {"kind": "", "content": "", "display_content": ""}
 
 
 # ── The window tables ─────────────────────────────────────────────
