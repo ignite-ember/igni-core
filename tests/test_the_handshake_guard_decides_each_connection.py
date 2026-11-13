@@ -221,7 +221,7 @@ def test_the_names_the_launcher_and_clients_speak_are_igni_s():
     assert ws_auth.DEV_NO_TOKEN_ENV == "IGNI_DEV_NO_WS_TOKEN"
     assert ws_auth.SUBPROTOCOL == "igni.v1"
     assert ws_auth.TOKEN_PROTOCOL_PREFIX == "igni-token."
-    assert ws_auth.TAURI_ORIGINS == {
+    assert set(ws_auth.TAURI_ORIGINS) == {
         "tauri://localhost",
         "http://tauri.localhost",
         "https://tauri.localhost",
