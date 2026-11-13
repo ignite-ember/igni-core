@@ -51,9 +51,17 @@ class ProcessEviction:
         time anyone looked at this".
 
         ``expire`` is what the task calls when the TTL runs out. It
-        runs on the event loop, not under this class's lock.
+        runs on the event loop, not under this class's lock. Called
+        with no running loop, it arms nothing and does not raise.
         """
         self.cancel(pid)
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # No loop, no timer: there is nothing that could ever run the
+            # expiry, and the caller (a sync path) cannot do anything
+            # about it. Same rule as the persistence writes.
+            return
         ttl = self._ttl_seconds
 
         async def _evict() -> None:
