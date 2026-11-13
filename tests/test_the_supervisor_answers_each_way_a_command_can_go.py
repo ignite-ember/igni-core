@@ -98,7 +98,9 @@ class TestAForegroundCommandThatFinishes:
         assert supervisor.registry.all_known() == []
 
     async def test_a_long_output_keeps_the_last_lines_and_says_how_to_run_it_narrower(self, tools):
-        result = await tools.run_shell_command("seq 1 20000")
+        # Room to finish under a loaded run with coverage on: the default 7 s
+        # backgrounds it there, and the truncation is what this pins.
+        result = await tools.run_shell_command("seq 1 20000", timeout=60)
 
         assert result.startswith("[Output truncated: 20000 lines; the first 19900 are not shown")
         assert ProcessSupervisor.FINISHED_SEE_MORE in result
