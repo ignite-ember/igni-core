@@ -118,8 +118,8 @@ async def test_no_store_means_all_three_writes_do_nothing() -> None:
     writer.record_start(1, "x")
     writer.record_end(FakeTrackedProcess())
     writer.forget(1)
-    await _drain()
     assert asyncio.all_tasks() == {asyncio.current_task()}  # nothing was scheduled
+    await _drain()
 
 
 async def test_attach_and_detach_rewire_the_store() -> None:
