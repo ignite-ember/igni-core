@@ -60,7 +60,9 @@ class BundleSource:
     def directory(self) -> Path:
         """The bundle, when the source is a directory."""
         bundle = Path(self.source)
-        if not bundle.is_dir():
+        # ``Path("")`` is the current directory: an empty source must not
+        # quietly install whatever the shell happens to be in.
+        if not self.source.strip() or not bundle.is_dir():
             raise BundleSourceError(
                 f"{self.source} is not a directory, and does not look like a repository URL either."
             )
@@ -102,7 +104,9 @@ class BundleSource:
             checkout = Path(tmp) / "bundle"
             commit = self._clone_into(checkout, git)
             bundle = checkout / self.subdir if self.subdir else checkout
-            if not bundle.is_dir():
+            # ``--subdir ../..`` or an absolute path would name a directory
+            # outside the clone, which is not a bundle of this repository.
+            if not bundle.resolve().is_relative_to(checkout.resolve()) or not bundle.is_dir():
                 raise BundleSourceError(f"{self.subdir!r} is not a directory in {self.source}.")
             yield Checkout(bundle=bundle, commit=commit)
 
