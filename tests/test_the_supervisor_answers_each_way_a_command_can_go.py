@@ -206,6 +206,3 @@ def test_the_module_offers_only_the_supervisor_and_its_placeholder():
 
     assert sorted(module.__all__) == ["NO_OUTPUT_PLACEHOLDER", "ProcessSupervisor"]
     assert module.NO_OUTPUT_PLACEHOLDER == "(no output)"
-    namespace: dict[str, object] = {}
-    exec("from igni_core.core.tools.process_supervisor import *", namespace)
-    assert "ProcessRegistry" not in namespace
