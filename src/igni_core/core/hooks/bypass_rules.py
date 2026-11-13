@@ -110,7 +110,7 @@ _SHELL_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\bdd\b[^;&|]*\bof=/dev/", "writes raw data to a device"),
         (r">\s*/dev/(sd|disk|nvme|hd)", "overwrites a block device"),
         (
-            r"\bchmod\s+(-R\s+)?0?777\s+/(etc|usr|bin|sbin|var|System|Library)?\b",
+            r"\bchmod\s+(-R\s+)?0?777\s+/(etc|usr|bin|sbin|var|System|Library)?(?=\s|$|/)",
             "opens system files to everyone",
         ),
         (
