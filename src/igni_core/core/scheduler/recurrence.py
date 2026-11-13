@@ -151,13 +151,13 @@ class Recurrence(BaseModel):
             unit_candidate = RecurrenceUnit.from_token(m.group(2))
             if unit_candidate is None:
                 return None
-            recurrence = cls._build(m.group(1) or "1", unit_candidate)
-            if recurrence is None:
+            phrase = cls._build(m.group(1) or "1", unit_candidate)
+            if phrase is None:
                 return None
             rest = text[m.end() :].strip()
-            first = recurrence._first_from_suffix(rest)
+            first = phrase._first_from_suffix(rest)
             if first is not None:
-                return RecurrenceParseResult(recurrence=recurrence, first_scheduled=first)
+                return RecurrenceParseResult(recurrence=phrase, first_scheduled=first)
 
         return None
 
