@@ -372,7 +372,7 @@ class TestEventLogStore:
 
     async def test_a_blob_that_is_not_a_list_loads_empty(self, db: AsyncSqliteDb) -> None:
         service = SessionDataService(db, SESSION)
-        await service.write_key("event_log", {"seq": 1})
+        await service.write_key("event_log", _viz(1).model_dump())
         loaded = await EventLogStore(service).load()
         assert (loaded.ok, loaded.value) == (True, [])
 
