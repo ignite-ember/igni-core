@@ -168,11 +168,18 @@ class MCPApprovalManager:
         try:
             with open(self._path) as f:
                 data = json.load(f)
-            if isinstance(data, dict):
-                return data
-        except (json.JSONDecodeError, OSError):
-            pass
-        return {}
+        except (ValueError, OSError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        # Keep only what the file's own writer could have produced: a
+        # server name mapped to a list of paths. Anything else would
+        # break ``in`` and ``append`` later.
+        return {
+            name: [p for p in paths if isinstance(p, str)]
+            for name, paths in data.items()
+            if isinstance(paths, list)
+        }
 
     def _save(self) -> None:
         try:
