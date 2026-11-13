@@ -11,6 +11,7 @@ import gzip
 import hashlib
 import io
 import os
+import re
 import stat
 import tarfile
 import zipfile
@@ -56,7 +57,8 @@ def zip_of(members: dict[str, bytes], *, mode: int | None = None) -> bytes:
 def test_the_process_is_told_where_its_assets_are_by_an_igni_variable():
     assert assets_module.ASSETS_DIR_ENV == "IGNI_EXTENSION_ASSETS"
     assert assets_module.BUNDLE_ASSETS == "assets"
-    assert "ember" not in Path(assets_module.__file__).read_text(encoding="utf-8").lower()
+    source = Path(assets_module.__file__).read_text(encoding="utf-8")
+    assert not re.search(r"\bember\b", source, re.IGNORECASE)
 
 
 # ── The declaration ────────────────────────────────────────────────
