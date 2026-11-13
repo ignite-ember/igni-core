@@ -75,6 +75,15 @@ def test_an_empty_status_reads_as_the_documented_defaults() -> None:
     }
 
 
+def test_a_null_in_a_status_reads_as_nothing_not_as_the_word_none() -> None:
+    raw = {"model": None, "permission_mode": None, "max_context": None, "input_tokens": None}
+    read = StatusAnswer.from_rpc(raw)
+    assert read.model == ""
+    assert read.permission_mode == ""
+    assert (read.max_context, read.input_tokens) == (0, 0)
+    assert read.session_status("s") == SessionStatus.from_status(raw, "s")
+
+
 def test_a_status_reads_exactly_as_the_session_status_does() -> None:
     raw = {
         "model": "m-1",

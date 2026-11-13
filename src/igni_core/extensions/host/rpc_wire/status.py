@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from igni_core.extensions.host.values import Connection, SessionStatus
+from igni_core.extensions.host.values import Connection, SessionStatus, _text
 
 
 class StatusAnswer(BaseModel):
@@ -29,9 +29,9 @@ class StatusAnswer(BaseModel):
     @classmethod
     def from_rpc(cls, raw: dict[str, Any]) -> StatusAnswer:
         return cls(
-            model=str(raw.get("model", "")),
+            model=_text(raw.get("model")),
             model_configured=bool(raw.get("model_configured", True)),
-            permission_mode=str(raw.get("permission_mode", "default")),
+            permission_mode=_text(raw.get("permission_mode", "default")),
             max_context=int(raw.get("max_context") or 0),
             cloud_connected=bool(raw.get("cloud_connected")),
             input_tokens=int(raw.get("input_tokens") or 0),
