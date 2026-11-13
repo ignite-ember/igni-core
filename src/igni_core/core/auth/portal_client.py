@@ -164,6 +164,14 @@ class PortalClient:
         url = f"{self._base('Validating your session')}/v1/portal/me"
         try:
             resp = await self._get(url, headers=self._bearer(token))
+        except UnicodeEncodeError as exc:
+            # A token that cannot be a header value never left this machine.
+            logger.debug("Token validation refused a non-ASCII token: %s", exc)
+            return ValidateResult(
+                ok=False,
+                reason="decode_error",
+                error=f"The token is not a valid header value: {exc}",
+            )
         except (httpx.HTTPError, OSError) as exc:
             logger.debug("Token validation network error: %s", exc)
             return ValidateResult(ok=False, reason="network_error", error=str(exc))
@@ -276,6 +284,9 @@ class PortalClient:
             headers["If-None-Match"] = etag
         try:
             resp = await self._get(url, headers=headers)
+        except UnicodeEncodeError as exc:  # a token that cannot be a header value
+            logger.debug("fetch_group_pack refused a non-ASCII token: %s", exc)
+            return None
         except (httpx.HTTPError, OSError) as exc:
             logger.debug("fetch_group_pack network error: %s", exc)
             return None
