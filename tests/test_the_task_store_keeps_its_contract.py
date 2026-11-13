@@ -165,6 +165,16 @@ class TestCancel:
         task = await store.get("t1")
         assert (task.status, task.result, task.error) == (before, "the result", "the error")
 
+    @pytest.mark.asyncio
+    async def test_a_row_this_build_cannot_read_is_not_found_and_untouched(self, db, store):
+        await _insert_raw(db, "odd", "wat")
+
+        assert await store.cancel("odd") is None
+
+        async with db.session() as session:
+            row = await session.get(ScheduledTaskModel, "odd")
+        assert (row.status, row.result) == ("wat", "kept")
+
 
 class TestDueAndNext:
     @pytest.mark.asyncio
