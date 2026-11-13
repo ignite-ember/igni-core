@@ -37,6 +37,15 @@ def test_the_shell_toolkit_is_registered_as_igni_shell() -> None:
     assert "run_shell_command" in {**toolkit.functions, **toolkit.async_functions}
 
 
+def test_the_edit_toolkit_is_registered_as_igni_edit() -> None:
+    """Like the shell toolkit, the edit toolkit carries igni's name, not the
+    old product's. The model sees the tool names, never the toolkit's."""
+    toolkit = IgniEditTools()
+
+    assert toolkit.name == "igni_edit"
+    assert set(toolkit.functions) == {"edit_file", "edit_file_replace_all", "create_file"}
+
+
 class TestShellToolkitConfirmation:
     def test_run_shell_command_has_requires_confirmation_flag(self) -> None:
         # ``run_shell_command`` is async — used to be routed to

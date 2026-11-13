@@ -27,6 +27,7 @@ parsing strategy — the backend coordinator only iterates.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Protocol
 
@@ -34,6 +35,19 @@ from pydantic import BaseModel
 
 from igni_core.core.scheduler.parser import parse_time
 from igni_core.core.scheduler.recurrence import Recurrence
+
+
+def _rfind_separator(text: str, sep: str) -> int:
+    """Index in ``text`` of the right-most ``sep``, ignoring case; -1 if absent.
+
+    Searched on ``text`` itself, not on ``text.lower()``: lowercasing can
+    change a string's length (``"İ"`` becomes two characters), so an index
+    taken from the lowered copy cut the description at the wrong place.
+    """
+    last = -1
+    for match in re.finditer(re.escape(sep), text, re.IGNORECASE):
+        last = match.start()
+    return last
 
 
 class ParsedSchedule(BaseModel):
@@ -74,7 +88,7 @@ class RecurringClauseParser(BaseModel):
 
     def try_parse(self, text: str) -> ParsedSchedule | None:
         for sep in self.separators:
-            idx = text.lower().rfind(sep)
+            idx = _rfind_separator(text, sep)
             if idx > 0:
                 description = text[:idx].strip()
                 recur_part = text[idx:].strip()
@@ -99,7 +113,7 @@ class OneShotClauseParser(BaseModel):
 
     def try_parse(self, text: str) -> ParsedSchedule | None:
         for sep in self.separators:
-            idx = text.lower().rfind(sep)
+            idx = _rfind_separator(text, sep)
             if idx > 0:
                 description = text[:idx].strip()
                 time_part = text[idx:].strip()

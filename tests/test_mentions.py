@@ -171,3 +171,26 @@ class TestPathShapes:
         # generous on purpose.
         cleaned, paths = process_file_mentions("@my-file.test.ts is here")
         assert paths == ["my-file.test.ts"]
+
+
+class TestUnicodeAndRepeats:
+    def test_a_unicode_path_is_a_mention(self):
+        cleaned, paths = process_file_mentions("lees @docs/café—notes.md graag")
+
+        assert paths == ["docs/café—notes.md"]
+        assert cleaned.startswith(
+            "<attached-files>\n[Referenced files: docs/café—notes.md — read before responding]\n"
+            "</attached-files>\n"
+        )
+        assert cleaned.endswith("lees @docs/café—notes.md graag")
+
+    def test_a_mention_after_a_tab_counts(self):
+        _, paths = process_file_mentions("a\t@x.py")
+
+        assert paths == ["x.py"]
+
+    def test_a_mention_glued_to_a_word_does_not_count(self):
+        cleaned, paths = process_file_mentions("see foo@bar.py and (@baz.py)")
+
+        assert paths == []
+        assert cleaned == "see foo@bar.py and (@baz.py)"

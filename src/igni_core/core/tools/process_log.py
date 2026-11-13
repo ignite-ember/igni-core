@@ -23,7 +23,7 @@ the supervisor rather than a module global.
 Lifecycle of a :class:`ProcessLogStore`:
 
 * Constructor takes ``project_dir: str | Path | None``. ``None``
-  falls back to ``$TMPDIR/ember-process-logs/`` so the store is
+  falls back to ``$TMPDIR/igni-process-logs/`` so the store is
   functional in test / headless contexts without forcing every
   caller to plumb a path.
 * :meth:`path` — deterministic path for a pid. Both writer +
@@ -94,13 +94,13 @@ class ProcessLogStore:
     def path(self, pid: int) -> Path:
         """Return ``<project_dir>/.igni/process_logs/<pid>.log``.
 
-        Falls back to ``$TMPDIR/ember-process-logs/<pid>.log`` when
+        Falls back to ``$TMPDIR/igni-process-logs/<pid>.log`` when
         no ``project_dir`` was supplied — keeps the writer
         functional in test / headless contexts without forcing
         every caller to plumb a path.
         """
         if self._project_dir is None:
-            root = Path(tempfile.gettempdir()) / "ember-process-logs"
+            root = Path(tempfile.gettempdir()) / "igni-process-logs"
         else:
             root = Path(str(self._project_dir)) / CONFIG_DIR / "process_logs"
         return root / f"{int(pid)}.log"

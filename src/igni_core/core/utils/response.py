@@ -77,6 +77,8 @@ class ResponseTextExtractor:
 
     @staticmethod
     def _from_messages(messages: Any) -> str | None:
+        if messages is None:
+            return None
         for msg in reversed(messages):
             candidate = getattr(msg, "content", None)
             if candidate:

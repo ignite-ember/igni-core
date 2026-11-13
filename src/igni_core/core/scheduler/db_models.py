@@ -92,32 +92,21 @@ class ScheduledTaskModel(ScopedColumns, Base):
         so the task is read as one-shot rather than guessed at. One
         such row costs its own repeat and nothing else.
 
-        The parse is guarded, because
         :meth:`~igni_core.core.scheduler.recurrence.Recurrence.from_canonical`
-        turns the amount into an ``int`` and an absurd one (a number with
-        thousands of digits) raises ``ValueError``. An exception here
-        would escape :meth:`to_task` into the runner's poll loop, where
-        the row stays pending and due: every later poll would abort on
-        it the same way, and no task in the project would ever run
-        again.
+        answers ``None`` for an absurd amount (thousands of digits) as for
+        any other text it cannot read, so it never raises out of the row
+        read into the runner's poll loop, where the row would stay pending
+        and due and abort every later poll the same way.
         """
         raw = self.recurrence or ""
         if not raw:
             return ""
-        try:
-            recognised = Recurrence.from_canonical(raw) is not None
-        except ValueError as exc:
-            logger.warning(
-                "Task %s holds an unreadable recurrence (%s) — reading it as one-shot",
-                self.id,
-                exc,
-            )
-            return ""
+        recognised = Recurrence.from_canonical(raw) is not None
         if not recognised:
             logger.warning(
                 "Task %s holds an unrecognised recurrence %r — reading it as one-shot",
                 self.id,
-                raw,
+                raw[:80],
             )
             return ""
         return raw

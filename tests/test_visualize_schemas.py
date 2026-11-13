@@ -161,3 +161,33 @@ class TestTheToolsArgument:
         )
         assert spec.root == "r"
         assert spec.elements["r"].visible is True
+
+
+class TestTheFallbackAndVisibilityShapes:
+    def test_the_fallback_is_an_empty_placeholder_with_a_usable_state(self):
+        spec = JsonRenderSpec.absorb("junk")
+        assert (spec.root, spec.elements, spec.state) == ("", {}, {})
+
+    @pytest.mark.parametrize(
+        "visible",
+        [True, False, None, {"$state": "/x"}, [{"$state": "/x"}, {"$state": "/y"}], {"$and": []}],
+    )
+    def test_every_visibility_shape_the_renderer_takes_is_kept(self, visible):
+        element = JsonRenderElement.model_validate({"type": "Text", "visible": visible})
+        assert element.visible == visible
+
+    def test_a_list_of_non_conditions_is_not_a_visibility(self):
+        with pytest.raises(ValidationError):
+            JsonRenderElement.model_validate({"type": "Text", "visible": ["yes"]})
+
+    def test_a_bad_visibility_is_absorbed_whole(self):
+        spec = JsonRenderSpec.absorb(
+            {"root": "r", "elements": {"r": {"type": "Text", "visible": "yes"}}}
+        )
+        assert (spec.root, spec.elements) == ("", {})
+
+    def test_unicode_ids_and_props_survive(self):
+        spec = JsonRenderSpec.absorb(
+            {"root": "kaart", "elements": {"kaart": {"type": "Text", "props": {"t": "日本 ✓"}}}}
+        )
+        assert spec.elements["kaart"].props == {"t": "日本 ✓"}

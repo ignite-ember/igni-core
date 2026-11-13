@@ -68,6 +68,10 @@ class FileEditNotifier:
 default_file_edit_notifier = FileEditNotifier()
 
 
+class _Unreadable(Exception):
+    """A file the edit cannot read or write; the message is the tool's answer."""
+
+
 class EditResult(BaseModel):
     """Typed result of one :class:`IgniEditTools` operation.
 
@@ -118,7 +122,7 @@ class IgniEditTools(Toolkit):
                 :class:`agno.tools.Toolkit` (``name``, ``tool_hooks``,
                 etc.). Explicit passthrough — no silent kwarg drop.
         """
-        super().__init__(name="ember_edit", **toolkit_kwargs)
+        super().__init__(name="igni_edit", **toolkit_kwargs)
         self.base_dir = Path(base_dir) if base_dir else Path.cwd()
         # Share the module-level notifier by default so a single
         # backend-set listener sees edits from every toolkit instance.
@@ -143,6 +147,27 @@ class IgniEditTools(Toolkit):
             p = self.base_dir / p
         return p
 
+    @staticmethod
+    def _failure(path: Path, reason: str) -> str:
+        return str(EditResult(ok=False, path=str(path), reason=reason))
+
+    @staticmethod
+    def _read(path: Path) -> str:
+        """The file's text, or an ``Error:`` string when it cannot be read as text."""
+        try:
+            return path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise _Unreadable(f"Error: {path} is not a UTF-8 text file.") from None
+        except OSError as exc:
+            raise _Unreadable(f"Error: could not read {path}: {exc.strerror or exc}") from None
+
+    @staticmethod
+    def _write(path: Path, content: str) -> None:
+        try:
+            path.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            raise _Unreadable(f"Error: could not write {path}: {exc.strerror or exc}") from None
+
     def edit_file(self, file_path: str, old_string: str, new_string: str) -> str:
         """Replace a specific string in a file. The old_string must appear exactly once.
 
@@ -161,7 +186,12 @@ class IgniEditTools(Toolkit):
                 EditResult(ok=False, path=str(path), reason=f"Error: File not found: {path}")
             )
 
-        content = path.read_text(encoding="utf-8")
+        if not old_string:
+            return self._failure(path, "Error: old_string is empty. Provide the text to replace.")
+        try:
+            content = self._read(path)
+        except _Unreadable as exc:
+            return self._failure(path, str(exc))
         count = content.count(old_string)
 
         if count == 0:
@@ -191,7 +221,10 @@ class IgniEditTools(Toolkit):
             )
 
         new_content = content.replace(old_string, new_string, 1)
-        path.write_text(new_content, encoding="utf-8")
+        try:
+            self._write(path, new_content)
+        except _Unreadable as exc:
+            return self._failure(path, str(exc))
         self._notifier.notify(path)
 
         return str(EditResult(ok=True, path=str(path), reason=f"Successfully edited {path}"))
@@ -214,7 +247,12 @@ class IgniEditTools(Toolkit):
                 EditResult(ok=False, path=str(path), reason=f"Error: File not found: {path}")
             )
 
-        content = path.read_text(encoding="utf-8")
+        if not old_string:
+            return self._failure(path, "Error: old_string is empty. Provide the text to replace.")
+        try:
+            content = self._read(path)
+        except _Unreadable as exc:
+            return self._failure(path, str(exc))
         count = content.count(old_string)
 
         if count == 0:
@@ -227,7 +265,10 @@ class IgniEditTools(Toolkit):
             )
 
         new_content = content.replace(old_string, new_string)
-        path.write_text(new_content, encoding="utf-8")
+        try:
+            self._write(path, new_content)
+        except _Unreadable as exc:
+            return self._failure(path, str(exc))
         self._notifier.notify(path)
 
         return str(
@@ -260,8 +301,13 @@ class IgniEditTools(Toolkit):
                 )
             )
 
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._write(path, content)
+        except OSError as exc:
+            return self._failure(path, f"Error: could not create {path}: {exc.strerror or exc}")
+        except _Unreadable as exc:
+            return self._failure(path, str(exc))
         self._notifier.notify(path)
 
         return str(EditResult(ok=True, path=str(path), reason=f"Successfully created {path}"))

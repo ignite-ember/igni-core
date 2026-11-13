@@ -17,11 +17,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
+from sqlalchemy.exc import OperationalError
 
 from igni_core.backend.server import BackendServer
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.core.data_paths import state_db_path
+from igni_core.core.db.database import Database
+from igni_core.core.db.scope import StorageScope, Tenant
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.session.session_preferences import SessionPreferencesStore
 
@@ -156,6 +159,51 @@ class TestSessionPreferencesStore:
         store = SessionPreferencesStore(tmp_path / "state.db")
         await store.aset_model("sess", "MiniMax-M2.7")
         assert await store.aget_model("sess") == "MiniMax-M2.7"
+
+    @staticmethod
+    def _locked(store: SessionPreferencesStore) -> None:
+        def refuse():
+            raise OperationalError("select 1", {}, RuntimeError("database is locked"))
+
+        store._db.sync_session = refuse  # type: ignore[method-assign]
+
+    def test_a_save_that_cannot_land_answers_false_and_keeps_the_old_choice(self, tmp_path):
+        """The in-memory switch has happened; the store tells the caller the
+        choice will not survive a resume instead of raising."""
+        db = tmp_path / "state.db"
+        SessionPreferencesStore(db).set_model("sess", "old-model")
+        store = SessionPreferencesStore(db)
+        self._locked(store)
+
+        assert store.set_model("sess", "new-model") is False
+        assert SessionPreferencesStore(db).get_model("sess") == "old-model"
+
+    def test_a_read_that_cannot_land_answers_none(self, tmp_path):
+        db = tmp_path / "state.db"
+        SessionPreferencesStore(db).set_model("sess", "m")
+        store = SessionPreferencesStore(db)
+        self._locked(store)
+
+        assert store.get_model("sess") is None
+
+    @pytest.mark.asyncio
+    async def test_the_async_wrappers_report_the_same_failures(self, tmp_path):
+        store = SessionPreferencesStore(tmp_path / "state.db")
+        self._locked(store)
+
+        assert await store.aset_model("sess", "m") is False
+        assert await store.aget_model("sess") is None
+
+    def test_projects_of_one_producer_keep_their_own_choice(self, tmp_path):
+        scope = StorageScope.for_tenant(Tenant(org="acme", producer="person:ada"))
+        db = Database(tmp_path / "shared.db", scope=scope)
+        alpha = SessionPreferencesStore(db.in_scope(scope.model_copy(update={"project": "alpha"})))
+        beta = SessionPreferencesStore(db.in_scope(scope.model_copy(update={"project": "beta"})))
+
+        alpha.set_model("sess", "model-a")
+
+        assert alpha.get_model("sess") == "model-a"
+        assert beta.get_model("sess") is None
 
 
 class TestBackendServerResumeOverride:

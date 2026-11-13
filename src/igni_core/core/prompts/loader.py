@@ -46,7 +46,7 @@ class PromptLoader:
         Raises ``FileNotFoundError`` when there is no such file.
         """
         path = self._directory / f"{name}.md"
-        return self.expand(path.read_text().strip())
+        return self.expand(path.read_text(encoding="utf-8").strip())
 
     def expand(self, text: str) -> str:
         """``text``, with the anchors this process's extensions fill."""

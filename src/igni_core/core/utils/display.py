@@ -16,6 +16,7 @@ type-signature level rather than by convention.
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.panel import Panel
 
 from igni_core.core.utils.display_schemas import RunStats, ToolCallDisplay
@@ -43,7 +44,7 @@ class DisplayManager:
     def print_response(self, text: str, agent_name: str | None = None) -> None:
         """Print an agent response with optional agent label."""
         if agent_name:
-            self.console.print(f"[dim]{agent_name}[/dim]")
+            self.console.print(f"[dim]{escape(agent_name)}[/dim]")
         self.print_markdown(text)
 
     def print_tool_call(self, call: ToolCallDisplay) -> None:
@@ -55,19 +56,19 @@ class DisplayManager:
         marker ``>`` — no emoji icons (Rule 3).
         """
         args_str = call.format_args()
-        self.console.print(f"[dim]  > {call.tool_name}{args_str}[/dim]")
+        self.console.print(f"[dim]  > {escape(call.tool_name)}{escape(args_str)}[/dim]")
 
     def print_error(self, message: str) -> None:
         """Print an error message."""
-        self.console.print(f"[red]Error:[/red] {message}")
+        self.console.print(f"[red]Error:[/red] {escape(message)}")
 
     def print_warning(self, message: str) -> None:
         """Print a warning message."""
-        self.console.print(f"[yellow]Warning:[/yellow] {message}")
+        self.console.print(f"[yellow]Warning:[/yellow] {escape(message)}")
 
     def print_info(self, message: str) -> None:
         """Print an info message."""
-        self.console.print(f"[dim]{message}[/dim]")
+        self.console.print(f"[dim]{escape(message)}[/dim]")
 
     def print_run_stats(self, stats: RunStats) -> None:
         """Print run statistics after a completed run.
@@ -76,13 +77,13 @@ class DisplayManager:
         :meth:`RunStats.format_summary`; this method just wraps
         it in the ``── … ──`` separator and hands it to Rich.
         """
-        self.console.print(f"[dim]  ── {stats.format_summary()} ──[/dim]")
+        self.console.print(f"[dim]  ── {escape(stats.format_summary())} ──[/dim]")
 
     def print_welcome(self, version: str) -> None:
         """Print the welcome banner."""
         self.console.print(
             Panel(
-                f"[bold]igni[/bold] v{version}\n"
+                f"[bold]igni[/bold] v{escape(version)}\n"
                 f"[dim]AI coding assistant powered by Agno[/dim]\n\n"
                 f"Type your message, or /help for commands.\n"
                 f"Press Ctrl+C to exit.",

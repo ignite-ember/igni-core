@@ -53,6 +53,7 @@ class LLMResultBuffer:
         if len(text) <= cap:
             return text
         half = cap // 2
-        return (
-            text[:half] + f"\n\n... ({len(text) - cap} characters truncated) ...\n\n" + text[-half:]
-        )
+        # ``text[-0:]`` is the whole text, not nothing: with a cap of 0
+        # or 1 there is no tail to keep, so the tail is empty.
+        tail = text[len(text) - half :] if half else ""
+        return text[:half] + f"\n\n... ({len(text) - cap} characters truncated) ...\n\n" + tail
