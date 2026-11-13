@@ -9,6 +9,7 @@ cannot drift from what the binder has already checked.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from igni_core.extensions.host.definition import HOST_SCHEMA
 from igni_core.extensions.host.errors import HostModelError
@@ -69,3 +70,12 @@ def test_parameters_outside_the_model_are_invalid():
 
     assert refused.value.code is ErrorCode.INVALID
     assert refused.value.message.startswith("chat.search(extra):")
+
+
+def test_a_params_model_cannot_be_changed_once_read():
+    """The parameters a member read are the parameters it acts on."""
+    params = SearchChatParams.model_validate({"query": "a", "limit": None})
+
+    with pytest.raises(ValidationError):
+        params.query = "b"  # type: ignore[misc]
+    assert params.query == "a"

@@ -81,8 +81,8 @@ class HostAllowList:
         text = entry.strip()
         if not text:
             return None
-        parsed = urlsplit(f"//{text}")
         try:
+            parsed = urlsplit(f"//{text}")
             port = parsed.port
         except ValueError:
             return None
@@ -185,12 +185,14 @@ class EgressProxy:
     def _authorised(self, lines: list[str]) -> bool:
         if self._token is None:
             return True
-        expected = base64.b64encode(f"{PROXY_USER}:{self._token}".encode()).decode()
+        expected = base64.b64encode(f"{PROXY_USER}:{self._token}".encode())
         for line in lines[1:]:
             name, _, value = line.partition(":")
             if name.strip().lower() == "proxy-authorization":
                 scheme, _, credentials = value.strip().partition(" ")
-                if scheme.lower() == "basic" and hmac.compare_digest(credentials.strip(), expected):
+                if scheme.lower() == "basic" and hmac.compare_digest(
+                    credentials.strip().encode("latin-1"), expected
+                ):
                     return True
         return False
 
@@ -268,7 +270,11 @@ class EgressProxy:
     async def _http(
         self, first: bytes, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        head = first + await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), HEAD_TIMEOUT_S)
+        try:
+            head = first + await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), HEAD_TIMEOUT_S)
+        except asyncio.LimitOverrunError:
+            await self._reply(writer, 431, "Request Header Fields Too Large", "")
+            return
         if len(head) > MAX_HEAD:
             await self._reply(writer, 431, "Request Header Fields Too Large", "")
             return
@@ -308,8 +314,13 @@ class EgressProxy:
             await splice((reader, writer), upstream)
             return
 
-        parts = urlsplit(target)
-        if parts.scheme.lower() != "http" or not parts.hostname:
+        try:
+            parts = urlsplit(target)
+            url_port = parts.port
+        except ValueError:
+            parts = None
+            url_port = None
+        if parts is None or parts.scheme.lower() != "http" or not parts.hostname:
             await self._reply(
                 writer,
                 400,
@@ -318,7 +329,7 @@ class EgressProxy:
             )
             return
         host = parts.hostname
-        port = parts.port or 80
+        port = url_port or 80
         reason = self._refuse_reason(host, port)
         if reason is not None:
             await self._reply(writer, 403, "Forbidden", reason)
@@ -387,7 +398,11 @@ class EgressProxy:
             host = socket.inet_ntop(socket.AF_INET6, await reader.readexactly(16))
         elif kind == 3:
             length = (await reader.readexactly(1))[0]
-            host = (await reader.readexactly(length)).decode("idna")
+            try:
+                host = (await reader.readexactly(length)).decode("idna")
+            except UnicodeError:
+                await self._socks_reply(writer, 4)  # host unreachable: no such name
+                return
         else:
             await self._socks_reply(writer, 8)
             return

@@ -598,7 +598,7 @@ def test_a_pipe_admits_the_person_and_the_container_only_at_low_integrity():
 def test_the_bridge_says_it_needs_windows_elsewhere(capsys):
     if ON_WINDOWS:
         pytest.skip("this is Windows")
-    assert winbridge.main(["run", "--sid", "x", "--", "true"]) == 2
+    assert winbridge.main(["shim", "--", "true"]) == 2
     assert "Windows only" in capsys.readouterr().err
 
 

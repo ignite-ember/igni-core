@@ -250,15 +250,15 @@ class FakePlugins:
         self.enabled.append((name, enabled))
         return SimpleNamespace(text=f"{name} {'on' if enabled else 'off'}")
 
-    def install(self, ref: str, install_ref: str | None) -> Any:
+    async def install(self, ref: str, install_ref: str | None) -> Any:
         self.installed.append(ref)
         return SimpleNamespace(text=f"installed {ref}")
 
-    def update(self, name: str, install_ref: str | None) -> Any:
+    async def update(self, name: str, install_ref: str | None) -> Any:
         self.updated.append(name)
         return SimpleNamespace(text=f"updated {name}")
 
-    def remove(self, name: str) -> Any:
+    async def remove(self, name: str) -> Any:
         self.removed.append(name)
         return SimpleNamespace(text=f"removed {name}")
 
@@ -271,15 +271,15 @@ class FakeMarketplaces:
         self.removed: list[str] = []
         self.refreshed: list[str | None] = []
 
-    def add(self, url: str) -> Any:
+    async def add(self, url: str) -> Any:
         self.added.append(url)
         return SimpleNamespace(text=f"added {url}")
 
-    def remove(self, name: str) -> Any:
+    async def remove(self, name: str) -> Any:
         self.removed.append(name)
         return SimpleNamespace(text=f"removed {name}")
 
-    def refresh(self, name: str | None) -> Any:
+    async def refresh(self, name: str | None) -> Any:
         self.refreshed.append(name)
         return SimpleNamespace(text="refreshed")
 

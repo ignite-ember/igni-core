@@ -68,6 +68,28 @@ class TestRunProducer:
         assert producer.kind == "team"
         assert producer.name == "reviewers"
 
+    def test_a_falsy_name_that_is_not_a_string_is_missing(self):
+        class Zero:
+            agent_name = 0
+            team_name = "reviewers"
+
+        producer = RunProducer.from_agno(Zero())
+        assert (producer.kind, producer.name) == ("team", "reviewers")
+
+    def test_none_names_and_a_none_source_are_unknown(self):
+        class Nones:
+            agent_name = None
+            team_name = None
+
+        assert RunProducer.from_agno(Nones()).kind == "unknown"
+        assert RunProducer.from_agno(None) == RunProducer(kind="unknown", name="")
+
+    def test_reading_does_not_change_the_source(self):
+        run = TeamRunOutput(run_id="r1", team_id="t1", team_name="reviewers")
+        before = dict(vars(run))
+        RunProducer.from_agno(run)
+        assert vars(run) == before
+
     def test_a_name_that_is_not_a_string_is_read_as_text(self):
         class Odd:
             agent_name = 42
@@ -105,6 +127,25 @@ class TestNothingIsPatched:
         native = {f.name for f in dataclasses.fields(TeamRunOutput)}
         assert "agent_id" not in TeamRunOutput.__dict__ or "agent_id" in native
 
+    def test_a_team_run_output_does_not_answer_to_agent_id(self):
+        assert not hasattr(TeamRunOutput(run_id="r1", team_id="t1"), "agent_id")
+        assert not hasattr(TeamRunOutput, "agent_id")
+
+    def test_a_team_run_output_has_no_agent_id_after_the_protocol_is_imported(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import igni_core.protocol, igni_core.protocol.agno_compat; "
+                "from agno.run.team import TeamRunOutput; "
+                "print(hasattr(TeamRunOutput(run_id='r'), 'agent_id'))",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert result.stdout.strip() == "False", result.stdout
+
     def test_importing_the_protocol_package_does_not_import_agno(self):
         # The protocol package is the FE-facing contract; pulling Agno
         # into it would make an import a side effect on a third-party
@@ -121,3 +162,12 @@ class TestNothingIsPatched:
             check=True,
         )
         assert result.stdout.strip() == "[]", result.stdout
+
+    def test_every_public_message_name_is_reachable_from_the_package(self):
+        import igni_core.protocol as protocol
+
+        public = [n for n in dir(msg) if not n.startswith("_")]
+        assert "RunStarted" in public
+        missing = [n for n in getattr(msg, "__all__", public) if not hasattr(protocol, n)]
+        assert missing == []
+        assert protocol.RunStarted is msg.RunStarted

@@ -80,7 +80,7 @@ class SseParser:
             self._data.append(value)
         elif name == "id" and "\0" not in value:
             self._id = value
-        elif name == "retry" and value.isdigit():
+        elif name == "retry" and value.isascii() and value.isdigit() and len(value) <= 12:
             self._retry = int(value)
         return None
 
@@ -257,13 +257,15 @@ class NotificationStreamFollower:
             api_url, session = await self._server.signed_in()
         except NotSignedIn:
             return StreamOutcome.SIGNED_OUT
-        headers = {
+        headers: dict[str, str | bytes] = {
             "Authorization": f"Bearer {session.access_token}",
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache",
         }
         if self._cursor is not None:
-            headers["Last-Event-ID"] = self._cursor
+            # Bytes, so a cursor outside ASCII is sent as UTF-8 instead of
+            # failing to encode on every reconnect.
+            headers["Last-Event-ID"] = self._cursor.encode()
         connected_with = self._cursor
         opened_at: float | None = None
         timeout = httpx.Timeout(15.0, read=self.READ_TIMEOUT)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 from typing import ClassVar, Protocol
+from urllib.parse import quote
 
 import httpx
 
@@ -48,7 +49,10 @@ class ServerAttachments:
             api_url, session = await self._server.signed_in()
         except NotSignedIn as exc:
             raise AttachmentUnavailable(f"nobody to fetch {attachment.filename} as: {exc}") from exc
-        path = self.PATH.format(event_id=event_id, attachment_id=attachment.attachment_id)
+        path = self.PATH.format(
+            event_id=quote(event_id, safe=""),
+            attachment_id=quote(attachment.attachment_id, safe=""),
+        )
         try:
             async with (
                 busy_call("igni-server", "an item's attachment"),
@@ -69,7 +73,7 @@ class ServerAttachments:
         content = response.content
         if len(content) > self.MAX_BYTES:
             raise AttachmentUnavailable(f"{attachment.filename} is larger than igni accepts")
-        if attachment.sha256 and hashlib.sha256(content).hexdigest() != attachment.sha256:
+        if attachment.sha256 and hashlib.sha256(content).hexdigest() != attachment.sha256.lower():
             raise AttachmentUnavailable(f"{attachment.filename} does not match its SHA-256")
         return content
 

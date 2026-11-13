@@ -43,8 +43,9 @@ class ProjectRoot:
             root = self._dirs.project_dir_of(session_id or self._dirs.default_session()).resolve()
             target = Path(path)
             target = target.resolve() if target.is_absolute() else (root / target).resolve()
-        except (OSError, ValueError) as exc:
-            # Not a path the filesystem can resolve (a null byte, a loop).
+        except (OSError, ValueError, RuntimeError) as exc:
+            # Not a path the filesystem can resolve (a null byte; a loop, which
+            # Python 3.12 reports as a RuntimeError).
             return ProjectPath(ok=False, reason=str(exc))
         if not target.is_relative_to(root):
             return ProjectPath(ok=False, reason="outside the project")

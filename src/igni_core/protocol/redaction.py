@@ -13,13 +13,17 @@ def url_without_credentials(url: str) -> str:
         return url
     try:
         parts = urlsplit(url)
+        port = parts.port
     except ValueError:
         return ""
     if not parts.netloc:
         return url
     host = parts.hostname or ""
-    if parts.port is not None:
-        host = f"{host}:{parts.port}"
+    if ":" in host:
+        # An IPv6 literal: ``hostname`` drops its brackets, a URL needs them.
+        host = f"[{host}]"
+    if port is not None:
+        host = f"{host}:{port}"
     return urlunsplit((parts.scheme, host, parts.path, "", ""))
 
 

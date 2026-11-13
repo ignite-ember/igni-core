@@ -254,13 +254,13 @@ class ExtensionStore:
         target = self.path_for(extension_id)
         self._provenance.path(extension_id).unlink(missing_ok=True)
         self.drop_environments(extension_id)
-        if not target.is_dir():
-            return False
-        ReadOnlyTree.remove(target)
         # Its settings go with it. Leaving them would mean
         # reinstalling an extension silently inherited whatever the
         # last administrator had configured.
         self._settings_values().delete(extension_id)
+        if not target.is_dir():
+            return False
+        ReadOnlyTree.remove(target)
         logger.info("removed extension %s", extension_id)
         return True
 

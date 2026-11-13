@@ -9,7 +9,7 @@ answers is what the schema promised.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, ForwardRef, Optional
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model
 
@@ -24,6 +24,10 @@ class SchemaTypes:
         self._schema = schema
         self._models: dict[str, type[BaseModel]] = {}
         self._adapters: dict[str, TypeAdapter[Any]] = {}
+        # Named types being built now: one that is reached again while its
+        # own fields are built is a type that names itself.
+        self._building: list[str] = []
+        self._forward = False
 
     def python_type(self, expression: str) -> Any:
         return self._build(TypeExpr.parse(expression))
@@ -75,22 +79,34 @@ class SchemaTypes:
         found = self._models.get(name)
         if found is not None:
             return found
+        if name in self._building:
+            self._forward = True
+            return ForwardRef(name)
         spec = self._schema.type(name)
         if spec is None:
             raise KeyError(name)
-        fields: dict[str, Any] = {}
-        for f in spec.fields:
-            annotation = self._build(TypeExpr.parse(f.type))
-            if f.optional:
-                fields[f.name] = (annotation, None)
-            else:
-                fields[f.name] = (annotation, ...)
-        model = create_model(  # type: ignore[call-overload]
-            name,
-            __config__=ConfigDict(extra="allow", strict=False),
-            **fields,
-        )
+        self._building.append(name)
+        try:
+            fields: dict[str, Any] = {}
+            for f in spec.fields:
+                annotation = self._build(TypeExpr.parse(f.type))
+                if f.optional:
+                    fields[f.name] = (annotation, None)
+                else:
+                    fields[f.name] = (annotation, ...)
+            model = create_model(  # type: ignore[call-overload]
+                name,
+                __config__=ConfigDict(extra="allow", strict=False),
+                **fields,
+            )
+        finally:
+            self._building.pop()
         self._models[name] = model
+        if self._forward and not self._building:
+            # The names left open while building are known now.
+            self._forward = False
+            for built in self._models.values():
+                built.model_rebuild(force=True, _types_namespace=dict(self._models))
         return model
 
 

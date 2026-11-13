@@ -70,7 +70,7 @@ class SignedInServer:
         if not is_configured(api_url):
             raise NotSignedIn("no igni server is configured")
         assert api_url is not None
-        return api_url.rstrip("/"), session
+        return api_url.strip().rstrip("/"), session
 
 
 class IgniNotificationsClient:

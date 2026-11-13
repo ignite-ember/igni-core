@@ -66,17 +66,30 @@ def main(argv: list[str]) -> int:
         if option != "--forward":
             print(f"bridge.py: unknown option {option}", file=sys.stderr)
             return 2
-        port_text, _, path = next(it).partition("=")
+        value = next(it, None)
+        port_text, _, path = (value or "").partition("=")
+        if value is None or not port_text.isdecimal():
+            print(f"bridge.py: --forward needs PORT=SOCKET, not {value!r}", file=sys.stderr)
+            return 2
         forwards.append((int(port_text), path))
     for port, path in forwards:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        listener.bind(("127.0.0.1", port))
+        try:
+            listener.bind(("127.0.0.1", port))
+        except OSError as exc:
+            print(f"bridge.py: cannot listen on 127.0.0.1:{port}: {exc}", file=sys.stderr)
+            return 1
         listener.listen(64)
         threading.Thread(target=_serve, args=(listener, path), daemon=True).start()
     if not command:
         return 2
-    child = subprocess.Popen(command)  # noqa: S603 — the extension's own argv
+    try:
+        child = subprocess.Popen(command)  # noqa: S603 — the extension's own argv
+    except OSError as exc:
+        print(f"bridge.py: cannot run {command[0]}: {exc}", file=sys.stderr)
+        # The shell's own statuses: 127 not found, 126 found but not runnable.
+        return 127 if isinstance(exc, FileNotFoundError) else 126
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, lambda signum, _frame: child.send_signal(signum))
     code = child.wait()
