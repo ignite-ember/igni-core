@@ -181,3 +181,43 @@ def test_what_an_author_reads_says_igni():
     message = _describe(zzzzzz=1)
     assert "igni" in message
     assert "".join(["em", "ber"]) not in message.lower()
+
+
+class _Leaf(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    colour: int = 0
+
+
+def _listing_for(model: type[BaseModel], loc: tuple) -> str:
+    error = ValidationError.from_exception_data(
+        "M", [{"type": "extra_forbidden", "loc": loc, "input": 1}]
+    )
+    return ManifestErrors(model).describe(error)
+
+
+def test_a_model_field_is_walked_by_its_alias():
+    class Outer(BaseModel):
+        inner: _Leaf = Field(default_factory=_Leaf, alias="theInner")
+
+    assert _listing_for(Outer, ("theInner", "zzz")).endswith("Known here: colour.")
+    assert _listing_for(Outer, ("inner", "zzz")).endswith("Known here: colour.")
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        tuple[_Leaf, ...],
+        set[_Leaf],
+        frozenset[_Leaf],
+        "Annotated[_Leaf | None, 'note']",
+    ],
+)
+def test_a_model_inside_a_container_or_union_is_still_found(annotation):
+    namespace = {"_Leaf": _Leaf, "Annotated": __import__("typing").Annotated}
+    Outer = type(
+        "Outer",
+        (BaseModel,),
+        {"__annotations__": {"things": annotation}, "__module__": __name__},
+    )
+    Outer.model_rebuild(_types_namespace=namespace)
+    assert _listing_for(Outer, ("things", 0, "zzz")).endswith("Known here: colour.")
