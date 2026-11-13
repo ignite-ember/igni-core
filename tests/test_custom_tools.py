@@ -592,3 +592,28 @@ class TestCustomToolkit:
         tk = CustomToolkit(name="custom_math", functions=[add])
         func = tk.functions["add"]
         assert func is not None
+
+
+# ── the edges of a scan ───────────────────────────────────────────
+
+
+class TestTheEdgesOfAScan:
+    def test_a_tool_file_that_exits_at_import_is_a_failed_file_not_the_end_of_igni(
+        self, home, trust, project
+    ):
+        tools_dir = home / CONFIG_DIR / "tools"
+        _write_tool_file(tools_dir, "a_quits.py", "import sys\nsys.exit(3)\n")
+        _write_tool_file(tools_dir, "b_fine.py", _one_tool("fine"))
+        loader = _loader(trust)
+
+        result = loader.discover(project)
+
+        [failed] = result.failed
+        assert (failed.path.name, failed.error_type, failed.error) == (
+            "a_quits.py",
+            "SystemExit",
+            "3",
+        )
+        assert [tk.name for tk in result.toolkits] == ["custom_b_fine"]
+        assert "igni_custom_tools.a_quits" not in sys.modules
+        assert loader._loaded_module_names == ["igni_custom_tools.b_fine"]

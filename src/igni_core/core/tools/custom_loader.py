@@ -303,7 +303,9 @@ class CustomToolLoader:
 
         try:
             spec.loader.exec_module(module)
-        except Exception as e:
+        except (Exception, SystemExit) as e:
+            # ``SystemExit`` too: a tool file that calls ``sys.exit()`` at import
+            # is a file that failed to load, not a request to end igni.
             logger.warning("Failed to load custom tool file %s: %s", file_path, e)
             # Clean up partial module and forget we ever installed
             # it so :meth:`unload` doesn't try to double-remove.
