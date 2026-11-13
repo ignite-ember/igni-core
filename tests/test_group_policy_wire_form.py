@@ -68,7 +68,11 @@ class TestCompactPack:
 
     def test_surrounding_whitespace_is_stripped(self):
         pack = CompactPack.parse("  h.p.s \n")
-        assert (pack.header_segment, pack.payload_segment, pack.signature_segment) == ("h", "p", "s")
+        assert (pack.header_segment, pack.payload_segment, pack.signature_segment) == (
+            "h",
+            "p",
+            "s",
+        )
 
     def test_the_signing_input_is_header_dot_payload(self):
         pack = CompactPack.parse(_compact(GOOD_HEADER, {"sub": "p"}))
@@ -211,7 +215,7 @@ class TestAnswers:
     def test_an_unchanged_answer_is_its_own_kind_and_never_none(self):
         assert PACK_UNCHANGED is not None
         assert PACK_UNCHANGED.kind == "unchanged"
-        assert PACK_UNCHANGED == UnchangedPack()
+        assert UnchangedPack() == PACK_UNCHANGED
 
     def test_an_unchanged_answer_is_frozen(self):
         with pytest.raises(ValidationError):
