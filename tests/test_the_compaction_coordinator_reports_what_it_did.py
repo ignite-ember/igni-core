@@ -185,6 +185,23 @@ async def test_a_fallback_that_repeats_the_old_summary_is_not_a_new_one(
 
 
 @pytest.mark.asyncio
+async def test_a_summariser_that_leaves_the_old_summary_is_followed_by_the_fallback(
+    structured_nothing,
+) -> None:
+    agno = _conversation(summary=SimpleNamespace(summary="old"))
+    s = _stub(agno)
+    coord = compaction_over(s)
+    coord._fallback.summarise = AsyncMock(return_value="fresh recap")
+
+    result = await coord.compact()
+
+    coord._fallback.summarise.assert_awaited_once()
+    assert (result.ok, result.summary, result.history_cleared) == (True, "fresh recap", True)
+    assert agno.runs == []
+    s.rebuild_main_team.assert_called_once()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("tokens", "window"), [(7999, 10_000), (-5, 10_000), (0, 10_000), (9000, -1)]
 )
