@@ -103,7 +103,7 @@ class TestTheProjectId:
     def test_a_git_that_hangs_falls_back_to_the_path_after_its_timeout(
         self, tmp_path: Path, monkeypatch
     ):
-        _fake_git(tmp_path / "bin", "exec sleep 30", monkeypatch)
+        _fake_git(tmp_path / "bin", "sleep 3; echo https://example.test/late.git", monkeypatch)
         monkeypatch.setattr(data_paths, "_GIT_TIMEOUT_SECONDS", 0.3)
         project = tmp_path / "p"
         project.mkdir()
