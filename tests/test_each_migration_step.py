@@ -471,3 +471,11 @@ def test_one_thread_key_is_kept_once_per_extension(chain: Chain):
     chain.run(insert, x="ext-1", t="other")
     with pytest.raises(IntegrityError):
         chain.run(insert, x="ext-1", t="thread")
+
+
+def test_two_paused_runs_in_one_scope_are_both_kept_by_the_waiting_spawn_table(chain: Chain):
+    chain.up("b8e2f4a6d1c3")
+    columns = "run_id, session_id, agent_session_id, agent_name, parents, created_at"
+    _insert(chain, "waiting_spawns", columns, "'r1', 's', 'a', 'n', '[]', 1", ("o", "p", "j"))
+    _insert(chain, "waiting_spawns", columns, "'r2', 's', 'a', 'n', '[]', 1", ("o", "p", "j"))
+    assert chain.rows("SELECT run_id FROM waiting_spawns ORDER BY run_id") == [("r1",), ("r2",)]
