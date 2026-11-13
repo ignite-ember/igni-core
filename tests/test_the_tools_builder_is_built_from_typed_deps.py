@@ -583,6 +583,14 @@ class TestTheCoordinatorFillsTheBag:
 
         assert deps.registry.broadcast is session.broadcast
 
+    def test_the_coordinator_shares_the_sessions_process_supervisor(self, tmp_path):
+        """Every toolkit runs its backends on the one supervisor the session owns."""
+        session = _FakeSession(tmp_path)
+
+        deps = _coordinator(session).tool_deps()
+
+        assert deps.registry.supervisor is session.supervisor
+
     def test_the_coordinator_reads_the_session_id_off_the_session(self, tmp_path):
         """The delegation surface is keyed by the session's own id."""
         session = _FakeSession(tmp_path)
