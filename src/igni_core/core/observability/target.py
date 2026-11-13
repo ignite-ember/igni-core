@@ -41,8 +41,12 @@ class OtlpTarget(BaseModel):
         if not isinstance(config, OtlpConfig) or not config.enabled:
             return cls(ok=False)
         endpoint = config.endpoint.strip()
-        parts = urlsplit(endpoint)
-        if parts.scheme.lower() not in _SCHEMES or not parts.hostname:
+        try:
+            parts = urlsplit(endpoint)
+            scheme, hostname = parts.scheme.lower(), parts.hostname
+        except ValueError:  # e.g. an unclosed IPv6 bracket
+            scheme, hostname = "", None
+        if scheme not in _SCHEMES or not hostname:
             return cls(
                 ok=False,
                 reason=(
