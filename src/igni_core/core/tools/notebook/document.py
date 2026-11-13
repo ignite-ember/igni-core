@@ -73,10 +73,14 @@ class NotebookDocument(BaseModel):
         except (ValidationError, TypeError) as exc:
             return NotebookLoadResult.fail(f"Error: Invalid notebook structure: {exc}")
         # Preserve any unexpected top-level keys so load->save stays lossless.
+        # Written into the extras directly: ``setattr`` would let a vendor key
+        # named like a model field (``path``) overwrite that field.
         known = {"cells", "metadata", "nbformat", "nbformat_minor"}
+        extras = document.__pydantic_extra__
+        assert extras is not None
         for key, value in raw.items():
             if key not in known:
-                setattr(document, key, value)
+                extras[key] = value
         return NotebookLoadResult.success(document)
 
     # ---- persistence ----

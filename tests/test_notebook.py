@@ -355,3 +355,83 @@ class TestNotebookUnwritable:
         result = NotebookTools(base_dir=str(tmp_path)).notebook_remove_cell("ro.ipynb", 0)
 
         assert result.startswith("Error: Cannot write notebook")
+
+
+class TestNotebookRoundTrip:
+    """What an edit writes back, byte for byte."""
+
+    def test_vendor_top_level_keys_survive_an_edit(self, tmp_path):
+        nb = _make_notebook([_code_cell("x = 1")])
+        nb["widgets"] = {"state": [1, 2]}
+        path = tmp_path / "v.ipynb"
+        _write_notebook(path, nb)
+
+        NotebookTools(base_dir=str(tmp_path)).notebook_edit_cell("v.ipynb", 0, "y = 2")
+
+        saved = json.loads(path.read_text())
+        assert saved["widgets"] == {"state": [1, 2]}
+
+    def test_a_vendor_key_named_path_does_not_break_the_edit(self, tmp_path):
+        nb = _make_notebook([_code_cell("x = 1")])
+        nb["path"] = "colab/origin.ipynb"
+        path = tmp_path / "p.ipynb"
+        _write_notebook(path, nb)
+
+        result = NotebookTools(base_dir=str(tmp_path)).notebook_edit_cell("p.ipynb", 0, "y")
+
+        assert result.startswith("Successfully edited cell [0]")
+        saved = json.loads(path.read_text())
+        assert saved["path"] == "colab/origin.ipynb"
+        assert saved["cells"][0]["source"] == ["y"]
+
+    def test_saved_bytes_use_one_space_indent_unescaped_unicode_and_a_final_newline(
+        self, tmp_path
+    ):
+        nb = _make_notebook([_md_cell("café")])
+        path = tmp_path / "u.ipynb"
+        _write_notebook(path, nb)
+
+        NotebookTools(base_dir=str(tmp_path)).notebook_edit_cell("u.ipynb", 0, "naïve ☃")
+
+        text = path.read_text(encoding="utf-8")
+        assert "naïve ☃" in text
+        assert "\\u" not in text
+        assert text.endswith("}\n")
+        assert text.startswith('{\n "cells": [')
+        assert list(json.loads(text)) == ["cells", "metadata", "nbformat", "nbformat_minor"]
+
+    def test_defaults_for_missing_nbformat_keys(self, tmp_path):
+        path = tmp_path / "d.ipynb"
+        path.write_text(json.dumps({"cells": []}))
+
+        NotebookTools(base_dir=str(tmp_path)).notebook_add_cell("d.ipynb", -1, "raw", "r")
+
+        saved = json.loads(path.read_text())
+        assert (saved["nbformat"], saved["nbformat_minor"], saved["metadata"]) == (4, 5, {})
+
+    def test_markdown_and_raw_cells_are_written_without_outputs(self, tmp_path):
+        nb = _make_notebook([_md_cell("m")])
+        nb["cells"][0]["outputs"] = [{"output_type": "stream", "text": "x"}]
+        nb["cells"][0]["execution_count"] = 3
+        path = tmp_path / "m.ipynb"
+        _write_notebook(path, nb)
+
+        NotebookTools(base_dir=str(tmp_path)).notebook_add_cell("m.ipynb", -1, "raw", "r")
+
+        cells = json.loads(path.read_text())["cells"]
+        assert set(cells[0]) == {"cell_type", "metadata", "source"}
+        assert set(cells[1]) == {"cell_type", "metadata", "source"}
+
+    def test_cell_vendor_keys_survive_and_code_cells_keep_their_shape(self, tmp_path):
+        cell = _code_cell("x")
+        cell["id"] = "abc123"
+        nb = _make_notebook([cell])
+        path = tmp_path / "c.ipynb"
+        _write_notebook(path, nb)
+
+        NotebookTools(base_dir=str(tmp_path)).notebook_edit_cell("c.ipynb", 0, "z")
+
+        saved = json.loads(path.read_text())["cells"][0]
+        assert saved["id"] == "abc123"
+        assert saved["execution_count"] is None
+        assert saved["outputs"] == []
