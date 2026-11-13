@@ -117,6 +117,13 @@ class TestCommandHandler:
         result = await CommandHookHandler().run(_command("exit 2"), "PreToolUse", _payload())
         assert (result.should_continue, result.message) == (False, "Blocked by hook")
 
+    async def test_exit_two_with_stderr_that_is_not_utf8_still_blocks(self) -> None:
+        hook = _command("printf 'bad \\xff byte' >&2; exit 2")
+        result = await CommandHookHandler().run(hook, "PreToolUse", _payload())
+        assert result.should_continue is False
+        assert result.message.startswith("bad ")
+        assert result.message.endswith(" byte")
+
     async def test_a_raising_rewake_callback_is_swallowed(self) -> None:
         def boom(_msg: str) -> None:
             raise RuntimeError("callback broke")
