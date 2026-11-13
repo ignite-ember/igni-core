@@ -21,7 +21,7 @@ Supports formats like:
 - "in 5 minutes", "через 5 хвилин", "en 30 minutos"
 - "at 5pm", "о 17:00", "a las 5pm"
 - "tomorrow", "завтра", "mañana"
-- "tomorrow at 9am", "завтра о 9 ранку"
+- "tomorrow at 9am", "завтра о 9:00"
 - "2026-03-20 14:00"
 """
 
