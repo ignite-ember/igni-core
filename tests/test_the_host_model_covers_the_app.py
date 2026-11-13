@@ -218,3 +218,21 @@ class TestTheCloudPlanIsACredentialRead:
         assert coverage.rpc_destination(RpcMethod.GET_CLOUD_PLAN) == ("unreachable", "credentials")
         row = next(r for r in coverage.NOT_REACHABLE if r.key == "credentials")
         assert "`get_cloud_plan`" in row.what
+
+
+class TestTheDeadChannelsStayDead:
+    DEAD = ("orchestrate_progress", "scheduler_event")
+
+    def test_the_row_names_channels_that_are_not_push_channels(self) -> None:
+        row = next(r for r in coverage.NOT_REACHABLE if r.key == "dead_channel")
+        values = {c.value for c in PushChannel}
+        for name in self.DEAD:
+            assert f"`{name}`" in row.what
+            assert name not in values
+
+    def test_no_dead_channel_is_mapped_as_a_push(self) -> None:
+        mapped = {getattr(c, "value", c) for c in (*coverage.PUSH, *coverage.PUSH_UNREACHABLE)}
+        assert not mapped & set(self.DEAD)
+
+    def test_the_scheduler_event_broadcast_is_in_the_model_not_the_row(self) -> None:
+        assert coverage.BROADCASTS["scheduler_event"] == "scheduler.event"
