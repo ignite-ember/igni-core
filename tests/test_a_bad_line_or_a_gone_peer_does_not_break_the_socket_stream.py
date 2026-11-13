@@ -54,7 +54,9 @@ async def test_a_line_that_is_not_utf8_is_skipped_and_the_next_message_arrives(
         await asyncio.wait_for(server.close(), 5)
 
 
-async def test_a_send_to_a_peer_that_has_gone_is_dropped_and_the_close_still_closes(socket_path: Path):
+async def test_a_send_to_a_peer_that_has_gone_is_dropped_and_the_close_still_closes(
+    socket_path: Path,
+):
     server = UnixSocketServerTransport(socket_path)
     await server.start()
     try:
