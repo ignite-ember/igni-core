@@ -132,9 +132,11 @@ def test_for_session_builds_the_five_toolkits_bound_to_that_session():
 
 
 def test_a_failing_toolkit_constructor_is_not_swallowed():
-    with patch.object(deps, "PlanTool", side_effect=RuntimeError("no plan")):
-        with pytest.raises(RuntimeError, match="no plan"):
-            SessionToolkits.for_session(SimpleNamespace())
+    with (
+        patch.object(deps, "PlanTool", side_effect=RuntimeError("no plan")),
+        pytest.raises(RuntimeError, match="no plan"),
+    ):
+        SessionToolkits.for_session(SimpleNamespace())
 
 
 def test_the_module_exports_exactly_the_six_bags():
