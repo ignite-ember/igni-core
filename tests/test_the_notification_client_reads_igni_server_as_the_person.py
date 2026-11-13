@@ -44,6 +44,13 @@ def test_the_address_loses_its_trailing_slash():
         assert session.access_token == SESSION
 
 
+def test_the_address_loses_stray_spaces_around_it():
+    # A configured address with a space at either end is still an address.
+    url, _ = signed_in(api_url=f"  {API_URL}/ ").current()
+
+    assert url == API_URL
+
+
 async def test_the_token_is_made_ready_before_the_session_is_read():
     order: list[str] = []
 
