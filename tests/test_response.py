@@ -145,3 +145,34 @@ class TestExtractResponseText:
             messages=[SimpleNamespace(content="messages-loses")],
         )
         assert extract_response_text(response) == "content-wins"
+
+
+class _Plain:
+    """An object with neither ``content`` nor ``messages``."""
+
+    def __init__(self, **attrs):
+        self.__dict__.update(attrs)
+
+    def __str__(self):
+        return "plain-repr"
+
+
+class TestTheFallbackIsTheResponseItself:
+    def test_an_empty_messages_list_falls_to_the_responses_own_text(self):
+        assert extract_response_text(_Plain(messages=[])) == "plain-repr"
+
+    def test_every_message_empty_falls_to_the_responses_own_text(self):
+        response = _Plain(messages=[SimpleNamespace(content=""), SimpleNamespace(content=None)])
+        assert extract_response_text(response) == "plain-repr"
+
+    def test_a_response_with_no_messages_at_all_falls_to_its_own_text(self):
+        assert extract_response_text(_Plain(messages=None)) == "plain-repr"
+
+    def test_a_non_string_non_object_is_stringified(self):
+        assert extract_response_text(42) == "42"
+
+    def test_the_function_and_the_extractor_agree(self):
+        from igni_core.core.utils.response import ResponseTextExtractor
+
+        response = _Plain(messages=[SimpleNamespace(content="x"), SimpleNamespace(content="y")])
+        assert ResponseTextExtractor(response).text() == extract_response_text(response) == "y"
