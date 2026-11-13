@@ -210,13 +210,14 @@ class TestAServiceThatWillNotStart:
             sys, "executable", program(tmp_path, f"#!/bin/sh\necho $$ > {pidfile}\nexec sleep 60\n")
         )
         monkeypatch.setattr(LocalDecisions, "START_S", 0.3)
-        with pytest.raises(DecisionsUnavailable, match="did not start in time"):
+        with pytest.raises(DecisionsUnavailable, match="did not start in time") as raised:
             local.connection()
         pid = int(pidfile.read_text())
         state = subprocess.run(
             ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True
         ).stdout.strip()
         assert state == "", f"the killed child is still in the process table ({state})"
+        assert raised.value.__traceback__  # the failure is still held while the table is read
 
     def test_a_failed_start_is_tried_again_by_the_next_call(
         self, local, monkeypatch, tmp_path
