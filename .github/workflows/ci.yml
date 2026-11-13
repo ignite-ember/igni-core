@@ -27,7 +27,7 @@ jobs:
           python-version-file: .python-version
 
       - name: Install uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Install dependencies
         run: |
@@ -67,7 +67,7 @@ jobs:
           python-version-file: .python-version
 
       - name: Install uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Install dependencies
         run: uv sync --all-extras
@@ -115,7 +115,7 @@ jobs:
           python-version-file: .python-version
 
       - name: Install uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       # The core alone — the desktop's wheel, without psycopg or the
       # cloud layer: everything it does must work, and every cloud test
@@ -173,7 +173,7 @@ jobs:
           python-version-file: .python-version
 
       - name: Install uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Install dependencies
         run: uv sync --extra dev --extra otel
@@ -227,7 +227,7 @@ jobs:
           python-version-file: .python-version
 
       - name: Install uv
-        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       # PostgreSQL storage is the igni-cloud package's (an entry point,
       # found by the database URL), so it is installed here.
