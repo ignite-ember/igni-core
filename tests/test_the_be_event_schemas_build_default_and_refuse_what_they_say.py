@@ -268,3 +268,21 @@ def test_a_snapshot_status_that_is_not_a_string_is_written_as_its_text():
     snap = TaskSnapshot.from_agno(SimpleNamespace(status=OrchestrationTaskStatus.FAILED))
     assert snap.status == "failed"
     assert TaskSnapshot.from_agno(SimpleNamespace(status=3)).status == "3"
+
+
+def test_a_requirement_whose_execution_has_no_args_or_name_gives_empty_ones_not_a_crash():
+    request = HITLRequest.from_agno_requirement(_requirement("shell", None), _named_lookup)
+    assert request.tool_args == {}
+    nameless = HITLRequest.from_agno_requirement(_requirement(None, {"a": 1}), _named_lookup)
+    assert nameless.tool_name == ""
+    assert nameless.tool_args == {"a": 1}
+
+
+def test_a_snapshot_of_an_unassigned_task_or_a_bare_object_is_empty_not_the_word_none():
+    assert TaskSnapshot.from_agno(SimpleNamespace(task_id="t", assignee=None)).assignee == ""
+    bare = TaskSnapshot.from_agno(SimpleNamespace())
+    assert bare.model_dump() == {"task_id": "", "title": "", "status": "", "assignee": ""}
+    nulls = TaskSnapshot.from_agno(
+        SimpleNamespace(task_id=None, title=None, status=None, assignee=None)
+    )
+    assert nulls.model_dump() == {"task_id": "", "title": "", "status": "", "assignee": ""}
