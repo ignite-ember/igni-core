@@ -33,7 +33,7 @@ def _stand_in(tmp_path: Path, monkeypatch, body: str) -> Path:
     script = bin_dir / "bwrap"
     script.write_text(f"#!/bin/sh\n{body}\n")
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), *os.get_exec_path()]))
     return script
 
 
@@ -79,7 +79,7 @@ async def test_a_bwrap_that_cannot_be_started_is_a_reason_not_a_crash(tmp_path, 
     bin_dir.mkdir()
     (bin_dir / "bwrap").write_text("not executable\n")
     (bin_dir / "bwrap").chmod(0o755)  # which() finds it; starting it fails: no interpreter line
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), *os.get_exec_path()]))
     reason = await Bubblewrap.probe()
     assert reason is not None and reason.startswith("bwrap could not run: ")
 

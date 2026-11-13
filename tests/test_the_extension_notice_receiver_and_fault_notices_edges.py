@@ -189,7 +189,7 @@ def test_a_fault_notice_is_cut_to_the_bounds_a_notice_may_have(registry):
 def test_an_extension_with_no_page_or_not_installed_is_not_told_about(registry, caplog):
     sink = Sink()
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.INFO, logger="igni_core.notifications.extension_notices"):
         FaultNotices(registry, sink).told("acme.bare", "dead")
         FaultNotices(registry, sink).told("acme.gone", "dead")
 
