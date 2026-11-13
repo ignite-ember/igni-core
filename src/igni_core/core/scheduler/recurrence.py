@@ -148,13 +148,12 @@ class Recurrence(BaseModel):
         # 2) ``every N units`` — N defaults to 1 so ``every minute`` works.
         m = _PHRASE_PATTERN.match(text)
         if m:
-            amount = int(m.group(1)) if m.group(1) else 1
             unit_candidate = RecurrenceUnit.from_token(m.group(2))
             if unit_candidate is None:
                 return None
-            assert isinstance(unit_candidate, RecurrenceUnit)
-            unit = unit_candidate  # type: ignore[misc,assignment]  # narrow through sentinel above; the for-loop binding on line 140 only exists in its own scope
-            recurrence = cls(amount=amount, unit=unit)
+            recurrence = cls._build(m.group(1) or "1", unit_candidate)
+            if recurrence is None:
+                return None
             rest = text[m.end() :].strip()
             first = recurrence._first_from_suffix(rest)
             if first is not None:
@@ -175,13 +174,27 @@ class Recurrence(BaseModel):
         m = _CANONICAL_PATTERN.fullmatch(canonical.strip())
         if not m:
             return None
-        amount = int(m.group(1))
-        if amount < 1:
-            return None
         unit = RecurrenceUnit.from_token(m.group(2))
         if unit is None:
             return None
-        return cls(amount=amount, unit=unit)
+        return cls._build(m.group(1), unit)
+
+    @classmethod
+    def _build(cls, digits: str, unit: RecurrenceUnit) -> Recurrence | None:
+        """The recurrence for ``digits`` units, or ``None`` when it cannot exist.
+
+        Zero, a number too long for ``int`` and an interval too large for
+        a :class:`timedelta` are all "not a recurrence", not exceptions:
+        the first made ``/schedule x every 0 hours`` raise out of
+        :meth:`parse`, and the last was accepted here and then raised
+        ``OverflowError`` in the rescheduler after the task had run.
+        """
+        try:
+            recurrence = cls(amount=int(digits), unit=unit)
+            recurrence.to_delta()
+        except (ValueError, OverflowError):
+            return None
+        return recurrence
 
     # ── Behaviour ─────────────────────────────────────────────────
 
