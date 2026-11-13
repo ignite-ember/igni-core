@@ -115,6 +115,22 @@ def test_an_edit_the_text_cannot_take_leaves_the_agent_as_it_was(tmp_path) -> No
     assert "the project's rules" in before.definition.system_prompt
 
 
+def test_an_edit_on_a_file_whose_sections_do_not_close_leaves_the_agent_as_it_was(
+    tmp_path,
+) -> None:
+    path = _agent_file(tmp_path)
+    path.write_text(
+        "---\nname: explorer\ndescription: d\n---\n\n<!-- section:rules -->\nnever closed\n",
+        encoding="utf-8",
+    )
+    pool = _loaded(tmp_path)
+    before = pool.get_entry("explorer")
+
+    _apply(pool, _editing())
+
+    assert pool.get_entry("explorer") == before
+
+
 def test_an_edit_to_an_agent_nobody_defines_adds_nothing(tmp_path) -> None:
     pool = _loaded(tmp_path)
 
