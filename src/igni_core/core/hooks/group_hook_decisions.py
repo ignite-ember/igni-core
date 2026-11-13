@@ -110,6 +110,7 @@ class GroupHookDecisions:
     def set(self, digest: str, decision: GroupHookDecision, hook: HookDefinition) -> None:
         stored = self._read()
         stored.hooks[digest] = GroupHookDecisionRecord.now(decision, hook).model_dump(mode="json")
+        tmp = ""
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".group-hooks-")
@@ -118,6 +119,8 @@ class GroupHookDecisions:
             os.chmod(tmp, 0o600)
             os.replace(tmp, self.path)
         except OSError as exc:
+            if tmp:
+                Path(tmp).unlink(missing_ok=True)
             # Not remembered means asked again next time — the safe side.
             logger.warning("Could not record the answer in %s: %s", self.path, exc)
 

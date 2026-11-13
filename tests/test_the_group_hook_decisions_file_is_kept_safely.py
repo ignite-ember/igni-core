@@ -139,6 +139,15 @@ class TestWritingTheFile:
         assert "Could not record the answer" in caplog.text
         assert GroupHookDecisions(path).get(hook.digest()) is None
 
+    def test_a_write_that_fails_leaves_no_temporary_file(self, tmp_path: Path):
+        path = tmp_path / "decisions.json"
+        path.mkdir()
+        hook = _hook()
+
+        GroupHookDecisions(path).set(hook.digest(), "run", hook)
+
+        assert [p.name for p in tmp_path.iterdir()] == ["decisions.json"]
+
     def test_an_unwritable_directory_is_logged_not_raised(self, tmp_path: Path, caplog):
         if os.geteuid() == 0:
             pytest.skip("root writes anywhere")
