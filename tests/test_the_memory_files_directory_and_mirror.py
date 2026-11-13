@@ -122,6 +122,16 @@ def test_sync_with_no_directory_and_nothing_known_changes_nothing(tmp_path: Path
     assert store.names() == []
 
 
+def test_a_file_that_cannot_be_read_is_skipped_and_its_stored_copy_kept(tmp_path: Path) -> None:
+    mirror, store, cache = _mirror(tmp_path)
+    store.write("keep.md", "kept")
+    mirror.fill()
+    (cache / "keep.md").write_bytes(b"\xff\xfe\x00 not text")
+
+    assert mirror.sync() == 0
+    assert store.read("keep.md") == "kept"
+
+
 class _FailingStore(DirectoryMemoryFiles):
     def __init__(self, directory: Path) -> None:
         super().__init__(directory)
