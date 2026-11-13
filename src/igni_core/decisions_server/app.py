@@ -118,7 +118,8 @@ class DecisionsApp:
         return JSONResponse(answer.model_dump(mode="json"))
 
     def _authorised(self, request: Request) -> bool:
-        given = request.headers.get("authorization", "").encode()
+        # Starlette reads header bytes as latin-1; encode back the same way.
+        given = request.headers.get("authorization", "").encode("latin-1")
         return hmac.compare_digest(given, self._expected)
 
     @staticmethod

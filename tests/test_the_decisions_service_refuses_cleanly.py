@@ -31,3 +31,15 @@ class TestWhatItCannotRead:
         [error] = reply.json()["detail"]
         assert "every question has its own id" in error["msg"]
         assert "input" not in error
+
+
+class TestANonAsciiSecret:
+    async def test_a_secret_with_non_ascii_text_is_matched(self) -> None:
+        app = DecisionsApp(StubModel(), "sécret")
+        async with client_for(app) as http:
+            wrong = await http.get("/v1/health", headers={"Authorization": "Bearer secret"})
+            right = await http.get(
+                "/v1/health", headers={"Authorization": "Bearer sécret".encode()}
+            )
+        assert wrong.status_code == 401
+        assert right.status_code == 200
