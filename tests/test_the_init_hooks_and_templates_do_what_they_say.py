@@ -83,6 +83,13 @@ class TestThePrePushReview:
         assert "1 debug statement(s)" in out["systemMessage"]
         assert out["systemMessage"].startswith("Before pushing: found ")
 
+    @pytest.mark.parametrize("command", ["git push", "gh pr create --fill", "gh pr view"])
+    def test_every_push_or_pr_command_is_reviewed(self, tmp_path: Path, command: str):
+        repo = _repo(tmp_path)
+        _stage(repo, "a.py", "# HACK\n")
+        out = _run(PRE_PR_REVIEW_HOOK, repo, command)
+        assert "1 TODO/FIXME comment(s)" in out["systemMessage"]
+
     def test_only_added_lines_count(self, tmp_path: Path):
         repo = _repo(tmp_path)
         _stage(repo, "a.py", "# TODO old\nvalue = 1\n")
