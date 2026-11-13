@@ -23,6 +23,7 @@ double work). Both intentionally live outside this hierarchy.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 
 from igni_core.protocol.messages import Message
@@ -104,11 +105,9 @@ class NDJsonStreamTransport(Transport):
     async def _close_writer(self) -> None:
         if self._writer:
             self._writer.close()
-            try:
+            # The peer may have gone first; closing is all that was asked.
+            with contextlib.suppress(ConnectionError):
                 await self._writer.wait_closed()
-            except ConnectionError:
-                # The peer went first; closing is all that was asked.
-                pass
 
     async def _close_extra(self) -> None:
         """Hook for subclass-specific cleanup (server socket teardown,
