@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from igni_core.core.tools.notebook.schemas import (
     NotebookCell,
@@ -55,14 +55,23 @@ class NotebookDocument(BaseModel):
             raw = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             return NotebookLoadResult.fail(f"Error: Invalid notebook JSON: {exc}")
+        except (OSError, UnicodeDecodeError) as exc:
+            return NotebookLoadResult.fail(f"Error: Cannot read notebook {path}: {exc}")
+        if not isinstance(raw, dict):
+            return NotebookLoadResult.fail(
+                f"Error: Invalid notebook structure: expected a JSON object in {path}"
+            )
 
-        document = cls(
-            path=path,
-            cells=[NotebookCell.model_validate(cell) for cell in raw.get("cells", [])],
-            metadata=raw.get("metadata", {}),
-            nbformat=raw.get("nbformat", 4),
-            nbformat_minor=raw.get("nbformat_minor", 5),
-        )
+        try:
+            document = cls(
+                path=path,
+                cells=[NotebookCell.model_validate(cell) for cell in raw.get("cells", [])],
+                metadata=raw.get("metadata", {}),
+                nbformat=raw.get("nbformat", 4),
+                nbformat_minor=raw.get("nbformat_minor", 5),
+            )
+        except (ValidationError, TypeError) as exc:
+            return NotebookLoadResult.fail(f"Error: Invalid notebook structure: {exc}")
         # Preserve any unexpected top-level keys so load->save stays lossless.
         known = {"cells", "metadata", "nbformat", "nbformat_minor"}
         for key, value in raw.items():

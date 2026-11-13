@@ -242,3 +242,73 @@ class TestNotebookRemoveCell:
         tools = NotebookTools(base_dir=str(tmp_path))
         result = tools.notebook_remove_cell("test.ipynb", 5)
         assert "Error" in result
+
+
+class TestNotebookMalformedFiles:
+    """A notebook the toolkit cannot parse comes back as an error string."""
+
+    def _tools(self, tmp_path):
+        return NotebookTools(base_dir=str(tmp_path))
+
+    def test_invalid_json_is_reported(self, tmp_path):
+        (tmp_path / "bad.ipynb").write_text("{not json")
+
+        result = self._tools(tmp_path).notebook_read("bad.ipynb")
+
+        assert result.startswith("Error: Invalid notebook JSON:")
+
+    def test_a_json_list_is_not_a_notebook(self, tmp_path):
+        (tmp_path / "list.ipynb").write_text("[]")
+
+        result = self._tools(tmp_path).notebook_read("list.ipynb")
+
+        assert result.startswith("Error: Invalid notebook structure:")
+
+    def test_a_cell_without_cell_type_is_reported(self, tmp_path):
+        nb = _make_notebook([{"source": "x"}])
+        _write_notebook(tmp_path / "nt.ipynb", nb)
+
+        result = self._tools(tmp_path).notebook_read_cell("nt.ipynb", 0)
+
+        assert result.startswith("Error: Invalid notebook structure:")
+
+    def test_null_metadata_is_reported(self, tmp_path):
+        nb = _make_notebook()
+        nb["metadata"] = None
+        _write_notebook(tmp_path / "nm.ipynb", nb)
+
+        result = self._tools(tmp_path).notebook_read("nm.ipynb")
+
+        assert result.startswith("Error: Invalid notebook structure:")
+
+    def test_null_cells_is_reported(self, tmp_path):
+        nb = _make_notebook()
+        nb["cells"] = None
+        _write_notebook(tmp_path / "nc.ipynb", nb)
+
+        result = self._tools(tmp_path).notebook_remove_cell("nc.ipynb", 0)
+
+        assert result.startswith("Error: Invalid notebook structure:")
+
+    def test_non_utf8_file_is_reported(self, tmp_path):
+        (tmp_path / "bin.ipynb").write_bytes(b"\xff\xfe\x00bad")
+
+        result = self._tools(tmp_path).notebook_read("bin.ipynb")
+
+        assert result.startswith("Error: Cannot read notebook")
+
+    def test_a_directory_named_like_a_notebook_is_reported(self, tmp_path):
+        (tmp_path / "dir.ipynb").mkdir()
+
+        result = self._tools(tmp_path).notebook_read("dir.ipynb")
+
+        assert result.startswith("Error: Cannot read notebook")
+
+    def test_malformed_file_is_left_untouched_by_an_edit(self, tmp_path):
+        path = tmp_path / "list.ipynb"
+        path.write_text("[]")
+
+        result = self._tools(tmp_path).notebook_add_cell("list.ipynb", -1, "code", "x")
+
+        assert result.startswith("Error: Invalid notebook structure:")
+        assert path.read_text() == "[]"
