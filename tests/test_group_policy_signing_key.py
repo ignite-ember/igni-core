@@ -111,6 +111,14 @@ class TestAnEcKey:
         padded = (signature + b"\x00" * 128)[:length]
         assert key.verifies(MESSAGE, padded) is False
 
+    def test_a_valid_signature_with_a_padding_byte_inside_does_not_verify(self):
+        """r and s are each 32 bytes: a zero slipped between them reads as the same
+        two numbers, so only the length rule refuses this malleated copy."""
+        key = SigningKey(Jwk.model_validate(EC.jwk))
+        signature = EC.sign()
+        assert key.verifies(MESSAGE, signature) is True
+        assert key.verifies(MESSAGE, signature[:32] + b"\x00" + signature[32:]) is False
+
     def test_a_signature_with_r_and_s_zero_does_not_verify(self):
         key = SigningKey(Jwk.model_validate(EC.jwk))
         assert key.verifies(MESSAGE, bytes(64)) is False
