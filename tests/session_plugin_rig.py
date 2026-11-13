@@ -16,10 +16,13 @@ from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.plugins.state import PluginsState, save_state
 
 
-def write_plugin(project: Path, name: str) -> Path:
-    """A project plugin shipping an agent, a skill, an MCP server, a language
-    server, a monitor and an output style, each named after the plugin."""
-    root = project / CONFIG_DIR / "plugins" / name
+def write_plugin(project: Path, name: str, *, plugins_root: Path | None = None) -> Path:
+    """A plugin shipping an agent, a skill, an MCP server, a language server,
+    a monitor and an output style, each named after the plugin.
+
+    It goes under the project's own plugin root unless *plugins_root* says
+    otherwise (the managed tier, say)."""
+    root = (plugins_root or project / CONFIG_DIR / "plugins") / name
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin" / "plugin.json").write_text(
         json.dumps({"name": name, "version": "0.1.0"})
