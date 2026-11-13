@@ -149,3 +149,21 @@ class TestSave:
         store.save({"srv": {"tool_a"}})
         store.save({"srv": {"tool_b"}})
         assert store.load() == {"srv": {"tool_b"}}
+
+    def test_tool_names_are_written_sorted(self, tmp_path: Path):
+        store = MCPToolStateStore(tmp_path)
+        store.save({"srv": {"zeta", "alpha", "mid"}})
+        written = json.loads((tmp_path / CONFIG_DIR / "mcp-tool-state.json").read_text())
+        assert written["disabled"]["srv"] == ["alpha", "mid", "zeta"]
+
+    def test_a_file_that_cannot_be_written_raises_oserror(self, tmp_path: Path):
+        # A directory where the file belongs: the write fails, and the
+        # failure must reach the caller rather than read as "saved".
+        (tmp_path / CONFIG_DIR / "mcp-tool-state.json").mkdir(parents=True)
+        with pytest.raises(OSError):
+            MCPToolStateStore(tmp_path).save({"srv": {"tool"}})
+
+    def test_a_config_dir_that_cannot_be_made_raises_oserror(self, tmp_path: Path):
+        (tmp_path / CONFIG_DIR).write_text("a file where the directory belongs")
+        with pytest.raises(OSError):
+            MCPToolStateStore(tmp_path).save({"srv": {"tool"}})
