@@ -414,9 +414,11 @@ def test_a_sync_failed_send_lets_go_and_raises():
     def refuse(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route", request=request)
 
-    with BusyClient(
-        busy_holder="svc", busy_registry=registry, transport=httpx.MockTransport(refuse)
-    ) as client:
-        with pytest.raises(httpx.ConnectError):
-            client.get("https://h.test/")
+    with (
+        BusyClient(
+            busy_holder="svc", busy_registry=registry, transport=httpx.MockTransport(refuse)
+        ) as client,
+        pytest.raises(httpx.ConnectError),
+    ):
+        client.get("https://h.test/")
     assert registry.busy() == []
