@@ -345,7 +345,7 @@ class TestTheAssembly:
             "ember_loop",
             "ember_loop_progress",
             "ember_todo",
-            "ember_plan",
+            "igni_plan",
             "ember_slash_command",
             "ember_lsp",
             "ember_monitors",
