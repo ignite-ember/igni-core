@@ -463,6 +463,26 @@ def test_a_scoped_rule_that_is_not_text_is_skipped_and_the_others_still_fire(
     assert [c for _, c in idx.consume_path(tmp_path / "main.py")] == ["GOOD"]
 
 
+def test_a_directory_that_cannot_be_listed_is_skipped(tmp_path: Path) -> None:
+    import os
+
+    import pytest
+
+    locked = tmp_path / "locked"
+    _write(locked / "igni.md", "LOCKED")
+    _write(tmp_path / "open" / "igni.md", "OPEN")
+    _write(tmp_path / "open" / "x.py")
+    locked.chmod(0)
+    try:
+        if os.access(locked, os.R_OK):
+            pytest.skip("permissions are not enforced for this user")
+        idx = RulesIndex(tmp_path)
+    finally:
+        locked.chmod(0o755)
+
+    assert [c for _, c in idx.consume_path(tmp_path / "open" / "x.py")] == ["OPEN"]
+
+
 def test_a_scoped_rule_with_an_empty_paths_list_never_fires(tmp_path: Path) -> None:
     rules = tmp_path / CONFIG_DIR / "rules"
     _write(rules / "empty.md", "---\npaths: []\n---\nNEVER")

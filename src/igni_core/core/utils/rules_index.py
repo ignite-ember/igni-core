@@ -175,8 +175,15 @@ class RulesIndex:
                         matched: list[Path] = []
                         for name in self._filenames:
                             rules_file = entry / name
-                            if rules_file.is_file():
-                                matched.append(rules_file.resolve())
+                            try:
+                                if rules_file.is_file():
+                                    matched.append(rules_file.resolve())
+                            except OSError as exc:
+                                # A directory we may list but not enter
+                                # (mode 0): its rules are unreadable, the
+                                # rest of the project is not.
+                                logger.debug("RulesIndex skip %s (%s)", rules_file, exc)
+                                break
                         if matched:
                             self._index[entry.resolve()] = matched
         # Scan the project-level rules dirs explicitly. They live
