@@ -339,6 +339,11 @@ class VmCredentials:
                 self._set(CredentialState.UNREACHABLE, str(exc))
                 return self._change()
             await self._take(grant)
+            # The file the watcher waits for is the one just written: it has
+            # nothing left to do, and seeing the file would only renew it again.
+            watcher, self._watcher = self._watcher, None
+            if watcher is not None:
+                watcher.cancel()
         return self._change()
 
     async def refresh(self, *, force: bool = True) -> StateChange:

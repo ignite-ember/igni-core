@@ -305,8 +305,10 @@ async def test_the_file_a_sign_in_writes_does_not_send_the_watcher_to_renew_it(
 
     vm.keeper._token.write = slow_token_write  # type: ignore[method-assign]
     await vm.keeper.sign_in("s")
-    await asyncio.wait_for(watcher, 2)
+    await asyncio.wait([watcher], timeout=2)
+    await asyncio.sleep(0.05)
 
+    assert watcher.done() and vm.keeper._watcher is None, "a sign-in ends the watch"
     assert len(vm.seen) == 1, "the sign-in's exchange, and no renewal after it"
     assert vm.keeper.state is CredentialState.READY
     await vm.keeper.stop()
