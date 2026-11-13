@@ -127,6 +127,43 @@ class TestThePackageSurface:
         assert result.stdout.strip() == "ok"
 
 
+class TestThePackageIsNamedIgni:
+    """The package was renamed; nothing in observability still carries the old name."""
+
+    _MODULES = ("content", "pipeline", "run_spans", "runtime", "target")
+
+    def test_every_module_lives_under_igni_core_and_says_igni(self):
+        import importlib
+
+        import igni_core.core.observability as package
+
+        for name in ("", *self._MODULES):
+            module = importlib.import_module(
+                "igni_core.core.observability" + (f".{name}" if name else "")
+            )
+            assert module.__name__.startswith("igni_core.core.observability")
+            assert "igni" in (module.__doc__ or "").lower()
+        assert package.OtelRuntime.__module__ == "igni_core.core.observability.runtime"
+        assert OtlpTarget.__module__ == "igni_core.core.observability.target"
+        assert OtelSinks.__module__ == "igni_core.core.observability.pipeline"
+        assert RunSpanProcessor.__module__ == "igni_core.core.observability.run_spans"
+        assert SpanContentPolicy.__module__ == "igni_core.core.observability.content"
+
+    def test_no_source_file_names_the_old_product(self):
+        from pathlib import Path
+
+        import igni_core.core.observability as package
+
+        folder = Path(package.__file__).parent
+        old = "em" + "ber"
+        for path in sorted(folder.glob("*.py")):
+            assert old not in path.read_text(encoding="utf-8").lower(), path.name
+
+    def test_the_attributes_carry_the_igni_prefix(self):
+        for name in ("ORG", "PRODUCER", "PERMISSION", "OUTCOME"):
+            assert getattr(SpanAttribute, name).startswith("igni.")
+
+
 # ── content.py ──────────────────────────────────────────────────────
 
 
