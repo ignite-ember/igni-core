@@ -194,6 +194,12 @@ class ModelRegistryEntry(BaseModel):
             )
         except subprocess.TimeoutExpired:
             return None
+        except (OSError, ValueError) as exc:
+            # A program that is not installed, or a command line that does
+            # not split into words: no key, which ``why_no_api_key`` says,
+            # rather than an error out of session bring-up.
+            logger.warning("api_key_cmd for %r could not run: %s", self.model_id, exc)
+            return None
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
         return None
