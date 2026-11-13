@@ -72,7 +72,7 @@ class TestWhichHostsAreThisMachine:
             "notlocalhost",
             "128.0.0.1",
             "10.0.0.1",
-            "0.0.0.0",
+            "0.0.0.0",  # noqa: S104 - a host under test, not a bind
             "::2",
             "example.com",
             "",
