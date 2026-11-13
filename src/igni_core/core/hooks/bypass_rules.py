@@ -104,7 +104,7 @@ _SHELL_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         ),
         (r"\bgit\s+push\b[^;&|]*\s\+\S+", "force-pushes a refspec"),
         (
-            r"\b(mkfs(\.\w+)?|fdisk|parted|diskutil\s+(erase|partition))\b",
+            r"\b(mkfs(\.\w+)?|fdisk|parted|diskutil\s+(erase|partition)\w*)\b",
             "formats or repartitions a disk",
         ),
         (r"\bdd\b[^;&|]*\bof=/dev/", "writes raw data to a device"),
