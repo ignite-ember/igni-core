@@ -90,7 +90,7 @@ class Migrator:
             f"alembic.ini and migrations/ missing from package at {self._package_root}. "
             "This usually means the wheel was built without package-data — "
             "reinstall via `pip install --force-reinstall igni-core` or "
-            "`brew reinstall ignite-ember`."
+            "`brew reinstall igni-core`."
         )
 
     def upgrade_to_head(self, target: DatabaseTarget) -> None:
