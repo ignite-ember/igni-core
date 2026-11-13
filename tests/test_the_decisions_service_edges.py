@@ -682,9 +682,11 @@ class TestTheProcess:
 
 
 class TestTheNameIsIgni:
+    OLD = "em" + "ber"
+
     def test_nothing_the_service_says_or_names_carries_the_old_product_name(self) -> None:
         package = ROOT / "src" / "igni_core" / "decisions_server"
         for path in package.glob("*.py"):
-            assert "ember" not in path.read_text().lower(), path.name
-        assert "ember" not in PRESEED_HINT.lower()
+            assert self.OLD not in path.read_text().lower(), path.name
+        assert self.OLD not in PRESEED_HINT.lower()
         assert "igni_core.prefetch_models" in PRESEED_HINT
