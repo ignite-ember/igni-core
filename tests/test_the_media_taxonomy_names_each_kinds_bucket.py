@@ -78,3 +78,40 @@ def test_a_resolved_text_defaults_to_no_paths_and_its_lists_are_its_own() -> Non
 
     assert (second.paths, second.attachable, second.missed) == ([], [], [])
     assert first.attachable == []
+
+
+def _one_of_each(tag: str) -> MediaAttachments:
+    return MediaAttachments(
+        images=[Image(url=f"https://x.test/{tag}.png")],
+        audio=[Audio(url=f"https://x.test/{tag}.mp3")],
+        videos=[Video(url=f"https://x.test/{tag}.mp4")],
+        files=[File(url=f"https://x.test/{tag}.pdf")],
+    )
+
+
+def test_merge_appends_every_bucket_in_order_and_leaves_the_other_bundle_alone() -> None:
+    mine = _one_of_each("a")
+    theirs = _one_of_each("b")
+    first_image, second_image = mine.images[0], theirs.images[0]
+
+    mine.merge(theirs)
+
+    assert mine.images == [first_image, second_image]
+    assert [len(mine.audio), len(mine.videos), len(mine.files)] == [2, 2, 2]
+    assert mine.audio[1] is theirs.audio[0]
+    assert mine.videos[1] is theirs.videos[0]
+    assert mine.files[1] is theirs.files[0]
+    assert mine.total() == 8
+    assert theirs.total() == 4
+
+
+def test_total_counts_every_bucket_and_an_empty_bundle_is_empty() -> None:
+    assert MediaAttachments().total() == 0
+    assert MediaAttachments().is_empty()
+    assert MediaAttachments().to_kwargs() == {}
+
+    one = MediaAttachments(files=[File(url="https://x.test/a.pdf")])
+    assert one.total() == 1
+    assert not one.is_empty()
+    assert list(one.to_kwargs()) == ["files"]
+    assert one.to_kwargs()["files"][0] is one.files[0]
