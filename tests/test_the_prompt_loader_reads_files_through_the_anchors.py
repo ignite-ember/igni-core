@@ -6,6 +6,10 @@ anchors the table knows. Files are UTF-8 whatever the machine's locale.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -60,3 +64,30 @@ def test_the_package_exports_what_the_backend_wires():
     }
     assert prompts.PromptLoader is PromptLoader
     assert prompts.PromptFragments is PromptFragments
+
+
+def test_a_prompt_with_non_ascii_text_reads_on_a_machine_whose_locale_is_not_utf8(tmp_path):
+    (tmp_path / "u.md").write_text("naïve — “quoted” ✓", encoding="utf-8")
+    code = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from igni_core.core.prompts import PromptFragments, PromptLoader\n"
+        "text = PromptLoader(PromptFragments(), Path(sys.argv[1])).load('u')\n"
+        "sys.stdout.buffer.write(text.encode('utf-8'))\n"
+    )
+    env = {
+        **os.environ,
+        "LC_ALL": "C",
+        "LANG": "C",
+        "PYTHONUTF8": "0",
+        "PYTHONCOERCECLOCALE": "0",
+        "PYTHONIOENCODING": "utf-8",
+    }
+    done = subprocess.run(
+        [sys.executable, "-c", code, str(Path(tmp_path))],
+        env=env,
+        capture_output=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr.decode()
+    assert done.stdout.decode("utf-8") == "naïve — “quoted” ✓"
