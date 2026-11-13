@@ -69,7 +69,8 @@ def _load_style_file(path: Path) -> OutputStyle | None:
     # ``name`` defaults to the filename stem (matches the
     # convention; explicit frontmatter ``name:`` lets a style
     # advertise itself under a different label).
-    name = str(meta.get("name", "")).strip() or path.stem
+    raw_name = meta.get("name")
+    name = (str(raw_name).strip() if raw_name is not None else "") or path.stem
     description = str(meta.get("description", "")).strip()
     return OutputStyle(
         name=name,
