@@ -118,7 +118,7 @@ _SHELL_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             "installs something that runs on its own",
         ),
         (
-            r">>?\s*~?/?(\$HOME/)?\.(bashrc|zshrc|profile|bash_profile|zprofile)\b",
+            r">>?\s*(\S*/)?\.(bashrc|zshrc|profile|bash_profile|zprofile)\b",
             "edits a shell start-up file",
         ),
         (
