@@ -335,3 +335,26 @@ def test_a_server_that_is_not_an_extension_cannot_speak_for_an_installed_one():
     receiver("abc:acme.scanner", {"conditions": {"a": True}})
     receiver("acme.scanner", {"conditions": {"a": True}})
     assert _held(rig) is None
+
+
+async def test_a_bundled_file_that_is_not_text_or_not_there_gives_nothing(tmp_path):
+    (tmp_path / "bin.md").write_bytes(b"\xff\xfe\x00\xc3\x28")
+    rig = Rig(bundles={"acme.scanner": tmp_path})
+    await rig.contributions.apply(_manifest(promptFragments=[_anchor("file", "bin.md")]))
+    assert rig.fragments.owner_of("ACME_NOTE") is None
+    await rig.contributions.apply(_manifest(promptFragments=[_anchor("file", "missing.md")]))
+    assert rig.fragments.owner_of("ACME_NOTE") is None
+
+
+async def test_a_file_that_is_not_text_does_not_stop_the_extension_s_other_contributions(
+    tmp_path,
+):
+    (tmp_path / "bin.md").write_bytes(b"\xff\xfe\x00\xc3\x28")
+    rig = Rig(bundles={"acme.scanner": tmp_path})
+    await rig.contributions.apply(
+        _manifest(
+            promptFragments=[_anchor("file", "bin.md")],
+            commands=[{"command": "/scan", "desc": "d"}],
+        )
+    )
+    assert rig.commands.get("scan") is not None
