@@ -198,7 +198,18 @@ class CallbackServer:
                 response.text[:200],
             )
             return None
-        token = response.json().get("access_token")
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            # A proxy's error page or a server that answered something
+            # else with a 200: not a token, and not worth an unhandled
+            # error on the handler thread that leaves the browser with a
+            # dropped connection instead of the page saying why.
+            logger.error("the sign-in code exchange did not answer with a JSON object")
+            return None
+        token = body.get("access_token")
         return str(token) if token else None
 
     def _serve(self) -> None:
@@ -242,8 +253,16 @@ class CallbackServer:
             self._loop = loop
             self._token_future = loop.create_future()
 
+            # The request thread may have delivered between the fast path
+            # above and the future existing; it then found no future to
+            # wake, so nothing would ever resolve this one.
+            if self._token is not None:
+                return self._token
+
         try:
-            return await asyncio.wait_for(self._token_future, timeout)
+            # Shielded: a timeout cancels the wait, not the future, so a
+            # second wait (a retry after the first timed out) still works.
+            return await asyncio.wait_for(asyncio.shield(self._token_future), timeout)
         except asyncio.TimeoutError:
             return None
 
