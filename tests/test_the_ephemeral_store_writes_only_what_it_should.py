@@ -298,3 +298,32 @@ def test_the_store_works_through_the_pools_public_surface_alone(tmp_path, settin
     store.discard("again")
     store.register("last", "Helps", "Help.")
     assert store.cleanup() == 1
+
+
+class TestTheFileNameAFileSystemCanHold:
+    """The agent's name becomes its file name; under an ASCII locale Linux cannot name
+    a file ``jäger.md``, and the model chooses the name."""
+
+    def test_a_name_the_file_system_cannot_hold_gets_a_stable_ascii_file_and_keeps_its_name(
+        self, pool, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "igni_core.core.agents.ephemeral.sys.getfilesystemencoding", lambda: "ascii"
+        )
+        stem = EphemeralAgentStore._file_stem("jäger")
+
+        _register(pool, name="jäger", description="日本語", system_prompt="Grüße")
+
+        assert stem.isascii() and stem.startswith("agent-")
+        assert stem == EphemeralAgentStore._file_stem("jäger")
+        assert stem != EphemeralAgentStore._file_stem("jagër")
+        assert [p.name for p in _tmp(tmp_path).glob("*.md")] == [f"{stem}.md"]
+        definition = pool.get_entry("jäger").definition
+        assert definition.name == "jäger" and definition.system_prompt == "Grüße"
+
+    def test_a_name_the_file_system_can_hold_is_the_file_name(self, monkeypatch):
+        monkeypatch.setattr(
+            "igni_core.core.agents.ephemeral.sys.getfilesystemencoding", lambda: "utf-8"
+        )
+        assert EphemeralAgentStore._file_stem("jäger") == "jäger"
+        assert EphemeralAgentStore._file_stem("helper") == "helper"

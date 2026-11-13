@@ -14,8 +14,10 @@ private-attribute reach-in.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal
 
@@ -137,6 +139,18 @@ class EphemeralAgentStore:
 
     # ── CRUD ──────────────────────────────────────────────────────
 
+    @staticmethod
+    def _file_stem(name: str) -> str:
+        """The agent's file name, without ``.md``: its name where the file system
+        can hold it. Under an ASCII locale (a container with no ``LANG``) Linux
+        cannot name a file ``jäger.md``, so such a name gets a stable ASCII stem;
+        the agent's own name is the one in the file."""
+        try:
+            name.encode(sys.getfilesystemencoding())
+        except UnicodeEncodeError:
+            return "agent-" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:16]
+        return name
+
     def register(
         self,
         name: str,
@@ -174,7 +188,7 @@ class EphemeralAgentStore:
             tools=resolved_tools,
             model=model,
         )
-        md_path = self._dir / f"{name}.md"
+        md_path = self._dir / f"{self._file_stem(name)}.md"
         md_path.write_text(md_content, encoding="utf-8")
 
         definition = AgentMarkdownFile(md_path, prompt_loader=self._pool.prompt_loader).parse()
