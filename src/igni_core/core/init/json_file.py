@@ -45,9 +45,12 @@ class JsonFile(BaseModel):
         if not self.path.exists():
             return {}
         try:
-            return json.loads(self.path.read_text())
+            data = json.loads(self.path.read_text())
         except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             return {}
+        # Valid JSON that is not an object (a list, a string, ``null``) is
+        # as unusable to a caller as a corrupt file.
+        return data if isinstance(data, dict) else {}
 
     def save(self, data: dict[str, Any]) -> None:
         """Write ``data`` as pretty-printed JSON with a trailing newline.
