@@ -95,8 +95,13 @@ def should_wrap(tool_name: str) -> bool:
 _OPEN = "<untrusted_tool_output nonce={nonce}>"
 _CLOSE = "</untrusted_tool_output nonce={nonce}>"
 #: Matches an already-wrapped payload so wrapping is idempotent (a result that
-#: passed through here or was authored wrapped is not double-wrapped).
-_ALREADY = re.compile(r"^<untrusted_tool_output nonce=[0-9a-f]+>\n")
+#: passed through here or was authored wrapped is not double-wrapped). An opening
+#: tag alone is not a block: it needs its own closing tag, with the same nonce,
+#: or a tool's output could start like one and reach the model unquarantined.
+#: Anything after the closing tag (a hook message, a rules suffix) is igni's own.
+_ALREADY = re.compile(
+    r"^<untrusted_tool_output nonce=([0-9a-f]+)>\n.*\n</untrusted_tool_output nonce=\1>", re.S
+)
 
 
 def new_nonce() -> str:
