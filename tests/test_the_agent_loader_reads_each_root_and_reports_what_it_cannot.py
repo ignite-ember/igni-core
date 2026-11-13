@@ -182,3 +182,18 @@ def test_a_group_directory_is_ranked_between_the_users_and_the_projects(
     assert entries["one"].definition.description == "group"
     assert entries["one"].priority is AgentPriority.ORG_GROUP
     assert entries["two"].definition.description == "project"
+
+
+def test_the_prompt_loader_it_is_given_fills_the_anchors_of_every_agent(tmp_path) -> None:
+    from igni_core.core.prompts import PromptFragments, PromptLoader
+
+    fragments = PromptFragments()
+    fragments.register("SCHEMA", "acme.ext", lambda: "the schema")
+    directory = tmp_path / "agents"
+    directory.mkdir()
+    (directory / "a.md").write_text(
+        "---\nname: a\ndescription: d\n---\nUse {{SCHEMA}}.", encoding="utf-8"
+    )
+    loader = _loader(tmp_path, prompt_loader=PromptLoader(fragments))
+    report = loader.load_directory(directory, AgentPriority.PROJECT_EMBER)
+    assert report.entries["a"].definition.system_prompt == "Use the schema."
