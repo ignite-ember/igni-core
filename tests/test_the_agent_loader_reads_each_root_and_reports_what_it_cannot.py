@@ -86,6 +86,16 @@ def test_an_integer_priority_becomes_the_enum_and_an_invalid_one_is_refused(tmp_
         _loader(tmp_path).load_directory(directory, 99)
 
 
+def test_a_plugin_roots_priority_that_is_no_agent_priority_is_kept_for_its_namespace(
+    tmp_path,
+) -> None:
+    directory = tmp_path / "agents"
+    _agent(directory, "a.md", "a")
+    report = _loader(tmp_path).load_directory(directory, 7, namespace="managed")
+    assert report.entries["managed:a"].priority == 7
+    assert not isinstance(report.entries["managed:a"].priority, AgentPriority)
+
+
 def test_a_plugin_directory_is_namespaced_and_enveloped_together(tmp_path) -> None:
     directory = tmp_path / "plugin" / "agents"
     directory.mkdir(parents=True)

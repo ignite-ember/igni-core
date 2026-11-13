@@ -102,6 +102,23 @@ class AgentDefinitionLoader:
             report.merge(partial)
         return report
 
+    @staticmethod
+    def _typed_priority(
+        priority: AgentPriority | int, namespace: str | None
+    ) -> AgentPriority | int:
+        """``priority`` as an :class:`AgentPriority` when it is one. A plugin root's
+        priority runs to 7 (the managed roots), which is not; a plugin's agents are
+        namespaced and only compete with the same plugin's, so they keep it as it is.
+        Anywhere else a number that is no AgentPriority is refused."""
+        if isinstance(priority, AgentPriority):
+            return priority
+        number = int(priority)
+        if number in AgentPriority._value2member_map_:
+            return AgentPriority(number)
+        if namespace is None:
+            raise ValueError(f"{number} is not a valid AgentPriority")
+        return number
+
     def load_directory(
         self,
         path: Path,
@@ -119,9 +136,7 @@ class AgentDefinitionLoader:
         if not path.exists():
             return report
 
-        typed_priority: AgentPriority = (
-            priority if isinstance(priority, AgentPriority) else AgentPriority(int(priority))
-        )
+        typed_priority = self._typed_priority(priority, namespace)
 
         for md_file in sorted(path.glob("*.md")):
             try:
