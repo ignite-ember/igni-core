@@ -12,6 +12,9 @@ import datetime as dt
 from types import SimpleNamespace
 from typing import Any, get_args
 
+import pytest
+
+from igni_core.backend.workspace_watch import Head
 from igni_core.extensions.host.definition import HOST_SCHEMA
 from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.host.signal_values import Emitter
@@ -20,11 +23,14 @@ from igni_core.extensions.host.types import SchemaTypes
 from igni_core.extensions.host.values import (
     Account,
     CommandOutcome,
+    ExtensionInfo,
+    HeadInfo,
     NotificationCounts,
     NotificationEntry,
     SessionInfo,
     SessionStatus,
     UpdateInfo,
+    Withheld,
 )
 from igni_core.extensions.host.window_changes import WindowChange
 from igni_core.extensions.host.window_field import WindowFieldName
@@ -32,6 +38,9 @@ from igni_core.extensions.host.window_rpc import WindowModelRpc, WindowRequest
 from igni_core.extensions.host.window_signals import WindowSignals
 from igni_core.extensions.host.window_values import Dialog, Scroll
 from igni_core.extensions.host.windows import Windows
+from igni_core.extensions.impact import SwitchedOff
+from igni_core.extensions.registry import ExtensionState, InstalledExtension
+from igni_core.protocol import messages as msg
 from tests.host_model_helpers import manifest
 
 
@@ -168,6 +177,124 @@ def test_counts_are_all_of_them_with_the_grant_and_its_own_without():
         "unread": 0,
         "by_source": {},
     }
+
+
+def test_a_typed_status_update_is_copied_field_for_field_to_the_status_and_the_account():
+    update = msg.StatusUpdate(
+        input_tokens=5,
+        output_tokens=6,
+        context_tokens=7,
+        max_context=8,
+        model="m-1",
+        model_configured=False,
+        cloud_connected=True,
+        cloud_org="acme",
+        cloud_email="a@b.c",
+        cloud_name="Ada é",
+        permission_mode="plan",
+    )
+
+    assert SessionStatus.from_update(update).model_dump() == {
+        "session_id": "",
+        "model": "m-1",
+        "model_configured": False,
+        "permission_mode": "plan",
+        "input_tokens": 5,
+        "output_tokens": 6,
+        "context_tokens": 7,
+        "max_context": 8,
+    } | {"session_id": update.session_id}
+    assert Account.from_update(update).model_dump() == {
+        "signed_in": True,
+        "email": "a@b.c",
+        "name": "Ada é",
+        "org": "acme",
+    }
+
+
+def test_a_typed_account_is_signed_in_with_an_email_or_a_connection_alone():
+    assert Account.from_update(msg.StatusUpdate()).signed_in is False
+    assert Account.from_update(msg.StatusUpdate(cloud_email="a@b.c")).signed_in is True
+    assert Account.from_update(msg.StatusUpdate(cloud_connected=True)).model_dump() == {
+        "signed_in": True,
+        "email": "",
+        "name": "",
+        "org": "",
+    }
+    assert Account.from_status({"cloud_connected": True, "cloud_email": ""}).signed_in is True
+    assert Account.from_status({"cloud_email": None}).signed_in is False
+
+
+def test_a_git_head_is_told_by_its_commit_and_its_branch():
+    assert HeadInfo.of(Head(commit_sha="abc123", branch="HEAD")).model_dump() == {
+        "commit_sha": "abc123",
+        "branch": "HEAD",
+    }
+
+
+def test_an_available_update_with_a_missing_field_is_an_error_not_a_half_answer():
+    for missing in ("current_version", "latest_version", "download_url"):
+        found = {
+            "available": True,
+            "current_version": "1.0",
+            "latest_version": "1.1",
+            "download_url": "https://igni.example/1.1",
+        }
+        del found[missing]
+
+        with pytest.raises(KeyError, match=missing):
+            UpdateInfo.from_check(found)
+    assert UpdateInfo.from_check({"current_version": "1.0"}) is None
+    assert UpdateInfo.from_check([("available", True)]) is None
+
+
+def test_a_claim_that_is_withheld_says_why():
+    assert Withheld.of(SwitchedOff(claim="tool:shell", reason="acme.one has it first")) == Withheld(
+        claim="tool:shell", reason="acme.one has it first"
+    )
+
+
+def test_an_installed_extension_is_told_with_its_state_its_reason_and_what_it_lacks():
+    entry = InstalledExtension(
+        manifest=manifest("acme.one", host=["chat.read"]),
+        state=ExtensionState.FAILED,
+        reason="licence expired",
+        switched_off=[SwitchedOff(claim="tool:a", reason="taken")],
+        dropped=[SwitchedOff(claim="edit:b", reason="no section")],
+        faulty="timed out",
+    )
+
+    info = ExtensionInfo.from_entry(entry, "http://127.0.0.1:1/x")
+
+    assert info.model_dump() == {
+        "id": "acme.one",
+        "name": "acme.one",
+        "version": "1.0.0",
+        "state": "FAILED",
+        "reason": "licence expired",
+        "web_url": "http://127.0.0.1:1/x",
+        "switched_off": [{"claim": "tool:a", "reason": "taken"}],
+        "dropped": [{"claim": "edit:b", "reason": "no section"}],
+        "faulty": "timed out",
+    }
+    plain_one = ExtensionInfo.from_entry(
+        InstalledExtension(manifest=manifest("acme.two"), state=ExtensionState.READY), None
+    )
+    assert (plain_one.state, plain_one.reason, plain_one.web_url) == ("READY", "", None)
+    assert (plain_one.switched_off, plain_one.dropped, plain_one.faulty) == ([], [], "")
+
+
+def test_counts_with_no_sources_are_empty_and_a_count_that_is_not_a_number_is_refused():
+    assert NotificationCounts.from_counts({}).model_dump() == {"unread": 0, "by_source": {}}
+    assert NotificationCounts.from_counts({"unread": "4", "by_source": None}).unread == 4
+    with pytest.raises(ValueError):
+        NotificationCounts.from_counts({"by_source": {"acme": "many"}})
+
+
+def test_a_session_entry_with_names_in_any_script_keeps_them_as_text():
+    info = SessionInfo.from_entry({"session_id": 7, "name": "Ünï ✓"})
+
+    assert (info.session_id, info.name, info.summary) == ("7", "Ünï ✓", "")
 
 
 # ── The window tables ─────────────────────────────────────────────
