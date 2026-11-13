@@ -212,3 +212,17 @@ def test_the_dev_switch_drops_a_token_that_was_set_and_still_removes_it(caplog):
     assert TOKEN_ENV not in env
     assert DEV_NO_TOKEN_ENV in caplog.text
     assert SECRET not in caplog.text
+
+
+def test_the_names_the_launcher_and_clients_speak_are_igni_s():
+    from igni_core.transport import ws_auth
+
+    assert ws_auth.TOKEN_ENV == "IGNI_WS_TOKEN"
+    assert ws_auth.DEV_NO_TOKEN_ENV == "IGNI_DEV_NO_WS_TOKEN"
+    assert ws_auth.SUBPROTOCOL == "igni.v1"
+    assert ws_auth.TOKEN_PROTOCOL_PREFIX == "igni-token."
+    assert ws_auth.TAURI_ORIGINS == {
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    }
