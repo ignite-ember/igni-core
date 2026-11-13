@@ -370,3 +370,17 @@ async def test_two_monitors_do_not_share_their_in_flight_probes() -> None:
     assert second.health.pending_probes == 0
     await first.health.stop()
     assert first.health.pending_probes == 0
+
+
+def test_a_monitor_cannot_be_built_without_the_processes_registry(wired: Wired) -> None:
+    with pytest.raises(TypeError, match="processes"):
+        ExtensionHealth(registry=wired.registry, rpc=wired.rpc, mcp=wired.mcp)  # type: ignore[call-arg,arg-type]
+
+
+async def test_a_restart_result_that_is_not_a_connect_result_is_an_error_not_a_failure(
+    wired: Wired,
+) -> None:
+    wired.mcp.connect_result = object()
+
+    with pytest.raises(AttributeError, match="ok"):
+        await wired.health.probe("acme.one")
