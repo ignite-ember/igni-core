@@ -207,9 +207,10 @@ class LspServerConfig(BaseModel):
     """One LSP server's launch + protocol-init config.
 
     The required minimum is ``command`` — everything else has a
-    workable default. Unknown fields are preserved
-    (``extra="allow"``) so future Claude Code LSP-manifest additions
-    don't bounce the file.
+    workable default. Unknown fields never bounce the file, so future
+    Claude Code LSP-manifest additions load: validation allows them
+    (``extra="allow"``) and :meth:`from_raw` ignores them, since
+    nothing reads them.
 
     Field aliases mirror the LSP-spec camelCase (``rootUri``,
     ``initializationOptions``); ``populate_by_name=True`` means
