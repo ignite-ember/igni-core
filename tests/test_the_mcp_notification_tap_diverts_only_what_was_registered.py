@@ -30,6 +30,9 @@ def _stream(*messages: Any):
     send, receive = anyio.create_memory_object_stream[Any](len(messages) + 1)
     for message in messages:
         send.send_nowait(message)
+    # Closed up front: what is buffered is still read, then the stream ends,
+    # so a message wrongly swallowed fails a test instead of hanging it.
+    send.close()
     return send, receive
 
 
@@ -80,7 +83,6 @@ async def test_requests_responses_exceptions_and_unregistered_notifications_pass
     problem = RuntimeError("transport")
     cancelled = _notification("notifications/cancelled", {"requestId": 1})
     send, receive = _stream(request, response, problem, cancelled)
-    send.close()  # so a message wrongly diverted ends the stream instead of hanging it
     tapped = router.tap("acme", receive)
 
     got = [await tapped.receive() for _ in range(4)]
