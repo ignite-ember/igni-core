@@ -218,3 +218,42 @@ class TestTheFileTokens:
         out = await _renderer(tmp_path / "c.md").render("see @ref.txt, then", "")
 
         assert out == "see body\n, then"
+
+
+class TestTheArgumentsNeverInlineAFile:
+    """``$ARGUMENTS`` goes in last so the arguments are never scanned for ``@path``; a shell
+    command handed them could still print them back into the text that is scanned."""
+
+    @pytest.mark.asyncio
+    async def test_a_command_that_echoes_the_arguments_does_not_inline_the_file_they_name(
+        self, tmp_path
+    ):
+        secret = tmp_path / "secret.txt"
+        secret.write_text("TOP SECRET")
+
+        out = await _renderer(tmp_path / "c.md").render("!`echo $ARGUMENTS`", f"@{secret}")
+
+        assert out == f"@{secret}"
+        assert "TOP SECRET" not in out
+
+    @pytest.mark.asyncio
+    async def test_a_command_without_the_arguments_still_inlines_the_paths_it_prints(
+        self, tmp_path
+    ):
+        (tmp_path / "notes.md").write_text("the notes")
+
+        out = await _renderer(tmp_path / "c.md").render("!`echo @notes.md`", "ignored")
+
+        assert out == "the notes"
+
+    @pytest.mark.asyncio
+    async def test_the_template_s_own_paths_inline_beside_a_command_given_the_arguments(
+        self, tmp_path
+    ):
+        (tmp_path / "notes.md").write_text("the notes")
+
+        out = await _renderer(tmp_path / "c.md").render(
+            "@notes.md | !`echo $ARGUMENTS @x` | $ARGUMENTS", "a@b"
+        )
+
+        assert out == "the notes | a@b @x | a@b"
