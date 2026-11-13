@@ -211,3 +211,10 @@ class TestTheSpecSaysWhatTheCodeDoes:
         text = DOC.read_text()
         for member in HOST_SCHEMA.stage_two():
             assert f"`{member}`" in text, f"stage-2 member {member} is not named in the spec"
+
+
+class TestTheCloudPlanIsACredentialRead:
+    def test_get_cloud_plan_is_unreachable_under_credentials_and_named_there(self) -> None:
+        assert coverage.rpc_destination(RpcMethod.GET_CLOUD_PLAN) == ("unreachable", "credentials")
+        row = next(r for r in coverage.NOT_REACHABLE if r.key == "credentials")
+        assert "`get_cloud_plan`" in row.what
