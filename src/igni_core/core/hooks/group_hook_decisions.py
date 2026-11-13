@@ -95,7 +95,7 @@ class GroupHookDecisions:
             raw = self.path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return GroupHookDecisionsFile()
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             logger.warning("Could not read %s (%s); asking again.", self.path, exc)
             return GroupHookDecisionsFile()
         try:
