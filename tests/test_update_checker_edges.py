@@ -240,6 +240,26 @@ async def test_a_stale_cache_is_ignored_and_pypi_is_asked(
     assert info.latest_version == "0.5.0"
 
 
+@pytest.mark.asyncio
+async def test_a_cache_that_is_not_text_is_a_miss_and_pypi_is_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, current: str
+) -> None:
+    pypi = _fake_pypi(monkeypatch, {"info": {"version": "0.2.0"}})
+    (tmp_path / ".update-check").write_bytes(b"\xff\xfe\x00\x80 not utf-8")
+
+    info = await _checker(tmp_path).check()
+
+    assert info.error is None
+    assert info.available is True
+    assert pypi.urls != []
+
+
+def test_a_cache_that_is_not_text_reads_as_a_miss(tmp_path: Path) -> None:
+    path = tmp_path / ".update-check"
+    path.write_bytes(b"\xff\xfe\x00\x80")
+    assert UpdateCache(path).read(ttl=60) is None
+
+
 def test_a_cache_of_the_wrong_json_shape_is_a_miss(tmp_path: Path) -> None:
     path = tmp_path / ".update-check"
     path.write_text("[1, 2, 3]")
