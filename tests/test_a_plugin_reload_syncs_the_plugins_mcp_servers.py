@@ -84,12 +84,12 @@ async def _settle() -> None:
 
 async def test_a_reload_rebuilds_in_order_and_counts_what_is_loaded(tmp_path) -> None:
     rig = Rig(tmp_path, ["alpha", "beta"])
-    rig.hooks = {"PreToolUse": [1, 2], "Stop": [3], "Empty": []}
+    rig.hooks = {"PreToolUse": [1, 2], "Stop": [3, 4], "Empty": []}
 
     counts = rig.orchestrator.reload()
 
     assert rig.calls == ["plugins+hooks", "pools"]
-    assert counts == PluginReloadCounts(plugins=2, skills=3, agents=2, hooks=3)
+    assert counts == PluginReloadCounts(plugins=2, skills=3, agents=2, hooks=4)
 
 
 async def test_a_reload_with_nothing_installed_counts_zero(tmp_path) -> None:
