@@ -100,6 +100,17 @@ def test_a_path_with_a_null_byte_is_not_ok_and_says_why(project: Path) -> None:
     assert "null" in placed.reason
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks")
+def test_a_symlink_loop_is_not_ok_and_says_why(project: Path) -> None:
+    (project / "a").symlink_to(project / "b")
+    (project / "b").symlink_to(project / "a")
+
+    placed = place(project, "a/x.py")
+
+    assert placed.ok is False
+    assert "loop" in placed.reason.lower()
+
+
 def test_an_empty_session_is_the_default_sessions_project(tmp_path: Path) -> None:
     one, two = tmp_path / "one", tmp_path / "two"
     one.mkdir()
