@@ -57,8 +57,13 @@ class NDJsonStreamTransport(Transport):
         if self._writer is None or self._closed:
             return
         line = message.model_dump_json() + "\n"
-        self._writer.write(line.encode())
-        await self._writer.drain()
+        try:
+            self._writer.write(line.encode())
+            await self._writer.drain()
+        except ConnectionError:
+            # The peer is gone (reset, broken pipe): like a send with no
+            # peer, the message has nowhere to go.
+            return
 
     async def _wait_for_reader(self) -> None:
         """Hook for subclasses that need to block until ``self._reader``
@@ -80,7 +85,9 @@ class NDJsonStreamTransport(Transport):
             line_bytes = await self._reader.readline()
             if not line_bytes:
                 break  # Connection closed
-            line = line_bytes.decode().strip()
+            # A line that is not UTF-8 is a bad line like any other: it
+            # reads as garbage the registry refuses, and the stream goes on.
+            line = line_bytes.decode(errors="replace").strip()
             if not line:
                 continue
             msg = self._registry.deserialize(line)
@@ -97,7 +104,11 @@ class NDJsonStreamTransport(Transport):
     async def _close_writer(self) -> None:
         if self._writer:
             self._writer.close()
-            await self._writer.wait_closed()
+            try:
+                await self._writer.wait_closed()
+            except ConnectionError:
+                # The peer went first; closing is all that was asked.
+                pass
 
     async def _close_extra(self) -> None:
         """Hook for subclass-specific cleanup (server socket teardown,
