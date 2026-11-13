@@ -440,7 +440,10 @@ class ExtensionOrigin:
         """
         headers: dict[str, str] = {}
         for line in lines:
-            if not line:
+            # A continuation line belongs to the header above it; with no
+            # folding it is nothing, and must not be read as a header of
+            # its own (`` Host: x`` is not a Host).
+            if not line or line[0] in " \t":
                 continue
             name, sep, value = line.partition(":")
             if sep:
@@ -475,6 +478,18 @@ class ExtensionOrigin:
         if "\x00" in path:
             return None
 
+        try:
+            return self._find(target, path)
+        except (OSError, RuntimeError, ValueError) as exc:
+            # A name longer than the filesystem allows, a symlink loop:
+            # the file system's refusal is this server's "not here", not
+            # a connection dropped with a traceback in the log.
+            logger.debug(
+                "extension origin %s could not resolve %r: %s", self._extension_id, target, exc
+            )
+            return None
+
+    def _find(self, target: str, path: str) -> Path | None:
         candidate = (self._root / path.lstrip("/")).resolve()
         if not self._contains(candidate):
             logger.debug(

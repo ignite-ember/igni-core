@@ -118,7 +118,7 @@ class SettingsFileLoader:
         raises so a corrupt settings file can't break session start."""
         try:
             raw_text = path.read_text()
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             reason = f"read failed: {exc}"
             logger.warning("Failed to read %s: %s", path, exc)
             return LoadResult(path=str(path), ok=False, reason=reason)
@@ -201,12 +201,17 @@ class SettingsFileWriter:
         path = self.target_path()
         data: dict[str, Any] = self._read_raw(path)
 
-        perms = data.setdefault("permissions", {})
+        # A hand-edited file may hold the wrong type here; what cannot be
+        # read as a rule list is replaced rather than crashing the save.
+        perms = data.get("permissions")
+        if not isinstance(perms, dict):
+            perms = data["permissions"] = {}
         for key in ("allow", "ask", "deny"):
             existing = perms.get(key, [])
+            if not isinstance(existing, list):
+                existing = perms[key] = []
             if rule in existing:
                 existing.remove(rule)
-                perms[key] = existing
 
         perms.setdefault(level, []).append(rule)
 
@@ -227,7 +232,7 @@ class SettingsFileWriter:
             return {}
         try:
             parsed = json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             logger.warning(
                 "SettingsFileWriter: failed to read %s (%s); starting from empty",
                 path,

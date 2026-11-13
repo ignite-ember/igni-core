@@ -12,7 +12,7 @@ YAML frontmatter in:
 * Plugin-bundled ``<plugin>/output-styles/<name>.md``
 
 Discovery precedence (last write wins): user-claude < user-igni <
-project-claude < project-igni < plugin. Identical model to
+plugin < group < project-claude < project-igni. Identical model to
 markdown-commands / skills.
 """
 

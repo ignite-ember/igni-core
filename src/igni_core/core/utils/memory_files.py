@@ -99,13 +99,13 @@ class DirectoryMemoryFiles(MemoryFiles):
         try:
             if not path.is_file():
                 return None
-            return path.read_text()
+            return path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             return None
 
     def write(self, name: str, content: str) -> None:
         self._directory.mkdir(parents=True, exist_ok=True)
-        (self._directory / name).write_text(content)
+        (self._directory / name).write_text(content, encoding="utf-8")
 
     def names(self) -> list[str]:
         if not self._directory.is_dir():
@@ -197,7 +197,7 @@ class MemoryMirror:
             if path.is_file() and path.name not in stored:
                 path.unlink()
         for name, content in stored.items():
-            (self._directory / name).write_text(content)
+            (self._directory / name).write_text(content, encoding="utf-8")
         self._known = {name: self._digest(content) for name, content in stored.items()}
         return len(stored)
 
@@ -211,20 +211,21 @@ class MemoryMirror:
         changed = 0
         try:
             present: dict[str, str] = {}
+            unreadable: set[str] = set()
             if self._directory.is_dir():
                 for path in self._directory.iterdir():
                     if path.is_file():
                         try:
-                            present[path.name] = path.read_text()
+                            present[path.name] = path.read_text(encoding="utf-8")
                         except (OSError, UnicodeDecodeError):
-                            continue
+                            unreadable.add(path.name)
             for name, content in present.items():
                 digest = self._digest(content)
                 if self._known.get(name) != digest:
                     self._files.write(name, content)
                     self._known[name] = digest
                     changed += 1
-            for name in [n for n in self._known if n not in present]:
+            for name in [n for n in self._known if n not in present and n not in unreadable]:
                 self._files.delete(name)
                 del self._known[name]
                 changed += 1

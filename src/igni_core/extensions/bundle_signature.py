@@ -146,13 +146,14 @@ class PublisherKeys:
         no other: a header naming a key the publisher does not have is
         not a reason to try the rest.
         """
-        parts = compact.strip().split(".")
-        if len(parts) != 3:
+        compact = compact.strip()
+        parts = compact.split(".")
+        if len(parts) != 3 or not compact.isascii():
             raise BundleSignatureError("the signature is not a compact JWS")
         header_segment, payload_segment, signature_segment = parts
         try:
             header = json.loads(_Base64Url.decode(header_segment, what="header"))
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise BundleSignatureError("the signature's header is not JSON") from exc
         if not isinstance(header, dict):
             raise BundleSignatureError("the signature's header is not an object")

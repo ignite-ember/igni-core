@@ -144,7 +144,9 @@ class PluginInstallCoordinator:
         """Remove a plugin directory the pack does not name: withdrawn, or planted."""
         if not self.directory.is_dir():
             return
-        installed = {e.entry_name for e in pack.entries if e.kind == "plugins" and e.source_url}
+        installed = {
+            e.safe_name().name for e in pack.entries if e.kind == "plugins" and e.source_url
+        }
         for path in self.directory.iterdir():
             if path.is_dir() and path.name not in installed:
                 logger.warning(

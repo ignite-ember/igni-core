@@ -3,8 +3,7 @@
 igni server sends each person's group pack twice in one response: as the
 plain fields it always had, and as ``signed_pack`` — a compact JWS over the
 same content, signed with the key igni server signs its tokens with and
-publishes at ``/.well-known/jwks.json`` (igni__server
-``app/services/portal/group_pack_signature.py``). igni stores that string
+publishes at ``/.well-known/jwks.json``. igni stores that string
 exactly as received (``<data_dir>/group-policy/pack.jws``) and applies a
 pack only after :class:`PackSignatureVerifier` has accepted it.
 

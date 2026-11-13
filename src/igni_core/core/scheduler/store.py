@@ -87,7 +87,7 @@ class TaskStore:
     async def cancel(self, task_id: str) -> TaskStatus | None:
         """Mark a task cancelled, if it has not finished; its status before.
 
-        ``None`` for a task the store does not have. A task that already
+        ``None`` for a task the store does not have (or cannot read). A task that already
         completed, failed or was cancelled keeps its status, its result and
         its error: cancelling it is not a write. The read and the write
         share one transaction, as in :meth:`update_status`.
@@ -98,7 +98,12 @@ class TaskStore:
             ).scalar_one_or_none()
             if row is None:
                 return None
-            before = TaskStatus(row.status)
+            try:
+                before = TaskStatus(row.status)
+            except ValueError:
+                # A row this build cannot read is, to every other call, no
+                # task at all: cancelling it is not found, not a crash.
+                return None
             if before.is_active:
                 row.status = TaskStatus.cancelled.value
             return before

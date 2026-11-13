@@ -279,3 +279,98 @@ class TestGetChatHistoryVizSplicing:
         ]
         result = self._splice(history, event_log)
         assert all(t.role != "visualization" for t in result)
+
+
+class TestTheLogItself:
+    """:class:`SessionEventLog` on its own: seeding, snapshots, rebinding."""
+
+    @staticmethod
+    def _entry(seq: int) -> VisualizationDeltaEntry:
+        return VisualizationDeltaEntry(
+            seq=seq, run_id="r", payload=VisualizationDeltaPayload(spec_id=f"s{seq}")
+        )
+
+    async def test_without_a_persister_the_event_is_kept_and_not_persisted(self):
+        log = SessionEventLog()
+
+        result = await log.append(_draft(spec_id="a"))
+
+        assert result.persisted is False
+        assert result.error is None
+        assert [e.payload.spec_id for e in log.events] == ["a"]
+
+    def test_restore_continues_after_the_highest_seq_on_disk(self):
+        log = SessionEventLog()
+
+        log.restore([self._entry(3), self._entry(7), self._entry(5)])
+
+        assert log.seq == 7
+
+    async def test_an_append_after_a_restore_does_not_collide(self):
+        log = SessionEventLog()
+        log.restore([self._entry(2), self._entry(4)])
+
+        await log.append(_draft(spec_id="new"))
+
+        assert [e.seq for e in log.events] == [2, 4, 5]
+
+    def test_restoring_nothing_starts_again_at_zero(self):
+        log = SessionEventLog()
+        log.restore([self._entry(9)])
+
+        log.restore([])
+
+        assert log.events == []
+        assert log.seq == 0
+
+    async def test_restore_replaces_what_was_there(self):
+        log = SessionEventLog()
+        await log.append(_draft(spec_id="old"))
+
+        log.restore([self._entry(1)])
+
+        assert [e.payload.spec_id for e in log.events] == ["s1"]
+
+    def test_restore_does_not_keep_the_callers_list(self):
+        log = SessionEventLog()
+        seed = [self._entry(1)]
+        log.restore(seed)
+
+        seed.append(self._entry(2))
+
+        assert len(log.events) == 1
+
+    async def test_the_events_are_a_snapshot_not_the_live_list(self):
+        log = SessionEventLog()
+        await log.append(_draft(spec_id="a"))
+
+        log.events.clear()
+        log.events.append(self._entry(99))
+
+        assert [e.payload.spec_id for e in log.events] == ["a"]
+        assert log.seq == 1
+
+    async def test_a_rebound_persister_is_the_one_written_to(self):
+        holder: dict[str, object] = {}
+        first, second = MagicMock(), MagicMock()
+        first.save_event_log = AsyncMock(return_value=PersistResult(ok=True))
+        second.save_event_log = AsyncMock(return_value=PersistResult(ok=True))
+        log = SessionEventLog(persist_ref=lambda: holder["p"])  # type: ignore[arg-type,return-value]
+
+        holder["p"] = first
+        await log.append(_draft(spec_id="a"))
+        holder["p"] = second
+        await log.append(_draft(spec_id="b"))
+
+        assert first.save_event_log.await_count == 1
+        assert second.save_event_log.await_count == 1
+
+    async def test_a_failed_write_still_advances_the_seq(self):
+        persistence = MagicMock()
+        persistence.save_event_log = AsyncMock(side_effect=RuntimeError("down"))
+        log = SessionEventLog(persist_ref=lambda: persistence)
+
+        await log.append(_draft(spec_id="a"))
+        await log.append(_draft(spec_id="b"))
+
+        assert [e.seq for e in log.events] == [1, 2]

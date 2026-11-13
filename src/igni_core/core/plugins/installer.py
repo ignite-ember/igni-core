@@ -155,6 +155,12 @@ class PluginInstaller:
         """
         if not self._source_policy.allows(url):
             raise PluginError(self._source_policy.refusal(url))
+        if ref is not None:
+            _refuse_option_like_ref(ref)
+        if subdir is not None:
+            _refuse_unconfined_subdir(subdir)
+        if directory_name is not None:
+            _refuse_unconfined_name(directory_name, "directory name")
 
         # Stale temp from a prior crashed install — wipe before reuse.
         if self._tmp_dir.exists():
@@ -194,13 +200,19 @@ class PluginInstaller:
             shutil.rmtree(self._tmp_dir, ignore_errors=True)
             raise PluginError(f"plugin.json at {url} is malformed: {e}") from e
 
+        if not directory_name:
+            try:
+                _refuse_unconfined_name(manifest.name, "plugin name")
+            except PluginError:
+                shutil.rmtree(self._tmp_dir, ignore_errors=True)
+                raise
         dest = self._plugins_dir / (directory_name or manifest.name)
         if dest.exists():
             shutil.rmtree(self._tmp_dir, ignore_errors=True)
             raise PluginError(
                 f"Plugin '{manifest.name}' is already installed at {dest}. "
-                "Run `/plugin remove {manifest.name}` first to reinstall, "
-                "or `/plugin update {manifest.name}` to update in place."
+                f"Run `/plugin remove {manifest.name}` first to reinstall, "
+                f"or `/plugin update {manifest.name}` to update in place."
             )
 
         self._plugins_dir.mkdir(parents=True, exist_ok=True)
@@ -244,6 +256,9 @@ class PluginInstaller:
 
         Returns the SHA the plugin was set to.
         """
+        _refuse_unconfined_name(name, "plugin name")
+        if ref is not None:
+            _refuse_option_like_ref(ref)
         plugin_dir = self._plugins_dir / name
         if not plugin_dir.is_dir():
             raise PluginError(f"Plugin '{name}' is not installed at {plugin_dir}.")
@@ -322,6 +337,7 @@ class PluginInstaller:
         raises if the plugin dir isn't there — callers should treat
         that as a user error (typo, already removed).
         """
+        _refuse_unconfined_name(name, "plugin name")
         plugin_dir = self._plugins_dir / name
         if not plugin_dir.is_dir():
             raise PluginError(f"Plugin '{name}' is not installed at {plugin_dir}.")
@@ -335,6 +351,29 @@ class PluginInstaller:
         save_state(state, data_dir=self._data_dir)
 
         logger.info("Removed plugin '%s' from %s", name, plugin_dir)
+
+
+def _refuse_option_like_ref(ref: str) -> None:
+    """A ref beginning with ``-`` would be read by git as an option
+    (``--upload-pack=<cmd>`` runs a command), never as a branch or tag."""
+    if ref.startswith("-"):
+        raise PluginError(f"'{ref}' is not a valid ref: a ref cannot start with '-'.")
+
+
+def _refuse_unconfined_subdir(subdir: str) -> None:
+    """The plugin's subdirectory must stay inside the cloned repo."""
+    parts = subdir.replace("\\", "/").split("/")
+    if subdir.startswith(("/", "\\")) or ".." in parts or Path(subdir).is_absolute():
+        raise PluginError(f"The subdirectory '{subdir}' must be a relative path inside the repo.")
+
+
+def _refuse_unconfined_name(name: str, what: str) -> None:
+    """A plugin's directory is one path segment under the plugins directory."""
+    if name in ("", ".", "..") or "/" in name or "\\" in name or "\0" in name:
+        raise PluginError(
+            f"The {what} '{name}' is not allowed: it must be a single name, "
+            "not a path, so it stays inside the plugins directory."
+        )
 
 
 def _safe_current_sha(git: GitClient, path: Path) -> str | None:

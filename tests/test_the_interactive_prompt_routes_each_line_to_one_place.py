@@ -312,3 +312,44 @@ async def test_nothing_is_cleaned_up_when_the_settings_say_not_to(make_loop):
     await run.loop.run()
 
     assert not run.session.pool.ephemeral.cleaned
+
+
+async def test_nothing_is_said_when_no_ephemeral_agent_was_removed(make_loop):
+    run = make_loop(["exit"], ephemeral=0)
+    run.session.settings.orchestration.auto_cleanup = True
+
+    await run.loop.run()
+
+    assert run.session.pool.ephemeral.cleaned
+    assert not any("Cleaned up" in line for line in run.infos())
+
+
+async def test_the_session_still_ends_when_the_prompt_loop_crashes(make_loop):
+    run = make_loop([RuntimeError("terminal gone")])
+    run.session.settings.orchestration.auto_cleanup = True
+    run.session.pool.ephemeral._count = 1
+
+    with pytest.raises(RuntimeError, match="terminal gone"):
+        await run.loop.run()
+
+    assert run.events[-1] == "SessionEnd"
+    assert run.session.pool.ephemeral.cleaned
+
+
+async def test_the_session_starts_before_the_banner_is_shown(make_loop):
+    run = make_loop(["exit"])
+    run.session.display.print_info.side_effect = lambda *_: run.events.append("print")
+
+    await run.loop.run()
+
+    assert run.events[0] == "SessionStart"
+    assert run.events.index("SessionStart") < run.events.index("print")
+
+
+async def test_the_banner_lists_agents_sorted_and_counts_every_hook(make_loop):
+    run = make_loop(["exit"])
+
+    await run.loop.run()
+
+    assert "Loaded agents: editor, reviewer" in run.infos()
+    assert "Loaded hooks: 2" in run.infos()

@@ -115,9 +115,9 @@ class HookEnvelope(BaseModel):
         """Resolve the permission decision honouring the
         documented precedence: nested wins over bare.
 
-        Returns :class:`PermissionDecision.DEFER` when neither
+        Returns :class:`PermissionDecision.NONE` (no decision) when neither
         source is set OR when the source string isn't one of the
-        four recognised values (a defensive fallback — a hook
+        recognised wire values (a defensive fallback — a hook
         that emits garbage in this slot doesn't break the pipeline).
         """
         nested = str(self.hook_specific_output.get("permissionDecision", "") or "")

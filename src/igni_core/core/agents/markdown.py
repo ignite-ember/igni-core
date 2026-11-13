@@ -79,7 +79,7 @@ class AgentMarkdownFile:
         self._parse_ok = True
 
     def _read(self) -> str:
-        return self._content if self._content is not None else self.path.read_text()
+        return self._content if self._content is not None else self.path.read_text(encoding="utf-8")
 
     def raw_frontmatter_keys(self) -> set[str]:
         """Top-level YAML frontmatter keys, or empty on any failure.

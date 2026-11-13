@@ -61,7 +61,8 @@ def _secret_models(payload: Any) -> list[str]:
     """Registry entry names whose config embeds a literal key."""
     if not isinstance(payload, dict):
         return []
-    registry = (payload.get("models") or {}).get("registry")
+    models = payload.get("models")
+    registry = models.get("registry") if isinstance(models, dict) else None
     if not isinstance(registry, dict):
         return []
 
@@ -128,7 +129,7 @@ def scan_project_config(project_dir: Path) -> list[str]:
 
         try:
             payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError) as exc:
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
             logger.debug("Could not scan %s for credentials: %s", path, exc)
             continue
 

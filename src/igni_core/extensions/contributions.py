@@ -480,7 +480,7 @@ class ExtensionContributions:
                 return None
             try:
                 return path.read_text(encoding="utf-8")
-            except OSError as exc:
+            except (OSError, UnicodeDecodeError) as exc:
                 logger.warning(
                     "extension %s: %s could not read %s: %s", manifest.id, what, origin, exc
                 )

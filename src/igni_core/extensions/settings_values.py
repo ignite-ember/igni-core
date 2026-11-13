@@ -77,7 +77,7 @@ class FileSettingsValues(SettingsValues):
             return {}
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError) as exc:  # ValueError: not UTF-8, or not JSON
             # A corrupt settings file must not stop the extension
             # starting; defaults are a working configuration.
             logger.warning("ignoring %s: %s", path, exc)

@@ -31,6 +31,13 @@ from igni_core.core.session.schemas import PluginReloadCounts
 logger = logging.getLogger(__name__)
 
 
+def _close_unstarted(work: Awaitable[None]) -> None:
+    """Close work that could not be started, so it is not left un-awaited."""
+    close = getattr(work, "close", None)
+    if close is not None:
+        close()
+
+
 class PluginReloadOrchestrator:
     """Coordinator that hot-reloads plugin contributions into a
     live session.
@@ -146,26 +153,30 @@ class PluginReloadOrchestrator:
         removed_mcp_names = previously_plugin_owned - now_plugin_owned
 
         if removed_mcp_names:
+            disconnect = self._disconnect_removed_mcps(removed_mcp_names)
             try:
                 background.start(
-                    self._disconnect_removed_mcps(removed_mcp_names),
+                    disconnect,
                     holder="plugin-reload",
                     reason="disconnecting removed MCP servers",
                 )
             except RuntimeError:
+                _close_unstarted(disconnect)
                 logger.debug(
                     "No running loop — skipping MCP disconnect for: %s",
                     sorted(removed_mcp_names),
                 )
 
         if added_mcp_names:
+            connect = self._auto_connect_mcps(added_mcp_names)
             try:
                 background.start(
-                    self._auto_connect_mcps(added_mcp_names),
+                    connect,
                     holder="plugin-reload",
                     reason="connecting added MCP servers",
                 )
             except RuntimeError:
+                _close_unstarted(connect)
                 logger.debug(
                     "Skipping MCP auto-connect (no running loop); use /mcp connect to start: %s",
                     sorted(added_mcp_names),

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 import stat
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -282,6 +283,35 @@ def test_only_an_apps_credential_is_reissued_not_signed_in_again(
     tmp_path: Path, producer: str, app: bool
 ):
     assert Keeper(tmp_path, httpx.Response(200, json=GRANT), producer=producer).keeper.is_app is app
+
+
+async def test_the_file_a_sign_in_writes_does_not_send_the_watcher_to_renew_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """With no credential on the volume the keeper watches for the file; a sign-in writes
+    it. Seen before the sign-in had finished (at once, where inotify watches the
+    directory), the watcher renewed the credential just issued: a second exchange."""
+    monkeypatch.setattr(VmCredentials, "FILE_POLL_SECONDS", 0.01)
+    vm = Keeper(tmp_path, httpx.Response(200, json=GRANT))
+    await vm.keeper.start()
+    watcher = vm.keeper._watcher
+    assert watcher is not None
+    write_token = vm.keeper._token.write
+
+    def slow_token_write(data: bytes) -> None:
+        # The credential file is on the volume; the sign-in has not finished.
+        time.sleep(0.3)
+        write_token(data)
+
+    vm.keeper._token.write = slow_token_write  # type: ignore[method-assign]
+    await vm.keeper.sign_in("s")
+    await asyncio.wait([watcher], timeout=2)
+    await asyncio.sleep(0.05)
+
+    assert watcher.done() and vm.keeper._watcher is None, "a sign-in ends the watch"
+    assert len(vm.seen) == 1, "the sign-in's exchange, and no renewal after it"
+    assert vm.keeper.state is CredentialState.READY
+    await vm.keeper.stop()
 
 
 async def test_a_restore_arms_the_renewal_again_from_the_wall_clock(tmp_path: Path):

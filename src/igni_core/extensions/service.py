@@ -106,7 +106,11 @@ class McpExtensionService:
             ) from exc
 
         if getattr(result, "is_error", False):
-            raise ExtensionServiceError(f"'{method}' reported: {self.unwrap(result)}")
+            try:
+                reported = self.unwrap(result)
+            except ExtensionServiceError:
+                reported = "an error with no message"
+            raise ExtensionServiceError(f"'{method}' reported: {reported}")
         return self.unwrap(result)
 
     @staticmethod

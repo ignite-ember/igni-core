@@ -51,7 +51,7 @@ class NotebookTools(Toolkit):
                 :class:`agno.tools.Toolkit` (``name``, ``tool_hooks``,
                 etc.). Explicit passthrough — no silent kwarg drop.
         """
-        super().__init__(name="ember_notebook", **toolkit_kwargs)
+        super().__init__(name="igni_notebook", **toolkit_kwargs)
         self.base_dir = Path(base_dir) if base_dir else Path.cwd()
         self.register(self.notebook_read)
         self.register(self.notebook_read_cell)
@@ -75,6 +75,15 @@ class NotebookTools(Toolkit):
         if not p.is_absolute():
             p = self.base_dir / p
         return p
+
+    @staticmethod
+    def _save(doc: NotebookDocument) -> str:
+        """Save ``doc``; return an error string instead of raising."""
+        try:
+            doc.save()
+        except OSError as exc:
+            return f"Error: Cannot write notebook {doc.path}: {exc}"
+        return ""
 
     # ---- endpoints ----
 
@@ -164,7 +173,9 @@ class NotebookTools(Toolkit):
         if doc.replace_source(cell_index, new_source) is None:
             return doc.out_of_range_message(cell_index)
 
-        doc.save()
+        failure = self._save(doc)
+        if failure:
+            return failure
         return str(
             NotebookOpResult(
                 ok=True,
@@ -203,7 +214,9 @@ class NotebookTools(Toolkit):
         if idx == -1:
             return f"Error: Cell index {cell_index} out of range (0-{len(doc.cells)})."
 
-        doc.save()
+        failure = self._save(doc)
+        if failure:
+            return failure
         return str(
             NotebookOpResult(
                 ok=True,
@@ -234,7 +247,9 @@ class NotebookTools(Toolkit):
         if removed is None:
             return doc.out_of_range_message(cell_index)
 
-        doc.save()
+        failure = self._save(doc)
+        if failure:
+            return failure
         return str(
             NotebookOpResult(
                 ok=True,

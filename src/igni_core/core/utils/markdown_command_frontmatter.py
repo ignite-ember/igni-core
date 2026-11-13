@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 #: The header block: ``---`` on a line of its own, the YAML, ``---``
 #: again. Everything after the closing fence is the body.
-_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)", re.DOTALL)
+_FRONTMATTER_RE = re.compile(r"\A---\s*\n(?:(.*?)\n)?---\s*\n?(.*)", re.DOTALL)
 
 
 class CommandFrontmatter(BaseModel):
@@ -97,7 +97,7 @@ class CommandFrontmatter(BaseModel):
         match = _FRONTMATTER_RE.match(content)
         if not match:
             return cls(), content
-        raw, body = match.group(1), match.group(2)
+        raw, body = match.group(1) or "", match.group(2)
         try:
             meta = yaml.safe_load(raw) or {}
         except yaml.YAMLError as exc:

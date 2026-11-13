@@ -83,6 +83,32 @@ class TestRunSingleMessage:
             assert call_kwargs["project_dir"] == Path("/tmp/proj")
             assert call_kwargs["additional_dirs"] == [Path("/tmp/extra")]
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("resume", [None, "old-session"])
+    async def test_hands_the_resume_id_to_the_session_and_the_hooks(self, resume):
+        """A fresh run builds its session with no resume id; a resumed one
+        passes it on and tells the hooks the session was resumed."""
+        with patch("igni_core.core.session.session_run.Session") as MockSession:
+            mock_session = _make_mock_session()
+            MockSession.return_value = mock_session
+
+            await run_single_message(MagicMock(), "test", resume_session_id=resume)
+
+            assert MockSession.call_args[1]["resume_session_id"] == resume
+            payloads = [c[1]["payload"] for c in mock_session.hook_executor.execute.call_args_list]
+            assert len(payloads) == 2
+            assert all(p.resumed is bool(resume) for p in payloads)
+
+    @pytest.mark.asyncio
+    async def test_a_session_that_raises_propagates_to_the_caller(self):
+        with patch("igni_core.core.session.session_run.Session") as MockSession:
+            mock_session = _make_mock_session()
+            mock_session.handle_message = AsyncMock(side_effect=RuntimeError("boom"))
+            MockSession.return_value = mock_session
+
+            with pytest.raises(RuntimeError, match="boom"):
+                await run_single_message(MagicMock(), "test")
+
 
 class TestAnEmptyModelTurnIsNotSilence:
     """A model can return an assistant turn with nothing in it.

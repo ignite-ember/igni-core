@@ -174,7 +174,9 @@ class Seatbelt:
         homes = " ".join(f"(subpath {_quote(h)})" for h in HOME_ROOTS)
         lines = [
             "(version 1)",
-            f";; igni extension sandbox: {plan.extension_id}",
+            # One line: a newline in the id would end the comment and the
+            # rest would be read as profile rules.
+            f";; igni extension sandbox: {' '.join(plan.extension_id.splitlines())}",
             "(deny default)",
             ";; processes",
             "(allow process-exec process-fork)",

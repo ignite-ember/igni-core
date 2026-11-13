@@ -99,6 +99,17 @@ class FakeRouter:
         }
 
 
+class PerContextRouter(FakeRouter):
+    """Answers each context its own noul, by what the context says."""
+
+    def predict_batch(self, requests: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out = super().predict_batch(requests)
+        for request, answer in zip(requests, out, strict=True):
+            yes = {"a": 0.9, "b": 0.5, "c": 0.1}[request["state"]["text"]]
+            answer["answers"]["urgent"] = {"type": "noul", "noul": yes}
+        return out
+
+
 def service_over(model: LayaModel) -> Laya:
     """The backend's client, talking to the real service app in-process."""
     app = DecisionsApp(model, "secret")
@@ -198,6 +209,23 @@ class TestDecide:
 
         assert len(decisions) == 3
         assert [r["state"]["text"] for r in router.batches[0]] == ["a", "b", "c"]
+
+    async def test_a_batch_keeps_each_answer_with_its_own_context(self, rig: HostRig) -> None:
+        """The decisions come back in the order of the contexts, each about its own."""
+        assert rig.model is not None
+        rig.model.services.decisions = laya_over(PerContextRouter())
+        ext = rig.install(host=["decide"])
+        decisions = ok(
+            await rig.ask(
+                ext,
+                "call",
+                "decide_batch",
+                contexts=[{"text": "c"}, {"text": "a"}, {"text": "b"}],
+                questions=[TRIAGE[1]],
+            )
+        )
+        yes = [d["answers"]["urgent"]["probabilities"]["yes"] for d in decisions]
+        assert yes == pytest.approx([0.1, 0.9, 0.5])
 
     async def test_it_needs_the_decide_grant(self, rig: HostRig) -> None:
         assert rig.model is not None

@@ -120,7 +120,7 @@ class SkillParser:
         The skill name defaults to the parent directory name
         (e.g. ``deploy/SKILL.md`` → ``deploy``).
         """
-        content = path.read_text()
+        content = path.read_text(encoding="utf-8")
         default_name = path.parent.name
 
         fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)", content, re.DOTALL)
@@ -134,6 +134,10 @@ class SkillParser:
         yaml_str = fm_match.group(1)
         body = fm_match.group(2).strip()
         fm = yaml.safe_load(yaml_str) or {}
+        if not isinstance(fm, dict):
+            raise ValueError(
+                f"{path}: skill frontmatter must be a mapping, not {type(fm).__name__}"
+            )
 
         return SkillDefinition(
             name=fm.get("name", default_name),

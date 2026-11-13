@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 CommandInvoker = Callable[[str], Awaitable[str]]
 
 
+def _bare(name: str) -> str:
+    """``name`` as the table keys it: no whitespace, no leading slash, lowercase."""
+    return name.strip().lstrip("/").strip().lower()
+
+
 @dataclass(frozen=True, slots=True)
 class ContributedCommand:
     """One command, who owns it, and how to run it."""
@@ -62,7 +67,7 @@ class ContributedCommands:
         winner decided by install order is a product that behaves
         differently on two machines with the same software on them.
         """
-        bare = name.lstrip("/").strip().lower()
+        bare = _bare(name)
         if not bare:
             return "a command needs a name"
         held = self._by_name.get(bare)
@@ -78,7 +83,7 @@ class ContributedCommands:
             del self._by_name[name]
 
     def get(self, name: str) -> ContributedCommand | None:
-        return self._by_name.get(name.lstrip("/").strip().lower())
+        return self._by_name.get(_bare(name))
 
     def all(self) -> list[ContributedCommand]:
         return [self._by_name[name] for name in sorted(self._by_name)]

@@ -25,6 +25,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.engine import URL, make_url
+from sqlalchemy.exc import ArgumentError
 
 
 class Dialect(StrEnum):
@@ -68,7 +69,11 @@ class DatabaseUrl(BaseModel):
         the one psycopg spelling. A SQLite URL's path is resolved the way
         :meth:`for_file` resolves one.
         """
-        parsed = make_url(url)
+        try:
+            parsed = make_url(url)
+        except ArgumentError:
+            # The text is not echoed: it may carry a password.
+            raise ValueError("not a database URL: expected dialect://… or a file path") from None
         dialect = cls._dialect_of(parsed)
         if dialect is Dialect.SQLITE:
             if not parsed.database or parsed.database == ":memory:":

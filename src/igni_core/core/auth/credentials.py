@@ -46,6 +46,21 @@ DEFAULT_CREDENTIALS_PATH = f"{DEFAULT_DATA_DIR}/credentials.json"
 DEFAULT_TOKEN_TTL = 30 * 24 * 3600
 
 
+def _claims_of(token: str) -> JwtClaims | None:
+    """The token's claims, or ``None`` when it has none this client can read.
+
+    A payload that decodes but does not fit :class:`JwtClaims` (an ``exp``
+    that is not a number, a ``sub`` that is not text) is as unreadable as
+    one that does not decode: the token is still the credential, and the
+    server alone decides whether it is good.
+    """
+    try:
+        return JwtClaims.decode(token)
+    except ValidationError as exc:
+        logger.debug("the token's claims are unreadable (%s)", exc)
+        return None
+
+
 class Credentials(BaseModel):
     """Stored authentication credentials.
 
@@ -89,7 +104,7 @@ class Credentials(BaseModel):
     def for_token(cls, token: str, email: str) -> Credentials:
         """Credentials expiring when the JWT does — or at the
         :meth:`new` default when it carries no ``exp``."""
-        claims = JwtClaims.decode(token)
+        claims = _claims_of(token)
         if claims is None or not claims.exp:
             return cls.new(token, email)
         now = datetime.now(timezone.utc).timestamp()
@@ -237,11 +252,7 @@ class CredentialsStore:
         if not loaded.ok or loaded.creds is None:
             return SignedInSession()
         token = loaded.creds.access_token
-        try:
-            claims = JwtClaims.decode(token)
-        except ValidationError as exc:
-            logger.debug("the signed-in session's claims are unreadable (%s)", exc)
-            claims = None
+        claims = _claims_of(token)
         if claims is None:
             return SignedInSession(token=token)
         return SignedInSession(subject=claims.sub, org=claims.org, token=token)
@@ -319,7 +330,7 @@ class CloudCredentials:
             return
         self._creds = creds
         if creds.access_token:
-            self._claims = JwtClaims.decode(creds.access_token)
+            self._claims = _claims_of(creds.access_token)
 
     @property
     def access_token(self) -> str | None:
