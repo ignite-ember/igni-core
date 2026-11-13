@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
-from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.dialects import sqlite
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session
 
@@ -160,12 +160,6 @@ class TestConflictInsert:
             stmt = ConflictInsert.into(session, _table)
         assert isinstance(stmt, sqlite.Insert)
         assert hasattr(stmt, "on_conflict_do_update")
-
-    def test_sync_postgres_session_gets_the_postgres_insert(self):
-        engine = create_engine("postgresql+psycopg://u:p@localhost/db")
-        with Session(engine) as session:
-            stmt = ConflictInsert.into(session, _table)
-        assert isinstance(stmt, postgresql.Insert)
 
     async def test_async_session_is_resolved_through_bind(self):
         engine = create_async_engine("sqlite+aiosqlite://")

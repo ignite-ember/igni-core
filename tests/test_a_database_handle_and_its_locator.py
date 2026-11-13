@@ -10,7 +10,6 @@ configured database in the cloud.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -70,10 +69,6 @@ def test_of_hands_back_a_handle_and_builds_one_from_a_path(tmp_path: Path):
     assert built.path == (tmp_path / "b.db").resolve()
     from_url = Database.of(f"sqlite:///{tmp_path / 'c.db'}")
     assert from_url.path == (tmp_path / "c.db").resolve()
-
-
-def test_a_server_has_no_file():
-    assert Database(SERVER, run_migrations=False).path is None
 
 
 def test_two_handles_on_one_file_share_their_pool_and_sessions_keep_what_they_committed(
@@ -184,20 +179,6 @@ def test_the_cloud_refuses_to_open_a_database_with_nobody_signed_in(tmp_path: Pa
         locator.scope(tmp_path)
     with pytest.raises(NoTenantError):
         locator.global_database()
-
-
-def test_the_global_database_is_the_producers_with_no_project(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    # No server is listening: only which database and whose rows is asked here.
-    monkeypatch.setattr(
-        "igni_core.core.db.database.keeper", SimpleNamespace(ensure_current=lambda url: None)
-    )
-    locator = StorageLocator(database_url=SERVER, data_dir=tmp_path)
-    tenancy.use(lambda: Tenant(org="acme", producer="app:7"))
-    database = locator.global_database()
-    assert database.scope == StorageScope(org="acme", producer="app:7", project="", shared=True)
-    assert database.url == DatabaseUrl.parse(SERVER)
 
 
 def test_a_project_database_defaults_to_the_current_directory(

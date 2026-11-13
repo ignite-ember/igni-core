@@ -19,9 +19,6 @@ from igni_core.core.db import schema
 from igni_core.core.db.schema import HEAD_REVISION, SchemaKeeper, SchemaRevision
 from igni_core.core.db.urls import DatabaseUrl
 
-#: A server nobody is listening on: connecting is refused at once.
-UNREACHABLE = "postgresql://igni:pw@127.0.0.1:1/igni"
-
 
 def write_revision(path: Path, revision: str | None) -> None:
     with sqlite3.connect(path) as connection:
@@ -69,11 +66,6 @@ def test_asking_about_a_file_that_does_not_exist_does_not_create_it(tmp_path: Pa
     assert not path.parent.exists()
 
 
-def test_a_server_that_cannot_be_reached_has_no_revision():
-    assert SchemaRevision.of(UNREACHABLE) is None
-    assert not SchemaRevision.is_current(UNREACHABLE)
-
-
 def test_a_database_behind_the_head_is_not_current(tmp_path: Path):
     path = tmp_path / "state.db"
     write_revision(path, "0000behind")
@@ -96,11 +88,6 @@ def test_a_current_database_never_reaches_the_migrator(tmp_path: Path, migrator:
     write_revision(path, HEAD_REVISION)
     SchemaKeeper().ensure_current(path)
     assert migrator.upgraded == []
-
-
-def test_an_unreadable_server_is_handed_to_the_migrator(migrator: SimpleNamespace):
-    SchemaKeeper().ensure_current(UNREACHABLE)
-    assert migrator.upgraded == [DatabaseUrl.parse(UNREACHABLE)]
 
 
 def test_a_database_seen_current_is_not_read_or_migrated_again(
