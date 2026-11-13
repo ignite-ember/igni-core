@@ -110,6 +110,7 @@ class ManagedProcess:
         "output",
         "_trimmed_lines",
         "_trimmed_chars",
+        "_buffered_chars",
         "lock",
         "started_at",
         "cmd",
@@ -136,6 +137,9 @@ class ManagedProcess:
         # how much came before what it shows.
         self._trimmed_lines = 0
         self._trimmed_chars = 0
+        # The characters ``output`` holds, kept as lines arrive: summing the
+        # whole buffer for every line made a long output quadratic.
+        self._buffered_chars = 0
         # File handle opened lazily on first backgrounded line —
         # foreground commands skip it (their output is consumed
         # immediately by the calling tool's reply). See
@@ -218,12 +222,14 @@ class ManagedProcess:
                 line = raw_line.decode("utf-8", errors="replace").rstrip("\n")
                 with self.lock:
                     self.output.append(line)
+                    self._buffered_chars += len(line)
                     # Trim if buffer is too large (keep last half)
-                    total = sum(len(line) for line in self.output)
-                    if total > _MAX_BUFFER:
+                    if self._buffered_chars > _MAX_BUFFER:
                         half = len(self.output) // 2
+                        dropped = self.output[:half]
                         self._trimmed_lines += half
-                        self._trimmed_chars += sum(len(old) + 1 for old in self.output[:half])
+                        self._trimmed_chars += sum(len(old) + 1 for old in dropped)
+                        self._buffered_chars -= sum(len(old) for old in dropped)
                         self.output = self.output[half:]
                 # Fire line subscribers OUTSIDE the buffer lock —
                 # they're independent (the FE watcher's loop hop
