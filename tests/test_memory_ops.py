@@ -217,3 +217,132 @@ class TestMemoryResults:
         result = MemoryOptimizeResult.fail("nope")
         assert not result.success
         assert result.error == "nope"
+
+
+class TestWhatTheManagerAsksAgno:
+    """The arguments the manager hands Agno are the behaviour a user sees:
+    whose memories are read, and how they are optimized."""
+
+    @pytest.mark.asyncio
+    async def test_the_session_users_memories_are_the_ones_read(self):
+        agent = _reader_agent([])
+        mgr = SessionMemoryManager(db=MagicMock(), settings=Settings(), user_id="alice")
+
+        with patch.object(mgr, "_create_reader_agent", return_value=agent):
+            await mgr.get_memories()
+
+        agent.aget_user_memories.assert_awaited_once_with(user_id="alice")
+
+    @pytest.mark.asyncio
+    async def test_a_reader_that_returns_nothing_is_an_empty_store(self):
+        mgr = SessionMemoryManager(db=MagicMock(), settings=Settings(), user_id="u")
+
+        with patch.object(mgr, "_create_reader_agent", return_value=_reader_agent(None)):
+            result = await mgr.get_memories()
+
+        assert result.success
+        assert result.memories == []
+
+    @pytest.mark.asyncio
+    async def test_a_failed_read_names_what_could_not_be_read(self):
+        mgr = SessionMemoryManager(db=MagicMock(), settings=Settings(), user_id="u")
+
+        with patch.object(
+            mgr, "_create_reader_agent", return_value=_reader_agent(error=RuntimeError("db down"))
+        ):
+            result = await mgr.get_memories()
+
+        assert result.error == "Could not read user memories: db down"
+
+    @pytest.mark.asyncio
+    async def test_a_memory_without_text_reads_as_empty_and_topics_are_joined_in_order(self):
+        mem = [
+            UserMemory(memory=None, topics=["b", "a", "é, ü"]),  # type: ignore[arg-type]
+            UserMemory(memory="世界", topics=[]),
+        ]
+        mgr = SessionMemoryManager(db=MagicMock(), settings=Settings(), user_id="u")
+
+        with patch.object(mgr, "_create_reader_agent", return_value=_reader_agent(mem)):
+            result = await mgr.get_memories()
+
+        assert result.memories == [
+            MemoryEntry(memory="", topics="b, a, é, ü"),
+            MemoryEntry(memory="世界", topics=""),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_optimizing_summarizes_and_applies_for_the_session_user(self):
+        from agno.memory.strategies.types import MemoryOptimizationStrategyType
+
+        manager = MagicMock()
+        manager.aoptimize_memories = AsyncMock(return_value=[UserMemory(memory="m")])
+        mgr = SessionMemoryManager(db=MagicMock(), settings=Settings(), user_id="alice")
+        two = _reader_agent([UserMemory(memory="a"), UserMemory(memory="b")])
+
+        with (
+            patch.object(mgr, "_create_manager", return_value=manager),
+            patch.object(mgr, "_create_reader_agent", return_value=two),
+        ):
+            await mgr.optimize()
+
+        manager.aoptimize_memories.assert_awaited_once_with(
+            user_id="alice", strategy=MemoryOptimizationStrategyType.SUMMARIZE, apply=True
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("optimized", [None, []])
+    async def test_an_optimizer_that_returns_nothing_leaves_zero_memories(self, optimized):
+        manager = MagicMock()
+        manager.aoptimize_memories = AsyncMock(return_value=optimized)
+        mgr = SessionMemoryManager(db=MagicMock(), settings=Settings(), user_id="u")
+        two = _reader_agent([UserMemory(memory="a"), UserMemory(memory="b")])
+
+        with (
+            patch.object(mgr, "_create_manager", return_value=manager),
+            patch.object(mgr, "_create_reader_agent", return_value=two),
+        ):
+            result = await mgr.optimize()
+
+        assert result.success
+        assert (result.count_before, result.count_after) == (2, 0)
+        assert result.message == "Optimized 2 memories into 0"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stored", [0, 1])
+    async def test_below_two_memories_nothing_is_optimized(self, stored):
+        manager = MagicMock()
+        manager.aoptimize_memories = AsyncMock()
+        mgr = SessionMemoryManager(db=MagicMock(), settings=Settings(), user_id="u")
+        agent = _reader_agent([UserMemory(memory="x")] * stored)
+
+        with (
+            patch.object(mgr, "_create_manager", return_value=manager),
+            patch.object(mgr, "_create_reader_agent", return_value=agent),
+        ):
+            result = await mgr.optimize()
+
+        assert (result.count_before, result.count_after) == (stored, stored)
+        assert result.message == "Not enough memories to optimize"
+        manager.aoptimize_memories.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_database_means_the_manager_is_not_available(self):
+        mgr = SessionMemoryManager(db=None, settings=Settings(), user_id="u")
+
+        result = await mgr.optimize()
+
+        assert result.error == "Memory manager not available"
+
+    def test_the_reader_agent_is_named_and_bound_to_the_sessions_database(self):
+        db = MagicMock()
+        mgr = SessionMemoryManager(db=db, settings=Settings(), user_id="u")
+
+        with (
+            patch.object(mgr, "_model", return_value=MagicMock()),
+            patch("igni_core.core.session.memory_ops.Agent") as agent_cls,
+        ):
+            mgr._create_reader_agent()
+
+        kwargs = agent_cls.call_args.kwargs
+        assert kwargs["name"] == "_memory_reader"
+        assert kwargs["db"] is db
