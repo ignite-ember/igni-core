@@ -243,8 +243,12 @@ class TestTheRegistry:
         torn: list[Any] = []
 
         def reader() -> None:
+            # One look at all fifty under the registry's lock: fifty separate
+            # get() calls can each land between a declare and a forget, which
+            # would show a partial set however atomic the writes are.
             while not stop.is_set():
-                present = {n for n in names if reg.get(n) is not None}
+                with reg._lock:
+                    present = {n for n in names if reg._by_name.get(n) is not None}
                 if present and len(present) != len(names):
                     torn.append(present)
 
