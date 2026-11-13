@@ -199,8 +199,8 @@ class PluginInstaller:
             shutil.rmtree(self._tmp_dir, ignore_errors=True)
             raise PluginError(
                 f"Plugin '{manifest.name}' is already installed at {dest}. "
-                "Run `/plugin remove {manifest.name}` first to reinstall, "
-                "or `/plugin update {manifest.name}` to update in place."
+                f"Run `/plugin remove {manifest.name}` first to reinstall, "
+                f"or `/plugin update {manifest.name}` to update in place."
             )
 
         self._plugins_dir.mkdir(parents=True, exist_ok=True)
