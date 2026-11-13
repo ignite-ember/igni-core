@@ -89,7 +89,9 @@ class TestTheUnionRoutesOnType:
             ADAPTER.validate_python({"type": "line", "pid": "abc", "line": "hi"})
 
     def test_an_event_round_trips_through_its_dump(self) -> None:
-        event = ProcessExitEvent(pid=9, cmd="make", exit_code=2, duration_seconds=4.0, output_tail="x")
+        event = ProcessExitEvent(
+            pid=9, cmd="make", exit_code=2, duration_seconds=4.0, output_tail="x"
+        )
         assert ADAPTER.validate_python(event.model_dump()) == event
 
 
