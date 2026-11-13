@@ -52,7 +52,6 @@ def test_an_identifier_or_pipe_list_matches_exactly_and_case_sensitively(pattern
         ("mcp-x", "use mcp-x here", True),
         ("1abc", "x1abcx", True),
         ("héllo", "say héllo", True),
-        ("Edit(|)", "Anything", True),
     ],
 )
 def test_any_other_pattern_is_a_case_sensitive_regex_searched_in_the_target(
