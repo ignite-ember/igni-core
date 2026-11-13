@@ -236,3 +236,99 @@ class TestTheDeadChannelsStayDead:
 
     def test_the_scheduler_event_broadcast_is_in_the_model_not_the_row(self) -> None:
         assert coverage.BROADCASTS["scheduler_event"] == "scheduler.event"
+
+
+class TestThePushMapsAreConsistent:
+    def test_push_and_unreachable_are_disjoint_real_channels(self) -> None:
+        assert not set(coverage.PUSH) & set(coverage.PUSH_UNREACHABLE)
+        real = set(PushChannel) - coverage.PUSH_NOT_A_CHANNEL
+        assert set(coverage.PUSH) | set(coverage.PUSH_UNREACHABLE) == real
+        assert PushChannel.UNKNOWN in coverage.PUSH_NOT_A_CHANNEL
+
+    def test_ui_actions_are_not_both_member_and_unreachable(self) -> None:
+        assert not set(coverage.FE_ACTIONS) & set(coverage.FE_ACTIONS_UNREACHABLE)
+
+    def test_broadcast_parts_are_not_broadcasts(self) -> None:
+        assert not set(coverage.BROADCAST_PARTS) & set(coverage.BROADCASTS)
+
+
+class TestTheNotReachableTable:
+    def test_the_nine_rows_are_unique_and_each_is_used_or_named(self) -> None:
+        keys = [row.key for row in coverage.NOT_REACHABLE]
+        assert keys == [
+            "credentials",
+            "as_person",
+            "shutdown",
+            "channel",
+            "events",
+            "workspace_trust",
+            "service",
+            "approver_tokens",
+            "dead_channel",
+        ]
+        used = {
+            *coverage.RPC_UNREACHABLE.values(),
+            *coverage.FE_ACTIONS_UNREACHABLE.values(),
+            *coverage.PUSH_UNREACHABLE.values(),
+        }
+        assert set(keys) - used == {"dead_channel"}
+
+    def test_a_row_is_frozen(self) -> None:
+        row = coverage.NOT_REACHABLE[0]
+        with pytest.raises(ValueError):
+            row.why = "changed"  # type: ignore[misc]
+
+    def test_rows_is_the_keys_and_a_copy(self) -> None:
+        got = coverage.rows()
+        assert got == {row.key for row in coverage.NOT_REACHABLE}
+        got.add("invented")
+        got.discard("shutdown")
+        assert coverage.rows() == {row.key for row in coverage.NOT_REACHABLE}
+
+
+class TestRpcDestination:
+    def test_a_method_in_neither_table_is_unmapped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delitem(coverage.RPC, RpcMethod.GET_STATUS)
+        assert coverage.rpc_destination(RpcMethod.GET_STATUS) is None
+
+    def test_a_member_wins_over_an_unreachable_row(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setitem(coverage.RPC_UNREACHABLE, RpcMethod.GET_STATUS, "shutdown")
+        assert coverage.rpc_destination(RpcMethod.GET_STATUS) == ("member", "chat.status")
+
+    def test_each_kind_is_tagged(self) -> None:
+        assert coverage.rpc_destination(RpcMethod.SHUTDOWN) == ("unreachable", "shutdown")
+        assert coverage.rpc_destination(RpcMethod.GET_TODOS) == (
+            "member",
+            "tasks.todos",
+        )
+
+    def test_two_methods_may_share_one_member(self) -> None:
+        assert (
+            coverage.RPC[RpcMethod.GET_OUTPUT_STYLES] == coverage.RPC[RpcMethod.GET_DISPLAY_CONFIG]
+        )
+        assert (
+            coverage.RPC[RpcMethod.COUNT_CONTEXT_TOKENS]
+            == coverage.RPC[RpcMethod.GET_CONTEXT_BREAKDOWN]
+        )
+
+
+def test_the_module_exports_its_public_names() -> None:
+    assert sorted(coverage.__all__) == sorted(
+        [
+            "BROADCASTS",
+            "BROADCAST_PARTS",
+            "FE_ACTIONS",
+            "FE_ACTIONS_UNREACHABLE",
+            "NOT_REACHABLE",
+            "PUSH",
+            "PUSH_NOT_A_CHANNEL",
+            "PUSH_UNREACHABLE",
+            "RPC",
+            "RPC_UNREACHABLE",
+            "Unreachable",
+            "rows",
+            "rpc_destination",
+        ]
+    )
+    for name in coverage.__all__:
+        assert hasattr(coverage, name)
