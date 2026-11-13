@@ -62,8 +62,13 @@ class DebugLogging:
         # propagate — they write request/response bodies, and letting those reach
         # root put them on stderr (see ``LlmCallLogger._attach_transport_loggers``).
         # A --debug run still wants them in one place, so hand them the handler
-        # directly instead of reopening the propagation path.
+        # directly instead of reopening the propagation path. They stop
+        # propagating here too: until the first model call configures them,
+        # a record would reach the handler twice, once on the logger and once
+        # through root.
         for name in ("igni_core.llm_calls", "httpx", "httpcore"):
-            logging.getLogger(name).addHandler(handler)
+            named = logging.getLogger(name)
+            named.addHandler(handler)
+            named.propagate = False
 
         return log_path
