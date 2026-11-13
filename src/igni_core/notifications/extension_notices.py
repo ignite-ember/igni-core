@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -135,6 +136,6 @@ class FaultNotices:
             title=f"{entry.manifest.display_name} isn't responding"[:200],
             body=reason[:1000],
             target=NotificationTarget(page=entry.manifest.contributes.pages[0].kind),
-            event_key=f"{self.KIND}:{time.time_ns()}",
+            event_key=f"{self.KIND}:{time.time_ns()}:{uuid.uuid4().hex[:8]}",
         )
         self._sink.keep_local(extension_id, notice)

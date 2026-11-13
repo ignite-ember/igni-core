@@ -9,6 +9,7 @@ says an extension stopped responding, bounded, once per fault.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import pytest
@@ -194,6 +195,18 @@ def test_an_extension_with_no_page_or_not_installed_is_not_told_about(registry, 
 
     assert sink.kept == []
     assert sum("no page to point a notice at" in r.getMessage() for r in caplog.records) == 2
+
+
+def test_two_faults_in_one_instant_are_two_notices(registry, monkeypatch):
+    monkeypatch.setattr(time, "time_ns", lambda: 1_000)
+    sink = Sink()
+    faults = FaultNotices(registry, sink)
+
+    faults.told("acme.scanner", "first")
+    faults.told("acme.scanner", "second")
+
+    assert [notice.body for _, notice in sink.kept] == ["first", "second"]
+    assert len({notice.event_key for _, notice in sink.kept}) == 2
 
 
 def test_a_fault_notice_names_what_it_is_and_always_fits_a_notice(registry):
