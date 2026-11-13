@@ -250,8 +250,9 @@ class LspServerConfig(BaseModel):
         set (plugin tier) — keeps server names unique across
         tiers without forcing plugin authors to pre-prefix.
 
-        Returns ``None`` when the entry is not a mapping or when
-        ``command`` is missing / blank / not a string. Loaders
+        Returns ``None`` when the entry is not a mapping, when
+        ``command`` is missing / blank / not a string, or when ``args`` /
+        ``languages`` is set but not a list. Loaders
         should record such rejections as
         :class:`LspConfigLoadError` (Pattern 3 — expected failures
         as data).
@@ -273,12 +274,16 @@ class LspServerConfig(BaseModel):
         env = entry.get("env") or {}
         if not isinstance(env, Mapping):
             env = {}
+        args = entry.get("args") or []
+        languages = entry.get("languages") or []
+        if not isinstance(args, list) or not isinstance(languages, list):
+            return None
         full_name = f"{namespace}:{name}" if namespace else name
         return cls(
             name=full_name,
             command=command,
-            args=list(entry.get("args") or []),
-            languages=list(entry.get("languages") or []),
+            args=[str(a) for a in args],
+            languages=[str(x) for x in languages],
             root_uri=root_uri if isinstance(root_uri, str) else None,
             initialization_options=dict(init_opts),
             env={str(k): str(v) for k, v in env.items()},

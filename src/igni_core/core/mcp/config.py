@@ -97,7 +97,10 @@ class MCPPolicy(BaseModel):
                 data = json.load(f)
             mcp_data = data.get("mcp", {})
             return cls(**mcp_data)
-        except (json.JSONDecodeError, OSError, TypeError):
+        # ``ValueError`` covers bad JSON, a file that is not UTF-8 and a
+        # field of the wrong type; ``AttributeError`` a top level that is
+        # not an object. A policy file nobody can read is an empty policy.
+        except (ValueError, OSError, TypeError, AttributeError):
             return cls()
 
 
@@ -159,11 +162,14 @@ class MCPConfigLoader:
         try:
             with open(path) as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, OSError) as exc:
+        except (ValueError, OSError) as exc:
             logger.debug("Failed to parse MCP config %s: %s", path, exc)
             return
 
-        mcp_servers = data.get("mcpServers", {})
+        mcp_servers = data.get("mcpServers", {}) if isinstance(data, dict) else {}
+        if not isinstance(mcp_servers, dict):
+            logger.warning("MCP config %s: 'mcpServers' is not an object — ignored", path)
+            return
         for name, config in mcp_servers.items():
             try:
                 servers[name] = MCPServerConfig(
@@ -208,11 +214,14 @@ class MCPConfigLoader:
         try:
             with open(path) as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, OSError) as exc:
+        except (ValueError, OSError) as exc:
             logger.warning("Failed to parse plugin MCP config %s: %s", path, exc)
             return
 
-        mcp_servers = data.get("mcpServers", {})
+        mcp_servers = data.get("mcpServers", {}) if isinstance(data, dict) else {}
+        if not isinstance(mcp_servers, dict):
+            logger.warning("Plugin MCP config %s: 'mcpServers' is not an object — ignored", path)
+            return
         for raw_name, config in mcp_servers.items():
             prefixed = f"{plugin_name}:{raw_name}"
             if prefixed in servers:
