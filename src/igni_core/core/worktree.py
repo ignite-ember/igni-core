@@ -293,7 +293,7 @@ class WorktreeManager:
         """
         if branch_name is None:
             suffix = session_id or self._short_suffix()
-            branch_name = f"ember-worktree-{suffix}"
+            branch_name = f"igni-worktree-{suffix}"
 
         self.root.ensure_exists()
         worktree_path = self.root.path_for(branch_name)

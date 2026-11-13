@@ -41,7 +41,7 @@ class TestWorktreeManager:
         wm = WorktreeManager(tmp_path)
         info = wm.create(session_id="abc123")
 
-        assert info.branch_name.endswith("-abc123")
+        assert info.branch_name == "igni-worktree-abc123"
         assert info.worktree_path.exists()
 
         wm.cleanup()
