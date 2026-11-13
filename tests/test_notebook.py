@@ -312,3 +312,46 @@ class TestNotebookMalformedFiles:
 
         assert result.startswith("Error: Invalid notebook structure:")
         assert path.read_text() == "[]"
+
+
+class TestNotebookUnwritable:
+    """A notebook that cannot be written back is reported, not raised."""
+
+    def _readonly(self, tmp_path, monkeypatch):
+        import pathlib
+
+        path = tmp_path / "ro.ipynb"
+        _write_notebook(path, _make_notebook([_code_cell("x = 1")]))
+        real = pathlib.Path.write_text
+
+        def refuse(self, *args, **kwargs):
+            if self == path:
+                raise PermissionError(13, "Permission denied")
+            return real(self, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "write_text", refuse)
+        return path
+
+    def test_edit_reports_the_failed_write(self, tmp_path, monkeypatch):
+        self._readonly(tmp_path, monkeypatch)
+
+        result = NotebookTools(base_dir=str(tmp_path)).notebook_edit_cell("ro.ipynb", 0, "y")
+
+        assert result.startswith("Error: Cannot write notebook")
+        assert "Successfully" not in result
+
+    def test_add_reports_the_failed_write(self, tmp_path, monkeypatch):
+        self._readonly(tmp_path, monkeypatch)
+
+        result = NotebookTools(base_dir=str(tmp_path)).notebook_add_cell(
+            "ro.ipynb", -1, "code", "y"
+        )
+
+        assert result.startswith("Error: Cannot write notebook")
+
+    def test_remove_reports_the_failed_write(self, tmp_path, monkeypatch):
+        self._readonly(tmp_path, monkeypatch)
+
+        result = NotebookTools(base_dir=str(tmp_path)).notebook_remove_cell("ro.ipynb", 0)
+
+        assert result.startswith("Error: Cannot write notebook")

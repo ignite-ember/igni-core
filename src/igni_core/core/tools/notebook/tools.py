@@ -76,6 +76,15 @@ class NotebookTools(Toolkit):
             p = self.base_dir / p
         return p
 
+    @staticmethod
+    def _save(doc: NotebookDocument) -> str:
+        """Save ``doc``; return an error string instead of raising."""
+        try:
+            doc.save()
+        except OSError as exc:
+            return f"Error: Cannot write notebook {doc.path}: {exc}"
+        return ""
+
     # ---- endpoints ----
 
     def notebook_read(self, file_path: str) -> str:
@@ -164,7 +173,9 @@ class NotebookTools(Toolkit):
         if doc.replace_source(cell_index, new_source) is None:
             return doc.out_of_range_message(cell_index)
 
-        doc.save()
+        failure = self._save(doc)
+        if failure:
+            return failure
         return str(
             NotebookOpResult(
                 ok=True,
@@ -203,7 +214,9 @@ class NotebookTools(Toolkit):
         if idx == -1:
             return f"Error: Cell index {cell_index} out of range (0-{len(doc.cells)})."
 
-        doc.save()
+        failure = self._save(doc)
+        if failure:
+            return failure
         return str(
             NotebookOpResult(
                 ok=True,
@@ -234,7 +247,9 @@ class NotebookTools(Toolkit):
         if removed is None:
             return doc.out_of_range_message(cell_index)
 
-        doc.save()
+        failure = self._save(doc)
+        if failure:
+            return failure
         return str(
             NotebookOpResult(
                 ok=True,
