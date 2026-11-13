@@ -25,6 +25,7 @@ from igni_core.core.monitors.handle import MonitorHandle
 from igni_core.core.monitors.models import (
     BackoffDecision,
     GiveUpDecision,
+    MonitorStatus,
     RestartDecision,
     StopDecision,
 )
@@ -104,6 +105,10 @@ class MonitorSupervisor:
         :class:`RestartDecision` values, no reach-in.
         """
         handle = self._handle
+        if handle.status is MonitorStatus.FAILED:
+            # It never launched: there is no process to watch, and judging
+            # its absent exit would overwrite FAILED with STOPPED.
+            return
         try:
             while True:
                 code = await handle.wait_exit()
