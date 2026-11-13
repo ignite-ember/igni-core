@@ -10,7 +10,10 @@ Pins the store's contract in isolation from ``MCPClientManager``:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
 
 from igni_core.core.mcp.tool_state import MCPToolStateStore
 from igni_core.core.paths import CONFIG_DIR
@@ -20,7 +23,7 @@ class TestPath:
     def test_none_project_dir_returns_none(self):
         assert MCPToolStateStore(None).path() is None
 
-    def test_resolves_relative_to_ember_subdir(self, tmp_path: Path):
+    def test_resolves_relative_to_config_dir(self, tmp_path: Path):
         store = MCPToolStateStore(tmp_path)
         assert store.path() == tmp_path / CONFIG_DIR / "mcp-tool-state.json"
 
@@ -55,6 +58,61 @@ class TestLoad:
         assert store.load() == {}
 
 
+def _write(tmp_path: Path, content: str | bytes) -> MCPToolStateStore:
+    (tmp_path / CONFIG_DIR).mkdir(exist_ok=True)
+    target = tmp_path / CONFIG_DIR / "mcp-tool-state.json"
+    if isinstance(content, bytes):
+        target.write_bytes(content)
+    else:
+        target.write_text(content)
+    return MCPToolStateStore(tmp_path)
+
+
+class TestLoadOfAnOddFile:
+    """A file that is not what save writes reads as "nothing disabled"."""
+
+    def test_an_empty_file_is_nothing_disabled(self, tmp_path: Path):
+        assert _write(tmp_path, "").load() == {}
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "[]",
+            '"text"',
+            "3",
+            "null",
+            '{"disabled": ["a"]}',
+            '{"disabled": null}',
+            '{"disabled": 4}',
+        ],
+    )
+    def test_valid_json_of_the_wrong_shape_is_nothing_disabled(self, tmp_path: Path, content: str):
+        assert _write(tmp_path, content).load() == {}
+
+    def test_a_file_that_is_not_utf8_is_nothing_disabled(self, tmp_path: Path):
+        assert _write(tmp_path, b'{"disabled": {"srv": ["\xff\xfe"]}}').load() == {}
+
+    def test_a_directory_where_the_file_belongs_is_nothing_disabled(self, tmp_path: Path):
+        (tmp_path / CONFIG_DIR / "mcp-tool-state.json").mkdir(parents=True)
+        assert MCPToolStateStore(tmp_path).load() == {}
+
+    def test_a_server_whose_value_is_not_a_list_is_skipped(self, tmp_path: Path):
+        store = _write(
+            tmp_path, '{"disabled": {"a": "tool", "b": {"x": 1}, "c": null, "d": ["t"]}}'
+        )
+        assert store.load() == {"d": {"t"}}
+
+    def test_tool_names_that_are_not_strings_are_stringified(self, tmp_path: Path):
+        assert _write(tmp_path, '{"disabled": {"srv": [1, "two", true]}}').load() == {
+            "srv": {"1", "two", "True"}
+        }
+
+    def test_unicode_names_survive_a_round_trip(self, tmp_path: Path):
+        store = MCPToolStateStore(tmp_path)
+        store.save({"serveur-é": {"outil-ü"}})
+        assert store.load() == {"serveur-é": {"outil-ü"}}
+
+
 class TestSave:
     def test_no_project_dir_is_noop(self):
         MCPToolStateStore(None).save({"srv": {"tool"}})  # should not raise
@@ -75,14 +133,12 @@ class TestSave:
         # A server with no disabled tools should not appear in the
         # saved blob — keeps the file clean when a tool gets
         # re-enabled and the caller doesn't pop the empty set.
-        import json
-
         store = MCPToolStateStore(tmp_path)
         store.save({"srv1": {"tool"}, "srv2": set()})
         payload = json.loads((tmp_path / CONFIG_DIR / "mcp-tool-state.json").read_text())
         assert payload["disabled"] == {"srv1": ["tool"]}
 
-    def test_creates_ember_subdir(self, tmp_path: Path):
+    def test_creates_config_dir(self, tmp_path: Path):
         store = MCPToolStateStore(tmp_path)
         assert not (tmp_path / CONFIG_DIR).exists()
         store.save({"srv": {"tool"}})
@@ -93,3 +149,21 @@ class TestSave:
         store.save({"srv": {"tool_a"}})
         store.save({"srv": {"tool_b"}})
         assert store.load() == {"srv": {"tool_b"}}
+
+    def test_tool_names_are_written_sorted(self, tmp_path: Path):
+        store = MCPToolStateStore(tmp_path)
+        store.save({"srv": {"zeta", "alpha", "mid"}})
+        written = json.loads((tmp_path / CONFIG_DIR / "mcp-tool-state.json").read_text())
+        assert written["disabled"]["srv"] == ["alpha", "mid", "zeta"]
+
+    def test_a_file_that_cannot_be_written_raises_oserror(self, tmp_path: Path):
+        # A directory where the file belongs: the write fails, and the
+        # failure must reach the caller rather than read as "saved".
+        (tmp_path / CONFIG_DIR / "mcp-tool-state.json").mkdir(parents=True)
+        with pytest.raises(OSError):
+            MCPToolStateStore(tmp_path).save({"srv": {"tool"}})
+
+    def test_a_config_dir_that_cannot_be_made_raises_oserror(self, tmp_path: Path):
+        (tmp_path / CONFIG_DIR).write_text("a file where the directory belongs")
+        with pytest.raises(OSError):
+            MCPToolStateStore(tmp_path).save({"srv": {"tool"}})

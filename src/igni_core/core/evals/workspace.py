@@ -70,7 +70,13 @@ class EvalWorkspace:
         """
         self._work_dir = self._allocate_and_copy_fixtures()
         if self._setup_module:
-            await self._import_and_run_setup_module(self._work_dir)
+            try:
+                await self._import_and_run_setup_module(self._work_dir)
+            except BaseException:
+                # A failed setup leaves the caller with no workspace to
+                # tear down: release the temp dir and the sys.path entry.
+                await self.teardown()
+                raise
         return self._work_dir
 
     async def teardown(self) -> None:

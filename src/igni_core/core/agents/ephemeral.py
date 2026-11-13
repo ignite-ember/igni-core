@@ -14,9 +14,12 @@ private-attribute reach-in.
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal
+
+import yaml
 
 from igni_core.core.agents.markdown import AgentMarkdownFile
 from igni_core.core.agents.schemas import (
@@ -35,6 +38,25 @@ _PROMOTE_DIRS: dict[str, tuple[str, AgentPriority]] = {
     "project": ("agents", AgentPriority.PROJECT_EMBER),
     "personal": ("agents.local", AgentPriority.PROJECT_LOCAL),
 }
+
+
+def _yaml_scalar(value: str) -> str:
+    """``value`` as it goes after ``key: `` in a frontmatter header.
+
+    Written as it is when YAML reads it back as the same one-line string,
+    which is every ordinary value, so those files stay as they were. A value
+    that would break the header or turn into something else (a colon
+    followed by a space, a newline, a leading ``#`` or ``-``, ``null``,
+    nothing at all) is quoted.
+    """
+    if "\n" not in value and "\r" not in value:
+        try:
+            if yaml.safe_load(f"k: {value}") == {"k": value}:
+                return value
+        except yaml.YAMLError:
+            pass
+    return json.dumps(value, ensure_ascii=False)
+
 
 if TYPE_CHECKING:
     from agno.agent import Agent
@@ -130,6 +152,11 @@ class EphemeralAgentStore:
         function-name-to-registry-name aliases and reject unknown
         tools before the file lands on disk.
         """
+        if not name or name in {".", ".."} or any(c in name for c in "/\\\0\r\n"):
+            raise ValueError(
+                f"Invalid agent name {name!r}: it becomes a file name, so it cannot be "
+                "empty, '.' or '..', or contain a path separator or a line break."
+            )
         if self.count >= self._max:
             raise ValueError(
                 f"Ephemeral agent limit reached ({self._max}). "
@@ -148,7 +175,7 @@ class EphemeralAgentStore:
             model=model,
         )
         md_path = self._dir / f"{name}.md"
-        md_path.write_text(md_content)
+        md_path.write_text(md_content, encoding="utf-8")
 
         definition = AgentMarkdownFile(md_path, prompt_loader=self._pool.prompt_loader).parse()
         self._pool.upsert_entry(AgentEntry(definition=definition, priority=AgentPriority.EPHEMERAL))
@@ -235,12 +262,12 @@ class EphemeralAgentStore:
         tools_str = ", ".join(tools)
         lines = [
             "---",
-            f"name: {name}",
-            f"description: {description}",
+            f"name: {_yaml_scalar(name)}",
+            f"description: {_yaml_scalar(description)}",
             f"tools: {tools_str}",
         ]
         if model:
-            lines.append(f"model: {model}")
+            lines.append(f"model: {_yaml_scalar(model)}")
         lines.append("---")
         lines.append(system_prompt)
         lines.append("")

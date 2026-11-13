@@ -57,7 +57,15 @@ class Jwks(BaseModel):
         # leniency ``SigningKey.all_in`` applies to each key it reads.
         if not isinstance(value, list):
             return []
-        return [entry for entry in value if isinstance(entry, dict)]
+        return [entry for entry in value if cls._is_key(entry)]
+
+    @staticmethod
+    def _is_key(entry: object) -> bool:
+        try:
+            Jwk.model_validate(entry)
+        except ValidationError:
+            return False
+        return True
 
     @classmethod
     def parse(cls, raw: object) -> Jwks | None:

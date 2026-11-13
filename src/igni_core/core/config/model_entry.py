@@ -194,6 +194,12 @@ class ModelRegistryEntry(BaseModel):
             )
         except subprocess.TimeoutExpired:
             return None
+        except (OSError, ValueError) as exc:
+            # A program that is not installed, or a command line that does
+            # not split into words: no key, which ``why_no_api_key`` says,
+            # rather than an error out of session bring-up.
+            logger.warning("api_key_cmd for %r could not run: %s", self.model_id, exc)
+            return None
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
         return None
@@ -227,12 +233,12 @@ class ModelRegistryEntry(BaseModel):
         predicate — pair it with :meth:`matches_cloud_gateway` for
         the substring predicate used by credential routing.
         """
+        if not isinstance(url, str):
+            return False
         try:
             return urlparse(url).hostname == CLOUD_GATEWAY_HOST
-        except (ValueError, TypeError):
-            # ``urlparse`` raises ValueError for malformed inputs and
-            # TypeError when handed a non-string — anything else is a
-            # programming bug and should propagate.
+        except ValueError:
+            # ``urlparse`` raises ValueError for malformed inputs.
             return False
 
     @staticmethod

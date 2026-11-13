@@ -94,7 +94,7 @@ class SlashCommandTool(Toolkit):
     """Single-method toolkit: ``slash_command``."""
 
     def __init__(self, session: Session) -> None:
-        super().__init__(name="ember_slash_command")
+        super().__init__(name="igni_slash_command")
         self._session = session
         self.register(self.slash_command)
 

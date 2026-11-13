@@ -81,7 +81,7 @@ class AgentContributionApplier:
             return None
         try:
             return source.read_text(encoding="utf-8")
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             logger.warning("agent %s: %s could not be read: %s", name, source, exc)
             return None
 

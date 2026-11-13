@@ -117,7 +117,8 @@ class CaseRunner:
         pin a bigger ``case_timeout`` in their YAML rather than inflating
         the default for everyone.
         """
-        raw = self._case.case_timeout or self._default_timeout
+        own = self._case.case_timeout
+        raw = own if own is not None and own > 0 else self._default_timeout
         if raw is None or raw <= 0:
             return None
         return float(raw)
@@ -142,7 +143,7 @@ class CaseRunner:
                     await self._run_checked(result)
         except TimeoutError:
             result.passed = False
-            result.error = f"case_timeout: exceeded {timeout:.0f}s"
+            result.error = f"case_timeout: exceeded {timeout:g}s"
 
         result.elapsed = time.monotonic() - start
         return result

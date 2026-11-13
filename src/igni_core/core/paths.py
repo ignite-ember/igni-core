@@ -126,19 +126,20 @@ def managed_policy_dir() -> Path | None:
     """Where a sysadmin or MDM drops org-wide policy, or None off-platform.
 
     One function because four modules used to answer this separately and
-    two of them disagreed — on *every* platform:
+    two of them disagreed — on *every* platform. The answer, for all of
+    them (managed policy, plugins, rules and MCP):
 
-    ==========  ===============================  ==============================
-    platform    managed_policy / plugins / rules  mcp
-    ==========  ===============================  ==============================
-    macOS       ``…/Application Support/Ember``   ``…/Application Support/EmberCode``
-    Linux       ``/etc/ember``                    ``/etc/ignite-ember``
-    Windows     ``%PROGRAMDATA%/Ember``           unsupported
-    ==========  ===============================  ==============================
+    ==========  ===================================
+    platform    directory
+    ==========  ===================================
+    macOS       ``/Library/Application Support/igni``
+    Linux       ``/etc/igni``
+    Windows     ``%PROGRAMDATA%/igni``
+    ==========  ===================================
 
-    So an admin deploying managed settings had to populate two directory
-    trees to cover both, MCP policy could not be deployed on Windows at
-    all, and nothing said so. Managed policy is the tier a user is not
+    Before, an admin deploying managed settings had to populate two
+    directory trees to cover both, and MCP policy could not be deployed on
+    Windows at all. Managed policy is the tier a user is not
     allowed to override, which makes "it silently was not read" the worst
     possible failure for it.
 

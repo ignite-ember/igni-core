@@ -222,7 +222,7 @@ def _release_steps(job: str) -> list[dict]:
 
 def _brew_formula() -> str:
     text = RELEASE_YML.read_text()
-    body = text.split("cat > Formula/ignite-ember.rb << 'FORMULA'\n", 1)[1]
+    body = text.split("cat > Formula/igni-core.rb << 'FORMULA'\n", 1)[1]
     body = body.split("\n          FORMULA\n", 1)[0]
     return "\n".join(line.removeprefix(" " * 10) for line in body.splitlines())
 
@@ -235,6 +235,23 @@ def test_homebrew_formula_symlinks_every_console_script():
 
     for name in scripts:
         assert f'bin.install_symlink libexec/"bin/{name}"' in formula, name
+
+
+def test_the_formula_is_igni_core_and_ignite_ember_is_its_alias():
+    """``brew install .../igni-core`` and ``.../ignite-ember`` install one formula: the
+    package's name, with the old one as a tap alias. The pre-rename file and its
+    igni-core alias go, or Homebrew sees two formulae for one name."""
+    run = next(
+        step["run"]
+        for step in _release_steps("update-homebrew")
+        if step.get("name") == "Update Homebrew tap"
+    )
+
+    assert _brew_formula().startswith("class IgniCore < Formula\n")
+    assert "git rm -q --ignore-unmatch Formula/ignite-ember.rb Aliases/igni-core" in run
+    assert "ln -sfn ../Formula/igni-core.rb Aliases/ignite-ember" in run
+    assert "git add Formula/igni-core.rb Aliases/ignite-ember" in run
+    assert "Formula/ignite-ember.rb <<" not in run
 
 
 def test_homebrew_formula_test_exercises_the_canonical_command():

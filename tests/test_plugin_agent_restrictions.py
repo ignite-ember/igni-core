@@ -229,6 +229,28 @@ class TestAgentPoolPluginRestrictedLoad:
         joined = " ".join(captured_pool_warnings)
         assert "hooks" in joined
 
+    @pytest.mark.parametrize("priority", [6, 7])
+    def test_a_managed_plugins_agent_loads_at_its_roots_priority(self, tmp_path, priority):
+        """The managed plugin roots rank 6 and 7; 7 is no AgentPriority, and converting it
+        raised out of Session construction for any managed plugin that ships agents/."""
+        _write_agent(tmp_path, "helper")
+        pool = AgentPool()
+        pool.load_plugin_directory(tmp_path, priority=priority, namespace="it-plugin")
+        entry = pool.get_entry("it-plugin:helper")
+        assert entry.priority == priority
+        assert entry.definition.force_isolation == "worktree"
+
+    def test_the_same_plugin_agent_from_a_higher_root_wins(self, tmp_path):
+        low, high = tmp_path / "low", tmp_path / "high"
+        low.mkdir()
+        high.mkdir()
+        _write_agent(low, "helper")
+        _write_agent(high, "helper")
+        pool = AgentPool()
+        pool.load_plugin_directory(high, priority=7, namespace="plug")
+        pool.load_plugin_directory(low, priority=2, namespace="plug")
+        assert pool.get_entry("plug:helper").priority == 7
+
     def test_non_plugin_load_preserves_mcp_servers(
         self, tmp_path, settings, captured_pool_warnings
     ):

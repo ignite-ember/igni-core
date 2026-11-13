@@ -198,9 +198,9 @@ class JwtClaims(BaseModel):
                 payload += "=" * padding
             decoded = base64.urlsafe_b64decode(payload)
             data = json.loads(decoded)
+            if not isinstance(data, dict):
+                return None
+            return cls(**data)
         except Exception as exc:
             logger.debug("Failed to decode JWT claims: %s", exc)
             return None
-        if not isinstance(data, dict):
-            return None
-        return cls(**data)

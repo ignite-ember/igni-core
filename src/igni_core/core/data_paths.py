@@ -162,12 +162,22 @@ def global_db_path(data_dir: str | Path = DEFAULT_DATA_DIR) -> Path:
     legacy = root / LEGACY_GLOBAL_DB
     if path.exists() or not legacy.exists():
         return path
+    moved: list[tuple[Path, Path]] = []
     try:
         for suffix in _SQLITE_COMPANIONS:
             old = root / f"{LEGACY_GLOBAL_DB}{suffix}"
             if old.exists():
-                os.replace(old, root / f"{GLOBAL_DB}{suffix}")
+                new = root / f"{GLOBAL_DB}{suffix}"
+                os.replace(old, new)
+                moved.append((old, new))
     except OSError as exc:
+        # A database moved without its journal files would open without the
+        # rows that were only in them: put back what was moved.
+        for old, new in reversed(moved):
+            try:
+                os.replace(new, old)
+            except OSError:
+                logger.warning("could not put %s back to %s", new, old)
         logger.warning("could not move %s to %s (%s); using it where it is", legacy, path, exc)
         return legacy if legacy.exists() else path
     logger.info("moved the global database %s to %s", legacy, path)
