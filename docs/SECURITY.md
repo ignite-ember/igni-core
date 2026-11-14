@@ -408,16 +408,24 @@ without a token, with a wrong one, or from a foreign origin even with the
 right one. `X-Igni-Gateway: control` does not stand in for the token: on a
 desktop anybody can send that header.
 
-**Where there is no token.** A backend started by hand
-(`python -m igni_core.backend --ws-port …`) gets no token, so only the
-Origin check applies: web pages are kept out, local processes of the same
-user are not. In the cloud the backend listens inside the producer's VM, reachable only through the node agent's
+**A backend started by hand.** (`python -m igni_core.backend --ws-port …`)
+has no launcher to give it a secret, so it mints its own window token at
+start, prints it once to stderr (one line, never written to disk) and
+requires it from every window connection exactly as it requires the
+launcher's. It also mints the program token and publishes it in the
+lockfile as above, so `Local(project_dir)` attaches as a program without
+the window token; `Local(url=..., token=...)` takes the printed one. A
+local process of the same user that was not given the printed token is
+kept out, as it is from the desktop's backend.
+
+**Where there is no token.** In the cloud the backend listens inside the producer's VM, reachable only through the node agent's
 vsock stream, and the gateway authenticates every client (an igni bearer
 token) before it opens a stream; the gateway's own connections are marked
 `X-Igni-Gateway: control` by the node agent, which strips that header from
 every other stream. See [CLOUD.md](CLOUD.md).
 
-**Development.** `IGNI_DEV_NO_WS_TOKEN=1` drops the token requirement. The
+**Development.** `IGNI_DEV_NO_WS_TOKEN=1` drops the token requirement (a
+hand-started backend then takes no token at all, only the Origin check). The
 desktop app honours it only in a debug build (`cargo tauri dev`) and strips
 it from the backend's environment in a release build; the backend honours it
 with a warning in its log. Never set it on a machine you use for real work.

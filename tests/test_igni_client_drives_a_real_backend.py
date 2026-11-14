@@ -236,3 +236,57 @@ async def test_a_program_approves_only_with_the_token_the_window_made(project: P
             if not running.done():
                 app.request_shutdown()
                 await asyncio.wait_for(running, 30)
+
+
+@POSIX_ONLY
+async def test_a_backend_started_by_hand_takes_its_own_window_token_and_the_lockfile_s_program_token(
+    project: Path,
+) -> None:
+    """``python -m igni_core.backend --ws-port N``, with no launcher to give a token.
+
+    ``main`` mints the window secret (:func:`take_window_token`) and hands it
+    to the launch. Nothing connects without it; the printed token is the
+    window; the lockfile's program token attaches a program that is not;
+    and the window token is on no disk.
+    """
+    from websockets.asyncio.client import connect
+    from websockets.exceptions import InvalidStatus
+
+    from igni_core.transport.ws_auth import take_window_token
+
+    window_token, minted = take_window_token({}, mint=True)
+    assert minted and window_token
+    app = BackendApp(BackendLaunch(ws_port=0, project_dir=project, ws_token=window_token))
+    with _signal_handlers_restored():
+        running = asyncio.create_task(app.run())
+        try:
+            await _until(lambda: app.serving_port is not None or running.done())
+            assert not running.done(), running.exception()
+            port = app.serving_port
+            url = f"ws://127.0.0.1:{port}"
+
+            with pytest.raises(InvalidStatus) as refused:
+                async with connect(url):
+                    pass
+            assert refused.value.response.status_code == 403
+            with pytest.raises(Exception, match="403|refus|token"):
+                async with IgniClient(Local(url=url)):
+                    pass
+
+            # The window token is the window: it may mint an approver token.
+            async with IgniClient(Local(url=url, token=window_token)) as igni:
+                assert (await igni.approvers.mint_token()).token
+
+            # The lockfile's program token attaches a program: not the window.
+            async with IgniClient(Local(project_dir=project)) as igni:
+                assert igni.client_id.startswith("ws-")
+                with pytest.raises(Exception, match="only igni's window"):
+                    await igni.approvers.mint_token()
+
+            for path in project.rglob("*"):
+                if path.is_file():
+                    assert window_token not in path.read_text(errors="ignore"), path
+        finally:
+            if not running.done():
+                app.request_shutdown()
+                await asyncio.wait_for(running, 30)
