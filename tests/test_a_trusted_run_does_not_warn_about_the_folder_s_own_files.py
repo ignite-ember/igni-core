@@ -93,3 +93,22 @@ def test_the_held_warnings_are_said_when_loading_fails(
     monkeypatch.setattr(CliSettingsLoader, "load", load)
     CliRunner().invoke(cli_module.cli, ["-m", "hello"])
     assert _said(caplog)
+
+
+def test_an_untrusted_run_says_the_file_is_ignored_once(
+    project: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The settings load twice (local files, then with the group policy), and
+    each pass said it: the warning printed twice on every run."""
+    caplog.set_level(logging.WARNING)
+    _run("-m", "hello")
+    assert len(_said(caplog)) == 1
+
+
+def test_igni_trust_says_the_file_is_ignored_once(
+    project: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.WARNING)
+    _run("trust")
+    assert len(_said(caplog)) == 1
+    process_trust().revoke(project)
