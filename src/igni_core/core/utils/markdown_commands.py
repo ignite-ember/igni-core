@@ -152,7 +152,7 @@ class MarkdownCommand(BaseModel):
         if path.name.startswith("."):
             return None
         try:
-            content = path.read_text()
+            content = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             logger.debug("Markdown command read %s failed: %s", path, exc)
             return None

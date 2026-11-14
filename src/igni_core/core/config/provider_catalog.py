@@ -73,6 +73,10 @@ class ProviderCatalog:
         builder_cls = self._LAZY.get(name)
         if builder_cls is None:
             return False
+        if name in self._builders:
+            # Registered by the caller: theirs stands, the SDK's is not
+            # probed over it.
+            return True
         if name in self._probed:
             return name in self._builders
         self._probed.add(name)

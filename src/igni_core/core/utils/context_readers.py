@@ -58,7 +58,7 @@ def read_if_exists(path: Path) -> str:
     """
     try:
         if path.is_file():
-            return path.read_text()
+            return path.read_text(encoding="utf-8")
     except Exception as e:
         logger.debug("Failed to read rules from %s: %s", path, e)
     return ""

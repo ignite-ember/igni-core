@@ -108,7 +108,7 @@ class UpdateCache:
             if not self._path.exists():
                 return None
             raw = self._path.read_text()
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             logger.debug("Failed to read update cache: %s", exc)
             return None
         try:

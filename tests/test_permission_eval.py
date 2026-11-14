@@ -376,8 +376,8 @@ def test_permission_mode_enum_values() -> None:
 
 def test_from_strings_drops_malformed_rules() -> None:
     """Garbage entries in the settings file shouldn't bring down
-    the whole pipeline — they get dropped silently (caller can
-    cross-check counts if it cares)."""
+    the whole pipeline — they are dropped, and each one is logged
+    (see test_permission_rules_name_their_tools_args_and_warnings)."""
     ev = PermissionEvaluator.from_strings(
         deny=["Bash(rm *)", "", "garbage(", "123_invalid"],
     )

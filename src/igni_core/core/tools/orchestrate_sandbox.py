@@ -205,6 +205,10 @@ class SpawnSandbox:
                 f"\n\nWorktree: {self.info.worktree_path} (branch: "
                 f"{self.info.branch_name}) — cleanup failed: {exc}"
             )
+        if result.status == "noop":
+            # The manager owns no worktree any more: an earlier finalize
+            # already reported it. Nothing new to say.
+            return ""
         if result.status == "cleaned":
             return f"\n\nWorktree {self.info.branch_name} (clean) — reaped."
         if result.status == "preserved_dirty":

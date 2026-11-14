@@ -153,7 +153,8 @@ class ToolResultErrorDetector:
                 # convention was configured to flag on match).
                 if not m.groups():
                     return True
-                if m.group(1) != "0":
+                # "00" is zero too, and a long digit string is not parsed.
+                if set(m.group(1)) != {"0"}:
                     return True
         return False
 

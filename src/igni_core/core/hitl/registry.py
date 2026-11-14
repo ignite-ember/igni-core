@@ -142,9 +142,10 @@ class PendingRegistry:
         the caller to continue the run.
         """
         by_run: dict[str, list[str]] = {}
-        for requirement_id in self._restored:
-            entry = self._entries.get(requirement_id)
-            if entry is not None:
+        # In arrival order: ``_restored`` is a set, whose order differs
+        # from one process to the next.
+        for requirement_id, entry in self._entries.items():
+            if requirement_id in self._restored:
                 by_run.setdefault(entry.run_id, []).append(requirement_id)
         ready: list[RestoredRun] = []
         for run_id, requirement_ids in by_run.items():

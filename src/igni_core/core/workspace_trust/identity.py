@@ -156,7 +156,7 @@ class GitConfigRemote:
                 # git dir names the shared one in ``commondir``.
                 try:
                     first = dot_git.read_text(encoding="utf-8").strip().splitlines()[0]
-                except (OSError, IndexError):
+                except (OSError, UnicodeDecodeError, IndexError):
                     return None
                 if not first.startswith("gitdir:"):
                     return None
@@ -165,8 +165,8 @@ class GitConfigRemote:
                     git_dir = (candidate / git_dir).resolve()
                 common = git_dir / "commondir"
                 if common.is_file():
-                    with contextlib.suppress(OSError):
-                        git_dir = (git_dir / common.read_text().strip()).resolve()
+                    with contextlib.suppress(OSError, UnicodeDecodeError):
+                        git_dir = (git_dir / common.read_text(encoding="utf-8").strip()).resolve()
                 return git_dir / "config"
         return None
 

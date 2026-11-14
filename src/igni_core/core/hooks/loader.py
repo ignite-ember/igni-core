@@ -144,10 +144,18 @@ class _SettingsFileReader:
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
-        except json.JSONDecodeError as e:
+        except ValueError as e:
+            # ``JSONDecodeError`` and ``UnicodeDecodeError`` (a file that is
+            # not UTF-8) are both ``ValueError``.
             return None, [HookLoadWarning.from_path(path, "invalid_json", str(e))]
         except OSError as e:
             return None, [HookLoadWarning.from_path(path, "os_error", str(e))]
+        if not isinstance(data, dict):
+            return None, [
+                HookLoadWarning.from_path(
+                    path, "non_dict_block", "settings file is not a JSON object"
+                )
+            ]
         hooks_block = data.get("hooks", {})
         if not isinstance(hooks_block, dict):
             return None, [
@@ -264,7 +272,7 @@ class HookLoader:
         try:
             with open(path, encoding="utf-8") as f:
                 hooks_block = json.load(f)
-        except json.JSONDecodeError as e:
+        except ValueError as e:
             return HookLoadResult(
                 registry=registry,
                 warnings=[HookLoadWarning.from_path(path, "invalid_json", str(e))],

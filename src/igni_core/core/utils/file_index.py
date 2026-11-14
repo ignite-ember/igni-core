@@ -146,6 +146,7 @@ class FileIndex:
         user when the visible list is a slice of a larger result and
         they should type more to narrow it down.
         """
+        limit = max(limit, 0)
         if not self._files:
             return [], 0
         if not query:

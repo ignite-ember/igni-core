@@ -321,3 +321,66 @@ def test_merge_skips_entries_with_empty_model_id():
     merge = _client().merge_into(registry, entries=entries)
     assert merge.added == 1
     assert set(registry.keys()) == {"gpt-4o"}
+
+
+# ── what the first pass did not pin ───────────────────────────────────
+
+
+def test_fetch_without_a_server_says_so_before_asking_for_a_token():
+    for api_url in ("", "   "):
+        for token in (None, "tok"):
+            result = CloudModelCatalogClient(api_url, token).fetch()
+            assert not result.ok
+            assert result.reason == FetchReason.NO_SERVER
+
+
+def test_fetch_sends_the_bearer_token_with_a_three_second_timeout(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["auth"] = request.headers["authorization"]
+        captured["method"] = request.method
+        return httpx.Response(200, json={"models": []})
+
+    def make(**kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        return _mock_client(handler)
+
+    monkeypatch.setattr("httpx.Client", make)
+    CloudModelCatalogClient("https://api.example.com", "tok-1").fetch()
+    assert captured == {"auth": "Bearer tok-1", "method": "GET", "timeout": 3.0}
+
+
+def test_fetch_of_an_empty_catalogue_is_ok_with_no_entries(monkeypatch):
+    monkeypatch.setattr(
+        "httpx.Client", lambda **_: _mock_client(lambda r: httpx.Response(200, json={"models": []}))
+    )
+    result = CloudModelCatalogClient("https://api.example.com", "tok").fetch()
+    assert result.ok and result.reason == FetchReason.OK and result.entries == []
+
+
+def test_fetch_with_a_non_json_body_is_a_bad_shape(monkeypatch):
+    monkeypatch.setattr(
+        "httpx.Client", lambda **_: _mock_client(lambda r: httpx.Response(200, content=b"<html>"))
+    )
+    result = CloudModelCatalogClient("https://api.example.com", "tok").fetch()
+    assert result.reason == FetchReason.BAD_SHAPE
+
+
+def test_merge_without_entries_fetches_and_adds(monkeypatch):
+    monkeypatch.setattr(
+        "httpx.Client",
+        lambda **_: _mock_client(lambda r: httpx.Response(200, json={"models": [{"id": "m1"}]})),
+    )
+    registry: dict[str, ModelRegistryEntry] = {}
+    merged = CloudModelCatalogClient("https://api.example.com", "tok").merge_into(registry)
+    assert (merged.added, merged.skipped_existing) == (1, 0)
+    assert registry["m1"].url == "https://api.example.com/v1"
+
+
+def test_merge_without_entries_adds_nothing_when_the_fetch_fails(monkeypatch):
+    monkeypatch.setattr("httpx.Client", lambda **_: _mock_client(lambda r: httpx.Response(503)))
+    registry: dict[str, ModelRegistryEntry] = {}
+    merged = CloudModelCatalogClient("https://api.example.com", "tok").merge_into(registry)
+    assert (merged.added, merged.skipped_existing) == (0, 0)
+    assert registry == {}

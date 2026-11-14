@@ -70,7 +70,7 @@ class Provenance:
             return None
         try:
             return DistributionRecord.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError) as exc:
+        except (OSError, UnicodeDecodeError, ValidationError) as exc:
             logger.warning("ignoring %s: %s", path, exc)
             return None
 

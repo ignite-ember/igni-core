@@ -509,16 +509,18 @@ jobs:
           cd /tmp/homebrew-tap
 
           # Simple formula: create venv, pip install igni-core from PyPI (uses
-          # wheels). The formula keeps the name ``ignite-ember`` — what
-          # existing users ``brew upgrade`` — and installs igni-core.
+          # wheels). The formula is ``igni-core``, after the package, and
+          # ``Aliases/ignite-ember`` keeps the old name installable: both
+          # ``brew install ignite-ember/tap/igni-core`` and
+          # ``.../ignite-ember`` install this one formula.
           # NOTE: Homebrew derives the class name from the formula file
-          # via ``Formula.class_s``: ``ignite-ember`` → ``IgniteEmber``
+          # via ``Formula.class_s``: ``igni-core`` → ``IgniCore``
           # (PascalCase, hyphens dropped). A lowercase leading letter
           # makes it invalid Ruby and Homebrew silently refuses to load
           # the formula — the reason releases v0.7.0 through v0.8.3
           # never propagated to ``brew upgrade`` users.
-          cat > Formula/ignite-ember.rb << 'FORMULA'
-          class IgniteEmber < Formula
+          cat > Formula/igni-core.rb << 'FORMULA'
+          class IgniCore < Formula
             include Language::Python::Virtualenv
 
             desc "AI coding assistant with multi-agent orchestration"
@@ -570,11 +572,11 @@ jobs:
           FORMULA
 
           # Fix heredoc indentation and replace placeholders
-          sed -i 's/^          //' Formula/ignite-ember.rb
+          sed -i 's/^          //' Formula/igni-core.rb
           PYPI_VERSION="${{ steps.version.outputs.pypi_version }}"
-          sed -i "s|PLACEHOLDER_URL|https://files.pythonhosted.org/packages/source/i/igni-core/igni_core-${PYPI_VERSION}.tar.gz|" Formula/ignite-ember.rb
-          sed -i "s|PLACEHOLDER_SHA|${SHA}|" Formula/ignite-ember.rb
-          sed -i "s|PLACEHOLDER_VERSION|${VERSION}|" Formula/ignite-ember.rb
+          sed -i "s|PLACEHOLDER_URL|https://files.pythonhosted.org/packages/source/i/igni-core/igni_core-${PYPI_VERSION}.tar.gz|" Formula/igni-core.rb
+          sed -i "s|PLACEHOLDER_SHA|${SHA}|" Formula/igni-core.rb
+          sed -i "s|PLACEHOLDER_VERSION|${VERSION}|" Formula/igni-core.rb
 
           # Belt-and-suspenders: parse the generated Ruby before we
           # push it, so a future rebrand can't silently ship an
@@ -582,14 +584,20 @@ jobs:
           # any syntax error; combined with the class-name comment
           # above this catches both the specific past regression and
           # anything else that breaks parsing.
-          if ! ruby -c Formula/ignite-ember.rb; then
+          if ! ruby -c Formula/igni-core.rb; then
             echo "::error::Generated Homebrew formula is not valid Ruby — aborting"
             exit 1
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/ignite-ember.rb
+          # The old name is an alias of this formula. Before the rename the
+          # formula was Formula/ignite-ember.rb with an igni-core alias to
+          # it; both go, or Homebrew would see two formulae for one name.
+          git rm -q --ignore-unmatch Formula/ignite-ember.rb Aliases/igni-core
+          mkdir -p Aliases
+          ln -sfn ../Formula/igni-core.rb Aliases/ignite-ember
+          git add Formula/igni-core.rb Aliases/ignite-ember
           # ``git commit`` fails with exit 1 when nothing is staged,
           # which would fail the job on a re-run of the same tag.
           # Skip cleanly instead — the tap is already up-to-date.
@@ -597,5 +605,5 @@ jobs:
             echo "Formula unchanged for ${VERSION}; nothing to push."
             exit 0
           fi
-          git commit -m "Update ignite-ember to ${VERSION}"
+          git commit -m "Update igni-core to ${VERSION}"
           git push

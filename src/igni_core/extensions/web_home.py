@@ -38,7 +38,7 @@ class ExtensionWebHome:
     def _web(url: str) -> str | None:
         """Only an http(s) URL is a home page; anything else is not shown."""
         text = url.strip()
-        if text.startswith(("https://", "http://")):
+        if text.lower().startswith(("https://", "http://")):
             return text
         return None
 

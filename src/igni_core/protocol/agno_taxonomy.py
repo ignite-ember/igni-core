@@ -60,7 +60,7 @@ class AgnoEventTaxonomy:
         agent_events.RunCompletedEvent,
         team_events.RunCompletedEvent,
         agent_events.RunOutput,
-        team_events.RunOutput,
+        team_events.TeamRunOutput,
     )
     RUN_STARTED = (agent_events.RunStartedEvent, team_events.RunStartedEvent)
     RUN_ERROR = (agent_events.RunErrorEvent, team_events.RunErrorEvent)

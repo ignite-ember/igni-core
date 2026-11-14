@@ -65,13 +65,16 @@ class ToolInvocationArgs(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    args: list[str] | None = None
-    command: str | None = None
-    path: str | None = None
-    file_path: str | None = None
-    file_name: str | None = None
-    url: str | None = None
-    query: str | None = None
+    # ``Any`` on purpose: the arguments are whatever the model emitted, and a
+    # number where a path was expected must reach the matchers (which read
+    # every value through ``str``) rather than make the permission check raise.
+    args: list[Any] | None = None
+    command: Any | None = None
+    path: Any | None = None
+    file_path: Any | None = None
+    file_name: Any | None = None
+    url: Any | None = None
+    query: Any | None = None
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any] | None) -> ToolInvocationArgs:
@@ -80,7 +83,12 @@ class ToolInvocationArgs(BaseModel):
         dict → empty instance (no-arg call)."""
         if not raw:
             return cls()
-        return cls.model_validate(raw)
+        payload = dict(raw)
+        args = payload.get("args")
+        if args is not None and not isinstance(args, (list, tuple)):
+            # A bare string (or number) is one argument, not a list of characters.
+            payload["args"] = [args]
+        return cls.model_validate(payload)
 
     def as_dict(self) -> dict[str, Any]:
         """Round-trip back to a plain dict — used by the fnmatch
@@ -148,8 +156,8 @@ class RuleArgPattern(BaseModel):
 
     def matches(self, args: ToolInvocationArgs) -> bool:
         """Does this pattern match a tool invocation's args? Subclasses
-        override — this base returns ``False`` so an unknown pattern
-        kind fails closed (safer than True)."""
+        override — the base raises :class:`NotImplementedError`, so a
+        pattern kind nobody implemented is loud, not silently allowed."""
         raise NotImplementedError
 
 
@@ -191,8 +199,11 @@ class KeyValueGlobPattern(RuleArgPattern):
     value: str
 
     def matches(self, args: ToolInvocationArgs) -> bool:
+        primary = args.primary_string()
         pattern = self.raw if " " in self.key else f"{self.key} {self.value}"
-        return fnmatch.fnmatch(args.primary_string(), pattern)
+        # The raw text too: an exact rule for ``https://host/a`` or ``C:\\x``
+        # reads as ``key:value`` yet names the call verbatim, and must match it.
+        return fnmatch.fnmatch(primary, pattern) or fnmatch.fnmatch(primary, self.raw)
 
 
 class GlobPattern(RuleArgPattern):

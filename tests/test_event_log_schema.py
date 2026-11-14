@@ -15,7 +15,9 @@ from pydantic import TypeAdapter, ValidationError
 from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
 from igni_core.core.session.event_log_schema import (
     SESSION_EVENT_ADAPTER,
+    SessionEventAppendResult,
     SessionEventDraft,
+    SessionEventDraftBase,
     VisualizationDeltaDraft,
     VisualizationDeltaEntry,
     VisualizationDeltaPayload,
@@ -210,3 +212,60 @@ class TestModelDump:
         assert dumped["payload"]["json"] == "{}"
         assert dumped["payload"]["spec_id"] == "s1"
         assert isinstance(dumped["timestamp_ms"], int)
+
+
+class TestDefaultsAndAliases:
+    def test_a_partial_card_is_final_and_empty(self):
+        card = VisualizationDeltaPayload()
+
+        assert card.final is True
+        assert (card.spec_id, card.spec_json, card.title, card.source, card.agent_path) == (
+            "",
+            "",
+            "",
+            "",
+            "",
+        )
+        assert card.type == "visualization_delta"
+
+    def test_a_card_is_in_progress_only_when_it_says_so(self):
+        assert VisualizationDeltaPayload(final=False).final is False
+
+    def test_the_spec_is_read_under_its_wire_name(self):
+        card = VisualizationDeltaPayload.model_validate({"spec_id": "s", "json": '{"a":1}'})
+
+        assert card.spec_json == '{"a":1}'
+
+    def test_the_spec_is_also_read_under_its_field_name(self):
+        card = VisualizationDeltaPayload.model_validate({"spec_id": "s", "spec_json": "x"})
+
+        assert card.spec_json == "x"
+
+    def test_the_base_draft_has_no_event_of_its_own(self):
+        with pytest.raises(NotImplementedError):
+            SessionEventDraftBase().to_event(1)
+
+    def test_an_append_result_defaults_to_not_persisted_without_error(self):
+        result = SessionEventAppendResult()
+
+        assert result.persisted is False
+        assert result.error is None
+
+    def test_entries_at_the_same_millisecond_are_ordered_by_seq_alone(self):
+        first = VisualizationDeltaEntry(
+            seq=1, payload=VisualizationDeltaPayload(spec_id="a"), timestamp_ms=5
+        )
+        second = VisualizationDeltaEntry(
+            seq=2, payload=VisualizationDeltaPayload(spec_id="b"), timestamp_ms=5
+        )
+
+        assert [e.seq for e in sorted([second, first], key=lambda e: e.seq)] == [1, 2]
+
+    def test_a_workflow_draft_copies_its_record(self):
+        record = _record()
+        event = WorkflowEventDraft(payload=record).to_event(3)
+
+        record.name = "changed"
+
+        assert event.seq == 3
+        assert event.payload.name == "run"

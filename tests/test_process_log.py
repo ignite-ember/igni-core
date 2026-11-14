@@ -24,6 +24,7 @@ it.
 
 from __future__ import annotations
 
+import tempfile
 import time
 from pathlib import Path
 
@@ -57,7 +58,8 @@ class TestLogPathResolution:
         # get a working path so the reader doesn't error.
         store = ProcessLogStore(None)
         p = store.path(99)
-        assert "ember-process-logs" in str(p)
+        assert p == Path(tempfile.gettempdir()) / "igni-process-logs" / "99.log"
+        assert "ember" not in str(p)
         assert p.name == "99.log"
 
     def test_path_coerces_pid_to_int(self, tmp_path: Path) -> None:

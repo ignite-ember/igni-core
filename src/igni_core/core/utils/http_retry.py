@@ -24,7 +24,9 @@ RetryCallback = Callable[[int, float], None]
 def _no_such_host(exc: BaseException) -> bool:
     """Whether ``exc`` comes from a name that does not resolve (not a temporary DNS failure)."""
     seen: BaseException | None = exc
-    while seen is not None:
+    visited: set[int] = set()
+    while seen is not None and id(seen) not in visited:
+        visited.add(id(seen))
         if isinstance(seen, socket.gaierror):
             return seen.errno == socket.EAI_NONAME
         seen = seen.__cause__ or seen.__context__

@@ -86,7 +86,7 @@ class UserConfigStore:
                 existing["models"] = models_block
             models_block["default"] = model_name
             self.write(existing)
-        except (OSError, yaml.YAMLError) as exc:
+        except (OSError, ValueError, yaml.YAMLError) as exc:
             logger.warning("failed to save default model to %s: %s", self._path, exc)
             return False
         return True

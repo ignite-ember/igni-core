@@ -104,13 +104,13 @@ _SHELL_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         ),
         (r"\bgit\s+push\b[^;&|]*\s\+\S+", "force-pushes a refspec"),
         (
-            r"\b(mkfs(\.\w+)?|fdisk|parted|diskutil\s+(erase|partition))\b",
+            r"\b(mkfs(\.\w+)?|fdisk|parted|diskutil\s+(erase|partition)\w*)\b",
             "formats or repartitions a disk",
         ),
         (r"\bdd\b[^;&|]*\bof=/dev/", "writes raw data to a device"),
         (r">\s*/dev/(sd|disk|nvme|hd)", "overwrites a block device"),
         (
-            r"\bchmod\s+(-R\s+)?0?777\s+/(etc|usr|bin|sbin|var|System|Library)?\b",
+            r"\bchmod\s+(-R\s+)?0?777\s+/(etc|usr|bin|sbin|var|System|Library)?(?=\s|$|/)",
             "opens system files to everyone",
         ),
         (
@@ -118,7 +118,7 @@ _SHELL_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             "installs something that runs on its own",
         ),
         (
-            r">>?\s*~?/?(\$HOME/)?\.(bashrc|zshrc|profile|bash_profile|zprofile)\b",
+            r">>?\s*(\S*/)?\.(bashrc|zshrc|profile|bash_profile|zprofile)\b",
             "edits a shell start-up file",
         ),
         (
@@ -165,7 +165,9 @@ _SHELL_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         ),
         (r"\bsudo\s+rm\b", "deletes files as root"),
         (
-            r"\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f[a-z]*d|checkout\s+--\s+\.)\b",
+            r"\bgit\s+(reset\s+--hard\b"
+            r"|clean\b(?=[^;&|]*\s-[a-z]*f)(?=[^;&|]*\s-[a-z]*d)(?![^;&|]*(\s-[a-z]*n|--dry-run))"
+            r"|checkout\s+--\s+\.(/)?(?=\s|$|[;&|]))",
             "discards uncommitted work",
         ),
     )

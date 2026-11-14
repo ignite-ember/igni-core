@@ -75,8 +75,19 @@ class UnixSocketServerTransport(NDJsonStreamTransport, ListeningTransport):
         await asyncio.wait_for(self._connected.wait(), timeout=timeout)
 
     async def _on_connect(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        if self._closed:
+            # Accepted while the backend was shutting down: nobody will
+            # serve it, and a connection left open keeps the server's
+            # own close waiting forever.
+            writer.close()
+            return
+        previous = self._writer
         self._reader = reader
         self._writer = writer
+        if previous is not None and previous is not writer:
+            # The later connection replaces the earlier: the earlier is
+            # let go, not left open (and unserved) until the process ends.
+            previous.close()
         self._connected.set()
         logger.info("FE connected")
 

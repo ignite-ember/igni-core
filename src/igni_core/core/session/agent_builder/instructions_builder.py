@@ -67,7 +67,7 @@ class InstructionsBuilder:
         todo_path = self._project_dir / CONFIG_DIR / "TODO.md"
         if not todo_path.is_file():
             return
-        content = todo_path.read_text().strip()
+        content = todo_path.read_text(encoding="utf-8", errors="replace").strip()
         if content:
             out.append(f"Active TODO ({CONFIG_DIR}/TODO.md):\n{content}")
 

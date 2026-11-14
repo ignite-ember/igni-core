@@ -31,7 +31,7 @@ import os
 from pathlib import Path
 from typing import Any, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from igni_core.core.activity import background
 from igni_core.core.lsp.schemas import (
@@ -158,10 +158,15 @@ class LspClient:
                     await asyncio.wait_for(self._proc.wait(), timeout=1.0)
                 if self._proc.returncode is None:
                     self._proc.kill()
+                    with contextlib.suppress(Exception):
+                        await asyncio.wait_for(self._proc.wait(), timeout=1.0)
         finally:
             if self._reader_task and not self._reader_task.done():
                 self._reader_task.cancel()
-                with contextlib.suppress(Exception):
+                # Awaiting the cancelled reader raises CancelledError, which
+                # is not an ``Exception``: unsuppressed it escaped shutdown
+                # before the client's state was reset.
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await self._reader_task
             self._proc = None
             self._reader_task = None
@@ -182,15 +187,21 @@ class LspClient:
         The server's ``result`` is returned verbatim — callers are
         responsible for interpreting the LSP shape.
         """
-        req_id = self._next_id
+        try:
+            envelope_params = self._encode_params(params)
+            # Build the envelope before registering a waiter: params that
+            # are not an object, an array or null (JSON-decoded model output
+            # can be a bare string or number) are refused here, and nothing
+            # is left waiting for a request that was never sent.
+            req_id = self._next_id
+            envelope = JsonRpcRequest(id=req_id, method=method, params=envelope_params)
+        except ValidationError as exc:
+            raise LspClientError(
+                f"{self.config.name}: {method} params must be an object, an array or null"
+            ) from exc
         self._next_id += 1
         future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
         self._pending[req_id] = future
-        envelope = JsonRpcRequest(
-            id=req_id,
-            method=method,
-            params=self._encode_params(params),
-        )
         try:
             await self._send_envelope(envelope)
             return await asyncio.wait_for(future, timeout=timeout)
@@ -203,10 +214,15 @@ class LspClient:
 
     async def notify(self, method: str, params: RequestParams) -> None:
         """Send a JSON-RPC notification — no response expected."""
-        envelope = JsonRpcNotification(
-            method=method,
-            params=self._encode_params(params),
-        )
+        try:
+            envelope = JsonRpcNotification(
+                method=method,
+                params=self._encode_params(params),
+            )
+        except ValidationError as exc:
+            raise LspClientError(
+                f"{self.config.name}: {method} params must be an object, an array or null"
+            ) from exc
         await self._send_envelope(envelope)
 
     @staticmethod
@@ -230,6 +246,9 @@ class LspClient:
         """
         if self._proc is None or self._proc.stdin is None:
             raise LspClientError(f"{self.config.name}: not running")
+        if self._reader_task is not None and self._reader_task.done():
+            # The server's output has ended: nothing can answer any more.
+            raise LspClientError(f"{self.config.name}: server gone")
         payload = envelope.model_dump(exclude_none=False)
         body = json.dumps(payload).encode("utf-8")
         header = f"Content-Length: {len(body)}\r\n\r\n".encode()
@@ -254,7 +273,14 @@ class LspClient:
             while True:
                 msg = await self._read_message(self._proc.stdout)
                 if msg is None:
-                    return
+                    # ``None`` is also a dropped frame (bad body, bad
+                    # header); only the end of the stream ends the reader,
+                    # or every later response would be lost and its request
+                    # left to time out.
+                    if self._proc.stdout.at_eof():
+                        self._fail_pending("LSP server closed its output")
+                        return
+                    continue
                 self._dispatch(msg)
         except asyncio.CancelledError:
             raise

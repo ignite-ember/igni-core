@@ -22,6 +22,7 @@ The process gets:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import shutil
 import sys
@@ -57,6 +58,7 @@ class Bubblewrap:
         if bwrap is None:
             return "bubblewrap (bwrap) is not installed"
         true = shutil.which("true") or "/bin/true"
+        proc: asyncio.subprocess.Process | None = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 bwrap,
@@ -74,7 +76,12 @@ class Bubblewrap:
             )
             _, err = await asyncio.wait_for(proc.communicate(), 10)
         except (OSError, TimeoutError) as exc:
-            return f"bwrap could not run: {exc}"
+            if proc is not None and proc.returncode is None:
+                # A probe that hung must not stay behind as a process.
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                await proc.wait()
+            return f"bwrap could not run: {str(exc) or 'it did not answer within 10 seconds'}"
         if proc.returncode != 0:
             return f"bwrap cannot create a sandbox here: {err.decode(errors='replace').strip()}"
         return None

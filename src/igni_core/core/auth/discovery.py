@@ -145,18 +145,28 @@ class ServerDiscovery:
                     follow_redirects=False,
                     transport=self._transport,
                 ) as client,
+                client.stream("GET", url, headers={"Accept": "application/json"}) as response,
             ):
-                response = await client.get(url, headers={"Accept": "application/json"})
+                status = response.status_code
+                body = bytearray()
+                if status == 200:
+                    # Read only as far as the cap: a streamed gigabyte is
+                    # stopped at MAX_BYTES + 1, not downloaded and then
+                    # found too large.
+                    async for chunk in response.aiter_bytes():
+                        body += chunk
+                        if len(body) > MAX_BYTES:
+                            break
         except (httpx.HTTPError, httpx.InvalidURL) as exc:
             # No web root, or none that answers. The zone may still say.
             logger.debug("discovery: %s did not answer: %r", url, exc)
             return await self._from_dns(domain)
 
-        if response.status_code != 200:
+        if status != 200:
             return await self._from_dns(domain)
-        if len(response.content) > MAX_BYTES:
+        if len(body) > MAX_BYTES:
             return Discovered.nothing(f"The record at {domain} is too large to be one.")
-        record = PublishedRecord.from_json(response.content)
+        record = PublishedRecord.from_json(bytes(body))
         if isinstance(record, Discovered):
             return record
         # A file that is there but unusable is worth saying so about

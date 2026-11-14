@@ -75,7 +75,9 @@ class SleepBlocker:
             return
         with self._lock:
             self._count += 1
-            if self._count > 1 or self.holding:
+            # Another reference is only enough while its caffeinate is
+            # alive: one that died on its own is started again here.
+            if self.holding:
                 return
             self._start()
 

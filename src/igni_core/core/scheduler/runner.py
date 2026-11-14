@@ -214,8 +214,14 @@ class SchedulerRunner:
         If the task has a recurrence pattern, a new pending task is created
         for the next occurrence after completion (success or failure).
         """
+        # A callback is a courtesy to a listener: one that raises must not
+        # leave the task marked running forever (started) or skip the
+        # next occurrence of a recurring task (completed).
         if self._on_task_started:
-            self._on_task_started(task_id, description)
+            try:
+                self._on_task_started(task_id, description)
+            except Exception:
+                logger.exception("on_task_started callback failed for task %s", task_id)
 
         # ``unless_cancelled`` on every terminal write: a cancel issued
         # while the task was running used to be overwritten here, so the
@@ -252,7 +258,10 @@ class SchedulerRunner:
             return
 
         if self._on_task_completed:
-            self._on_task_completed(task_id, description, succeeded, detail)
+            try:
+                self._on_task_completed(task_id, description, succeeded, detail)
+            except Exception:
+                logger.exception("on_task_completed callback failed for task %s", task_id)
 
         # Reschedule recurring tasks (even after failure — the schedule continues)
         await self._reschedule_if_recurring(task_id)

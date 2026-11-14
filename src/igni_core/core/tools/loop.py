@@ -140,7 +140,12 @@ class LoopTools(Toolkit):
         Args:
             total: Positive integer — the expected iteration count.
         """
-        result = await self._session.set_announced_total_from_tool(total)
+        # The controller owns the loop's state and the progress store is its
+        # peer on the session: the session has no facade method for this.
+        session = self._session
+        result = await session.loop.set_announced_total_from_tool(
+            total, session.loop_progress_store
+        )
         return result.render()
 
     async def loop_resume(self) -> str:

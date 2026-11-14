@@ -1,7 +1,7 @@
 """Stdio transport adapter for Agno's :class:`MCPTools`.
 
 This module encapsulates the private-attribute reach-in that
-Ember needs to perform on Agno's :class:`MCPTools` to redirect
+igni needs to perform on Agno's :class:`MCPTools` to redirect
 the subprocess's stderr away from ``sys.stderr`` (which Textual
 uses for TUI rendering — a subprocess writing to the same
 stream corrupts the on-screen frame). Every ``mcp_tools._*``
@@ -12,7 +12,7 @@ behind one named seam).
 Why the reach-in exists
 -----------------------
 Agno's :meth:`MCPTools.__aenter__` opens the stdio subprocess
-with ``errlog=sys.stderr``. When Ember runs inside a Textual
+with ``errlog=sys.stderr``. When igni runs inside a Textual
 TUI, any bytes written to ``sys.stderr`` interleave with
 Textual's own rendering commands and corrupt the visible
 frame. To fix this we skip Agno's ``__aenter__`` entirely and
@@ -117,7 +117,7 @@ class StdioMCPBinding:
         a classmethod (not a bare module constant) so the
         default has a named home and tests can override the
         instance without touching module globals."""
-        return Path(tempfile.gettempdir()) / "ember_mcp_stderr.log"
+        return Path(tempfile.gettempdir()) / "igni_mcp_stderr.log"
 
     async def open(
         self,

@@ -102,7 +102,7 @@ class PlainFileKind(EntryKind):
             # Not 0o755: nothing else on the machine needs to run code that
             # arrived over the network.
             placement.path.chmod(0o700)
-        ctx.active.add(self.name, entry.entry_name)
+        ctx.active.add(self.name, entry.safe_name().name)
 
     def content(self, entry: GroupPolicyEntry) -> str:
         return entry.rendered_content() if self.model else entry.content
@@ -149,7 +149,7 @@ class PluginKind(EntryKind):
             return
         if not ctx.rebuild:
             self._plugins.install(entry)
-        ctx.active.add(self.name, entry.entry_name)
+        ctx.active.add(self.name, entry.safe_name().name)
 
     def is_stale(self, path: Path, active: set[str]) -> bool:
         # Installed plugins are directories, pruned by ``prune_planted``.

@@ -84,17 +84,17 @@ class LoggingModel(ToolNameBoundary, ReplyCutRetries, OpenAILike):
 
     def invoke(self, *args, **kwargs):
         self._log_call("invoke", args, kwargs, stream=False)
-        args = self._sanitizer.sanitize_if_needed(args, vision=self.vision)
+        args, kwargs = self._sanitizer.sanitize_call(args, kwargs, vision=self.vision)
         return super().invoke(*args, **kwargs)
 
     async def ainvoke(self, *args, **kwargs):
         self._log_call("ainvoke", args, kwargs, stream=False)
-        args = self._sanitizer.sanitize_if_needed(args, vision=self.vision)
+        args, kwargs = self._sanitizer.sanitize_call(args, kwargs, vision=self.vision)
         return await super().ainvoke(*args, **kwargs)
 
     def invoke_stream(self, *args, **kwargs):
         self._log_call("invoke_stream", args, kwargs, stream=True)
-        args = self._sanitizer.sanitize_if_needed(args, vision=self.vision)
+        args, kwargs = self._sanitizer.sanitize_call(args, kwargs, vision=self.vision)
         ending = self._reply_ending()
         with ending.watching():
             yield from super().invoke_stream(*args, **kwargs)
@@ -102,7 +102,7 @@ class LoggingModel(ToolNameBoundary, ReplyCutRetries, OpenAILike):
 
     async def ainvoke_stream(self, *args, **kwargs):
         self._log_call("ainvoke_stream", args, kwargs, stream=True)
-        args = self._sanitizer.sanitize_if_needed(args, vision=self.vision)
+        args, kwargs = self._sanitizer.sanitize_call(args, kwargs, vision=self.vision)
         ending = self._reply_ending()
         with ending.watching():
             async for chunk in super().ainvoke_stream(*args, **kwargs):

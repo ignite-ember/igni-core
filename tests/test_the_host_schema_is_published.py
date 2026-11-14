@@ -8,6 +8,10 @@ the same schema — a field the JSON loses is a member an SDK never gets.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from igni_core.extensions.host import published
 from igni_core.extensions.host.definition import HOST_SCHEMA, SCHEMA_VERSION
 from igni_core.extensions.host.spec import HostSchema
@@ -26,3 +30,27 @@ def test_it_reads_back_as_the_same_schema() -> None:
 
 def test_it_carries_the_schema_version() -> None:
     assert HostSchema.model_validate_json(published.render()).version == SCHEMA_VERSION
+
+
+def test_it_is_rendered_as_indented_json_with_a_trailing_newline() -> None:
+    rendered = published.render()
+
+    assert rendered.endswith("}\n") and not rendered.endswith("\n\n")
+    assert rendered.startswith('{\n  "')
+
+
+def test_it_is_published_in_docs_of_this_repository() -> None:
+    assert published.PUBLISHED.is_absolute()
+    assert published.PUBLISHED.parts[-2:] == ("docs", "host-schema.json")
+    assert published.PUBLISHED.parent.is_dir()
+
+
+def test_writing_it_puts_the_rendered_schema_where_it_says(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "host-schema.json"
+    monkeypatch.setattr(published, "PUBLISHED", target)
+
+    assert published.write() == target
+
+    assert target.read_text() == published.render()

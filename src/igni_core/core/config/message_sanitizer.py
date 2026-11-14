@@ -11,7 +11,10 @@ class).
 
 from __future__ import annotations
 
+import copy
 from typing import Any
+
+from pydantic import BaseModel
 
 
 class MessageSanitizer:
@@ -23,12 +26,32 @@ class MessageSanitizer:
     parts, joined with newlines. Vision-capable models see the
     original content untouched.
 
-    ``sanitize_if_needed`` takes the four-tuple ``args`` that Agno
-    passes into ``invoke`` / ``ainvoke`` / ``invoke_stream`` /
-    ``ainvoke_stream`` and returns a new ``args`` tuple — hiding
-    the "sanitize only when non-vision and messages present"
-    branching from every one of the four invoke sites.
+    Agno calls ``invoke`` / ``ainvoke`` / ``invoke_stream`` /
+    ``ainvoke_stream`` with keyword arguments only (``self.invoke(**kwargs)``),
+    so :meth:`sanitize_call` reads ``messages`` from the keywords and falls back
+    to the first positional argument. The messages handed in are the run's own
+    history, which Agno stores with the session: they are never changed. A
+    message that needs flattening is copied, so a later vision model still
+    finds its images.
     """
+
+    def sanitize_call(
+        self,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        *,
+        vision: bool,
+    ) -> tuple[tuple[Any, ...], dict[str, Any]]:
+        """``(args, kwargs)`` with the messages a non-vision model may read.
+
+        A vision model gets both back as they are. Otherwise ``messages`` is
+        taken from the keywords when it is there, or from ``args[0]``.
+        """
+        if vision:
+            return args, kwargs
+        if "messages" in kwargs:
+            return args, {**kwargs, "messages": self._sanitize_messages(kwargs["messages"])}
+        return self.sanitize_if_needed(args, vision=vision), kwargs
 
     def sanitize_if_needed(
         self,
@@ -36,15 +59,11 @@ class MessageSanitizer:
         *,
         vision: bool,
     ) -> tuple[Any, ...]:
-        """Return a possibly-rewritten ``args`` tuple.
+        """``args`` with ``args[0]``, the messages, made readable without vision.
 
         No-op fast paths:
         * ``vision=True`` — pass through so image content survives.
         * empty ``args`` — nothing to sanitize.
-
-        The message list is rewritten in place (matches the old
-        behavior; callers pass in a fresh list per call so no
-        cross-call aliasing risk).
         """
         if vision or not args:
             return args
@@ -52,15 +71,15 @@ class MessageSanitizer:
         return (sanitized, *args[1:])
 
     def _sanitize_messages(self, messages: list[Any]) -> list[Any]:
-        """Rewrite multimodal content lists to their text-only
-        concatenation, in place on each message.
+        """A new list in which each message whose content is a list of parts is
+        replaced by a copy holding their text; the others are the same objects.
         """
-        for msg in messages:
-            content = self._read_content(msg)
-            if not isinstance(content, list):
-                continue
-            self._write_content(msg, self._flatten_to_text(content))
-        return messages
+        return [
+            self._with_content(msg, self._flatten_to_text(content))
+            if isinstance(content := self._read_content(msg), list)
+            else msg
+            for msg in messages
+        ]
 
     @staticmethod
     def _read_content(msg: Any) -> Any:
@@ -69,11 +88,14 @@ class MessageSanitizer:
         return getattr(msg, "content", None)
 
     @staticmethod
-    def _write_content(msg: Any, new_content: str) -> None:
+    def _with_content(msg: Any, new_content: str) -> Any:
         if isinstance(msg, dict):
-            msg["content"] = new_content
-        else:
-            msg.content = new_content
+            return {**msg, "content": new_content}
+        if isinstance(msg, BaseModel):
+            return msg.model_copy(update={"content": new_content})
+        duplicate = copy.copy(msg)
+        duplicate.content = new_content
+        return duplicate
 
     @staticmethod
     def _flatten_to_text(content: list[Any]) -> str:

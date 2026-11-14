@@ -237,12 +237,12 @@ class HITLRequest(Message):
         formatter imports at module scope).
         """
         tool_exec = getattr(requirement, "tool_execution", None)
-        raw_name = str(getattr(tool_exec, "tool_name", "") if tool_exec else "")
+        raw_name = str((getattr(tool_exec, "tool_name", "") if tool_exec else "") or "")
         return cls(
             requirement_id=str(id(requirement)),
             tool_name=raw_name,
             friendly_name=friendly_name_lookup(raw_name, default=""),
-            tool_args=dict(getattr(tool_exec, "tool_args", {}) if tool_exec else {}),
+            tool_args=dict((getattr(tool_exec, "tool_args", {}) if tool_exec else {}) or {}),
         )
 
 
@@ -328,9 +328,9 @@ class TaskSnapshot(BaseModel):
         string verbatim.
         """
         return cls(
-            task_id=str(getattr(task, "task_id", "")),
-            title=str(getattr(task, "title", "")),
-            status=str(getattr(task, "status", "")),
+            task_id=str(getattr(task, "task_id", "") or ""),
+            title=str(getattr(task, "title", "") or ""),
+            status=str(getattr(task, "status", "") or ""),
             assignee=str(getattr(task, "assignee", "") or ""),
         )
 

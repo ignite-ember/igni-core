@@ -180,11 +180,13 @@ class LspConfigLoader:
         :class:`LspConfigLoadError` on rejection."""
         parsed = LspServerConfig.from_raw(name, entry, namespace=namespace)
         if parsed is None:
-            reason = (
-                "entry is not a mapping"
-                if not isinstance(entry, Mapping)
-                else "missing or blank command"
-            )
+            if not isinstance(entry, Mapping):
+                reason = "entry is not a mapping"
+            elif not isinstance(entry.get("command"), str) or not entry["command"].strip():
+                reason = "missing or blank command"
+            else:
+                reason = "args and languages must be lists"
+
             result.errors.append(
                 LspConfigLoadError(
                     path=str(path),

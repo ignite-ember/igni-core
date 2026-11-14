@@ -162,7 +162,10 @@ class AgentEntry(BaseModel):
     model_config = ConfigDict(frozen=False)
 
     definition: AgentDefinition
-    priority: AgentPriority
+    #: An :class:`AgentPriority`, or for a plugin's agent its plugin root's
+    #: priority (1-7): those agents are named ``<plugin>:<agent>``, so they only
+    #: ever compete with the same plugin's agents from another root.
+    priority: AgentPriority | int
 
 
 class LoadError(BaseModel):

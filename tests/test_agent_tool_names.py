@@ -96,3 +96,67 @@ class TestThePoolCheck:
         session.pool = Exploding()
 
         assert AgentsBuilder(session).check_tools().by_agent() == {}
+
+
+class TestWhatTheCheckReports:
+    """The report's own shape: which agents, in what order, and what it keeps."""
+
+    @staticmethod
+    def _agent(name: str, tools: list[str]):
+        return type("Defn", (), {"name": name, "tools": tools})()
+
+    def _check(self, tmp_path, agents) -> UnresolvedAgentTools:
+        return UnresolvedAgentTools.check(agents, ToolRegistry(base_dir=str(tmp_path)))
+
+    def test_every_agent_is_named_with_all_its_unknown_tools_in_order(self, tmp_path):
+        check = self._check(
+            tmp_path,
+            [
+                self._agent("one", ["Bsh", "Bash", "Wrte"]),
+                self._agent("clean", ["Bash"]),
+                self._agent("two", ["Wrte"]),
+            ],
+        )
+
+        assert [e.agent for e in check.entries] == ["one", "two"]
+        assert check.by_agent() == {"one": ["Bsh", "Wrte"], "two": ["Wrte"]}
+
+    def test_an_agent_with_no_tools_does_not_hide_the_ones_after_it(self, tmp_path):
+        check = self._check(tmp_path, [self._agent("thinker", []), self._agent("one", ["Bsh"])])
+
+        assert check.by_agent() == {"one": ["Bsh"]}
+
+    def test_no_agents_is_a_clean_report_that_still_lists_what_is_available(self, tmp_path):
+        check = self._check(tmp_path, [])
+
+        assert check.entries == []
+        assert "Bash" in check.available
+
+    def test_by_agent_hands_out_copies(self, tmp_path):
+        check = self._check(tmp_path, [self._agent("one", ["Bsh"])])
+
+        check.by_agent()["one"].append("mutated")
+
+        assert check.by_agent() == {"one": ["Bsh"]}
+
+    def test_a_clean_report_logs_nothing(self, tmp_path, caplog):
+        check = self._check(tmp_path, [self._agent("one", ["Bash"])])
+
+        with caplog.at_level("WARNING"):
+            check.log_warnings()
+
+        assert caplog.records == []
+
+    def test_one_warning_per_agent_naming_its_tools_quoted(self, tmp_path, caplog):
+        check = self._check(
+            tmp_path, [self._agent("one", ["Bsh", "Wrte"]), self._agent("two", ["Zzz"])]
+        )
+
+        with caplog.at_level("WARNING"):
+            check.log_warnings()
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert len(messages) == 2
+        assert messages[0].startswith("Agent 'one' names 'Bsh', 'Wrte', which igni cannot resolve")
+        assert messages[1].startswith("Agent 'two' names 'Zzz', which")
+        assert all(r.levelname == "WARNING" for r in caplog.records)

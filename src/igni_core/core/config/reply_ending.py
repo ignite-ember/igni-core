@@ -166,7 +166,9 @@ class ReplyCutRetries:
         # catch-all re-raises it as a plain ModelProviderError: the cut is
         # its ``__cause__``.
         cause: BaseException | None = error
-        while cause is not None:
+        seen: set[int] = set()
+        while cause is not None and id(cause) not in seen:
+            seen.add(id(cause))
             if isinstance(cause, ModelReplyCut) and not cause.retryable:
                 return False
             cause = cause.__cause__
@@ -184,7 +186,7 @@ class ReplyEnding:
     """
 
     _current: ClassVar[ContextVar[ReplyEnding | None]] = ContextVar(
-        "ember_reply_ending", default=None
+        "igni_reply_ending", default=None
     )
 
     def __init__(self, model_id: str, cap: int | None, provider: Provider = OPENAI) -> None:

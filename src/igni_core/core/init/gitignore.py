@@ -102,7 +102,7 @@ class IgniGitignore:
         """Write the block if it is missing or out of date. ``True`` if written."""
         try:
             existing = self.path.read_text(encoding="utf-8") if self.path.exists() else ""
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             return False
         wanted = self.render(existing)
         if wanted == existing:

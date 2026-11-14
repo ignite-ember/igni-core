@@ -14,13 +14,13 @@ module stays a leaf in the import graph and CODE_STANDARDS Rule 2
 
 1. ``~/.igni/rules.md`` — legacy single-file form. Kept for users
    who set that up before the directory form was added.
-2. ``~/.igni/rules/*.md`` — ember-native directory form. One file
+2. ``~/.igni/rules/*.md`` — igni-native directory form. One file
    per topic (e.g. ``coding.md``, ``testing.md``). Files with a
    ``paths:`` frontmatter contribute only when the session's
    ``working_dir`` matches one of the globs.
 3. ``~/.claude/rules/*.md`` — cross-tool form, gated on
    ``read_claude_rules``. Lets a user who has Claude Code rules
-   set up already have them apply to ember sessions too without
+   set up already have them apply to igni sessions too without
    duplicating.
 """
 

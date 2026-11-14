@@ -38,6 +38,7 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+import zlib
 from collections.abc import Iterable
 from enum import StrEnum
 from pathlib import Path
@@ -179,6 +180,10 @@ class ReadOnlyTree:
     def remove(root: Path) -> None:
         """``rmtree`` that first gives back the write permission sealing took."""
         if not root.exists() and not root.is_symlink():
+            return
+        if root.is_symlink():
+            # ``rmtree`` refuses a link; what is removed is the link, never what it points at.
+            root.unlink()
             return
 
         def writable_then_retry(function, path, _exc) -> None:  # type: ignore[no-untyped-def]
@@ -357,7 +362,7 @@ class Unpacker:
                 # `data` refuses absolute paths, `..`, links that point
                 # outside and device files, and keeps executable bits.
                 tar.extractall(into, members=members, filter="data")
-        except (tarfile.TarError, OSError, EOFError) as exc:
+        except (tarfile.TarError, OSError, EOFError, zlib.error) as exc:
             raise AssetError(f"{archive.name} could not be unpacked: {exc}") from exc
 
     @staticmethod
@@ -381,5 +386,12 @@ class Unpacker:
                     mode = (info.external_attr >> 16) & 0o777
                     if mode & 0o111 and not info.is_dir():
                         (into / info.filename).chmod(mode)
-        except (zipfile.BadZipFile, OSError) as exc:
+        except (
+            zipfile.BadZipFile,
+            OSError,
+            EOFError,
+            zlib.error,
+            NotImplementedError,
+            RuntimeError,
+        ) as exc:
             raise AssetError(f"{archive.name} could not be unpacked: {exc}") from exc

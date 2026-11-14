@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # The split :class:`AgentMarkdownFile` uses, so a model written here parses
 # back out of the file the loader reads. Not imported from there:
 # ``core.agents`` imports the auth package, which imports this module.
-_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)", re.DOTALL)
+_FRONTMATTER_RE = re.compile(r"^---\s*\n(?:(.*?)\n)?---\s*\n?(.*)", re.DOTALL)
 
 
 class EntryNameCheck(BaseModel):
@@ -139,7 +139,7 @@ class GroupPolicyEntry(BaseModel):
             logger.warning("Group agent has no YAML frontmatter; cannot set model %r", self.model)
             return self.content
         try:
-            frontmatter = yaml.safe_load(match.group(1)) or {}
+            frontmatter = yaml.safe_load(match.group(1) or "") or {}
         except yaml.YAMLError:
             logger.warning(
                 "Group agent has unreadable frontmatter; cannot set model %r", self.model

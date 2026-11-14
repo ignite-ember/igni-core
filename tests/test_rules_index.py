@@ -375,3 +375,172 @@ def test_dual_namespace_independent_rules_both_fire(tmp_path: Path) -> None:
     bodies = [c for _, c in results]
     assert any("EMBER-RULE" in b for b in bodies)
     assert any("CLAUDE-RULE" in b for b in bodies)
+
+
+# ── Group rules, unreadable input and the matching edges ────────────
+
+
+def _scoped(root: Path, name: str, globs: str, body: str) -> Path:
+    path = root / f"{name}.md"
+    _write(path, f"---\npaths: [{globs}]\n---\n{body}")
+    return path
+
+
+def test_a_group_rule_fires_beside_the_project_rule_for_the_same_path(tmp_path: Path) -> None:
+    """Both say something about Python files, so both reach the agent:
+    the group's rules are scanned in addition to the project's, never
+    in place of them."""
+    project = tmp_path / "proj"
+    _scoped(project / CONFIG_DIR / "rules", "project-py", '"**/*.py"', "PROJECT-PY")
+    group = tmp_path / "group-rules"
+    _scoped(group, "group-py", '"**/*.py"', "GROUP-PY")
+    _write(project / "app" / "main.py")
+
+    idx = RulesIndex(project, read_claude_md=False, group_rules_dir=group)
+    contents = [c for _, c in idx.consume_path(project / "app" / "main.py")]
+
+    assert sorted(contents) == ["GROUP-PY", "PROJECT-PY"]
+    assert idx.consume_path(project / "app" / "main.py") == []
+    assert not idx.has_pending()
+
+
+def test_a_group_rules_dir_that_does_not_exist_is_ignored(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    _scoped(project / CONFIG_DIR / "rules", "py", '"**/*.py"', "PROJECT-PY")
+    _write(project / "main.py")
+
+    idx = RulesIndex(project, group_rules_dir=tmp_path / "no-such-group-dir")
+
+    assert [c for _, c in idx.consume_path(project / "main.py")] == ["PROJECT-PY"]
+
+
+def test_a_group_rule_without_paths_is_left_to_the_eager_loader(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    group = tmp_path / "group-rules"
+    _write(group / "always.md", "ALWAYS")
+    _write(project / "main.py")
+
+    idx = RulesIndex(project, group_rules_dir=group)
+
+    assert idx.consume_path(project / "main.py") == []
+    assert not idx.has_pending()
+
+
+def test_a_project_dir_that_does_not_exist_gives_an_empty_index(tmp_path: Path) -> None:
+    idx = RulesIndex(tmp_path / "missing")
+
+    assert idx.consume_path(tmp_path / "missing" / "a.py") == []
+    assert not idx.has_pending()
+
+
+def test_a_rules_file_that_is_not_text_is_skipped_and_its_neighbour_still_loads(
+    tmp_path: Path,
+) -> None:
+    service = tmp_path / "service"
+    service.mkdir()
+    (service / "igni.md").write_bytes(b"\xff\xfe\x00binary")
+    _write(service / "igni.local.md", "LOCAL")
+    _write(service / "x.py")
+
+    idx = RulesIndex(tmp_path)
+    results = idx.consume_path(service / "x.py")
+
+    assert [c for _, c in results] == ["LOCAL"]
+
+
+def test_a_scoped_rule_that_is_not_text_is_skipped_and_the_others_still_fire(
+    tmp_path: Path,
+) -> None:
+    rules = tmp_path / CONFIG_DIR / "rules"
+    rules.mkdir(parents=True)
+    (rules / "broken.md").write_bytes(b"---\npaths: ['**/*.py']\n---\n\xff\xfe")
+    _scoped(rules, "good", '"**/*.py"', "GOOD")
+    _write(tmp_path / "main.py")
+
+    idx = RulesIndex(tmp_path)
+
+    assert [c for _, c in idx.consume_path(tmp_path / "main.py")] == ["GOOD"]
+
+
+def test_a_directory_that_cannot_be_listed_is_skipped(tmp_path: Path) -> None:
+    import os
+
+    import pytest
+
+    locked = tmp_path / "locked"
+    _write(locked / "igni.md", "LOCKED")
+    _write(tmp_path / "open" / "igni.md", "OPEN")
+    _write(tmp_path / "open" / "x.py")
+    locked.chmod(0)
+    try:
+        if os.access(locked, os.R_OK):
+            pytest.skip("permissions are not enforced for this user")
+        idx = RulesIndex(tmp_path)
+    finally:
+        locked.chmod(0o755)
+
+    assert [c for _, c in idx.consume_path(tmp_path / "open" / "x.py")] == ["OPEN"]
+
+
+def test_a_scoped_rule_with_an_empty_paths_list_never_fires(tmp_path: Path) -> None:
+    rules = tmp_path / CONFIG_DIR / "rules"
+    _write(rules / "empty.md", "---\npaths: []\n---\nNEVER")
+    _write(tmp_path / "main.py")
+
+    idx = RulesIndex(tmp_path)
+
+    assert idx.consume_path(tmp_path / "main.py") == []
+    assert not idx.has_pending()
+
+
+def test_a_star_in_a_scoped_glob_crosses_directory_separators(tmp_path: Path) -> None:
+    """The match is ``fnmatch``'s, where ``*`` is not stopped by ``/``:
+    ``src/*.py`` also covers ``src/deep/er/x.py``."""
+    _scoped(tmp_path / CONFIG_DIR / "rules", "src", '"src/*.py"', "SRC")
+    _write(tmp_path / "src" / "deep" / "er" / "x.py")
+    _write(tmp_path / "lib" / "x.py")
+
+    idx = RulesIndex(tmp_path)
+
+    assert idx.consume_path(tmp_path / "lib" / "x.py") == []
+    assert [c for _, c in idx.consume_path(tmp_path / "src" / "deep" / "er" / "x.py")] == ["SRC"]
+
+
+def test_scoped_rules_matching_one_path_come_out_in_file_name_order(tmp_path: Path) -> None:
+    rules = tmp_path / CONFIG_DIR / "rules"
+    _scoped(rules, "b-second", '"**/*.py"', "SECOND")
+    _scoped(rules, "a-first", '"**/*.py"', "FIRST")
+    _write(tmp_path / "main.py")
+
+    idx = RulesIndex(tmp_path)
+
+    assert [c for _, c in idx.consume_path(tmp_path / "main.py")] == ["FIRST", "SECOND"]
+
+
+def test_subdirectory_rules_come_before_scoped_rules_and_nothing_is_pending_after(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path / "svc" / "igni.md", "SUBDIR")
+    _scoped(tmp_path / CONFIG_DIR / "rules", "py", '"**/*.py"', "SCOPED")
+    _write(tmp_path / "svc" / "x.py")
+
+    idx = RulesIndex(tmp_path)
+    assert idx.has_pending()
+    contents = [c for _, c in idx.consume_path(tmp_path / "svc" / "x.py")]
+
+    assert contents == ["SUBDIR", "SCOPED"]
+    assert not idx.has_pending()
+
+
+def test_igni_variants_load_with_claude_md_off_and_ember_variants_still_do(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path / "svc" / "igni.md", "IGNI")
+    _write(tmp_path / "svc" / "igni.local.md", "IGNI-LOCAL")
+    _write(tmp_path / "svc" / "CLAUDE.md", "CLAUDE")
+    _write(tmp_path / "svc" / "x.py")
+
+    idx = RulesIndex(tmp_path, read_claude_md=False)
+
+    assert [c for _, c in idx.consume_path(tmp_path / "svc" / "x.py")] == ["IGNI", "IGNI-LOCAL"]

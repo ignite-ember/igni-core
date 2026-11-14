@@ -136,15 +136,20 @@ class EditDiffComputer:
         """
         if not tool_args or not isinstance(tool_args, dict):
             return None
-        old = tool_args.get("old_string", "")
-        new = tool_args.get("new_string", "")
+        # A null edit string is "nothing"; a value that is not text
+        # (a model's malformed call) has no lines to diff.
+        old = tool_args.get("old_string") or ""
+        new = tool_args.get("new_string") or ""
+        if not isinstance(old, str) or not isinstance(new, str):
+            return None
         if not old and not new:
             return None
 
         old_lines = old.splitlines()
         new_lines = new.splitlines()
+        file_path = tool_args.get("file_path", "")
         start_line = self._find_start_line(
-            file_path=tool_args.get("file_path", ""),
+            file_path=file_path if isinstance(file_path, str) else "",
             old=old,
             new=new,
         )

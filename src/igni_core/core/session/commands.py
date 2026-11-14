@@ -115,8 +115,10 @@ class InteractiveCommandDispatcher:
     async def _render_compact(self, result: CommandResult) -> None:
         display = self.session.display
         display.print_info("Context compacted. Old messages summarized and cleared.")
-        if result.content:
-            display.print_info(f"Summary:\n{result.content}")
+        # The summary rides in ``display_content``; ``content`` is the
+        # status line, which is not a summary.
+        if result.display_content:
+            display.print_info(f"Summary:\n{result.display_content}")
 
     async def _render_run_prompt(self, result: CommandResult) -> None:
         """Run the command's rendered prompt as a model turn.

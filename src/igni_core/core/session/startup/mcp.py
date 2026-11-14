@@ -94,7 +94,14 @@ class McpInitPhase(SessionStartupPhase):
             return McpInitResult(skipped_reason="no_configured_servers")
 
         logger.info(self._MCP_CONNECT_INFO, len(available), available)
-        bundle, failed = await self._connect_all(available)
+        try:
+            bundle, failed = await self._connect_all(available)
+        except BaseException:
+            # A connect that raises (a cancelled turn, a broken manager)
+            # must not leave the session believing MCP is up: the next
+            # message tries again.
+            self._initialized = False
+            raise
 
         if not bundle:
             logger.info("MCP init: no clients to attach; team rebuild skipped")

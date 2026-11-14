@@ -24,7 +24,13 @@ class NotificationMembers(Members):
 
     @call("notifications.notify")
     async def notify(self, c: Call) -> None:
-        self.host.notices.notify(c.extension_id, c.params["notification"])
+        # An optional field the extension left out arrives as ``None``; the
+        # notice's own model has a default for it, and no use for ``None``.
+        notice = {k: v for k, v in c.params["notification"].items() if v is not None}
+        target = notice.get("target")
+        if isinstance(target, dict):
+            notice["target"] = {k: v for k, v in target.items() if v is not None}
+        self.host.notices.notify(c.extension_id, notice)
 
     @call("notifications.mark_read")
     async def mark_read(self, c: Call) -> NotificationCounts:

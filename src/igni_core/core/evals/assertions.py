@@ -53,6 +53,20 @@ class BaseFileAssertion(BaseModel, ABC):
         return FileCheckResult(type=self.type, passed=passed, detail=detail)
 
 
+def _search(pattern: str, path: Path) -> bool | str:
+    """Whether ``pattern`` matches the text of ``path``.
+
+    Returns the reason as a string when the check cannot be made (a file
+    that is not text, an unreadable one, a pattern that is not a valid
+    regex), so one bad assertion fails with a message instead of aborting
+    the case's whole run.
+    """
+    try:
+        return re.search(pattern, path.read_text()) is not None
+    except (OSError, UnicodeDecodeError, re.error) as exc:
+        return f"{path} could not be checked: {exc}"
+
+
 class FileExists(BaseFileAssertion):
     type: Literal["file_exists"] = "file_exists"
 
@@ -78,7 +92,10 @@ class FileContains(BaseFileAssertion):
     def evaluate(self, path: Path) -> FileCheckResult:
         if not path.is_file():
             return self.result(False, f"{path} does not exist")
-        if re.search(self.pattern, path.read_text()):
+        found = _search(self.pattern, path)
+        if isinstance(found, str):
+            return self.result(False, found)
+        if found:
             return self.result(True, f"{path} contains /{self.pattern}/")
         return self.result(False, f"{path} does not contain /{self.pattern}/")
 
@@ -90,7 +107,10 @@ class FileNotContains(BaseFileAssertion):
     def evaluate(self, path: Path) -> FileCheckResult:
         if not path.is_file():
             return self.result(True, f"{path} does not exist (OK for not_contains)")
-        if re.search(self.pattern, path.read_text()):
+        found = _search(self.pattern, path)
+        if isinstance(found, str):
+            return self.result(False, found)
+        if found:
             return self.result(False, f"{path} contains /{self.pattern}/ (expected not to)")
         return self.result(True, f"{path} does not contain /{self.pattern}/")
 

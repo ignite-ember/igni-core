@@ -74,3 +74,59 @@ class TestThePersistedRuleIsUsable:
 
     def test_an_explicit_tool_name_still_wins(self):
         assert ToolNameResolver().resolve(tool_name="WebFetch", func_name="fetch_url") == "WebFetch"
+
+
+class TestTheRestOfTheTable:
+    def test_empty_or_missing_names_resolve_to_empty_string(self):
+        resolver = ToolNameResolver()
+
+        assert resolver.resolve() == ""
+        assert resolver.resolve(None, None) == ""
+        assert resolver.resolve("", "") == ""
+
+    def test_an_empty_tool_name_falls_through_to_the_function_mapping(self):
+        assert ToolNameResolver().resolve("", "run_shell_command") == "Bash"
+        assert ToolNameResolver().resolve(None, "save_file") == "Write"
+
+    def test_a_whitespace_tool_name_is_returned_as_given(self):
+        assert ToolNameResolver().resolve(" ", "run_shell_command") == " "
+
+    def test_function_names_are_case_sensitive(self):
+        assert ToolNameResolver().resolve(func_name="Run_Shell_Command") == "Run_Shell_Command"
+
+    def test_edit_and_notebook_rows(self):
+        resolver = ToolNameResolver()
+
+        assert resolver.resolve(func_name="edit_file") == "Edit"
+        assert resolver.resolve(func_name="replace_in_file") == "Edit"
+        for name in (
+            "notebook_read",
+            "notebook_read_cell",
+            "notebook_edit_cell",
+            "notebook_add_cell",
+            "notebook_remove_cell",
+        ):
+            assert resolver.resolve(func_name=name) == "NotebookEdit", name
+
+    def test_removed_rows_resolve_to_themselves(self):
+        resolver = ToolNameResolver()
+
+        for name in ("Read", "LS", "Grep", "Glob", "Python"):
+            assert resolver.resolve(func_name=name) == name
+            assert resolver.catalog_for(name) is None
+
+    def test_catalog_for_is_a_plain_lookup(self):
+        resolver = ToolNameResolver()
+
+        assert resolver.catalog_for("fetch_json") == "WebFetch"
+        assert resolver.catalog_for("nope") is None
+        assert resolver.resolve(func_name="nope") == "nope"
+
+    def test_all_mappings_is_read_only(self):
+        import pytest
+
+        mappings = ToolNameResolver.all_mappings()
+
+        with pytest.raises(TypeError):
+            mappings["run_shell_command"] = "Hacked"  # type: ignore[index]
+        assert ToolNameResolver().resolve(func_name="run_shell_command") == "Bash"

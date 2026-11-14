@@ -194,6 +194,8 @@ class MonitorHandle:
                 env=env,
             )
         except (OSError, FileNotFoundError) as exc:
+            # A relaunch that fails must not keep reporting the dead run's pid.
+            self._proc = None
             self.mark_failed(f"[monitor failed to launch: {exc}]")
             logger.warning("Monitor %s launch failed: %s", self.name, exc)
             return

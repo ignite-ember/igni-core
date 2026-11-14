@@ -132,7 +132,7 @@ class _CatalogFetcher:
         Result with ``ok=False`` and the exception message; the
         temp clone is always cleaned up.
         """
-        tmp_root = Path(tempfile.mkdtemp(prefix="ember_mkt_"))
+        tmp_root = Path(tempfile.mkdtemp(prefix="igni_mkt_"))
         try:
             clone_dir = tmp_root / "repo"
             try:

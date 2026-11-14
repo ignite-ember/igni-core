@@ -153,11 +153,33 @@ def rewrite_ports(env: Mapping[str, str], ports: Mapping[int, int]) -> dict[str,
     ``127.0.0.1:41001``.
     """
     out = dict(env)
-    for old, new in ports.items():
-        pattern = re.compile(rf"(?<![\w.]){_LOOPBACK}:{old}(?!\d)")
-        for key, value in out.items():
-            out[key] = pattern.sub(f"127.0.0.1:{new}", value)
-    return out
+    if not ports:
+        return out
+    # One pass over each value: a port already rewritten is never read as
+    # an old port of another forward.
+    ours = "|".join(str(old) for old in ports)
+    pattern = re.compile(rf"(?<![\w.]){_LOOPBACK}:({ours})(?!\d)")
+
+    def swap(match: re.Match[str]) -> str:
+        return f"127.0.0.1:{ports[int(match.group(1))]}"
+
+    return {key: pattern.sub(swap, value) for key, value in out.items()}
+
+
+#: The options each mode cannot start without.
+_REQUIRED = {"run": ("--sid", "--user", "--python", "--parent"), "shim": ()}
+
+
+def check_options(mode: str, options: Mapping[str, list[str]]) -> None:
+    """Refuse, as ``ValueError``, what ``run`` or ``shim`` would stumble on later."""
+    for name in _REQUIRED[mode]:
+        if not options.get(name):
+            raise ValueError(f"{mode} needs {name}")
+    if mode == "run" and not options["--parent"][0].isdigit():
+        raise ValueError(f"--parent wants a process id, not {options['--parent'][0]!r}")
+    for text in options.get("--forward", []):
+        parse_forward(text)
+    restore_env({}, options.get("--setenv", []))
 
 
 # ── Relaying ──────────────────────────────────────────────────────────
@@ -742,9 +764,16 @@ async def _shim(options: dict[str, list[str]], command: list[str]) -> int:
     # Its stdio passed on explicitly: on Windows a child inherits a pipe
     # handle only when it is redirected, and MCP speaks over these pipes.
     stdio = [fd if _open_fd(fd) else None for fd in (0, 1, 2)]
-    child = await asyncio.create_subprocess_exec(
-        *command, env=env, stdin=stdio[0], stdout=stdio[1], stderr=stdio[2]
-    )
+    try:
+        child = await asyncio.create_subprocess_exec(
+            *command, env=env, stdin=stdio[0], stdout=stdio[1], stderr=stdio[2]
+        )
+    except OSError as exc:
+        for server in servers:
+            server.close()
+        print(f"winbridge.py: cannot run {command[0]}: {exc}", file=sys.stderr)
+        # The shell's own statuses: 127 not found, 126 found but not runnable.
+        return 127 if isinstance(exc, FileNotFoundError) else 126
     try:
         return await child.wait()
     finally:
@@ -755,13 +784,18 @@ async def _shim(options: dict[str, list[str]], command: list[str]) -> int:
 def main(argv: list[str]) -> int:
     try:
         mode, options, command = parse_args(argv)
+        check_options(mode, options)
     except ValueError as exc:
         print(f"winbridge.py: {exc}", file=sys.stderr)
         return 2
     if sys.platform != "win32":
         print("winbridge.py: this runs on Windows only", file=sys.stderr)
         return 2
-    return asyncio.run(_run(options, command) if mode == "run" else _shim(options, command))
+    try:
+        return asyncio.run(_run(options, command) if mode == "run" else _shim(options, command))
+    except OSError as exc:
+        print(f"winbridge.py: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

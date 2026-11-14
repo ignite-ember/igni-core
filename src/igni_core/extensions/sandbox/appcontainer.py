@@ -137,6 +137,8 @@ class ContainerRun:
     @classmethod
     def from_json(cls, text: str) -> ContainerRun:
         data = json.loads(text)
+        if not isinstance(data, dict):
+            raise ValueError(f"a ledger entry is a JSON object, not {type(data).__name__}")
         grants = [
             Grant(path=Path(g["path"]), write=bool(g["write"]), label=g.get("label"))
             for g in data.get("grants", [])

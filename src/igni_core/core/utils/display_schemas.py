@@ -51,11 +51,11 @@ class RunStats(BaseModel):
         (elapsed, tokens, model).
         """
         parts: list[str] = []
-        if self.elapsed_seconds < 60:
+        if round(self.elapsed_seconds, 1) < 60:
             parts.append(f"{self.elapsed_seconds:.1f}s")
         else:
-            m = int(self.elapsed_seconds // 60)
-            s = int(self.elapsed_seconds % 60)
+            # A run of 59.96s would print as "60.0s"; it is a minute.
+            m, s = divmod(max(int(self.elapsed_seconds), 60), 60)
             parts.append(f"{m}m {s}s")
         if self.input_tokens or self.output_tokens:
             total = self.input_tokens + self.output_tokens
@@ -88,6 +88,6 @@ class ToolCallDisplay(BaseModel):
         for k, v in self.args.items():
             val = str(v)
             if len(val) > max_value_len:
-                val = val[: max_value_len - 3] + "..."
+                val = val[: max(max_value_len - 3, 0)] + "..."
             parts.append(f"{k}={val}")
         return f" ({', '.join(parts)})"

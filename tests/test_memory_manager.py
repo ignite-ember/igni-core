@@ -10,14 +10,6 @@ from igni_core.core.memory.manager import StorageManager
 
 
 class TestStorageManager:
-    def test_create_db_returns_async_sqlite_db_or_none(self, tmp_path):
-        settings = Settings()
-        settings.storage.data_dir = str(tmp_path)
-        mgr = StorageManager(settings, project_dir=tmp_path)
-        db = mgr.create_db()
-        # AsyncSqliteDb if Agno available, else None — either is fine here.
-        assert db is not None or db is None
-
     def test_create_db_points_at_per_project_state_db(self, tmp_path):
         settings = Settings()
         settings.storage.data_dir = str(tmp_path)

@@ -6,7 +6,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
-    """Single declarative base for every Ember table.
+    """Single declarative base for every igni table.
 
     Why one ``Base``: alembic ``--autogenerate`` reads ``Base.metadata`` to
     diff against the live schema, so all owned tables must register here

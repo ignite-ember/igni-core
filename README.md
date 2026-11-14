@@ -50,7 +50,7 @@ The architectural choices that drive the gap: (1) **CodeIndex queried first, not
 ## Quick Start
 
 ```bash
-brew install ignite-ember/tap/ignite-ember  # or: pip install ignite-ember
+brew install ignite-ember/tap/igni-core  # or: pip install igni-core (the old name ignite-ember works for both)
 cd your-project
 igni -m "In one sentence, what does this project do?"   # `ignite-ember` if brew installed it
 ```
@@ -127,8 +127,8 @@ See [Quickstart](QUICKSTART.md) for the full setup guide.
 ### Quickstart (new setup)
 
 1. **Install** — `pip install 'igni-core[decisions]==1.0.4'` (or
-   `brew install ignite-ember/tap/ignite-ember`, or `pip install ignite-ember` —
-   the old name installs the same package).
+   `brew install ignite-ember/tap/igni-core`; the old name `ignite-ember` installs
+   the same package from either).
 2. **Configure a model** — set `OPENAI_API_KEY` (or any provider key) and add the
    model to `.igni/config.yaml`; or point `api_url` at your igni server and run
    `igni login`
@@ -236,13 +236,13 @@ release notes below that mention them are history.
 To upgrade igni to the latest version:
 
 ```bash
-brew upgrade ignite-ember/tap/ignite-ember
+brew upgrade ignite-ember/tap/igni-core
 ```
 
 If `brew upgrade` doesn't work or you encounter issues, manually reinstall:
 
 ```bash
-brew uninstall ignite-ember && brew untap ignite-ember/tap && brew tap ignite-ember/tap && brew install ignite-ember
+brew uninstall igni-core && brew untap ignite-ember/tap && brew tap ignite-ember/tap && brew install igni-core
 ```
 
 ## Clients

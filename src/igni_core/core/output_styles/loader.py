@@ -23,7 +23,7 @@ from igni_core.core.paths import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
-_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)", re.DOTALL)
+_FRONTMATTER_RE = re.compile(r"\A---\s*\n(?:(.*?)\n)?---\s*\n?(.*)", re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,7 @@ def _parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     match = _FRONTMATTER_RE.match(content)
     if not match:
         return {}, content
-    raw, body = match.group(1), match.group(2)
+    raw, body = match.group(1) or "", match.group(2)
     try:
         meta = yaml.safe_load(raw) or {}
     except yaml.YAMLError as exc:
@@ -69,7 +69,8 @@ def _load_style_file(path: Path) -> OutputStyle | None:
     # ``name`` defaults to the filename stem (matches the
     # convention; explicit frontmatter ``name:`` lets a style
     # advertise itself under a different label).
-    name = str(meta.get("name", "")).strip() or path.stem
+    raw_name = meta.get("name")
+    name = (str(raw_name).strip() if raw_name is not None else "") or path.stem
     description = str(meta.get("description", "")).strip()
     return OutputStyle(
         name=name,

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 if TYPE_CHECKING:
     from igni_core.core.tools.notebook.document import NotebookDocument
@@ -105,13 +105,16 @@ class UnknownOutput(NotebookOutput):
 def _parse_output(raw: dict[str, Any]) -> NotebookOutput:
     """Route a raw output dict to the right :class:`NotebookOutput` subclass."""
     output_type = raw.get("output_type", "unknown")
-    if output_type == "stream":
-        return NotebookStreamOutput.model_validate(raw)
-    if output_type in ("execute_result", "display_data"):
-        return NotebookDataOutput.model_validate(raw)
-    if output_type == "error":
-        return NotebookErrorOutput.model_validate(raw)
-    return UnknownOutput.model_validate(raw)
+    try:
+        if output_type == "stream":
+            return NotebookStreamOutput.model_validate(raw)
+        if output_type in ("execute_result", "display_data"):
+            return NotebookDataOutput.model_validate(raw)
+        if output_type == "error":
+            return NotebookErrorOutput.model_validate(raw)
+    except ValidationError:
+        pass  # a known type with a malformed body is shown as opaque
+    return UnknownOutput.model_validate({**raw, "output_type": str(output_type)})
 
 
 # ---------------------------------------------------------------------------

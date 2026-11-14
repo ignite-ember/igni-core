@@ -184,3 +184,52 @@ class TestRegistryWiring:
             {"root": "r", "elements": {"r": {"type": "Text", "props": {}}}}
         )
         assert "Emitted visualization" in result
+
+
+class TestTheTitleIsAlwaysText:
+    """Whatever the model writes as the title reaches the body as a string."""
+
+    @pytest.mark.parametrize(
+        ("written", "recorded"),
+        [
+            ("AAPL", "AAPL"),
+            (None, ""),
+            (True, ""),
+            (False, ""),
+            (7, "7"),
+            (2.5, "2.5"),
+            ({"a": 1}, ""),
+            (["a"], ""),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_the_body_receives_text(self, written, recorded, caplog):
+        caplog.set_level("DEBUG", logger="igni_core.core.tools.visualize")
+        result = await call_as_agno_does(spec=RAW_SPEC, title=written)
+        assert result == "Emitted visualization."
+        assert f"title={recorded!r}" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_the_log_counts_elements_and_never_echoes_the_spec(self, caplog):
+        caplog.set_level("DEBUG", logger="igni_core.core.tools.visualize")
+        spec = {
+            "root": "r",
+            "elements": {
+                "r": {"type": "Text", "props": {"text": "secret-payload"}},
+                "s": {"type": "Text"},
+            },
+        }
+        await call_as_agno_does(spec=spec)
+        assert "2 element(s)" in caplog.text
+        assert "secret-payload" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_spec_is_logged_as_no_elements(self, caplog):
+        caplog.set_level("DEBUG", logger="igni_core.core.tools.visualize")
+        await call_as_agno_does(spec=["junk"])
+        assert "0 element(s)" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_repeated_calls_each_confirm(self):
+        tool = VisualizeTools()
+        assert [await tool.visualize(RAW_SPEC) for _ in range(3)] == ["Emitted visualization."] * 3

@@ -494,7 +494,7 @@ class ServiceTokenEndpoint:
         if self._principal is None:
             return False
         principal = self._principal()
-        return principal is not None and hmac.compare_digest(principal.ref, named)
+        return principal is not None and hmac.compare_digest(principal.ref.encode(), named.encode())
 
     def _grant_for(self, authorization: str) -> ServiceGrant | None:
         scheme, _, presented = authorization.partition(" ")

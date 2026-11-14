@@ -142,7 +142,7 @@ class CommandHookHandler(HookHandler):
             if not msg:
                 msg = "Blocked by hook"
         except (json.JSONDecodeError, UnicodeDecodeError):
-            msg = stderr.decode().strip() or "Blocked by hook"
+            msg = stderr.decode(errors="replace").strip() or "Blocked by hook"
         if hook.async_rewake and self._rewake_callback is not None:
             try:
                 self._rewake_callback(msg)

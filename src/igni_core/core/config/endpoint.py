@@ -114,7 +114,11 @@ def portal_url_for(api_url: str) -> str:
     because a deployment serving both from one name is a normal shape and
     guessing at it would be worse than doing nothing.
     """
-    parsed = urlparse(require_api_url(api_url, operation="Opening the portal"))
+    value = require_api_url(api_url, operation="Opening the portal")
+    # A URL written without its scheme has no host as far as urlparse can
+    # tell (``localhost:7777`` reads as scheme ``localhost``), and rebuilt
+    # from that it came out as ``https:`` — a portal nobody can open.
+    parsed = urlparse(value if "://" in value else f"//{value}")
     host = parsed.netloc
     first, sep, rest = host.partition(".")
     if first == "api":

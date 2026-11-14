@@ -131,6 +131,7 @@ class LocalDecisions:
                 )
             if time.monotonic() > deadline:
                 process.kill()
+                process.wait()
                 raise DecisionsUnavailable("igni's decisions service did not start in time")
             time.sleep(0.05)
         self._process = process

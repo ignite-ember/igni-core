@@ -81,7 +81,8 @@ class ChecksumStore(BaseModel):
         """
         path = project_dir / CONFIG_DIR / config.checksums_file
         raw = JsonFile(path=path).load()
-        return cls(project_dir=project_dir, config=config, entries=dict(raw))
+        entries = {k: v for k, v in raw.items() if isinstance(v, str)}
+        return cls(project_dir=project_dir, config=config, entries=entries)
 
     # ── Persistence ───────────────────────────────────────────────
 

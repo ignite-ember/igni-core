@@ -68,7 +68,7 @@ class ManifestErrors:
             name = str(loc[-1])
             close = difflib.get_close_matches(name, known, n=1, cutoff=0.6)
             hint = f" — did you mean {close[0]!r}?" if close else ""
-            listing = f" Known here: {', '.join(known)}." if known and not close else ""
+            listing = f". Known here: {', '.join(known)}." if known and not close else ""
             return f"{where}: not a field igni knows{hint}{listing}"
         if kind == "missing":
             return f"{where}: required" + (f" — {fix}" if fix else "")

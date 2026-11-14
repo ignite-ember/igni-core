@@ -106,8 +106,8 @@ class OpenAILikeBuilder(ProviderClientBuilder):
         http_client.
 
         Models with explicit credentials use them directly.
-        Otherwise, authenticated users route through the Ember
-        Cloud gateway. URL and API key resolve independently:
+        Otherwise, authenticated users route through the igni
+        server gateway. URL and API key resolve independently:
         - URL: from the entry, or the igni server gateway fallback
         - Key: from the entry, or the injected cloud token
         """

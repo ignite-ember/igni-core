@@ -120,13 +120,23 @@ class SessionIdentity:
         :attr:`session_named` to ``True`` (a switch is by
         definition to a named / persisted session), and asks
         Agno to reload the target session's persisted history via
-        :meth:`Agent.aget_session`.
+        :meth:`Agent.aget_session`. If that reload raises, the previous
+        identity is restored and the error propagates.
         """
+        previous_id, previous_named = self._session_id, self._session_named
         self.rotate(session_id)
         self._session_named = True
         team = self._main_team_ref()
         if team is not None:
-            await team.aget_session(
-                session_id=session_id,
-                user_id=self._user_id,
-            )
+            try:
+                await team.aget_session(
+                    session_id=session_id,
+                    user_id=self._user_id,
+                )
+            except BaseException:
+                # The switch failed, and the caller is told so: the session
+                # must still be the one it was, not keyed to a session whose
+                # history never loaded.
+                self.rotate(previous_id)
+                self._session_named = previous_named
+                raise

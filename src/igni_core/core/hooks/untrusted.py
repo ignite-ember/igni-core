@@ -22,6 +22,7 @@ from __future__ import annotations
 import inspect
 import re
 import secrets
+from collections import OrderedDict
 from collections.abc import Callable
 from typing import Any
 
@@ -95,8 +96,26 @@ def should_wrap(tool_name: str) -> bool:
 _OPEN = "<untrusted_tool_output nonce={nonce}>"
 _CLOSE = "</untrusted_tool_output nonce={nonce}>"
 #: Matches an already-wrapped payload so wrapping is idempotent (a result that
-#: passed through here or was authored wrapped is not double-wrapped).
-_ALREADY = re.compile(r"^<untrusted_tool_output nonce=[0-9a-f]+>\n")
+#: passed through here or was authored wrapped is not double-wrapped). An opening
+#: tag alone is not a block: it needs its own closing tag, with the same nonce,
+#: or a tool's output could start like one and reach the model unquarantined.
+#: Anything after the closing tag (a hook message, a rules suffix) is igni's own,
+#: so the nonce must also be one this process issued: a tool could otherwise
+#: forge both tags with a made-up nonce and put its own text after them.
+_ALREADY = re.compile(
+    r"^<untrusted_tool_output nonce=([0-9a-f]+)>\n.*\n</untrusted_tool_output nonce=\1>", re.S
+)
+#: The nonces of the blocks this process made, newest last; bounded so a long
+#: session does not grow it without end.
+_ISSUED_LIMIT = 4096
+_issued: OrderedDict[str, None] = OrderedDict()
+
+
+def _issue(nonce: str) -> None:
+    _issued[nonce] = None
+    _issued.move_to_end(nonce)
+    while len(_issued) > _ISSUED_LIMIT:
+        _issued.popitem(last=False)
 
 
 def new_nonce() -> str:
@@ -110,9 +129,11 @@ def wrap_untrusted(text: str, nonce: str | None = None) -> str:
     Non-str callers should not reach here; the seam wraps only string results
     (the ones the model reads as text), matching the corpus rewrite.
     """
-    if _ALREADY.match(text):
+    already = _ALREADY.match(text)
+    if already and already.group(1) in _issued:
         return text
     n = nonce or new_nonce()
+    _issue(n)
     return f"{_OPEN.format(nonce=n)}\n{text}\n{_CLOSE.format(nonce=n)}"
 
 

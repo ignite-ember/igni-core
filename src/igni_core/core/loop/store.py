@@ -15,6 +15,7 @@ from sqlalchemy import Select, delete, select
 
 from igni_core.core.db.database import Database
 from igni_core.core.db.locator import StorageLocator
+from igni_core.core.db.upsert import ConflictInsert
 from igni_core.core.loop.db_models import LoopProgressModel, LoopStateModel
 from igni_core.core.loop.models import LoopState
 
@@ -71,29 +72,27 @@ class LoopStore:
         ``updated_at`` ticks every time.
         """
         now = datetime.now()
+        fields = {
+            "run_id": state.run_id,
+            "prompt": state.prompt,
+            "iteration_index": state.iteration_index,
+            "iterations_remaining": state.iterations_remaining,
+            "cap_explicit": state.cap_explicit,
+        }
         async with self._db.session() as session, session.begin():
-            row = (await session.execute(self._select_row())).scalar_one_or_none()
-            if row is None:
-                session.add(
-                    LoopStateModel(
-                        **self._db.scope.stamp(),
-                        id=self._SINGLETON_ID,
-                        run_id=state.run_id,
-                        prompt=state.prompt,
-                        iteration_index=state.iteration_index,
-                        iterations_remaining=state.iterations_remaining,
-                        cap_explicit=state.cap_explicit,
-                        created_at=now,
-                        updated_at=now,
-                    )
+            stmt = ConflictInsert.into(session, LoopStateModel).values(
+                **self._db.scope.stamp(),
+                id=self._SINGLETON_ID,
+                **fields,
+                created_at=now,
+                updated_at=now,
+            )
+            await session.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=["org", "producer", "project", "id"],
+                    set_={**fields, "updated_at": now},
                 )
-                return
-            row.run_id = state.run_id
-            row.prompt = state.prompt
-            row.iteration_index = state.iteration_index
-            row.iterations_remaining = state.iterations_remaining
-            row.cap_explicit = state.cap_explicit
-            row.updated_at = now
+            )
 
     async def clear(self) -> bool:
         async with self._db.session() as session, session.begin():
@@ -165,28 +164,20 @@ class LoopProgressStore:
         """
         now = datetime.now()
         async with self._db.session() as session, session.begin():
-            result = await session.execute(
-                select(LoopProgressModel).where(
-                    self._db.scope.where(LoopProgressModel),
-                    LoopProgressModel.run_id == run_id,
-                    LoopProgressModel.key == key,
+            stmt = ConflictInsert.into(session, LoopProgressModel).values(
+                **self._db.scope.stamp(),
+                run_id=run_id,
+                key=key,
+                value=value,
+                created_at=now,
+                updated_at=now,
+            )
+            await session.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=["org", "producer", "project", "run_id", "key"],
+                    set_={"value": value, "updated_at": now},
                 )
             )
-            row = result.scalar_one_or_none()
-            if row is None:
-                session.add(
-                    LoopProgressModel(
-                        **self._db.scope.stamp(),
-                        run_id=run_id,
-                        key=key,
-                        value=value,
-                        created_at=now,
-                        updated_at=now,
-                    )
-                )
-                return
-            row.value = value
-            row.updated_at = now
 
     async def list(self, run_id: str) -> list[tuple[str, str]]:
         """Return all (key, value) pairs for ``run_id``, ordered

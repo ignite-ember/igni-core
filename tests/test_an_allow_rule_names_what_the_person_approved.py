@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pytest
 
+from igni_core.core.config.tool_permissions.schemas import PermissionRule
 from igni_core.core.config.tool_permissions.tool_invocation import ToolInvocation
 
 
@@ -78,3 +79,90 @@ def test_unrecognised_arguments_are_named_and_cut_to_a_hundred_characters():
     assert rule.startswith("Custom({'payload': 'xxx")
     assert len(rule) == len("Custom()") + 100
     assert invocation.pattern_rule() == "Custom"
+
+
+def test_a_file_at_the_root_widens_to_the_root_not_to_a_pattern_that_matches_nothing():
+    invocation = ToolInvocation.from_raw("Write", {"path": "/notes.txt"})
+
+    similar = invocation.pattern_rule()
+
+    assert similar == "Write(/*)"
+    rule = PermissionRule.parse(similar, level="allow")
+    assert rule is not None and rule.matches("Write", invocation.args)
+
+
+def test_a_nested_absolute_path_widens_to_its_directory():
+    assert (
+        ToolInvocation.from_raw("Edit", {"file_path": "/a/b/c.py"}).pattern_rule() == "Edit(/a/b/*)"
+    )
+
+
+def test_the_argument_list_outranks_the_command_which_outranks_the_path_and_the_url():
+    both = {
+        "args": ["git", "log"],
+        "command": "npm test",
+        "path": "src/a.py",
+        "url": "https://x.test",
+    }
+    invocation = ToolInvocation.from_raw("Bash", both)
+    assert invocation.exact_rule() == "Bash(git log)"
+    assert invocation.pattern_rule() == "Bash(git *)"
+
+    del both["args"]
+    invocation = ToolInvocation.from_raw("Bash", both)
+    assert invocation.exact_rule() == "Bash(npm test)"
+    assert invocation.pattern_rule() == "Bash(npm *)"
+
+    del both["command"]
+    invocation = ToolInvocation.from_raw("Bash", both)
+    assert invocation.exact_rule() == "Bash(src/a.py)"
+    assert invocation.pattern_rule() == "Bash(src/*)"
+
+    del both["path"]
+    invocation = ToolInvocation.from_raw("Bash", both)
+    assert invocation.exact_rule() == "Bash(https://x.test)"
+    assert invocation.pattern_rule() == "Bash(domain:x.test)"
+
+
+def test_a_file_name_is_not_named_in_the_exact_rule_and_does_not_widen():
+    invocation = ToolInvocation.from_raw("Read", {"file_name": "a.txt"})
+
+    assert invocation.exact_rule() == "Read({'file_name': 'a.txt'})"
+    assert invocation.pattern_rule() == "Read"
+
+
+def test_an_argument_list_with_numbers_is_named_by_their_text():
+    invocation = ToolInvocation.from_raw("Bash", {"args": ["sleep", 5]})
+
+    assert invocation.exact_rule() == "Bash(sleep 5)"
+    assert invocation.pattern_rule() == "Bash(sleep *)"
+
+
+def test_a_command_is_widened_by_its_first_word_whatever_follows_it():
+    invocation = ToolInvocation.from_raw("Bash", {"command": "\n  make  all && rm -rf x; ls"})
+
+    assert invocation.pattern_rule() == "Bash(make *)"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"args": ["python3", "-m", "http.server", "8000"]},
+        {"command": "npm run build"},
+        {"command": "echo a:b"},
+        {"path": "src/app/main.py"},
+        {"path": "/notes.txt"},
+        {"url": "https://example.org/a/b?c=1"},
+        {"query": "pydantic v2"},
+    ],
+)
+def test_both_rules_a_call_produces_match_the_call_they_came_from(raw):
+    """What the person approved must cover what they approved: the rule
+    persisted by "Allow" and by "Allow similar" is read back by the same
+    matchers that will meet the next call."""
+    invocation = ToolInvocation.from_raw("Tool", raw)
+
+    for text in (invocation.exact_rule(), invocation.pattern_rule()):
+        rule = PermissionRule.parse(text, level="allow")
+        assert rule is not None, text
+        assert rule.matches("Tool", invocation.args), text

@@ -118,3 +118,15 @@ def test_igni_debug_prints_where_the_log_is_and_says_nothing_without_it(
 
     CliInvocation(CliOptions(debug=True), None, None).enable_debug_logging()  # type: ignore[arg-type]
     assert f"Debug logging enabled → {tmp_path / 'debug.log'}" in capsys.readouterr().out
+
+
+def test_a_transport_record_before_any_model_call_is_written_once(tmp_path: Path) -> None:
+    """``--debug`` hands the transport loggers its handler directly; were they still
+    propagating, root's copy of the same handler wrote every line a second time."""
+    path = tmp_path / "debug.log"
+    DebugLogging.enable(path)
+    logging.getLogger("httpx").debug("one request")
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+    assert path.read_text().count("one request") == 1
+    assert not any(logging.getLogger(n).propagate for n in NAMED)

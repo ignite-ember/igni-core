@@ -23,6 +23,11 @@ from igni_core.extensions.registry import InstalledExtension
 from igni_core.protocol import messages as msg
 
 
+def _text(value: Any) -> str:
+    """A value as text, with nothing as empty: ``None`` is not the word "None"."""
+    return "" if value is None else str(value)
+
+
 class SessionInfo(BaseModel):
     """One session of the person's list."""
 
@@ -38,13 +43,13 @@ class SessionInfo(BaseModel):
     def from_entry(cls, entry: dict[str, Any]) -> SessionInfo:
         """One entry of ``list_sessions``."""
         return cls(
-            session_id=str(entry.get("session_id", "")),
-            name=str(entry.get("name", "")),
+            session_id=_text(entry.get("session_id")),
+            name=_text(entry.get("name")),
             created_at=int(entry.get("created_at") or 0),
             updated_at=int(entry.get("updated_at") or 0),
             run_count=int(entry.get("run_count") or 0),
-            summary=str(entry.get("summary", "")),
-            agent_name=str(entry.get("agent_name", "")),
+            summary=_text(entry.get("summary")),
+            agent_name=_text(entry.get("agent_name")),
         )
 
 
@@ -67,9 +72,9 @@ class SessionStatus(Signal):
         """``get_status`` (or a ``status_update``), for ``session_id``."""
         return cls(
             session_id=session_id,
-            model=str(status.get("model", "")),
+            model=_text(status.get("model")),
             model_configured=bool(status.get("model_configured", True)),
-            permission_mode=str(status.get("permission_mode", "default")),
+            permission_mode=_text(status.get("permission_mode", "default")),
             input_tokens=int(status.get("input_tokens") or 0),
             output_tokens=int(status.get("output_tokens") or 0),
             context_tokens=int(status.get("context_tokens") or 0),
@@ -158,9 +163,9 @@ class CommandOutcome(BaseModel):
         result), so the fields are read where present.
         """
         return cls(
-            kind=str(getattr(answer, "kind", "info")),
-            content=str(getattr(answer, "content", "")),
-            display_content=str(getattr(answer, "display_content", "")),
+            kind=_text(getattr(answer, "kind", "info")),
+            content=_text(getattr(answer, "content", "")),
+            display_content=_text(getattr(answer, "display_content", "")),
         )
 
 
@@ -261,12 +266,12 @@ class NotificationEntry(BaseModel):
         target = row.get("target")
         created = row.get("created_at")
         return cls(
-            id=str(row.get("id", "")),
-            origin=str(row.get("origin", "")),
-            source=str(row.get("source", "")),
-            kind=str(row.get("kind", "")),
-            title=str(row.get("title", "")),
-            body=str(row.get("body", "")),
+            id=_text(row.get("id")),
+            origin=_text(row.get("origin")),
+            source=_text(row.get("source")),
+            kind=_text(row.get("kind")),
+            title=_text(row.get("title")),
+            body=_text(row.get("body")),
             actor=str(row.get("actor") or ""),
             target=target if isinstance(target, dict) else None,
             created_at=created.isoformat() if hasattr(created, "isoformat") else created,

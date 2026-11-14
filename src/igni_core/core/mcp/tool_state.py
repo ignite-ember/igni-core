@@ -45,11 +45,14 @@ class MCPToolStateStore:
             return {}
         try:
             data = json.loads(path.read_text() or "{}")
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError) as exc:
             logger.debug("MCP tool state read failed (%s): %s", path, exc)
             return {}
+        disabled = data.get("disabled") if isinstance(data, dict) else None
+        if not isinstance(disabled, dict):
+            return {}
         out: dict[str, set[str]] = {}
-        for server, tools in (data.get("disabled") or {}).items():
+        for server, tools in disabled.items():
             if isinstance(tools, list):
                 out[server] = {str(t) for t in tools}
         return out

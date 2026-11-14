@@ -59,7 +59,7 @@ class PlanTool(Toolkit):
     """
 
     def __init__(self, session: Session) -> None:
-        super().__init__(name="ember_plan")
+        super().__init__(name="igni_plan")
         self._session = session
         self._coordinator = PlanTransactionCoordinator(
             session,

@@ -104,7 +104,8 @@ class HttpFetcher:
         except httpx.HTTPError as e:
             return FetchResult.failure(url, e)
 
-        content_type = response.headers.get("content-type", "")
+        # Media types are case-insensitive (RFC 9110 §8.3.1): ``text/HTML`` is HTML.
+        content_type = response.headers.get("content-type", "").lower()
         text = response.text
         if "json" in content_type:
             return FetchResult.success(text[:limit])

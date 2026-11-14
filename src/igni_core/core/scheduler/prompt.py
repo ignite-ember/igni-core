@@ -24,6 +24,8 @@ one to ask, and that finishing or reporting beats waiting.
 
 from __future__ import annotations
 
+from html import escape
+
 
 def wrap_scheduled_prompt(description: str, *, task_id: str | None = None) -> str:
     """Wrap a scheduled task's description as an autonomous run.
@@ -50,7 +52,10 @@ def wrap_scheduled_prompt(description: str, *, task_id: str | None = None) -> st
             <the description>
             </scheduled-run>
     """
-    attr = f' task="{task_id}"' if task_id else ""
+    # Store ids are 8 hex characters and pass through unchanged; escaping only
+    # matters for a caller-supplied id holding a quote or an angle bracket,
+    # which would close the attribute or the tag early.
+    attr = f' task="{escape(task_id)}"' if task_id else ""
     return (
         f"<scheduled-run{attr}>\n"
         f"This is a scheduled task firing on its own. Nobody is watching and no "

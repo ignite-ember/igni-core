@@ -47,9 +47,8 @@ class ToolNameCatalog:
             "list_processes",
         ],
         "WebSearch": ["web_search", "search_news"],
-        # ``ember_web`` is the *toolkit* name (``WebTools.__init__``
-        # passes ``name="ember_web"`` to Agno) — it never appears in a
-        # tool_call. The two callables it registers are ``fetch_url``
+        # The web toolkit's own name (``WebTools.__init__`` passes it to
+        # Agno as ``name=``) never appears in a tool_call. The two callables it registers are ``fetch_url``
         # and ``fetch_json`` (see ``core/tools/web.py`` and the
         # ``agno_function_names`` on ``WebFetchToolSpec``). Listing the
         # toolkit name here meant the blocklist for ``WebFetch`` only

@@ -97,7 +97,8 @@ class ToolInvocation(BaseModel):
         if path_value:
             parent = str(Path(str(path_value)).parent)
             if parent and parent != ".":
-                return f"{self.tool_name}({parent}/*)"
+                # ``/`` is its own parent: ``//*`` would match nothing.
+                return f"{self.tool_name}({parent.rstrip('/')}/*)"
 
         # Web tools: whitelist the domain.
         if args.url:

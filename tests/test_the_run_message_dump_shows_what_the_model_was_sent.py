@@ -92,3 +92,33 @@ def test_a_message_in_an_unexpected_shape_costs_a_line_not_the_reply(debug_log):
     RunMessagesDebugDumper(_Team(_Run([malformed]))).dump()
 
     assert _lines(debug_log)[-1].startswith("RUN_MESSAGES: error: ")
+
+
+@pytest.mark.parametrize(("length", "suffix"), [(200, ""), (201, "... (201 total)")])
+def test_a_preview_is_cut_after_two_hundred_characters(debug_log, length, suffix):
+    RunMessagesDebugDumper(_Team(_Run([_Message(role="user", content="é" * length)]))).dump()
+
+    assert _lines(debug_log)[-1].endswith("| " + "é" * min(length, 200) + suffix)
+
+
+def test_content_that_is_not_text_is_shown_as_text(debug_log):
+    RunMessagesDebugDumper(_Team(_Run([_Message(role="tool", content={"ok": True})]))).dump()
+
+    assert _lines(debug_log)[-1].endswith("| {'ok': True}")
+
+
+def test_a_compressed_message_is_flagged_even_when_its_compressed_text_is_empty(debug_log):
+    RunMessagesDebugDumper(
+        _Team(_Run([_Message(role="tool", content="x", compressed_content="")]))
+    ).dump()
+
+    assert "COMPRESSED(0ch)" in _lines(debug_log)[-1]
+
+
+def test_a_message_with_no_fields_is_a_line_with_an_unknown_role(debug_log):
+    RunMessagesDebugDumper(_Team(_Run([_Message()]))).dump()
+
+    line = _lines(debug_log)[-1]
+    assert "MSG[0] role=?" in line
+    assert line.endswith("| <None>")
+    assert "tcid" not in line and "HIST" not in line and "COMPRESSED" not in line

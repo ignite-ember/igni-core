@@ -19,7 +19,7 @@ Cross-tool support is **enabled by default** — igni reads `CLAUDE.md` files, `
 ## Quick Start (for Claude Code users)
 
 ```bash
-brew install ignite-ember/tap/ignite-ember
+brew install ignite-ember/tap/igni-core   # ignite-ember/tap/ignite-ember works too
 # or: pip install 'igni-core[decisions]==1.0.4'
 
 igni login                            # sign in to your igni server account
@@ -194,7 +194,7 @@ models:
 
 ### Minimal (just switch)
 
-- [ ] `brew install ignite-ember/tap/ignite-ember` (or `pip install ignite-ember`)
+- [ ] `brew install ignite-ember/tap/igni-core` (or `pip install igni-core`; `ignite-ember` works for both)
 - [ ] `igni login` — sign in to your igni server account
 - [ ] Run `igni -m "…"` — it automatically picks up:
   - `.mcp.json` (your MCP servers)

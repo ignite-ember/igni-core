@@ -84,7 +84,7 @@ class SignedPackStore:
                 .read_text(encoding="utf-8")
                 .strip()
             )
-        except OSError:
+        except (OSError, ValueError):  # a file that is not UTF-8 is not a pack
             return None
 
     def jwks(self) -> Jwks | None:
@@ -100,7 +100,7 @@ class SignedPackStore:
         try:
             text = self._layout.file(GroupPolicyLayout.STATE_FILE).read_text(encoding="utf-8")
             return PackState.model_validate_json(text).version
-        except (OSError, ValidationError):
+        except (OSError, ValueError):  # a ValidationError is a ValueError
             return None
 
     def read(self, trust: PackTrust, *, etag: str | None = None) -> StoredPackRead:

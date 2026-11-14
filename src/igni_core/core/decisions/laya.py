@@ -31,6 +31,7 @@ from pydantic import BaseModel, ValidationError
 
 from igni_core.core.activity.http import busy_call
 from igni_core.core.decisions.endpoints import Connection, DecisionsEndpoint, DecisionsEndpoints
+from igni_core.core.decisions.laya_wire import LayaResult
 from igni_core.core.decisions.schemas import (
     Decision,
     DecisionQuestion,
@@ -75,12 +76,22 @@ class Laya:
         """
         call = PredictCall(state=state, questions=questions, model=model, priority=priority)
         answer = await self._ask("/v1/predict", call, PredictAnswer)
-        return answer.result.decision(questions, allow_truncated=True)
+        return self._decision(answer.result, questions, allow_truncated=True)
 
     async def decide(self, request: DecisionRequest) -> list[Decision]:
         """Every context's decision, from Laya's general checkpoints, behind the approvals."""
         answer = await self._ask("/v1/decide", DecideCall(request=request), DecideAnswer)
-        return [result.decision(request.questions) for result in answer.results]
+        return [self._decision(result, request.questions) for result in answer.results]
+
+    @staticmethod
+    def _decision(
+        result: LayaResult, questions: list[DecisionQuestion], *, allow_truncated: bool = False
+    ) -> Decision:
+        try:
+            return result.decision(questions, allow_truncated=allow_truncated)
+        except KeyError as exc:
+            # The service answered 200 but left a question out: never a guess.
+            raise DecisionsUnavailable("igni's decisions service answered nonsense") from exc
 
     async def _ask(self, path: str, call: BaseModel, shape: type[Answer]) -> Answer:
         body = call.model_dump_json()

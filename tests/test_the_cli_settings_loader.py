@@ -142,3 +142,18 @@ def test_a_required_policy_with_no_pack_starts_no_session(
 
     with pytest.raises(GroupPolicyUnavailable):
         CliSettingsLoader(CliOptions()).load()
+
+
+def test_the_group_policy_still_applies_to_the_run_that_dropped_auto_approve(tmp_path: Path):
+    """Dropping the refused flag reloads the settings; the reload must read the
+    cached pack too, or the rest of the organisation's policy would fall away."""
+    _configure(Path.home() / ".igni", data_dir=None)
+    _publish(
+        Path.home() / ".igni",
+        {"permissions": {"allow_bypass": False}, "learning": {"enabled": False}},
+    )
+
+    settings = CliSettingsLoader(CliOptions(auto_approve=True)).load()
+
+    assert settings.permissions.mode != "bypassPermissions"
+    assert settings.learning.enabled is False

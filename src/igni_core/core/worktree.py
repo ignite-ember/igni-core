@@ -237,10 +237,15 @@ class WorktreeManager:
         the ``RuntimeError`` — flipping it would be a wider
         surface change than the audit scope.
         """
-        result = _run_git(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            cwd=self.repo_dir,
-        )
+        try:
+            result = _run_git(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                cwd=self.repo_dir,
+            )
+        except OSError as exc:
+            # A missing / non-directory repo_dir (or no git binary) is
+            # "not a repository" to the callers, not a raw OSError.
+            raise RuntimeError(f"Not a git repository: {self.repo_dir}") from exc
         if result.returncode != 0:
             raise RuntimeError(f"Not a git repository: {self.repo_dir}")
 
@@ -288,7 +293,7 @@ class WorktreeManager:
         """
         if branch_name is None:
             suffix = session_id or self._short_suffix()
-            branch_name = f"ember-worktree-{suffix}"
+            branch_name = f"igni-worktree-{suffix}"
 
         self.root.ensure_exists()
         worktree_path = self.root.path_for(branch_name)
@@ -330,10 +335,15 @@ class WorktreeManager:
         """Check if the worktree has uncommitted or staged changes."""
         if self._info is None:
             return False
-        result = _run_git(
-            ["git", "status", "--porcelain"],
-            cwd=self._info.worktree_path,
-        )
+        try:
+            result = _run_git(
+                ["git", "status", "--porcelain"],
+                cwd=self._info.worktree_path,
+            )
+        except OSError:
+            # The directory was deleted from under us: nothing there
+            # to hold changes, and cleanup() can report the git side.
+            return False
         return bool(result.stdout.strip())
 
     def cleanup(self) -> WorktreeCleanupResult:

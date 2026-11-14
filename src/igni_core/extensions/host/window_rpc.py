@@ -10,8 +10,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Annotated, Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from igni_core.extensions.host.window_errors import WindowModelError
 from igni_core.extensions.host.window_values import Dialog, Toast, WindowModelState
 from igni_core.extensions.host.windows import Windows
 
@@ -174,7 +175,10 @@ class WindowModelRpc:
 
     def _toast(self, request: WindowRequest) -> WindowReply:
         window = request.window
-        toast = Toast.model_validate(request.value or {})
+        try:
+            toast = Toast.model_validate(request.value or {})
+        except ValidationError as exc:
+            raise WindowModelError(f"toast: expected Toast: {exc}") from None
         shown = self._windows.toast(window, toast, token=request.token)
         return ToastAdded(toast=shown, rev=self._windows.rev(window))
 

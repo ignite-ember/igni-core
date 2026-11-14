@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import time
 from typing import Any, Protocol
 
@@ -101,7 +102,10 @@ class DecisionsApp:
         try:
             call = shape.model_validate_json(await request.body())
         except ValidationError as exc:
-            return JSONResponse({"detail": exc.errors(include_url=False)}, status_code=422)
+            # ``exc.json`` renders what ``errors()`` cannot (the body's bytes, a
+            # validator's exception); the body itself is not echoed back.
+            detail = json.loads(exc.json(include_url=False, include_input=False))
+            return JSONResponse({"detail": detail}, status_code=422)
         self.activity.in_flight += 1
         try:
             answer = await run(call)
@@ -114,7 +118,8 @@ class DecisionsApp:
         return JSONResponse(answer.model_dump(mode="json"))
 
     def _authorised(self, request: Request) -> bool:
-        given = request.headers.get("authorization", "").encode()
+        # Starlette reads header bytes as latin-1; encode back the same way.
+        given = request.headers.get("authorization", "").encode("latin-1")
         return hmac.compare_digest(given, self._expected)
 
     @staticmethod

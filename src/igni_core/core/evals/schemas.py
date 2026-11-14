@@ -305,7 +305,10 @@ class CaseResult(BaseModel):
         if self.unexpected_passed is False:
             lines.append(f"    {self.unexpected_detail}")
         if self.accuracy_passed is False:
-            lines.append(f"    accuracy: score {self.accuracy_score or '?'}")
+            score = "?" if self.accuracy_score is None else self.accuracy_score
+            lines.append(f"    accuracy: score {score}")
+        if self.tool_arg_passed is False:
+            lines.append(f"    {self.tool_arg_detail}")
         for fr in self.file_results:
             if not fr.passed:
                 lines.append(f"    {fr.type}: {fr.detail}")

@@ -24,6 +24,8 @@ from igni_core.core.config.caller_inspector import CallerContextInspector
 from igni_core.core.layer import layers
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
+logger = logging.getLogger(__name__)
+
 
 class LlmCallLogger:
     """Owns the ``~/.igni/llm_calls.log`` handler and the httpx /
@@ -67,9 +69,18 @@ class LlmCallLogger:
             # No llm_calls.log where the layer keeps no log files.
             handler = layers.current().log_handler()
         else:
-            self._log_dir.mkdir(parents=True, exist_ok=True)
-            handler = logging.FileHandler(self._log_dir / "llm_calls.log")
-            handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%H:%M:%S"))
+            try:
+                self._log_dir.mkdir(parents=True, exist_ok=True)
+                handler = logging.FileHandler(self._log_dir / "llm_calls.log")
+            except OSError as exc:
+                # A log that cannot be written must not take the model call
+                # with it: the call is made, the line is not kept.
+                logger.warning("LLM call log not kept, %s is not writable: %s", self._log_dir, exc)
+                handler = logging.NullHandler()
+            else:
+                handler.setFormatter(
+                    logging.Formatter("%(asctime)s %(message)s", datefmt="%H:%M:%S")
+                )
         self._logger.addHandler(handler)
         self._logger.setLevel(logging.INFO)
         # File only, for the same reason as the transport loggers below — and

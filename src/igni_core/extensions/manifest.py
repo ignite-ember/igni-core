@@ -701,6 +701,8 @@ class ExtensionManifest(Strict):
         """
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
+        except UnicodeDecodeError as exc:
+            raise ManifestError(f"{path}: not UTF-8 text — {exc}") from exc
         except json.JSONDecodeError as exc:
             raise ManifestError(f"{path}: not valid JSON — {exc}") from exc
         if not isinstance(raw, dict):

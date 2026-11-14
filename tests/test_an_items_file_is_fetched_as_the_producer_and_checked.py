@@ -16,6 +16,7 @@ import hashlib
 import httpx
 import pytest
 
+from igni_core.core.activity import ActivityRegistry, BusyKind
 from igni_core.extensions.service_attachments import AttachmentUnavailable, ServerAttachments
 from igni_core.extensions.service_items import ItemAttachment
 from tests.notification_helpers import API_URL, SESSION, signed_in
@@ -98,3 +99,62 @@ async def test_a_file_larger_than_igni_accepts_is_refused(monkeypatch):
 
     with pytest.raises(AttachmentUnavailable, match="larger than igni accepts"):
         await ServerAttachments(signed_in(), transport=transport).fetch("ev1", ATTACHMENT)
+
+
+async def test_a_file_of_exactly_the_largest_size_is_accepted(monkeypatch):
+    monkeypatch.setattr(ServerAttachments, "MAX_BYTES", len(CONTENT))
+    transport, _ = _server()
+
+    assert await ServerAttachments(signed_in(), transport=transport).fetch("ev1", ATTACHMENT) == (
+        CONTENT
+    )
+
+
+async def test_only_a_200_is_a_file():
+    for status in (201, 204, 401, 500):
+        transport, _ = _server(status=status)
+        with pytest.raises(AttachmentUnavailable, match=f"answered {status}"):
+            await ServerAttachments(signed_in(), transport=transport).fetch("ev1", ATTACHMENT)
+
+
+async def test_an_id_with_path_characters_stays_one_path_segment():
+    """A hostile id must not walk to another route, nor add a query string."""
+    transport, seen = _server()
+    hostile = ATTACHMENT.model_copy(update={"attachment_id": "../x?y=1#z"})
+
+    await ServerAttachments(signed_in(), transport=transport).fetch("a/b", hostile)
+
+    (request,) = seen
+    assert request.url.raw_path == b"/v1/me/events/a%2Fb/attachments/..%2Fx%3Fy%3D1%23z"
+    assert request.url.query == b""
+
+
+async def test_the_stated_hash_is_hex_so_its_case_does_not_matter():
+    transport, _ = _server()
+    upper = ATTACHMENT.model_copy(update={"sha256": ATTACHMENT.sha256.upper()})
+
+    assert await ServerAttachments(signed_in(), transport=transport).fetch("ev1", upper) == CONTENT
+
+
+async def test_an_empty_file_with_a_stated_hash_is_checked_like_any_other():
+    transport, _ = _server(content=b"")
+
+    with pytest.raises(AttachmentUnavailable, match="does not match its SHA-256"):
+        await ServerAttachments(signed_in(), transport=transport).fetch("ev1", ATTACHMENT)
+    unhashed = ATTACHMENT.model_copy(update={"sha256": ""})
+    assert await ServerAttachments(signed_in(), transport=transport).fetch("ev1", unhashed) == b""
+
+
+async def test_the_fetch_is_a_busy_igni_server_call_let_go_afterwards():
+    held: list[tuple[BusyKind, str]] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        held.extend((lease.kind, lease.holder) for lease in ActivityRegistry.shared().busy())
+        return httpx.Response(200, content=CONTENT)
+
+    await ServerAttachments(signed_in(), transport=httpx.MockTransport(answer)).fetch(
+        "ev1", ATTACHMENT
+    )
+
+    assert (BusyKind.HTTP_CALL, "igni-server") in held
+    assert ActivityRegistry.shared().busy() == []

@@ -265,7 +265,9 @@ class WebSocketServerTransport(ListeningTransport):
             self._tell_watchers("attached", client_id)
             async for raw in conn:
                 if isinstance(raw, bytes):
-                    raw = raw.decode()
+                    # Bytes that are not UTF-8 read as garbage the registry
+                    # refuses, like any other frame that is not a message.
+                    raw = raw.decode(errors="replace")
                 msg = self._registry.deserialize(raw)
                 if msg is not None:
                     # Which connection said it: from the connection, never

@@ -37,16 +37,16 @@ class ExtensionBusy:
         ttl = self.MAX_TTL_SECONDS if ttl_seconds is None else ttl_seconds
         ttl = max(1.0, min(float(ttl), self.MAX_TTL_SECONDS))
         key = (extension_id, reason)
+        # Check-then-act under one lock: two callers for the same reason
+        # must not each take a lease and orphan one of them.
         with self._lock:
             held = self._leases.get(key)
-        if held is not None:
-            renewed = held.renew(ttl)
+            renewed = held.renew(ttl) if held is not None else None
             if renewed is not None:
                 return renewed
-        lease = self.registry.hold(BusyKind.EXTENSION, extension_id, reason, ttl=ttl)
-        with self._lock:
+            lease = self.registry.hold(BusyKind.EXTENSION, extension_id, reason, ttl=ttl)
             self._leases[key] = lease
-        found = self.registry.lease(lease.id)
+            found = self.registry.lease(lease.id)
         assert found is not None
         return found
 

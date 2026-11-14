@@ -271,7 +271,7 @@ def _pyvenv_home(cfg: Path) -> Path | None:
             key, _, value = line.partition("=")
             if key.strip() == "home" and value.strip():
                 return Path(value.strip())
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     return None
 

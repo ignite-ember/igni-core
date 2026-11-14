@@ -586,7 +586,8 @@ def test_every_push_channel_with_a_signal_is_translated(rig):
 def _signals(base: type[Signal]) -> list[type[Signal]]:
     found: list[type[Signal]] = []
     for sub in base.__subclasses__():
-        if "WIRE" in sub.__dict__:
+        # Not the throwaway models other tests declare to exercise the dump.
+        if "WIRE" in sub.__dict__ and sub.__module__.startswith("igni_core."):
             found.append(sub)
         found.extend(_signals(sub))
     return found

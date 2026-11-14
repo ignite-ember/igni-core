@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import re
 from typing import Any
 
 from igni_core.core.evals.schemas import ToolTraceEntry
@@ -45,11 +46,16 @@ class AgnoResponseAdapter:
     #: real tool calls and the reliability check would report every call
     #: as missing.
     ERROR_MARKERS: tuple[str, ...] = (
-        "Function ",  # Agno: "Function X not found" — only emitted when the runtime rejects a tool name
         "ValidationError",  # pydantic: invalid args to a real tool
         "Unexpected keyword argument",  # pydantic kwargs mismatch
         "Missing required argument",  # pydantic positional/required mismatch
     )
+
+    #: Agno's reply to a call naming a tool the agent does not have. Matched
+    #: whole: the bare word "Function " also opens ordinary tool output (a
+    #: source file read back, a doc page), and treating that as a rejection
+    #: erased real calls from the trace.
+    REJECTED_FUNCTION = re.compile(r"Function \S+ not found")
 
     def __init__(self, response: Any) -> None:
         self._response = response
@@ -137,7 +143,10 @@ class AgnoResponseAdapter:
                     errored_ids.add(tcid)
                 continue
             content = getattr(m, "content", None)
-            if isinstance(content, str) and any(mk in content for mk in self.ERROR_MARKERS):
+            if isinstance(content, str) and (
+                self.REJECTED_FUNCTION.search(content)
+                or any(mk in content for mk in self.ERROR_MARKERS)
+            ):
                 tcid = getattr(m, "tool_call_id", None)
                 if tcid:
                     errored_ids.add(tcid)

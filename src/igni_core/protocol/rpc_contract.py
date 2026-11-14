@@ -156,9 +156,16 @@ class MethodSpec:
     @property
     def reply(self) -> str:
         """``message`` when igni answers with the result itself, a message."""
-        members = [
-            m for m in (typing.get_args(self.result) or (self.result,)) if m is not type(None)
-        ]
+        result = self.result
+        while typing.get_origin(result) is typing.Annotated:
+            result = typing.get_args(result)[0]
+        # Only a union has alternatives: ``list[Message]`` is one value, not a message.
+        alternatives = (
+            typing.get_args(result)
+            if typing.get_origin(result) in (typing.Union, types.UnionType)
+            else (result,)
+        )
+        members = [m for m in alternatives if m is not type(None)]
         messages = [m for m in members if isinstance(m, type) and issubclass(m, msg.Message)]
         if messages and len(messages) != len(members):
             raise TypeError(
@@ -316,7 +323,7 @@ def push_payloads() -> Mapping[PushChannel, Any]:
 
 def render(contract: dict[str, Any] | None = None) -> str:
     """The exact bytes of the published file, for writing or comparing."""
-    return json.dumps(contract or build(), indent=2, sort_keys=True) + "\n"
+    return json.dumps(build() if contract is None else contract, indent=2, sort_keys=True) + "\n"
 
 
 def write(path: Path | None = None) -> tuple[Path, dict[str, Any]]:

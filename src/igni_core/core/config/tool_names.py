@@ -47,7 +47,7 @@ _INVALID = re.compile(r"[^a-zA-Z0-9_-]")
 
 def wire_name(name: str) -> str:
     """``name`` as a provider accepts it, before collisions are considered."""
-    if VALID_NAME.match(name):
+    if VALID_NAME.fullmatch(name):
         return name
     candidate = _INVALID.sub("_", name)
     if not candidate or not (candidate[0].isalpha() or candidate[0] == "_"):
@@ -75,7 +75,7 @@ class ProviderToolNames:
     def assign(self, names: Iterable[str]) -> dict[str, str]:
         """Each of ``names`` → the name a provider is sent, collision-free."""
         unique = sorted(set(names))
-        mapping: dict[str, str] = {n: n for n in unique if VALID_NAME.match(n)}
+        mapping: dict[str, str] = {n: n for n in unique if VALID_NAME.fullmatch(n)}
         taken = set(mapping)
         for name in unique:
             if name in mapping:

@@ -106,3 +106,17 @@ def test_an_entry_knows_the_identity_it_was_recorded_for(tmp_path):
     assert entry.identity == identity
     assert entry.state == "trusted"
     assert entry.decided_at
+
+
+def test_a_file_that_is_not_text_trusts_nothing(tmp_path):
+    """Bytes that are not UTF-8 are a broken file, not a crash: nothing is
+    trusted, and the next decision rewrites the file."""
+    store, path = _store(tmp_path)
+    path.write_bytes(b"\xff\xfe\x00 not utf-8 \x80")
+
+    assert store.get(_identity()) is None
+    assert store.entries() == []
+
+    store.set(_identity(), "trusted")
+
+    assert store.get(_identity()) == "trusted"
