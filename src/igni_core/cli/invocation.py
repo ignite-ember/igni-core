@@ -90,6 +90,15 @@ class CliInvocation:
         opts = self._options
         if opts.session_id:
             self._resume_session_id = opts.session_id
+            if ResumeResolver(self._settings).has(opts.session_id) is False:
+                # Still started under that id (a client names a new session
+                # this way), but a typo here used to lose the conversation
+                # without a word.
+                click.echo(
+                    f"No session {opts.session_id!r} in this project; "
+                    "starting a new one under that id.",
+                    err=True,
+                )
             return
         if not opts.continue_session:
             return

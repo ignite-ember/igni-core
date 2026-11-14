@@ -391,7 +391,10 @@ igni -c -m "and now the tests"            # continue the last session
 igni --session-id abc123 -m "carry on"    # continue a specific one
 ```
 
-Or use `/sessions` in the desktop app to browse past sessions.
+`igni -m /sessions` lists this project's sessions with their ids, and
+`/sessions` in the desktop app browses them. An id this project has not
+saved starts a new session under that id; igni says so on stderr, so a
+typo does not pass unnoticed.
 
 ---
 

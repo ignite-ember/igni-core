@@ -920,7 +920,7 @@ igni --no-color              # disable colors
 
 # Session
 igni --continue              # resume the most recent session
-igni --session-id <id>       # resume a specific session
+igni --session-id <id>       # resume a specific session (an unknown id starts a new one, and says so)
 
 # Direct execution
 igni -m "add tests for auth module"   # non-interactive single task

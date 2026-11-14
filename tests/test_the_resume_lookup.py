@@ -88,3 +88,21 @@ async def test_a_lookup_under_a_running_loop_is_an_error_not_a_resume(settings: 
 
     assert lookup.session_id is None
     assert lookup.error is not None
+
+
+@pytest.mark.asyncio
+async def test_has_answers_whether_this_project_saved_the_session(settings: Settings):
+    now = int(time.time())
+    await _seed(settings, ("7997d259", now))
+
+    import asyncio
+
+    resolver = ResumeResolver(settings)
+    assert await asyncio.to_thread(resolver.has, "7997d259") is True
+    assert await asyncio.to_thread(resolver.has, "doesnotexist123") is False
+
+
+def test_has_is_unknown_when_the_sessions_cannot_be_read(settings: Settings):
+    settings.storage.database_url = "mysql://nobody@localhost/none"
+
+    assert ResumeResolver(settings).has("anything") is None
