@@ -125,6 +125,8 @@ async def _drive(args) -> None:
     env = {
         **os.environ,
         "IGNI_PARENT_PID": str(os.getpid()),
+        # A backend started by hand requires a token; this measurement connects without one.
+        "IGNI_DEV_NO_WS_TOKEN": "1",
         # 1s timeout so each cycle's evict is fast.
         "IGNI_SESSION_IDLE_TIMEOUT": "1",
     }
