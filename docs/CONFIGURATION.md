@@ -207,6 +207,45 @@ There are three providers:
 
 > **API key resolution order:** `api_key` (direct) → `api_key_env` (env var) → `api_key_cmd` (shell command). The special value `cloud_token` resolves to your igni server login credentials (from `/login`), and is sent only to your igni server: an entry whose requests go to any other origin than `api_url` (scheme, host and port) gets no token, whichever config file it came from.
 
+### Cloud models through igni server
+
+Claude on AWS Bedrock, Vertex AI or Microsoft Foundry, and the OpenAI-style
+models on Azure OpenAI or Vertex AI, are reached **through igni server**,
+not directly. The server signs for each cloud with its own identity (an
+IAM role, a role it assumes, Workload Identity, a managed identity) or a
+credential an admin stored in the portal. igni only sends its own igni
+server token, so no laptop and no Fleet VM holds a cloud credential.
+Requests signed with a cloud's own credentials (SigV4, Google OAuth) are
+not something igni makes itself: a Bedrock or Vertex URL in a registry
+entry does not work.
+
+The server serves each model on its own API: Claude on Anthropic's
+(`/v1/messages`), everything else on the OpenAI-compatible one
+(`/v1/chat/completions`). Use the provider that matches:
+
+```yaml
+models:
+  registry:
+    # Claude — on whichever of Anthropic, Bedrock, Vertex or Foundry the server routes it to
+    claude:
+      provider: anthropic
+      model_id: claude-opus-5-5          # the name the server's backend serves
+      url: https://igni.example.com      # your igni server, the same origin as api_url
+      api_key: cloud_token
+      context_window: 1000000
+
+    # Gemini on Vertex AI, or a model on Azure OpenAI
+    gemini:
+      provider: openai_like
+      model_id: gemini-pro
+      url: https://igni.example.com/v1
+      api_key: cloud_token
+```
+
+`cloud_token` is sent only to your igni server's origin, so `url` must be
+on it. Which models a server serves, and on which API, is listed by
+`GET /v1/chat/models` (each entry's `api` is `openai` or `anthropic`).
+
 ### Comparison with Claude Code
 
 Claude Code uses a simple alias map (`"sonnet"` → `"claude-sonnet-4-6"`) because it only supports Anthropic models. igni needs a full registry because it's multi-provider — each model name must resolve to a provider class, endpoint URL, model ID, and credentials.
@@ -216,8 +255,8 @@ Claude Code uses a simple alias map (`"sonnet"` → `"claude-sonnet-4-6"`) becau
 | Model resolution | Alias map (string → string) | Config-driven registry (name → provider + URL + key) |
 | First-party API | `ANTHROPIC_API_KEY` | `/login` device-flow (server-hosted MiniMax M2.7) |
 | Hosted endpoint | `api.anthropic.com` | `api.ignite-ember.sh` |
-| AWS Bedrock | `CLAUDE_CODE_USE_BEDROCK` | BYOM registry entry with Bedrock URL |
-| Google Vertex | `CLAUDE_CODE_USE_VERTEX` | BYOM registry entry with Vertex URL |
+| AWS Bedrock | `CLAUDE_CODE_USE_BEDROCK` | Through igni server: `provider: anthropic`, `url` your igni server, `api_key: cloud_token` — the server signs for Bedrock |
+| Google Vertex | `CLAUDE_CODE_USE_VERTEX` | Through igni server, the same way: `provider: anthropic` for Claude, `openai_like` for Gemini |
 | Custom base URL | `ANTHROPIC_BASE_URL` | `url` field per registry entry |
 | Adding new models | Not supported (Anthropic only) | Add a registry entry in config |
 | Key helper script | `apiKeyHelper` | `api_key_env` or `api_key_cmd` per model |
