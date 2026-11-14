@@ -466,6 +466,13 @@ IGNI_DEV_EXTENSIONS=1 igni ext install ./my-extension
 IGNI_DEV_EXTENSIONS=1 igni ext install https://github.com/acme/tools --subdir extensions/scanner --ref v1.2.0
 ```
 
+The install is a copy into `<data>/extensions/<id>/`, so a change to the
+source — a rebuilt page included — reaches igni only by installing it
+again: `igni ext install --replace ./my-extension` upgrades the installed
+copy and re-asks for its permissions. Without `--replace` a second install
+of the same id is refused ("already installed … Pass --replace to upgrade
+it").
+
 `--ref` takes a branch, a tag or a commit, and the commit that was
 installed is always printed. `--subdir` picks one bundle out of a
 repository holding several; the store keys by extension id, so two
@@ -906,7 +913,7 @@ These three are a promise. **Everything else about igni's appearance is not**, a
 
 - **Start with [Your first extension](https://github.com/ignite-ember/igni-sdk/blob/main/docs/YOUR_FIRST_EXTENSION.md) (in igni-sdk).** It is task-ordered — write an extension and its service, bundle it, run the service, approve it, switch it on for a group, sync, use it in chat and on its page, ask for a VM profile, answer export and erasure, and test it all on the SDKs' fakes — and every file it shows is a file in `examples/ticket-lookup/`, whose tests run in CI.
 - **The reference extension is `examples/reference-extension/`** — a compliance scanner, around 200 lines, written against the published surface and nothing else. Anything it has to hand-roll is something the floor is missing, and its README keeps that list.
-- **`igni ext init <dir>`** scaffolds one that runs as written. `igni ext doctor` checks a bundle and prints the contract version this igni implements; `igni ext install` (development only, behind `IGNI_DEV_EXTENSIONS=1`) copies it into `<data>/extensions/<id>/` and prints the permissions it is being granted; a backend starts it at its next start-up. `igni ext sync` installs, updates and removes what igni server distributes to the signed-in person, as start-up and sign-in do. `list` says where each one came from, and `remove` does what it says — one igni distributed comes back at the next sync while its service is approved and switched on for your group.
+- **`igni ext init <dir>`** scaffolds one that runs as written. `igni ext doctor` checks a bundle and prints the contract version this igni implements; `igni ext install` (development only, behind `IGNI_DEV_EXTENSIONS=1`) copies it into `<data>/extensions/<id>/` and prints the permissions it is being granted, and `igni ext install --replace` copies a changed one over it; a backend starts it at its next start-up. `igni ext sync` installs, updates and removes what igni server distributes to the signed-in person, as start-up and sign-in do. `list` says where each one came from, and `remove` does what it says — one igni distributed comes back at the next sync while its service is approved and switched on for your group.
 - **An install outlives the process that made it**, which is why the CLI writes to a store rather than talking to a running backend: a CLI that needed one could install nothing before it started, and nothing would survive it stopping.
 - **Dev mode** is `IGNI_DEV_EXTENSIONS=1`, the only thing that lets a bundle igni server did not distribute install or start, whatever trust it claims. An environment variable and not a setting a bundle can reach, because the easiest way to ship must not be the one with no provenance. The persistent banner and hot reload do not exist yet.
 - **Shipping it** is the service's job: package it as `python` with its wheelhouse and have the service upload the signed bundle at start-up (§8 of igni server's `service-identity.md`). A super admin approves the service, and an org admin switches the extension on for each group that should have it.
