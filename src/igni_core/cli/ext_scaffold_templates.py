@@ -155,7 +155,7 @@ through igni server — `igni ext init --service` scaffolds that shape,
 and igni-sdk's `docs/YOUR_FIRST_EXTENSION.md` walks through it. Once the
 service is running, two people decide: a **super admin** approves the
 service in igni's portal (Services), and an **organisation admin**
-switches the extension on for a group (Extensions). Then everyone in
+switches the extension on for a group (Groups → the group → Extensions). Then everyone in
 that group gets it at their next sync — `igni ext sync`, or the igni
 app's start-up.
 """
@@ -457,20 +457,29 @@ igni ext doctor extension
 ## Ship it
 
 ```bash
+# Add --find-links <wheels> while igni-extension is newer than your index's.
 uv run igni-service-bundle --extension extension --out service/extension-bundle.tar.gz
-export IGNI_KEY_ENCRYPTION_KEY=$(uv run python -c "from igni_service import KeyCipher; print(KeyCipher.generate())")
-IGNI_SERVER_URL=http://localhost:8000 PUBLIC_BASE_URL=http://localhost:8201 \\
+# Once, and keep it: a new key is a new identity, approved again.
+test -f .kek || uv run python -c "from igni_service import KeyCipher; print(KeyCipher.generate())" > .kek
+export IGNI_KEY_ENCRYPTION_KEY=$(cat .kek)
+IGNI_SERVER_URL=http://localhost:7777 PUBLIC_BASE_URL=http://{{HOST}}.localhost:8201 \\
   SERVICE_NAME="{{TITLE}}" IGNI_KEY_DATABASE_URL=sqlite+aiosqlite:///service/keys.db \\
   IGNI_EXTENSION_BUNDLE=service/extension-bundle.tar.gz \\
   uv run uvicorn --factory service:create_app --app-dir service --port 8201
 ```
 
+`IGNI_SERVER_URL` is your igni server (`make run` serves it on :7777). A
+service has a hostname of its own — its URL is its identity, the audience
+of the tokens people get for it — and `*.localhost` is this machine (on
+Linux, add `127.0.0.1 {{HOST}}.localhost` to `/etc/hosts` if it does not
+resolve).
+
 Then two people decide, in igni's portal:
 
-1. a **super admin** approves the service (Services), after checking the
-   thumbprint the service printed is the one shown there;
+1. a **super admin** approves the service (**Services**), after checking
+   the thumbprint the service printed is the one shown there;
 2. an **organisation admin** switches the extension on for a group
-   (Extensions).
+   (**Groups** → the group → **Extensions**).
 
 Approval alone installs it nowhere. Once both are done, everyone in that
 group gets it at their next sync: `igni ext sync`, an `igni -m` run, or

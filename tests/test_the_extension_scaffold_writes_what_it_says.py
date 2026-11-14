@@ -247,3 +247,26 @@ def test_the_service_tool_answers_a_development_install_and_quotes_the_id(tmp_pa
 
     tests = (tmp_path / "t/tests/test_extension_and_service.py").read_text()
     assert "test_the_service_tool_says_so_in_a_development_install_with_no_service" in tests
+
+
+@pytest.mark.parametrize(
+    "extension_id,host", [("acme.tickets", "tickets"), ("local.mythings", "mythings")]
+)
+def test_the_readme_ships_it_as_the_tutorial_does(
+    tmp_path: Path, extension_id: str, host: str
+) -> None:
+    """The README said IGNI_SERVER_URL=http://localhost:8000 and
+    PUBLIC_BASE_URL=http://localhost:8201 (a bare localhost, no hostname of
+    its own), made a new encryption key on every run, and sent the org admin
+    to "(Extensions)" with no Groups path; the tutorial says :7777, a
+    `<name>.localhost` of the service's own, a key made once and kept, and
+    Groups → the group → Extensions."""
+    Scaffold(tmp_path / "t", extension_id).write_service()
+    readme = (tmp_path / "t" / "README.md").read_text()
+
+    assert "IGNI_SERVER_URL=http://localhost:7777" in readme
+    assert f"PUBLIC_BASE_URL=http://{host}.localhost:8201" in readme
+    assert "localhost:8000" not in readme
+    assert "test -f .kek ||" in readme
+    assert "IGNI_KEY_ENCRYPTION_KEY=$(cat .kek)" in readme
+    assert "**Groups** → the group → **Extensions**" in readme

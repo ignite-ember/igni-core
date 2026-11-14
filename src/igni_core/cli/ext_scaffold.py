@@ -83,6 +83,13 @@ class Scaffold:
         return self.module.replace("_", "-")
 
     @property
+    def host(self) -> str:
+        """The service's own hostname under ``.localhost``: ``acme.tickets`` → ``tickets``."""
+        return (
+            re.sub(r"[^a-z0-9-]+", "-", self.id.rsplit(".", 1)[-1].lower()).strip("-") or "service"
+        )
+
+    @property
     def label(self) -> str:
         """The sidebar label: the title, as much of it as fits."""
         return self.title[:24]
@@ -189,6 +196,7 @@ class Scaffold:
             "TITLE_PY": self.title.replace("\\", "\\\\").replace('"', '\\"'),
             "MODULE": self.module,
             "DIST": self.distribution,
+            "HOST": self.host,
             **(parts or {}),
         }
         return _TOKEN.sub(lambda match: tokens[match[1]], template)
