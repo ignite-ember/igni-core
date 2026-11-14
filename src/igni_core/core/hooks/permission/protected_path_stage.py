@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any, ClassVar
 
 from igni_core.core.hooks.permission.context import ToolCallContext
@@ -61,13 +61,35 @@ class ProtectedPathStage(PermissionStage):
 
     @staticmethod
     def matches_pattern(path: str, protected_patterns: list[str]) -> bool:
-        """Whether ``path`` matches a pattern by basename (``.env``) or in full
-        (``**/credentials.json``)."""
-        filename = Path(path).name
-        return any(
-            fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(path, pattern)
-            for pattern in protected_patterns
-        )
+        """Whether ``path`` matches a protected pattern.
+
+        A pattern matches by basename (``.env``), in full
+        (``**/credentials.json``), or against the path's trailing
+        components, so ``terraform/*.tfstate`` covers the same file spelt
+        ``./terraform/x.tfstate`` or ``/abs/project/terraform/x.tfstate``.
+        A pattern ending in ``/`` names a directory (``keys/``): everything
+        under a directory of that name is protected.
+        """
+        parts = [
+            part for part in PurePosixPath(path.replace("\\", "/")).parts if part not in ("/", ".")
+        ]
+        tails = ["/".join(parts[i:]) for i in range(len(parts))]
+        directories = parts[:-1]
+        for pattern in protected_patterns:
+            if pattern.endswith("/"):
+                name = pattern.rstrip("/")
+                if name and any(
+                    fnmatch.fnmatch("/".join(directories[i:j]), name)
+                    for j in range(1, len(directories) + 1)
+                    for i in range(j)
+                ):
+                    return True
+                continue
+            if fnmatch.fnmatch(path, pattern) or any(
+                fnmatch.fnmatch(tail, pattern) for tail in tails
+            ):
+                return True
+        return False
 
     def check_sync(self, ctx: ToolCallContext) -> SafetyCheckResult:
         """Does this call write to a protected path? Quiet: :meth:`evaluate` logs."""
