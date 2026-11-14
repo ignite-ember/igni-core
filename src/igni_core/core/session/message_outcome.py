@@ -123,12 +123,17 @@ class TurnFailure(BaseModel):
         asked for is worse than a reported failure.
         """
         tools = outcome.paused_tools or ["unknown tool"]
+        # The remedies are QUICKSTART's, in its order. This offered only
+        # ``--auto-approve`` (which the docs warn against) and "a settings
+        # rule", and not ``--read-only``, which is what a question needs.
         return cls(
             kind=FailureKind.PAUSED,
             message=(
                 f"Run paused for confirmation on {tools} but this session cannot resolve a "
-                "pause; the tool did not run. Grant the tool up front (--auto-approve or a "
-                "settings rule) or use a client that supports confirmations."
+                "pause; the tool did not run. Decide up front what it may do: --read-only "
+                "to only read, or a permissions.allow rule in ~/.igni/config.yaml (with "
+                "--accept-edits for edits); --auto-approve allows everything. Or use a "
+                "client that supports confirmations."
             ),
             error_type=FailureKind.PAUSED.value,
         )
