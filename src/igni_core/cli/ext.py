@@ -45,7 +45,7 @@ from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.plugins.git import GitClient
 from igni_core.extensions.bundle_source import BundleSource, BundleSourceError
 from igni_core.extensions.distribution.once import OneShotSync
-from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.manifest import ExtensionManifest, Workspace
 from igni_core.extensions.profile import DEV_FLAG, DevelopmentFlag
 from igni_core.extensions.store import ExtensionStore
 from igni_core.extensions.store_errors import StoreError
@@ -273,9 +273,14 @@ def _echo_grants(manifest: ExtensionManifest) -> None:
     permission nobody enforces.
     """
     permissions = manifest.permissions
-    granted = [
-        ("workspace", permissions.workspace.value),
-        ("workspace paths", ", ".join(permissions.workspacePaths) or "all"),
+    granted = [("workspace", permissions.workspace.value)]
+    if permissions.workspace is not Workspace.NONE:
+        # Only with a workspace to narrow: printed under ``workspace none``,
+        # "workspace paths  all" read as a grant of every path.
+        granted.append(
+            ("workspace paths", ", ".join(permissions.workspacePaths) or "the whole workspace")
+        )
+    granted += [
         ("egress", ", ".join(permissions.egress) or "none"),
         ("secrets", ", ".join(permissions.secrets) or "none"),
         ("agent tools", ", ".join(tool.name for tool in permissions.tools) or "none"),
