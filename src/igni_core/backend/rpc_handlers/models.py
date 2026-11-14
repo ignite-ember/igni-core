@@ -27,6 +27,14 @@ class SwitchModelArgs(BaseModel):
     )
 
 
+class ModelSwitched(BaseModel):
+    """What a successful ``switch_model`` answers."""
+
+    text: str = Field(
+        description="Says the model switched, with a note for any part of the choice that could not be saved."
+    )
+
+
 class CheckPermissionArgs(BaseModel):
     """Arguments for looking up the permission level of one tool call."""
 
@@ -61,22 +69,21 @@ class ModelsRpcHandler(RpcHandler):
         args=SwitchModelArgs,
         scope=RpcScope.SESSION,
     )
-    def switch_model(self, args: SwitchModelArgs) -> msg.Info:
+    def switch_model(self, args: SwitchModelArgs) -> ModelSwitched:
         """Make another model the one this session's agent runs on.
 
         ``model_name`` is a name from the model registry
         (``get_model_registry``). The choice is also saved as the default
-        for new sessions. Returns an ``info`` message, sent in place of an
-        ``rpc_response``, saying the model switched, with a note for any
-        part of the choice that could not be saved. Fails when the model is
-        not in the registry.
+        for new sessions. Returns ``text``, saying the model switched, with a
+        note for any part of the choice that could not be saved. Fails when
+        the model is not in the registry.
         """
         reply = self._ctx.backend.switch_model(args.model_name)
         if isinstance(reply, msg.Error):
             # A refused switch fails the call, so write listeners
             # never announce a model that never became current.
             raise ValueError(reply.text)
-        return reply
+        return ModelSwitched(text=reply.text)
 
     @rpc(RpcMethod.TOGGLE_VERBOSE, args=NoArgs, scope=RpcScope.SESSION)
     def toggle_verbose(self, args: NoArgs) -> bool:

@@ -3877,6 +3877,21 @@
       "title": "ModelSwitch",
       "type": "object"
     },
+    "ModelSwitched": {
+      "description": "What a successful `switch_model` answers.",
+      "properties": {
+        "text": {
+          "description": "Says the model switched, with a note for any part of the choice that could not be saved.",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "ModelSwitched",
+      "type": "object"
+    },
     "NoArgs": {
       "additionalProperties": false,
       "description": "The arguments of a call that takes none: `{}`.",
@@ -12686,12 +12701,12 @@
         "$ref": "#/defs/SwitchModelArgs"
       },
       "correlate": null,
-      "doc": "Make another model the one this session's agent runs on.\n\n`model_name` is a name from the model registry\n(`get_model_registry`). The choice is also saved as the default\nfor new sessions. Returns an `info` message, sent in place of an\n`rpc_response`, saying the model switched, with a note for any\npart of the choice that could not be saved. Fails when the model is\nnot in the registry.",
+      "doc": "Make another model the one this session's agent runs on.\n\n`model_name` is a name from the model registry\n(`get_model_registry`). The choice is also saved as the default\nfor new sessions. Returns `text`, saying the model switched, with a\nnote for any part of the choice that could not be saved. Fails when\nthe model is not in the registry.",
       "duration": "io",
       "may_stream": [],
-      "reply": "message",
+      "reply": "rpc_response",
       "result": {
-        "$ref": "#/defs/Info"
+        "$ref": "#/defs/ModelSwitched"
       },
       "scope": "session",
       "streams": [],
