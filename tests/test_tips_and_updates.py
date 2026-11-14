@@ -571,3 +571,31 @@ class TestUpdateCheckerPackage:
             package=PackageMetadata(name="igni-probe-package"),
         )
         assert checker.package.name == "igni-probe-package"
+
+
+class TestTheGeneralTipsMatchTheCli:
+    """A tip told people to run "igni --resume", which is no option, and said
+    sub-teams have "no depth limit" while orchestration.max_nesting_depth
+    stops delegation at 5."""
+
+    def test_every_igni_option_a_tip_names_is_an_option_of_igni(self):
+        import re
+
+        from igni_core.cli import cli
+
+        options = {opt for param in cli.params for opt in getattr(param, "opts", [])}
+        named = {
+            flag
+            for tip in GENERAL_TIPS
+            for command in re.findall(r'"igni ([^"]*)"', tip)
+            for flag in re.findall(r"(?<!\S)(--?[a-z][a-z-]*)", command)
+        }
+
+        assert named, "no tip names an igni option"
+        assert named <= options, f"not options of igni: {sorted(named - options)}"
+
+    def test_no_tip_says_delegation_has_no_depth_limit(self):
+        from igni_core.core.config.schemas.orchestration import OrchestrationConfig
+
+        assert OrchestrationConfig().max_nesting_depth == 5
+        assert not [tip for tip in GENERAL_TIPS if "no depth limit" in tip]
