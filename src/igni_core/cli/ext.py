@@ -460,7 +460,13 @@ def init(directory: Path, extension_id: str | None, shape: str) -> None:
     click.echo()
     click.echo("next:")
     if shape == "service":
-        click.echo(f"  cd {directory} && uv sync && uv run pytest")
+        # The SDKs come from local wheels until the index has them (the
+        # tutorial's Step 0); a plain ``uv sync`` looks on the index alone.
+        click.echo(f"  cd {directory} && uv sync --find-links <wheels> && uv run pytest")
+        click.echo(
+            "    <wheels>: the directory holding the igni-extension and igni-service "
+            "wheels (the tutorial's Step 0); plain uv sync once your index has both"
+        )
         click.echo(f"  igni ext doctor {directory / 'extension'}")
         click.echo(f"  then {directory / 'README.md'} — shipping it through igni server")
     else:

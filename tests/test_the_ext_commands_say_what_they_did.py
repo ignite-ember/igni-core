@@ -191,7 +191,11 @@ def test_init_says_what_to_run_next_for_a_service_extension(tmp_path):
     result = _run("init", str(target), "--service")
     assert result.exit_code == 0, result.output
     tail = result.output.split("next:\n", 1)[1]
-    assert f"cd {target} && uv sync && uv run pytest" in tail
+    # A plain `uv sync` looks on the index, which may not have the SDKs or
+    # may hold an older igni-extension: the tutorial's Step 0 says to pass
+    # the wheels' directory, and the line said otherwise.
+    assert f"cd {target} && uv sync --find-links <wheels> && uv run pytest" in tail
+    assert "Step 0" in tail
     assert f"igni ext doctor {target / 'extension'}" in tail
     assert f"{target / 'README.md'}" in tail
     assert "igni ext install" not in tail
@@ -353,3 +357,14 @@ def test_installing_over_an_installed_id_needs_replace_and_replace_upgrades_it(
     upgraded = _run("install", str(second), "--root", str(root), "--replace")
     assert upgraded.exit_code == 0, upgraded.output
     assert ExtensionStore(root).read(root / "acme.notes").version == "0.0.2"
+
+
+def test_the_service_scaffold_does_not_say_the_sdks_are_not_on_pypi(tmp_path):
+    """The workspace said the SDKs "are not on PyPI yet" while the tutorial
+    says the index "may hold an older igni-extension"."""
+    target = tmp_path / "mine"
+    _run("init", str(target), "--service")
+    for name in ("pyproject.toml", "README.md"):
+        text = (target / name).read_text(encoding="utf-8")
+        assert "not on PyPI" not in text
+        assert "on PyPI:" not in text

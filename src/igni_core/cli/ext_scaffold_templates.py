@@ -401,12 +401,13 @@ SERVICE_WORKSPACE = """# The development environment for the extension and its s
 #   uv sync
 #   uv run pytest
 #
-# igni-extension and igni-service are not on PyPI yet, so `uv sync` cannot
-# find them on its own: they are installed from local wheels, with
+# Your package index may not have igni-extension and igni-service yet, or
+# may hold an older igni-extension, so `uv sync` alone cannot be relied on:
+# they are installed from local wheels, with
 # `uv sync --find-links <the directory holding the wheels>`. The tutorial
 # builds those wheels in its Step 0:
 # https://github.com/ignite-ember/igni-sdk/blob/main/docs/YOUR_FIRST_EXTENSION.md
-# Once both are on PyPI, plain `uv sync` is enough.
+# Once your index has both, at these versions, plain `uv sync` is enough.
 [project]
 name = "{{DIST}}-workspace"
 version = "0.1.0"
@@ -449,7 +450,7 @@ pyproject.toml                 the development environment
 ## Test it
 
 ```bash
-uv sync          # until igni-extension and igni-service are on PyPI: uv sync --find-links <wheels>, built in Step 0 of the tutorial
+uv sync          # until your index has igni-extension and igni-service: uv sync --find-links <wheels>, built in Step 0 of the tutorial
 uv run pytest
 igni ext doctor extension
 ```
