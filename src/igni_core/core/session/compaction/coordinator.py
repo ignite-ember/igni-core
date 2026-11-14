@@ -236,6 +236,7 @@ class CompactionCoordinator:
             session_id=self._source.session_id,
             scope="auto",
             tokens_before=input_tokens,
+            summary_chars=len(result.summary),
         )
         await self._hook_executor_ref().execute(
             event=HookEvent.POST_COMPACT.value,

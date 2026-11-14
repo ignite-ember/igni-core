@@ -352,8 +352,8 @@ class PostCompactHookPayload(BaseModel):
     fire after the summariser has run and history has been
     cleared. Cannot undo at this stage.
 
-    ``summary_chars`` is only populated on the manual path
-    (0 otherwise). Extra fields are allowed so subscribers
+    ``summary_chars`` is the length of the summary that replaced
+    the history, on both paths (0 when none was produced). Extra fields are allowed so subscribers
     can enrich the payload without a schema change here.
     """
 
