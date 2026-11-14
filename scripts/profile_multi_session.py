@@ -154,7 +154,7 @@ async def _drive(n_sessions: int) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=REPO_ROOT,
-        env={**os.environ, "IGNI_PARENT_PID": str(os.getpid())},
+        env={**os.environ, "IGNI_PARENT_PID": str(os.getpid()), "IGNI_DEV_NO_WS_TOKEN": "1"},
     )
 
     # Wait for the ready line.

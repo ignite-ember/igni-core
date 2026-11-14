@@ -22,7 +22,8 @@ from igni_core.backend.app import BackendApp
 from igni_core.backend.logging_setup import configure_logging
 from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.core.data_paths import canonical_project_dir
-from igni_core.transport.ws_auth import take_token_from_environment
+from igni_core.core.layer import layers
+from igni_core.transport.ws_auth import take_window_token
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,18 @@ def main(
 
     # Taken out of the environment at once, before anything is spawned
     # that would inherit it (shell tools, hooks, MCP servers).
-    ws_token = take_token_from_environment()
+    # A backend started by hand has no launcher to give it one, so on a
+    # desktop it mints its own and says so once (the cloud's gateway
+    # authenticates every client; there the backend takes no token).
+    ws_token, minted = take_window_token(
+        mint=ws_port is not None and layers.current().name == "desktop"
+    )
+    if minted:
+        click.echo(
+            f"igni window token for this backend (shown once, never written to disk): {ws_token} "
+            "-- a program connects as the window with igni-client's Local(url=..., token=...).",
+            err=True,
+        )
 
     extra_dirs = [Path(d) for d in additional_dirs] if additional_dirs else None
     # One spelling of the project dir, shared with ``igni migrate`` and

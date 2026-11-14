@@ -69,7 +69,7 @@ class SessionRpcHandler(RpcHandler):
         scope=RpcScope.SESSION,
     )
     async def get_pending_messages(self, args: SessionIdArgs) -> list[PendingMessage]:
-        """List a session's messages that were received but never answered.
+        """List a session's messages whose run started but never finished.
 
         ``session_id`` names the session. Returns the user messages still
         pending at least a minute after they arrived — typically left by a
@@ -88,9 +88,10 @@ class SessionRpcHandler(RpcHandler):
         """List a session's runs that stopped before they finished.
 
         ``session_id`` names the session. Returns one row per run that was
-        cancelled or failed: the ``message_id`` and text of the message that
-        started it, when it arrived and when it stopped, why (``cancelled``
-        or ``errored``) and the last error. A client offers to retry,
+        cancelled, failed or never finished: the ``message_id`` and text of
+        the message that started it, when it arrived and when it stopped, why
+        (``cancelled``, ``errored``, or ``abandoned`` when igni stopped while
+        it ran) and the last error. A client offers to retry,
         discard or edit each. A storage failure answers an empty list.
         """
         # Distinct from ``get_pending_messages`` — see the controller docs.

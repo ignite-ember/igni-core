@@ -142,3 +142,91 @@ def test_a_project_dir_that_does_not_exist_is_refused(launches, tmp_path):
 
     assert result.exit_code == 2
     assert launches == []
+
+
+# ── A backend started by hand takes its own window token ──────────
+
+
+@pytest.fixture
+def by_hand(monkeypatch):
+    """No launcher: no token in the environment, no opt-out, a desktop layer."""
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    monkeypatch.delenv("IGNI_DEV_NO_WS_TOKEN", raising=False)
+
+
+def test_a_backend_started_by_hand_mints_its_window_token_and_prints_it_once(
+    launches, tmp_path, by_hand
+):
+    result = CliRunner().invoke(entry.main, ["--ws-port", "0", "--project-dir", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    (launch,) = launches
+    assert launch.ws_token
+    assert result.output.count(launch.ws_token) == 1
+    assert "window token" in result.output
+    assert "Local(url=..., token=...)" in result.output
+    # Never in the log file either (the log is on disk).
+    log = tmp_path / "logs" / "backend.log"
+    assert launch.ws_token not in log.read_text()
+
+
+def test_each_hand_started_backend_mints_a_different_token(launches, tmp_path, by_hand):
+    _run("--ws-port", "0", "--project-dir", str(tmp_path))
+    _run("--ws-port", "0", "--project-dir", str(tmp_path))
+
+    first, second = launches
+    assert first.ws_token and second.ws_token and first.ws_token != second.ws_token
+
+
+def test_the_launchers_token_is_used_and_nothing_is_printed(
+    launches, tmp_path, by_hand, monkeypatch
+):
+    monkeypatch.setenv(TOKEN_ENV, "from-the-launcher")
+
+    result = _run("--ws-port", "0", "--project-dir", str(tmp_path))
+
+    (launch,) = launches
+    assert launch.ws_token == "from-the-launcher"
+    assert "from-the-launcher" not in result.output
+    assert "window token" not in result.output
+
+
+def test_the_development_opt_out_still_means_no_token_at_all(
+    launches, tmp_path, by_hand, monkeypatch
+):
+    monkeypatch.setenv("IGNI_DEV_NO_WS_TOKEN", "1")
+
+    result = _run("--ws-port", "0", "--project-dir", str(tmp_path))
+
+    (launch,) = launches
+    assert launch.ws_token is None
+    assert "window token" not in result.output
+
+
+def test_a_socket_only_backend_has_no_websocket_and_mints_nothing(launches, tmp_path, by_hand):
+    result = _run("--socket", "/tmp/igni.sock", "--project-dir", str(tmp_path))
+
+    (launch,) = launches
+    assert launch.ws_token is None
+    assert "window token" not in result.output
+
+
+def test_in_the_cloud_the_gateway_authenticates_so_the_backend_takes_no_token(
+    launches, tmp_path, by_hand
+):
+    """The cloud's behaviour is exactly what it was: no token, only the Origin check."""
+    from igni_core.core.layer import Layer, layers
+
+    class _Cloud(Layer):
+        name = "cloud"
+
+    previous = layers.current()
+    layers.install(_Cloud())
+    try:
+        result = _run("--ws-port", "0", "--project-dir", str(tmp_path))
+    finally:
+        layers.install(previous)
+
+    (launch,) = launches
+    assert launch.ws_token is None
+    assert "window token" not in result.output

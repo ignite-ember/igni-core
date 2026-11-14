@@ -21,10 +21,9 @@ of these directly.
 
 from __future__ import annotations
 
-from igni_core.backend.cmd_help import help_overview
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.backend.headless_extensions import HeadlessExtensions
-from igni_core.core.session.commands import LOGIN_HINT
+from igni_core.core.session.commands import InteractiveCommandDispatcher
 from igni_core.core.session.session_run import SessionRun
 from igni_core.protocol.messages import CommandAction
 
@@ -61,15 +60,13 @@ class SingleMessageRun(SessionRun):
             return result.content
         if result.content:
             self._session.display.print_info(result.content)
-        elif result.action == CommandAction.HELP:
-            # A bare ``/help`` opens a panel in the clients; headless,
-            # its content is empty, so print what the panel would show.
-            self._session.display.print_markdown(help_overview())
-        elif result.action == CommandAction.LOGIN:
-            # ``/login`` is an action the clients carry out (a browser and a
-            # callback); its result has no content, so ``igni -m /login``
-            # printed nothing and exited 0, as if it had signed in.
-            self._session.display.print_info(LOGIN_HINT)
+        elif result.action != CommandAction.QUIT:
+            # An action with no content opens a panel or a picker in the
+            # clients (``/help``, ``/login``, ``/sessions``, ``/model``,
+            # ``/agents``...). Headless, the REPL's text form is printed in
+            # its place; before, ``igni -m /sessions`` printed nothing and
+            # exited 0, as if there were nothing to list.
+            await InteractiveCommandDispatcher(self._session).render(result)
         return None
 
     # ── Public entry point ────────────────────────────────────────

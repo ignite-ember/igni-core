@@ -171,3 +171,38 @@ async def test_an_update_check_with_no_package_metadata_is_refused(
 
     with pytest.raises(ValueError, match=r"update check failed \(unknown\)"):
         await _call(handler, RpcMethod.CHECK_FOR_UPDATE, {})
+
+
+async def test_a_successful_model_switch_answers_an_rpc_response_with_its_declared_result() -> None:
+    """Through the dispatcher: a client waiting for the ``rpc_response`` gets it.
+
+    The success used to go out as an ``info`` message in place of one, so a
+    caller that waits for the response timed out on a switch that worked.
+    """
+    from igni_core.backend.message_dispatcher import MessageDispatcher
+
+    handler, ctx = _handler()
+    ctx.backend.switch_model.return_value = msg.Info(text="Switched to m1")
+    sent: list = []
+
+    class _Transport:
+        async def send(self, message) -> None:
+            sent.append(message)
+
+    dispatcher = MessageDispatcher(
+        backend=None,  # type: ignore[arg-type]
+        transport=_Transport(),
+        rpc_table=handler.methods(),
+        queue=[],
+        login=None,
+        extensions=None,
+    )
+    request = msg.RPCRequest(id="q", method="switch_model", args={"model_name": "m1"})
+
+    await dispatcher.dispatch(request)
+
+    (reply,) = sent
+    assert isinstance(reply, msg.RPCResponse)
+    assert reply.id == "q"
+    assert reply.error is None
+    assert reply.result == {"text": "Switched to m1"}

@@ -155,7 +155,7 @@ through igni server — `igni ext init --service` scaffolds that shape,
 and igni-sdk's `docs/YOUR_FIRST_EXTENSION.md` walks through it. Once the
 service is running, two people decide: a **super admin** approves the
 service in igni's portal (Services), and an **organisation admin**
-switches the extension on for a group (Extensions). Then everyone in
+switches the extension on for a group (Groups → the group → Extensions). Then everyone in
 that group gets it at their next sync — `igni ext sync`, or the igni
 app's start-up.
 """
@@ -196,8 +196,9 @@ The agent sees each tool as ``{{ID}}.<tool>`` in the manifest's
 import json
 import logging
 from pathlib import Path
+from urllib.parse import quote
 
-from igni_extension import Hooks, IgniExtension, NotSignedIn, ToolHints
+from igni_extension import Hooks, IgniExtension, NotConfigured, NotSignedIn, ToolHints
 from igni_extension.hooks import PostToolUse
 
 ext = IgniExtension("{{ID}}")
@@ -224,9 +225,12 @@ async def lookup_ticket(ticket_id: str) -> str:
 async def ticket_from_service(ticket_id: str) -> str:
     """Look a ticket up on this extension's service, as the signed-in person."""
     try:
-        response = await ext.service.get(f"/v1/tickets/{ticket_id}")
+        # Quoted: an id like "../igni/subjects/u-ada" stays one path segment.
+        response = await ext.service.get(f"/v1/tickets/{quote(ticket_id, safe='')}")
     except NotSignedIn:
         return "Sign in to igni to reach the ticket service."
+    except NotConfigured:  # a development install has no service, so no URL for one
+        return "The ticket service is not set up for this install."
     response.raise_for_status()
     return response.text
 
@@ -352,6 +356,14 @@ async def test_the_tool_answers_as_igni_calls_it() -> None:
     assert json.loads(result.content[0].text)["title"] == "VPN drops every hour"
 
 
+async def test_the_service_tool_says_so_in_a_development_install_with_no_service() -> None:
+    # Run here, igni gave the extension no service URL, as in a development install.
+    async with HostHarness(ext) as host:
+        result = await host.call("ticket_from_service", {"ticket_id": "T-1001"}, caller=ADA)
+    assert not result.is_error
+    assert result.content[0].text == "The ticket service is not set up for this install."
+
+
 async def test_many_callers_at_once() -> None:
     report = await ConcurrencyHarness(ext).run(
         [
@@ -389,9 +401,13 @@ SERVICE_WORKSPACE = """# The development environment for the extension and its s
 #   uv sync
 #   uv run pytest
 #
-# Until igni-extension and igni-service are on PyPI, build their wheels
-# from an igni checkout and add `--find-links <that directory>` to
-# `uv sync` (igni-sdk's docs/YOUR_FIRST_EXTENSION.md, step 0).
+# Your package index may not have igni-extension and igni-service yet, or
+# may hold an older igni-extension, so `uv sync` alone cannot be relied on:
+# they are installed from local wheels, with
+# `uv sync --find-links <the directory holding the wheels>`. The tutorial
+# builds those wheels in its Step 0:
+# https://github.com/ignite-ember/igni-sdk/blob/main/docs/YOUR_FIRST_EXTENSION.md
+# Once your index has both, at these versions, plain `uv sync` is enough.
 [project]
 name = "{{DIST}}-workspace"
 version = "0.1.0"
@@ -434,7 +450,7 @@ pyproject.toml                 the development environment
 ## Test it
 
 ```bash
-uv sync          # until the SDKs are on PyPI: uv sync --find-links <sdk wheels>
+uv sync          # until your index has igni-extension and igni-service: uv sync --find-links <wheels>, built in Step 0 of the tutorial
 uv run pytest
 igni ext doctor extension
 ```
@@ -442,20 +458,29 @@ igni ext doctor extension
 ## Ship it
 
 ```bash
+# Add --find-links <wheels> while igni-extension is newer than your index's.
 uv run igni-service-bundle --extension extension --out service/extension-bundle.tar.gz
-export IGNI_KEY_ENCRYPTION_KEY=$(uv run python -c "from igni_service import KeyCipher; print(KeyCipher.generate())")
-IGNI_SERVER_URL=http://localhost:8000 PUBLIC_BASE_URL=http://localhost:8201 \\
+# Once, and keep it: a new key is a new identity, approved again.
+test -f .kek || uv run python -c "from igni_service import KeyCipher; print(KeyCipher.generate())" > .kek
+export IGNI_KEY_ENCRYPTION_KEY=$(cat .kek)
+IGNI_SERVER_URL=http://localhost:7777 PUBLIC_BASE_URL=http://{{HOST}}.localhost:8201 \\
   SERVICE_NAME="{{TITLE}}" IGNI_KEY_DATABASE_URL=sqlite+aiosqlite:///service/keys.db \\
   IGNI_EXTENSION_BUNDLE=service/extension-bundle.tar.gz \\
   uv run uvicorn --factory service:create_app --app-dir service --port 8201
 ```
 
+`IGNI_SERVER_URL` is your igni server (`make run` serves it on :7777). A
+service has a hostname of its own — its URL is its identity, the audience
+of the tokens people get for it — and `*.localhost` is this machine (on
+Linux, add `127.0.0.1 {{HOST}}.localhost` to `/etc/hosts` if it does not
+resolve).
+
 Then two people decide, in igni's portal:
 
-1. a **super admin** approves the service (Services), after checking the
-   thumbprint the service printed is the one shown there;
+1. a **super admin** approves the service (**Services**), after checking
+   the thumbprint the service printed is the one shown there;
 2. an **organisation admin** switches the extension on for a group
-   (Extensions).
+   (**Groups** → the group → **Extensions**).
 
 Approval alone installs it nowhere. Once both are done, everyone in that
 group gets it at their next sync: `igni ext sync`, an `igni -m` run, or

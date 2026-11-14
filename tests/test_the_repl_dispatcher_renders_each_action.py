@@ -96,10 +96,13 @@ async def test_sessions_are_capped_at_twenty_and_a_nameless_one_shows_its_id() -
     (text,) = _printed(session.display, "print_markdown")
     lines = [line for line in text.splitlines() if line.startswith("- ")]
     assert len(lines) == 20
-    assert lines[0] == "- nameless-id"
-    assert lines[-1] == "- name19"
+    assert lines[0] == "- `nameless-id`"
+    assert lines[-1] == "- `id19` — name19"
     assert "name20" not in text
-    assert "--resume" in text
+    # The hint names the option ``igni`` has, not ``--resume``.
+    assert "--resume" not in text
+    assert "`igni --session-id <id>" in text
+    assert "[dim]" not in text
 
 
 @pytest.mark.asyncio
@@ -190,7 +193,7 @@ async def test_a_result_without_an_action_is_printed_by_its_kind(
     session = _make_session()
     dispatcher = InteractiveCommandDispatcher(session)
 
-    await dispatcher._render(result)
+    await dispatcher.render(result)
 
     assert _printed(session.display, method) == [result.content]
     for other in ("print_markdown", "print_info", "print_error"):

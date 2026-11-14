@@ -34,11 +34,25 @@ class DisplayManager:
     thin Rich sink.
     """
 
-    def __init__(self, console: Console | None = None):
+    def __init__(self, console: Console | None = None, diagnostics: Console | None = None):
         self.console = console or Console()
+        #: Where errors, warnings and the run's ``── 2.1s · model ──`` line
+        #: go. By default stderr: stdout is the reply, and ``igni -m … |
+        #: cat`` got the footer as part of it. A console passed alone takes
+        #: everything, as it always did.
+        self.diagnostics = diagnostics or (
+            Console(stderr=True) if console is None else self.console
+        )
+        #: Stdout is not a terminal (a pipe, a file, CI): the reply is
+        #: written as the model wrote it, not rendered into an 80-column box
+        #: padded with spaces.
+        self._plain = console is None and not self.console.is_terminal
 
     def print_markdown(self, text: str) -> None:
-        """Render markdown text in the terminal."""
+        """Render markdown text in the terminal; as it is, to a pipe."""
+        if self._plain:
+            self.console.out(text, highlight=False)
+            return
         self.console.print(Markdown(text))
 
     def print_response(self, text: str, agent_name: str | None = None) -> None:
@@ -60,11 +74,11 @@ class DisplayManager:
 
     def print_error(self, message: str) -> None:
         """Print an error message."""
-        self.console.print(f"[red]Error:[/red] {escape(message)}")
+        self.diagnostics.print(f"[red]Error:[/red] {escape(message)}")
 
     def print_warning(self, message: str) -> None:
         """Print a warning message."""
-        self.console.print(f"[yellow]Warning:[/yellow] {escape(message)}")
+        self.diagnostics.print(f"[yellow]Warning:[/yellow] {escape(message)}")
 
     def print_info(self, message: str) -> None:
         """Print an info message."""
@@ -77,7 +91,7 @@ class DisplayManager:
         :meth:`RunStats.format_summary`; this method just wraps
         it in the ``── … ──`` separator and hands it to Rich.
         """
-        self.console.print(f"[dim]  ── {escape(stats.format_summary())} ──[/dim]")
+        self.diagnostics.print(f"[dim]  ── {escape(stats.format_summary())} ──[/dim]")
 
     def print_welcome(self, version: str) -> None:
         """Print the welcome banner."""

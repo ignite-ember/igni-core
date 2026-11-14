@@ -18,7 +18,7 @@ source .venv/bin/activate       # puts `igni` on your PATH
 **Homebrew:**
 
 ```bash
-brew install ignite-ember/tap/ignite-ember
+brew install ignite-ember/tap/igni-core   # ignite-ember/tap/ignite-ember is an alias of it
 ```
 
 **pip:**
@@ -33,9 +33,9 @@ Those two install **v1.0.4** — this repository's build: the `igni_core`
 module, the `igni` command and the decisions service. `igni-core` is on
 PyPI under its own name, and the `ignite-ember` alias
 (`packages/ignite-ember/` — metadata, and a dependency on `igni-core` at
-the same version) forwards to it. The command is `ignite-ember` under
-Homebrew, which symlinks one binary, and `igni` under pip, which installs
-both names.
+the same version) forwards to it. The formula is `igni-core`, and
+`ignite-ember` is an alias of it; either way, Homebrew and pip both
+install the `igni` command and the `ignite-ember` alias.
 
 ## What `igni` is on the command line
 
@@ -115,7 +115,7 @@ That's it — agents will now use GPT-4o. See [Configuration](docs/CONFIGURATION
 
 ```bash
 cd your-project
-igni -m "In one sentence, what does this project do?"
+igni --read-only -m "In one sentence, what does this project do?"
 ```
 
 The first run in a folder:
@@ -139,8 +139,8 @@ The first run in a folder:
 ### A headless run cannot ask you anything
 
 `igni -m` has nobody to show a confirmation to, and igni reads files with
-the shell, which asks by default. So out of the box the question above stops
-at its first `cat` with *"Run paused for confirmation … the tool did not
+the shell, which asks by default. So without `--read-only` the question above
+stops at its first `cat` with *"Run paused for confirmation … the tool did not
 run"* and exits 1. Decide up front what it may do:
 
 ```bash
@@ -154,7 +154,10 @@ igni --read-only -m "…"
 puts any other command to you — headless, that stops the run.)
 
 ```yaml
-# or name what may run, e.g. for "fix the failing test":
+# or name what may run, e.g. for "fix the failing test".
+# In ~/.igni/config.yaml; a project's .igni/config.yaml counts only once
+# the folder is trusted (`igni trust`, or --trust for one run) — in an
+# untrusted folder its permission settings are off and the run still pauses.
 permissions:
   allow:
     - "Bash(python3 -m pytest *)"
@@ -199,7 +202,12 @@ approval dialogs and slash commands. `/help` lists the commands and
 
 ### Shell Mode
 
-Type `!` or `$` to enter shell mode — the prompt changes from `>` to `$`. Commands run directly in your terminal with output shown in the conversation. The AI sees the output as context in your next message.
+In the desktop app and the web client, type `$` at the start of the message
+box to enter shell mode — a `$ shell` badge appears and the box says
+*Shell command*. Enter runs the command in the project directory, with no
+approval (you typed it), and its output shows in the conversation. The AI sees
+the output as context in your next message. `igni -m` has no shell mode: there
+is no prompt on the command line.
 
 ```
 $ ls src/
@@ -208,13 +216,12 @@ $ ls src/
 $ python -m pytest tests/ -q
   12 passed in 1.3s
 
-> The tests pass. Now add a /health endpoint
+The tests pass. Now add a /health endpoint
   (AI sees the shell output as context)
 ```
 
-- **Enter shell mode**: type `!` or `$`
-- **Exit shell mode**: `Esc` or `Backspace` on empty input
-- **One-off command**: `! git status` from chat mode (without entering shell mode)
+- **Enter shell mode**: type `$` in an empty message box
+- **Exit shell mode**: `Esc`, or `Backspace` on empty input
 
 ### File References
 
@@ -391,7 +398,16 @@ igni -c -m "and now the tests"            # continue the last session
 igni --session-id abc123 -m "carry on"    # continue a specific one
 ```
 
-Or use `/sessions` in the desktop app to browse past sessions.
+`igni -m /sessions` lists this project's sessions with their ids, and
+`/sessions` in the desktop app browses them. An id this project has not
+saved starts a new session under that id; igni says so on stderr, so a
+typo does not pass unnoticed.
+
+A turn that paused for confirmation (`igni -m` exiting 1 with *"Run paused
+for confirmation"*) is not part of the session's history: the call it
+stopped at never ran, and the resumed session goes on from the turn before
+it, so the model does not see that message. Send it again in the resumed
+session, with `--read-only` or the allow rule the pause asked for.
 
 ---
 

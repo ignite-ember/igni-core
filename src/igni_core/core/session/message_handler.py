@@ -101,7 +101,7 @@ class MessageHandlerDeps:
     #: The window the compaction threshold is measured against.
     budget: ContextBudget
     #: How the reply is read off the run output; the default reads the
-    #: run's own content.
+    #: run's own content, its assistant texts kept apart.
     extract_response_text: Callable[[AnyRunOutput], str] | None = None
     #: The permission evaluator — rebuilt with the team, so it is read
     #: on every turn.
@@ -133,7 +133,7 @@ class SessionMessageHandler:
         return self._deps.team_ref()
 
     def _extract_response_text(self, response: AnyRunOutput) -> str:
-        extract = self._deps.extract_response_text or response_text.extract_response_text
+        extract = self._deps.extract_response_text or response_text.extract_reply_text
         return extract(response)
 
     async def handle(self, message: str, media: MessageMedia | None = None) -> str:

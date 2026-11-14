@@ -191,7 +191,11 @@ def test_init_says_what_to_run_next_for_a_service_extension(tmp_path):
     result = _run("init", str(target), "--service")
     assert result.exit_code == 0, result.output
     tail = result.output.split("next:\n", 1)[1]
-    assert f"cd {target} && uv sync && uv run pytest" in tail
+    # A plain `uv sync` looks on the index, which may not have the SDKs or
+    # may hold an older igni-extension: the tutorial's Step 0 says to pass
+    # the wheels' directory, and the line said otherwise.
+    assert f"cd {target} && uv sync --find-links <wheels> && uv run pytest" in tail
+    assert "Step 0" in tail
     assert f"igni ext doctor {target / 'extension'}" in tail
     assert f"{target / 'README.md'}" in tail
     assert "igni ext install" not in tail
@@ -353,3 +357,36 @@ def test_installing_over_an_installed_id_needs_replace_and_replace_upgrades_it(
     upgraded = _run("install", str(second), "--root", str(root), "--replace")
     assert upgraded.exit_code == 0, upgraded.output
     assert ExtensionStore(root).read(root / "acme.notes").version == "0.0.2"
+
+
+def test_the_service_scaffold_does_not_say_the_sdks_are_not_on_pypi(tmp_path):
+    """The workspace said the SDKs "are not on PyPI yet" while the tutorial
+    says the index "may hold an older igni-extension"."""
+    target = tmp_path / "mine"
+    _run("init", str(target), "--service")
+    for name in ("pyproject.toml", "README.md"):
+        text = (target / name).read_text(encoding="utf-8")
+        assert "not on PyPI" not in text
+        assert "on PyPI:" not in text
+
+
+def test_a_replace_says_a_running_backend_serves_the_new_page_at_once(tmp_path, monkeypatch):
+    """After a rebuilt page, `--replace` said the change "starts the next time
+    igni's backend starts", while a running backend's origin streamed the new
+    ui/ at once (each file is read from the store per request): a page-only
+    change needs a reload, not a restart."""
+    monkeypatch.setenv("IGNI_DEV_EXTENSIONS", "1")
+    monkeypatch.setattr(
+        PolicySettingsLoader,
+        "load",
+        lambda _self: SimpleNamespace(air_gapped=False, network=SimpleNamespace(internal_hosts=[])),
+    )
+    root = tmp_path / "store"
+    bundle = _dev_bundle(tmp_path, name="one")
+    first = _run("install", str(bundle), "--root", str(root))
+    assert "It starts the next time igni's backend starts" in first.output
+
+    replaced = _run("install", str(bundle), "--root", str(root), "--replace")
+    assert replaced.exit_code == 0, replaced.output
+    assert "serves the new page (ui/) at once: reload it" in replaced.output
+    assert "code and manifest change the next time igni's backend starts" in replaced.output

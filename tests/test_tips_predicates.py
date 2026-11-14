@@ -84,7 +84,7 @@ def test_the_no_project_context_tip_names_the_configured_file(tmp_path: Path) ->
 def test_the_shipped_catalog_points_at_igni_and_never_at_the_old_name() -> None:
     texts = [*tips.GENERAL_TIPS, *(t.message for t in tips.CONTEXTUAL_TIPS)]
     joined = "\n".join(texts)
-    assert "igni --resume" in joined
+    assert "igni --session-id" in joined
     assert "igni -m" in joined
     assert "igni-core[web]" in joined
     assert not re.search(r"\bember\b", joined, re.IGNORECASE)

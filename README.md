@@ -52,13 +52,12 @@ The architectural choices that drive the gap: (1) **CodeIndex queried first, not
 ```bash
 brew install ignite-ember/tap/igni-core  # or: pip install igni-core (the old name ignite-ember works for both)
 cd your-project
-igni -m "In one sentence, what does this project do?"   # `ignite-ember` if brew installed it
+igni --read-only -m "In one sentence, what does this project do?"
 ```
 
 `igni` is the command; `ignite-ember` is kept as an alias so existing
-shell aliases and scripts keep working. Both are the same entry point —
-pip installs both names, the Homebrew formula symlinks one, so a brew
-install gives you `ignite-ember` and a pip install gives you both.
+shell aliases and scripts keep working. Both are the same entry point,
+and pip and the Homebrew formula both install both names.
 On the command line it runs **one task and exits** (`-m`, or `-p` for a
 pipe); there is no terminal chat UI any more — run it bare and it says so.
 
@@ -78,7 +77,9 @@ uv venv && uv pip install -e ".[dev]"
 source .venv/bin/activate          # puts `igni` on your PATH
 ```
 The interactive chat is the desktop app and the web client. A headless run cannot ask before it runs a command, so decide
-up front what it may do — see
+up front what it may do. igni reads files with the shell, which asks by
+default, so without `--read-only` the question above stops at its first
+`cat` with *"Run paused for confirmation"* and exits 1 — see
 [A headless run cannot ask you anything](QUICKSTART.md#a-headless-run-cannot-ask-you-anything).
 
 To point it at your own igni server, set `api_url` in your user config,

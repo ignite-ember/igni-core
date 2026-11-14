@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from http import HTTPStatus
 from pathlib import Path
 
 import httpx
@@ -179,6 +180,9 @@ class UpdateChecker:
     async def check(self) -> UpdateInfo:
         """Ask PyPI (or the cache) whether a newer version exists.
 
+        A 404 from PyPI means the project has no release yet: no update
+        is offered and nothing is reported as an error.
+
         The top boundary of the check: it never raises. A failure the
         check knows about comes back with its own
         :class:`UpdateError`; a failure it does not come back as
@@ -247,6 +251,11 @@ class UpdateChecker:
                 resp.raise_for_status()
                 payload = resp.json()
         except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == HTTPStatus.NOT_FOUND:
+                # PyPI has no such project: nothing is published yet, so
+                # there is nothing newer to offer. Not a failure.
+                logger.debug("No release of %s is published on PyPI yet", self.package.name)
+                return self._current()
             logger.debug("Update check failed (HTTP status): %s", exc)
             return self._failure(UpdateError.HTTP_STATUS, str(exc))
         except httpx.HTTPError as exc:

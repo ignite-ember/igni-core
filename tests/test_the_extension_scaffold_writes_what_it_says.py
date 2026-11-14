@@ -204,3 +204,69 @@ async def test_the_dev_scaffold_backend_starts_and_answers_hello_over_mcp(tmp_pa
         assert [t.name for t in tools.tools] == ["hello"]
         result = await session.call_tool("hello", {})
     assert json.loads(result.content[0].text) == {"message": "hello from the extension backend"}
+
+
+TUTORIAL = "https://github.com/ignite-ember/igni-sdk/blob/main/docs/YOUR_FIRST_EXTENSION.md"
+
+
+def test_the_service_workspace_points_at_the_published_tutorial_and_says_how_the_sdks_install(
+    tmp_path: Path,
+) -> None:
+    Scaffold(tmp_path / "t", "acme.tickets").write_service()
+    pyproject = (tmp_path / "t" / "pyproject.toml").read_text()
+
+    assert TUTORIAL in pyproject
+    assert "Step 0" in pyproject
+    assert "step 0" not in pyproject
+    assert "docs/YOUR_FIRST_EXTENSION.md" not in pyproject.replace(TUTORIAL, "")
+    assert "may hold an older igni-extension" in pyproject
+    assert "local wheels" in pyproject
+    assert "--find-links" in pyproject
+
+
+def _function(tree: ast.Module, name: str) -> ast.AsyncFunctionDef:
+    (found,) = [n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == name]
+    return found
+
+
+def test_the_service_tool_answers_a_development_install_and_quotes_the_id(tmp_path: Path) -> None:
+    """As igni-sdk's examples/ticket-lookup does, which the tutorial says the
+    scaffold matches: with no service URL (a development install) the tool
+    said "Error executing tool ticket_from_service: ... was not started with
+    its service's URL", and an id with a ``/`` left its path segment. The
+    scaffold's own tests run the tool; this holds the code shape here, where
+    igni-extension is not installed."""
+    Scaffold(tmp_path / "t", "acme.tickets").write_service()
+    source = (tmp_path / "t/extension/src/acme_tickets_extension/__init__.py").read_text()
+    tool = _function(ast.parse(source), "ticket_from_service")
+
+    (attempt,) = [n for n in ast.walk(tool) if isinstance(n, ast.Try)]
+    caught = {h.type.id for h in attempt.handlers if isinstance(h.type, ast.Name)}
+    assert caught == {"NotSignedIn", "NotConfigured"}
+    assert "quote(ticket_id, safe='')" in ast.unparse(tool)
+
+    tests = (tmp_path / "t/tests/test_extension_and_service.py").read_text()
+    assert "test_the_service_tool_says_so_in_a_development_install_with_no_service" in tests
+
+
+@pytest.mark.parametrize(
+    "extension_id,host", [("acme.tickets", "tickets"), ("local.mythings", "mythings")]
+)
+def test_the_readme_ships_it_as_the_tutorial_does(
+    tmp_path: Path, extension_id: str, host: str
+) -> None:
+    """The README said IGNI_SERVER_URL=http://localhost:8000 and
+    PUBLIC_BASE_URL=http://localhost:8201 (a bare localhost, no hostname of
+    its own), made a new encryption key on every run, and sent the org admin
+    to "(Extensions)" with no Groups path; the tutorial says :7777, a
+    `<name>.localhost` of the service's own, a key made once and kept, and
+    Groups → the group → Extensions."""
+    Scaffold(tmp_path / "t", extension_id).write_service()
+    readme = (tmp_path / "t" / "README.md").read_text()
+
+    assert "IGNI_SERVER_URL=http://localhost:7777" in readme
+    assert f"PUBLIC_BASE_URL=http://{host}.localhost:8201" in readme
+    assert "localhost:8000" not in readme
+    assert "test -f .kek ||" in readme
+    assert "IGNI_KEY_ENCRYPTION_KEY=$(cat .kek)" in readme
+    assert "**Groups** → the group → **Extensions**" in readme

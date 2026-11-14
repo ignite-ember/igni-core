@@ -96,8 +96,8 @@ class TestDispatch:
         result = await dispatch(session, "/sessions")
         assert result is True
         printed = session.display.print_markdown.call_args[0][0]
-        assert "- My session" in printed
-        assert "- s2" in printed
+        assert "- `s1` — My session" in printed
+        assert "- `s2`" in printed
 
     @pytest.mark.asyncio
     async def test_dispatch_help(self):

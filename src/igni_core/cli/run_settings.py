@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 import click
 
 from igni_core.cli.options import CliOptions
@@ -29,13 +33,24 @@ class CliSettingsLoader:
     verified before it is merged; with ``group_policy.required`` set and no
     verified pack, the fetcher raises ``GroupPolicyUnavailable`` and this run
     starts no session (``main`` reports it).
+
+    Only one pass speaks. Every pass reads the same files and says the same
+    things about them ("…/.igni/config.yaml sets permissions, which a project
+    may set only once you trust the folder; ignored."), so each warning
+    printed twice on every run and twice from ``igni trust``. The local-only
+    pass, and the reload without ``--auto-approve`` after the pass that
+    already spoke, are quiet.
     """
+
+    #: The logger the settings loader and its tiers warn under.
+    CONFIG_LOGGER = "igni_core.core.config"
 
     def __init__(self, options: CliOptions) -> None:
         self._options = options
 
     def load(self) -> Settings:
-        local_only = self._load(self._options, None)
+        with self._quiet():
+            local_only = self._load(self._options, None)
         settings = self._load(self._options, CachedSettingsFetcher.for_settings(local_only))
         policy = settings.permissions.mode_policy
         if self._options.auto_approve and policy is not None and not policy.allow_bypass:
@@ -51,11 +66,26 @@ class CliSettingsLoader:
                 "(permissions.allow_bypass: false); running without it.",
                 err=True,
             )
-            settings = self._load(
-                self._options.model_copy(update={"auto_approve": False}),
-                CachedSettingsFetcher.for_settings(local_only),
-            )
+            with self._quiet():
+                settings = self._load(
+                    self._options.model_copy(update={"auto_approve": False}),
+                    CachedSettingsFetcher.for_settings(local_only),
+                )
         return settings
+
+    @classmethod
+    @contextmanager
+    def _quiet(cls) -> Iterator[None]:
+        """Drop what the settings loader says for the length of the block."""
+        config_logger = logging.getLogger(cls.CONFIG_LOGGER)
+        handlers, propagate = list(config_logger.handlers), config_logger.propagate
+        config_logger.handlers = [logging.NullHandler()]
+        config_logger.propagate = False
+        try:
+            yield
+        finally:
+            config_logger.handlers = handlers
+            config_logger.propagate = propagate
 
     @staticmethod
     def _load(options: CliOptions, fetcher: CachedSettingsFetcher | None) -> Settings:

@@ -23,7 +23,8 @@ class TransportBuilder:
         self._socket_path = socket_path
         self._ws_port = ws_port
         # The launcher's per-launch secret; every WS connection must
-        # offer it (``transport/ws_auth.py``). ``None``: Origin check only.
+        # offer it (``transport/ws_auth.py``). ``None``: Origin check only
+        # (the cloud, or the development opt-out).
         self._ws_token = ws_token
         self._ws_transport: WebSocketServerTransport | None = None
 

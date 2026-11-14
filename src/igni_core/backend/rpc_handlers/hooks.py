@@ -17,9 +17,10 @@ class HooksRpcHandler(RpcHandler):
         """List the hooks this session runs.
 
         Takes no arguments. Returns one row per hook: the ``event`` it runs
-        on, its ``type`` (a shell ``command`` or an HTTP ``url``), the
-        ``matcher`` that narrows it, its timeout, whether it runs in the
-        background, and the HTTP headers it sends.
+        on, its ``type`` (``command``, ``http``, ``prompt`` or ``mcp_tool``)
+        and the ``command`` or ``url`` it runs, the ``matcher`` that narrows
+        it, its timeout, whether it runs in the background, and the HTTP
+        headers it sends.
         """
         return self._ctx.backend.get_hooks_details()
 

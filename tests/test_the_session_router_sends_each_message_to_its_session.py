@@ -259,3 +259,18 @@ async def test_refreshing_agents_rebuilds_every_live_session(tmp_path) -> None:
 
     rig.boot.backend.reload_agents.assert_called_once_with()
     other.backend.reload_agents.assert_called_once_with()
+
+
+async def test_an_id_igni_has_no_session_by_starts_one_and_the_contract_says_so(tmp_path) -> None:
+    """A program attached to a typo and got a fresh, empty session under it,
+    with nothing in the contract saying an unknown id is not an error."""
+    from igni_core.backend.pool_rpcs.attach_session import AttachSessionRpc
+
+    rig = _rig(tmp_path)
+
+    result = await rig.router.attach("no-such-session-xyz", None)
+
+    assert isinstance(result, AttachSessionResult)
+    assert result.session_id == "no-such-session-xyz"
+    doc = " ".join((AttachSessionRpc.attach.__doc__ or "").split())
+    assert "An id igni has no session by is not an error" in doc

@@ -95,3 +95,46 @@ def extract_response_text(response: str | AgnoResponseLike) -> str:
     directly via ``patch("igni_core.core.session.core.extract_response_text")``.
     """
     return ResponseTextExtractor(response).text()
+
+
+def extract_reply_text(response: str | AgnoResponseLike) -> str:
+    """The reply a person reads: :func:`extract_response_text`, with the run's
+    separate assistant texts kept apart.
+
+    Agno builds a run's ``content`` by appending each assistant message of
+    its tool loop to the last with nothing between them, so a model that
+    says "OK", calls a tool and then answers was printed as
+    ``OKOK — noted``, and "I'll look up ticket T-1001." ran into its answer.
+    When ``content`` is exactly those texts end to end, they are joined
+    with a blank line instead.
+
+    A run that paused at a tool call and was continued (the permission
+    policy settling the pause, ``message_pause_policy``) starts its
+    ``content`` again from the continuation, so it holds only the texts
+    after the pause and the text before the call was dropped:
+    "Checking the notes now." never printed. ``content`` that is the
+    last of those texts, or the last few end to end, is read the same
+    way: every text of the run is shown. Any other content is left as it is. Only what is
+    shown changes: the history the model reads is the messages.
+    """
+    text = extract_response_text(response)
+    if isinstance(response, str):
+        return text
+    parts = _assistant_texts(getattr(response, "messages", None))
+    if len(parts) > 1 and any("".join(parts[start:]) == text for start in range(len(parts))):
+        return "\n\n".join(part.strip() for part in parts)
+    return text
+
+
+def _assistant_texts(messages: Any) -> list[str]:
+    """This run's assistant texts, in order (history and empty ones left out)."""
+    if not messages:
+        return []
+    texts: list[str] = []
+    for msg in messages:
+        if getattr(msg, "role", None) != "assistant" or getattr(msg, "from_history", False):
+            continue
+        content = getattr(msg, "content", None)
+        if isinstance(content, str) and content:
+            texts.append(content)
+    return texts
