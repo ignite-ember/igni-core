@@ -30,12 +30,25 @@ class OrganisationOnlyTier(Tier):
         """The block's defaults, without its environment."""
         raise NotImplementedError
 
+    def environment_defaults(self) -> dict[str, Any]:
+        """The block's defaults with the environment applied.
+
+        The built-in defaults the settings start from already carry the
+        environment, so a value equal to one of these came from the
+        environment, not from a user, a project or the CLI.
+        """
+        raise NotImplementedError
+
     def apply(self, accumulator: SettingsAccumulator) -> SettingsAccumulator:
         defaults = self.defaults()
+        from_environment = self.environment_defaults()
         payload = dict(accumulator.payload)
         block = payload.get(self.BLOCK)
         if isinstance(block, dict) and any(
-            key in defaults and block[key] != defaults[key] for key in block
+            key in defaults
+            and block[key] != defaults[key]
+            and block[key] != from_environment.get(key)
+            for key in block
         ):
             logger.warning(
                 "%s may be set only in the managed-settings file, the group policy or "
@@ -59,6 +72,9 @@ class WorkspaceTrustTier(OrganisationOnlyTier):
     def defaults(self) -> dict[str, Any]:
         return WorkspaceTrustConfig.model_construct().model_dump()
 
+    def environment_defaults(self) -> dict[str, Any]:
+        return WorkspaceTrustConfig().model_dump()
+
 
 class TelemetryTier(OrganisationOnlyTier):
     """``telemetry`` (the OTLP collector) comes from the organisation.
@@ -74,3 +90,6 @@ class TelemetryTier(OrganisationOnlyTier):
 
     def defaults(self) -> dict[str, Any]:
         return TelemetryConfig.model_construct(otlp=OtlpConfig.model_construct()).model_dump()
+
+    def environment_defaults(self) -> dict[str, Any]:
+        return TelemetryConfig().model_dump()
