@@ -64,3 +64,141 @@ whose search order is right in a fixture and wrong in a real session, a
 credential resolving from the wrong tier after the config split, and a
 home-directory migration that by definition runs once on a machine that
 already has data. None of those are reachable from unit tests.
+
+---
+
+## A person uses their cloud VM from the desktop app, not only the local backend
+
+**What.** The desktop app (igni-app, Tauri + web) talks to exactly one
+backend: the local one, over loopback. A person whose group gives them a
+Fleet VM has no app to use it with. Build the switch:
+
+1. **Discovery.** After sign-in, igni server tells the app whether the
+   person has a cloud VM: the gateway's address and the VM's state
+   (running, asleep, needs sign-in). A new small endpoint; nothing lists
+   a person's VM today, and nothing reads the advertised `igni_gateway`.
+2. **A Local / Cloud switch**, shown only when a cloud VM exists.
+   Flipping reconnects every window to the gateway's `/v1/connect` and
+   reloads state; the local backend keeps running.
+3. **Auth.** The web client sends the person's own token the way the
+   gateway expects from a browser (subprotocol `igni.bearer.<token>`) and
+   refreshes it; the Tauri shell hands the token over.
+4. **Real time.** The VM waking is shown, the gateway's "the VM needs
+   sign-in" push is handled, and the client reconnects when the gateway
+   moves the session.
+5. **Per-backend state.** The `client_id` localStorage key gets a backend id.
+6. **Group mode in the portal: local only, cloud only, or both.** Carried
+   in the signed group pack so the shell enforces it offline, and
+   enforced by the gateway: a local-only group's person is refused;
+   cloud-only means the desktop never starts a local backend.
+
+**Why.** Fleet exists for people on paper only: the gateway is reachable
+through the `igni-client` SDK and the tests, and the portal is for
+admins. A real person signing in is also the first end-to-end proof of
+Fleet — wake, sign-in, the session moving between nodes, the group mode —
+all of which is tested today only piece by piece against mocks.
+
+**The awkward part.** Extension pages: the gateway relays the client
+protocol, not the host object model (`CLOUD.md`, the client-protocol
+section). Local-only ideas — attachments, the project folder, "open in
+editor" — need a cloud meaning. And only one side may pull
+`/v1/me/events` at a time.
+
+**Order.** Discovery and the switch for chat only (extensions hidden in
+cloud) → VM wake, sign-in and status → the group mode in the portal and
+its enforcement → extensions over the gateway → maybe both side by side.
+Repos: igni-server (endpoint, group mode, portal), igni-app (shell and
+web), igni-core (the event-pull rule, cloud-only startup), igni-sdk
+(shared discovery). Write the design doc before any code.
+
+---
+
+## Seeing what an app does, without signing in as the app
+
+**What.** An app (a producer an org admin registers, signing in only with
+its own private key) runs on its own VM, and its spaces are usually its
+own customers. Who sees what:
+
+- **The app's owner sees content, through the SDK, as the app.**
+  `igni-client` already reads back sessions, their turns, live events and
+  the app's spaces. Add a small read-only command to the SDK — sign in
+  with the app's key, list sessions, show one, follow one — so looking
+  does not mean writing a script.
+- **The org admin sees metadata in the portal, never content.** VM state,
+  wake times and node; runs (count, duration, outcome, error class,
+  tokens, model); tool calls by name and outcome, never arguments or
+  results; pending approvals and who answered them; the licence band
+  count; the audit trail. The data leaves the VM through an **allow-list
+  of fields**, so text, files and tool arguments cannot reach the portal
+  by accident. Write the list down: air-gapped customers will ask for it.
+- **A person may answer an app's pending approval as themselves**, seeing
+  only the pending call, recorded in the audit as that person. Today the
+  app answers in its own code.
+
+**Why not a login as the app in the desktop app.** It needs the app's
+private key on a laptop, or a "person acts as app" path that breaks the
+rule that an app acts only as itself. Whoever signed in would see every
+conversation of the app and of all its spaces — exactly the sensitive
+data — and the audit could no longer tell the developer from the
+automated app.
+
+**Where it belongs.** The command in `igni-client` (igni-sdk); the
+allow-list where the gateway and the VM report (igni__cloudvm, igni-core
+telemetry); the view in igni-server's portal. A section of the same
+design doc as the cloud switch above.
+
+---
+
+## A browser-testing VM profile
+
+**What.** A Fleet VM profile with Chromium and Playwright, a ceiling of
+about 2 GiB and 2+ vCPUs (the `standard` profile's 256 MiB and one vCPU
+cannot hold a browser), and the egress the tests need: `internet` for
+public sites, or the customer's staging hosts on `network.allow`.
+
+**Why.** Testing websites is the first thing people ask a cloud igni to
+do, and everything it needs exists already: profile layers
+(`image/profile/build_layer.sh` in igni__cloudvm, built from the
+customer's own mirror) and per-profile egress (`crates/node-agent/src/net.rs`).
+It wants only a tested profile and a measured memory ceiling.
+
+---
+
+## A recipe: igni drives a Windows machine elsewhere
+
+**What.** Fleet VMs are Linux Firecracker microVMs: no Windows guest, no
+display. To test a Windows desktop application, igni starts a Windows
+machine through its provider's API (Azure, AWS, GCP, Hyper-V), runs the
+tests remotely (WinAppDriver, SSH, RDP automation), fills the tables and
+reports, stops the machine, and its own VM suspends. A written, tested
+recipe for that, covering:
+
+- a key that may start and stop that one machine, and nothing else;
+- the provider's API, the machine, and the report's destination on the
+  profile's `network.allow`;
+- a backstop that does not depend on igni: provider-side auto-shutdown
+  or a budget alert, so a crashed run cannot leave the machine billing;
+- whether an active run keeps igni's VM from pausing
+  (`idle_before_pause_s`) through a long suite where igni only polls —
+  check this before promising it;
+- approvals: starting machines costs money, so a person approves once,
+  or the scheduled run carries a policy that allows only those calls.
+
+**Why not Windows in Fleet.** A Windows node pool means full VMs
+(QEMU/KVM), its own image, guest agent and licensing, and wakes in
+seconds rather than milliseconds — a separate product. Wine covers only
+simple programs.
+
+---
+
+## Fix the Bedrock and Vertex rows of the Claude Code comparison
+
+`docs/CONFIGURATION.md` says AWS Bedrock and Google Vertex work as "a
+BYOM registry entry with a Bedrock (Vertex) URL". They do not: both need
+requests signed with the cloud's own credentials (SigV4, Google OAuth),
+and igni signs nothing — the `anthropic` provider sends a key as
+`X-Api-Key`. The answer is igni server as the proxy (the item below in
+igni-server's plan): igni points `provider: anthropic` or `openai_like`
+at igni server with `cloud_token`, and the server holds the cloud
+credentials. Until that ships, the row should say "through a proxy that
+signs the requests".
