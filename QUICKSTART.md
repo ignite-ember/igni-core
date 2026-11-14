@@ -115,7 +115,7 @@ That's it — agents will now use GPT-4o. See [Configuration](docs/CONFIGURATION
 
 ```bash
 cd your-project
-igni -m "In one sentence, what does this project do?"
+igni --read-only -m "In one sentence, what does this project do?"
 ```
 
 The first run in a folder:
@@ -139,8 +139,8 @@ The first run in a folder:
 ### A headless run cannot ask you anything
 
 `igni -m` has nobody to show a confirmation to, and igni reads files with
-the shell, which asks by default. So out of the box the question above stops
-at its first `cat` with *"Run paused for confirmation … the tool did not
+the shell, which asks by default. So without `--read-only` the question above
+stops at its first `cat` with *"Run paused for confirmation … the tool did not
 run"* and exits 1. Decide up front what it may do:
 
 ```bash

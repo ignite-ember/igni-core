@@ -45,3 +45,15 @@ def test_the_quickstart_allow_rules_say_which_file_they_go_in():
 
     assert "~/.igni/config.yaml" in snippet
     assert "igni trust" in snippet
+
+
+def test_the_quickstart_first_run_question_runs_read_only():
+    """QUICKSTART's First Run asked the same question without --read-only, while
+    the section after it says that run pauses and exits 1."""
+    first_run = _section((_ROOT / "QUICKSTART.md").read_text(encoding="utf-8"), "## First Run")
+    (fence,) = re.findall(r"```bash\n(.*?)```", first_run, re.S)[:1]
+    runs = [line for line in fence.splitlines() if re.match(r"\s*igni\b.*\s-m\s", line)]
+
+    assert runs, "First Run has no `igni -m` command"
+    for line in runs:
+        assert "--read-only" in line, f"`{line.strip()}` pauses for confirmation headless"
