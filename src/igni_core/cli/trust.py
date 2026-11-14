@@ -33,6 +33,17 @@ from igni_core.core.workspace_trust import (
 )
 
 
+class _Keeper(logging.Handler):
+    """A log handler that keeps the records it is given."""
+
+    def __init__(self, records: list[logging.LogRecord]) -> None:
+        super().__init__(level=logging.WARNING)
+        self._records = records
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self._records.append(record)
+
+
 class HeldWarnings:
     """The settings loader's warnings, kept back until the folder's trust is settled.
 
@@ -50,8 +61,7 @@ class HeldWarnings:
     def __init__(self) -> None:
         self._logger = logging.getLogger(self.LOGGER)
         self._records: list[logging.LogRecord] = []
-        self._handler = logging.Handler(level=logging.WARNING)
-        self._handler.emit = self._records.append  # type: ignore[method-assign]
+        self._handler = _Keeper(self._records)
         self._propagate = self._logger.propagate
 
     def __enter__(self) -> HeldWarnings:
@@ -72,7 +82,8 @@ class HeldWarnings:
 
     def release(self) -> None:
         """Say what was held, as it would have been said."""
-        records, self._records = self._records, []
+        records = list(self._records)
+        self._records.clear()
         for record in records:
             logging.getLogger(record.name).handle(record)
 
