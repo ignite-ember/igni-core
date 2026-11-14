@@ -403,6 +403,12 @@ igni --session-id abc123 -m "carry on"    # continue a specific one
 saved starts a new session under that id; igni says so on stderr, so a
 typo does not pass unnoticed.
 
+A turn that paused for confirmation (`igni -m` exiting 1 with *"Run paused
+for confirmation"*) is not part of the session's history: the call it
+stopped at never ran, and the resumed session goes on from the turn before
+it, so the model does not see that message. Send it again in the resumed
+session, with `--read-only` or the allow rule the pause asked for.
+
 ---
 
 ## Optional Features
