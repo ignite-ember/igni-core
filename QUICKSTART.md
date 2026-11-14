@@ -18,7 +18,7 @@ source .venv/bin/activate       # puts `igni` on your PATH
 **Homebrew:**
 
 ```bash
-brew install ignite-ember/tap/ignite-ember
+brew install ignite-ember/tap/igni-core   # ignite-ember/tap/ignite-ember is an alias of it
 ```
 
 **pip:**
@@ -33,9 +33,9 @@ Those two install **v1.0.4** — this repository's build: the `igni_core`
 module, the `igni` command and the decisions service. `igni-core` is on
 PyPI under its own name, and the `ignite-ember` alias
 (`packages/ignite-ember/` — metadata, and a dependency on `igni-core` at
-the same version) forwards to it. The command is `ignite-ember` under
-Homebrew, which symlinks one binary, and `igni` under pip, which installs
-both names.
+the same version) forwards to it. The formula is `igni-core`, and
+`ignite-ember` is an alias of it; either way, Homebrew and pip both
+install the `igni` command and the `ignite-ember` alias.
 
 ## What `igni` is on the command line
 
