@@ -196,8 +196,9 @@ The agent sees each tool as ``{{ID}}.<tool>`` in the manifest's
 import json
 import logging
 from pathlib import Path
+from urllib.parse import quote
 
-from igni_extension import Hooks, IgniExtension, NotSignedIn, ToolHints
+from igni_extension import Hooks, IgniExtension, NotConfigured, NotSignedIn, ToolHints
 from igni_extension.hooks import PostToolUse
 
 ext = IgniExtension("{{ID}}")
@@ -224,9 +225,12 @@ async def lookup_ticket(ticket_id: str) -> str:
 async def ticket_from_service(ticket_id: str) -> str:
     """Look a ticket up on this extension's service, as the signed-in person."""
     try:
-        response = await ext.service.get(f"/v1/tickets/{ticket_id}")
+        # Quoted: an id like "../igni/subjects/u-ada" stays one path segment.
+        response = await ext.service.get(f"/v1/tickets/{quote(ticket_id, safe='')}")
     except NotSignedIn:
         return "Sign in to igni to reach the ticket service."
+    except NotConfigured:  # a development install has no service, so no URL for one
+        return "The ticket service is not set up for this install."
     response.raise_for_status()
     return response.text
 
@@ -350,6 +354,14 @@ async def test_the_tool_answers_as_igni_calls_it() -> None:
     async with HostHarness(ext) as host:
         result = await host.call("lookup_ticket", {"ticket_id": "T-1001"}, caller=ADA)
     assert json.loads(result.content[0].text)["title"] == "VPN drops every hour"
+
+
+async def test_the_service_tool_says_so_in_a_development_install_with_no_service() -> None:
+    # Run here, igni gave the extension no service URL, as in a development install.
+    async with HostHarness(ext) as host:
+        result = await host.call("ticket_from_service", {"ticket_id": "T-1001"}, caller=ADA)
+    assert not result.is_error
+    assert result.content[0].text == "The ticket service is not set up for this install."
 
 
 async def test_many_callers_at_once() -> None:

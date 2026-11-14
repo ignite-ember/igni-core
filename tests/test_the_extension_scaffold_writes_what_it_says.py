@@ -222,3 +222,28 @@ def test_the_service_workspace_points_at_the_published_tutorial_and_says_how_the
     assert "igni-extension and igni-service are not on PyPI" in pyproject
     assert "local wheels" in pyproject
     assert "--find-links" in pyproject
+
+
+def _function(tree: ast.Module, name: str) -> ast.AsyncFunctionDef:
+    (found,) = [n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == name]
+    return found
+
+
+def test_the_service_tool_answers_a_development_install_and_quotes_the_id(tmp_path: Path) -> None:
+    """As igni-sdk's examples/ticket-lookup does, which the tutorial says the
+    scaffold matches: with no service URL (a development install) the tool
+    said "Error executing tool ticket_from_service: ... was not started with
+    its service's URL", and an id with a ``/`` left its path segment. The
+    scaffold's own tests run the tool; this holds the code shape here, where
+    igni-extension is not installed."""
+    Scaffold(tmp_path / "t", "acme.tickets").write_service()
+    source = (tmp_path / "t/extension/src/acme_tickets_extension/__init__.py").read_text()
+    tool = _function(ast.parse(source), "ticket_from_service")
+
+    (attempt,) = [n for n in ast.walk(tool) if isinstance(n, ast.Try)]
+    caught = {h.type.id for h in attempt.handlers if isinstance(h.type, ast.Name)}
+    assert caught == {"NotSignedIn", "NotConfigured"}
+    assert "quote(ticket_id, safe='')" in ast.unparse(tool)
+
+    tests = (tmp_path / "t/tests/test_extension_and_service.py").read_text()
+    assert "test_the_service_tool_says_so_in_a_development_install_with_no_service" in tests
