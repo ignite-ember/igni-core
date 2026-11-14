@@ -14,7 +14,7 @@ actual extracted strings.
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from igni_core.core.utils.response import extract_response_text
+from igni_core.core.utils.response import extract_reply_text, extract_response_text
 
 
 class TestExtractResponseText:
@@ -176,3 +176,62 @@ class TestTheFallbackIsTheResponseItself:
 
         response = _Plain(messages=[SimpleNamespace(content="x"), SimpleNamespace(content="y")])
         assert ResponseTextExtractor(response).text() == extract_response_text(response) == "y"
+
+
+class TestTheReplyKeepsTheRunsTextsApart:
+    """``igni -m`` printed "OKOK — noted": agno appends each assistant text of
+    the tool loop to the last with nothing between them."""
+
+    @staticmethod
+    def _message(role: str, content, from_history: bool = False):
+        return SimpleNamespace(role=role, content=content, from_history=from_history)
+
+    def _run(self, *messages):
+        texts = [m.content for m in messages if m.role == "assistant" and not m.from_history]
+        content = "".join(t for t in texts if isinstance(t, str))
+        return SimpleNamespace(content=content, messages=list(messages))
+
+    def test_two_texts_around_a_tool_call_are_a_blank_line_apart(self):
+        run = self._run(
+            self._message("user", "Remember TANGERINE-42. Reply only with OK."),
+            self._message("assistant", "OK"),
+            self._message("tool", "saved"),
+            self._message("assistant", "OK — code word **TANGERINE-42** noted for later."),
+        )
+
+        assert extract_reply_text(run) == ("OK\n\nOK — code word **TANGERINE-42** noted for later.")
+
+    def test_a_text_from_an_earlier_turn_is_not_part_of_this_reply(self):
+        earlier = self._message("assistant", "from before", from_history=True)
+        run = self._run(earlier, self._message("assistant", "only this"))
+
+        assert extract_reply_text(run) == "only this"
+
+    def test_content_that_is_not_the_texts_end_to_end_is_left_as_it_is(self):
+        run = SimpleNamespace(
+            content="a structured answer",
+            messages=[self._message("assistant", "a"), self._message("assistant", "b")],
+        )
+
+        assert extract_reply_text(run) == "a structured answer"
+
+    def test_a_plain_string_is_returned_verbatim(self):
+        assert extract_reply_text("OKOK") == "OKOK"
+
+
+def test_the_message_handler_reads_the_reply_with_the_texts_kept_apart():
+    """The headless reply comes from :class:`SessionMessageHandler`, whose
+    default extractor is the one that keeps the texts apart."""
+    from igni_core.core.session.message_handler import SessionMessageHandler
+
+    run = SimpleNamespace(
+        content="I'll look up ticket T-1001.T-1001 is open.",
+        messages=[
+            SimpleNamespace(role="assistant", content="I'll look up ticket T-1001."),
+            SimpleNamespace(role="assistant", content="T-1001 is open."),
+        ],
+    )
+    handler = SessionMessageHandler.__new__(SessionMessageHandler)
+    handler._deps = SimpleNamespace(extract_response_text=None)
+
+    assert handler._extract_response_text(run) == "I'll look up ticket T-1001.\n\nT-1001 is open."
