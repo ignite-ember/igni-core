@@ -70,8 +70,9 @@ class NoModelConfigured(OpenAILike):
     STALE_DEFAULT_MESSAGE = (
         "The model {name!r} is not in `models.registry` ({known}). It was named "
         f"by `--model` or by `models.default` in {DEFAULT_DATA_DIR}/config.yaml: "
-        "name one that is there, add an entry for it, or run `/login` from a "
-        "client to rediscover the models your server offers."
+        "pick one that is there (with `/model` in a client), add an entry for "
+        "it, or run `/login` from a client to rediscover the models your server "
+        "offers."
     )
 
     @classmethod

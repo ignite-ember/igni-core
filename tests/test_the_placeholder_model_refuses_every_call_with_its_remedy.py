@@ -52,8 +52,6 @@ def test_the_stale_message_names_both_places_the_name_comes_from_and_the_models_
     assert "`--model`" in message
     assert "`models.default`" in message
     assert "the models there: minimax, zeta" in message
-    # ``/model`` printed nothing headless when this pointed at it.
-    assert "`/model`" not in message
 
 
 def test_the_stale_message_says_when_the_registry_is_empty():
