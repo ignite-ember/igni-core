@@ -204,3 +204,21 @@ async def test_the_dev_scaffold_backend_starts_and_answers_hello_over_mcp(tmp_pa
         assert [t.name for t in tools.tools] == ["hello"]
         result = await session.call_tool("hello", {})
     assert json.loads(result.content[0].text) == {"message": "hello from the extension backend"}
+
+
+TUTORIAL = "https://github.com/ignite-ember/igni-sdk/blob/main/docs/YOUR_FIRST_EXTENSION.md"
+
+
+def test_the_service_workspace_points_at_the_published_tutorial_and_says_how_the_sdks_install(
+    tmp_path: Path,
+) -> None:
+    Scaffold(tmp_path / "t", "acme.tickets").write_service()
+    pyproject = (tmp_path / "t" / "pyproject.toml").read_text()
+
+    assert TUTORIAL in pyproject
+    assert "Step 0" in pyproject
+    assert "step 0" not in pyproject
+    assert "docs/YOUR_FIRST_EXTENSION.md" not in pyproject.replace(TUTORIAL, "")
+    assert "igni-extension and igni-service are not on PyPI" in pyproject
+    assert "local wheels" in pyproject
+    assert "--find-links" in pyproject
