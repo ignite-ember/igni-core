@@ -16,8 +16,10 @@ person trusted it earlier.
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
+from types import TracebackType
 
 import click
 
@@ -29,6 +31,53 @@ from igni_core.core.workspace_trust import (
     TrustRefused,
     process_trust,
 )
+
+
+class HeldWarnings:
+    """The settings loader's warnings, kept back until the folder's trust is settled.
+
+    The first settings load of a run reads the organisation's policy, which
+    decides whether ``--trust`` may apply, so it runs before the folder is
+    trusted. An untrusted load says what it left out of the folder's files
+    ("sets permissions … ignored"), and that is false once ``--trust`` makes
+    the folder trusted and settings load again. So those warnings wait:
+    :meth:`release` says them when the folder stayed untrusted, and
+    :meth:`discard` drops them when the reload will have read the files.
+    """
+
+    LOGGER = "igni_core.core.config"
+
+    def __init__(self) -> None:
+        self._logger = logging.getLogger(self.LOGGER)
+        self._records: list[logging.LogRecord] = []
+        self._handler = logging.Handler(level=logging.WARNING)
+        self._handler.emit = self._records.append  # type: ignore[method-assign]
+        self._propagate = self._logger.propagate
+
+    def __enter__(self) -> HeldWarnings:
+        self._logger.addHandler(self._handler)
+        self._logger.propagate = False
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self._logger.removeHandler(self._handler)
+        self._logger.propagate = self._propagate
+        if exc_type is not None:
+            self.release()
+
+    def release(self) -> None:
+        """Say what was held, as it would have been said."""
+        records, self._records = self._records, []
+        for record in records:
+            logging.getLogger(record.name).handle(record)
+
+    def discard(self) -> None:
+        self._records.clear()
 
 
 def _can_prompt() -> bool:
@@ -147,4 +196,4 @@ def trust_command(path: Path | None, revoke: bool, list_: bool) -> None:
     click.echo(f"Trusted {decision.identity.path}\n" + _describe(decision))
 
 
-__all__ = ["SessionTrust", "trust_command"]
+__all__ = ["HeldWarnings", "SessionTrust", "trust_command"]
