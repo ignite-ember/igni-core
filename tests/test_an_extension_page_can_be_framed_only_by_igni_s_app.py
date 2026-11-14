@@ -8,6 +8,7 @@ may open the backend's WebSocket (``transport/ws_auth.py``).
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Any
 
@@ -50,9 +51,9 @@ def _assert_only_igni_app(csp: str) -> None:
     assert "'none'" not in sources
     assert set(TAURI_ORIGINS) <= set(sources)
     for scheme in ("http", "https"):
-        for host in ("127.0.0.1", "localhost", "[::1]"):
+        for host in ("127.0.0.1", "localhost"):
             assert f"{scheme}://{host}:*" in sources
-    assert len(sources) == len(TAURI_ORIGINS) + 6
+    assert len(sources) == len(TAURI_ORIGINS) + 4
     # Nothing in the list is wider than what may open the WebSocket.
     for source in sources:
         assert origin_allowed(source.replace(":*", ":5173"))
@@ -62,8 +63,23 @@ def _assert_only_igni_app(csp: str) -> None:
 def test_the_sources_are_the_ws_origins_written_as_csp_host_sources() -> None:
     sources = frame_ancestor_sources()
     assert set(TAURI_ORIGINS) <= set(sources)
-    assert "http://[::1]:*" in sources and "https://localhost:*" in sources
+    assert "http://127.0.0.1:*" in sources and "https://localhost:*" in sources
     assert not any(s in ("*", "http:", "https:") for s in sources)
+
+
+# CSP3 ``host-source``: ``scheme://`` then ``*.``-or-not and host-chars
+# (letters, digits, ``-``) in dot-separated parts, then an optional port.
+_HOST_SOURCE = re.compile(
+    r"^[a-z][a-z0-9+.-]*://(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(:(\*|\d+))?$"
+)
+
+
+def test_every_source_is_a_host_source_a_browser_accepts() -> None:
+    """``http://[::1]:*`` is not a host-source: Chromium logged "The
+    Content-Security-Policy directive 'frame-ancestors' does not support the
+    source expression 'http://[::1]:*'" on every load of every page."""
+    for source in frame_ancestor_sources():
+        assert _HOST_SOURCE.match(source), source
 
 
 async def test_the_runtime_builds_origins_the_app_may_frame(tmp_path: Path) -> None:

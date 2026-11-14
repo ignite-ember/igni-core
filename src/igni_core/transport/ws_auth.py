@@ -115,11 +115,18 @@ def frame_ancestor_sources() -> tuple[str, ...]:
     may open the WebSocket are the origins that may frame the page: the
     Tauri webview's, and loopback pages on any port. Derived from the
     same constants as :func:`origin_allowed`, so the two cannot drift.
+
+    Except the IPv6 loopback: a CSP host-source is a name or an IPv4
+    address, and ``http://[::1]:*`` is not one. Chromium refused both
+    entries with a console error on every load of every extension page,
+    and framed nothing from ``[::1]`` anyway; igni's app is on the Tauri
+    origins, ``127.0.0.1`` or ``localhost``.
     """
     loopback = [
-        f"{scheme}://{'[' + host + ']' if ':' in host else host}:*"
+        f"{scheme}://{host}:*"
         for scheme in ("http", "https")
         for host in sorted(_LOOPBACK_HOSTS)
+        if ":" not in host
     ]
     return (*sorted(TAURI_ORIGINS), *loopback)
 
