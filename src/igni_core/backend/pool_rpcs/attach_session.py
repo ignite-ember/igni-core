@@ -40,7 +40,10 @@ class AttachSessionRpc(PoolRpc):
         ``session_id`` names the session to resume; ``project_dir`` the folder
         it works in. Neither: the default session. Only ``project_dir``: a new
         session locked to that folder. Both: that session, which must belong
-        to that folder. The session is made live if it is not.
+        to that folder. The session is made live if it is not. An id igni has
+        no session by is not an error: a new, empty session starts under that
+        id, so check ``session_id`` against the session list first when it
+        must already exist.
 
         Returns the ``session_id`` and ``project_dir`` actually bound; send
         later requests for that session with this ``session_id`` on the
