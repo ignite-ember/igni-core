@@ -172,8 +172,11 @@ class InteractiveCommandDispatcher:
             return
         lines = ["## Sessions"]
         for row in sessions[:20]:
-            lines.append(f"- {row.name or row.session_id}")
-        lines.append("\n[dim]Use --resume <id> to resume a session.[/dim]")
+            # The id is what resumes a session, so every row shows it.
+            lines.append(_entry(f"`{row.session_id}`", row.name or ""))
+        # ``--resume`` is not an option of ``igni`` (it is ``--session-id``),
+        # and the line was Rich markup printed through Markdown.
+        lines.append('\nResume one with `igni --session-id <id> -m "..."`.')
         display.print_markdown("\n".join(lines))
 
     async def _render_agents(self, result: CommandResult) -> None:

@@ -96,10 +96,13 @@ async def test_sessions_are_capped_at_twenty_and_a_nameless_one_shows_its_id() -
     (text,) = _printed(session.display, "print_markdown")
     lines = [line for line in text.splitlines() if line.startswith("- ")]
     assert len(lines) == 20
-    assert lines[0] == "- nameless-id"
-    assert lines[-1] == "- name19"
+    assert lines[0] == "- `nameless-id`"
+    assert lines[-1] == "- `id19` — name19"
     assert "name20" not in text
-    assert "--resume" in text
+    # The hint names the option ``igni`` has, not ``--resume``.
+    assert "--resume" not in text
+    assert "`igni --session-id <id>" in text
+    assert "[dim]" not in text
 
 
 @pytest.mark.asyncio

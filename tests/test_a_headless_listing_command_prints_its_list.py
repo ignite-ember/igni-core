@@ -62,7 +62,7 @@ async def _run(session, message: str) -> str:
     return "\n".join(printed)
 
 
-async def test_sessions_lists_the_saved_sessions(session):
+async def test_sessions_lists_the_saved_sessions_by_id(session):
     session.persistence.list_sessions = AsyncMock(
         return_value=[SessionListRow(session_id="7997d259", name="greeting fix")]
     )
@@ -70,7 +70,7 @@ async def test_sessions_lists_the_saved_sessions(session):
     text = await _run(session, "/sessions")
 
     assert "## Sessions" in text
-    assert "greeting fix" in text
+    assert "- `7997d259` — greeting fix" in text
 
 
 async def test_model_lists_the_registry_and_marks_the_current_one(session):
