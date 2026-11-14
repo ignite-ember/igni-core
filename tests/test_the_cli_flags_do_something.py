@@ -197,6 +197,46 @@ class TestFlagsThatRefuse:
         assert "-m" in result.output
 
 
+class TestNoColor:
+    """``--no-color`` turns colour off in the consoles igni prints through."""
+
+    @staticmethod
+    def _clear(monkeypatch: pytest.MonkeyPatch) -> None:
+        # setenv first so the teardown removes what the CLI sets.
+        monkeypatch.setenv("NO_COLOR", "")
+        monkeypatch.delenv("NO_COLOR")
+
+    def test_the_flag_turns_colour_off_for_rich(self, monkeypatch, tmp_path):
+        from rich.console import Console
+
+        self._clear(monkeypatch)
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            runner.invoke(cli_module.cli, ["--no-color"])
+
+        assert Console(force_terminal=True).no_color is True
+
+    def test_a_subcommand_gets_it_too(self, monkeypatch, tmp_path):
+        import os
+
+        self._clear(monkeypatch)
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            runner.invoke(cli_module.cli, ["--no-color", "trust", "--help"])
+
+        assert os.environ.get("NO_COLOR") == "1"
+
+    def test_without_it_colour_stays_on(self, monkeypatch, tmp_path):
+        from rich.console import Console
+
+        self._clear(monkeypatch)
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            runner.invoke(cli_module.cli, [])
+
+        assert Console(force_terminal=True).no_color is False
+
+
 class TestFlagsBecomeSettings:
     """The mapping the old tests hand-wrote instead of calling."""
 

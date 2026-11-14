@@ -152,6 +152,10 @@ def cli(ctx: click.Context, **_params: object) -> None:
     # A subcommand handles itself. Falling through would run the CLI's own
     # setup as well — and, with no message, print the help pointer on top
     # of it.
+    # ``--no-color``: Rich honours ``NO_COLOR`` in every console igni makes
+    # from here on (the reply, the footer, warnings), subcommands included.
+    if ctx.params.get("no_color"):
+        os.environ["NO_COLOR"] = "1"
     if ctx.invoked_subcommand is not None:
         return
 
