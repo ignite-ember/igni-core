@@ -82,12 +82,15 @@ class SpawnHooks:
 
         A hook that raises must not take the spawn down with it: a
         hook observes the spawn, it does not participate in it. The
-        failure is logged, not swallowed.
+        failure is logged, not swallowed. The spawned agent's name is the
+        target a hook's ``matcher`` is checked against.
         """
         if self._executor is None:
             return
+        # A hook's ``matcher`` is checked against the spawned agent's name.
+        target = getattr(payload, "agent_name", "") or ""
         try:
-            await self._executor.execute(event=event, payload=payload)
+            await self._executor.execute(event=event, payload=payload, target=target)
         except Exception as exc:
             _spawn_log.warning("spawn hook %s failed: %s", event.value, exc)
 
