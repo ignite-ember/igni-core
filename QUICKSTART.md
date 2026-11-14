@@ -154,7 +154,10 @@ igni --read-only -m "…"
 puts any other command to you — headless, that stops the run.)
 
 ```yaml
-# or name what may run, e.g. for "fix the failing test":
+# or name what may run, e.g. for "fix the failing test".
+# In ~/.igni/config.yaml; a project's .igni/config.yaml counts only once
+# the folder is trusted (`igni trust`, or --trust for one run) — in an
+# untrusted folder its permission settings are off and the run still pauses.
 permissions:
   allow:
     - "Bash(python3 -m pytest *)"

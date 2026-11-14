@@ -29,3 +29,19 @@ def test_the_readme_quick_start_question_runs_read_only():
     assert runs, "the Quick Start has no `igni -m` command"
     for line in runs:
         assert "--read-only" in line, f"`{line.strip()}` pauses for confirmation headless"
+
+
+def test_the_quickstart_allow_rules_say_which_file_they_go_in():
+    """Put in the project's `.igni/config.yaml` of a new folder — the file igni
+    had just written — the rules were ignored and the run paused: a project's
+    permission settings are off until the folder is trusted."""
+    section = _section(
+        (_ROOT / "QUICKSTART.md").read_text(encoding="utf-8"),
+        "### A headless run cannot ask you anything",
+    )
+    (snippet,) = [
+        block for block in re.findall(r"```yaml\n(.*?)```", section, re.S) if "allow:" in block
+    ]
+
+    assert "~/.igni/config.yaml" in snippet
+    assert "igni trust" in snippet
