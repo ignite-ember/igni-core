@@ -13,6 +13,7 @@ root-logger state on the CLI startup path).
 from __future__ import annotations
 
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -72,3 +73,29 @@ class DebugLogging:
             named.propagate = False
 
         return log_path
+
+
+class AgnoLogs:
+    """Agno's own loggers, sent to stderr for a headless run.
+
+    Agno gives its loggers (``agno``, ``agno-team``, ``agno-workflow``) a
+    handler of their own that writes to stdout — a rich console on a
+    terminal, a plain stream otherwise — and stops them propagating. On
+    ``igni -m`` and ``igni -p`` stdout is the reply, so a tool the model
+    named that the run did not offer printed ``ERROR   Function save_file
+    not found`` above it, and a failed turn printed agno's "Error in Agent
+    run: …" there as well as igni's own report. What agno logs is still
+    said, on stderr.
+    """
+
+    LOGGERS = ("agno", "agno-team", "agno-workflow")
+    _FORMAT = "%(levelname)-7s %(message)s"
+
+    @classmethod
+    def to_stderr(cls) -> None:
+        """Replace each agno logger's handlers with one that writes to stderr."""
+        for name in cls.LOGGERS:
+            agno_logger = logging.getLogger(name)
+            handler = logging.StreamHandler(sys.stderr)
+            handler.setFormatter(logging.Formatter(cls._FORMAT))
+            agno_logger.handlers = [handler]

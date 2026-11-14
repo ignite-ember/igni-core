@@ -19,7 +19,7 @@ import click
 
 from igni_core.cli.context import CliContext
 from igni_core.cli.headless_run import HeadlessRun
-from igni_core.cli.logging import DebugLogging
+from igni_core.cli.logging import AgnoLogs, DebugLogging
 from igni_core.cli.options import CliOptions
 from igni_core.cli.resume import ResumeResolver
 from igni_core.core.config.settings import Settings
@@ -197,7 +197,11 @@ class CliInvocation:
         self.run_message(self.read_pipe_message())
 
     def run_message(self, message: str) -> None:
-        """Run one session on ``message``, then exit (see :class:`HeadlessRun`)."""
+        """Run one session on ``message``, then exit (see :class:`HeadlessRun`).
+
+        Stdout is the reply: agno's logs go to stderr (:class:`AgnoLogs`).
+        """
+        AgnoLogs.to_stderr()
         self._headless_run.run(self._session(message), cleanup=self.cleanup_worktree)
 
     async def _session(self, message: str) -> None:
