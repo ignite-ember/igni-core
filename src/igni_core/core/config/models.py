@@ -109,7 +109,9 @@ class ModelRegistry:
             # by a different route, so it gets the same treatment and a
             # message naming the model that went missing.
             self._warn_stale_default(resolved_name)
-            return NoModelConfigured.for_stale_default(resolved_name)
+            return NoModelConfigured.for_stale_default(
+                resolved_name, self.settings.models.registry.keys()
+            )
 
         builder = self._catalog.builder_for(entry.provider)
         if builder is None:
@@ -193,9 +195,7 @@ class ModelRegistry:
 
     def _warn_stale_default(self, name: str) -> None:
         logger.warning(
-            "Configured default model %r is not in models.registry — "
-            "returning placeholder. Run /login to rediscover models, or "
-            "pick one with /model.",
+            "Model %r is not in models.registry — returning placeholder.",
             name,
         )
 

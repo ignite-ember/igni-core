@@ -17,6 +17,8 @@ so there's no free module string floating around.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from agno.models.openai.like import OpenAILike
 
 from igni_core.core.paths import DEFAULT_DATA_DIR
@@ -61,15 +63,19 @@ class NoModelConfigured(OpenAILike):
             api_key="placeholder",
         )
 
+    # The name reaches the default from ``models.default`` in a config file
+    # or from ``igni --model``, and nothing downstream knows which: the
+    # message called a typo on the command line "the configured default" and
+    # sent the person to config.yaml. It names both, and the models there.
     STALE_DEFAULT_MESSAGE = (
-        "The configured default model {name!r} is not in `models.registry`. "
-        "Run `/login` from a client to rediscover the models your server "
-        "offers, or "
-        f"pick one with `/model`. Set in {DEFAULT_DATA_DIR}/config.yaml."
+        "The model {name!r} is not in `models.registry` ({known}). It was named "
+        f"by `--model` or by `models.default` in {DEFAULT_DATA_DIR}/config.yaml: "
+        "name one that is there, add an entry for it, or run `/login` from a "
+        "client to rediscover the models your server offers."
     )
 
     @classmethod
-    def for_stale_default(cls, name: str) -> NoModelConfigured:
+    def for_stale_default(cls, name: str, known: Iterable[str] = ()) -> NoModelConfigured:
         """Factory for a default that names a model nobody registers.
 
         Distinct from :meth:`for_login_required` because the remedy
@@ -80,8 +86,10 @@ class NoModelConfigured(OpenAILike):
         ``Session.__init__`` and the backend died before it could say
         anything at all.
         """
+        names = sorted(known)
+        listed = f"the models there: {', '.join(names)}" if names else "it is empty"
         placeholder = cls()
-        placeholder.ERROR_MESSAGE = cls.STALE_DEFAULT_MESSAGE.format(name=name)
+        placeholder.ERROR_MESSAGE = cls.STALE_DEFAULT_MESSAGE.format(name=name, known=listed)
         return placeholder
 
     @classmethod
