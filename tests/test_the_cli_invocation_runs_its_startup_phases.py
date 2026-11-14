@@ -93,14 +93,14 @@ def test_continue_resumes_the_latest_session_and_says_which(latest, capsys) -> N
     inv = _invocation(continue_session=True)
     inv.resolve_resume_id()
     assert inv._resume_session_id == "s-42"
-    assert capsys.readouterr().out == "Resuming last session: s-42\n"
+    assert capsys.readouterr().err == "Resuming last session: s-42\n"
 
 
 def test_continue_with_no_sessions_says_so_and_starts_fresh(latest, capsys) -> None:
     inv = _invocation(continue_session=True)
     inv.resolve_resume_id()
     assert inv._resume_session_id is None
-    assert capsys.readouterr().out == "No previous sessions found.\n"
+    assert capsys.readouterr().err == "No previous sessions found.\n"
 
 
 def test_continue_when_the_lookup_fails_says_so_and_starts_fresh(latest, capsys) -> None:
@@ -108,7 +108,7 @@ def test_continue_when_the_lookup_fails_says_so_and_starts_fresh(latest, capsys)
     inv = _invocation(continue_session=True)
     inv.resolve_resume_id()
     assert inv._resume_session_id is None
-    assert capsys.readouterr().out == "Could not look up last session.\n"
+    assert capsys.readouterr().err == "Could not look up last session.\n"
 
 
 # ── worktree and trust ──────────────────────────────────────────────

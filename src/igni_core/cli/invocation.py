@@ -104,15 +104,17 @@ class CliInvocation:
             return
 
         resolver = ResumeResolver(self._settings)
+        # Said on stderr, as the unknown --session-id note is: stdout is the
+        # reply, and ``igni -c -m … | cat`` got "Resuming last session" in it.
         lookup = resolver.latest_id()
         if lookup.error is not None:
-            click.echo("Could not look up last session.")
+            click.echo("Could not look up last session.", err=True)
             return
         if lookup.session_id is None:
-            click.echo("No previous sessions found.")
+            click.echo("No previous sessions found.", err=True)
             return
         self._resume_session_id = lookup.session_id
-        click.echo(f"Resuming last session: {lookup.session_id}")
+        click.echo(f"Resuming last session: {lookup.session_id}", err=True)
 
     def setup_worktree(self) -> None:
         """Create the isolated git worktree when ``--worktree`` is
