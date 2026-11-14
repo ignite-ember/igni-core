@@ -202,7 +202,12 @@ approval dialogs and slash commands. `/help` lists the commands and
 
 ### Shell Mode
 
-Type `!` or `$` to enter shell mode — the prompt changes from `>` to `$`. Commands run directly in your terminal with output shown in the conversation. The AI sees the output as context in your next message.
+In the desktop app and the web client, type `$` at the start of the message
+box to enter shell mode — a `$ shell` badge appears and the box says
+*Shell command*. Enter runs the command in the project directory, with no
+approval (you typed it), and its output shows in the conversation. The AI sees
+the output as context in your next message. `igni -m` has no shell mode: there
+is no prompt on the command line.
 
 ```
 $ ls src/
@@ -211,13 +216,12 @@ $ ls src/
 $ python -m pytest tests/ -q
   12 passed in 1.3s
 
-> The tests pass. Now add a /health endpoint
+The tests pass. Now add a /health endpoint
   (AI sees the shell output as context)
 ```
 
-- **Enter shell mode**: type `!` or `$`
-- **Exit shell mode**: `Esc` or `Backspace` on empty input
-- **One-off command**: `! git status` from chat mode (without entering shell mode)
+- **Enter shell mode**: type `$` in an empty message box
+- **Exit shell mode**: `Esc`, or `Backspace` on empty input
 
 ### File References
 
