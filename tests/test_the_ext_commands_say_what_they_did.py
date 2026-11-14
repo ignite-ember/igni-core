@@ -368,3 +368,25 @@ def test_the_service_scaffold_does_not_say_the_sdks_are_not_on_pypi(tmp_path):
         text = (target / name).read_text(encoding="utf-8")
         assert "not on PyPI" not in text
         assert "on PyPI:" not in text
+
+
+def test_a_replace_says_a_running_backend_serves_the_new_page_at_once(tmp_path, monkeypatch):
+    """After a rebuilt page, `--replace` said the change "starts the next time
+    igni's backend starts", while a running backend's origin streamed the new
+    ui/ at once (each file is read from the store per request): a page-only
+    change needs a reload, not a restart."""
+    monkeypatch.setenv("IGNI_DEV_EXTENSIONS", "1")
+    monkeypatch.setattr(
+        PolicySettingsLoader,
+        "load",
+        lambda _self: SimpleNamespace(air_gapped=False, network=SimpleNamespace(internal_hosts=[])),
+    )
+    root = tmp_path / "store"
+    bundle = _dev_bundle(tmp_path, name="one")
+    first = _run("install", str(bundle), "--root", str(root))
+    assert "It starts the next time igni's backend starts" in first.output
+
+    replaced = _run("install", str(bundle), "--root", str(root), "--replace")
+    assert replaced.exit_code == 0, replaced.output
+    assert "serves the new page (ui/) at once: reload it" in replaced.output
+    assert "code and manifest change the next time igni's backend starts" in replaced.output

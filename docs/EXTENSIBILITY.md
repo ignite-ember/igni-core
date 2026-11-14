@@ -469,9 +469,11 @@ IGNI_DEV_EXTENSIONS=1 igni ext install https://github.com/acme/tools --subdir ex
 The install is a copy into `<data>/extensions/<id>/`, so a change to the
 source — a rebuilt page included — reaches igni only by installing it
 again: `igni ext install --replace ./my-extension` upgrades the installed
-copy and re-asks for its permissions. Without `--replace` a second install
-of the same id is refused ("already installed … Pass --replace to upgrade
-it").
+copy and prints again what it may use (it asks nothing). A running backend
+serves a rebuilt page at once — reload it; the extension's code and
+manifest change the next time the backend starts. Without `--replace` a
+second install of the same id is refused ("already installed … Pass
+--replace to upgrade it").
 
 `--ref` takes a branch, a tag or a commit, and the commit that was
 installed is always printed. `--subdir` picks one bundle out of a
