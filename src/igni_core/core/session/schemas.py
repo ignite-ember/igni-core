@@ -609,8 +609,8 @@ class LoopAdvance(BaseModel):
     )
     auto_extended: bool = Field(
         default=False,
-        description="True on the first iteration after an open-ended loop was resumed past "
-        "the safety limit.",
+        description="True on the first iteration after an open-ended loop's safety budget "
+        "rolled over (it is extended every 30 iterations, up to 200).",
     )
 
     @model_validator(mode="after")

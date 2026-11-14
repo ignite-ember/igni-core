@@ -1,5 +1,5 @@
 {
-  "access": "Who may make a call, as igni enforces it.\n\n* `client` \u2014 any connection igni admitted.\n* `approver` \u2014 igni's window, or a connection standing as an approver.\n* `window` \u2014 a connection standing as igni's window only.\n* `page` \u2014 an extension's page, through a window that sets the\n  request's `caller`, where the deployment lets a connection speak\n  for an extension.\n* `platform` \u2014 the platform. Where the deployment requires it (the\n  cloud), only on the gateway's control connection; elsewhere any\n  connection.\n\nA connection's standing is decided once, at the WebSocket handshake,\nby the token it offers:\n\n* **Local client, on the desktop.** igni's desktop app launches igni\n  with a per-launch secret that only the app holds, so only the app's\n  own window stands as the window. A client attaching with the token\n  igni publishes in its owner-only lockfile stands as a *program*: it\n  reaches every `client` call and the `platform` calls (the\n  desktop does not require a control connection for them), and is\n  refused every `window` and `approver` call, every approval\n  answer (`hitl_response`), any `caller`, and the window-only\n  slash commands. A client given an approver token (minted in igni's\n  window with `mint_approver_token`) stands as an *approver*: it\n  also answers approval requests and calls `approve_plan`, each\n  time once \u2014 no saved rule, no permission-mode change. It still\n  reaches no `window` call.\n* **Local client, igni started without a secret** (by hand, or with\n  the development switch): every connection stands as the window, so\n  it reaches `client`, `approver` and `window` calls.\n* **Through Fleet's gateway** (a cloud VM): the gateway authenticates\n  the client \u2014 with a person's key or an app's \u2014 and igni on the VM\n  takes no token, so every connection stands as the window and\n  reaches `client`, `approver` and `window` calls alike; igni\n  cannot tell a person's key from an app's. No connection there may\n  speak for an extension, so `page` calls are refused, and the\n  `platform` calls are taken only from the gateway's control\n  connection, which a client never has.",
+  "access": "Who may make a call, as igni enforces it.\n\n* `client` \u2014 any connection igni admitted.\n* `approver` \u2014 igni's window, or a connection standing as an approver.\n* `window` \u2014 a connection standing as igni's window only.\n* `page` \u2014 an extension's page, through a window that sets the\n  request's `caller`, where the deployment lets a connection speak\n  for an extension.\n* `platform` \u2014 the platform. Where the deployment requires it (the\n  cloud), only on the gateway's control connection; elsewhere any\n  connection.\n\nA connection's standing is decided once, at the WebSocket handshake,\nby the token it offers:\n\n* **Local client, on the desktop.** igni's desktop app launches igni\n  with a per-launch secret that only the app holds, so only the app's\n  own window stands as the window. A client attaching with the token\n  igni publishes in its owner-only lockfile stands as a *program*: it\n  reaches every `client` call and the `platform` calls (the\n  desktop does not require a control connection for them), and is\n  refused every `window` and `approver` call, every approval\n  answer (`hitl_response`), any `caller`, and the window-only\n  slash commands. A client given an approver token (minted in igni's\n  window with `mint_approver_token`) stands as an *approver*: it\n  also answers approval requests and calls `approve_plan`, each\n  time once \u2014 no saved rule, no permission-mode change. It still\n  reaches no `window` call.\n* **Local client, igni started by hand.** With no launcher to give it\n  a secret, igni mints its own window token and prints it once to the\n  terminal; the connection that offers it stands as the window, and\n  the lockfile's program token makes a program, as on the desktop.\n* **Local client, igni started with the development switch**\n  (`IGNI_DEV_NO_WS_TOKEN=1`): no token at all, so every connection\n  stands as the window and reaches `client`, `approver` and\n  `window` calls.\n* **Through Fleet's gateway** (a cloud VM): the gateway authenticates\n  the client \u2014 with a person's key or an app's \u2014 and igni on the VM\n  takes no token, so every connection stands as the window and\n  reaches `client`, `approver` and `window` calls alike; igni\n  cannot tell a person's key from an app's. No connection there may\n  speak for an extension, so `page` calls are refused, and the\n  `platform` calls are taken only from the gateway's control\n  connection, which a client never has.",
   "defs": {
     "AgentCompletedEvent": {
       "description": "A sub-agent finished its run, with its token usage.",
@@ -2961,7 +2961,7 @@
       "properties": {
         "auto_extended": {
           "default": false,
-          "description": "True on the first iteration after an open-ended loop was resumed past the safety limit.",
+          "description": "True on the first iteration after an open-ended loop's safety budget rolled over (it is extended every 30 iterations, up to 200).",
           "title": "Auto Extended",
           "type": "boolean"
         },
@@ -3064,7 +3064,7 @@
           "type": "integer"
         },
         "paused": {
-          "description": "`true` when the loop stopped early (it hit the hard iteration cap or an iteration failed) and waits to be resumed.",
+          "description": "`true` when the loop is paused and waits to be resumed: paused by hand, stopped at the hard iteration cap, or restored paused after igni restarted.",
           "title": "Paused",
           "type": "boolean"
         },
@@ -3875,6 +3875,21 @@
         }
       },
       "title": "ModelSwitch",
+      "type": "object"
+    },
+    "ModelSwitched": {
+      "description": "What a successful `switch_model` answers.",
+      "properties": {
+        "text": {
+          "description": "Says the model switched, with a note for any part of the choice that could not be saved.",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "ModelSwitched",
       "type": "object"
     },
     "NoArgs": {
@@ -11254,7 +11269,7 @@
         "$ref": "#/defs/NoArgs"
       },
       "correlate": null,
-      "doc": "List the hooks this session runs.\n\nTakes no arguments. Returns one row per hook: the `event` it runs\non, its `type` (a shell `command` or an HTTP `url`), the\n`matcher` that narrows it, its timeout, whether it runs in the\nbackground, and the HTTP headers it sends.",
+      "doc": "List the hooks this session runs.\n\nTakes no arguments. Returns one row per hook: the `event` it runs\non, its `type` (`command`, `http`, `prompt` or `mcp_tool`)\nand the `command` or `url` it runs, the `matcher` that narrows\nit, its timeout, whether it runs in the background, and the HTTP\nheaders it sends.",
       "duration": "instant",
       "may_stream": [],
       "reply": "rpc_response",
@@ -11276,7 +11291,7 @@
         "$ref": "#/defs/SessionIdArgs"
       },
       "correlate": null,
-      "doc": "List a session's runs that stopped before they finished.\n\n`session_id` names the session. Returns one row per run that was\ncancelled or failed: the `message_id` and text of the message that\nstarted it, when it arrived and when it stopped, why (`cancelled`\nor `errored`) and the last error. A client offers to retry,\ndiscard or edit each. A storage failure answers an empty list.",
+      "doc": "List a session's runs that stopped before they finished.\n\n`session_id` names the session. Returns one row per run that was\ncancelled, failed or never finished: the `message_id` and text of\nthe message that started it, when it arrived and when it stopped, why\n(`cancelled`, `errored`, or `abandoned` when igni stopped while\nit ran) and the last error. A client offers to retry,\ndiscard or edit each. A storage failure answers an empty list.",
       "duration": "io",
       "may_stream": [],
       "reply": "rpc_response",
@@ -11443,7 +11458,7 @@
         "$ref": "#/defs/SessionIdArgs"
       },
       "correlate": null,
-      "doc": "List a session's messages that were received but never answered.\n\n`session_id` names the session. Returns the user messages still\npending at least a minute after they arrived \u2014 typically left by a\ncrash \u2014 oldest first, each with its text, when it arrived and its\n`message_id`. A storage failure answers an empty list.",
+      "doc": "List a session's messages whose run started but never finished.\n\n`session_id` names the session. Returns the user messages still\npending at least a minute after they arrived \u2014 typically left by a\ncrash \u2014 oldest first, each with its text, when it arrived and its\n`message_id`. A storage failure answers an empty list.",
       "duration": "io",
       "may_stream": [],
       "reply": "rpc_response",
@@ -11455,7 +11470,7 @@
       },
       "scope": "session",
       "streams": [],
-      "summary": "List a session's messages that were received but never answered.",
+      "summary": "List a session's messages whose run started but never finished.",
       "timeout_seconds": 30
     },
     "get_plugin_contents": {
@@ -12562,7 +12577,7 @@
         "$ref": "#/defs/SetServerArgs"
       },
       "correlate": null,
-      "doc": "Choose the igni server to sign in to, and remember it for the next launch.\n\n`api_url` is the server's API address (`https` only);\n`portal_url` its portal, empty to derive it from `api_url`.\nReturns the server as stored, or, when the choice is refused (an\nempty or non-`https` address), `error` saying why and nothing\nstored. Fails when the user configuration file cannot be read or\nwritten.",
+      "doc": "Choose the igni server to sign in to, and remember it for the next launch.\n\n`api_url` is the server's API address: `https`, or `http` to\n`localhost`, `127.0.0.1` or `::1` for a local deployment;\n`portal_url` its portal, empty to derive it from `api_url`, and\nheld to the same rule when given. Returns the server as stored, or,\nwhen the choice is refused (an empty `api_url`, or an address that\nbreaks that rule), `error` saying why and nothing stored. Fails when the user configuration file cannot be read or\nwritten.",
       "duration": "io",
       "may_stream": [],
       "reply": "rpc_response",
@@ -12686,12 +12701,12 @@
         "$ref": "#/defs/SwitchModelArgs"
       },
       "correlate": null,
-      "doc": "Make another model the one this session's agent runs on.\n\n`model_name` is a name from the model registry\n(`get_model_registry`). The choice is also saved as the default\nfor new sessions. Returns an `info` message, sent in place of an\n`rpc_response`, saying the model switched, with a note for any\npart of the choice that could not be saved. Fails when the model is\nnot in the registry.",
+      "doc": "Make another model the one this session's agent runs on.\n\n`model_name` is a name from the model registry\n(`get_model_registry`). The choice is also saved as the default\nfor new sessions. Returns `text`, saying the model switched, with a\nnote for any part of the choice that could not be saved. Fails when\nthe model is not in the registry.",
       "duration": "io",
       "may_stream": [],
-      "reply": "message",
+      "reply": "rpc_response",
       "result": {
-        "$ref": "#/defs/Info"
+        "$ref": "#/defs/ModelSwitched"
       },
       "scope": "session",
       "streams": [],

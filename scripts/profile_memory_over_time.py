@@ -167,7 +167,7 @@ async def _run(sessions: int, duration: float, interval: float, rate: float) -> 
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=REPO_ROOT,
-        env={**os.environ, "IGNI_PARENT_PID": str(os.getpid())},
+        env={**os.environ, "IGNI_PARENT_PID": str(os.getpid()), "IGNI_DEV_NO_WS_TOKEN": "1"},
     )
     try:
         # Read ready line.

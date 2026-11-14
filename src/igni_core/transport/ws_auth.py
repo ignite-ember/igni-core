@@ -37,15 +37,26 @@ The token a connection offered also decides what it may do
   that may also answer approval requests. The person hands it to the
   program they chose; a restart forgets every one.
 
-Without a token (a backend started by hand, or in the
-cloud, where the gateway authenticates every client and nothing outside
-the VM reaches the port) only the Origin check applies, and every
-connection is a window.
+A backend started by hand (``python -m igni_core.backend --ws-port N``)
+has no launcher to give it that secret, so it mints its own
+(:func:`take_window_token`), prints it **once** to the terminal's
+stderr, and requires it from every window connection exactly as it
+requires the launcher's. It is never written to disk: whoever started the
+backend sees it, a process that merely shares the user does not. A program
+needs no window token: the program token is minted for every backend that
+takes a token and published in the owner-only lockfile, so the SDK's
+``Local(project_dir)`` attaches as a program; ``Local(url=..., token=...)``
+takes the printed window token.
+
+Only in the cloud (where the gateway authenticates every client and
+nothing outside the VM reaches the port) is there no token at all: only
+the Origin check applies, and every connection is a window.
 ``X-Igni-Gateway: control`` never exempts a connection from the token: on
 a desktop anybody can send that header.
 
-``IGNI_DEV_NO_WS_TOKEN=1`` drops the token requirement for development,
-with a loud warning; the desktop shell only honours it in debug builds.
+``IGNI_DEV_NO_WS_TOKEN=1`` is the explicit opt-out for development: no
+token at all, with a loud warning, and every connection is a window; the
+desktop shell only honours it in debug builds.
 """
 
 from __future__ import annotations
@@ -73,8 +84,10 @@ __all__ = [
     "TOKEN_PROTOCOL_PREFIX",
     "HandshakeGuard",
     "Standing",
+    "frame_ancestor_sources",
     "origin_allowed",
     "take_token_from_environment",
+    "take_window_token",
 ]
 
 logger = logging.getLogger(__name__)
@@ -95,6 +108,22 @@ TAURI_ORIGINS = frozenset(
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
+def frame_ancestor_sources() -> tuple[str, ...]:
+    """The origins :func:`origin_allowed` admits, as CSP ``frame-ancestors`` sources.
+
+    An extension's page is framed by igni's own app, so the origins that
+    may open the WebSocket are the origins that may frame the page: the
+    Tauri webview's, and loopback pages on any port. Derived from the
+    same constants as :func:`origin_allowed`, so the two cannot drift.
+    """
+    loopback = [
+        f"{scheme}://{'[' + host + ']' if ':' in host else host}:*"
+        for scheme in ("http", "https")
+        for host in sorted(_LOOPBACK_HOSTS)
+    ]
+    return (*sorted(TAURI_ORIGINS), *loopback)
+
+
 def take_token_from_environment(environ: MutableMapping[str, str] | None = None) -> str | None:
     """The launcher's token, removed from the environment.
 
@@ -103,7 +132,7 @@ def take_token_from_environment(environ: MutableMapping[str, str] | None = None)
     """
     env = os.environ if environ is None else environ
     token = (env.pop(TOKEN_ENV, None) or "").strip() or None
-    if env.get(DEV_NO_TOKEN_ENV, "").strip() == "1":
+    if _dev_opt_out(env):
         logger.warning(
             "%s=1: the WebSocket accepts connections WITHOUT a token. Any local process "
             "can drive this backend. Development only; never set it on a machine you use.",
@@ -111,6 +140,28 @@ def take_token_from_environment(environ: MutableMapping[str, str] | None = None)
         )
         return None
     return token
+
+
+def _dev_opt_out(env: MutableMapping[str, str]) -> bool:
+    return env.get(DEV_NO_TOKEN_ENV, "").strip() == "1"
+
+
+def take_window_token(
+    environ: MutableMapping[str, str] | None = None, *, mint: bool
+) -> tuple[str | None, bool]:
+    """The window token for this launch, and whether this process minted it.
+
+    The launcher's, when it gave one. Else, when ``mint`` (a backend on a
+    desktop, started by hand), a fresh per-launch secret: the caller
+    prints it once and holds it in memory only. ``IGNI_DEV_NO_WS_TOKEN=1``
+    stays the opt-out (``None``: no token at all), and ``mint=False`` (the
+    cloud, where the gateway authenticates) leaves it ``None``.
+    """
+    env = os.environ if environ is None else environ
+    token = take_token_from_environment(env)
+    if token is not None or not mint or _dev_opt_out(env):
+        return token, False
+    return _new_token(), True
 
 
 def origin_allowed(origin: str) -> bool:

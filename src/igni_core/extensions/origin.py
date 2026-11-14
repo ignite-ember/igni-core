@@ -204,10 +204,10 @@ class ExtensionOrigin:
                 tells those apart.
             frame_ancestors: Host application origins permitted to embed
                 this extension, for the CSP. Empty means nothing may
-                embed it, which is where this starts: the host side of
-                the bridge is a separate piece of work, and until it
-                exists an extension that could be framed by anything
-                would be a surface with no one minding it.
+                embed it. The backend passes igni's own app origins
+                (:func:`~igni_core.transport.ws_auth.frame_ancestor_sources`),
+                the same set that may open its WebSocket; nothing else
+                may frame an extension.
             connect_src: The CSP's ``connect-src``, from
                 :meth:`~igni_core.extensions.permissions.Egress.csp_connect_src`.
             service_url: The extension's own service, whose origin

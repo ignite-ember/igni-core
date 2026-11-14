@@ -414,9 +414,14 @@ class RpcAccess(StrEnum):
       also answers approval requests and calls ``approve_plan``, each
       time once — no saved rule, no permission-mode change. It still
       reaches no ``window`` call.
-    * **Local client, igni started without a secret** (by hand, or with
-      the development switch): every connection stands as the window, so
-      it reaches ``client``, ``approver`` and ``window`` calls.
+    * **Local client, igni started by hand.** With no launcher to give it
+      a secret, igni mints its own window token and prints it once to the
+      terminal; the connection that offers it stands as the window, and
+      the lockfile's program token makes a program, as on the desktop.
+    * **Local client, igni started with the development switch**
+      (``IGNI_DEV_NO_WS_TOKEN=1``): no token at all, so every connection
+      stands as the window and reaches ``client``, ``approver`` and
+      ``window`` calls.
     * **Through Fleet's gateway** (a cloud VM): the gateway authenticates
       the client — with a person's key or an app's — and igni on the VM
       takes no token, so every connection stands as the window and

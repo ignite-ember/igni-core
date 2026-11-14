@@ -40,7 +40,7 @@ from igni_core.cli.login import login
 from igni_core.cli.migrate import migrate
 from igni_core.cli.options import CliOptions
 from igni_core.cli.run_settings import CliSettingsLoader
-from igni_core.cli.trust import SessionTrust, trust_command
+from igni_core.cli.trust import HeldWarnings, SessionTrust, trust_command
 from igni_core.core import air_gap
 from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
@@ -156,24 +156,31 @@ def cli(ctx: click.Context, **_params: object) -> None:
         return
 
     options = CliOptions.model_validate(ctx.params)
+    # Workspace trust: the folder's config, tools, hooks and the rest wait for
+    # it (``core/workspace_trust``). Settled after the first load, which read
+    # the organisation's policy, and settings reload with the folder's config
+    # once it is trusted. Only for a run that starts a session. What the first
+    # load says about the folder's files being left out is held until then:
+    # it is untrue once the folder is trusted.
+    folder = Path.cwd()
+    starts_session = bool(options.message or options.pipe)
+    held = HeldWarnings()
     try:
-        settings = CliSettingsLoader(options).load()
+        with held:
+            settings = CliSettingsLoader(options).load()
     except GroupPolicyUnavailable as exc:
         # ``group_policy.required`` and no verified pack: no session, and
         # the message says what to do. ``igni login`` still works — it is a
         # subcommand, handled above.
         raise click.ClickException(str(exc)) from exc
-    # Workspace trust: the folder's config, tools, hooks and the rest wait for
-    # it (``core/workspace_trust``). Settled after the first load, which read
-    # the organisation's policy, and settings reload with the folder's config
-    # once it is trusted. Only for a run that starts a session.
-    folder = Path.cwd()
-    if options.message or options.pipe:
+    if starts_session:
         became_trusted = SessionTrust(
             folder, pipe=options.pipe, trust_flag=options.trust, quiet=options.quiet
         ).settle()
         if became_trusted:
+            held.discard()
             settings = CliSettingsLoader(options).load()
+    held.release()
 
     # A ``-m`` or pipe run starts igni's decisions service itself, and that
     # process reads no settings: it inherits the air-gap decision instead.
