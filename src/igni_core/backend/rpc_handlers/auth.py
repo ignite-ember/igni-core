@@ -128,11 +128,12 @@ class AuthRpcHandler(RpcHandler):
     def set_server(self, args: SetServerArgs) -> ServerChoice:
         """Choose the igni server to sign in to, and remember it for the next launch.
 
-        ``api_url`` is the server's API address (``https`` only);
-        ``portal_url`` its portal, empty to derive it from ``api_url``.
-        Returns the server as stored, or, when the choice is refused (an
-        empty or non-``https`` address), ``error`` saying why and nothing
-        stored. Fails when the user configuration file cannot be read or
+        ``api_url`` is the server's API address: ``https``, or ``http`` to
+        ``localhost``, ``127.0.0.1`` or ``::1`` for a local deployment;
+        ``portal_url`` its portal, empty to derive it from ``api_url``, and
+        held to the same rule when given. Returns the server as stored, or,
+        when the choice is refused (an empty ``api_url``, or an address that
+        breaks that rule), ``error`` saying why and nothing stored. Fails when the user configuration file cannot be read or
         written.
         """
         return self._controllers.auth.set_server(args.api_url, args.portal_url)
