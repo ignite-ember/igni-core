@@ -149,3 +149,32 @@ def test_the_install_note_says_what_is_published_today(name):
     )
     assert _PUBLISHED in text, f"{name} does not name {_PUBLISHED}, the package PyPI carries today."
     assert _PUBLISHED_VERSION in text, f"{name} does not name the published version."
+
+
+#: The Homebrew formula `release.yml` writes (`Formula/igni-core.rb`, with
+#: `Aliases/ignite-ember` beside it), and the tap it lives in.
+_FORMULA = "ignite-ember/tap/igni-core"
+_BREW_INSTALL = re.compile(r"brew install\s+([^\s`;]+)")
+
+
+@pytest.mark.parametrize("doc", _DOCS, ids=lambda d: d.name)
+def test_every_brew_install_names_the_formula_the_release_writes(doc):
+    """README said `ignite-ember/tap/igni-core` and QUICKSTART
+    `ignite-ember/tap/ignite-ember` for the same install."""
+    text = doc.read_text(encoding="utf-8")
+    named = {name for name in _BREW_INSTALL.findall(text) if name.startswith("ignite-ember/tap/")}
+    assert named <= {_FORMULA}, f"{doc.name} installs {sorted(named)}, not {_FORMULA}"
+
+
+def test_the_release_writes_the_formula_the_docs_name_and_links_both_commands():
+    workflow = (_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "Formula/igni-core.rb" in workflow
+    assert 'bin.install_symlink libexec/"bin/igni"' in workflow
+    assert 'bin.install_symlink libexec/"bin/ignite-ember"' in workflow
+
+
+@pytest.mark.parametrize(
+    "doc", [_ROOT / "README.md", _ROOT / "QUICKSTART.md"], ids=lambda d: d.name
+)
+def test_no_doc_says_homebrew_links_only_one_command(doc):
+    assert "symlinks one" not in doc.read_text(encoding="utf-8")

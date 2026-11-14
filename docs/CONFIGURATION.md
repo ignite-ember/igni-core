@@ -89,23 +89,24 @@ model: MiniMax-M2.7           # → looks up "MiniMax-M2.7" in the registry
 When an agent references `model: <name>`:
 
 ```
-1. Is <name> in models.registry (user config)?     → use it
-2. Is <name> in built-in registry?                  → use it (your igni server)
-3. Does <name> contain ":" (e.g., "openai:gpt-4o")? → parse as provider:model_id
-4. None of the above?                               → error: unknown model
+1. Is <name> in models.registry?                    → use it (your entries, and
+                                                       the ones your igni server
+                                                       advertises, merged at start)
+2. Does <name> contain ":" (e.g., "openai:gpt-4o")? → parse as provider:model_id
+3. None of the above?                               → error: unknown model
 ```
 
 ### Option 1: igni Account (default, zero-config)
 
-Sign up at **https://ignite-ember.sh**. All built-in models route through the your igni server. Free tier available.
+Sign up at **https://ignite-ember.sh**. The models your igni server advertises route through it. Free tier available.
 
 ```bash
-igni                        # then type /login at the prompt (device-flow login)
+igni login                  # opens the portal's sign-in page; /login in the desktop app
 ```
 
-**Device-flow login:** Running `/login` opens your browser to your igni server's portal. After you authenticate, the CLI automatically receives your access token and model credentials. Platform credentials are saved to `~/.igni/credentials.json` (token, email, expiry). Model credentials (API key, URL) are saved to `~/.igni/config.yaml`.
+**Device-flow login:** `igni login` (or `/login` in the desktop app) opens your browser to your igni server's portal. After you authenticate, the CLI automatically receives your access token and model credentials. Platform credentials are saved to `~/.igni/credentials.json` (token, email, expiry). Model credentials (API key, URL) are saved to `~/.igni/config.yaml`.
 
-No manual model configuration needed — the built-in registry handles everything.
+No manual model configuration needed — the models your server advertises are merged into the registry (below).
 
 #### Cloud model auto-discovery
 
@@ -920,7 +921,7 @@ igni --no-color              # disable colors
 
 # Session
 igni --continue              # resume the most recent session
-igni --session-id <id>       # resume a specific session
+igni --session-id <id>       # resume a specific session (an unknown id starts a new one, and says so)
 
 # Direct execution
 igni -m "add tests for auth module"   # non-interactive single task

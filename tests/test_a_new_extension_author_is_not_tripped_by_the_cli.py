@@ -280,7 +280,7 @@ def test_the_service_scaffold_tests_pass_as_written(run, tmp_path):
         timeout=300,
     )
     assert done.returncode == 0, done.stdout + done.stderr
-    assert "3 passed" in done.stdout
+    assert "4 passed" in done.stdout
 
 
 def test_ci_gives_the_scaffold_tests_an_interpreter_with_both_sdks():

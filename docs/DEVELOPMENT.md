@@ -108,17 +108,26 @@ make check
 ### Running the web client against a backend
 
 A backend you start by hand (`python -m igni_core.backend --ws-port 8765
---project-dir .`) requires no WebSocket token, so the web client's dev
-server reaches it as before — run `npm --prefix clients/web run dev` in
-igni-app, which is where the clients live; only pages from a foreign
-`Origin` are refused. A backend the desktop app spawns requires its
-per-launch token (`IGNI_WS_TOKEN`, handed to the webview as
-`#igni_ws_token=…`; see
-[SECURITY.md](SECURITY.md#10-the-backends-local-websocket)). To connect
-something else to that one during development, start the app with
-`IGNI_DEV_NO_WS_TOKEN=1 cargo tauri dev` (in igni-app): debug builds
-then spawn the backend without a token, and both print a warning.
-Release builds ignore it.
+--project-dir .`) requires a token too. It mints its own window token at
+start and prints it once to stderr (one line, "igni window token for this
+backend"); it is never written to disk, so copy it from the terminal. A
+window connection offers it as the subprotocol `igni-token.<token>`
+(the web client takes it as `#igni_ws_token=…`), and a program passes it
+as `Local(url=..., token=...)` in igni-client. A program on the same
+project needs no window token: `Local(project_dir)` reads the program
+token from the owner-only `.igni/backend.lock`. The dev server of the web
+client (`npm --prefix clients/web run dev` in igni-app, which is where
+the clients live) still has the `Origin` check besides the token. A
+backend the desktop app spawns requires its per-launch token
+(`IGNI_WS_TOKEN`, handed to the webview as `#igni_ws_token=…`; see
+[SECURITY.md](SECURITY.md#10-the-backends-local-websocket)).
+
+To start a backend with no token at all during development, set
+`IGNI_DEV_NO_WS_TOKEN=1` (`IGNI_DEV_NO_WS_TOKEN=1 python -m
+igni_core.backend --ws-port 8765`, or `IGNI_DEV_NO_WS_TOKEN=1 cargo tauri
+dev` in igni-app, whose debug builds then spawn the backend without a
+token). Both print a warning; any local process can then drive the
+agent. Release builds ignore it.
 
 ## Makefile
 

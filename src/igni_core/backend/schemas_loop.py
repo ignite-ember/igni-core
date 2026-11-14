@@ -177,8 +177,8 @@ class LoopStatusSnapshot(BaseModel):
     active: bool = Field(description="`true` when a loop is running or paused.")
     paused: bool = Field(
         description=(
-            "`true` when the loop stopped early (it hit the hard iteration cap or "
-            "an iteration failed) and waits to be resumed."
+            "`true` when the loop is paused and waits to be resumed: paused by hand, "
+            "stopped at the hard iteration cap, or restored paused after igni restarted."
         )
     )
     prompt: str = Field(description="The prompt being looped; empty when no loop is active.")

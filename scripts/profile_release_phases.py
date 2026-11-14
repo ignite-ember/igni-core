@@ -111,7 +111,7 @@ async def _watch_phase(
 
 async def _drive(args) -> None:
     project = Path(tempfile.mkdtemp(prefix="igni-release-"))
-    env_overrides = {**os.environ, "IGNI_PARENT_PID": str(os.getpid())}
+    env_overrides = {**os.environ, "IGNI_PARENT_PID": str(os.getpid()), "IGNI_DEV_NO_WS_TOKEN": "1"}
     if args.idle_timeout > 0:
         env_overrides["IGNI_SESSION_IDLE_TIMEOUT"] = str(args.idle_timeout)
     # Force INFO-level logging in the spawned BE so the eviction log

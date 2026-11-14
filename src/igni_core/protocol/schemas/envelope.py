@@ -31,11 +31,12 @@ from pydantic import BaseModel, Field, PrivateAttr
 class Standing(StrEnum):
     """What a connection may do, decided at its handshake (``transport/ws_auth.py``).
 
-    * ``WINDOW`` — igni's own window: it offered the launch secret, which
-      only the process that started the backend holds. Everything,
+    * ``WINDOW`` — igni's own window: it offered the launch secret (the
+      launcher's, or the window token a backend started by hand prints
+      once), which only whoever started the backend holds. Everything,
       approving the agent's tool calls and speaking for an extension
-      included. A connection to a backend that requires no secret (one
-      started by hand, a cloud VM's behind its gateway) and a message from
+      included. A connection to a backend that requires no secret (the
+      development opt-out, a cloud VM's behind its gateway) and a message from
       a transport without connections (the terminal's) stand here too.
     * ``APPROVER`` — a program the window let answer the agent's approval
       requests, with a token it minted. A program otherwise.

@@ -45,7 +45,7 @@ from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.plugins.git import GitClient
 from igni_core.extensions.bundle_source import BundleSource, BundleSourceError
 from igni_core.extensions.distribution.once import OneShotSync
-from igni_core.extensions.manifest import ExtensionManifest
+from igni_core.extensions.manifest import ExtensionManifest, Workspace
 from igni_core.extensions.profile import DEV_FLAG, DevelopmentFlag
 from igni_core.extensions.store import ExtensionStore
 from igni_core.extensions.store_errors import StoreError
@@ -249,7 +249,7 @@ def install(
     click.echo(f"installed {manifest.display_name} ({manifest.id}) to {target} for development")
     _echo_grants(manifest)
     click.echo()
-    click.echo(_STARTS)
+    click.echo(_REPLACED if replace else _STARTS)
 
 
 #: What to restart, said exactly: "restart igni" read as "run igni
@@ -258,6 +258,16 @@ _STARTS = (
     f"It starts the next time igni's backend starts: quit the igni app (and any "
     f"'igni' backend process it left running) and open it again with {DEV_FLAG}=1 "
     f"in its environment. An 'igni -m ...' run with {DEV_FLAG}=1 starts it too."
+)
+#: After ``--replace``: the extension's origin streams each file from the
+#: store on every request (``extensions/origin.py``, ``no-store``), so a
+#: running backend serves a rebuilt page at once; the code waits for a start.
+_REPLACED = (
+    "A running igni backend serves the new page (ui/) at once: reload it. The "
+    "extension's code and manifest change the next time igni's backend starts: quit "
+    "the igni app (and any 'igni' backend process it left running) and open it again "
+    f"with {DEV_FLAG}=1 in its environment. An 'igni -m ...' run with {DEV_FLAG}=1 "
+    "starts the new version too."
 )
 _STOPS = (
     "It stops the next time igni's backend starts: quit the igni app (and any "
@@ -273,9 +283,14 @@ def _echo_grants(manifest: ExtensionManifest) -> None:
     permission nobody enforces.
     """
     permissions = manifest.permissions
-    granted = [
-        ("workspace", permissions.workspace.value),
-        ("workspace paths", ", ".join(permissions.workspacePaths) or "all"),
+    granted = [("workspace", permissions.workspace.value)]
+    if permissions.workspace is not Workspace.NONE:
+        # Only with a workspace to narrow: printed under ``workspace none``,
+        # "workspace paths  all" read as a grant of every path.
+        granted.append(
+            ("workspace paths", ", ".join(permissions.workspacePaths) or "the whole workspace")
+        )
+    granted += [
         ("egress", ", ".join(permissions.egress) or "none"),
         ("secrets", ", ".join(permissions.secrets) or "none"),
         ("agent tools", ", ".join(tool.name for tool in permissions.tools) or "none"),
@@ -455,7 +470,13 @@ def init(directory: Path, extension_id: str | None, shape: str) -> None:
     click.echo()
     click.echo("next:")
     if shape == "service":
-        click.echo(f"  cd {directory} && uv sync && uv run pytest")
+        # The SDKs come from local wheels until the index has them (the
+        # tutorial's Step 0); a plain ``uv sync`` looks on the index alone.
+        click.echo(f"  cd {directory} && uv sync --find-links <wheels> && uv run pytest")
+        click.echo(
+            "    <wheels>: the directory holding the igni-extension and igni-service "
+            "wheels (the tutorial's Step 0); plain uv sync once your index has both"
+        )
         click.echo(f"  igni ext doctor {directory / 'extension'}")
         click.echo(f"  then {directory / 'README.md'} — shipping it through igni server")
     else:

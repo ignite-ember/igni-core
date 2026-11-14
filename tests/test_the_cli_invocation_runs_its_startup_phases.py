@@ -38,13 +38,17 @@ def _invocation(**options: Any) -> CliInvocation:
 @pytest.fixture
 def latest(monkeypatch: pytest.MonkeyPatch):
     """The session store's answer to ``--continue``, and how often it was asked."""
-    state: dict[str, Any] = {"answer": ResumeLookup(), "asked": 0}
+    state: dict[str, Any] = {"answer": ResumeLookup(), "asked": 0, "known": True}
 
     def latest_id(self) -> ResumeLookup:
         state["asked"] += 1
         return state["answer"]
 
+    def has(self, session_id: str) -> bool | None:
+        return state["known"]
+
     monkeypatch.setattr(invocation_module.ResumeResolver, "latest_id", latest_id)
+    monkeypatch.setattr(invocation_module.ResumeResolver, "has", has)
     return state
 
 
@@ -54,7 +58,27 @@ def test_an_explicit_session_id_wins_and_nothing_is_looked_up(latest, capsys) ->
     inv.resolve_resume_id()
     assert inv._resume_session_id == "chosen"
     assert latest["asked"] == 0
-    assert capsys.readouterr().out == ""
+    assert capsys.readouterr() == ("", "")
+
+
+def test_an_explicit_session_id_nobody_saved_is_said_and_still_used(latest, capsys) -> None:
+    latest["known"] = False
+    inv = _invocation(session_id="doesnotexist123")
+    inv.resolve_resume_id()
+    assert inv._resume_session_id == "doesnotexist123"
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err == (
+        "No session 'doesnotexist123' in this project; starting a new one under that id.\n"
+    )
+
+
+def test_an_explicit_session_id_that_cannot_be_checked_is_used_quietly(latest, capsys) -> None:
+    latest["known"] = None
+    inv = _invocation(session_id="chosen")
+    inv.resolve_resume_id()
+    assert inv._resume_session_id == "chosen"
+    assert capsys.readouterr() == ("", "")
 
 
 def test_without_either_flag_there_is_no_resume_id(latest, capsys) -> None:
@@ -69,14 +93,14 @@ def test_continue_resumes_the_latest_session_and_says_which(latest, capsys) -> N
     inv = _invocation(continue_session=True)
     inv.resolve_resume_id()
     assert inv._resume_session_id == "s-42"
-    assert capsys.readouterr().out == "Resuming last session: s-42\n"
+    assert capsys.readouterr().err == "Resuming last session: s-42\n"
 
 
 def test_continue_with_no_sessions_says_so_and_starts_fresh(latest, capsys) -> None:
     inv = _invocation(continue_session=True)
     inv.resolve_resume_id()
     assert inv._resume_session_id is None
-    assert capsys.readouterr().out == "No previous sessions found.\n"
+    assert capsys.readouterr().err == "No previous sessions found.\n"
 
 
 def test_continue_when_the_lookup_fails_says_so_and_starts_fresh(latest, capsys) -> None:
@@ -84,7 +108,7 @@ def test_continue_when_the_lookup_fails_says_so_and_starts_fresh(latest, capsys)
     inv = _invocation(continue_session=True)
     inv.resolve_resume_id()
     assert inv._resume_session_id is None
-    assert capsys.readouterr().out == "Could not look up last session.\n"
+    assert capsys.readouterr().err == "Could not look up last session.\n"
 
 
 # ── worktree and trust ──────────────────────────────────────────────

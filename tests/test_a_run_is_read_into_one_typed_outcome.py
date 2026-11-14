@@ -108,9 +108,17 @@ class TestTheFailuresATurnCanEndIn:
         assert failure.error_type == "paused"
         assert failure.message == (
             "Run paused for confirmation on ['run_shell_command', 'write'] but this session "
-            "cannot resolve a pause; the tool did not run. Grant the tool up front "
-            "(--auto-approve or a settings rule) or use a client that supports confirmations."
+            "cannot resolve a pause; the tool did not run. Decide up front what it may do: "
+            "--read-only to only read, or a permissions.allow rule in ~/.igni/config.yaml "
+            "(with --accept-edits for edits); --auto-approve allows everything. Or use a "
+            "client that supports confirmations."
         )
+
+    def test_a_pause_offers_read_only_before_auto_approve(self):
+        message = TurnFailure.paused(TurnOutcome(kind=OutcomeKind.PAUSED)).message
+
+        assert message.index("--read-only") < message.index("--auto-approve")
+        assert "permissions.allow" in message
 
     def test_a_pause_with_no_paused_tool_says_unknown_tool(self):
         failure = TurnFailure.paused(TurnOutcome(kind=OutcomeKind.PAUSED))

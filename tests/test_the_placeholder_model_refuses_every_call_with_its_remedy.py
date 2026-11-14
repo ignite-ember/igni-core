@@ -39,9 +39,25 @@ def test_the_stale_message_names_the_model_and_the_real_config_path():
 
     assert "'gone-model'" in message
     assert "/login" in message
-    assert "/model" in message
     assert f"{DEFAULT_DATA_DIR}/config.yaml" in message
     assert "{" not in message
+
+
+def test_the_stale_message_names_both_places_the_name_comes_from_and_the_models_there():
+    """``igni --model nosuchmodel`` is a stale default too: the message must not
+    call it "the configured default" and send the person to config.yaml alone."""
+    message = NoModelConfigured.for_stale_default("nosuchmodel", ["zeta", "minimax"]).ERROR_MESSAGE
+
+    assert "configured default" not in message
+    assert "`--model`" in message
+    assert "`models.default`" in message
+    assert "the models there: minimax, zeta" in message
+
+
+def test_the_stale_message_says_when_the_registry_is_empty():
+    message = NoModelConfigured.for_stale_default("gone-model").ERROR_MESSAGE
+
+    assert "it is empty" in message
 
 
 @pytest.mark.parametrize("name", ["{name}", "a{b}c", "{0}", "modèle-ü", "}{"])

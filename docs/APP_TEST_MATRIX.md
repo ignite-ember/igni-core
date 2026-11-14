@@ -57,7 +57,7 @@ model** (`e2e-wire-format-stub`) — right for wire-format tests,
 useless here. Start a real backend and point at it:
 
 ```
-python -m igni_core.backend --ws-port 0      # prints ws_url
+IGNI_DEV_NO_WS_TOKEN=1 python -m igni_core.backend --ws-port 0   # prints ws_url; the opt-out lets the spec connect without the window token
 cd clients/web
 IGNI_LIVE_WS=ws://127.0.0.1:PORT npx playwright test live-chat
 ```

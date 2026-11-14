@@ -58,9 +58,31 @@ class ResumeResolver:
         must not abort session startup — the CLI reports it and
         continues without a resume id.
         """
+        listed = self._list(limit=1)
+        if isinstance(listed, ResumeLookup):
+            return listed
+        if not listed:
+            return ResumeLookup()
+        return ResumeLookup(session_id=listed[0])
+
+    def has(self, session_id: str) -> bool | None:
+        """Whether this project has a session ``session_id``; ``None`` when
+        the sessions could not be read.
+
+        ``--session-id`` with an id nobody saved starts a new session under
+        that id, which is how a client names a new session. On the command
+        line it is usually a typo, so the CLI asks this first and says so.
+        """
+        listed = self._list(limit=None)
+        if isinstance(listed, ResumeLookup):
+            return None
+        return session_id in listed
+
+    def _list(self, limit: int | None) -> list[str] | ResumeLookup:
+        """The project's session ids, newest first, or the error reading them."""
         try:
             db = StorageManager.build_db(self._settings)
-            listing = SessionListing(db).list_sessions(limit=1)
+            listing = SessionListing(db).list_sessions(limit=limit)
             try:
                 listed = asyncio.run(listing)
             except BaseException:
@@ -73,6 +95,4 @@ class ResumeResolver:
         # than raising; that is the error state, not "no previous sessions".
         if not listed.ok:
             return ResumeLookup(error=listed.error or "the session list could not be read")
-        if not listed.value:
-            return ResumeLookup()
-        return ResumeLookup(session_id=listed.value[0].session_id)
+        return [row.session_id for row in listed.value]
