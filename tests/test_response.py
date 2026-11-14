@@ -235,3 +235,48 @@ def test_the_message_handler_reads_the_reply_with_the_texts_kept_apart():
     handler._deps = SimpleNamespace(extract_response_text=None)
 
     assert handler._extract_response_text(run) == "I'll look up ticket T-1001.\n\nT-1001 is open."
+
+
+class TestAContinuedRunKeepsTheTextBeforeThePause:
+    """A run the permission policy paused and continued starts its content
+    again from the continuation: ``igni -m`` printed only the answer and
+    dropped "Checking the notes now.", the text written before the call."""
+
+    @staticmethod
+    def _message(role: str, content):
+        return SimpleNamespace(role=role, content=content, from_history=False)
+
+    def test_the_text_before_the_call_prints_above_the_answer(self):
+        run = SimpleNamespace(
+            content='The first line reads "first line of notes".',
+            messages=[
+                self._message("user", "First write 'Checking the notes now.', then cat notes.txt"),
+                self._message("assistant", "Checking the notes now."),
+                self._message("tool", "first line of notes"),
+                self._message("assistant", 'The first line reads "first line of notes".'),
+            ],
+        )
+
+        assert extract_reply_text(run) == (
+            'Checking the notes now.\n\nThe first line reads "first line of notes".'
+        )
+
+    def test_content_holding_the_last_two_of_three_texts_shows_all_three(self):
+        run = SimpleNamespace(
+            content="bc",
+            messages=[
+                self._message("assistant", "a"),
+                self._message("assistant", "b"),
+                self._message("assistant", "c"),
+            ],
+        )
+
+        assert extract_reply_text(run) == "a\n\nb\n\nc"
+
+    def test_content_that_is_only_an_earlier_text_is_left_as_it_is(self):
+        run = SimpleNamespace(
+            content="a",
+            messages=[self._message("assistant", "a"), self._message("assistant", "b")],
+        )
+
+        assert extract_reply_text(run) == "a"
