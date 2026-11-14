@@ -190,7 +190,7 @@ async def test_a_result_without_an_action_is_printed_by_its_kind(
     session = _make_session()
     dispatcher = InteractiveCommandDispatcher(session)
 
-    await dispatcher._render(result)
+    await dispatcher.render(result)
 
     assert _printed(session.display, method) == [result.content]
     for other in ("print_markdown", "print_info", "print_error"):

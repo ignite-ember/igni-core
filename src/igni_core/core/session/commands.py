@@ -41,6 +41,11 @@ LOGIN_HINT = (
 )
 
 
+def _entry(name: str, description: str) -> str:
+    """One listing line: the name, and what it is when that is known."""
+    return f"- {name} — {description}" if description else f"- {name}"
+
+
 class InteractiveCommandDispatcher:
     """Runs slash commands for the plain-text (--no-tui) REPL.
 
@@ -73,6 +78,8 @@ class InteractiveCommandDispatcher:
             CommandAction.SESSIONS: self._render_sessions,
             CommandAction.MODEL: self._render_model_picker,
             CommandAction.MCP: self._render_mcp_status,
+            CommandAction.AGENTS: self._render_agents,
+            CommandAction.SKILLS: self._render_skills,
             CommandAction.COMPACT: self._render_compact,
             CommandAction.LOGIN: self._render_login,
             CommandAction.RUN_PROMPT: self._render_run_prompt,
@@ -88,14 +95,29 @@ class InteractiveCommandDispatcher:
         if result.is_unknown_command():
             return False
 
-        await self._render(result)
+        await self.render(result)
         return True
 
-    async def _render(self, result: CommandResult) -> None:
-        """Render a CommandResult as plain text output."""
+    async def render(self, result: CommandResult) -> None:
+        """Render a CommandResult as plain text output.
+
+        The headless runner calls this too, for a result with nothing in
+        ``content``: the listings (``/sessions``, ``/model``, ``/agents``,
+        ``/skills``, ``/mcp``) are text here and nowhere else, and before it
+        did, ``igni -m /sessions`` printed nothing and exited 0.
+        """
         renderer = self._action_handlers.get(result.action)
         if renderer is not None:
             await renderer(result)
+            return
+        if result.kind == CommandResultKind.ACTION and not result.content:
+            # An action that opens a page of igni's app (plugins, hooks,
+            # the context breakdown...) has no text form: say so, rather
+            # than print nothing, which reads as success.
+            self.session.display.print_info(
+                f"`/{result.action.value}` opens a page in igni's app (the desktop "
+                "app or the web client); there is nothing to show here."
+            )
             return
         # No dedicated action handler — fall through to the kind-based
         # renderers (MARKDOWN / INFO / ERROR). A ``CommandAction`` added
@@ -154,6 +176,31 @@ class InteractiveCommandDispatcher:
         lines.append("\n[dim]Use --resume <id> to resume a session.[/dim]")
         display.print_markdown("\n".join(lines))
 
+    async def _render_agents(self, result: CommandResult) -> None:
+        """List the loaded agents with their tools (no panel)."""
+        agents = self.session.pool.list_agents()
+        if not agents:
+            self.session.display.print_info("No agents loaded.")
+            return
+        lines = ["## Agents"]
+        for agent in agents:
+            lines.append(_entry(agent.name, agent.description))
+            if agent.tools:
+                lines.append(f"  - tools: {', '.join(agent.tools)}")
+        self.session.display.print_markdown("\n".join(lines))
+
+    async def _render_skills(self, result: CommandResult) -> None:
+        """List the loaded skills (no panel); a person runs one as ``/<name>``."""
+        skills = self.session.skill_pool.list_skills()
+        if not skills:
+            self.session.display.print_info("No skills loaded.")
+            return
+        lines = ["## Skills"]
+        for skill in skills:
+            name = f"/{skill.name}" if skill.user_invocable else skill.name
+            lines.append(_entry(name, skill.description))
+        self.session.display.print_markdown("\n".join(lines))
+
     async def _render_model_picker(self, result: CommandResult) -> None:
         """List available models as text (no interactive picker).
 
@@ -167,7 +214,9 @@ class InteractiveCommandDispatcher:
         for name in sorted(registry.keys()):
             marker = " (current)" if name == current else ""
             lines.append(f"- {name}{marker}")
-        lines.append("\n[dim]Use /model <name> to switch.[/dim]")
+        # Markdown, not Rich markup: ``[dim]`` was printed as written and
+        # ``<name>`` was taken for an HTML tag and dropped.
+        lines.append("\nSwitch with `/model <name>`.")
         self.session.display.print_markdown("\n".join(lines))
 
     async def _render_mcp_status(self, result: CommandResult) -> None:
