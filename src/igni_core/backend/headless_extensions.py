@@ -63,6 +63,7 @@ from igni_core.extensions.service_token import (
 from igni_core.extensions.store import ExtensionStore
 from igni_core.protocol.messages import Message
 from igni_core.protocol.rpc import RpcMethod
+from igni_core.transport.ws_auth import frame_ancestor_sources
 
 if TYPE_CHECKING:
     from igni_core.extensions.sandbox import ExtensionSandbox
@@ -236,7 +237,7 @@ class HeadlessExtensions:
             registry=self._registry,
             rpc=rpc,
             mcp=session.mcp_manager,
-            origins=ExtensionOrigins(),
+            origins=ExtensionOrigins(frame_ancestors=frame_ancestor_sources()),
             project_dir=Path(session.project_dir),
             profile=DeploymentProfile.current(),
             plugins_dir=plugins_dir,

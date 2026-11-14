@@ -73,6 +73,7 @@ __all__ = [
     "TOKEN_PROTOCOL_PREFIX",
     "HandshakeGuard",
     "Standing",
+    "frame_ancestor_sources",
     "origin_allowed",
     "take_token_from_environment",
 ]
@@ -93,6 +94,22 @@ TAURI_ORIGINS = frozenset(
     {"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
 )
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def frame_ancestor_sources() -> tuple[str, ...]:
+    """The origins :func:`origin_allowed` admits, as CSP ``frame-ancestors`` sources.
+
+    An extension's page is framed by igni's own app, so the origins that
+    may open the WebSocket are the origins that may frame the page: the
+    Tauri webview's, and loopback pages on any port. Derived from the
+    same constants as :func:`origin_allowed`, so the two cannot drift.
+    """
+    loopback = [
+        f"{scheme}://{'[' + host + ']' if ':' in host else host}:*"
+        for scheme in ("http", "https")
+        for host in sorted(_LOOPBACK_HOSTS)
+    ]
+    return (*sorted(TAURI_ORIGINS), *loopback)
 
 
 def take_token_from_environment(environ: MutableMapping[str, str] | None = None) -> str | None:

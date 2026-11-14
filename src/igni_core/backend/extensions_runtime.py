@@ -22,6 +22,7 @@ from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.extensions.store import ExtensionStore
 from igni_core.notifications.center import NotificationCenter
 from igni_core.notifications.extension_notices import FaultNotices
+from igni_core.transport.ws_auth import frame_ancestor_sources
 
 
 class ExtensionsRuntime:
@@ -62,7 +63,7 @@ class ExtensionsRuntime:
         prompt_loader: PromptLoader,
     ) -> ExtensionsRuntime:
         rpc = ExtensionRpc(ExtensionRegistry())
-        origins = ExtensionOrigins()
+        origins = ExtensionOrigins(frame_ancestors=frame_ancestor_sources())
         # Which process group each extension's is, so a hung one can be
         # ended: the channel hears the claim and the health monitor acts
         # on it, and they are two ends of one set of groups.
