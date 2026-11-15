@@ -209,7 +209,7 @@ models:
   - `reasoning: true` for agents that need chain-of-thought
   - `can_orchestrate: false` for agents that shouldn't spawn sub-teams
 - [ ] Copy hooks from `.claude/settings.json` → `.igni/settings.json`
-- [ ] Run `/agents refresh` to reload the agent pool
+- [ ] Start igni again: the agent pool is read when a session starts; no slash command reloads it
 
 ### Optional (power features)
 

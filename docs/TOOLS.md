@@ -53,7 +53,8 @@ registry is built.
 
 The two lists differ because they are validated by different code.
 Sub-agent `.md` frontmatter goes through `ToolRegistry.resolve`, which
-accepts every catalog name. `create_agent` and `/agents create` go through
+accepts every catalog name. `create_agent` (the only way to make an
+ephemeral agent: `/agents` has no `create` verb) goes through
 `ToolRegistry.normalize_agno_names`, which validates against the smaller
 *ephemeral-visible* set — that is where `Visualize` drops out.
 

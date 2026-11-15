@@ -353,11 +353,10 @@ were last configured. Want me to propose a graphql.md agent?
 
 ## Re-Running Onboarding
 
-Use slash commands interactively:
-
-```
-/agents refresh   — re-scan agent directories and reload pool
-```
+Start igni again after changing the agent files: the agent pool is read
+when a session starts. `/agents` opens the Agents panel; `/agents ephemeral`,
+`/agents promote <name>` and `/agents discard <name>` manage the agents the
+model made with `create_agent`.
 
 ---
 
