@@ -43,9 +43,11 @@ from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnava
 from igni_core.core.config.settings import Settings
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.plugins.git import GitClient
+from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.extensions.bundle_source import BundleSource, BundleSourceError
 from igni_core.extensions.contract import CONTRACT_VERSION
 from igni_core.extensions.distribution.once import OneShotSync
+from igni_core.extensions.install_contributions import ExtensionPlugin
 from igni_core.extensions.install_errors import InstallError
 from igni_core.extensions.install_preflight import InstallPreflight
 from igni_core.extensions.manifest import ExtensionManifest, Workspace
@@ -406,6 +408,12 @@ def remove(extension_id: str, root: str | None) -> None:
         raise click.ClickException(str(exc)) from exc
     if not removed:
         raise click.ClickException(f"{extension_id} is not installed")
+    # The plugin it carried was copied under its id into the plugins
+    # directory; left there, its agents, skills and hooks stayed live on
+    # every later run with the extension gone (EXTENSIBILITY.md: it "is
+    # removed, with the extension").
+    plugins_dir = PluginInstaller(data_dir=_settings().storage.data_dir).plugins_dir
+    ExtensionPlugin(plugins_dir=plugins_dir).remove(extension_id)
     click.echo(f"removed {extension_id}")
     if distributed is not None:
         click.echo(

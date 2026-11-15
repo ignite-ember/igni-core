@@ -88,3 +88,23 @@ def test_a_good_bundle_still_installs(install):
     result, store = install(_BASE)
     assert result.exit_code == 0, result.output
     assert (store / "local.c1" / "manifest.json").exists()
+
+
+def test_remove_takes_the_carried_plugin_with_it(install, tmp_path):
+    """``igni ext remove`` left ~/.igni/plugins/<id>, and its skills,
+    agents and hooks stayed live on every later run (campaign R299)."""
+    from igni_core.core.config.settings_loader import SettingsLoader
+    from igni_core.core.plugins.installer import PluginInstaller
+
+    result, store = install(_BASE)
+    assert result.exit_code == 0, result.output
+    plugins = PluginInstaller(data_dir=SettingsLoader.load().storage.data_dir).plugins_dir
+    (plugins / "local.c1" / ".claude-plugin").mkdir(parents=True)
+    (plugins / "local.c1" / ".claude-plugin" / "plugin.json").write_text("{}")
+    (plugins / "someone-elses").mkdir()
+
+    removed = CliRunner().invoke(ext, ["remove", "local.c1", "--root", str(store)])
+
+    assert removed.exit_code == 0, removed.output
+    assert not (plugins / "local.c1").exists()
+    assert (plugins / "someone-elses").is_dir()
