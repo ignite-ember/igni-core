@@ -183,3 +183,63 @@ class TestTheEventsThatFire:
             f"{never} are declared, documented, and raised by nothing. Either "
             "wire them up or mark them reserved like Notification."
         )
+
+
+class TestThePayloadColumnMatchesThePayload:
+    """The payload a row promises is the payload the event carries.
+
+    The end-to-end campaign found four rows promising fields that never
+    arrived: ``PostCompact``'s ``tokens_after``, ``TaskCreated``'s
+    ``scheduled_at`` and ``recurrence``, ``TaskCompleted``'s ``result``,
+    ``error`` and ``duration_seconds``, and an ``InstructionsLoaded``
+    source, ``session_init``, that nothing fires. A hook written from the
+    page read keys that were never there. The model is the source.
+    """
+
+    @staticmethod
+    def _models() -> dict[str, type]:
+        from igni_core.backend.schemas_scheduler import (
+            TaskCompletedPayload,
+            TaskCreatedPayload,
+        )
+        from igni_core.core.hooks.tool_events import InstructionsLoadedPayload
+        from igni_core.core.session.schemas import (
+            PostCompactHookPayload,
+            PreCompactHookPayload,
+        )
+
+        return {
+            "PreCompact": PreCompactHookPayload,
+            "PostCompact": PostCompactHookPayload,
+            "TaskCreated": TaskCreatedPayload,
+            "TaskCompleted": TaskCompletedPayload,
+            "InstructionsLoaded": InstructionsLoadedPayload,
+        }
+
+    @staticmethod
+    def _row(event: str) -> str:
+        return next(
+            ln
+            for ln in _DOC.read_text().splitlines()
+            if ln.startswith("|") and f"`{event}`" in ln.split("|")[1]
+        )
+
+    @pytest.mark.parametrize(
+        "event", ["PreCompact", "PostCompact", "TaskCreated", "TaskCompleted", "InstructionsLoaded"]
+    )
+    def test_the_documented_fields_are_the_models_fields(self, event: str):
+        # ``\|`` inside a cell is an escaped pipe, not a cell border.
+        payload = re.split(r"(?<!\\)\|", self._row(event).strip().strip("|"))[-1]
+        documented = set(re.findall(r"\b([a-z_]+)\??(?=\s*[:,}])", payload))
+
+        assert documented == set(self._models()[event].model_fields), (
+            f"{event}'s row in docs/HOOKS.md promises {sorted(documented)}; "
+            f"the payload carries {sorted(self._models()[event].model_fields)}."
+        )
+
+    def test_instructions_loaded_names_only_the_source_that_fires(self):
+        row = self._row("InstructionsLoaded")
+
+        assert "session_init" not in row, (
+            "InstructionsLoaded is fired only from the rules index; no session_init event exists."
+        )

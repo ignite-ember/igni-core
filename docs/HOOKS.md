@@ -67,8 +67,12 @@ tokens approach the model's context window.
 
 | Event | When It Fires | Can Block? | Payload |
 |---|---|---|---|
-| `PreCompact` | Before context is compacted | No | `{scope: "manual"\|"auto", tokens_before}` |
-| `PostCompact` | After it completes | No | `{scope, tokens_before, tokens_after, summary_chars}` |
+| `PreCompact` | Before context is compacted | Yes — exit 2 or `continue: false` cancels the compaction, manual or automatic, and `/compact` shows the hook's message | `{session_id, scope: "manual"\|"auto", tokens_before}` |
+| `PostCompact` | After it completes | No | `{session_id, scope, tokens_before, summary_chars}` |
+
+`tokens_before` is the input-token count that set off an automatic
+compaction; a manual `/compact` has no such count and sends `0`.
+`summary_chars` is the length of the summary that replaced the history.
 
 Use these for export-before-compact, or to drive your own
 context-budget strategy from a plugin.
@@ -82,15 +86,18 @@ these cover the longer-lived scheduled-execution layer.
 
 | Event | When It Fires | Can Block? | Payload |
 |---|---|---|---|
-| `TaskCreated` | A scheduled task is registered | No | `{task_id, description, scheduled_at, recurrence?}` |
-| `TaskCompleted` | It finishes, is cancelled, or errors | No | `{task_id, status, result?, error?, duration_seconds?}` |
+| `TaskCreated` | The scheduler picks a due task up and starts running it — not when it is scheduled | No | `{session_id, task_id, description}` |
+| `TaskCompleted` | The run ends, in success, an error or a timeout | No | `{session_id, task_id, description, status: "completed"\|"error"}` |
+
+`session_id` is the scheduler's own session that runs the task, not the
+session that scheduled it.
 
 ### Other
 
 | Event | When It Fires | Can Block? | Payload |
 |---|---|---|---|
 | `StopFailure` | A run ends in an unhandled exception rather than normal completion. Paired with `Stop` | No | `{session_id, error, error_type}` |
-| `InstructionsLoaded` | Project rules resolve — once at session init, and again from `RulesIndex.consume_path` when subdirectory or path-scoped rules surface lazily | No | `{source: "session_init"\|"rules_index", files: [str], bytes}` |
+| `InstructionsLoaded` | Subdirectory or path-scoped rules surface lazily (`RulesIndex.consume_path`) after a file tool with a path argument (`edit_file`, `save_file`, …) touched their folder. It does not fire at session start, and a file read through the shell (`cat sub/x.py`) surfaces nothing | No | `{session_id, source: "rules_index", files: [str], bytes}` |
 
 Every event in `HookEvent` is on this page, and
 `tests/test_every_hook_event_is_documented.py` fails if one is added
@@ -200,16 +207,21 @@ hooks:
 |---|---|---|
 | `type` | Yes | `"command"` or `"http"` |
 | `command` / `url` | Yes | Shell command or HTTP endpoint |
-| `matcher` | No | Regex to filter which tools/agents trigger the hook |
+| `matcher` | No | Which tools/agents trigger the hook — see [Matchers](#matchers) |
 | `timeout` | No | Milliseconds before the hook is killed (default: 10 000) |
 | `background` | No | `true` for fire-and-forget hooks that don't block the agent |
+| `asyncRewake` | No | Command hooks: runs in the background like `background`, and if it exits 2 its note reaches the agent as a system reminder on the next turn. The note is the `systemMessage` of the JSON it prints on stdout; when stdout is not JSON (plain text or nothing), its stderr; and `Blocked by hook` when neither gives one. Plain text on stdout is never read. `async_rewake` is accepted too |
 | `headers` | No | HTTP headers (supports `${ENV_VAR}` expansion) |
 
 ---
 
 ## Matchers
 
-Matchers are regex patterns that filter when a hook fires. Only hooks whose matcher matches the tool name (or event type) will execute.
+Matchers filter when a hook fires. Only hooks whose matcher matches the tool name (or agent name) will execute. As in Claude Code, a matcher has three forms:
+
+- empty or `*` matches everything;
+- a plain name or a `|` list of names (`run_shell_command`, `save_file|edit_file`) is an **exact** match — `run_shell` does not match `run_shell_command`;
+- anything else is a regular expression, searched anywhere in the name (`run_shell.*`, `mcp__.*`, `^edit`).
 
 | Event | Matcher Field | Examples |
 |---|---|---|
