@@ -96,6 +96,25 @@ def test_an_rsa_key_with_unusable_numbers_is_refused(rsa_publisher):
         PublisherKey({**rsa_publisher.jwk(), "e": b64url(b"\x00")})
 
 
+def test_an_rsa_key_under_2048_bits_is_refused_naming_its_size():
+    with pytest.raises(
+        BundleSignatureError, match=r"is a 1024-bit RSA key; igni accepts RSA keys of 2048"
+    ):
+        PublisherKey(Publisher("RSA", kid="weak", key_size=1024).jwk())
+
+
+def test_a_short_rsa_key_in_the_set_refuses_the_bundle(rsa_publisher):
+    weak = Publisher("RSA", kid="weak", key_size=1024)
+    with pytest.raises(BundleSignatureError, match="1024-bit RSA key"):
+        PublisherKeys({"keys": [rsa_publisher.jwk(), weak.jwk()]}).verify(weak.sign(CLAIM))
+
+
+@pytest.mark.parametrize("bits", [2048, 3072])
+def test_an_rsa_key_of_2048_bits_or_more_verifies_its_bundle(bits):
+    publisher = Publisher("RSA", kid=f"rsa-{bits}", key_size=bits)
+    assert PublisherKeys(publisher.jwks()).verify(publisher.sign(CLAIM)).extension == "acme.notes"
+
+
 def test_a_key_member_that_is_not_base64url_is_refused(rsa_publisher):
     with pytest.raises(BundleSignatureError, match="key modulus is not base64url"):
         PublisherKey({**rsa_publisher.jwk(), "n": "a"})

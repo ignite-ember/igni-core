@@ -1,0 +1,7 @@
+# Who reviews what. GitHub requests a review from the owner below on
+# every pull request; whether that review is required to merge is a
+# branch-protection setting, not this file.
+#
+# ignite-ember is a user account, not an organisation, so there is no
+# team to name; when there is, this becomes @ignite-ember/<team>.
+* @ignite-ember

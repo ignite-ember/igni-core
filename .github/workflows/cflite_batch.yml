@@ -1,0 +1,47 @@
+name: ClusterFuzzLite (batch)
+
+# Fuzzes main on a schedule, longer than a pull request can afford, and
+# keeps the growing corpus between runs as workflow artifacts (the
+# action's default store, which reads earlier runs' artifacts: hence
+# `actions: read`). A crash fails the run with the reproducer attached.
+# The targets and the build are fuzz/ and .clusterfuzzlite/.
+
+on:
+  schedule:
+    # Weekly, Wednesday 03:10 UTC. Weekly rather than daily: the run costs
+    # Actions minutes, and the code these targets reach changes slowly.
+    - cron: "10 3 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Batch fuzz (${{ matrix.sanitizer }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read  # fetch the corpus earlier runs stored as artifacts
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address]
+    steps:
+      - name: Build fuzzers (${{ matrix.sanitizer }})
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: python
+          sanitizer: ${{ matrix.sanitizer }}
+
+      - name: Run fuzzers (${{ matrix.sanitizer }})
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Split across the targets.
+          fuzz-seconds: 1800
+          mode: batch
+          sanitizer: ${{ matrix.sanitizer }}

@@ -48,6 +48,15 @@ def test_both_install_that_package_in_both_modes_from_the_same_places():
     assert "https://pypi.org/pypi/$Package/$Version/json" in PS1
 
 
+def test_both_install_only_what_a_hashed_compile_wrote_down():
+    for text in (PS1, SH):
+        assert text.count("pip compile --python") == 2
+        assert text.count("--generate-hashes") == 2
+        assert text.count("pip install --require-hashes") == 2
+        assert text.count("pip install --no-deps") == 1
+    assert "--extra $Extras" in PS1 and '--extra "$EXTRAS"' in SH
+
+
 def test_both_import_and_launch_igni_core_and_nothing_else():
     for text in (PS1, SH):
         assert "import igni_core;" in text
