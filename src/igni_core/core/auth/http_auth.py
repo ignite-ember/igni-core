@@ -11,12 +11,14 @@ in the cloud, ``credentials.json`` on the desktop).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator, Generator
 
 import httpx
 
 from igni_core.core.auth.credentials import CloudCredentials, CredentialsStore
 
+logger = logging.getLogger(__name__)
 
 class CloudTokenAuth(httpx.Auth):
     """``Authorization: Bearer <the current token>`` on each request.
@@ -30,9 +32,35 @@ class CloudTokenAuth(httpx.Auth):
 
     def __init__(self, credentials_file: str | None = None) -> None:
         self._credentials_file = credentials_file
+        #: Whether the expired sign-in was said (once per client).
+        self._said_expired = False
 
     def token(self) -> str | None:
-        return CloudCredentials(self._credentials_file).access_token
+        token = CloudCredentials(self._credentials_file).access_token
+        if token is None:
+            self._say_if_expired()
+        return token
+
+    def _say_if_expired(self) -> None:
+        """Say so when the token is missing because the sign-in expired.
+
+        ``CloudCredentials`` drops an expired credential, so the request
+        goes out with no token and igni server answers a bare 401. The
+        expiry is known here, before the request (docs/TOKEN.md).
+        """
+        if self._said_expired:
+            return
+        result = CredentialsStore(self._credentials_file).load()
+        creds = result.creds if result.ok else None
+        if creds is None or not creds.is_expired():
+            return
+        self._said_expired = True
+        logger.warning(
+            "Your igni server sign-in for %s expired at %s, so igni server will "
+            "refuse this request. Run `igni login` to sign in again.",
+            creds.email,
+            creds.expires_at,
+        )
 
     async def ready(self) -> None:
         await CredentialsStore(self._credentials_file).ready()

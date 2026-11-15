@@ -176,3 +176,35 @@ class TestInAVm:
         assert await gateway.call(CloudTokenAuth()) == 200
         assert gateway.seen == ["Bearer renewed"]
         assert source.order == ["ready", "sent"]
+
+
+async def test_an_expired_sign_in_is_said_before_the_request_is_refused(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """TOKEN.md: ``is_expired()`` exists so igni "can tell you to sign in
+    again rather than send a request it knows will be refused". A model on
+    ``cloud_token`` dropped the expired credential without a word and the
+    person saw only the server's raw 401 (campaign R221)."""
+    path = tmp_path / "credentials.json"
+    past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    path.write_text(
+        json.dumps({"access_token": "old", "email": "who@acme.test", "expires_at": past})
+    )
+    auth = CloudTokenAuth(str(path))
+
+    with caplog.at_level("WARNING", logger="igni_core.core.auth.http_auth"):
+        assert await Gateway("old").call(auth) == 401
+        await Gateway("old").call(auth)
+
+    said = [r.getMessage() for r in caplog.records if "expired" in r.getMessage()]
+    assert len(said) == 1, "said once, not on every request"
+    assert "who@acme.test" in said[0] and "igni login" in said[0]
+
+
+async def test_nobody_signed_in_is_not_called_expired(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    auth = CloudTokenAuth(str(tmp_path / "missing.json"))
+    with caplog.at_level("WARNING", logger="igni_core.core.auth.http_auth"):
+        await Gateway().call(auth)
+    assert not [r for r in caplog.records if "expired" in r.getMessage()]
