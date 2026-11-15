@@ -25,7 +25,7 @@
 | **Permission system** | 5 modes (`default`/`dontAsk`/`acceptEdits`/`bypassPermissions`/`plan`), 6-step evaluation pipeline, scope-prefixed deny rules that survive bypass mode (a `Bash(rm *)` deny holds even under `bypassPermissions`). A mode set by managed settings or group policy is a floor no `/accept`, `/bypass` or flag can switch past, and `permissions.allow_bypass: false` (organisation tiers only) turns `bypassPermissions` off; with no policy every mode, fully automatic included, is available. |
 | **Hook system** | 18 of 30 Claude Code hook events, 4 of 5 handler types, all 3 execution modes (sync / `async` / `asyncRewake`). `permissionDecision` envelope on `PreToolUse` honored. |
 | **MCP client** | MCP client fully wired (consume external servers via `/mcp`). |
-| **Output styles** | `default` / `explanatory` / `learning` markdown-defined styles; `/output-style` slash command hot-patches the live team. |
+| **Output styles** | Markdown-defined styles from `.igni/output-styles/`, `~/.igni/output-styles/`, Claude Code's directories and plugins (igni ships none); `/output-style` slash command hot-patches the live team. |
 | **Plan mode** | Read-only sandbox plus user approval workflow; both `/plan` slash command and `enter_plan_mode(reason)` agent tool; agent cannot exit on its own (security invariant). Shell runs unasked only from a read-only allow-list (`ls`, `cat`, `rg`, `git status`/`log`/`diff`, …); obvious writes are denied and every other command is asked about, and an ask rule still asks — plan mode is never looser than `default`. |
 | **Knowledge base** | Local Neo4j (BE-spawned, per-commit DB) + EmberEmbedder (384d) with `/knowledge add/search/sync-knowledge`. Per-project `.igni/artifacts.yaml` file for git-shareable knowledge sharing. |
 | **Auto-memory** | Per-project `~/.igni/projects/<slug>/memory/MEMORY.md` (200 lines / 25KB cap), with cross-tool fallback to `~/.claude/.../memory/MEMORY.md` — Claude Code users don't need to migrate their memory bank. |
@@ -254,7 +254,7 @@ The CLI points at `api.ignite-ember.sh` by default. A self-hosted `igni__server`
 | **Plugin monitor primitive** | yes (experimental) | yes (26 tests, supervisor + backoff) | ✅ parity |
 | **Plugin theme primitive** | yes | **not shipped** | ❌ igni gap |
 | **Surface bundle** | terminal + Anthropic desktop + claude.ai/code | Tauri desktop + VSCode + JetBrains + browser, **one React bundle** for all 4 (earlier Textual TUI removed) | ✅ parity + igni richer UI |
-| **Output styles** | yes | yes (`default`/`explanatory`/`learning`) | ✅ parity |
+| **Output styles** | yes | yes (from your style files; none ship) | ✅ parity |
 | **Plan mode** | yes | yes (`/plan`, `enter_plan_mode(reason)`) | ✅ parity |
 | **acceptEdits mode** | yes | yes (`/accept`) | ✅ parity |
 | **TodoWrite tool** | yes | yes (`todo_write(todos)` atomic replace) | ✅ parity |
@@ -381,7 +381,7 @@ Selected key citations. Line numbers refer to the files as of the snapshot read.
 | `MiniMax-M2.7` default model positioning | `README.md:46`, `pyproject.toml` (model classifier topic) |
 | 13 base agents + 6 .codeindex.md variants | direct `ls agents/`; `QUICKSTART.md:178-196` |
 | Permission modes (5) + eval pipeline (6) + scoped deny | `CLAUDE_CODE_PARITY.md` rows 7, 8, 9; `CODE_STANDARDS.md` |
-| Output styles (`default`/`explanatory`/`learning`) | `CLAUDE_CODE_PARITY.md` row 52 |
+| Output styles (from `.igni/output-styles/`; none ship) | `CLAUDE_CODE_PARITY.md` row 52 |
 | Plan mode (`/plan`, `enter_plan_mode(reason)`) | `CLAUDE_CODE_PARITY.md` row 50 |
 | acceptEdits mode + `/accept` | `CLAUDE_CODE_PARITY.md` row 51 |
 | TodoWrite (`todo_write(todos)` atomic replace) | `CLAUDE_CODE_PARITY.md` row 25 |
