@@ -64,6 +64,14 @@ def login(token_stdin: bool, timeout: float) -> None:
         if not token:
             raise click.ClickException("no token on stdin")
         email = asyncio.run(_keep(portal, store, token))
+        # As the browser sign-in does: the person's group pack, now, so the
+        # first run already has the organisation's policy.
+        if not asyncio.run(GroupPackHydrator(settings, portal).hydrate(token, force=True)):
+            click.echo(
+                "No group policy was fetched now (see the log); igni fetches it again "
+                "at the next start.",
+                err=True,
+            )
     else:
         sign_in = BrowserSignIn(portal, store, GroupPackHydrator(settings, portal))
         try:

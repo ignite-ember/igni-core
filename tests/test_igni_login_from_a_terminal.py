@@ -33,6 +33,11 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace
         storage=SimpleNamespace(data_dir=str(tmp_path / "data")),
     )
     monkeypatch.setattr(login_cli.SettingsLoader, "load", classmethod(lambda cls: value))
+
+    async def no_pack(self, token: str, *, force: bool = False) -> bool:
+        return True  # the network is a boundary; tests that care replace this
+
+    monkeypatch.setattr(login_cli.GroupPackHydrator, "hydrate", no_pack)
     return value
 
 
@@ -216,3 +221,33 @@ def test_an_empty_portal_setting_means_the_portal_is_derived_from_the_server(set
     out = CliRunner().invoke(cli, ["login", "--token-stdin"], input="tok\n")
     assert out.exit_code == 0, out.output
     assert seen[0].portal_url == PortalClient(api_url="https://igni.test").portal_url
+
+
+def test_a_token_on_stdin_fetches_the_group_pack_as_the_browser_flow_does(settings, monkeypatch):
+    """``--token-stdin`` kept the token and fetched no pack, so a CI user ran
+    with none of the organisation's policy (campaign R028, R311)."""
+    _validated(monkeypatch)
+    calls: list[tuple[str, bool]] = []
+
+    async def hydrate(self, token: str, *, force: bool = False) -> bool:
+        calls.append((token, force))
+        return True
+
+    monkeypatch.setattr(login_cli.GroupPackHydrator, "hydrate", hydrate)
+    result = CliRunner().invoke(cli, ["login", "--token-stdin"], input="tok-123\n")
+
+    assert result.exit_code == 0, result.output
+    assert calls == [("tok-123", True)]
+
+
+def test_a_pack_that_could_not_be_fetched_does_not_fail_the_sign_in(settings, monkeypatch):
+    _validated(monkeypatch)
+
+    async def hydrate(self, token: str, *, force: bool = False) -> bool:
+        return False
+
+    monkeypatch.setattr(login_cli.GroupPackHydrator, "hydrate", hydrate)
+    result = CliRunner().invoke(cli, ["login", "--token-stdin"], input="tok-123\n")
+
+    assert result.exit_code == 0, result.output
+    assert "No group policy was fetched now" in result.output
