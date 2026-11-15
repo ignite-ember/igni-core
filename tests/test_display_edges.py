@@ -66,7 +66,8 @@ class TestTheBannerAndTheDefaultConsole:
         mgr.print_welcome("2.3.4")
         out = buf.getvalue()
         assert "igni v2.3.4" in out
-        assert "AI coding assistant powered by Agno" in out
+        assert "Self-hosted, air-gapped agentic platform" in out
+        assert "coding assistant" not in out
         assert "Type your message, or /help for commands." in out
         assert "Press Ctrl+C to exit." in out
 

@@ -106,20 +106,33 @@ class BlockedDetails(BaseModel):
 
 
 class ToolCallDetails(BaseModel):
-    """Details variant for a skill / tool invocation with args.
+    """Details variant for one tool call: who decided it, and how it went.
 
-    :attr:`args` is the raw arg string as typed by the user
-    after the ``/skill-name`` prefix (e.g. ``"foo --bar 3"``);
-    the audit log captures it verbatim for post-hoc
-    reproduction of the invocation. Kept typed as ``str`` (not
-    ``dict[str, Any]``) because that's the actual shape at the
-    one call site — the pre-refactor ``details={"args": args}``
-    dict-wrapper was scaffolding for the untyped ``details``
-    bag, not a real structural need.
+    Written for every tool call any agent makes (``core/utils/tool_audit.py``).
+    What it holds is what an OpenTelemetry span keeps when content is not
+    captured (``core/observability/content.py``): names and decisions, never
+    content. So the call's arguments appear by **name only** — a command, a
+    path or a request body can carry a secret — and a failure by its
+    exception type, not its message, which quotes whatever failed.
     """
 
     kind: Literal["tool_call"] = "tool_call"
-    args: str = ""
+    #: ``allow`` — the call ran; ``deny`` — it was refused before it ran.
+    decision: Literal["allow", "deny"]
+    #: What made the decision (:class:`~igni_core.core.utils.tool_audit.DecidedBy`).
+    decided_by: str
+    #: The session's permission mode when the call was decided, when known.
+    mode: str | None = None
+    #: The permission policy's own reason — a rule or a mode, never an
+    #: argument. Only set when the policy evaluator decided.
+    reason: str | None = None
+    #: The names of the arguments the call was made with; their values are
+    #: not recorded.
+    arg_names: list[str] = Field(default_factory=list)
+    #: How long the tool ran, in milliseconds; absent when it never ran.
+    duration_ms: float | None = None
+    #: The exception type when the call ran and failed.
+    error_type: str | None = None
 
 
 AuditDetails = Annotated[
@@ -211,20 +224,27 @@ class AuditEntry(BaseModel):
         session_id: str,
         agent_name: str,
         tool_name: str,
-        args: str,
+        details: ToolCallDetails,
     ) -> AuditEntry:
-        """Build a tool-invocation entry with a captured arg string.
+        """Build the entry for one tool call.
 
-        Status is :attr:`AuditStatus.SUCCESS` — the entry records
-        that the call was dispatched. Failures land through
-        :meth:`error` on the exception path.
+        The status follows from the details: a refused call is
+        :attr:`AuditStatus.BLOCKED`, one that ran and failed
+        :attr:`AuditStatus.ERROR`, one that ran and returned
+        :attr:`AuditStatus.SUCCESS`.
         """
+        if details.decision == "deny":
+            status = AuditStatus.BLOCKED
+        elif details.error_type is not None:
+            status = AuditStatus.ERROR
+        else:
+            status = AuditStatus.SUCCESS
         return cls(
             session_id=session_id,
             agent=agent_name,
             tool=tool_name,
-            status=AuditStatus.SUCCESS,
-            details=ToolCallDetails(args=args),
+            status=status,
+            details=details,
         )
 
     # ── Wire format ──────────────────────────────────────────────

@@ -11,6 +11,7 @@ from igni_core.core.hooks.permission.context import ToolCallContext
 from igni_core.core.hooks.permission.outcome import Block, Continue, StageOutcome
 from igni_core.core.hooks.permission.stage import PermissionStage
 from igni_core.core.hooks.schemas import SafetyCheckResult
+from igni_core.core.utils.tool_audit import DecidedBy
 
 logger = logging.getLogger(__name__)
 
@@ -86,5 +87,5 @@ class ProtectedPathStage(PermissionStage):
             logger.warning(
                 "Protected path blocked: %s via %s", self.target_path(ctx.args), ctx.name
             )
-            return Block(result.block_message)
+            return Block(result.block_message, by=DecidedBy.PROTECTED_PATH)
         return Continue()

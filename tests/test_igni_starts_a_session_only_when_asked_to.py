@@ -97,7 +97,10 @@ def test_help_lists_the_subcommands_and_none_of_the_implementation():
     assert "Usage: igni [OPTIONS] [COMMAND] [ARGS]..." in result.output
     for command in ("ext", "login", "migrate", "trust"):
         assert f"\n  {command} " in result.output
-    assert "igni — an AI coding assistant that works on your code where it lives." in result.output
+    assert (
+        "igni — a self-hosted, air-gapped agentic platform; this is its agent runtime."
+        in result.output
+    )
     assert "Run one message with -m" in result.output
     for leaked in (":class:", "CliInvocation", "CliOptions", "decorator-per-option", "Click"):
         assert leaked not in result.output

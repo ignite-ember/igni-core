@@ -23,6 +23,7 @@ from igni_core.core.session.tool_approval import ToolCallApprovalChannel
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.core.utils.audit import AuditLogger
 from igni_core.core.utils.display import DisplayManager
+from igni_core.core.utils.tool_audit import ToolAudit
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session
@@ -38,11 +39,14 @@ class RuntimeBuilder:
         """The audit log, the display, the approval channel and the guardrails."""
         session = self._session
         session.audit = AuditLogger(session.settings)
+        # One entry per tool call, from every agent of the session. The
+        # id is read per entry: it is set later, and ``/clear`` rotates it.
+        session.tool_audit = ToolAudit(session.audit, lambda: session.session_id)
         session.display = DisplayManager()
         # Sub-agents spawned by the orchestrator pause inside the parent's
         # tool execution; this coordinator carries those pauses (and the
         # session's own single-call questions) to the person.
-        session.sub_agent_hitl = SubAgentHITLCoordinator()
+        session.sub_agent_hitl = SubAgentHITLCoordinator(audit=session.tool_audit)
         session.approval = ToolCallApprovalChannel(session.sub_agent_hitl)
         session.guardrail_runner = GuardrailRunner(session.settings)
 
@@ -108,6 +112,7 @@ class RuntimeBuilder:
                 budget=session.context_budget,
                 # Replaced with the tool-hook factory on every plugin reload.
                 permission_evaluator_ref=lambda: session.permission_evaluator,
+                tool_audit=session.tool_audit,
             )
         )
 

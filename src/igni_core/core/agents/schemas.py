@@ -29,6 +29,7 @@ from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.utils.tool_audit import ToolAudit
 
 
 class AgentPriority(IntEnum):
@@ -319,6 +320,9 @@ class AgentBuildContext(BaseModel):
     # sub-agent's background commands land in the same watcher panel
     # as the main agent's.
     supervisor: ProcessSupervisor
+    # Where every agent the pool builds writes one audit entry per tool
+    # call (``core/hooks/tool_audit_hook.py``); ``None`` writes none.
+    tool_audit: ToolAudit | None = None
 
 
 __all__ = [

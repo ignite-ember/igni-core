@@ -292,19 +292,69 @@ If limits are reached, the agent is informed and must proceed without sub-teams.
 
 ### 6. Audit Logging
 
-Every tool execution is logged:
+Every tool call writes one line to the audit log — the main agent's and every
+sub-agent's, built-in, MCP and extension tools alike, whether it ran, failed or
+was refused:
 
 ```yaml
 storage:
-  audit_log: "~/.igni/audit.log"
+  audit_log: "~/.igni/audit.log"   # the default
 ```
 
-**Log format:**
+The file is JSON lines, appended to and never sent anywhere: it stays on the
+machine, so an air-gapped install keeps it like any other file under `~/.igni`.
+(In the cloud deployment, which keeps no log files, the same object is written
+to standard output as the `audit` section of a JSON log record on the
+`igni_core.audit` logger — see [CLOUD.md](CLOUD.md).)
+
+**What a line holds:**
+
+```json
+{"timestamp": "2026-11-15T10:30:00.123456+00:00", "session_id": "a1b2c3d4", "agent": "igni", "tool": "run_shell_command", "status": "success", "details": {"decision": "allow", "decided_by": "rule", "mode": "default", "reason": "allow rule 'Bash(pytest *)' matched", "arg_names": ["command"], "duration_ms": 812.402}}
+{"timestamp": "2026-11-15T10:30:02.004211+00:00", "session_id": "a1b2c3d4", "agent": "igni", "tool": "edit_file", "status": "blocked", "details": {"decision": "deny", "decided_by": "protected_path", "mode": "default", "arg_names": ["file_path", "new_string", "old_string"]}}
+{"timestamp": "2026-11-15T10:30:05.517090+00:00", "session_id": "a1b2c3d4", "agent": "explorer", "tool": "web_fetch", "status": "error", "details": {"decision": "allow", "decided_by": "policy", "arg_names": ["url"], "duration_ms": 30001.7, "error_type": "TimeoutError"}}
 ```
-2026-03-13T10:30:00Z | session:abc123 | agent:editor | tool:Edit | path:/src/auth.py | status:success
-2026-03-13T10:30:01Z | session:abc123 | agent:editor | tool:Bash | cmd:pytest | status:success
-2026-03-13T10:30:02Z | session:abc123 | agent:editor | tool:Write | path:.env | status:BLOCKED (protected)
-```
+
+| Field | Meaning |
+|---|---|
+| `timestamp` | When the line was written, ISO-8601 in UTC |
+| `session_id` | The session the call belongs to (a sub-agent's call carries its parent session's id) |
+| `agent` | The agent that made the call: `igni` for the main agent, the sub-agent's name otherwise |
+| `tool` | The tool's function name (`run_shell_command`, `edit_file`, an MCP or extension tool's name) |
+| `status` | `success` — ran and returned; `error` — ran and failed; `blocked` — refused before it ran |
+| `details.decision` | `allow` or `deny` |
+| `details.decided_by` | What decided: `rule` (a `permissions.allow` / `ask` / `deny` rule), `mode` (the permission mode, `--read-only` included), `policy` (nothing more specific — the tool's configured level), `hook` (a `PreToolUse` hook), `extension` (an extension's `PreToolUse` hook), `person` (an approval prompt answered), `protected_path`, `blocked_command`, `bypass_guard` |
+| `details.mode` | The permission mode the call was decided in, when igni's permission evaluator was asked (not on a sub-agent's call) |
+| `details.reason` | The permission evaluator's own reason — which rule or mode decided, or why the person was asked. Only when the evaluator was consulted |
+| `details.arg_names` | The names of the call's arguments, sorted |
+| `details.duration_ms` | How long the tool ran; absent when it never ran |
+| `details.error_type` | The exception's type when it ran and failed; `McpUnanswered` for an MCP call its server never answered; `CancelledError` for a call stopped mid-run |
+
+A call paused for approval is written once, when it is settled: by the tool
+hook when the person approved it and it runs (`decided_by: person`), or as
+`blocked` by `person` when they refused it. A paused call the policy settles
+without asking (a deny rule, plan mode) is written as `blocked` by `rule` or
+`mode`.
+
+**What is never written.** The log keeps what an exported OpenTelemetry span
+keeps when content is not captured ([CONFIGURATION.md](CONFIGURATION.md#opentelemetry)):
+argument **values** are not recorded — only their names — because a command, a
+path, a URL or a request body can carry a secret; a failure is recorded by its
+exception type, not its message, which quotes whatever failed; a hook's or an
+extension's refusal text is not recorded, since it may quote the call; and the
+tool's result is never recorded. To see what a call did, read the session's
+transcript, which stays on the machine too.
+
+**Rotation.** igni does not rotate or truncate the file; it grows until you
+rotate it. Each line is appended with its own open-write-close, so an external
+rotator (`logrotate`, `newsyslog`) can move or truncate the file at any time
+without restarting igni: the next call starts a new file.
+
+**When a write fails.** Writing never gets in the way of a call: a full disk, a
+read-only mount or a permission error loses the line, not the call. Each lost
+line is counted; igni logs a warning with the count on the first loss and at
+every power of ten after it (`1 entry lost so far`, `10 entries lost so far`,
+…).
 
 Audit logs are useful for:
 - Post-incident investigation

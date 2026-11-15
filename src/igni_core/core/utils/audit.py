@@ -68,10 +68,11 @@ class AuditLogger:
       returns an :class:`AuditWriteResult` envelope.
 
     IO failures (full disk, read-only mount, permission denied)
-    surface through the returned :class:`AuditWriteResult`; a
-    warning is emitted on the first failure per instance so a
-    read-only-disk session doesn't spam the log with one line per
-    turn.
+    surface through the returned :class:`AuditWriteResult` and are
+    counted (:attr:`failed_writes`). A warning carrying the count is
+    emitted on the first failure and again at every power of ten
+    (10th, 100th, ...), so a read-only-disk session neither hides the
+    loss nor writes one warning per tool call.
     """
 
     #: Where entries go when the layer keeps no log files (``core/layer.py``).
@@ -83,9 +84,9 @@ class AuditLogger:
         self._to_stdout = not layers.current().log_files()
         if not self._to_stdout:
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
-        # First IO failure emits a warning; subsequent failures
-        # are silent so a read-only-disk session doesn't spam.
-        self._warned_on_write_failure = False
+        # Every failed write is counted; the count is warned about on
+        # the first and at each power of ten.
+        self._failed_writes = 0
 
     @property
     def log_path(self) -> Path:
@@ -93,6 +94,11 @@ class AuditLogger:
         writes to.
         """
         return self._log_path
+
+    @property
+    def failed_writes(self) -> int:
+        """How many entries this instance could not write."""
+        return self._failed_writes
 
     def log(self, entry: AuditEntry) -> AuditWriteResult:
         """Append one :class:`AuditEntry` to the log.
@@ -113,12 +119,18 @@ class AuditLogger:
             with open(self._log_path, "a", encoding="utf-8") as f:
                 f.write(entry.to_jsonl_line())
         except OSError as exc:
-            reason = str(exc)
-            if not self._warned_on_write_failure:
-                logger.warning(
-                    "Audit log write failed (%s); further failures in this session will be silent.",
-                    reason,
-                )
-                self._warned_on_write_failure = True
-            return AuditWriteResult(ok=False, reason=reason)
+            return self._failed(str(exc))
         return AuditWriteResult(ok=True)
+
+    def _failed(self, reason: str) -> AuditWriteResult:
+        """Count one lost entry, and warn on the 1st, 10th, 100th, ..."""
+        self._failed_writes += 1
+        count = self._failed_writes
+        if str(count).rstrip("0") == "1":
+            logger.warning(
+                "Audit log write failed (%s); %d entr%s lost so far.",
+                reason,
+                count,
+                "y" if count == 1 else "ies",
+            )
+        return AuditWriteResult(ok=False, reason=reason)

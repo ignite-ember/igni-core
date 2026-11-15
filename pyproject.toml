@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "igni-core"
 version = "1.0.4"
-description = "igni's backend and CLI: an AI coding assistant with multi-agent orchestration"
+description = "igni's agent runtime, backend and CLI: the core of a self-hosted, air-gapped agentic platform"
 readme = "README.md"
 license = "Apache-2.0"
 # 3.12 exactly, not a floor. The desktop app installs 3.12 and only

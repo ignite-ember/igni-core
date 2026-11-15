@@ -26,13 +26,21 @@ from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
 from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.pause_handler import PauseHandler
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
-from igni_core.backend.schemas_hitl import PausedRun, ResolvedBatch, StreamFactory
+from igni_core.backend.schemas_hitl import (
+    PausedRun,
+    RequirementTool,
+    ResolvedBatch,
+    RunRequirement,
+    StreamFactory,
+)
 from igni_core.backend.schemas_pause import PauseHandleResult
 from igni_core.backend.schemas_run import StopHookPayload
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.hooks.extension_values import StopValue
+from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.session.persistence.run_history import RunHistory
+from igni_core.core.utils.tool_audit import DecidedBy
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
@@ -76,7 +84,9 @@ class HitlController:
         self._store = store
         self._stream_factory: StreamFactory = stream_factory or self.stream_with_subagent
         self._pause_handler = pause_handler or PauseHandler(
-            evaluator=session.permission_evaluator, store=store
+            evaluator=session.permission_evaluator,
+            store=store,
+            audit=getattr(session, "tool_audit", None),
         )
         self._tracer = tracer or HITLTracer(enabled=False)
 
@@ -131,6 +141,23 @@ class HitlController:
         async for proto in self.resolve_batch([decision]):
             yield proto
 
+    def _record_refusal(self, req: RunRequirement) -> None:
+        """Audit a paused call the person refused: it never runs, so no
+        tool hook sees it (``core/utils/tool_audit.py``)."""
+        audit = getattr(self._session, "tool_audit", None)
+        if audit is None:
+            return
+        tool = RequirementTool.of(req)
+        evaluator = getattr(self._session, "permission_evaluator", None)
+        mode = getattr(getattr(evaluator, "mode", None), "value", None)
+        audit.refused(
+            agent=MAIN_AGENT_NAME,
+            tool=tool.name,
+            args=tool.args,
+            decided_by=DecidedBy.PERSON,
+            mode=str(mode) if mode is not None else None,
+        )
+
     def _take_main_requirements(self, decisions: list[msg.HITLDecision]) -> ResolvedBatch:
         """Apply each decision the main team owns; route the rest to the
         sub-agent coordinator. Every applied requirement shares one run,
@@ -164,6 +191,8 @@ class HitlController:
             if not applied.ok:
                 batch.errors.append(msg.Error(text=applied.reason))
                 continue
+            if not msg.HITLAction(d.action).is_confirm():
+                self._record_refusal(entry.req)
             batch.requirements.append(entry.req)
             persisted = self.permissions.persist_choice(d, entry.req)
             if not persisted.ok and persisted.reason:

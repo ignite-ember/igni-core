@@ -59,6 +59,7 @@ from igni_core.core.session.schemas import (
 from igni_core.core.utils import response as response_text
 from igni_core.core.utils.audit import AuditEntry, AuditLogger
 from igni_core.core.utils.display import DisplayManager
+from igni_core.core.utils.tool_audit import ToolAudit
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,9 @@ class MessageHandlerDeps:
     #: The permission evaluator — rebuilt with the team, so it is read
     #: on every turn.
     permission_evaluator_ref: Callable[[], PermissionEvaluator | None] | None = None
+    #: Where a paused call the policy refuses is recorded; it never runs,
+    #: so no tool hook sees it.
+    tool_audit: ToolAudit | None = None
 
 
 class SessionMessageHandler:
@@ -119,6 +123,7 @@ class SessionMessageHandler:
         self._pause_policy = PausePolicyResolver(
             evaluator_ref=deps.permission_evaluator_ref or _no_evaluator,
             session_id_ref=deps.session_id_ref,
+            audit=deps.tool_audit,
         )
         #: Why the last :meth:`handle` failed, or ``""`` when it did not —
         #: what a headless run's exit code is made from.

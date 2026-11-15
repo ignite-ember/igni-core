@@ -15,6 +15,7 @@ from igni_core.core.hooks.tool_events import (
     PermissionRequestPayload,
     PreToolUsePayload,
 )
+from igni_core.core.utils.tool_audit import DecidedBy
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +44,16 @@ class PreToolUseHookStage(PermissionStage):
         decision = result.permission_decision
         if decision is PermissionDecision.DENY:
             await self._fire_denied(ctx)
-            return Block(result.message or f"Blocked: '{ctx.name}' denied by PreToolUse hook")
+            return Block(
+                result.message or f"Blocked: '{ctx.name}' denied by PreToolUse hook",
+                by=DecidedBy.HOOK,
+            )
         if decision is PermissionDecision.ASK:
             return await self._refuse_ask(ctx, result.message)
         if decision is PermissionDecision.ALLOW:
             return AllowSkip()
         if not result.should_continue:
-            return Block(result.message or "Blocked by PreToolUse hook")
+            return Block(result.message or "Blocked by PreToolUse hook", by=DecidedBy.HOOK)
         return Continue()
 
     async def _refuse_ask(self, ctx: ToolCallContext, message: str) -> Block:
@@ -70,7 +74,8 @@ class PreToolUseHookStage(PermissionStage):
                 f"Blocked: a PreToolUse hook asked for confirmation of '{ctx.name}', "
                 "and hooks have no way to prompt the user. Ask the user directly, or "
                 "have the hook return allow/deny."
-            )
+            ),
+            by=DecidedBy.HOOK,
         )
 
     async def _fire_denied(self, ctx: ToolCallContext) -> None:

@@ -41,6 +41,14 @@ class ToolCallContext:
         name = getattr(self.agent, "name", None)
         return [name] if name else []
 
+    def caller_name(self, default: str) -> str:
+        """The name of the agent (or team) making the call, or ``default``."""
+        for owner in (self.agent, self.team):
+            name = getattr(owner, "name", None)
+            if isinstance(name, str) and name:
+                return name
+        return default
+
     def built_with_pause(self) -> bool | None:
         """Was this tool built to pause for approval before it runs?
 
