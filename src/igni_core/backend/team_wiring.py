@@ -17,12 +17,17 @@ Extracting to :class:`TeamWiring` gives us:
 
 from __future__ import annotations
 
-from collections.abc import MutableSequence
+from collections.abc import Callable, MutableSequence
 from typing import TYPE_CHECKING
 
 from igni_core.core.hooks.queue import QueueBridge
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaDraft,
+    VisualizationDeltaPayload,
+)
 from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.orchestrate_contracts import EventAppender, OnProgress
+from igni_core.core.tools.orchestrate_events import VisualizationDeltaEvent
 
 if TYPE_CHECKING:
     from igni_core.core.session import Session
@@ -32,14 +37,22 @@ class TeamWiring:
     """One-shot wiring of queue hooks + orchestrate-progress
     callbacks onto :attr:`Session.main_team`.
 
-    The class is stateless — every method reads the session's live
-    ``main_team`` at call time so a caller who rebuilt the team
-    (e.g. after ``switch_model``) still wires onto the fresh
-    instance.
+    Every wiring is applied to the session's live ``main_team`` and
+    registered with the session, which applies it again each time it
+    builds a fresh team (the workspace-trust decision, ``/model``, a
+    plugin or group-pack reload, a cloud sign-out). It was applied once:
+    a rebuilt team had no progress callback, no event-log appender and
+    no queue hooks, so a window saw no sub-agent at all after the first
+    Trust click.
     """
 
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def _keep(self, apply: Callable[[], None]) -> None:
+        """Apply ``apply`` now and again on every fresh main team."""
+        apply()
+        self._session.main_team_wirings.append(apply)
 
     def wire_queue_hook(self, queue: MutableSequence[str]) -> None:
         """Wire queue hooks onto the team.
@@ -50,13 +63,16 @@ class TeamWiring:
           proper user-role history entries before the session is
           saved.
         """
-        bridge = QueueBridge(queue=queue)
-        bridge.register_on(self._session.main_team)
+        self._keep(lambda: QueueBridge(queue=queue).register_on(self._session.main_team))
 
     def wire_orchestrate_progress(self, callback: OnProgress) -> None:
         """Set a progress callback on the orchestrate tool."""
-        for tool in self._orchestrate_tools():
-            tool.wiring.sinks.on_progress = callback
+
+        def apply() -> None:
+            for tool in self._orchestrate_tools():
+                tool.wiring.sinks.on_progress = callback
+
+        self._keep(apply)
 
     def wire_orchestrate_event_appender(self, appender: EventAppender) -> None:
         """Set the session event-log appender on the orchestrate
@@ -64,8 +80,27 @@ class TeamWiring:
         event log — the ``get_chat_history`` splicer uses that
         entry to place the viz card next to its originating
         ``spawn_agent`` tool turn on reload."""
-        for tool in self._orchestrate_tools():
-            tool.wiring.sinks.event_appender = appender
+
+        def apply() -> None:
+            for tool in self._orchestrate_tools():
+                tool.wiring.sinks.event_appender = appender
+
+        self._keep(apply)
+
+    def wire_event_log(self) -> None:
+        """Keep the visualizer's final card in the session's own event log.
+
+        Nothing called :meth:`wire_orchestrate_event_appender`, so the
+        card was pushed live and never kept: ``get_chat_history`` had
+        no ``visualization`` turn, and a reload lost the view.
+        """
+        session = self._session
+
+        async def append(event: VisualizationDeltaEvent, run_id: str) -> None:
+            payload = VisualizationDeltaPayload.model_validate(event.model_dump(by_alias=True))
+            await session.append_event(VisualizationDeltaDraft(payload=payload, run_id=run_id))
+
+        self.wire_orchestrate_event_appender(append)
 
     def active_subagent_runs(self) -> int:
         """Sub-agent runs the main agent has going (its spawns' registry)."""

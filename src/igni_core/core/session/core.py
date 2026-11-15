@@ -118,6 +118,10 @@ class Session(SessionSurface):
         #: last said for the agent, until a turn carries it.
         self._session_start_fired: set[str] = set()
         self._session_start_context = ""
+        #: What the backend wired onto the main team (progress callback,
+        #: event-log appender, queue hooks), applied again to every
+        #: fresh team :meth:`rebuild_main_team` builds.
+        self.main_team_wirings: list[Callable[[], None]] = []
         SessionComposer(
             self,
             SessionDeps(
@@ -156,6 +160,8 @@ class Session(SessionSurface):
         against the window the new model actually has.
         """
         AgentsBuilder(self).build_main_team()
+        for apply in self.main_team_wirings:
+            apply()
         self.context_budget.resize(self.settings)
 
     def set_default_model(self, model_name: str) -> ModelSwitchResult:

@@ -148,6 +148,7 @@ class ControllerRegistry:
         plan_snapshots = PlanSnapshotBuilder(session)
         viz_actions = VisualizationActionBus(session)
         team_wiring = TeamWiring(session)
+        team_wiring.wire_event_log()
         plugins = PluginController(session)
         marketplaces = MarketplaceController(session)
 
