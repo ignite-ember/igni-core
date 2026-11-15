@@ -235,3 +235,23 @@ def test_a_unicode_skill_name_matches(pool):
 @pytest.mark.parametrize("text", ["/", "/ ", "  /  ", "review", "", "/nope", "/hidden"])
 def test_text_that_names_no_invocable_skill_matches_nothing(pool, text):
     assert pool.match_user_command(text) is None
+
+
+def test_the_agent_runs_a_skill_hidden_from_the_person_but_not_one_kept_from_it(tmp_path):
+    """R134: SKILLS.md — ``user-invocable: false`` means only the agent runs
+    it, ``disable-model-invocation: true`` only the person. The agent was
+    matched as the person: the first was unusable from both sides, and the
+    second ran through ``slash_command``."""
+    _skill(tmp_path, "hidden", **{"user-invocable": "false"})
+    _skill(tmp_path, "mine", **{"disable-model-invocation": "true"})
+    pool = SkillPool()
+    pool.load_directory(tmp_path)
+
+    skill, args = pool.match_model_command("/hidden now")
+    assert (skill.name, args) == ("hidden", "now")
+    assert pool.match_user_command("/hidden") is None
+
+    assert pool.match_model_command("/mine") is None
+    assert pool.match_user_command("/mine")[0].name == "mine"
+    for text in ("/", "mine", "/nope"):
+        assert pool.match_model_command(text) is None

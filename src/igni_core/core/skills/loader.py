@@ -224,3 +224,23 @@ class SkillPool:
         if skill and skill.user_invocable:
             return (skill, args)
         return None
+
+    def match_model_command(self, text: str) -> tuple[SkillDefinition, str] | None:
+        """Check if the agent's ``slash_command`` names a skill it may run.
+
+        SKILLS.md: ``user-invocable: false`` hides a skill from the person
+        only — the agent can still run it — and
+        ``disable-model-invocation: true`` keeps it the person's alone.
+        The agent was matched as the person was, so the first was
+        unusable from both sides and the second ran for anybody.
+        """
+        text = text.strip()
+        if not text.startswith("/"):
+            return None
+        parts = text[1:].split(None, 1)
+        if not parts:
+            return None
+        skill = self.get(parts[0])
+        if skill is None or skill.disable_model_invocation:
+            return None
+        return (skill, parts[1] if len(parts) > 1 else "")

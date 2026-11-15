@@ -54,6 +54,8 @@ class SkillDefinition(BaseModel):
     context: str = "inline"
     agent: str | None = None
     user_invocable: bool = True
+    #: ``disable-model-invocation: true`` — only the person runs it.
+    disable_model_invocation: bool = False
     body: str = ""
     source_dir: Path | None = None
 
@@ -148,6 +150,7 @@ class SkillParser:
             context=fm.get("context", "inline"),
             agent=fm.get("agent"),
             user_invocable=fm.get("user-invocable", True),
+            disable_model_invocation=bool(fm.get("disable-model-invocation", False)),
             body=body,
             source_dir=path.parent,
         )

@@ -30,11 +30,18 @@ class SkillCommandDispatcher:
     "no tier understood this command".
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, by_model: bool = False) -> None:
         self._session = session
+        #: Whether the agent asks (its ``slash_command`` tool) rather than the person.
+        self._by_model = by_model
 
     async def match_and_render(self, stripped: str) -> CommandResult:
-        skill_match = self._session.skill_pool.match_user_command(stripped)
+        pool = self._session.skill_pool
+        skill_match = (
+            pool.match_model_command(stripped)
+            if self._by_model
+            else pool.match_user_command(stripped)
+        )
         if skill_match:
             skill, args = skill_match
             rendered = skill.render(args, session_id=self._session.session_id)

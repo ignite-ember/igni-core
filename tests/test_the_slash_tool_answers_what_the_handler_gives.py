@@ -20,8 +20,10 @@ class _Handler:
     answer = CommandResult.info("")
     seen: list[str] = []
 
-    def __init__(self, session):
+    def __init__(self, session, *, by_model=False):
         self.session = session
+        # The agent's tool asks as the agent: its skills are matched so.
+        assert by_model is True
 
     async def handle(self, command):
         _Handler.seen.append(command)
