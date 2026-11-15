@@ -43,6 +43,12 @@ from pydantic import BaseModel, ValidationError
 #: header's ``alg`` is checked against the key rather than chosen by it.
 ALGORITHM_FOR_KEY_TYPE: Mapping[str, str] = {"RSA": "RS256", "EC": "ES256"}
 
+#: The shortest RSA modulus a publisher key may have. NIST SP 800-57 puts
+#: 2048 bits as the floor through 2030, and it is what igni-service generates
+#: for a service (``igni_service.crypto``, ``KEY_SIZE``). EC keys are held to
+#: P-256. A shorter key refuses the key set, and with it the bundle.
+MINIMUM_RSA_BITS = 2048
+
 #: An ES256 signature is ``r || s``, 32 bytes each.
 _ES256_LENGTH = 64
 
@@ -94,10 +100,16 @@ class PublisherKey:
     def _public_key(self, jwk: Mapping[str, Any]) -> rsa.RSAPublicKey | ec.EllipticCurvePublicKey:
         try:
             if self.kty == "RSA":
-                return rsa.RSAPublicNumbers(
+                key = rsa.RSAPublicNumbers(
                     e=_Base64Url.to_int(str(jwk["e"]), what="key exponent"),
                     n=_Base64Url.to_int(str(jwk["n"]), what="key modulus"),
                 ).public_key()
+                if key.key_size < MINIMUM_RSA_BITS:
+                    raise BundleSignatureError(
+                        f"publisher key {self.kid!r} is a {key.key_size}-bit RSA key; igni "
+                        f"accepts RSA keys of {MINIMUM_RSA_BITS} bits or more"
+                    )
+                return key
             if jwk.get("crv") != "P-256":
                 raise BundleSignatureError(f"publisher key {self.kid!r} is not on P-256")
             return ec.EllipticCurvePublicNumbers(

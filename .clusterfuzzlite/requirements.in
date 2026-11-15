@@ -1,0 +1,7 @@
+# What the fuzzed modules import, at uv.lock's versions; build.sh says how
+# requirements.txt is compiled from this.
+agno[mcp]==3.1.12
+mcp==2.3.0
+pydantic==2.14.2
+pyyaml==6.0.3
+rich==15.0.0

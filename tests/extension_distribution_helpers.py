@@ -49,11 +49,11 @@ def _uint(value: int) -> str:
 class Publisher:
     """A service's key pair — RS256 or ES256 — and its signatures."""
 
-    def __init__(self, kind: str = "RSA", kid: str = "service-key-1") -> None:
+    def __init__(self, kind: str = "RSA", kid: str = "service-key-1", key_size: int = 2048) -> None:
         self.kind = kind
         self.kid = kid
         if kind == "RSA":
-            self._private: Any = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            self._private: Any = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
         else:
             self._private = ec.generate_private_key(ec.SECP256R1())
 

@@ -9,7 +9,8 @@
 #   2. Use uv to install a pinned CPython.
 #   3. Create a managed venv.
 #   4. Install igni-core at the pinned version (or from a local
-#      source tree, see ``--local``).
+#      source tree, see ``--local``), every download checked against
+#      the hash its resolution wrote down.
 #   5. Prefetch Laya, igni's decision model.
 #   6. Spawn ``python -m igni_core.backend --ws-port 0`` and confirm
 #      the ready JSON line lands on stdout.
@@ -186,11 +187,20 @@ echo "  venv ready at $VENV (${STEP_TIME}s)"
 
 # ── Step 4: igni-core ───────────────────────────────────────────────
 STEP_START=$(date +%s)
+REQUIREMENTS="$CACHE_DIR/requirements.txt"
 if [[ "$LOCAL" == "true" ]]; then
     echo "→ Step 4: installing $PACKAGE from local source ($REPO_ROOT)"
+    # The dependencies resolve exactly as an editable install would
+    # resolve them, but are written down with their hashes first and
+    # installed only if every file matches (OpenSSF Scorecard's
+    # Pinned-Dependencies); the tree itself then goes in editable with
+    # nothing left to resolve.
+    "$UV" pip compile --python "$VENV_PYTHON" --generate-hashes \
+        --extra "$EXTRAS" -o "$REQUIREMENTS" "$REPO_ROOT/pyproject.toml"
+    "$UV" pip install --require-hashes --python "$VENV_PYTHON" -r "$REQUIREMENTS"
     # Braces around the variable: "$REPO_ROOT[$EXTRAS]" is an array
     # subscript to bash and expands to nothing at all.
-    "$UV" pip install --python "$VENV_PYTHON" -e "${REPO_ROOT}[$EXTRAS]"
+    "$UV" pip install --no-deps --python "$VENV_PYTHON" -e "${REPO_ROOT}[$EXTRAS]"
 else
     # Is the version on PyPI at all? Before this repository's first
     # release there is nothing to install, and uv's "no matching
@@ -203,7 +213,12 @@ else
         exit 77
     fi
     echo "→ Step 4: installing $PACKAGE==$VERSION from PyPI"
-    "$UV" pip install --python "$VENV_PYTHON" "${PACKAGE}[$EXTRAS]==$VERSION"
+    # Resolved as a plain install would resolve it, written down with
+    # every file's hash, and installed only if each download matches.
+    printf '%s\n' "${PACKAGE}[$EXTRAS]==$VERSION" > "$CACHE_DIR/requirements.in"
+    "$UV" pip compile --python "$VENV_PYTHON" --generate-hashes \
+        -o "$REQUIREMENTS" "$CACHE_DIR/requirements.in"
+    "$UV" pip install --require-hashes --python "$VENV_PYTHON" -r "$REQUIREMENTS"
 fi
 STEP_TIME=$(($(date +%s) - STEP_START))
 echo "  $PACKAGE installed (${STEP_TIME}s)"

@@ -1,0 +1,1 @@
+{"id": "acme.scanner", "version": "1.0.0", "contract": ">=1.0 <2", "trust": "unsigned", "sidecar": {"image": "acme__scanner:1.0.0", "mcp": {"transport": "stdio"}}, "requires": [{"capability": "graph-db", "constraint": ">=5"}]}

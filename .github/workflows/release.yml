@@ -415,8 +415,32 @@ jobs:
             -F prerelease=$PRERELEASE \
             --jq '{id, name, draft, prerelease, html_url}'
 
-  update-homebrew:
+  # Is there a token to push the tap with? Without HOMEBREW_TAP_TOKEN the
+  # push fails, and that one failure marked the whole release run failed
+  # although PyPI, the evidence and the GitHub release had all shipped
+  # (v1.0.4). The token is checked here, in a step, because a job's `if:`
+  # cannot read secrets; update-homebrew is skipped, not failed, without it.
+  homebrew-tap-token:
     needs: publish-pypi
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - name: Check for HOMEBREW_TAP_TOKEN
+        id: check
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "::notice title=Homebrew tap not updated::HOMEBREW_TAP_TOKEN is not set, so update-homebrew is skipped. Set the secret and re-run the release to publish the formula."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  update-homebrew:
+    needs: [publish-pypi, homebrew-tap-token]
     # Skip on RC / alpha / beta / dev tags. The brew formula
     # tracks the latest STABLE release; pre-release tags don't
     # actually publish a new PyPI sdist (the version in
@@ -424,8 +448,9 @@ jobs:
     # no-ops the publish on RC tags). The homebrew job would 404 on
     # the non-existent ``igni_core-X.Y.Zrc1.tar.gz`` file. Run
     # only on tags WITHOUT a hyphen (i.e. ``v1.2.3`` not
-    # ``v1.2.3-rc.1``).
-    if: ${{ !contains(github.ref_name, '-') }}
+    # ``v1.2.3-rc.1``). And only with a token to push the tap with
+    # (homebrew-tap-token, above).
+    if: ${{ !contains(github.ref_name, '-') && needs.homebrew-tap-token.outputs.present == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Wait for PyPI propagation
