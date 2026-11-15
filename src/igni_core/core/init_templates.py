@@ -147,17 +147,20 @@ PROJECT_CONFIG_TEMPLATE = """\
 # models:
 #   default: MiniMax-M2.7        # Default model for this project
 
-guardrails:
-  pii_detection: true             # Warn on PII in user messages
-  # prompt_injection: false       # Warn on prompt injection patterns
+# Everything below is commented out at its default, so a choice in
+# ~/.igni/config.yaml holds until the team sets it here on purpose.
 
-learning:
-  enabled: true                   # Learn user preferences, project context, entities across sessions
+# guardrails:
+#   pii_detection: true           # Refuse a message that carries PII, before any model call
+#   prompt_injection: false       # Refuse a message that looks like a prompt injection
+
+# learning:
+#   enabled: true                 # Learn user preferences, project context, entities across sessions
 
 # orchestration:
 #   max_nesting_depth: 5          # How far delegation may chain (agents marked can_orchestrate)
 #   max_total_agents: 20          # Max agents per request
-#   sub_team_timeout: 600         # Sub-team kill timeout (seconds)
+#   sub_team_timeout: 1800        # Sub-team kill timeout (seconds)
 """
 
 
