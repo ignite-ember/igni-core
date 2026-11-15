@@ -8,8 +8,8 @@ UI any more. For three releases that pointer told people to type
     • ember -p                       pipe mode (stdin → stdout)
     • ember -c -m "<message>"     resume last session, one-shot
 
-`ember` has never been a console script. `pyproject.toml` installs
-`igni` and `ignite-ember` and nothing else, so every one of those lines
+`ember` has never been a console script. `pyproject.toml` installed
+`igni` and `ignite-ember` and nothing else (and installs only `igni` now), so every one of those lines
 was a command-not-found — and it was the *first* thing anybody saw
 after installing. Found by installing the published wheel from PyPI
 into a clean environment and running it, which is the only way to see
@@ -75,8 +75,8 @@ class TestEveryCommandItNamesExists:
         )
 
     def test_it_recommends_the_canonical_script(self) -> None:
-        """`ignite-ember` is kept for backwards compatibility. New
-        installations should be pointed at `igni`."""
+        """`igni` is the one console script; the first-run message names
+        it."""
         assert COMMAND == "igni"
         assert COMMAND in _console_scripts()
 

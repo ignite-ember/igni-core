@@ -24,6 +24,13 @@ class SigningKey:
         {"RSA": "RS256", "EC": "ES256"}
     )
 
+    #: The shortest RSA modulus a pack may be checked against. NIST SP 800-57
+    #: puts 2048 bits as the floor through 2030; igni server generates exactly
+    #: that (``app/services/identity/jwk.py``, ``KEY_SIZE``). A shorter key is
+    #: refused like any other unusable one, so a pack signed with it verifies
+    #: against nothing. EC keys are held to P-256 below.
+    MINIMUM_RSA_BITS: ClassVar[int] = 2048
+
     def __init__(self, jwk: Jwk) -> None:
         self.kid = jwk.kid or ""
         kty = jwk.kty or ""
@@ -37,6 +44,11 @@ class SigningKey:
                     e=Base64Url.decode_uint(self._member(jwk, "e"), what="key exponent"),
                     n=Base64Url.decode_uint(self._member(jwk, "n"), what="key modulus"),
                 ).public_key()
+                if self._key.key_size < self.MINIMUM_RSA_BITS:
+                    raise PackRejected(
+                        f"key {self.kid!r} is a {self._key.key_size}-bit RSA key; igni accepts "
+                        f"RSA keys of {self.MINIMUM_RSA_BITS} bits or more"
+                    )
             else:
                 if jwk.crv != "P-256":
                     raise PackRejected(f"key {self.kid!r} is not on P-256")

@@ -339,8 +339,8 @@ def test_no_document_installs_or_clones_by_an_old_name(doc):
         pytest.skip(f"{doc.name} records what was true at the time; see _HISTORICAL")
     found = sorted(set(_OLD_NAMES.findall(doc.read_text())))
     assert not found, (
-        f"{doc.name} names {found}. The package is `ignite-ember` (pyproject's "
-        f"`name`) and the repository github.com/ignite-ember/igni."
+        f"{doc.name} names {found}. The package is `igni-core` (pyproject's "
+        f"`name`) and the repository github.com/ignite-ember/igni-core."
     )
 
 

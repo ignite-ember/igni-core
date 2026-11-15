@@ -2,15 +2,15 @@
 
 `igni-core` is on PyPI from v1.0.4, and it is this repository's build:
 the `igni_core` module, the `igni` command, the decisions service. The
-`ignite-ember` name on PyPI is the alias — the same version, the same
-extras, nothing of its own — so `pip install ignite-ember` installs
-`igni-core` and `pip install igni-core` installs the same thing.
+old name, `ignite-ember`, is retired: every release under it is yanked
+from PyPI, the tap has no formula by it and there is no command by it,
+so no document may tell a reader to install or run it.
 
 Three rules, stated over the markdown files rather than over a list
 somebody audited:
 
 1. every package a fenced install command installs is one this
-   repository builds (`igni-core`, `igni-cloud`, `ignite-ember`), the
+   repository builds (`igni-core`, `igni-cloud`), the
    checkout itself (`-e ".[...]"`), or a named third-party package;
 2. a fenced `git clone` is followed by a `cd` into the directory that
    clone creates — `git clone .../igni-core.git` creates `igni-core/`,
@@ -34,10 +34,12 @@ import pytest
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _DOCS = sorted((_ROOT / "docs").glob("*.md")) + sorted(_ROOT.glob("*.md"))
 
-#: The distributions this repository builds. `packages/ignite-ember/` is
-#: the alias: metadata, and a dependency on `igni-core` at the same
-#: version.
-_BUILT = {"igni-core", "igni-cloud", "ignite-ember"}
+#: The distributions this repository builds.
+_BUILT = {"igni-core", "igni-cloud"}
+
+#: The commands that install a Python distribution by name: pip's, and
+#: uv's tool install (the README's other install line).
+_INSTALLERS = ("pip install", "uv tool install")
 
 #: Third-party packages the docs tell a reader to install. Each one is
 #: named on purpose, so a new name has to be argued for.
@@ -72,7 +74,7 @@ def _install_lines_everywhere(doc: pathlib.Path) -> list[str]:
     for block in _shell_blocks(doc):
         lines.extend(_install_lines(block))
     for span in _INLINE_CODE.findall(doc.read_text(encoding="utf-8")):
-        if "pip install" in span:
+        if any(installer in span for installer in _INSTALLERS):
             lines.append(span.strip())
     return lines
 
@@ -81,14 +83,16 @@ def _install_lines(block: str) -> list[str]:
     lines = []
     for line in block.splitlines():
         line = line.split(" #")[0].strip()
-        if "pip install" in line:
+        if any(installer in line for installer in _INSTALLERS):
             lines.append(line)
     return lines
 
 
 def _packages(command: str) -> list[str]:
-    """The distribution names a `pip install` line installs."""
-    tail = command.split("pip install", 1)[1]
+    """The distribution names a `pip install` or `uv tool install` line
+    installs."""
+    installer = next(i for i in _INSTALLERS if i in command)
+    tail = command.split(installer, 1)[1]
     names = []
     for token in tail.split():
         token = token.strip("\"'")
@@ -151,8 +155,8 @@ def test_the_install_note_says_what_is_published_today(name):
     assert _PUBLISHED_VERSION in text, f"{name} does not name the published version."
 
 
-#: The Homebrew formula `release.yml` writes (`Formula/igni-core.rb`, with
-#: `Aliases/ignite-ember` beside it), and the tap it lives in.
+#: The Homebrew formula `release.yml` writes (`Formula/igni-core.rb`, the
+#: tap's only formula), and the tap it lives in.
 _FORMULA = "ignite-ember/tap/igni-core"
 _BREW_INSTALL = re.compile(r"brew install\s+([^\s`;]+)")
 
@@ -160,17 +164,39 @@ _BREW_INSTALL = re.compile(r"brew install\s+([^\s`;]+)")
 @pytest.mark.parametrize("doc", _DOCS, ids=lambda d: d.name)
 def test_every_brew_install_names_the_formula_the_release_writes(doc):
     """README said `ignite-ember/tap/igni-core` and QUICKSTART
-    `ignite-ember/tap/ignite-ember` for the same install."""
+    `ignite-ember/tap/ignite-ember` for the same install, and the project
+    overview a bare `brew install ignite-ember`. Neither of those names is
+    a formula any more."""
     text = doc.read_text(encoding="utf-8")
-    named = {name for name in _BREW_INSTALL.findall(text) if name.startswith("ignite-ember/tap/")}
+    named = {name for name in _BREW_INSTALL.findall(text) if "ign" in name}
     assert named <= {_FORMULA}, f"{doc.name} installs {sorted(named)}, not {_FORMULA}"
 
 
-def test_the_release_writes_the_formula_the_docs_name_and_links_both_commands():
+def test_the_release_writes_the_formula_the_docs_name_and_links_only_igni():
     workflow = (_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     assert "Formula/igni-core.rb" in workflow
     assert 'bin.install_symlink libexec/"bin/igni"' in workflow
-    assert 'bin.install_symlink libexec/"bin/ignite-ember"' in workflow
+    assert "ignite-ember.rb" not in workflow
+    assert 'libexec/"bin/ignite-ember"' not in workflow
+    assert "Aliases/" not in workflow
+
+
+#: Ways a document could still send a reader to the retired name: install
+#: it, upgrade to it, or run it as a command at the start of a line.
+_RETIRED = re.compile(
+    r"(?:pip install|uv tool install|brew (?:install|upgrade))\s+['\"]?ignite-ember\b(?!/)"
+    r"|^\s*\$?\s*ignite-ember\b(?!/)",
+    re.M,
+)
+
+
+@pytest.mark.parametrize("doc", _DOCS, ids=lambda d: d.name)
+def test_no_doc_installs_or_runs_the_retired_name(doc):
+    found = _RETIRED.findall(doc.read_text(encoding="utf-8"))
+    assert not found, (
+        f"{doc.name} still says {found}. `ignite-ember` is retired: install "
+        f"`igni-core` and run `igni`."
+    )
 
 
 @pytest.mark.parametrize(

@@ -62,7 +62,13 @@ dependencies = [
     # the SDK itself (``LoggingClaude.get_async_client``).
     "anthropic~=2.3.0",
     "tokenizers~=0.23.3",
-    "ripgrep~=15.1.0",
+    # ``rg`` for the composer's code search and the agent's shell. An
+    # ``rg`` on PATH always wins (``core/utils/ripgrep.py``); this is the
+    # fallback, required only where PyPI has a wheel for it: its sdist
+    # needs Rust, which made ``pip install igni-core`` fail everywhere
+    # else (linux/arm64, Intel macOS). There, install ripgrep from the
+    # system's package manager.
+    "ripgrep~=15.1.0; (sys_platform == 'darwin' and platform_machine == 'arm64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
     # Ed25519 verification of extension bundle signatures
     # (``extensions/signature.py``). It was already importable as a
     # transitive dependency, which a security control may not rely on.
@@ -148,12 +154,7 @@ otel = [
 ]
 
 [project.scripts]
-# ``igni`` is the command. ``ignite-ember`` is kept for backwards
-# compatibility — existing shell aliases, scripts and the Homebrew
-# formula's link keep working; both point at the same entrypoint. The
-# package was called ``ignite-ember`` too, and still is on PyPI as a
-# release that only depends on this one (packages/ignite-ember).
-ignite-ember = "igni_core.__main__:main"
+# ``igni`` is the command.
 igni = "igni_core.__main__:main"
 
 [tool.hatch.build.targets.wheel]

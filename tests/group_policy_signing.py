@@ -43,8 +43,8 @@ def _b64_uint(value: int) -> str:
 class ServerKey:
     """An RSA signing key, as igni server generates one."""
 
-    def __init__(self) -> None:
-        self._private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    def __init__(self, key_size: int = 2048) -> None:
+        self._private = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
         numbers = self._private.public_key().public_numbers()
         jwk: dict[str, str] = {
             "kty": "RSA",

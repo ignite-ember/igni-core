@@ -2,9 +2,8 @@
 // Single source-of-truth version syncer.
 //
 // ``pyproject.toml`` is igni-core's version. This script copies it into
-// the files that carry their own copy: the package's ``__init__.py``, and
-// packages/ignite-ember (the old name), whose version and igni-core pins
-// are igni-core's.
+// the files that carry their own copy: today, the package's
+// ``__init__.py``.
 //
 // Run from anywhere — the script resolves paths relative to itself.
 //
@@ -32,7 +31,7 @@ if (!versionMatch) {
   console.error("could not find version in pyproject.toml");
   process.exit(1);
 }
-const igniteEmberVersion = versionMatch[1];
+const version = versionMatch[1];
 
 // Two kinds of targets:
 //
@@ -47,19 +46,6 @@ const targets = [
     label: "Python package (__init__.py)",
     path: join(repoRoot, "src/igni_core/__init__.py"),
     pattern: /(__version__\s*=\s*")[^"]+(")/,
-  },
-  {
-    kind: "patch",
-    label: "ignite-ember, the old name (its version)",
-    path: join(repoRoot, "packages/ignite-ember/pyproject.toml"),
-    pattern: /(^version\s*=\s*")[^"]+(")/m,
-  },
-  {
-    kind: "patch",
-    label: "ignite-ember, the old name (the igni-core it installs)",
-    path: join(repoRoot, "packages/ignite-ember/pyproject.toml"),
-    // Every ``igni-core…==X`` pin: the dependency and each extra's.
-    pattern: /(igni-core(?:\[[a-z]+\])?==)[^"]+(")/g,
   },
 ];
 
@@ -83,10 +69,10 @@ for (const t of targets) {
     console.error(`version pattern not found in ${t.path}`);
     process.exit(1);
   }
-  const after = before.replace(t.pattern, `$1${igniteEmberVersion}$2`);
+  const after = before.replace(t.pattern, `$1${version}$2`);
   if (after === before) continue;
   writeFileSync(t.path, after);
   console.log(`updated ${t.label}: ${t.path}`);
   changed++;
 }
-if (changed === 0) console.log(`version ${igniteEmberVersion} already in sync`);
+if (changed === 0) console.log(`version ${version} already in sync`);

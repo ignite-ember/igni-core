@@ -1,7 +1,7 @@
 """Environment variables are `IGNI_*`, never a bare `EMBER_*`.
 
-The product is igni. `igni` and `ignite-ember` are both acceptable spellings
-of it; a bare `ember` is not. This file enforces that for environment
+The product is igni, made by the `ignite-ember` organisation; a bare `ember`
+is neither. This file enforces that for environment
 variable names specifically, because they are the one identifier class that
 crosses a process boundary: a client sets a variable and the Python backend
 reads it, so renaming one side and missing the other leaves a variable that
@@ -20,8 +20,9 @@ more than a list that was already incomplete when it was written.
 
 Two exemptions, both deliberate:
 
-* `IGNITE_EMBER_*` — `ignite-ember` is an accepted spelling, so
-  `IGNITE_EMBER_DEV` and `IGNITE_EMBER_VERSION` stay. `\\bEMBER_` cannot
+* `IGNITE_EMBER_*` — named after the organisation, not the retired
+  package, so `IGNITE_EMBER_DEV` (the desktop app's acknowledgement of a
+  development interpreter) stays. `\\bEMBER_` cannot
   match inside them anyway: `_` and `E` are both word characters, so there
   is no boundary between `IGNITE_` and `EMBER_`.
 * `evals/results/` — recorded model transcripts from past eval runs. They

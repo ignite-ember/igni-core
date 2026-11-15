@@ -585,7 +585,7 @@ What moves where (audit of `src/igni_core`, 2026-10-26; built in
 | Workspace files, `.igni` in the workspace, worktrees, process logs, installed packages | files | the producer's volume (section 10) |
 
 **One product: the core and a cloud layer.** The desktop igni
-(`ignite-ember`, `igni_core`) is the core; the cloud is a layer on top,
+(`igni-core`, `igni_core`) is the core; the cloud is a layer on top,
 its own package — `packages/igni-cloud` (`igni-cloud`, `igni_cloud`) —
 which the core never imports (a test holds it to that). The core asks
 seams instead of where it runs (`core/layer.py`): where logs go, where

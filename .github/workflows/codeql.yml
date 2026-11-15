@@ -1,0 +1,60 @@
+name: CodeQL
+
+# Static analysis (SAST) of every change before it merges and of main after
+# it does. CodeQL reads the source for injection, path traversal, unsafe
+# deserialisation and the other patterns its default query suite knows, and
+# each finding becomes an alert under the Security tab's code scanning.
+#
+# Three languages, because the repository has three: the Python backend and
+# CLI, the workflows themselves (`actions`: untrusted input reaching a `run:`,
+# over-broad tokens), and the JavaScript the backend runs
+# (src/igni_core/backend/workflow_runtime.mjs) plus scripts/sync-version.mjs.
+# None of them is compiled, so every language analyses without a build.
+#
+# OpenSSF Scorecard's SAST check counts a merged pull request as checked when
+# this workflow ran on it; the weekly run re-reads main with the newest
+# queries, so a query added upstream finds old code too.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, Tuesday 04:20 UTC — clear of the Scorecard run on Monday.
+    - cron: "20 4 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # upload the results to code scanning
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, actions, javascript-typescript]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:${{ matrix.language }}

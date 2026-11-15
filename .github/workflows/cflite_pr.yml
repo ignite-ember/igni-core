@@ -1,0 +1,58 @@
+name: ClusterFuzzLite (pull request)
+
+# Fuzzes a pull request that changes the code the fuzzers reach, briefly.
+# The targets are fuzz/fuzz_*.py (Atheris), built by .clusterfuzzlite/;
+# a crash fails this check and the reproducer is attached to the run.
+# cflite_batch.yml fuzzes main for longer on a schedule. OpenSSF
+# Scorecard's Fuzzing check reads .clusterfuzzlite/ itself.
+#
+# Only the paths below start it, because a run costs Actions minutes and a
+# docs change cannot move a fuzzer's result.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "fuzz/**"
+      - ".clusterfuzzlite/**"
+      - ".github/workflows/cflite_pr.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz (${{ matrix.sanitizer }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        # Python targets run under ASan only: it is what loads libFuzzer
+        # into the interpreter.
+        sanitizer: [address]
+    steps:
+      - name: Build fuzzers (${{ matrix.sanitizer }})
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: python
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: ${{ matrix.sanitizer }}
+
+      - name: Run fuzzers (${{ matrix.sanitizer }})
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Shared by every target; a few minutes is what a PR check can afford.
+          fuzz-seconds: 240
+          mode: code-change
+          sanitizer: ${{ matrix.sanitizer }}
