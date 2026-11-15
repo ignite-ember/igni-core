@@ -74,6 +74,9 @@ class ContextController:
         self._pending_store = pending_store
         self._models = models
         self._pack_meta = pack_meta
+        #: When this backend started: a message still pending from before
+        #: then is no run of this process's, so igni stopped while it ran.
+        self._started_at = int(time.time())
 
     def get_status(self) -> msg.StatusUpdate:
         """Status-bar snapshot.
@@ -235,10 +238,9 @@ class ContextController:
 
         Distinct from :meth:`get_pending_messages` in three ways:
 
-        1. Returns ONLY rows explicitly stamped by the cancel +
-           error paths in :class:`RunController`. A row that's
-           ``pending`` but never stamped (very old data, or the
-           stamp write was lost on crash) is invisible here.
+        1. Returns ONLY stamped rows: by the cancel + error paths in
+           :class:`RunController`, or ``abandoned`` here, for a row still
+           ``pending`` from before this backend started (a crash).
         2. No staleness cutoff — an interrupted row that just
            landed is the most useful one to surface (the user just
            hit Esc and is staring at the spinner).
@@ -252,6 +254,8 @@ class ContextController:
         controller stays out of the field-mapping business.
         """
         try:
+            # A crash stamps nothing; its message is stamped here, once.
+            await self._pending_store.astamp_abandoned(session_id, self._started_at)
             rows = await self._pending_store.alist_interrupted(session_id)
         except SQLAlchemyError:
             logger.warning("get_interrupted_runs: store read failed", exc_info=True)

@@ -406,6 +406,11 @@ class _Store:
             raise self._error
         return self._rows
 
+    async def astamp_abandoned(self, session_id: str, before: int) -> int:
+        if self._error:
+            raise self._error
+        return 0
+
     async def adiscard_interrupted(self, session_id: str, message_id: str) -> int:
         if self._error:
             raise self._error

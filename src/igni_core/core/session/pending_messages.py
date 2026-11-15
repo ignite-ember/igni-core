@@ -300,6 +300,29 @@ class PendingMessageStore:
             for r in rows
         ]
 
+    def stamp_abandoned(self, session_id: str, before: int) -> int:
+        """Mark ``session_id``'s unstamped pending messages that arrived
+        before ``before`` as interrupted, reason ``abandoned``.
+
+        A crash stamps nothing: its message stays ``pending`` with no
+        ``interrupted_at``. The backend passes the second it started, so a
+        message no run in this process can still be working on becomes an
+        interrupted run a client can retry or discard. Returns how many.
+        """
+        with self._db.sync_session() as session, session.begin():
+            result = session.execute(
+                update(ReceivedMessageModel)
+                .where(
+                    self._mine(),
+                    ReceivedMessageModel.session_id == session_id,
+                    ReceivedMessageModel.status == "pending",
+                    ReceivedMessageModel.interrupted_at.is_(None),
+                    ReceivedMessageModel.received_at < before,
+                )
+                .values(interrupted_at=self._now(), interrupted_reason="abandoned")
+            )
+            return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
     def discard_interrupted(self, session_id: str, message_id: str) -> int:
         """Hard-delete one interrupted run of ``session_id``; how many rows went.
 
@@ -369,6 +392,9 @@ class PendingMessageStore:
 
     async def alist_interrupted(self, session_id: str) -> list[InterruptedMessage]:
         return await asyncio.to_thread(self.list_interrupted, session_id)
+
+    async def astamp_abandoned(self, session_id: str, before: int) -> int:
+        return await asyncio.to_thread(self.stamp_abandoned, session_id, before)
 
     async def adiscard_interrupted(self, session_id: str, message_id: str) -> int:
         return await asyncio.to_thread(self.discard_interrupted, session_id, message_id)
