@@ -43,6 +43,8 @@ class RuntimeBuilder:
         # tool execution; this coordinator carries those pauses (and the
         # session's own single-call questions) to the person.
         session.sub_agent_hitl = SubAgentHITLCoordinator()
+        # Read late: the evaluator is rebuilt with the team.
+        session.sub_agent_hitl.use_policy(lambda: getattr(session, "permission_evaluator", None))
         session.approval = ToolCallApprovalChannel(session.sub_agent_hitl)
         session.guardrail_runner = GuardrailRunner(session.settings)
 

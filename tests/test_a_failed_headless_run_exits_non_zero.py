@@ -126,6 +126,29 @@ async def test_a_run_that_answered_exits_zero():
     display.print_error.assert_not_called()
 
 
+async def test_a_sub_agent_pause_nobody_could_answer_exits_non_zero():
+    """The sub-agent's run ended at its pause (nobody to ask headless), the
+    main agent answered anyway: the run still did not do what was asked
+    (campaign R092, R128)."""
+    from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
+
+    session = _session(_Team(RunOutput(status=RunStatus.completed, content="explorer stopped")))
+    coordinator = SubAgentHITLCoordinator()
+    session.sub_agent_hitl = coordinator
+    coordinator.record_unanswered(["run_shell_command"])
+    with patch("igni_core.core.session.session_run.Session", return_value=session):
+        try:
+            await run_single_message(MagicMock(), "spawn the explorer")
+            code = 0
+        except SystemExit as exit_:
+            code = int(exit_.code or 0)
+
+    assert code == SingleMessageRun.FAILED_EXIT_CODE
+    assert coordinator.unattended is True
+    (message,), _ = session.display.print_error.call_args
+    assert "sub-agent's run paused for confirmation on ['run_shell_command']" in message
+
+
 async def test_a_bare_help_prints_the_commands():
     """B35: a bare ``/help`` opens a panel in the clients, so its result has
     no content, and ``igni -m /help`` printed nothing."""

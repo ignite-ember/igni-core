@@ -83,6 +83,8 @@ class SingleMessageRun(SessionRun):
         # The extensions installed here apply to a headless run as they
         # do in the app: their tools, hooks and prompt contributions.
         extensions = HeadlessExtensions(self._session)
+        # Nobody answers a question here: a sub-agent's pause ends its run.
+        self._session.sub_agent_hitl.mark_unattended()
         await extensions.start()
         try:
             await self._fire_session_start()
@@ -94,6 +96,7 @@ class SingleMessageRun(SessionRun):
                 return
 
             succeeded = await self._run_turn(turn)
+            succeeded = self._report_unanswered_sub_agent_pauses() and succeeded
             self._emit_pending_plan()
             await self._fire_session_end()
         finally:
@@ -103,6 +106,28 @@ class SingleMessageRun(SessionRun):
             # found no model, or failed: said on stderr already, and the
             # exit code says it to whatever ran ``igni -m``.
             raise SystemExit(self.FAILED_EXIT_CODE)
+
+    def _report_unanswered_sub_agent_pauses(self) -> bool:
+        """Say which sub-agent calls waited on a confirmation; ``False`` if any did.
+
+        A sub-agent's pause ends that sub-agent's run here (nobody can
+        answer it), and the main agent goes on without the call. The run
+        still did not do what was asked, so it ends as a main-agent pause
+        does: the tools named on stderr, and exit 1.
+        """
+        tools = self._session.sub_agent_hitl.take_unanswered()
+        # Typed check, as in ``_run_turn``: a loosely held session (a test
+        # double) answers with something truthy that is not a list.
+        if not isinstance(tools, list) or not tools:
+            return True
+        self._session.display.print_error(
+            f"A sub-agent's run paused for confirmation on {tools} but this session "
+            "cannot resolve a pause; the tool did not run. Decide up front what it may "
+            "do: --read-only to only read, or a permissions.allow rule in "
+            "~/.igni/config.yaml (with --accept-edits for edits); --auto-approve allows "
+            "everything. Or use a client that supports confirmations."
+        )
+        return False
 
     def _emit_pending_plan(self) -> None:
         """Print a plan the agent submitted, because nothing else will.

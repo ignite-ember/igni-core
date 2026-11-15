@@ -121,6 +121,32 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         state = self.state
         coordinator = self._context.sinks.hitl_coordinator
         reqs = active_requirements(event)
+        run_id = event.run_id or state.current_run_id or ""
+        session_id = event.session_id or state.current_session_id
+        # The session's permission policy answers first, as it does for the
+        # main agent; only what it leaves undecided goes to a person. A
+        # bridge without a policy (a test double, a cold resume) asks
+        # about everything, and is taken to have somebody to ask.
+        settle = getattr(coordinator, "settle_by_policy", None)
+        to_ask = settle(reqs) if settle is not None else reqs
+        if reqs and not to_ask:
+            return self._context.runnable.acontinue_run(
+                run_id=run_id,
+                session_id=session_id,
+                requirements=reqs,
+                stream=True,
+            )
+        # A headless run has nobody to answer: waiting would hang it for
+        # ever, so the sub-agent's run ends at the pause, and the headless
+        # run reports the tools and exits 1, as a main-agent pause does.
+        if coordinator is not None and to_ask and getattr(coordinator, "unattended", False):
+            coordinator.record_unanswered(
+                [
+                    str(getattr(getattr(r, "tool_execution", None), "tool_name", "") or "tool")
+                    for r in to_ask
+                ]
+            )
+            coordinator = None
         if coordinator is None or not reqs:
             self._log_line(
                 f"  {LogSymbols.T_TRUNK.value}  "
@@ -133,10 +159,8 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
                 )
             )
             return None
-        run_id = event.run_id or state.current_run_id or ""
-        session_id = event.session_id or state.current_session_id
         req_ids: list[str] = []
-        for req in reqs:
+        for req in to_ask:
             req_id = await coordinator.push_requirement(
                 req,
                 run_id=run_id,
