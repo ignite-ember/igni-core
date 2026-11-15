@@ -451,6 +451,21 @@ class RunController:
 
     # ── The locked body ─────────────────────────────────────────────
 
+    async def _keep_todos(self, revision_before: int) -> None:
+        """Write the todo list again once the run has saved its session.
+
+        ``todo_write`` stores the list in ``session_data`` while the run
+        goes, and Agno saves the session it loaded at the run's start when
+        the run ends, over it: the list was live, and gone after a restart.
+        Written again here, after that save, when the run changed it.
+        """
+        todos = self._session.todo_store
+        if todos.revision == revision_before:
+            return
+        result = await self._session.persistence.save_todos(todos.items)
+        if not result.ok:
+            logger.warning("Could not keep the todo list: %s", result.error)
+
     async def _run_locked(
         self, text: str, media: MediaAttachments | None
     ) -> AsyncGenerator[msg.Message, None]:
@@ -527,6 +542,7 @@ class RunController:
 
         # Periodic checkpoint task — see SessionCheckpointer.run_forever.
         checkpoint_task = background.daemon(self.periodic_checkpoint(team), name="run-checkpoint")
+        todos_before = self._session.todo_store.revision
 
         media_kwargs = media.to_kwargs() if media is not None else {}
         self._transition_to(RunPhase.streaming)
@@ -574,6 +590,7 @@ class RunController:
             # conversation holds them (``DurableMessageQueue``).
             if self._message_queue is not None:
                 await self._message_queue.settle(self._session.db)
+            await self._keep_todos(todos_before)
             # Memory files the run wrote, whatever tool wrote them.
             mirror = self._session.memory_mirror
             if mirror is not None:

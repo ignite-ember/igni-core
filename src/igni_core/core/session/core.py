@@ -260,7 +260,14 @@ class Session(SessionSurface):
         self.identity.rotate(new_id)
 
     async def rebind_identity(self, session_id: str) -> None:
+        """Continue another stored session, its todo list included.
+
+        The list was only read back at start-up, so after a switch
+        ``todos()`` answered the previous session's list (or none).
+        """
         await self.identity.rebind(session_id)
+        if self.persistence is not None:
+            self.todo_store.set(await self.persistence.load_todos())
 
     @property
     def permission_mode_value(self) -> str:

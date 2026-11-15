@@ -37,6 +37,7 @@ from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.tools.process_events import ProcessExitEvent
+from igni_core.core.tools.todo import TodoStore
 from igni_core.protocol import messages as msg
 
 # ── Fakes ────────────────────────────────────────────────────────────
@@ -107,6 +108,7 @@ def _controller(stream_messages: list[msg.Message]) -> tuple[RunController, _Jou
     controller._session = SimpleNamespace(
         main_team=SimpleNamespace(arun=lambda *a, **k: None),
         guardrail_runner=SimpleNamespace(warning_prefix=_no_prefix),
+        todo_store=TodoStore(),
         memory_mirror=None,
     )
     controller._stream_factory = _stream

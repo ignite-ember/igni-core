@@ -24,6 +24,7 @@ from igni_core.backend.schemas_lifecycle import InterruptedRunSummary
 from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.utils.media_schemas import MediaAttachments
+from igni_core.core.tools.todo import TodoItemWire, TodoStore
 from igni_core.protocol import messages as msg
 
 
@@ -147,6 +148,7 @@ class _Rig:
         c._session = SimpleNamespace(
             main_team=self.team,
             guardrail_runner=SimpleNamespace(warning_prefix=_warning_prefix),
+            todo_store=TodoStore(),
             memory_mirror=_Mirror(),
             db="the-db",
         )
@@ -755,3 +757,42 @@ class TestAResumedRun:
         assert [m.text for m in got] == ["again"]
         assert rig.controller.phase is RunPhase.done
         assert rig.controller.current_run_task is None
+
+
+# ── The todo list outlives the run's own save ────────────────────────
+
+
+class TestTheTodoListIsWrittenAfterTheRunSavesItsSession:
+    """``todo_write`` stores the list in ``session_data`` during the run, and
+    Agno's end-of-run save of the session it loaded at the start wrote over
+    it: the list was live and gone after a restart (campaign R095). A run that
+    changed the list writes it again once the run is over."""
+
+    def _rig(self, change: bool) -> tuple[_Rig, list[list]]:
+        rig = _Rig()
+        saved: list[list] = []
+
+        async def save_todos(items):
+            saved.append(items)
+            return SimpleNamespace(ok=True, error=None)
+
+        session = rig.controller._session
+        session.persistence = SimpleNamespace(save_todos=save_todos)
+
+        async def _stream(team_stream):
+            if change:
+                session.todo_store.set([TodoItemWire(content="Alpha", status="in_progress")])
+            yield msg.Info(text="done")
+
+        rig.controller._stream_factory = _stream
+        return rig, saved
+
+    async def test_a_run_that_changed_the_list_writes_it_after(self):
+        rig, saved = self._rig(change=True)
+        await rig.run()
+        assert [[t.content for t in items] for items in saved] == [["Alpha"]]
+
+    async def test_a_run_that_did_not_change_it_writes_nothing(self):
+        rig, saved = self._rig(change=False)
+        await rig.run()
+        assert saved == []

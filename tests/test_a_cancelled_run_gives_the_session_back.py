@@ -39,6 +39,7 @@ from igni_core.backend.schemas_run import (
 )
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.utils.media_schemas import MediaAttachments, ResolvedText
+from igni_core.core.tools.todo import TodoStore
 from igni_core.protocol import messages as msg
 
 # ── Fakes ────────────────────────────────────────────────────────────
@@ -123,6 +124,7 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
     controller._session = SimpleNamespace(
         main_team=SimpleNamespace(arun=lambda *a, **k: None, run_id=None),
         guardrail_runner=SimpleNamespace(warning_prefix=_no_prefix),
+        todo_store=TodoStore(),
         memory_mirror=None,
     )
     controller._stream_factory = _stream
