@@ -25,7 +25,7 @@ The actual tool list registered on the main team at session boot:
 | `Edit` | `IgniEditTools` (custom) | Targeted string-replacement editing. Kept dedicated because `sed` is fragile. |
 | `Schedule` | `ScheduleTools` (custom) | Schedule tasks for later or recurring execution. |
 | `NotebookEdit` | `NotebookTools` (custom) | Read and edit Jupyter notebook cells. |
-| `WebSearch` | `DuckDuckGoTools` | Web search (when `permissions.web_search != "deny"` and the `web` extra — `pip install -e ".[web]"` — is installed). |
+| `WebSearch` | `DuckDuckGoTools` | Web search (when `permissions.web_search != "deny"`). Comes with igni-core: its `agno[ddg]` dependency brings the `ddgs` package the toolkit uses. |
 | `WebFetch` | `WebTools` (custom) | Fetch and extract URL content (when `permissions.web_fetch != "deny"`). |
 | `Orchestrate` | `OrchestrateTools` (custom) | Spawn sub-teams from the agent pool. |
 
@@ -41,7 +41,7 @@ not on this list raises `Unknown tool` when the agent is built.
 | `Bash` | yes | yes | `BashOutput` is an accepted alias for the same toolkit |
 | `Schedule` | yes | yes | Also appended automatically to every sub-agent that has any tools |
 | `NotebookEdit` | yes | yes | |
-| `WebSearch` | yes | yes | Needs the `web` extra; without it the name resolves to nothing |
+| `WebSearch` | yes | yes | |
 | `WebFetch` | yes | yes | |
 | `Visualize` | yes | **no** | Used by the bundled `visualizer` sub-agent; not offered to ephemeral agents |
 
