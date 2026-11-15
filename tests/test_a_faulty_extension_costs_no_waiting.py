@@ -106,6 +106,21 @@ async def test_three_silences_in_a_row_make_it_faulty_and_say_so(
     assert extension_id == "acme.guard" and "restarting" in reason
 
 
+async def test_one_that_never_started_is_refused_with_why_and_never_counted_faulty(
+    registry: ExtensionRegistry, faults: ExtensionFaults, hooks: ExtensionHooks
+) -> None:
+    """R263: a process that exited at start-up was counted as hung — after
+    three calls "isn't responding ... igni is restarting it". Its FAILED
+    state already says why, and each call is refused with that reason."""
+    registry.set_state("acme.guard", ExtensionState.FAILED, "its service did not start")
+
+    for _ in range(ExtensionFaults.LIMIT + 1):
+        verdict = await hooks.ask(CALL)
+        assert not verdict.allowed and "its service did not start" in verdict.reason
+
+    assert not faults.faulty("acme.guard")
+
+
 async def test_a_hung_extension_costs_no_waiting_once_faulty(hooks: ExtensionHooks) -> None:
     process = Process(hooks, "acme.guard", hung=True)
     await _hang_until_faulty(hooks)

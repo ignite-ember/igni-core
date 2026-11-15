@@ -200,7 +200,9 @@ class ExtensionHooks:
                 verdict = HookAnswers.verdict(spec, extension_id, current, answer)
                 self._faults.answered(extension_id)
             except HookFailure as exc:
-                if exc.unanswered:
+                if exc.not_running:
+                    pass  # its state says why; there was nobody to hang
+                elif exc.unanswered:
                     self._faults.failed(extension_id, f"its {spec.event.value} hook: {exc}")
                 else:
                     self._faults.answered(extension_id)
@@ -264,7 +266,7 @@ class ExtensionHooks:
                 raise HookFailure("it is not installed here", unanswered=True)
             if entry.state in self._NOT_RUNNING:
                 detail = f": {entry.reason}" if entry.reason else ""
-                raise HookFailure(f"it is not running{detail}", unanswered=True)
+                raise HookFailure(f"it is not running{detail}", unanswered=True, not_running=True)
         hook_id = self._connections.next_hook_id()
         frame = HookMessage(
             id=hook_id,
