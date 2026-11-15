@@ -279,7 +279,7 @@ class TestHandleMessage:
     class _Handler:
         last_failure = "the model refused"
 
-        async def handle(self, message: str, media: Any) -> str:
+        async def handle(self, message: str, media: Any, *, context: str = "") -> str:
             return f"reply to {message}"
 
     async def test_a_debug_dump_that_raises_does_not_fail_the_turn(
