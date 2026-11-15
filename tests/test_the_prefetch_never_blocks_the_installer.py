@@ -45,7 +45,7 @@ def test_a_model_that_loads_is_announced_and_exits_zero(tmp_path):
         """
         import runpy, sys
         from igni_core.decisions_server import model
-        model.LayaModel.load = lambda self: None
+        model.LayaModel.prefetch = lambda self: None
         sys.argv = ["prefetch_models"]
         runpy.run_module("igni_core.prefetch_models", run_name="__main__")
         """
@@ -59,3 +59,37 @@ def test_a_model_that_loads_is_announced_and_exits_zero(tmp_path):
         "prefetch: decision model ready",
     ]
     assert result.stderr == ""
+
+
+def test_the_prefetch_downloads_every_checkpoint_not_only_the_router(monkeypatch):
+    """Laya's Router fetches a checkpoint on first use; building it fetched
+    nothing, and the prefetch said "ready" with the model still to download
+    (campaign R085, R615)."""
+    from igni_core.decisions_server import model
+
+    calls: list[str] = []
+
+    class _Router:
+        def preload(self, names=None):
+            calls.append("preload")
+            return self
+
+    monkeypatch.setattr(model.LayaModel, "load", lambda self: _Router())
+    model.LayaModel().prefetch()
+
+    assert calls == ["preload"]
+
+
+def test_a_download_that_fails_is_unavailable(monkeypatch):
+    import pytest
+
+    from igni_core.core.decisions.schemas import DecisionsUnavailable
+    from igni_core.decisions_server import model
+
+    class _Router:
+        def preload(self, names=None):
+            raise OSError("disk full")
+
+    monkeypatch.setattr(model.LayaModel, "load", lambda self: _Router())
+    with pytest.raises(DecisionsUnavailable, match="disk full"):
+        model.LayaModel().prefetch()
