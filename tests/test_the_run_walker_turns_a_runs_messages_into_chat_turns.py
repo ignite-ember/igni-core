@@ -125,6 +125,25 @@ class TestWhatEachRoleBecomes:
 
         assert turn.is_rejected is True  # type: ignore[union-attr]
 
+    def test_a_declined_call_restores_as_rejected_not_as_an_error(self) -> None:
+        """Agno flags the declined call's result as a tool error; the card
+        must still read "not run", never red (campaign R641)."""
+        from igni_core.core.approvals.declined import declined_note
+
+        [turn] = _walker().walk(
+            [
+                _msg(
+                    "tool",
+                    declined_note("run_shell_command"),
+                    tool_name="run_shell_command",
+                    tool_call_error=True,
+                )
+            ]
+        )
+
+        assert turn.is_rejected is True  # type: ignore[union-attr]
+        assert turn.is_error is False  # type: ignore[union-attr]
+
     def test_the_system_message_is_never_a_turn(self) -> None:
         assert _walker().walk([_msg("system", "be good")]) == []
 
