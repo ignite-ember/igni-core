@@ -53,8 +53,8 @@ class ExtensionLauncher:
                 continue
             await self.activate(extension_id, bundle)
 
-    async def activate(self, extension_id: str, bundle: Path) -> None:
-        """Start one, replacing a running copy."""
+    async def activate(self, extension_id: str, bundle: Path) -> bool:
+        """Start one, replacing a running copy; whether it is READY."""
         if self._registry.get(extension_id) is not None:
             await self._installer.uninstall(extension_id)
         if self._contributions is not None:
@@ -72,9 +72,11 @@ class ExtensionLauncher:
             # registry entry to carry the reason, so the log is the
             # only record.
             logger.error("extension at %s was not installed: %s", bundle, exc)
-            return
+            return False
         if entry.state is not ExtensionState.READY:
             logger.warning("extension %s is %s: %s", entry.id, entry.state.value, entry.reason)
+            return False
+        return True
 
     async def deactivate(self, extension_id: str) -> None:
         """Stop one, if it is running."""

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -38,7 +39,9 @@ logger = logging.getLogger(__name__)
 class ExtensionLifecycle(Protocol):
     """Starting and stopping an extension in the running backend."""
 
-    async def activate(self, extension_id: str, bundle: Path) -> None: ...
+    async def activate(self, extension_id: str, bundle: Path) -> bool | None:
+        """Start it; ``False`` when it did not start (``None`` says nothing)."""
+        ...
 
     async def deactivate(self, extension_id: str) -> None: ...
 
@@ -195,7 +198,64 @@ class ExtensionDistribution:
         report.installed.append(extension_id)
 
     async def _install(self, client: DistributionClient, entry: DistributedExtension) -> None:
-        """Download, verify, store and start one extension."""
+        """Download, verify, store and start one extension.
+
+        An upgrade that stores but does not start puts the version that
+        worked back (EXTENSIBILITY.md §7: "a refused or failed upgrade
+        keeps the old running"), and is reported as failed.
+        """
+        with tempfile.TemporaryDirectory(prefix="igni-ext-kept-") as kept:
+            previous = self._keep_previous(entry.extension_id, Path(kept))
+            target = await self._store_new(client, entry)
+            logger.info(
+                "extension %s %s installed from %s",
+                entry.extension_id,
+                entry.version,
+                entry.service_url,
+            )
+            if self._lifecycle is None:
+                return
+            if await self._lifecycle.activate(entry.extension_id, target) is not False:
+                return
+            if previous is None:
+                return
+            await self._roll_back(entry, previous)
+
+    def _keep_previous(
+        self, extension_id: str, into: Path
+    ) -> tuple[Path, DistributionRecord | None] | None:
+        """A copy of the installed bundle and its record, to put back."""
+        installed = self._store.path_for(extension_id)
+        if not installed.is_dir():
+            return None
+        copy = into / "bundle"
+        try:
+            shutil.copytree(installed, copy)
+        except OSError as exc:
+            logger.warning("could not keep %s to roll back to: %s", extension_id, exc)
+            return None
+        return copy, self._store.provenance.of(extension_id)
+
+    async def _roll_back(
+        self, entry: DistributedExtension, previous: tuple[Path, DistributionRecord | None]
+    ) -> None:
+        """Put the version that worked back, and say the upgrade failed."""
+        bundle, record = previous
+        assert self._lifecycle is not None
+        await self._lifecycle.deactivate(entry.extension_id)
+        try:
+            restored = self._store.add(bundle, replace=True, distribution=record)
+        except (StoreError, OSError) as exc:
+            raise DistributionError(
+                f"{entry.version} did not start, and putting the previous version "
+                f"back failed: {exc}"
+            ) from exc
+        await self._lifecycle.activate(entry.extension_id, restored)
+        old = record.version if record is not None else "the previous version"
+        raise DistributionError(f"{entry.version} did not start; {old} runs again")
+
+    async def _store_new(self, client: DistributionClient, entry: DistributedExtension) -> Path:
+        """Download, verify and store one extension; the old one stops first."""
         downloaded = await client.bundle(entry.extension_id)
         archive = BundleVerifier.verify(entry, downloaded)
 
@@ -234,15 +294,7 @@ class ExtensionDistribution:
                 if self._lifecycle is not None and previous.is_dir():
                     await self._lifecycle.activate(entry.extension_id, previous)
                 raise DistributionError(f"storing it failed: {exc}") from exc
-
-        logger.info(
-            "extension %s %s installed from %s",
-            entry.extension_id,
-            entry.version,
-            entry.service_url,
-        )
-        if self._lifecycle is not None:
-            await self._lifecycle.activate(entry.extension_id, target)
+        return target
 
     async def _fetch_assets(self, client: DistributionClient, manifest: ExtensionManifest) -> None:
         """This machine's assets of ``manifest``, each one not here already."""

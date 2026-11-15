@@ -115,10 +115,14 @@ class Recorded:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        #: Versions that do not start (their process exits at start-up).
+        self.broken: set[str] = set()
 
-    async def activate(self, extension_id: str, bundle: Path) -> None:
+    async def activate(self, extension_id: str, bundle: Path) -> bool:
         self.calls.append(("activate", extension_id))
         assert (bundle / "manifest.json").is_file()
+        version = json.loads((bundle / "manifest.json").read_text())["version"]
+        return version not in self.broken
 
     async def deactivate(self, extension_id: str) -> None:
         self.calls.append(("deactivate", extension_id))
@@ -234,6 +238,25 @@ async def test_a_new_version_replaces_the_old(world):
     assert report.installed == ["acme.notes"]
     assert world.store.read(world.store.path_for("acme.notes")).version == "1.1.0"
     assert world.store.provenance.of("acme.notes").version == "1.1.0"
+
+
+async def test_an_upgrade_that_does_not_start_puts_the_working_version_back(world):
+    """EXTENSIBILITY.md §7: a refused or failed upgrade keeps the old one
+    running. One that verified and stored but exited at start-up had already
+    replaced it, and the sync called it installed (campaign R252)."""
+    world.publish()
+    await world.distribution.sync()
+    world.lifecycle.broken.add("1.1.0")
+    world.publish(manifest(version="1.1.0"))
+    world.lifecycle.calls.clear()
+
+    report = await world.distribution.sync()
+
+    assert report.installed == []
+    assert "1.1.0 did not start; 1.0.0 runs again" in report.failed["acme.notes"]
+    assert world.store.read(world.store.path_for("acme.notes")).version == "1.0.0"
+    assert world.store.provenance.of("acme.notes").version == "1.0.0"
+    assert world.lifecycle.calls[-1] == ("activate", "acme.notes")
 
 
 async def test_new_bytes_under_the_same_version_are_fetched(world):
