@@ -17,7 +17,7 @@ is a markdown file, so an organisation defines its own agents, skills, MCP
 servers and extensions for any team, and ships them to that team from its
 igni server.
 
-[ignite-ember.sh](https://ignite-ember.sh)
+[igni.sh](https://igni.sh)
 
 ## Where igni-core sits
 
