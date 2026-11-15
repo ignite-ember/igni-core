@@ -356,8 +356,9 @@ storage:
 #
 # 2. **Conversation history compaction** (igni's compact_if_needed)
 #    At the same 80% threshold, igni generates a session summary covering
-#    older turns, then trims the verbatim history to keep only recent turns.
-#    Subsequent compactions halve the kept turns (minimum 2).
+#    the whole conversation, then clears the verbatim history: every turn
+#    is replaced by the summary, which every later prompt carries (as
+#    /compact does). When no summary can be produced, nothing is cleared.
 #
 # The effective context window is:
 #
