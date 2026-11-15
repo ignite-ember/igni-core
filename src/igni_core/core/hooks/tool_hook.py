@@ -16,6 +16,10 @@ composes four small collaborators, each with one job:
 * :class:`~igni_core.core.hooks.hook_firer.HookFirer` — the
   uniform wire path every collaborator uses to actually reach
   the :class:`HookExecutor`.
+* :class:`~igni_core.core.utils.tool_audit.ToolAudit` — one
+  audit-log entry per call: refused (and by what), or run (how
+  long, and whether it failed). Every main-agent call passes here,
+  so this is where it is written, once.
 
 Module-level ``_safe_args`` / ``_preview`` are compat shims —
 ``tests/test_tool_hook.py`` imports them by name. Each is a
@@ -25,6 +29,7 @@ two-line delegator to :class:`PayloadSanitizer`.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -44,10 +49,12 @@ from igni_core.core.hooks.permission.context import ToolCallContext
 from igni_core.core.hooks.permission.evaluator_stage import AskPerson
 from igni_core.core.hooks.permission.pipeline import PermissionPipeline
 from igni_core.core.hooks.rules_suffixer import RulesSuffixer
+from igni_core.core.hooks.tool_audit_hook import UNANSWERED, unanswered
 from igni_core.core.hooks.tool_call_invoker import ToolCallInvoker
-from igni_core.core.hooks.untrusted import unwrap_untrusted
 from igni_core.core.observability.runtime import OtelRuntime
+from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.utils.rules_index import RulesIndex
+from igni_core.core.utils.tool_audit import DecidedBy, ToolAudit
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +85,15 @@ class ToolEventHook:
         permission_evaluator: PermissionEvaluator | None = None,
         bypass_guard: BypassGuard | None = None,
         ask_person: AskPerson | None = None,
+        audit: ToolAudit | None = None,
     ):
         # Agno's ``aexecute`` checks ``inspect.iscoroutinefunction``
         # — mark this callable-instance so the async path is used.
         AgnoCoroutineMarker.mark(self)
 
         self._session_id = session_id
+        self._evaluator = permission_evaluator
+        self.audit = audit
         firer = HookFirer(executor, session_id)
         self._pipeline = PermissionPipeline.build(
             firer=firer,
@@ -130,25 +140,75 @@ class ToolEventHook:
         )
         if not pre.allowed:
             OtelRuntime.note_permission("deny")
+            self._refused(ctx, DecidedBy.EXTENSION)
             return f"Blocked: {pre.reason}"
         ctx = ctx.with_args(pre.value.tool_args)
-        block_message = await self._pipeline.evaluate(ctx)
-        if block_message is not None:
+        verdict = await self._pipeline.decide(ctx)
+        if verdict.message is not None:
             OtelRuntime.note_permission("deny")
-            return block_message
+            self._refused(ctx, verdict.by, verdict.reason)
+            return verdict.message
         OtelRuntime.note_permission("allow")
+        started = time.perf_counter()
         try:
             result = await self._invoker.run(ctx)
-        except Exception as exc:
-            # An MCP tool that reported an error of its own answered
-            # (``core/mcp/tool_errors``); only one that did not is a fault.
-            answered = bool(getattr(exc, "answered", False))
-            extension_hook_gate.tool_called(name, answered=answered, detail=str(exc))
+        except BaseException as exc:
+            self._ran(ctx, verdict.by, verdict.reason, started, type(exc).__name__)
+            if isinstance(exc, Exception):
+                # An MCP tool that reported an error of its own answered
+                # (``core/mcp/tool_errors``); only one that did not is a fault.
+                answered = bool(getattr(exc, "answered", False))
+                extension_hook_gate.tool_called(name, answered=answered, detail=str(exc))
             raise
-        unanswered = self._unanswered(result)
-        extension_hook_gate.tool_called(name, answered=unanswered is None, detail=unanswered or "")
+        not_answered = self._unanswered(result)
+        self._ran(ctx, verdict.by, verdict.reason, started, UNANSWERED if not_answered else None)
+        extension_hook_gate.tool_called(
+            name, answered=not_answered is None, detail=not_answered or ""
+        )
         result = await self._after(ctx, result)
         return await self._suffixer.enrich(ctx, result)
+
+    def _mode(self) -> str | None:
+        """The permission mode the call is decided in, when there is an evaluator."""
+        if self._evaluator is None:
+            return None
+        try:
+            return str(self._evaluator.mode.value)
+        except Exception:  # noqa: BLE001 — the audit must never break a call
+            return None
+
+    def _refused(self, ctx: ToolCallContext, by: DecidedBy, reason: str = "") -> None:
+        if self.audit is None:
+            return
+        self.audit.refused(
+            agent=ctx.caller_name(MAIN_AGENT_NAME),
+            tool=ctx.name,
+            args=ctx.args,
+            decided_by=by,
+            mode=self._mode(),
+            reason=reason,
+        )
+
+    def _ran(
+        self,
+        ctx: ToolCallContext,
+        by: DecidedBy,
+        reason: str,
+        started: float,
+        error_type: str | None,
+    ) -> None:
+        if self.audit is None:
+            return
+        self.audit.ran(
+            agent=ctx.caller_name(MAIN_AGENT_NAME),
+            tool=ctx.name,
+            args=ctx.args,
+            decided_by=by,
+            mode=self._mode(),
+            reason=reason,
+            duration_ms=(time.perf_counter() - started) * 1000,
+            error_type=error_type,
+        )
 
     async def _after(self, ctx: ToolCallContext, result: Any) -> Any:
         """Extensions' PostToolUse hooks: what the model reads of a result.
@@ -196,21 +256,9 @@ class ToolEventHook:
 
     @staticmethod
     def _unanswered(result: Any) -> str | None:
-        """Why an MCP server did not answer a call, or ``None`` when it did.
-
-        Agno turns a call that raised — a timeout, a closed connection —
-        into a result reading ``Error: …``, where a tool that reported an
-        error of its own reads ``Error from MCP tool …``: that one
-        answered.
-        """
-        if not isinstance(result, ToolResult) or not isinstance(result.content, str):
-            return None
-        # Read through the untrusted-output block: every MCP result is
-        # wrapped by now, Agno's own "Error: …" included.
-        content = unwrap_untrusted(result.content)
-        if content.startswith("Error: "):
-            return content.removeprefix("Error: ")
-        return None
+        """Why an MCP server did not answer a call, or ``None`` when it did
+        (:func:`~igni_core.core.hooks.tool_audit_hook.unanswered`)."""
+        return unanswered(result)
 
 
 # ── Backwards-compat module-level shims ─────────────────────────────

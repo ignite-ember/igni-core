@@ -29,6 +29,8 @@ from igni_core.backend.schemas_pause import (
     PendingRequirement,
 )
 from igni_core.core.config.permission_eval import PermissionDecision
+from igni_core.core.paths import MAIN_AGENT_NAME
+from igni_core.core.utils.tool_audit import DecidedBy, ToolAudit
 from igni_core.protocol import messages as msg
 from igni_core.protocol.tool_friendly_names import ToolFriendlyNames
 
@@ -50,15 +52,19 @@ class PauseHandler:
         self,
         evaluator: Any | None,
         store: PendingRequirementsStore,
+        audit: ToolAudit | None = None,
     ) -> None:
         """Bind the evaluator + store the handler operates on.
 
         ``evaluator`` may be ``None`` (defensive — some test
         fixtures wire a session without a ``permission_evaluator``);
         in that case every req falls through to the user prompt.
+        ``audit`` records the calls the policy refuses here: they
+        never run, so no tool hook sees them.
         """
         self._evaluator = evaluator
         self._store = store
+        self._audit = audit
 
     def handle(self, event: Any) -> PauseHandleResult:
         """Route each requirement through the evaluator, deferring
@@ -89,9 +95,11 @@ class PauseHandler:
             classified = self._classify(raw_name, tool_args)
 
             if classified is not None:
-                auto_decision, reason = classified
+                auto_decision, reason, source = classified
                 result = self._apply(req, auto_decision, raw_name, run_id, reason)
                 if result.ok:
+                    if auto_decision is AutoDecision.REJECT:
+                        self._record_refusal(raw_name, tool_args, reason, source)
                     auto_resolved.append(req)
                     continue
                 # Fall through to the user-prompt path on any
@@ -122,12 +130,12 @@ class PauseHandler:
 
     def _classify(
         self, raw_name: str, tool_args: dict[str, Any]
-    ) -> tuple[AutoDecision, str] | None:
+    ) -> tuple[AutoDecision, str, str] | None:
         """Ask the evaluator for its verdict and translate to the enum.
 
         Returns ``None`` on DEFER, on evaluator absence, or on any
         evaluator exception — all three collapse to the user-prompt
-        path. On DENY/ALLOW returns ``(AutoDecision, reason)``: the
+        path. On DENY/ALLOW returns ``(AutoDecision, reason, source)``: the
         reason string comes from the evaluator outcome in the same
         pass so it can't drift from the decision (the two-scan drift
         the audit flagged when this used to call ``evaluate`` and
@@ -145,10 +153,26 @@ class PauseHandler:
             )
             return None
         if outcome.decision is PermissionDecision.DENY:
-            return AutoDecision.REJECT, outcome.reason
+            return AutoDecision.REJECT, outcome.reason, outcome.source
         if outcome.decision is PermissionDecision.ALLOW:
-            return AutoDecision.CONFIRM, ""
+            return AutoDecision.CONFIRM, "", outcome.source
         return None
+
+    def _record_refusal(
+        self, raw_name: str, tool_args: dict[str, Any], reason: str, source: str
+    ) -> None:
+        """Audit a paused call the policy refused (``core/utils/tool_audit.py``)."""
+        if self._audit is None:
+            return
+        mode = getattr(getattr(self._evaluator, "mode", None), "value", None)
+        self._audit.refused(
+            agent=MAIN_AGENT_NAME,
+            tool=raw_name,
+            args=tool_args,
+            decided_by=DecidedBy.of_policy(source),
+            mode=str(mode) if mode is not None else None,
+            reason=reason,
+        )
 
     def _apply(
         self,

@@ -3,7 +3,7 @@
 import json
 
 from igni_core.core.config.settings import Settings
-from igni_core.core.utils.audit import AuditEntry, AuditLogger
+from igni_core.core.utils.audit import AuditEntry, AuditLogger, ToolCallDetails
 
 
 class TestAuditLogger:
@@ -36,12 +36,16 @@ class TestAuditLogger:
                 session_id="sess2",
                 agent_name="bash",
                 tool_name="run_shell_command",
-                args="git status",
+                details=ToolCallDetails(
+                    decision="allow", decided_by="rule", arg_names=["command"], duration_ms=1.0
+                ),
             )
         )
 
         line = json.loads(log_path.read_text().strip())
-        assert line["details"]["args"] == "git status"
+        # Argument names only — never their values.
+        assert line["details"]["arg_names"] == ["command"]
+        assert "args" not in line["details"]
 
     def test_log_blocked(self, tmp_path):
         log_path = tmp_path / "audit.log"

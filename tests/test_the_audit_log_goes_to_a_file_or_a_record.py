@@ -31,6 +31,10 @@ def _logger(path: Path) -> AuditLogger:
     return AuditLogger(settings)
 
 
+def _call(**kwargs) -> ToolCallDetails:
+    return ToolCallDetails(**{"decision": "allow", "decided_by": "rule", **kwargs})
+
+
 def _entry(**kwargs) -> AuditEntry:
     return AuditEntry.success(
         session_id=kwargs.get("session_id", "s1"), agent_name="main", tool_name="edit"
@@ -95,12 +99,15 @@ class TestOnTheDesktop:
         path = tmp_path / "audit.log"
         _logger(path).log(
             AuditEntry.tool_call(
-                session_id="сесія", agent_name="a", tool_name="t", args='привіт "світ" \\ 🙂'
+                session_id="сесія",
+                agent_name="a",
+                tool_name='привіт "світ" \\ 🙂',
+                details=_call(),
             )
         )
         entry = json.loads(path.read_text(encoding="utf-8"))
         assert entry["session_id"] == "сесія"
-        assert entry["details"] == {"args": 'привіт "світ" \\ 🙂'}
+        assert entry["tool"] == 'привіт "світ" \\ 🙂'
 
     def test_a_failing_write_warns_once_per_logger_and_keeps_failing_quietly(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -118,6 +125,26 @@ class TestOnTheDesktop:
         warnings = [r for r in caplog.records if "Audit log write failed" in r.getMessage()]
         assert len(warnings) == 1
         assert first.reason in warnings[0].getMessage()
+
+    def test_the_lost_entries_are_counted_and_warned_about_at_each_power_of_ten(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ):
+        path = tmp_path / "audit.log"
+        logger = _logger(path)
+        path.mkdir()
+        with caplog.at_level(logging.WARNING, logger="igni_core.core.utils.audit"):
+            for _ in range(100):
+                logger.log(_entry())
+        assert logger.failed_writes == 100
+        warnings = [
+            r.getMessage() for r in caplog.records if "Audit log write failed" in r.getMessage()
+        ]
+        assert len(warnings) == 3
+        assert [w.split("; ")[-1] for w in warnings] == [
+            "1 entry lost so far.",
+            "10 entries lost so far.",
+            "100 entries lost so far.",
+        ]
 
     def test_another_logger_warns_again_for_itself(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -168,17 +195,31 @@ class TestTheWireShape:
             "error_type": "OSError",
         }
 
-    def test_a_tool_call_is_a_success_that_keeps_its_args_verbatim(self):
+    def test_a_tool_call_that_ran_is_a_success_with_its_argument_names_only(self):
         entry = AuditEntry.tool_call(
-            session_id="s", agent_name="a", tool_name="t", args="  foo --bar 3 "
+            session_id="s",
+            agent_name="a",
+            tool_name="t",
+            details=_call(arg_names=["command"], duration_ms=2.5),
         )
         data = json.loads(entry.to_jsonl_line())
         assert data["status"] == "success"
-        assert data["details"] == {"args": "  foo --bar 3 "}
+        assert data["details"] == {
+            "decision": "allow",
+            "decided_by": "rule",
+            "arg_names": ["command"],
+            "duration_ms": 2.5,
+        }
 
-    def test_a_tool_call_with_no_args_still_carries_an_empty_args_string(self):
-        entry = AuditEntry.tool_call(session_id="s", agent_name="a", tool_name="t", args="")
-        assert json.loads(entry.to_jsonl_line())["details"] == {"args": ""}
+    def test_a_tool_call_that_failed_is_an_error_and_a_refused_one_is_blocked(self):
+        failed = AuditEntry.tool_call(
+            session_id="s", agent_name="a", tool_name="t", details=_call(error_type="OSError")
+        )
+        refused = AuditEntry.tool_call(
+            session_id="s", agent_name="a", tool_name="t", details=_call(decision="deny")
+        )
+        assert failed.status is AuditStatus.ERROR
+        assert refused.status is AuditStatus.BLOCKED
 
     def test_a_blocked_entry_without_a_reason_is_refused(self):
         with pytest.raises(ValidationError):
@@ -208,5 +249,5 @@ class TestTheWireShape:
 
     def test_the_details_variants_default_their_optional_fields(self):
         assert ErrorDetails(error="x").error_type is None
-        assert ToolCallDetails().args == ""
+        assert ToolCallDetails(decision="allow", decided_by="policy").arg_names == []
         assert AuditWriteResult(ok=False).reason is None

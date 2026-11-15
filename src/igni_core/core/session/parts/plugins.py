@@ -91,6 +91,7 @@ class PluginBuilder:
             # The table of what the extension tools say they are: the
             # modes and Bypass's last check both read it.
             tool_hints=session.tool_hints,
+            tool_audit=session.tool_audit,
         )
         factory.bypass_guard = factory.build_bypass_guard(
             session.approval.ask,

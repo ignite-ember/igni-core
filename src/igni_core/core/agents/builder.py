@@ -22,6 +22,7 @@ from igni_core.core.agents.tool_audience import ToolAudience
 from igni_core.core.agents.tool_audience import audience as default_audience
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.hooks.tool_audit_hook import ToolAuditHook
 from igni_core.core.hooks.untrusted import UntrustedOutputHook
 from igni_core.core.tools.registry import ToolRegistry
 from igni_core.core.tools.schedule import ScheduleTools
@@ -142,7 +143,8 @@ class AgentBuilder:
             # Every agent the pool builds — so every agent a spawn runs, at
             # any depth — quarantines external tool output, as the main
             # agent's ToolEventHook does.
-            tool_hooks=UntrustedOutputHook.on(None),
+            # And every one of its tool calls is audited.
+            tool_hooks=UntrustedOutputHook.on(ToolAuditHook.on(None, self._context.tool_audit)),
         )
         return agent_cls(**args.to_agno_kwargs())
 

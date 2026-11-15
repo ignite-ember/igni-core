@@ -30,8 +30,10 @@ from igni_core.core.config.permission_eval import (
     PermissionEvaluator,
     PermissionOutcome,
 )
+from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.session.message_outcome import OutcomeKind, TurnOutcome
 from igni_core.core.session.message_team import AnyRunOutput, MessageTeam
+from igni_core.core.utils.tool_audit import DecidedBy, ToolAudit
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +56,11 @@ class PausePolicyResolver:
         *,
         evaluator_ref: Callable[[], PermissionEvaluator | None],
         session_id_ref: Callable[[], str],
+        audit: ToolAudit | None = None,
     ) -> None:
         self._evaluator_ref = evaluator_ref
         self._session_id_ref = session_id_ref
+        self._audit = audit
 
     async def settle(self, team: MessageTeam, run: AnyRunOutput) -> AnyRunOutput:
         """Confirm or reject what the policy decided, and continue the run.
@@ -82,6 +86,7 @@ class PausePolicyResolver:
                     requirement.confirm()
                 else:
                     requirement.reject(note=f"Blocked: {decision.reason}")
+                    self._refused(evaluator, requirement, decision)
             run = await team.acontinue_run(
                 run_response=run,
                 requirements=list(run.requirements or []),
@@ -89,6 +94,25 @@ class PausePolicyResolver:
                 stream=False,
             )
         return run
+
+    def _refused(
+        self,
+        evaluator: PermissionEvaluator,
+        requirement: RunRequirement,
+        decision: PermissionOutcome,
+    ) -> None:
+        """Record a paused call the policy refused: it never runs, so no tool hook sees it."""
+        if self._audit is None:
+            return
+        execution = requirement.tool_execution
+        self._audit.refused(
+            agent=MAIN_AGENT_NAME,
+            tool=str(execution.tool_name or "") if execution is not None else "",
+            args=(execution.tool_args or {}) if execution is not None else {},
+            decided_by=DecidedBy.of_policy(decision.source),
+            mode=evaluator.mode.value,
+            reason=decision.reason,
+        )
 
     def _verdicts(
         self,

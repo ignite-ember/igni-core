@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from igni_core.core.utils.display import DisplayManager
     from igni_core.core.utils.memory_files import MemoryMirror
     from igni_core.core.utils.rules_index import RulesIndex
+    from igni_core.core.utils.tool_audit import ToolAudit
     from igni_core.core.workspace import WorkspaceManager
 
 
@@ -152,6 +153,7 @@ class SessionSurface:
     # ── The collaborators that own the behaviour ───────────────
 
     audit: AuditLogger
+    tool_audit: ToolAudit
     display: DisplayManager
     sub_agent_hitl: SubAgentHITLCoordinator
     approval: ToolCallApprovalChannel
