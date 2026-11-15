@@ -142,6 +142,8 @@ hooks:
 
 ### Format
 
+Each entry carries its own `matcher`. Claude Code's nested form — `{"matcher": "Bash", "hooks": [{"type": "command", "command": ...}]}` — is read too, each inner hook taking the group's matcher, and so is a Claude Code plugin's `hooks/hooks.json` wrapped in `{"hooks": {...}}`. A command hook with no `command` is skipped with a warning.
+
 ```json
 {
   "hooks": {

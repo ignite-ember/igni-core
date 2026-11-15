@@ -293,6 +293,11 @@ class HookLoader:
                     )
                 ],
             )
+        # A Claude Code plugin's file wraps the block: ``{"description":
+        # ..., "hooks": {event: [...]}}``.
+        wrapped = hooks_block.get("hooks")
+        if isinstance(wrapped, dict):
+            hooks_block = wrapped
         warnings = registry.merge_from_dict(
             hooks_block, source=path, strategy=MergeStrategy.PREPEND, from_group=from_group
         )

@@ -128,6 +128,29 @@ class HookRegistry:
         """
         self._hooks.setdefault(event, []).insert(0, hook)
 
+    @staticmethod
+    def _flatten_matcher_groups(hook_list: list[Any]) -> list[Any]:
+        """Claude Code's matcher groups, as igni's flat hook entries.
+
+        Claude Code writes ``{"matcher": "Bash", "hooks": [{"type":
+        "command", "command": ...}]}``; igni's own entries carry the
+        matcher on the hook itself. A group becomes one entry per inner
+        hook, each with the group's matcher unless it names its own.
+        Anything else is passed through for the parser to judge.
+        """
+        flat: list[Any] = []
+        for entry in hook_list:
+            inner = entry.get("hooks") if isinstance(entry, dict) else None
+            if isinstance(inner, list) and "command" not in entry and "url" not in entry:
+                matcher = entry.get("matcher", "")
+                for hook in inner:
+                    if isinstance(hook, dict) and matcher and "matcher" not in hook:
+                        hook = {**hook, "matcher": matcher}
+                    flat.append(hook)
+            else:
+                flat.append(entry)
+        return flat
+
     def merge_from_dict(
         self,
         hooks_data: dict[str, Any],
@@ -169,7 +192,7 @@ class HookRegistry:
                     )
                 )
                 continue
-            for hook_data in hook_list:
+            for hook_data in self._flatten_matcher_groups(hook_list):
                 if not isinstance(hook_data, dict):
                     warnings.append(
                         HookLoadWarning.from_path(
@@ -187,6 +210,15 @@ class HookRegistry:
                             source,
                             "validation_error",
                             f"malformed hook in {event_name!r}: {e}",
+                        )
+                    )
+                    continue
+                if hook.type == "command" and not hook.command.strip():
+                    warnings.append(
+                        HookLoadWarning.from_path(
+                            source,
+                            "validation_error",
+                            f"command hook in {event_name!r} has no command; skipping",
                         )
                     )
                     continue
