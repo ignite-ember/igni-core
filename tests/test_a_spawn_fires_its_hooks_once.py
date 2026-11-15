@@ -82,9 +82,7 @@ class TestSubagentStopFiresOnce:
         hooks: SpawnHooks
 
         class _Reentrant(_Executor):
-            async def execute(
-                self, *, event: HookEvent, payload: object, target: str = ""
-            ) -> None:
+            async def execute(self, *, event: HookEvent, payload: object, target: str = "") -> None:
                 await super().execute(event=event, payload=payload, target=target)
                 await hooks.fire_stop_once(_stop("raced"))
 
