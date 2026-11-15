@@ -116,6 +116,9 @@ class _Backend:
     def reload_agents(self) -> None:
         self.reloads += 1
 
+    async def fire_session_start_hook(self) -> None:
+        self.session_starts = getattr(self, "session_starts", 0) + 1
+
     async def startup(self) -> None:
         pass
 
