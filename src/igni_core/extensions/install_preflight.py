@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 
+from igni_core.extensions.contract import CONTRACT_VERSION, ContractRange
 from igni_core.extensions.host.definition import HOST_SCHEMA
 from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.install_context import InstallContext
@@ -41,11 +42,32 @@ class InstallPreflight:
         Raises:
             InstallError: The bundle is not installable here, and why.
         """
+        self._check_contract(manifest)
         self._check_trust(manifest, distribution)
         self._check_profile(manifest)
         self._check_deliverable(manifest)
         self._check_host_grants(manifest)
         self._check_tool_audience(manifest)
+
+    @staticmethod
+    def _check_contract(manifest: ExtensionManifest) -> None:
+        """Refuse a bundle whose contract range leaves out igni's contract.
+
+        Never "works mostly" (``docs/EXTENSIBILITY.md`` §7): the refusal
+        names the version and which half is behind.
+        """
+        try:
+            needed = ContractRange.parse(manifest.contract)
+        except ValueError as exc:
+            raise InstallError(
+                f"{manifest.id} declares contract {manifest.contract!r}, which is not a "
+                f"range ({exc}). Write one like '>=1.0 <2'; this igni implements "
+                f"contract {CONTRACT_VERSION}."
+            ) from exc
+        if not needed.admits(CONTRACT_VERSION):
+            raise InstallError(
+                f"{manifest.id} is not installed: {needed.why_not(CONTRACT_VERSION)}."
+            )
 
     def _check_trust(
         self, manifest: ExtensionManifest, distribution: DistributionRecord | None

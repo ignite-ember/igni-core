@@ -44,16 +44,12 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.plugins.git import GitClient
 from igni_core.extensions.bundle_source import BundleSource, BundleSourceError
+from igni_core.extensions.contract import CONTRACT_VERSION
 from igni_core.extensions.distribution.once import OneShotSync
 from igni_core.extensions.manifest import ExtensionManifest, Workspace
 from igni_core.extensions.profile import DEV_FLAG, DevelopmentFlag
 from igni_core.extensions.store import ExtensionStore
 from igni_core.extensions.store_errors import StoreError
-
-#: What this build of igni implements. An extension declares a range
-#: and this is what it is checked against — the only compatibility
-#: axis, and never an igni version.
-CONTRACT_VERSION = "1.0"
 
 
 @click.group("ext")

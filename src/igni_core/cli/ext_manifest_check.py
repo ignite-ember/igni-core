@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 
 from igni_core.cli.ext_doctor import Findings
+from igni_core.extensions.contract import CONTRACT_VERSION, ContractRange
 from igni_core.extensions.manifest import ExtensionManifest, Workspace
 from igni_core.extensions.profile import DEV_FLAG
 
@@ -26,12 +27,26 @@ class ManifestCheck:
         self._bundle = bundle
 
     def check(self, findings: Findings) -> None:
+        self._contract(findings)
         self._packaging(findings)
         self._pages(findings)
         self._endpoint(findings)
         self._placement(findings)
         self._dev_command(findings)
         self._wildcard_rpc(findings)
+
+    def _contract(self, findings: Findings) -> None:
+        """The contract range against the contract this igni implements."""
+        try:
+            needed = ContractRange.parse(self._manifest.contract)
+        except ValueError as exc:
+            findings.problems.append(
+                f"contract {self._manifest.contract!r} is not a range ({exc}); write one "
+                f"like '>=1.0 <2'. This igni implements contract {CONTRACT_VERSION}."
+            )
+            return
+        if not needed.admits(CONTRACT_VERSION):
+            findings.problems.append(f"contract out of range: {needed.why_not(CONTRACT_VERSION)}")
 
     def _packaging(self, findings: Findings) -> None:
         manifest = self._manifest
