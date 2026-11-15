@@ -64,7 +64,7 @@
 - [x] "Always allow" — saves exact rule, no future prompts for same
 - [x] "Allow similar" — saves pattern rule
 - [x] "Deny" — blocks the call, agent informed
-- [x] Permission rules persist to `~/.igni/permissions.yaml`
+- [x] Permission rules persist to the project's `.igni/settings.local.json` (read once the folder is trusted)
 - [ ] `--accept-edits` — auto-approves file edits, still asks for shell
 - [ ] `--auto-approve` — skips all prompts
 - [ ] `--read-only` — blocks all writes and shell execution

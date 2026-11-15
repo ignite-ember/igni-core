@@ -80,21 +80,20 @@ When a tool call requires approval (`ask` level), the user sees the full command
 | Allow similar | Yes | Adds a pattern (e.g., `npm *`, `pytest *`) to the allowlist |
 | Deny | No | Blocks this call, agent can try alternatives |
 
-Permanent rules are saved to `~/.igni/permissions.yaml`:
+"Always allow", "Allow similar" and a rejection with "remember" are saved as rules in the project's `.igni/settings.local.json` (in `~/.igni/settings.local.json` when igni runs with no project), in the same `permissions` shape as `settings.json`:
 
-```yaml
-# Auto-generated from approval prompts — edit to adjust
-allowlist:
-  shell_execute:
-    - "npm test"           # from "always allow"
-    - "pytest *"           # from "allow similar"
-    - "ruff check *"       # from "allow similar"
-  file_write:
-    - "src/**"
-    - "tests/**"
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm test)", "Bash(pytest *)"],
+    "deny": ["Bash(touch forbidden.txt)"]
+  }
+}
 ```
 
-Pattern matching uses glob syntax. Exact entries come from "always allow", pattern entries from "allow similar". When a new command comes in, it checks the allowlist first, then falls back to the permission level from config.
+A project's settings files are read only once the folder is trusted (see Workspace trust above). In an untrusted folder the rule is still written and the running session follows it, but no other session, and no later start, reads it until you trust the folder.
+
+Pattern matching uses glob syntax. Exact entries come from "always allow", pattern entries from "allow similar". When a new command comes in, the rules are checked first, then the permission level from config.
 
 **A rule covers one command.** A line of several commands (`a && b`, `a; b`,
 `a | b`) is allowed only when every command on it is, and deny and ask rules
