@@ -363,34 +363,21 @@ cases:
 
 ## Running Evals
 
-### Slash Commands (Interactive)
+### Slash Command
 
 ```
-/evals run                         — run all evals for all agents
-/evals run editor                  — run evals for a specific agent
-/evals run editor.edit_existing    — run a single test case
-/evals run --changed               — run evals only for agents modified since last commit
-/evals run --orchestrator          — run only orchestrator (team assembly) evals
-/evals diff                        — compare current run to last run
-/evals baseline set                — save current scores as baseline
-/evals baseline check              — compare against baseline
+/evals                             — run every suite for every agent
+/evals editor                      — run the suites for one agent
+/evals editor.edit_existing        — run a single case
 ```
 
-### CLI (CI/CD)
+A leading `run` is accepted too (`/evals run editor.edit_existing`).
+A name that matches nothing says which suites or cases there are.
 
-```bash
-# Run all evals (non-interactive, exit code 1 on failure)
-igni evals run --ci --output results.json
-
-# Run only for agents changed in this PR
-igni evals run --changed --ci
-
-# Fail if scores drop below baseline
-igni evals run --ci --check-baseline --fail-on-regression
-
-# Output as markdown (for PR comment bots)
-igni evals run --ci --format markdown > eval-report.md
-```
+Not built yet, and answered as such: `--changed`, `--orchestrator`,
+`/evals diff` and `/evals baseline …`. There is no `igni evals`
+command for CI either; until there is, write evals as pytest tests
+(below) and run them in CI.
 
 ### Python (Programmatic)
 
@@ -511,7 +498,7 @@ AccuracyEval(
 ).run()
 ```
 
-### Regression Alerts
+### Regression Alerts (planned)
 
 When a score drops from the previous run or below the baseline:
 
@@ -521,17 +508,12 @@ When a score drops from the previous run or below the baseline:
   editor: 100% → 80% (dropped from last run)
     New failure: handles_nonexistent_file
     ReliabilityEval: expected no Write calls, but Write was called
-
-  Run `/evals diff` to see what changed in the agent definition.
 ```
 
 ### Baselines
 
-```
-/evals baseline set               — save current scores as baseline
-/evals baseline check             — compare current run against baseline
-/evals baseline update editor     — update baseline for one agent
-```
+Not built yet: regression alerts and `/evals baseline set|check|update`
+are the plan, and `/evals` answers that they are not available.
 
 ---
 
