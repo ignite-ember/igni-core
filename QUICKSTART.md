@@ -488,8 +488,8 @@ All flags at a glance:
 | Flag | Description |
 |---|---|
 | `--model <name>` | Override the default model |
-| `--verbose` | Show routing decisions and reasoning |
-| `--quiet` | Minimal output |
+| `--verbose` | Sets `display.show_routing` and `display.show_reasoning` for this run (see the `display` block in CONFIGURATION.md: `igni -m` itself prints no routing lines) |
+| `--quiet` | Leaves out the workspace-trust notice, and sets `display.show_tool_calls` / `display.show_routing` off for this run |
 | `-m, --message <text>` | Single message mode (non-interactive) |
 | `-p, --pipe` | Pipe mode: read stdin, write stdout |
 | `-c, --continue` | Resume last session |
@@ -513,7 +513,6 @@ On startup, igni shows contextual tips based on your configuration. For example:
 
 - *Create an `igni.md` in your project root to give agents project-specific context.*
 - *Drop a `.md` file in `.igni/agents/` to create a project-specific agent — no code needed.*
-- *Use `--verbose` to see which agents and team mode the Orchestrator picks.*
 
 Tips adapt to your setup — if you haven't enabled the knowledge base or guardrails, you'll see suggestions for those.
 

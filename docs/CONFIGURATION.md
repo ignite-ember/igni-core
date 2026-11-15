@@ -473,12 +473,18 @@ evals:
 
 # Display
 display:
-  markdown: true                   # Render markdown in terminal
+  markdown: true                   # Render replies as Markdown
   show_tool_calls: true            # Show which tools agents are using
   show_routing: false              # Show Router agent decisions
   show_reasoning: false            # Show reasoning chain steps
   color_theme: "auto"              # auto, dark, light
 ```
+
+These are display preferences the host hands to the windows and to
+extensions (an extension reads them through the host's display object).
+The headless `igni -m` / `igni -p` does not apply them: it prints the reply
+alone, rendered as Markdown on a terminal and as written to a pipe, with no
+tool-call, routing or reasoning lines; `--no-color` turns its colour off.
 
 ## Organisation group policy
 
@@ -914,8 +920,8 @@ igni --no-web                # disable web access
 igni --read-only             # reads files and the web; anything that changes is refused
 
 # Display
-igni --verbose               # show routing + reasoning
-igni --quiet                 # minimal output
+igni --verbose               # display.show_routing + show_reasoning on (see display below)
+igni --quiet                 # no workspace-trust notice; tool calls and routing off
 igni --no-color              # disable colors
 
 # Session
