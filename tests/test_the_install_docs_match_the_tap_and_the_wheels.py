@@ -33,7 +33,10 @@ def test_no_page_calls_the_deleted_formula_an_alias():
         assert "installs\n   the same package from either" not in text
         assert "works for both)" not in text
         assert "Homebrew formula both install both names" not in text
-        assert "Homebrew and pip both\ninstall the `igni` command and the `ignite-ember` alias" not in text
+        assert (
+            "Homebrew and pip both\ninstall the `igni` command and the `ignite-ember` alias"
+            not in text
+        )
 
 
 def test_both_pages_state_the_supported_platforms():
