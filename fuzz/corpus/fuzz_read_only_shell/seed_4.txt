@@ -1,0 +1,1 @@
+git diff --stat HEAD~1 2>&1

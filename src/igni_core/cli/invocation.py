@@ -30,9 +30,7 @@ from igni_core.core.worktree import WorktreeManager
 from igni_core.extensions.principal import SignedInPerson
 from igni_core.extensions.store import ExtensionStore
 
-#: The console script pyproject installs. `ignite-ember` is the other
-#: one and is kept only for backwards compatibility, so it is not what
-#: we tell anybody to type.
+#: The console script pyproject installs.
 #:
 #: Spelled here rather than inline because this text used to say
 #: `ember`, which has never been an entry point — the first thing a new

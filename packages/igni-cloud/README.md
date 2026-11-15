@@ -1,6 +1,6 @@
 # igni-cloud
 
-igni's cloud layer. The desktop igni (`ignite-ember`, import name
+igni's cloud layer. The desktop igni (`igni-core`, import name
 `igni_core`) is the core; this package is a layer on top of it that runs
 igni in a producer's microVM, with its state in PostgreSQL. The core never
 imports it — it finds it through two entry points:
@@ -27,10 +27,10 @@ repository.
 The image installs both packages and sets `IGNI_PROFILE=cloud`:
 
 ```sh
-pip install ignite-ember igni-cloud
+pip install igni-core igni-cloud
 ```
 
-The desktop installs `ignite-ember` alone, which depends on neither psycopg
+The desktop installs `igni-core` alone, which depends on neither psycopg
 nor `agno[postgres]`.
 
 ## Commands

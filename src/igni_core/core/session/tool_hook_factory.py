@@ -26,6 +26,7 @@ from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.session.hooks import SessionHooks
 from igni_core.core.utils.rules_index import RulesIndex
+from igni_core.core.utils.tool_audit import ToolAudit
 
 
 class ToolEventHookFactory:
@@ -45,8 +46,11 @@ class ToolEventHookFactory:
         session_id_ref: Callable[[], str],
         permission_evaluator: PermissionEvaluator | None = None,
         tool_hints: ToolHintsRegistry | None = None,
+        tool_audit: ToolAudit | None = None,
     ) -> None:
         self._settings = settings
+        #: Where each hook writes one audit entry per tool call.
+        self._tool_audit = tool_audit
         self._rules_index = rules_index
         self._project_dir = project_dir
         self._hooks = hooks
@@ -128,4 +132,5 @@ class ToolEventHookFactory:
             permission_evaluator=self.permission_evaluator,
             bypass_guard=self.bypass_guard,
             ask_person=self.ask_person,
+            audit=self._tool_audit,
         )

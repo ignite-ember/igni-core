@@ -98,7 +98,7 @@ class DisplayManager:
         self.console.print(
             Panel(
                 f"[bold]igni[/bold] v{escape(version)}\n"
-                f"[dim]AI coding assistant powered by Agno[/dim]\n\n"
+                f"[dim]Self-hosted, air-gapped agentic platform[/dim]\n\n"
                 f"Type your message, or /help for commands.\n"
                 f"Press Ctrl+C to exit.",
                 border_style="blue",

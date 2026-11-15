@@ -66,6 +66,7 @@ from igni_core.core.hitl.relay import RelayCounter
 from igni_core.core.hitl.trace import HitlTrace
 from igni_core.core.hitl.turns import TurnLedger
 from igni_core.core.tools.spawn_context import SpawnDeadline
+from igni_core.core.utils.tool_audit import DecidedBy, ToolAudit
 from igni_core.protocol import messages as msg
 
 #: Where the coordinator's own pushes are recorded, whatever the layer
@@ -79,7 +80,10 @@ class SubAgentHITLCoordinator:
     See the module docstring for the full flow.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, audit: ToolAudit | None = None) -> None:
+        #: Where a sub-agent's paused call the person refuses is recorded:
+        #: it never runs, so no tool hook sees it.
+        self.audit = audit
         self.pending = PendingRegistry()
         self.turns = TurnLedger()
         self.ledger = ApprovalLedger(self.turns)
@@ -324,6 +328,7 @@ class SubAgentHITLCoordinator:
             entry.requirement.reject(
                 note=declined_note(str(getattr(tool_execution, "tool_name", "") or ""))
             )
+            self._record_refusal(entry)
         entry.event.set()
         # Answered: a restart from here on must not ask again. A
         # restored request stays until its run is continued
@@ -331,6 +336,23 @@ class SubAgentHITLCoordinator:
         # on it.
         self.ledger.forget(req_id)
         return True
+
+    def _record_refusal(self, entry: PendingEntry) -> None:
+        """Audit a sub-agent's paused call the person refused.
+
+        Only an Agno requirement — a sub-agent's own call. A single-call
+        question (:class:`HitlRequirement`) is asked from inside the main
+        agent's permission pipeline, which records the refusal itself.
+        """
+        if self.audit is None or not isinstance(entry.requirement, RunRequirement):
+            return
+        execution = entry.requirement.tool_execution
+        self.audit.refused(
+            agent=entry.agent_path[-1] if entry.agent_path else "sub-agent",
+            tool=str(execution.tool_name or "") if execution is not None else "",
+            args=(execution.tool_args or {}) if execution is not None else {},
+            decided_by=DecidedBy.PERSON,
+        )
 
     async def wait_resolved(self, req_id: str) -> RunRequirement | HitlRequirement:
         """Called from the sub-agent stream handler. Blocks until user resolves."""

@@ -6,6 +6,7 @@ from igni_core.core.hooks.bypass_guard import BypassGuard
 from igni_core.core.hooks.permission.context import ToolCallContext
 from igni_core.core.hooks.permission.outcome import Block, Continue, StageOutcome
 from igni_core.core.hooks.permission.stage import PermissionStage
+from igni_core.core.utils.tool_audit import DecidedBy
 
 
 class BypassGuardStage(PermissionStage):
@@ -23,4 +24,4 @@ class BypassGuardStage(PermissionStage):
 
     async def evaluate(self, ctx: ToolCallContext) -> StageOutcome:
         message = await self._guard.check(ctx.name, ctx.args, ctx.agent_path)
-        return Block(message) if message else Continue()
+        return Block(message, by=DecidedBy.BYPASS_GUARD) if message else Continue()

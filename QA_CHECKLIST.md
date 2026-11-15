@@ -11,10 +11,10 @@
 ## P0 — Core Loop & Safety
 
 ### Startup & basic conversation
-- [x] `ignite-ember` — TUI launches, no crash
-- [x] `ignite-ember -m "what is 2+2"` — single message, response, exits
-- [x] `echo "hello" | ignite-ember -p` — pipe mode works
-- [x] `echo "text" | ignite-ember -p -m "prompt"` — combined works
+- [x] `igni` — TUI launches, no crash
+- [x] `igni -m "what is 2+2"` — single message, response, exits
+- [x] `echo "hello" | igni -p` — pipe mode works
+- [x] `echo "text" | igni -p -m "prompt"` — combined works
 - [x] Send a message in TUI — get a coherent response back
 - [x] Multi-turn conversation — context preserved across turns
 - [x] Streaming — responses appear token-by-token (not all at once)

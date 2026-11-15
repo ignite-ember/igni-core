@@ -1,8 +1,8 @@
 """The version the package reports, and the command that starts it.
 
 ``__version__`` is the backend's wire version and what the update checker
-compares, so it must be the version the wheel is built with. ``igni`` and
-``ignite-ember`` both start ``igni_core.__main__:main``, which moves a
+compares, so it must be the version the wheel is built with. ``igni`` is
+the one command, and it starts ``igni_core.__main__:main``, which moves a
 legacy home directory out of the way before the CLI reads anything.
 """
 
@@ -28,11 +28,12 @@ def test_the_reported_version_is_the_version_the_wheel_is_built_with():
     assert igni_core.__version__ == "1.0.4"
 
 
-def test_both_commands_start_the_same_main():
+def test_igni_is_the_one_command_and_it_starts_main():
+    """The ``ignite-ember`` command is retired with the name: the package
+    installs ``igni`` and nothing else."""
     scripts = _pyproject()["project"]["scripts"]
 
-    assert scripts["igni"] == "igni_core.__main__:main"
-    assert scripts["ignite-ember"] == "igni_core.__main__:main"
+    assert scripts == {"igni": "igni_core.__main__:main"}
 
 
 def test_every_project_link_points_at_this_repository():

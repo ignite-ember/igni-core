@@ -10,6 +10,7 @@ from igni_core.core.hooks.permission.context import ToolCallContext
 from igni_core.core.hooks.permission.outcome import Block, Continue, StageOutcome
 from igni_core.core.hooks.permission.stage import PermissionStage
 from igni_core.core.hooks.schemas import SafetyCheckResult
+from igni_core.core.utils.tool_audit import DecidedBy
 
 logger = logging.getLogger(__name__)
 
@@ -52,5 +53,5 @@ class BlockedCommandStage(PermissionStage):
         result = self.check_sync(ctx)
         if result.blocked:
             logger.warning("Blocked command: %s", BashCommand.from_args(ctx.args).command)
-            return Block(result.block_message)
+            return Block(result.block_message, by=DecidedBy.BLOCKED_COMMAND)
         return Continue()

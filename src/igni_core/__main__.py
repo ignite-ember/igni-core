@@ -1,4 +1,4 @@
-"""Entry point for `igni`, `ignite-ember` and `python -m igni_core`."""
+"""Entry point for `igni` and `python -m igni_core`."""
 
 from igni_core.cli import cli
 from igni_core.core.dir_migration import migrate_home

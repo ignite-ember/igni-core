@@ -131,7 +131,7 @@ class FakeClient:
 
 
 class FakeModel:
-    id = "MiniMax-M2.7"
+    id = "igni-1.0-27b"
     extra_headers = {"X-Test": "1"}
     extra_body = None
 
@@ -163,7 +163,7 @@ class TestOneRequestOneAnswer:
 
     def test_the_request_is_a_plain_system_and_user_turn(self):
         _, [call] = self._explain()
-        assert call["model"] == "MiniMax-M2.7"
+        assert call["model"] == "igni-1.0-27b"
         assert call["stream"] is False
         assert [m["role"] for m in call["messages"]] == ["system", "user"]
         assert "git push --force origin main" in call["messages"][1]["content"]

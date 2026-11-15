@@ -79,7 +79,7 @@ class EvalsConfig(BaseModel):
     fallback for a case with no ``case_timeout:`` of its own.
     """
 
-    judge_model: str = "MiniMax-M2.7"
+    judge_model: str = "igni-1.0-27b"
     num_iterations: int = 3
     accuracy_threshold: float = 7.0
     # Fallback per-case wall-clock budget, in seconds. The old value

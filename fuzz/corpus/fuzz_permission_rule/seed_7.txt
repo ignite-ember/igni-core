@@ -1,0 +1,2 @@
+Write(src/**/*.py)
+src/a/b.py

@@ -1,4 +1,4 @@
-"""igni — Terminal-based AI coding assistant built on Agno."""
+"""igni-core — the agent runtime of igni, a self-hosted, air-gapped agentic platform."""
 
 # Must run before anything that pulls in ``transformers`` /
 # ``sentence-transformers``. See the shim's docstring for why.

@@ -40,6 +40,7 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.utils.tool_audit import ToolAudit
 
 if TYPE_CHECKING:
     from agno.agent import Agent
@@ -68,6 +69,7 @@ class AgentPool:
         broadcast: BroadcastSink | None = None,
         prompt_loader: PromptLoader | None = None,
         supervisor: ProcessSupervisor | None = None,
+        tool_audit: ToolAudit | None = None,
     ) -> None:
         self._entries: dict[str, AgentEntry] = {}
         self._agents: dict[str, Agent] = {}
@@ -94,6 +96,7 @@ class AgentPool:
             db=db,
             broadcast=broadcast,
             supervisor=self._supervisor,
+            tool_audit=tool_audit,
         )
 
     # ── Entries ──────────────────────────────────────────────────

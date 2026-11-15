@@ -465,12 +465,12 @@ class TestWritingTheServerDown:
     def test_an_existing_config_keeps_its_other_keys(self, tmp_path):
         # This is somebody's config file, not ours to rewrite.
         controller, store = self._controller(tmp_path)
-        store.write({"models": {"default": "MiniMax-M2.7"}})
+        store.write({"models": {"default": "igni-1.0-27b"}})
 
         controller.set_server("https://igni.acme.example")
 
         config = store.read()
-        assert config["models"] == {"default": "MiniMax-M2.7"}
+        assert config["models"] == {"default": "igni-1.0-27b"}
         assert config["api_url"] == "https://igni.acme.example"
 
     def test_a_local_deployment_may_be_named(self, tmp_path):

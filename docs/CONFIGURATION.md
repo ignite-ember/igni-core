@@ -41,7 +41,7 @@ project's `.igni`; they are listed anyway, for a home directory kept in git.
 
 ## Models & Authentication
 
-igni needs an LLM to run. Models are resolved through a **config-driven registry** — agent `.md` files reference models by name (e.g., `model: MiniMax-M2.7`), and the registry maps that name to a provider, endpoint URL, model ID, and API key.
+igni needs an LLM to run. Models are resolved through a **config-driven registry** — agent `.md` files reference models by name (e.g., `model: igni-1.0-27b`), and the registry maps that name to a provider, endpoint URL, model ID, and API key.
 
 ### Model Registry
 
@@ -69,19 +69,19 @@ A fetched entry looks like this once merged:
 # .igni/config.yaml
 models:
   registry:
-    MiniMax-M2.7:
+    igni-1.0-27b:             # igni's own model, served by your organisation
       provider: openai_like
-      model_id: MiniMax-Text-01
+      model_id: igni-1.0-27b
       url: https://api.your-igni-server.example/v1
       api_key: cloud_token    # use the credentials from `igni login`
-      context_window: 204800
+      context_window: 131072  # what your GPU node serves (vLLM --max-model-len)
       vision: false
 ```
 
 Agent `.md` files just reference the registry name:
 
 ```yaml
-model: MiniMax-M2.7           # → looks up "MiniMax-M2.7" in the registry
+model: igni-1.0-27b          # → looks up "igni-1.0-27b" in the registry
 ```
 
 ### Resolution Order
@@ -102,9 +102,18 @@ the provider's own variables: `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` for
 `GOOGLE_API_KEY` for `gemini`. For anything else, add a full registry entry
 (`provider`, `model_id` and how to find the key).
 
-### Option 1: igni Account (default, zero-config)
+### Option 1: Your organisation's igni server
 
-Sign up at **https://ignite-ember.sh**. The models your igni server advertises route through it. Free tier available.
+igni server is self-hosted: your organisation runs it, and it holds the model
+keys. Point igni at it once in `~/.igni/config.yaml` and sign in; the models
+the server serves join the registry with no key on your machine. There is no
+vendor-hosted server and no default one: until `api_url` is set, igni contacts
+none.
+
+```yaml
+# ~/.igni/config.yaml
+api_url: https://igni-api.acme.example
+```
 
 ```bash
 igni login                  # opens the portal's sign-in page; /login in the desktop app
@@ -131,12 +140,20 @@ Add entries to `models.registry` in your config. These override built-in entries
 models:
   registry:
     # your igni server model — uses login credentials
-    MiniMax-M2.7:
+    igni-1.0-27b:
       provider: openai_like
-      model_id: MiniMaxAI/MiniMax-M2.7
-      url: https://api.ignite-ember.sh/v1
+      model_id: igni-1.0-27b
+      url: https://igni-api.acme.example/v1
       api_key: cloud_token
-      context_window: 204800
+      context_window: 131072
+      vision: false
+
+    # igni 1.0 27B on your own GPU node (vLLM), inside your network
+    igni-1.0-27b-local:
+      provider: openai_like
+      model_id: igni-1.0-27b
+      url: http://vllm.acme.internal:8000/v1
+      context_window: 131072
       vision: false
 
     # Direct API key — vision-capable model
@@ -198,7 +215,7 @@ There are three providers:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `provider` | string | yes | `openai_like` for any OpenAI-compatible API, `anthropic` for Claude or an Anthropic-compatible API, `gemini` for Gemini |
-| `model_id` | string | yes | Model identifier sent to the API (e.g., `MiniMax-Text-01`, `gpt-4o`, `claude-opus-5-5`) |
+| `model_id` | string | yes | Model identifier sent to the API (e.g., `igni-1.0-27b`, `gpt-4o`, `claude-opus-5-5`) |
 | `url` | string | yes* | API base URL (e.g., `https://api.openai.com/v1`). Omit only for OpenAI models that use the default endpoint. *Optional for `anthropic`, which defaults to `https://api.anthropic.com` |
 | `api_key` | string | no | API key value, or `cloud_token` to use your igni server login credentials |
 | `api_key_env` | string | no | Environment variable name containing the API key |
@@ -214,6 +231,45 @@ There are three providers:
 
 > **API key resolution order:** `api_key` (direct) → `api_key_env` (env var) → `api_key_cmd` (shell command). The special value `cloud_token` resolves to your igni server login credentials (from `/login`), and is sent only to your igni server: an entry whose requests go to any other origin than `api_url` (scheme, host and port) gets no token, whichever config file it came from.
 
+### Cloud models through igni server
+
+Claude on AWS Bedrock, Vertex AI or Microsoft Foundry, and the OpenAI-style
+models on Azure OpenAI or Vertex AI, are reached **through igni server**,
+not directly. The server signs for each cloud with its own identity (an
+IAM role, a role it assumes, Workload Identity, a managed identity) or a
+credential an admin stored in the portal. igni only sends its own igni
+server token, so no laptop and no Fleet VM holds a cloud credential.
+Requests signed with a cloud's own credentials (SigV4, Google OAuth) are
+not something igni makes itself: a Bedrock or Vertex URL in a registry
+entry does not work.
+
+The server serves each model on its own API: Claude on Anthropic's
+(`/v1/messages`), everything else on the OpenAI-compatible one
+(`/v1/chat/completions`). Use the provider that matches:
+
+```yaml
+models:
+  registry:
+    # Claude — on whichever of Anthropic, Bedrock, Vertex or Foundry the server routes it to
+    claude:
+      provider: anthropic
+      model_id: claude-opus-5-5          # the name the server's backend serves
+      url: https://igni.example.com      # your igni server, the same origin as api_url
+      api_key: cloud_token
+      context_window: 1000000
+
+    # Gemini on Vertex AI, or a model on Azure OpenAI
+    gemini:
+      provider: openai_like
+      model_id: gemini-pro
+      url: https://igni.example.com/v1
+      api_key: cloud_token
+```
+
+`cloud_token` is sent only to your igni server's origin, so `url` must be
+on it. Which models a server serves, and on which API, is listed by
+`GET /v1/chat/models` (each entry's `api` is `openai` or `anthropic`).
+
 ### Comparison with Claude Code
 
 Claude Code uses a simple alias map (`"sonnet"` → `"claude-sonnet-4-6"`) because it only supports Anthropic models. igni needs a full registry because it's multi-provider — each model name must resolve to a provider class, endpoint URL, model ID, and credentials.
@@ -221,10 +277,10 @@ Claude Code uses a simple alias map (`"sonnet"` → `"claude-sonnet-4-6"`) becau
 | Aspect | Claude Code | igni |
 |---|---|---|
 | Model resolution | Alias map (string → string) | Config-driven registry (name → provider + URL + key) |
-| First-party API | `ANTHROPIC_API_KEY` | `/login` device-flow (server-hosted MiniMax M2.7) |
-| Hosted endpoint | `api.anthropic.com` | `api.ignite-ember.sh` |
-| AWS Bedrock | `CLAUDE_CODE_USE_BEDROCK` | BYOM registry entry with Bedrock URL |
-| Google Vertex | `CLAUDE_CODE_USE_VERTEX` | BYOM registry entry with Vertex URL |
+| First-party API | `ANTHROPIC_API_KEY` | `/login` device-flow to your organisation's igni server; the models are the ones it serves |
+| Hosted endpoint | `api.anthropic.com` | None: igni hosts no model; `api_url` points at your own igni server |
+| AWS Bedrock | `CLAUDE_CODE_USE_BEDROCK` | Through igni server: `provider: anthropic`, `url` your igni server, `api_key: cloud_token` — the server signs for Bedrock |
+| Google Vertex | `CLAUDE_CODE_USE_VERTEX` | Through igni server, the same way: `provider: anthropic` for Claude, `openai_like` for Gemini |
 | Custom base URL | `ANTHROPIC_BASE_URL` | `url` field per registry entry |
 | Adding new models | Not supported (Anthropic only) | Add a registry entry in config |
 | Key helper script | `apiKeyHelper` | `api_key_env` or `api_key_cmd` per model |
@@ -241,15 +297,16 @@ The key difference: Claude Code only supports Anthropic models through different
 # Model configuration
 #
 # Model resolution order:
-#   1. User-provided custom models (BYOM - Bring Your Own Model)
-#   2. igni hosted models (requires igni account)
+#   1. The models in models.registry: your own entries (BYOM — any
+#      OpenAI-compatible, Anthropic or Gemini endpoint), merged with
+#      the ones your igni server serves once you `igni login`
+#   2. "provider:model_id" written in place
 #
-# If no custom model is configured, igni uses its own hosted
-# MiniMax M2.7 endpoint. You need an igni account for this.
-# Sign up at https://ignite-ember.sh (free tier available).
+# There is no built-in or vendor-hosted model: configure one here, or
+# sign in to your organisation's igni server (api_url above).
 
 models:
-  default: "MiniMax-M2.7"             # Default model for most agents
+  default: "igni-1.0-27b"             # Default model for most agents (served by your igni server)
   max_context_window: 200000          # Hard ceiling for context usage (see below)
 
   # Model registry: maps model names (used in agent .md files) to providers.
@@ -472,7 +529,7 @@ guardrails:
 
 # Agent evaluations
 evals:
-  judge_model: "MiniMax-M2.7"       # Model for AccuracyEval LLM-as-judge
+  judge_model: "igni-1.0-27b"       # Model for AccuracyEval LLM-as-judge
   num_iterations: 3                  # Default AccuracyEval iterations per case
   accuracy_threshold: 7.0            # Default passing score (0-10 scale)
   timeout_per_case: 600              # Seconds per eval case; 0 disables
@@ -745,7 +802,7 @@ What it turns off:
 |---|---|---|
 | Update check (PyPI) | `pypi.org`, every `update_check_ttl` seconds | No request |
 | Desktop updater | `github.com/ignite-ember/igni-app/releases`, or `update_endpoint` | `update_endpoint` only; no request if none is set |
-| Desktop first launch | Downloads uv, CPython, `ignite-ember` and the decision model | No download; the app runs on `runtime_python` (below), or refuses with a message naming it |
+| Desktop first launch | Downloads uv, CPython, `igni-core` and the decision model | No download; the app runs on `runtime_python` (below), or refuses with a message naming it |
 | Decision model (Laya, Hugging Face) | Downloaded on first use if not cached | Loaded only from the local cache, with the hub offline; refused with a message saying how to pre-seed it |
 | Plugin marketplace at session start | Only `plugins.marketplaces`; `github.com/anthropics/claude-plugins-official` too if `plugins.default_marketplace: true` (off by default) | Not registered or refreshed; only local paths and `plugins.marketplaces` |
 | `/plugin marketplace add`, `/plugin install`, `/plugin update`, the plugins panel, group-policy plugins | Any git URL | Local paths and hosts inside the network (below); others are refused before git runs |
@@ -790,7 +847,7 @@ egress rule.
 
 ### Providing the desktop runtime
 
-On first launch the desktop app downloads uv, CPython and `ignite-ember`,
+On first launch the desktop app downloads uv, CPython and `igni-core`,
 which an air-gapped network cannot do. Provision them yourself and tell the app
 where they are:
 
@@ -917,7 +974,7 @@ Run the shared service with `python -m igni_core.decisions_server --host 0.0.0.0
 
 ```bash
 # Model selection
-igni --model MiniMax-M2.7
+igni --model igni-1.0-27b
 igni --model <id>                    # any id your igni server's catalogue offers
 igni --model gpt-4o                  # use OpenAI
 

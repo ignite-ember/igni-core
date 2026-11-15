@@ -145,7 +145,7 @@ PROJECT_CONFIG_TEMPLATE = """\
 # See https://docs.ignite-ember.sh/configuration for details.
 
 # models:
-#   default: MiniMax-M2.7        # Default model for this project
+#   default: igni-1.0-27b        # Default model for this project (served by your igni server)
 
 # Everything below is commented out at its default, so a choice in
 # ~/.igni/config.yaml holds until the team sets it here on purpose.

@@ -15,6 +15,7 @@ from igni_core.core.hooks.permission.denial import Denial
 from igni_core.core.hooks.permission.outcome import Block, Continue, StageOutcome
 from igni_core.core.hooks.permission.stage import PermissionStage
 from igni_core.core.hooks.tool_events import PermissionDeniedPayload, PermissionRequestPayload
+from igni_core.core.utils.tool_audit import DecidedBy
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +51,14 @@ class PermissionEvaluatorStage(PermissionStage):
             return Continue()
         outcome = self._evaluator.evaluate_outcome(ctx.name, ctx.args)
         denial = Denial(ctx.name, outcome.reason)
+        by = DecidedBy.of_policy(outcome.source)
         if outcome.decision is PermissionDecision.DENY:
             await self._fire_denied(ctx)
             logger.info("Permission DENY for %s: %s", ctx.name, outcome.reason)
             return Block(
-                denial.policy_message(tool_is_off_entirely=self._tool_is_off_entirely(denial))
+                denial.policy_message(tool_is_off_entirely=self._tool_is_off_entirely(denial)),
+                by=by,
+                reason=outcome.reason,
             )
         if outcome.decision is PermissionDecision.ASK:
             await self._firer.fire(
@@ -65,14 +69,16 @@ class PermissionEvaluatorStage(PermissionStage):
             if ctx.built_with_pause() is False:
                 # Built without a pause (a bypass start, or an ``allow``
                 # category) in a mode that now asks: nobody has answered.
-                return await self._ask_now(ctx, denial)
+                return await self._ask_now(ctx, denial, by)
             logger.info(
                 "Permission ASK for %s — falling through to HITL (already resolved by Agno)",
                 ctx.name,
             )
-        return Continue()
+            # Paused before it ran, and only a confirmed call gets here.
+            return Continue(by=DecidedBy.PERSON, reason=outcome.reason)
+        return Continue(by=by, reason=outcome.reason)
 
-    async def _ask_now(self, ctx: ToolCallContext, denial: Denial) -> StageOutcome:
+    async def _ask_now(self, ctx: ToolCallContext, denial: Denial, by: DecidedBy) -> StageOutcome:
         """Put a call that skipped its pause to the person, or refuse it.
 
         With nobody to answer — a headless run, or no channel wired — the
@@ -86,11 +92,16 @@ class PermissionEvaluatorStage(PermissionStage):
                 logger.warning("asking about %s failed: %s — refusing", ctx.name, exc)
                 answer = None
         if answer is True:
-            return Continue()
+            return Continue(by=DecidedBy.PERSON, reason=denial.reason)
         await self._fire_denied(ctx)
         if answer is False:
-            return Block(declined_note(ctx.name))
-        return Block(denial.unasked_message())
+            return Block(declined_note(ctx.name), by=DecidedBy.PERSON, reason=denial.reason)
+        # Nobody could be asked: the policy's ASK stands as a refusal.
+        return Block(
+            denial.unasked_message(),
+            by=by,
+            reason=denial.reason,
+        )
 
     def _tool_is_off_entirely(self, denial: Denial) -> bool:
         """Is the tool denied for every argument list, or just this one?

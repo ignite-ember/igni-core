@@ -28,7 +28,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from igni_core.core.utils.audit import AuditEntry, AuditLogger
+from igni_core.core.utils.audit import AuditEntry, AuditLogger, ToolCallDetails
 
 
 def _make_logger(tmp_path: Path) -> AuditLogger:
@@ -87,13 +87,17 @@ class TestEntryShape:
         # canonical keys like ``status``).
         logger = _make_logger(tmp_path)
         logger.log(
-            AuditEntry.tool_call(session_id="s1", agent_name="a", tool_name="t", args="foo bar")
+            AuditEntry.tool_call(
+                session_id="s1",
+                agent_name="a",
+                tool_name="t",
+                details=ToolCallDetails(decision="deny", decided_by="rule", arg_names=["x"]),
+            )
         )
         entry = json.loads((tmp_path / "audit.log").read_text().splitlines()[0])
-        # ``kind`` discriminator is stripped from the wire
-        # format so downstream log-scrapers see only the
-        # original ``args`` key.
-        assert entry["details"] == {"args": "foo bar"}
+        # ``kind`` discriminator is stripped from the wire format, and
+        # the unset optional fields are left out.
+        assert entry["details"] == {"decision": "deny", "decided_by": "rule", "arg_names": ["x"]}
 
     def test_success_factory_writes_success_status(self, tmp_path):
         # The ``.success`` factory pins the status to

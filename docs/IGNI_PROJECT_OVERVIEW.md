@@ -2,13 +2,13 @@
 
 **Scope:** What's actually shipped, who it's for, how `igni__server` relates, and how it compares to alternatives — verified against both repositories.
 
-> **Since this report:** CodeIndex and Artifacts are extensions, not part of igni. The local per-commit Neo4j graph, its embedder and `codeindex_cypher` are the CodeIndex extension's (`igni__code-index/extension`); igni runs no graph database and no embedder. Where this report places them in igni, read the extension. The VS Code and JetBrains plugins are dropped (D19): igni ships the desktop app, the web client and the CLI, so read the report's "four surfaces" as those. The `igni` command is non-interactive (`igni -m "<message>"`, `igni -p`): it runs the work and exits, and the chat lives in the clients.
+> **Since this report:** CodeIndex and Artifacts are extensions, not part of igni. The local per-commit Neo4j graph, its embedder and `codeindex_cypher` are the CodeIndex extension's (`igni__code-index/extension`); igni runs no graph database and no embedder. Where this report places them in igni, read the extension. The VS Code and JetBrains plugins are dropped (D19): igni ships the desktop app, the web client and the CLI, so read the report's "four surfaces" as those. The `igni` command is non-interactive (`igni -m "<message>"`, `igni -p`): it runs the work and exits, and the chat lives in the clients. igni hosts no model: there is no hosted MiniMax-M2.7, no hosted roster and no built-in default on `/login`; the models are the ones the organisation's own igni server serves from its key pool and GPU nodes. igni's own model is igni 1.0 27B (`igni-1.0-27b`, shipping soon), which an organisation serves itself. The benchmark figures quoted here (82 %, 1/80th the cost) were measured with MiniMax-M2.7 before igni 1.0 and will be re-run with `igni-1.0-27b`.
 
 ---
 
 ## 1. Executive Summary
 
-**igni is a multi-agent AI coding assistant built on the Agno orchestration framework — released as v1.0.0 on 2026-07-30 (`git tag v1.0.0`).** Its core architectural differentiator is **CodeIndex** — a pre-built semantic + metadata index over the codebase produced by a separate backend (`igni__server`) and consumed locally as a per-commit **Neo4j graph + vector store** (BE-spawned, no Docker), so search runs on the user's machine and the server never holds a copy of the index. Self-published benchmarks put it at 82% directly-mergeable outputs vs Claude Code's 52% on a 12-case suite, but at ~33% slower wall time and 1/80th the per-run cost (driven by a smaller default model, MiniMax-M2.7, plus the pre-computed index). It holds extensive Claude Code parity (33/61 rows ✅, 1 explicit gap, 5 partials, 17 igni-only extras) and ships across four surfaces (Tauri desktop + VSCode + JetBrains + browser) from a single React bundle.
+**igni is a self-hosted, air-gapped agentic platform whose multi-agent runtime (igni-core) is built on the Agno orchestration framework — released as v1.0.0 on 2026-07-30 (`git tag v1.0.0`).** Its core architectural differentiator is **CodeIndex** — a pre-built semantic + metadata index over the codebase produced by a separate backend (`igni__server`) and consumed locally as a per-commit **Neo4j graph + vector store** (BE-spawned, no Docker), so search runs on the user's machine and the server never holds a copy of the index. Self-published benchmarks put it at 82% directly-mergeable outputs vs Claude Code's 52% on a 12-case suite, but at ~33% slower wall time and 1/80th the per-run cost (driven by a smaller default model, MiniMax-M2.7, plus the pre-computed index). It holds extensive Claude Code parity (33/61 rows ✅, 1 explicit gap, 5 partials, 17 igni-only extras) and ships across four surfaces (Tauri desktop + VSCode + JetBrains + browser) from a single React bundle.
 
 ---
 
@@ -97,7 +97,7 @@ The rollout mechanic — packs published from the portal, fetched at login or su
 
 ### Two deployment shapes
 
-**Solo developer / OSS community path** — since the Textual TUI is no longer shipped, end users go straight to one of the four GUI surfaces: the **Tauri desktop app** (signed + notarized installer for macOS / Windows / Linux — CI-built from `clients/tauri`), the **VSCode extension** (one-command marketplace install; auto-bootstraps the Python backend on first activation), the **JetBrains plugin** (IntelliJ / PyCharm / WebStorm via the Marketplace, JCEF panel hosting the shared web UI), or the **browser bundle** (`clients/web` Vite/React served from any host). The backend comes embedded with each surface — there is no separate CLI mode. BYO model supported for any OpenAI-compatible API (OpenAI, Anthropic, Gemini, Groq, Ollama, OpenRouter per portal docs). The default hosted MiniMax-M2.7 model plus the in-session `/login` makes the first-run path zero-config. See `docs/CONFIGURATION.md`.
+**Solo developer / OSS community path** — since the Textual TUI is no longer shipped, end users go straight to one of the four GUI surfaces: the **Tauri desktop app** (signed + notarized installer for macOS / Windows / Linux — CI-built from `clients/tauri`), the **VSCode extension** (one-command marketplace install; auto-bootstraps the Python backend on first activation), the **JetBrains plugin** (IntelliJ / PyCharm / WebStorm via the Marketplace, JCEF panel hosting the shared web UI), or the **browser bundle** (`clients/web` Vite/React served from any host). The backend comes embedded with each surface — there is no separate CLI mode. BYO model supported for any OpenAI-compatible API (OpenAI, Anthropic, Gemini, Groq, Ollama, OpenRouter per portal docs). The in-session `/login` to the organisation's own igni server, which serves its models (igni 1.0 27B, `igni-1.0-27b`, among them), makes the first-run path zero-config. See `docs/CONFIGURATION.md`.
 
 **Team / enterprise path** — self-hostable `igni__server` (FastAPI + Postgres + Celery + Redis + GCS), GKE-deployed via Helm with three environments (dev/stage/prod) and WIF-based GitHub Actions deploys. Enterprise-grade controls: 5-tier settings precedence including platform-managed `/Library/Application Support/igni/managed-settings.yaml` (`/etc/igni/` on Linux, `%PROGRAMDATA%\igni\` on Windows — this said the directory kept its pre-rename name for back-compat, which was not true of the code: `paths.managed_policy_dir` has read `igni` on all three platforms, so an admin following the old text deployed policy where nothing looked for it, and managed policy is the one tier a user cannot override) that wins over CLI flags; 4-tier plugin scopes including `/etc/igni/` managed scope; scoped deny rules that survive bypass mode. Apache 2.0 license permits commercial use. Source: `igni__server/README.md:178-216`, `README.md:241-249`.
 
@@ -143,7 +143,7 @@ This is the headline story for **admins who want a curated AI experience deliver
   - MCPs → `~/.igni/group-policy/mcps/<name>.json`
   - Plugins → installed via `PluginInstaller` into `<data_dir>/group-policy/plugins/` (priority 4.5 — between project-igni and managed-igni), so the plugin loader sees them naturally
   - Settings → deep-merged into the existing settings tier stack via `core/config/merge_plan.py:250` (`GroupPolicyTier`)
-- **Zero install at the workstation.** The end user's machine only needs `brew install ignite-ember` (or the desktop app). When they log in with `/login`, the appropriate group packs are pulled automatically — they get the curated agent set, MCP servers, plugin roster, and merged config without anyone running a setup script. A backend/security team can flip the group's overrides today; every member of the group sees the change on next fetch (5-min TTL on the cache, `group_policy.py:22-24`).
+- **Zero install at the workstation.** The end user's machine only needs `brew install ignite-ember/tap/igni-core` (or the desktop app). When they log in with `/login`, the appropriate group packs are pulled automatically — they get the curated agent set, MCP servers, plugin roster, and merged config without anyone running a setup script. A backend/security team can flip the group's overrides today; every member of the group sees the change on next fetch (5-min TTL on the cache, `group_policy.py:22-24`).
 - **What this enables.** Per-department personas without per-user configuration:
   - A "Security" group gets a security-focused agent set, audit-logging MCP, and restrictive permissions.
   - A "Frontend" group gets React/Vue/Tailwind specialists + a design-system knowledge pack + the Figma MCP, no shell-write rights.
@@ -164,7 +164,7 @@ The portal exposes a Stripe-backed per-seat subscription across three tiers — 
 
 | All three tiers include | Detail |
 |---|---|
-| **Unlimited tokens on the hosted MiniMax-M2.7 model** | The `features: ['Unlimited tokens', …]` line in every tier applies to the MiniMax-M2.7 default — **no per-token usage meter on the default model**. GLM and Kimi are planned additions to the subscription roster (see hosted model note below). |
+| **Unlimited tokens** | The `features: ['Unlimited tokens', …]` line in every tier. Withdrawn since: igni hosts no model, so there is no hosted default to meter; the organisation's igni server serves its own models (see the model note below). |
 
 | Seats | Volume discount |
 |---|---|
@@ -176,7 +176,7 @@ The portal exposes a Stripe-backed per-seat subscription across three tiers — 
 
 Beyond the org-wide CodeIndex pool (`code_index_repos_per_seat × seats`), extra repos are billed at `CODE_INDEX_OVERAGE_RATE = $15/repo/mo` (`billing.py:99`), so there's no arbitrage between bundled and standalone CodeIndex.
 
-**Hosted model roster.** The default hosted model on `/login` is **MiniMax-M2.7** (per `README.md:46` and the model classifier in `pyproject.toml`). **GLM and Kimi are planned to be added to the subscription soon.** BYO-model (`api_key_env`, `api_key_cmd`, or direct key in `.igni/config.yaml` per `README.md:62-74`) remains supported today for teams that want Anthropic, OpenAI, or self-hosted inference.
+**Models.** There is no hosted model roster and no default model on `/login`: `/login` signs in to the organisation's own igni server, and the models are the ones it serves from its key pool and GPU nodes. igni's own model is **igni 1.0 27B** (`igni-1.0-27b`, shipping soon), which the organisation serves itself. BYO-model (`api_key_env`, `api_key_cmd`, or direct key in `.igni/config.yaml` per `README.md:62-74`) remains supported today for teams that want Anthropic, OpenAI, or self-hosted inference.
 
 ---
 
@@ -377,8 +377,7 @@ Selected key citations. Line numbers refer to the files as of the snapshot read.
 | Knowledge-base / Neo4j + EmberEmbedder (384d) | `README.md:200-209`, `docs/ARCHITECTURE.md`, `docs/NEO4J_MIGRATION_DONE.md` |
 | Org-level Groups + zero-install rollout | `core/config/group_policy.py:27-119` (pack + entry schema), `core/config/group_policy.py:122+` (materialization), `core/config/settings_loader.py:246`, `core/config/merge_plan.py:250` (settings tier), `igni__server/app/api/base_v1/endpoints/portal/groups.py:33+` (group API) |
 | Pricing tiers + volume discounts | `igni__server/app/api/base_v1/schema/portal/billing.py:135-200` (`PLAN_CATALOG`, `VOLUME_TIER`), `igni__server/app/services/portal/billing_service.py:60+` |
-| Hosted model roster (MiniMax-M2.7 default; GLM/Kimi planned) | `README.md:46` |
-| `MiniMax-M2.7` default model positioning | `README.md:46`, `pyproject.toml` (model classifier topic) |
+| No hosted model; igni 1.0 27B served by the organisation's igni server | `docs/CONFIGURATION.md` (Models & Authentication) |
 | 11 bundled agents | `ls src/igni_core/bundled_agents/`; `QUICKSTART.md:178-196` |
 | Permission modes (5) + eval pipeline (6) + scoped deny | `CLAUDE_CODE_PARITY.md` rows 7, 8, 9; `CODE_STANDARDS.md` |
 | Output styles (from `.igni/output-styles/`; none ship) | `CLAUDE_CODE_PARITY.md` row 52 |
@@ -404,7 +403,7 @@ Selected key citations. Line numbers refer to the files as of the snapshot read.
 
 ## Bottom Line
 
-igni is a credible, well-engineered, multi-agent AI coding assistant whose **CodeIndex producer/consumer split is a genuinely novel architectural choice** in a category where most competitors compute context per-conversation. Its Claude Code parity (33/61 ✅) and cross-tool compatibility make it a reasonable migration target for CC users, and its feature breadth (4 surfaces, plugin primitives, output styles, plan/acceptEdits modes, knowledge base, scheduling/looping/forking) gives it competitive parity in dimensions that matter.
+igni is a credible, well-engineered, self-hosted multi-agent platform whose **CodeIndex producer/consumer split is a genuinely novel architectural choice** in a category where most competitors compute context per-conversation. Its Claude Code parity (33/61 ✅) and cross-tool compatibility make it a reasonable migration target for CC users, and its feature breadth (4 surfaces, plugin primitives, output styles, plan/acceptEdits modes, knowledge base, scheduling/looping/forking) gives it competitive parity in dimensions that matter.
 
 The **honest caveats** for a stakeholder weighing it:
 

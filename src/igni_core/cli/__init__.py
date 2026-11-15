@@ -151,7 +151,7 @@ from igni_core.core.paths import DEFAULT_DATA_DIR
 )
 @click.pass_context
 def cli(ctx: click.Context, **_params: object) -> None:
-    """igni — an AI coding assistant that works on your code where it lives.
+    """igni — a self-hosted, air-gapped agentic platform; this is its agent runtime.
 
     Run one message with -m, or pipe work in with -p. The chat itself is in
     the desktop app or the web client; running igni with no arguments says

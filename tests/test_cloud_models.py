@@ -229,10 +229,10 @@ def test_merge_routes_through_ember_server_even_for_legacy_payload():
     (the igni server chat proxy). Verified end-to-end via
     ``from_cloud_discovery`` — the legacy upstream URL never
     reaches the entry."""
-    entries = _entries_for(["MiniMaxAI/MiniMax-M2.5"])
+    entries = _entries_for(["igni-1.0-27b"])
     registry: dict[str, ModelRegistryEntry] = {}
     _client().merge_into(registry, entries=entries)
-    entry = registry["MiniMaxAI/MiniMax-M2.5"]
+    entry = registry["igni-1.0-27b"]
     assert isinstance(entry, ModelRegistryEntry)
     assert entry.url == "https://api.example.com/v1"
 

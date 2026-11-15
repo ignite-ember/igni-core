@@ -5,8 +5,9 @@ two very different execution paths that used to live as
 free ``_search_with_rg`` / ``_search_with_python`` functions in
 :mod:`igni_core.backend.server_search`:
 
-* :class:`RgSearchStrategy` — shells out to ``rg`` when it's on
-  ``PATH``. Fast, parallel, gitignore-aware.
+* :class:`RgSearchStrategy` — shells out to ``rg`` when there is one
+  (on ``PATH``, else the PyPI ``ripgrep`` package's binary; see
+  :mod:`igni_core.core.utils.ripgrep`). Fast, parallel, gitignore-aware.
 * :class:`PythonWalkSearchStrategy` — pure-Python ``os.walk``
   fallback for machines without ``rg``.
 
@@ -14,18 +15,21 @@ Both subclasses expose the same :meth:`SearchStrategy.search`
 contract and return a :class:`SearchCodeResult`, so the
 controller composes one instance (chosen once at construction
 via :meth:`SearchStrategy.pick`) and calls it uniformly — no
-per-call ``shutil.which`` branch, no dispatch dict.
+per-call lookup, no dispatch dict.
 """
 
 from __future__ import annotations
 
+import logging
 import os
-import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 from igni_core.backend.schemas_search import SearchCodeMatch, SearchCodeResult
+from igni_core.core.utils.ripgrep import MISSING, find_rg
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_FALLBACK_SKIP_DIRS: frozenset[str] = frozenset(
     {
@@ -69,12 +73,14 @@ class SearchStrategy(ABC):
         """Return the best strategy for the current environment.
 
         Called once by :class:`SearchController` at construction time
-        so the ``shutil.which`` branch runs on a per-controller basis,
-        not per search call.
+        so the lookup runs on a per-controller basis, not per search
+        call. Without any ``rg`` the walk answers, and the log says how
+        to install ripgrep.
         """
-        rg = shutil.which("rg")
+        rg = find_rg()
         if rg:
             return RgSearchStrategy(rg)
+        logger.warning(MISSING)
         return PythonWalkSearchStrategy()
 
 

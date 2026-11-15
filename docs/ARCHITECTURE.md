@@ -2,7 +2,7 @@
 
 ## Overview
 
-igni is a terminal-based AI coding assistant built on [Agno](https://docs.agno.com/). Its core innovation is **dynamic team assembly**: instead of a fixed agent hierarchy, an Orchestrator analyzes each task and builds a purpose-fit team on the fly from a pool of agent definitions.
+igni is a self-hosted, air-gapped agentic platform, and igni-core is the agent runtime at its centre, built on [Agno](https://docs.agno.com/). Writing and reviewing code is one thing its agents do; an organisation defines its own agents for any team. Its core innovation is **dynamic team assembly**: instead of a fixed agent hierarchy, an Orchestrator analyzes each task and builds a purpose-fit team on the fly from a pool of agent definitions.
 
 ```
 ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┐

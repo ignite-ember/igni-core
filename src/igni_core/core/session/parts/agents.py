@@ -48,6 +48,7 @@ class AgentsBuilder:
             broadcast=session.broadcast,
             prompt_loader=session.prompt_loader,
             supervisor=session.supervisor,
+            tool_audit=session.tool_audit,
         )
         session.pool.load_definitions(
             settings,

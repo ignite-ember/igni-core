@@ -260,15 +260,15 @@ def settings():
     connection.
     """
     s = SettingsLoader.load()
-    s.models.registry["MiniMax-M2.7"] = ModelRegistryEntry(
+    s.models.registry["igni-1.0-27b"] = ModelRegistryEntry(
         provider="openai_like",
-        model_id="MiniMaxAI/MiniMax-M2.7",
+        model_id="igni-1.0-27b",
         url="https://api.ignite-ember.sh/v1",
         api_key="cloud_token",
         context_window=204_800,
         vision=False,
     )
-    s.models.default = "MiniMax-M2.7"
+    s.models.default = "igni-1.0-27b"
     return s
 
 
@@ -291,7 +291,7 @@ def sample_agent_md(tmp_path):
         "name: test-agent\n"
         "description: A test agent\n"
         "tools: Read, Grep\n"
-        "model: MiniMax-M2.7\n"
+        "model: igni-1.0-27b\n"
         "tags: test, example\n"
         "reasoning: true\n"
         "reasoning_min_steps: 2\n"
