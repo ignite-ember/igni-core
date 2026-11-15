@@ -41,7 +41,7 @@ project's `.igni`; they are listed anyway, for a home directory kept in git.
 
 ## Models & Authentication
 
-igni needs an LLM to run. Models are resolved through a **config-driven registry** — agent `.md` files reference models by name (e.g., `model: MiniMax-M2.7`), and the registry maps that name to a provider, endpoint URL, model ID, and API key.
+igni needs an LLM to run. Models are resolved through a **config-driven registry** — agent `.md` files reference models by name (e.g., `model: igni-1.0-27b`), and the registry maps that name to a provider, endpoint URL, model ID, and API key.
 
 ### Model Registry
 
@@ -69,19 +69,19 @@ A fetched entry looks like this once merged:
 # .igni/config.yaml
 models:
   registry:
-    MiniMax-M2.7:
+    igni-1.0-27b:             # igni's own model, served by your organisation
       provider: openai_like
-      model_id: MiniMax-Text-01
+      model_id: igni-1.0-27b
       url: https://api.your-igni-server.example/v1
       api_key: cloud_token    # use the credentials from `igni login`
-      context_window: 204800
+      context_window: 131072  # what your GPU node serves (vLLM --max-model-len)
       vision: false
 ```
 
 Agent `.md` files just reference the registry name:
 
 ```yaml
-model: MiniMax-M2.7           # → looks up "MiniMax-M2.7" in the registry
+model: igni-1.0-27b          # → looks up "igni-1.0-27b" in the registry
 ```
 
 ### Resolution Order
@@ -134,12 +134,20 @@ Add entries to `models.registry` in your config. These override built-in entries
 models:
   registry:
     # your igni server model — uses login credentials
-    MiniMax-M2.7:
+    igni-1.0-27b:
       provider: openai_like
-      model_id: MiniMaxAI/MiniMax-M2.7
-      url: https://api.ignite-ember.sh/v1
+      model_id: igni-1.0-27b
+      url: https://igni-api.acme.example/v1
       api_key: cloud_token
-      context_window: 204800
+      context_window: 131072
+      vision: false
+
+    # igni 1.0 27B on your own GPU node (vLLM), inside your network
+    igni-1.0-27b-local:
+      provider: openai_like
+      model_id: igni-1.0-27b
+      url: http://vllm.acme.internal:8000/v1
+      context_window: 131072
       vision: false
 
     # Direct API key — vision-capable model
@@ -201,7 +209,7 @@ There are three providers:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `provider` | string | yes | `openai_like` for any OpenAI-compatible API, `anthropic` for Claude or an Anthropic-compatible API, `gemini` for Gemini |
-| `model_id` | string | yes | Model identifier sent to the API (e.g., `MiniMax-Text-01`, `gpt-4o`, `claude-opus-5-5`) |
+| `model_id` | string | yes | Model identifier sent to the API (e.g., `igni-1.0-27b`, `gpt-4o`, `claude-opus-5-5`) |
 | `url` | string | yes* | API base URL (e.g., `https://api.openai.com/v1`). Omit only for OpenAI models that use the default endpoint. *Optional for `anthropic`, which defaults to `https://api.anthropic.com` |
 | `api_key` | string | no | API key value, or `cloud_token` to use your igni server login credentials |
 | `api_key_env` | string | no | Environment variable name containing the API key |
@@ -263,8 +271,8 @@ Claude Code uses a simple alias map (`"sonnet"` → `"claude-sonnet-4-6"`) becau
 | Aspect | Claude Code | igni |
 |---|---|---|
 | Model resolution | Alias map (string → string) | Config-driven registry (name → provider + URL + key) |
-| First-party API | `ANTHROPIC_API_KEY` | `/login` device-flow (server-hosted MiniMax M2.7) |
-| Hosted endpoint | `api.anthropic.com` | `api.ignite-ember.sh` |
+| First-party API | `ANTHROPIC_API_KEY` | `/login` device-flow to your organisation's igni server; the models are the ones it serves |
+| Hosted endpoint | `api.anthropic.com` | None: igni hosts no model; `api_url` points at your own igni server |
 | AWS Bedrock | `CLAUDE_CODE_USE_BEDROCK` | Through igni server: `provider: anthropic`, `url` your igni server, `api_key: cloud_token` — the server signs for Bedrock |
 | Google Vertex | `CLAUDE_CODE_USE_VERTEX` | Through igni server, the same way: `provider: anthropic` for Claude, `openai_like` for Gemini |
 | Custom base URL | `ANTHROPIC_BASE_URL` | `url` field per registry entry |
@@ -292,7 +300,7 @@ The key difference: Claude Code only supports Anthropic models through different
 # sign in to your organisation's igni server (api_url above).
 
 models:
-  default: "MiniMax-M2.7"             # Default model for most agents
+  default: "igni-1.0-27b"             # Default model for most agents (served by your igni server)
   max_context_window: 200000          # Hard ceiling for context usage (see below)
 
   # Model registry: maps model names (used in agent .md files) to providers.
@@ -515,7 +523,7 @@ guardrails:
 
 # Agent evaluations
 evals:
-  judge_model: "MiniMax-M2.7"       # Model for AccuracyEval LLM-as-judge
+  judge_model: "igni-1.0-27b"       # Model for AccuracyEval LLM-as-judge
   num_iterations: 3                  # Default AccuracyEval iterations per case
   accuracy_threshold: 7.0            # Default passing score (0-10 scale)
   timeout_per_case: 600              # Seconds per eval case; 0 disables
@@ -955,7 +963,7 @@ Run the shared service with `python -m igni_core.decisions_server --host 0.0.0.0
 
 ```bash
 # Model selection
-igni --model MiniMax-M2.7
+igni --model igni-1.0-27b
 igni --model <id>                    # any id your igni server's catalogue offers
 igni --model gpt-4o                  # use OpenAI
 

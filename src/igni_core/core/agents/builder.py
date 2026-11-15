@@ -46,7 +46,7 @@ class AgentBuilder:
     #: ``AgentDefinition.model``; treat it the same as "no override"
     #: so a checked-in ``.md`` doesn't lock the user to a specific
     #: model.
-    BUILTIN_DEFAULT_MODEL: ClassVar[str] = "MiniMax-M2.7"
+    BUILTIN_DEFAULT_MODEL: ClassVar[str] = "igni-1.0-27b"
 
     # ── Test seams (class-level) ────────────────────────────────
     #

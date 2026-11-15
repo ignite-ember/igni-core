@@ -4,6 +4,8 @@ A reproducible head-to-head comparison on a 12-case software-engineering benchma
 
 > **TL;DR** igni (MiniMax-M2.7) + CodeIndex produces directly-mergeable code on **49 of 60 trials (82 %)**. Claude Code (Opus-4.7, no CodeIndex) does the same on **31 of 60 (52 %)**. igni wins by **+18 ✅ trials** at one-eightieth of the per-run cost.
 
+> **Model note.** These runs were measured with MiniMax-M2.7, before igni 1.0. They will be re-run with igni's own model, `igni-1.0-27b`; until then, every igni figure on this page is MiniMax-M2.7's.
+
 ## Setup
 
 | | igni (MiniMax-M2.7) + CodeIndex | Claude Code (Opus-4.7) without CodeIndex |
@@ -273,7 +275,7 @@ Three architectural choices in igni do most of the work:
 
 2. **A mandatory "What already exists" preamble.** Before any code, igni's agent must name (a) the reuse target, (b) the closest near-miss it considered and rejected, (c) the conventions to match, (d) the parallel infrastructure it will *not* introduce. This forces contrastive reasoning and blocks the "write from training-data shape" reflex that produces plausible-looking but non-native code.
 
-3. **A small, focused model with structured tools.** igni defaults to MiniMax-M2.7 — much cheaper than Opus-4.7 — and offsets the model-size gap with index access and prompt scaffolding that does the cognitively-expensive routing for the model. The result: comparable-or-better correctness at 1/80th the cost.
+3. **A small, focused model with structured tools.** In these runs igni used MiniMax-M2.7 — much cheaper than Opus-4.7 — and offsets the model-size gap with index access and prompt scaffolding that does the cognitively-expensive routing for the model. The result: comparable-or-better correctness at 1/80th the cost.
 
 ## Reproducibility
 

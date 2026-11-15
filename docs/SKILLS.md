@@ -69,7 +69,7 @@ Deploy the application to $ARGUMENTS environment.
 | `version` | string | Semantic version (informational) |
 | `argument-hint` | string | Hint shown in autocomplete (e.g., `[environment]`, `[file-path]`) |
 | `allowed-tools` | string | Comma-separated tool names (restricts which tools are available) |
-| `model` | string | Model override (`inherit`, `MiniMax-M2.7`, etc.) |
+| `model` | string | Model override (`inherit`, `igni-1.0-27b`, etc.) |
 | `context` | string | `fork` = run in isolated sub-agent, default = run inline |
 | `agent` | string | When `context: fork`, which agent type to use |
 | `disable-model-invocation` | bool | If `true`, only the user can invoke (not auto-triggered) |

@@ -46,12 +46,14 @@ def test_the_stale_message_names_the_model_and_the_real_config_path():
 def test_the_stale_message_names_both_places_the_name_comes_from_and_the_models_there():
     """``igni --model nosuchmodel`` is a stale default too: the message must not
     call it "the configured default" and send the person to config.yaml alone."""
-    message = NoModelConfigured.for_stale_default("nosuchmodel", ["zeta", "minimax"]).ERROR_MESSAGE
+    message = NoModelConfigured.for_stale_default(
+        "nosuchmodel", ["zeta", "igni-1.0-27b"]
+    ).ERROR_MESSAGE
 
     assert "configured default" not in message
     assert "`--model`" in message
     assert "`models.default`" in message
-    assert "the models there: minimax, zeta" in message
+    assert "the models there: igni-1.0-27b, zeta" in message
 
 
 def test_the_stale_message_says_when_the_registry_is_empty():

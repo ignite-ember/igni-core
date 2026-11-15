@@ -264,11 +264,11 @@ class TestWhoNeedsTheToken:
 
 def test_a_cloud_discovered_entry_goes_through_the_proxy_with_the_sentinel():
     entry = ModelRegistryEntry.from_cloud_discovery(
-        model_id="MiniMax", proxy_url="https://igni.example/v1"
+        model_id="igni-1.0-27b", proxy_url="https://igni.example/v1"
     )
 
     assert entry.provider == "openai_like"
-    assert entry.model_id == "MiniMax"
+    assert entry.model_id == "igni-1.0-27b"
     assert entry.url == "https://igni.example/v1"
     assert entry.api_key == CLOUD_TOKEN_SENTINEL
     assert entry.source == "cloud"

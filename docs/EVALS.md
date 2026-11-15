@@ -437,7 +437,7 @@ def test_editor_response_quality(editor_agent, tmp_path):
 
     # Agno AccuracyEval with LLM judge
     accuracy = AccuracyEval(
-        model=OpenAILike(id="MiniMax-M2.7", ...),
+        model=OpenAILike(id="igni-1.0-27b", ...),
         agent=editor_agent,
         input=f"Rename processData to process_data in {test_file}",
         expected_output="Renamed the function from processData to process_data",
@@ -596,7 +596,7 @@ When a score drops from the previous run or below the baseline:
 # .igni/config.yaml
 
 evals:
-  judge_model: MiniMax-M2.7           # model for AccuracyEval judge
+  judge_model: igni-1.0-27b           # model for AccuracyEval judge
   num_iterations: 3                    # default AccuracyEval iterations
   accuracy_threshold: 7                # default passing score (0-10)
   timeout_per_case: 600                # default seconds per case; 0 disables

@@ -145,7 +145,7 @@ PROJECT_CONFIG_TEMPLATE = """\
 # See https://docs.ignite-ember.sh/configuration for details.
 
 # models:
-#   default: MiniMax-M2.7        # Default model for this project
+#   default: igni-1.0-27b        # Default model for this project (served by your igni server)
 
 guardrails:
   pii_detection: true             # Warn on PII in user messages

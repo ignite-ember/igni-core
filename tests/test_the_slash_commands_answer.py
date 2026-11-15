@@ -35,7 +35,7 @@ class _Settings:
     """The slice of ``Session.settings`` that ``ConfigView`` reads."""
 
     class models:
-        default = "MiniMax-M2.7"
+        default = "igni-1.0-27b"
 
     class permissions:
         file_write = "ask"
@@ -85,7 +85,7 @@ class TestConfigRenders:
         command nor the field."""
         view = ConfigView.from_session(_Session(), store=_NoCreds())
 
-        assert view.model == "MiniMax-M2.7"
+        assert view.model == "igni-1.0-27b"
 
     def test_it_reads_a_field_storage_config_actually_has(self):
         """Stated against the schema rather than against the view.

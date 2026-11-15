@@ -75,12 +75,12 @@ async def test_sessions_lists_the_saved_sessions_by_id(session):
 
 async def test_model_lists_the_registry_and_marks_the_current_one(session):
     session.cloud_auth.refresh_models = MagicMock(return_value=0)
-    session.settings.models.registry = {"minimax": MagicMock(), "other": MagicMock()}
-    session.settings.models.default = "minimax"
+    session.settings.models.registry = {"igni-1.0-27b": MagicMock(), "other": MagicMock()}
+    session.settings.models.default = "igni-1.0-27b"
 
     text = await _run(session, "/model")
 
-    assert "- minimax (current)" in text
+    assert "- igni-1.0-27b (current)" in text
     assert "- other" in text
     assert "`/model <name>`" in text
     assert "[dim]" not in text

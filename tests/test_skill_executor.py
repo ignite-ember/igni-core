@@ -28,7 +28,7 @@ def _mock_pool():
 
 def _mock_settings():
     settings = MagicMock()
-    settings.models.default = "MiniMax-M2.7"
+    settings.models.default = "igni-1.0-27b"
     return settings
 
 

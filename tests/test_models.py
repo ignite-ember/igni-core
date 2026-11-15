@@ -14,7 +14,7 @@ from igni_core.core.config.settings_loader import SettingsLoader
 
 @pytest.fixture
 def registry():
-    """Registry pre-loaded with a synthetic M2.7 entry.
+    """Registry pre-loaded with a synthetic igni-1.0-27b entry.
 
     The package no longer ships hardcoded model entries — hosted
     models come from cloud discovery on session start. The fixture
@@ -22,15 +22,15 @@ def registry():
     tests can exercise the resolver without a real cloud
     connection."""
     settings = SettingsLoader.load()
-    settings.models.registry["MiniMax-M2.7"] = ModelRegistryEntry(
+    settings.models.registry["igni-1.0-27b"] = ModelRegistryEntry(
         provider="openai_like",
-        model_id="MiniMaxAI/MiniMax-M2.7",
+        model_id="igni-1.0-27b",
         url="https://api.ignite-ember.sh/v1",
         api_key="cloud_token",
         context_window=204_800,
         vision=False,
     )
-    settings.models.default = "MiniMax-M2.7"
+    settings.models.default = "igni-1.0-27b"
     return ModelRegistry(settings)
 
 
@@ -38,13 +38,13 @@ class TestModelRegistry:
     def test_default_model_in_registry(self, registry):
         # The fixture seeds the entry; without cloud discovery the
         # registry would be empty.
-        assert "MiniMax-M2.7" in registry.settings.models.registry
+        assert "igni-1.0-27b" in registry.settings.models.registry
 
     def test_resolve_default_entry(self, registry):
-        entry = registry._resolve_entry("MiniMax-M2.7")
+        entry = registry._resolve_entry("igni-1.0-27b")
         assert entry is not None
         assert entry.provider == "openai_like"
-        assert entry.model_id == "MiniMaxAI/MiniMax-M2.7"
+        assert entry.model_id == "igni-1.0-27b"
         assert entry.context_window == 204_800
 
     def test_resolve_provider_colon_format(self, registry):
@@ -61,7 +61,7 @@ class TestModelRegistry:
         settings = Settings(
             models=ModelsConfig(
                 registry={
-                    "MiniMax-M2.7": {
+                    "igni-1.0-27b": {
                         "provider": "openai_like",
                         "model_id": "custom-override",
                         "url": "https://example.com/v1",
@@ -70,7 +70,7 @@ class TestModelRegistry:
             )
         )
         reg = ModelRegistry(settings)
-        entry = reg._resolve_entry("MiniMax-M2.7")
+        entry = reg._resolve_entry("igni-1.0-27b")
         assert entry.model_id == "custom-override"
 
     def test_resolve_custom_model(self):
@@ -108,11 +108,11 @@ class TestModelRegistry:
 
     def test_env_model_override(self, monkeypatch, registry):
         """``IGNI_MODEL`` selects an entry from the registry. The
-        fixture has already seeded the M2.7 entry that cloud
+        fixture has already seeded the igni-1.0-27b entry that cloud
         discovery would normally populate."""
-        monkeypatch.setenv("IGNI_MODEL", "MiniMax-M2.7")
-        entry = registry._resolve_entry("MiniMax-M2.7")
-        assert entry.model_id == "MiniMaxAI/MiniMax-M2.7"
+        monkeypatch.setenv("IGNI_MODEL", "igni-1.0-27b")
+        entry = registry._resolve_entry("igni-1.0-27b")
+        assert entry.model_id == "igni-1.0-27b"
 
     def test_register_provider(self, registry):
         class FakeBuilder(ProviderClientBuilder):
@@ -123,7 +123,7 @@ class TestModelRegistry:
         assert registry._catalog.has("fake")
 
     def test_get_context_window_from_registry(self, registry):
-        ctx = registry.get_context_window("MiniMax-M2.7")
+        ctx = registry.get_context_window("igni-1.0-27b")
         assert ctx == 204_800
 
     def test_get_context_window_unknown_fallback(self, registry):

@@ -80,13 +80,13 @@ Claude Code has no equivalent — it's always "single agent decides everything, 
 
 | Aspect | Claude Code | igni |
 |---|---|---|
-| **Default model** | Claude Sonnet 4.6 (Anthropic) | MiniMax M2.7 (server-hosted) |
+| **Default model** | Claude Sonnet 4.6 (Anthropic) | No built-in or hosted model: the registry's default, or what your organisation's igni server serves (e.g. igni 1.0 27B, `igni-1.0-27b`) |
 | **Provider lock-in** | Anthropic only (Claude models) | Any OpenAI-compatible provider |
 | **BYOM** | No (Anthropic, Bedrock, or Vertex only) | Yes — full registry with provider, URL, key per model |
 | **API key sources** | `ANTHROPIC_API_KEY` env var | `api_key` (direct) / `api_key_env` (env var) / `api_key_cmd` (shell command, e.g. 1Password) |
 | **Per-agent models** | No (global model selection) | Yes — each agent `.md` specifies its own `model:` field |
 | **Model resolution** | Alias map (string → string) | Registry lookup (name → provider + URL + model_id + key) |
-| **Hosted endpoint** | `api.anthropic.com` | `api.ignite-ember.sh` |
+| **Hosted endpoint** | `api.anthropic.com` | None: your organisation's own igni server (`api_url`) |
 | **Supported providers** | Anthropic, AWS Bedrock, Google Vertex | MiniMax, OpenAI, Anthropic, Groq, Together, OpenRouter, Ollama, any OpenAI-compatible |
 
 ---
