@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from igni_core.backend.pool_rpcs.base import PoolRefusal, PoolRpc, UnavailableRpc
-from igni_core.backend.rpc_binding import NoArgs, rpc
+from igni_core.backend.rpc_binding import RpcArgs, rpc
 from igni_core.extensions.service_token import PageServiceTokens, PageTokenReply
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 from igni_core.protocol.schemas.rpc import RpcErrorCode
+
+
+class PageTokenArgs(RpcArgs):
+    """The arguments of ``extension_service_token``."""
+
+    refresh: bool = Field(
+        default=False,
+        description=(
+            "Exchange a new token rather than answer the one igni holds: the "
+            "service refused that one (a `401`), and it would refuse it again."
+        ),
+    )
 
 
 class PageTokenRpc(PoolRpc):
@@ -28,16 +42,17 @@ class PageTokenRpc(PoolRpc):
     @rpc(
         RpcMethod.EXTENSION_SERVICE_TOKEN,
         duration=RpcDuration.NETWORK,
-        args=NoArgs,
+        args=PageTokenArgs,
         scope=RpcScope.IGNI,
     )
-    async def token(self, args: NoArgs, request: msg.RPCRequest) -> PageTokenReply:
+    async def token(self, args: PageTokenArgs, request: msg.RPCRequest) -> PageTokenReply:
         """Get an access token for the calling extension's own service.
 
         Only an extension's page asks, through igni's window, which sets the
         request's ``caller`` to the page's extension; the token's audience is
         the service recorded for that extension, never one the page names.
-        Takes no arguments.
+        ``refresh: true`` exchanges a new token instead of answering the held
+        one, for a page whose service refused it.
 
         Returns ``ok: true`` with ``access_token``, ``expires_in`` (seconds)
         and ``service_url``; or ``ok: false`` with ``error`` when nobody is
@@ -48,4 +63,4 @@ class PageTokenRpc(PoolRpc):
         """
         if not request.caller:
             raise PoolRefusal(self.PAGE_ONLY, RpcErrorCode.FORBIDDEN)
-        return await self._tokens.reply_for(request.caller)
+        return await self._tokens.reply_for(request.caller, refresh=args.refresh)

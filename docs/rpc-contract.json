@@ -4330,6 +4330,20 @@
       "title": "PageRequest",
       "type": "object"
     },
+    "PageTokenArgs": {
+      "additionalProperties": false,
+      "description": "The arguments of `extension_service_token`.",
+      "properties": {
+        "refresh": {
+          "default": false,
+          "description": "Exchange a new token rather than answer the one igni holds: the service refused that one (a `401`), and it would refuse it again.",
+          "title": "Refresh",
+          "type": "boolean"
+        }
+      },
+      "title": "PageTokenArgs",
+      "type": "object"
+    },
     "PageTokenReply": {
       "description": "An access token an extension page uses to call its own service.\n\nWhen there is none to give (nobody is signed in, or the extension\nhas no service), `ok` is false and `error` says why.",
       "properties": {
@@ -11048,10 +11062,10 @@
       "access": "page",
       "area": "page_token",
       "args": {
-        "$ref": "#/defs/NoArgs"
+        "$ref": "#/defs/PageTokenArgs"
       },
       "correlate": null,
-      "doc": "Get an access token for the calling extension's own service.\n\nOnly an extension's page asks, through igni's window, which sets the\nrequest's `caller` to the page's extension; the token's audience is\nthe service recorded for that extension, never one the page names.\nTakes no arguments.\n\nReturns `ok: true` with `access_token`, `expires_in` (seconds)\nand `service_url`; or `ok: false` with `error` when nobody is\nsigned in, the extension has no service, or igni server refused the\nexchange \u2014 states a page shows rather than failures. The answer goes\nonly to the connection that asked. Fails when the request has no\n`caller` or this igni mounts no token exchange.",
+      "doc": "Get an access token for the calling extension's own service.\n\nOnly an extension's page asks, through igni's window, which sets the\nrequest's `caller` to the page's extension; the token's audience is\nthe service recorded for that extension, never one the page names.\n`refresh: true` exchanges a new token instead of answering the held\none, for a page whose service refused it.\n\nReturns `ok: true` with `access_token`, `expires_in` (seconds)\nand `service_url`; or `ok: false` with `error` when nobody is\nsigned in, the extension has no service, or igni server refused the\nexchange \u2014 states a page shows rather than failures. The answer goes\nonly to the connection that asked. Fails when the request has no\n`caller` or this igni mounts no token exchange.",
       "duration": "network",
       "may_stream": [],
       "reply": "rpc_response",
