@@ -13,6 +13,7 @@ Concerns owned:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -28,12 +29,23 @@ class PendingMessageJournal:
     Wraps the low-level :class:`PendingMessageStore` with methods
     named for the run pipeline's steps + a small state slot for
     the ids the previous ``detect_interrupted_run`` call flagged
-    for drop."""
+    for drop.
 
-    def __init__(self, store: PendingMessageStore, session_id: str) -> None:
+    ``session_id`` may be a callable, asked on every write: the backend's
+    session object keeps its identity across New chat and a sidebar switch
+    while its id changes, and a message belongs to the session it was sent
+    in, not the one the backend booted with."""
+
+    def __init__(self, store: PendingMessageStore, session_id: str | Callable[[], str]) -> None:
         self._store = store
-        self._session_id = session_id
+        self._session_id_of: Callable[[], str] = (
+            session_id if callable(session_id) else (lambda: session_id)
+        )
         self._ids_to_drop: list[str] = []
+
+    @property
+    def _session_id(self) -> str:
+        return self._session_id_of()
 
     @property
     def store(self) -> PendingMessageStore:

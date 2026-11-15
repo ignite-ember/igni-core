@@ -106,7 +106,8 @@ class RunController:
         self._stream_factory = stream_factory
         self._supervisor = supervisor
         self._gate = gate
-        self._pending_journal = PendingMessageJournal(pending_store, session.session_id)
+        # Asked per write: New chat and a sidebar switch change the id.
+        self._pending_journal = PendingMessageJournal(pending_store, lambda: session.session_id)
         self._http_client_manager = http_client_manager or ModelHttpClientManager()
         self._prompt_builder = PromptBuilder(session)
         self._hook_gate = RunHookGate(session.hook_executor, session.session_id)
