@@ -314,9 +314,15 @@ class Session(SessionSurface):
 
     # ── Message handling (headless path) ──────────────────────
 
-    async def handle_message(self, message: str, *, media: MessageMedia | None = None) -> str:
-        """Handle a single user message and return the response."""
-        result = await self.message_handler.handle(message, media)
+    async def handle_message(
+        self, message: str, *, media: MessageMedia | None = None, context: str = ""
+    ) -> str:
+        """Handle a single user message and return the response.
+
+        ``context`` is a hook's text for the agent (a ``SessionStart``
+        hook's ``systemMessage``), sent after the message.
+        """
+        result = await self.message_handler.handle(message, media, context=context)
         # A side-observer: always safe to fire once the pipeline returns.
         try:
             RunMessagesDebugDumper.dump_team(self.main_team)

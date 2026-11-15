@@ -161,6 +161,28 @@ async def test_a_headless_session_removes_the_ephemeral_agents_it_made_when_it_e
         assert session.pool.ephemeral.cleanup.call_count == expected
 
 
+async def test_a_session_start_hooks_context_goes_with_the_first_turn_only():
+    """A SessionStart hook's systemMessage never reached the agent
+    (campaign R117)."""
+    session = _session(_Team(RunOutput(status=RunStatus.completed, content="OTTO-7")))
+    sent: list[tuple[str, str]] = []
+    handle = session.handle_message
+
+    async def handle_message(message, *, context=""):
+        sent.append((message, context))
+        return await handle(message)
+
+    session.handle_message = handle_message
+    session.hook_executor = MagicMock()
+    session.hook_executor.execute = AsyncMock(
+        return_value=SimpleNamespace(should_continue=True, message="The mascot is OTTO-7.")
+    )
+    with patch("igni_core.core.session.session_run.Session", return_value=session):
+        await run_single_message(MagicMock(), "what is the mascot?")
+
+    assert sent == [("what is the mascot?", "The mascot is OTTO-7.")]
+
+
 async def test_a_bare_help_prints_the_commands():
     """B35: a bare ``/help`` opens a panel in the clients, so its result has
     no content, and ``igni -m /help`` printed nothing."""

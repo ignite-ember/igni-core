@@ -63,18 +63,30 @@ class SessionRun(ABC):
             resume_session_id=resume_session_id,
             additional_dirs=additional_dirs,
         )
+        #: What a ``SessionStart`` hook said for the agent, until the first turn carries it.
+        self._start_context = ""
 
     # ── Hook emit sites (single source of truth) ──────────────────
 
     async def _fire_session_start(self) -> None:
-        """Emit the ``SessionStart`` hook with a typed payload."""
-        await self._session.hook_executor.execute(
+        """Emit the ``SessionStart`` hook with a typed payload.
+
+        A hook's ``systemMessage`` is context for the agent (HOOKS.md:
+        "context loading", "shown to the agent"); it was discarded, so a
+        SessionStart hook could set nothing up for the model (campaign
+        R117). It rides on the first turn, as a UserPromptSubmit hook's
+        does: a ``<hook-context>`` block after the text.
+        """
+        result = await self._session.hook_executor.execute(
             event=HookEvent.SESSION_START.value,
             payload=SessionLifecyclePayload(
                 session_id=self._session.session_id,
                 resumed=bool(self._resume_session_id),
             ),
         )
+        message = getattr(result, "message", "")
+        if getattr(result, "should_continue", True) is True and isinstance(message, str):
+            self._start_context = message
 
     async def _fire_session_end(self) -> None:
         """Emit the ``SessionEnd`` hook with a typed payload."""
@@ -110,8 +122,16 @@ class SessionRun(ABC):
         if resolved_files:
             display.print_info(f"Resolved: {', '.join(resolved_files)}")
 
+        context, self._start_context = self._start_context, ""
+        # Asked with ``context`` only when there is one: a session double
+        # that takes the message alone keeps working.
+
         start_time = time.monotonic()
-        response = await session.handle_message(message)
+        response = (
+            await session.handle_message(message, context=context)
+            if context
+            else await session.handle_message(message)
+        )
         elapsed = time.monotonic() - start_time
         # A failed turn was printed as an error already; its text is not a
         # reply. Typed check, as in ``_emit_pending_plan``: a loosely held

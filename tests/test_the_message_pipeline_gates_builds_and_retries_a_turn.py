@@ -435,3 +435,19 @@ async def test_a_hook_with_no_message_adds_no_context_block():
 
     ((sent, _),) = rig.team.calls
     assert "<hook-context>" not in sent
+
+
+@pytest.mark.asyncio
+async def test_a_session_start_hooks_context_rides_on_the_message_before_the_prompt_hooks():
+    hooks = _Hooks(UserPromptSubmit=SimpleNamespace(should_continue=True, message="B"))
+    rig = _Rig(hooks=hooks)
+
+    await rig.handler.handle("hi", context="The mascot is OTTO-7.")
+
+    ((sent, _),) = rig.team.calls
+    assert (
+        "hi\n<hook-context>The mascot is OTTO-7.</hook-context>\n<hook-context>B</hook-context>"
+        in sent
+    )
+    (payload,) = hooks.payloads("UserPromptSubmit")
+    assert payload.message == "hi"

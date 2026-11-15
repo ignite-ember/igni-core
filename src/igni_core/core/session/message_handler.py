@@ -137,8 +137,15 @@ class SessionMessageHandler:
         extract = self._deps.extract_response_text or response_text.extract_reply_text
         return extract(response)
 
-    async def handle(self, message: str, media: MessageMedia | None = None) -> str:
-        """Handle a single user message and return the response."""
+    async def handle(
+        self, message: str, media: MessageMedia | None = None, *, context: str = ""
+    ) -> str:
+        """Handle a single user message and return the response.
+
+        ``context`` is a hook's text for the agent that came before this
+        message (a ``SessionStart`` hook's); it is sent the way a
+        ``UserPromptSubmit`` hook's is, after the text.
+        """
         self.last_failure = ""
         await self._deps.ensure_mcp()
 
@@ -149,14 +156,16 @@ class SessionMessageHandler:
             return self._blocked(verdict.reason)
         message = verdict.value.message
 
-        blocked, context = await self._check_user_prompt_hook(message)
+        blocked, prompt_context = await self._check_user_prompt_hook(message)
         if blocked is not None:
             return blocked
 
         guardrail_prefix = await self._guardrail_prefix(message)
         # A hook's context rides on the message as the backend puts it
         # (``RunController``): a ``<hook-context>`` block after the text.
-        prompt = f"{message}\n<hook-context>{context}</hook-context>" if context else message
+        prompt = message + "".join(
+            f"\n<hook-context>{text}</hook-context>" for text in (context, prompt_context) if text
+        )
         effective_message = self._build_effective_message(prompt, guardrail_prefix)
 
         try:
