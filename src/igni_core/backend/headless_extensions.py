@@ -191,6 +191,7 @@ class HeadlessExtensions:
         self._registry = ExtensionRegistry()
         self._channel: HostChannel | None = None
         self._contributions: ExtensionContributions | None = None
+        self._plugins_dir: Path | None = None
 
     @property
     def registry(self) -> ExtensionRegistry:
@@ -214,6 +215,7 @@ class HeadlessExtensions:
             # version that worked and kept one that could not start.
             launcher = self._launcher(store)
             await self._sync(store, settings, lifecycle=launcher)
+        plugins_before = self._plugin_dirs()
         try:
             await asyncio.wait_for(
                 launcher.start_installed(skip=set(self._registry.ids())), self.START_TIMEOUT_S
@@ -234,7 +236,20 @@ class HeadlessExtensions:
         # The one turn's prompt is built by the rebuild below: what the
         # extensions contribute to it has to be in by then.
         await self._contributions_settled()
+        if self._plugin_dirs() != plugins_before:
+            # An extension's plugin is copied in as the extension starts —
+            # after this run's skills, hooks and agents were loaded. Without
+            # a reload the first run after an install had none of them
+            # ("Unknown command"), and only the next run did.
+            session.reload_plugins()
         session.reload_group_agents()
+
+    def _plugin_dirs(self) -> set[str]:
+        """The plugins installed now, by directory name."""
+        plugins_dir = self._plugins_dir
+        if plugins_dir is None or not plugins_dir.is_dir():
+            return set()
+        return {child.name for child in plugins_dir.iterdir() if child.is_dir()}
 
     async def _contributions_settled(self) -> None:
         if self._contributions is not None:
@@ -246,6 +261,7 @@ class HeadlessExtensions:
         settings = session.settings
         rpc = ExtensionRpc(self._registry)
         plugins_dir = PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir
+        self._plugins_dir = Path(plugins_dir)
         hooks = ExtensionHooks(registry=self._registry)
         contributions = ExtensionContributions(
             registry=self._registry,
