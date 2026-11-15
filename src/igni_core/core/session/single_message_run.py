@@ -100,12 +100,30 @@ class SingleMessageRun(SessionRun):
             self._emit_pending_plan()
             await self._fire_session_end()
         finally:
+            self._cleanup_ephemeral_agents()
             await extensions.stop()
         if not succeeded:
             # The run stopped at a confirmation nobody here can answer,
             # found no model, or failed: said on stderr already, and the
             # exit code says it to whatever ran ``igni -m``.
             raise SystemExit(self.FAILED_EXIT_CODE)
+
+    def _cleanup_ephemeral_agents(self) -> None:
+        """Remove the agents this run created, as the app does when a session ends.
+
+        ``orchestration.auto_cleanup`` (on by default) removes ephemeral
+        agents when the session ends; the backend's shutdown and the
+        interactive loop did, a headless run did not, so every later
+        session's pool and ``/agents`` list carried them (campaign R131).
+        """
+        session = self._session
+        # Typed checks: a loosely held session (a test double) answers
+        # with truthy objects that are not booleans.
+        if session.settings.orchestration.auto_cleanup is not True:
+            return
+        pool = session.pool
+        if getattr(pool, "has_ephemeral", False) is True:
+            pool.ephemeral.cleanup()
 
     def _report_unanswered_sub_agent_pauses(self) -> bool:
         """Say which sub-agent calls waited on a confirmation; ``False`` if any did.

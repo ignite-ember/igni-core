@@ -149,6 +149,18 @@ async def test_a_sub_agent_pause_nobody_could_answer_exits_non_zero():
     assert "sub-agent's run paused for confirmation on ['run_shell_command']" in message
 
 
+async def test_a_headless_session_removes_the_ephemeral_agents_it_made_when_it_ends():
+    """orchestration.auto_cleanup: a headless run left .igni/agents.tmp in
+    place, and every later session listed its agents (campaign R131)."""
+    for auto_cleanup, expected in ((True, 1), (False, 0)):
+        session = _session(_Team(RunOutput(status=RunStatus.completed, content="made it")))
+        session.settings.orchestration.auto_cleanup = auto_cleanup
+        session.pool = SimpleNamespace(has_ephemeral=True, ephemeral=MagicMock())
+        with patch("igni_core.core.session.session_run.Session", return_value=session):
+            await run_single_message(MagicMock(), "create a helper agent")
+        assert session.pool.ephemeral.cleanup.call_count == expected
+
+
 async def test_a_bare_help_prints_the_commands():
     """B35: a bare ``/help`` opens a panel in the clients, so its result has
     no content, and ``igni -m /help`` printed nothing."""
