@@ -86,10 +86,10 @@ class ProtectedPathStage(PermissionStage):
         except ValueError:
             return []
         targets: list[str] = []
-        for i, token in enumerate(tokens):
-            if token in cls._REDIRECTS and i + 1 < len(tokens):
+        for i, word in enumerate(tokens):
+            if word in cls._REDIRECTS and i + 1 < len(tokens):
                 targets.append(tokens[i + 1])
-            elif token == "tee":
+            elif word == "tee":
                 for arg in tokens[i + 1 :]:
                     if arg in {"|", ";", "&&", "||", "&"} or arg in cls._REDIRECTS:
                         break
