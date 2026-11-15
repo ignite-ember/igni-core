@@ -46,6 +46,7 @@ def _runtime(session_id: str, project_dir: Path) -> SessionRuntime:
     backend.project_dir = project_dir
     backend.processing = False
     backend.shutdown = AsyncMock()
+    backend.fire_session_start_hook = AsyncMock()
     return SessionRuntime(backend=backend, rpc_table={}, queue=[], transport=MagicMock())
 
 
@@ -223,6 +224,19 @@ async def test_attaching_a_session_returns_its_id_and_directory(tmp_path) -> Non
 
     assert result == AttachSessionResult(session_id="chat", project_dir=str(rig.project))
     assert rig.resumed == ["chat"]
+
+
+async def test_opening_or_creating_a_session_fires_its_session_start_hook(tmp_path) -> None:
+    """HOOKS.md: SessionStart fires when a session begins or resumes. In the
+    backend it fired only on an explicit RPC, never on sessions.create or
+    open (campaign R117)."""
+    rig = _rig(tmp_path)
+
+    await rig.router.attach("chat", None)
+
+    runtime = rig.router.pool.find("chat")
+    assert runtime is not None
+    runtime.backend.fire_session_start_hook.assert_awaited_once()
 
 
 async def test_a_refused_attach_is_returned_as_it_is_and_builds_no_runtime(tmp_path) -> None:

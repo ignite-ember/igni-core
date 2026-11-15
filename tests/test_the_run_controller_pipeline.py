@@ -157,6 +157,7 @@ class _Rig:
             main_team=self.team,
             guardrail_runner=SimpleNamespace(warning_prefix=_warning_prefix),
             todo_store=TodoStore(),
+            take_session_start_context=lambda: "",
             memory_mirror=_Mirror(),
             db="the-db",
         )
@@ -817,3 +818,18 @@ class TestTheTodoListIsWrittenAfterTheRunSavesItsSession:
         rig, saved = self._rig(change=False)
         await rig.run()
         assert saved == []
+
+
+class TestASessionStartHookContextRidesOnTheFirstTurn:
+    async def test_it_comes_before_the_prompt_hook_s(self):
+        """As ``igni -m`` sends them (campaign R117)."""
+        rig = _Rig()
+        rig.controller._session.take_session_start_context = lambda: "Mascot OTTO-7."
+        rig.hooks.submit = HookGateResult(should_continue=True, context_message="Code ZEBRA.")
+
+        await rig.run("hi")
+
+        sent = rig.arun_calls[0][0]
+        assert sent.endswith(
+            "\n<hook-context>Mascot OTTO-7.</hook-context>\n<hook-context>Code ZEBRA.</hook-context>"
+        )

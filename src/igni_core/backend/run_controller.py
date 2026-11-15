@@ -517,8 +517,14 @@ class RunController:
         message = build.message
         media = build.media
 
-        if gate.context_message:
-            message = f"{message}\n<hook-context>{gate.context_message}</hook-context>"
+        # A SessionStart hook's context first, then the prompt hook's, as
+        # ``igni -m`` sends them: ``<hook-context>`` blocks after the text.
+        start_context = self._session.take_session_start_context()
+        message += "".join(
+            f"\n<hook-context>{context}</hook-context>"
+            for context in (start_context, gate.context_message)
+            if context
+        )
 
         # Guardrails, on the path the portal actually uses. They inform rather
         # than block, so the caveat is prepended and the model sees it before

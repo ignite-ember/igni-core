@@ -109,6 +109,7 @@ def _controller(stream_messages: list[msg.Message]) -> tuple[RunController, _Jou
         main_team=SimpleNamespace(arun=lambda *a, **k: None),
         guardrail_runner=SimpleNamespace(warning_prefix=_no_prefix),
         todo_store=TodoStore(),
+        take_session_start_context=lambda: "",
         memory_mirror=None,
     )
     controller._stream_factory = _stream
