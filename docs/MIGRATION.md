@@ -104,7 +104,7 @@ See `igni-integration.md` in the CodeIndex repository's docs (`igni__code-index`
 
 ### 5. Default Model
 
-Claude Code defaults to Anthropic models (Claude). igni defaults to **MiniMax M2.7** through the igni hosted endpoint, but supports any model:
+Claude Code defaults to Anthropic models (Claude). igni hosts no model and has no built-in default: it uses whatever your registry and your organisation's igni server provide (for example **igni 1.0 27B**, `igni-1.0-27b`, igni's own model, which your organisation serves on its own GPUs), and supports any model:
 
 ```yaml
 # Use any OpenAI-compatible model
@@ -137,7 +137,7 @@ models:
 | Claude Code | igni | Notes |
 |---|---|---|
 | `claude` | `igni` | Main command |
-| `--model claude-sonnet-4-6` | `--model MiniMax-M2.7` | Different default, both support overrides |
+| `--model claude-sonnet-4-6` | `--model igni-1.0-27b` | Different default, both support overrides |
 | `--continue` / `-c` | `--continue` | Resume last session |
 | `--resume <id>` | `--session-id <id>` | Resume specific session |
 | `--print` / `-p` | `-m "prompt"` | Non-interactive single task |

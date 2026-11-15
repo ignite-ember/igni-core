@@ -47,12 +47,12 @@ class TestSaveDefaultModel:
         unrelated keys."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-        _save_default_model("MiniMax-M2.7")
+        _save_default_model("igni-1.0-27b")
 
         cfg_path = tmp_path / CONFIG_DIR / "config.yaml"
         assert cfg_path.exists()
         cfg = yaml.safe_load(cfg_path.read_text())
-        assert cfg == {"models": {"default": "MiniMax-M2.7"}}
+        assert cfg == {"models": {"default": "igni-1.0-27b"}}
 
     def test_preserves_unrelated_keys(self, tmp_path, monkeypatch):
         """Writing the default must not clobber other top-level keys
@@ -99,10 +99,10 @@ class TestSaveDefaultModel:
         cfg_dir.mkdir(parents=True)
         (cfg_dir / "config.yaml").write_text(yaml.safe_dump({"models": ["bogus", "list"]}))
 
-        _save_default_model("MiniMax-M2.7")
+        _save_default_model("igni-1.0-27b")
 
         cfg = yaml.safe_load((cfg_dir / "config.yaml").read_text())
-        assert cfg["models"] == {"default": "MiniMax-M2.7"}
+        assert cfg["models"] == {"default": "igni-1.0-27b"}
 
     def test_reports_a_save_that_did_not_land(self, tmp_path):
         """A config path that can't be written comes back ``False``
@@ -122,8 +122,8 @@ class TestSessionPreferencesStore:
     def test_set_then_get_returns_model(self, tmp_path):
         """Basic upsert + read."""
         store = SessionPreferencesStore(tmp_path / "state.db")
-        assert store.set_model("sess-a", "MiniMax-M2.7") is True
-        assert store.get_model("sess-a") == "MiniMax-M2.7"
+        assert store.set_model("sess-a", "igni-1.0-27b") is True
+        assert store.get_model("sess-a") == "igni-1.0-27b"
 
     def test_get_unknown_session_returns_none(self, tmp_path):
         """No row → ``None``, not an error."""
@@ -150,15 +150,15 @@ class TestSessionPreferencesStore:
         """Closing and reopening the store yields the same value —
         i.e. the data is genuinely on disk, not just in memory."""
         db_path = tmp_path / "state.db"
-        SessionPreferencesStore(db_path).set_model("sess", "MiniMax-M2.7")
+        SessionPreferencesStore(db_path).set_model("sess", "igni-1.0-27b")
         # Fresh instance — new connection, no shared cache.
-        assert SessionPreferencesStore(db_path).get_model("sess") == "MiniMax-M2.7"
+        assert SessionPreferencesStore(db_path).get_model("sess") == "igni-1.0-27b"
 
     @pytest.mark.asyncio
     async def test_async_wrappers(self, tmp_path):
         store = SessionPreferencesStore(tmp_path / "state.db")
-        await store.aset_model("sess", "MiniMax-M2.7")
-        assert await store.aget_model("sess") == "MiniMax-M2.7"
+        await store.aset_model("sess", "igni-1.0-27b")
+        assert await store.aget_model("sess") == "igni-1.0-27b"
 
     @staticmethod
     def _locked(store: SessionPreferencesStore) -> None:

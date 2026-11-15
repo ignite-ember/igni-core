@@ -592,7 +592,7 @@ For organizations, administrators can enforce security policies that individual 
     ]
   },
   "models": {
-    "allowed": ["MiniMax-M2.7"]
+    "allowed": ["igni-1.0-27b"]
   }
 }
 ```

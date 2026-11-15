@@ -129,7 +129,7 @@ class TestClickParsesEachFlag:
         assert getattr(parsed(), field) is False
 
     def test_model_takes_its_value(self, parsed):
-        assert parsed("--model", "MiniMax-M2.7").model == "MiniMax-M2.7"
+        assert parsed("--model", "igni-1.0-27b").model == "igni-1.0-27b"
 
     def test_session_id_takes_its_value(self, parsed):
         assert parsed("--session-id", "abc12345").session_id == "abc12345"
