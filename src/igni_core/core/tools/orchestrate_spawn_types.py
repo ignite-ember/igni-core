@@ -168,6 +168,10 @@ class TeamBuildRequest(BaseModel):
     mode: str = ""
     #: The depth the team runs at.
     depth: int = 1
+    #: Where the members' tool hooks go, when the session has any.
+    hook_executor: SkipValidation[HookExecutor | None] = None
+    #: The session the team belongs to, for those hooks' payloads.
+    session_id: str = ""
 
 
 #: The two streaming coroutines a spawn delegates to. Both answer

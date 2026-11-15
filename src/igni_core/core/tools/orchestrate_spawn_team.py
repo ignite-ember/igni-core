@@ -21,6 +21,7 @@ import copy
 from typing import Any
 
 from igni_core.core.agno_telemetry import AgnoTelemetry
+from igni_core.core.hooks.subagent_tool_hook import SubAgentToolHook
 from igni_core.core.hooks.untrusted import UntrustedOutputHook
 from igni_core.core.tools.orchestrate_modes import TeamMode
 from igni_core.core.tools.orchestrate_spawn_runner import SpawnRunner
@@ -87,6 +88,8 @@ class TeamSpawn(SpawnRunner):
                 names=list(self._state.names),
                 mode=self._state.mode_raw,
                 depth=scope.current_depth + 1,
+                hook_executor=self._context.wiring.hook_executor,
+                session_id=self._context.wiring.session_id,
             ),
             self._context.deps,
         )
@@ -114,7 +117,11 @@ class TeamSpawn(SpawnRunner):
             if shared is None:
                 return SubTeamBuildResult(team=None, mode=None, error=request.pool.missing(name))
             member = copy.copy(shared)
-            member.tool_hooks = UntrustedOutputHook.on(getattr(member, "tool_hooks", None))
+            member.tool_hooks = SubAgentToolHook.on(
+                UntrustedOutputHook.on(getattr(member, "tool_hooks", None)),
+                request.hook_executor,
+                request.session_id,
+            )
             members.append(member)
 
         mode = TeamMode.parse(request.mode)
