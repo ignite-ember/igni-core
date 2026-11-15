@@ -33,7 +33,9 @@ class _Executor:
     def __init__(self) -> None:
         self.calls: list[tuple[HookEvent, Any]] = []
 
-    async def execute(self, *, event: HookEvent, payload: Any) -> None:
+    async def execute(self, *, event: HookEvent, payload: Any, target: str = "") -> None:
+        # The spawned agent's name is the matcher target (HookExecutor.execute).
+        assert target == getattr(payload, "agent_name", "")
         self.calls.append((event, payload))
 
     def of(self, event: HookEvent) -> list[Any]:
