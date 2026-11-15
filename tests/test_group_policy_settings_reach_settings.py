@@ -27,6 +27,8 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.core.config.cli_overrides import CliOverrides, PermissionOverrides
 from igni_core.core.config.group_policy.cache import GroupPolicyCache
@@ -38,6 +40,19 @@ from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFe
 from igni_core.core.config.group_policy.trust import PackTrust
 from igni_core.core.config.settings_loader import SettingsLoader
 from tests.group_policy_signing import ISSUER, sign_in, store
+
+
+@pytest.fixture(autouse=True)
+def _server_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CLI run fetches the pack at start when signed in; here the
+    server is a boundary, offline, so the run reads the stored pack."""
+    from igni_core.core.config.group_policy.transport import LiveFetchResult, SignedPackTransport
+
+    monkeypatch.setattr(
+        SignedPackTransport,
+        "fetch_into",
+        lambda self, cache: LiveFetchResult(stored=False, reason="offline in this test"),
+    )
 
 
 def _pack(payload: dict, *, enabled: bool = True) -> GroupPolicyPack:
