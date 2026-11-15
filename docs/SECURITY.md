@@ -521,7 +521,9 @@ For organizations, administrators can enforce security policies that individual 
 
 ```json
 // /Library/Application Support/igni/managed-settings.yaml (macOS)
-// /etc/ignite-ember/managed-settings.json (Linux)
+// /etc/igni/managed-settings.yaml (Linux)
+// %PROGRAMDATA%\igni\managed-settings.yaml (Windows)
+// The file is YAML; JSON, as here, is valid YAML too.
 {
   "permissions": {
     "web_search": "deny",
@@ -635,7 +637,7 @@ For teams that can't send code to the cloud, self-hosted CodeIndex is planned fo
 | Audit logging | Not built-in | Built-in to `~/.igni/audit.log` |
 | Agent isolation | Tools per agent definition | Same — tools declared in `.md` |
 | Depth limits | Sub-agents capped at 1 level | Configurable: depth, agent count, timeout |
-| Managed settings | Enterprise policy files | Same — managed-settings.json |
+| Managed settings | Enterprise policy files | Same — managed-settings.yaml |
 | MCP security | Approval prompts, no passthrough | Same + tool filtering per agent |
 | Hooks | PreToolUse/PostToolUse/Stop | Same events, same format |
 | Guardrails | Not built-in | PII detection, prompt injection, moderation pre-hooks |
@@ -663,7 +665,7 @@ For teams that can't send code to the cloud, self-hosted CodeIndex is planned fo
 
 ### For Enterprise
 
-- [ ] Deploy managed-settings.json via MDM/configuration management
+- [ ] Deploy managed-settings.yaml via MDM/configuration management
 - [ ] Self-host CodeIndex for code data residency (planned — coming soon)
 - [ ] Restrict allowed MCP servers to approved list
 - [ ] Enable network deny-by-default with whitelisted domains
