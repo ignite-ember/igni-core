@@ -117,6 +117,9 @@ class ResolvedBatch(BaseModel):
     requirements: list[Any] = []
     run_id: str | None = None
     errors: list[msg.Error] = []
+    #: The calls the person rejected: Agno's continuation streams no tool
+    #: events for them, so the backend sends the window their cards.
+    declined: list[RequirementTool] = []
 
     def claim(self, run_id: str | None) -> bool:
         """Whether a requirement of ``run_id`` can join this batch.

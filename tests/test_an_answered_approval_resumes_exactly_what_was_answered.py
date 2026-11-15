@@ -147,7 +147,14 @@ async def test_an_answered_batch_resumes_its_run_with_each_requirement_as_decide
     assert call["requirements"] == [ok, no]
     assert ok.confirmation is True and no.confirmation is False
     assert (call["stream"], call["stream_events"]) == (True, True)
-    assert [m.type for m in out] == ["content_delta", "run_completed"]
+    # The declined call's card first: the continuation streams none for it.
+    assert [m.type for m in out] == [
+        "tool_started",
+        "tool_completed",
+        "content_delta",
+        "run_completed",
+    ]
+    assert out[1].is_rejected is True
     assert store.pending_ids() == []
 
 

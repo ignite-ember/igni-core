@@ -26,14 +26,21 @@ from igni_core.backend.hitl_stream_mux import HITLStreamMultiplexer
 from igni_core.backend.hitl_tracer import HITLTracer
 from igni_core.backend.pause_handler import PauseHandler
 from igni_core.backend.pending_requirements_store import PendingRequirementsStore
-from igni_core.backend.schemas_hitl import PausedRun, ResolvedBatch, StreamFactory
+from igni_core.backend.schemas_hitl import (
+    PausedRun,
+    RequirementTool,
+    ResolvedBatch,
+    StreamFactory,
+)
 from igni_core.backend.schemas_pause import PauseHandleResult
 from igni_core.backend.schemas_run import StopHookPayload
+from igni_core.core.approvals.declined import declined_note
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.hooks.extension_values import StopValue
 from igni_core.core.session.persistence.run_history import RunHistory
 from igni_core.protocol import messages as msg
+from igni_core.protocol.agno_tool_formatter import AgnoToolEventFormatter
 
 if TYPE_CHECKING:
     from igni_core.core.session import Session
@@ -44,6 +51,8 @@ _HITL_LLM_LOGGER = logging.getLogger("igni_core.llm_calls")
 
 #: Stateless, so one is shared by every controller.
 _DECISION_APPLIER = AgnoDecisionApplier()
+#: Names and argument lines for the cards of declined calls, as the stream's.
+_TOOL_FORMATTER = AgnoToolEventFormatter()
 
 
 class HitlController:
@@ -165,6 +174,8 @@ class HitlController:
                 batch.errors.append(msg.Error(text=applied.reason))
                 continue
             batch.requirements.append(entry.req)
+            if d.action != msg.HITLAction.CONFIRM.value:
+                batch.declined.append(RequirementTool.of(entry.req))
             persisted = self.permissions.persist_choice(d, entry.req)
             if not persisted.ok and persisted.reason:
                 logger.debug(
@@ -198,6 +209,33 @@ class HitlController:
         _HITL_LLM_LOGGER.info("resolve_hitl_batch: atomic mode flip → %s (%s)", target, switch.text)
         return msg.Error(text=switch.text) if switch.refused else None
 
+    @staticmethod
+    def _declined_cards(batch: ResolvedBatch) -> list[msg.Message]:
+        """A started and a rejected-completed frame for each declined call.
+
+        The window draws a tool card from ``tool_started`` and marks it "Not
+        run" from ``tool_completed.is_rejected``. Agno's continuation streams
+        neither for a rejected call, so the card appeared only after a
+        reload, from the history. The result is the note the model is given.
+        """
+        cards: list[msg.Message] = []
+        run_id = batch.run_id or ""
+        for tool in batch.declined:
+            name = tool.name or "tool"
+            cards.append(
+                msg.ToolStarted(
+                    tool_name=name,
+                    friendly_name=_TOOL_FORMATTER.friendly_name(name),
+                    args_summary=_TOOL_FORMATTER.args_summary(name, tool.args),
+                    run_id=run_id,
+                )
+            )
+            note = declined_note(tool.name)
+            cards.append(
+                msg.ToolCompleted(summary=note, full_result=note, run_id=run_id, is_rejected=True)
+            )
+        return cards
+
     async def _continue(self, batch: ResolvedBatch) -> AsyncIterator[msg.Message]:
         """Continue the paused run with the answered requirements."""
         run_id = batch.run_id
@@ -209,6 +247,8 @@ class HitlController:
         # rather than leave it paused with nothing to answer.
         if run_id:
             self._store.begin_continuing(run_id)
+        for proto in self._declined_cards(batch):
+            yield proto
         try:
             async for proto in self._stream_factory(
                 self._session.main_team.acontinue_run(
