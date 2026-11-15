@@ -81,6 +81,12 @@ class SessionRuntimeFactory:
             gate=self._wiring.gate,
         )
         await backend.startup()
+        if self._wiring.extension_mcp is not None:
+            # The extensions run once, on the boot session's manager; this
+            # session is offered their tools too, and its agents are built
+            # again to carry them.
+            backend.mcp_manager.share_extensions_of(self._wiring.extension_mcp)
+            backend.reload_agents()
         queue = backend.message_queue
         backend.wire_queue_hook(queue)
         stamped = self._wiring.stamped(backend)

@@ -249,6 +249,7 @@ class BackendApp:
                 origins=extensions.origins,
                 extension_store=store,
                 notifications=notifications.center,
+                extension_mcp=backend.mcp_manager,
             ),
             settings=settings,
             dirs=ProjectDirs(

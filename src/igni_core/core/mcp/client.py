@@ -148,6 +148,33 @@ class MCPClientManager:
         #: (:mod:`igni_core.core.mcp.request_meta`). The extensions layer
         #: sets it: it is how an extension learns whom a call is for.
         self.extension_request_meta: RequestMeta | None = None
+        #: The manager the backend's extensions are connected on, when
+        #: this is another session's (:meth:`share_extensions_of`).
+        self._extensions_owner: MCPClientManager | None = None
+
+    def share_extensions_of(self, owner: MCPClientManager) -> None:
+        """Offer this session the extensions connected on ``owner``.
+
+        An extension runs once per backend, connected on the boot
+        session's manager; a session a window created had its own manager
+        and so none of their tools (EXTENSION_ROUTING_AND_CONCURRENCY.md).
+        Its clients are offered here as they are there — connected and
+        disconnected by ``owner``, never by this manager.
+        """
+        if owner is not self:
+            self._extensions_owner = owner
+
+    def _shared(self) -> dict[str, MCPTools]:
+        """The extension clients connected on the owner, by name."""
+        owner = self._extensions_owner
+        if owner is None:
+            return {}
+        return {
+            name: client
+            for name, client in owner._clients.items()
+            if name not in self._clients
+            and getattr(owner.configs.get(name), "source", None) == "extension"
+        }
 
     # ── Connection gate ───────────────────────────────────────────
 
@@ -397,7 +424,8 @@ class MCPClientManager:
         connected" and "disconnected" so callers get a single
         missing-client idiom.
         """
-        return self._clients.get(name)
+        client = self._clients.get(name)
+        return client if client is not None else self._shared().get(name)
 
     def all_clients(self) -> dict[str, MCPTools]:
         """Return a shallow copy of the ``name → client``
@@ -409,7 +437,7 @@ class MCPClientManager:
         attribute. The returned dict is a copy so external
         mutations don't leak into the manager's own state.
         """
-        return dict(self._clients)
+        return {**self._shared(), **self._clients}
 
     def get_tool(self, name: str, tool: str) -> Callable[..., Any] | None:
         """Return the invoker of the registered tool ``tool`` of server ``name``.
@@ -443,8 +471,9 @@ class MCPClientManager:
         return list(self.configs.keys())
 
     def list_connected(self) -> list[str]:
-        """List currently connected MCP server names."""
-        return list(self._clients.keys())
+        """List currently connected MCP server names, the shared
+        extensions' included."""
+        return [*self._clients.keys(), *self._shared().keys()]
 
     def list_required(self) -> list[str]:
         """List servers required by admin policy that are not

@@ -222,3 +222,36 @@ async def test_the_boot_session_becomes_the_default_on_a_transport_stamping_its_
 
     await runtime.transport.send(msg.Info(text="hi"))
     assert [m.session_id for m in rig.transport.sent] == ["boot-1"]
+
+
+async def test_a_session_is_offered_the_extensions_and_built_again_to_carry_them(
+    tmp_path,
+) -> None:
+    """The extensions run on the boot session's manager; a session the pool
+    makes had none of their tools (campaign R301)."""
+    from dataclasses import replace
+
+    rig = _rig(tmp_path)
+    owner = object()
+    shared: list[object] = []
+    reloads: list[str] = []
+    rig.factory._wiring = replace(rig.wiring, extension_mcp=owner)
+
+    def startup_with_a_manager(server: _Server) -> None:
+        server.mcp_manager = SimpleNamespace(share_extensions_of=shared.append)  # type: ignore[attr-defined]
+        server.reload_agents = lambda: reloads.append(server.session_id)  # type: ignore[attr-defined]
+
+    original = _Server.startup
+
+    async def startup(self: _Server) -> None:
+        await original(self)
+        startup_with_a_manager(self)
+
+    _Server.startup = startup  # type: ignore[method-assign]
+    try:
+        await rig.factory.create("sess-a")
+    finally:
+        _Server.startup = original  # type: ignore[method-assign]
+
+    assert shared == [owner]
+    assert reloads == ["sess-a"]
