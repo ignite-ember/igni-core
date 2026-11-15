@@ -157,6 +157,23 @@ class MessageDispatcher:
         # First completed run: name the session in the background so
         # a queued follow-up isn't blocked on the naming model call.
         self._spawn_auto_name()
+        await self._run_queued()
+
+    async def _run_queued(self) -> None:
+        """Run, in order, what was queued for after the run and is still waiting.
+
+        A tool call inside the run takes a queued message into that run
+        (``core/hooks/queue``); a run with no tool call left it waiting until
+        some later, unrelated run called a tool. A message still queued when
+        the run ends is the next turn, as ``session.queue()`` promises. It
+        leaves the queue as its run starts: the run's own pending-message
+        record is what survives a crash from then on.
+        """
+        while len(self._queue):
+            text = self._queue[0]
+            del self._queue[0]
+            if not await self._stream(self._backend.run_message(text, media=None), ""):
+                return
 
     async def _stream(self, frames: AsyncIterator[Any], req_id: str) -> bool:
         """Send ``frames`` to every view under ``req_id``, then ``StreamEnd``.
