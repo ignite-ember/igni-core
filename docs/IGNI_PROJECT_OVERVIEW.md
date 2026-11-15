@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary
 
-**igni is a multi-agent AI coding assistant built on the Agno orchestration framework — released as v1.0.0 on 2026-07-30 (`git tag v1.0.0`).** Its core architectural differentiator is **CodeIndex** — a pre-built semantic + metadata index over the codebase produced by a separate backend (`igni__server`) and consumed locally as a per-commit **Neo4j graph + vector store** (BE-spawned, no Docker), so search runs on the user's machine and the server never holds a copy of the index. Self-published benchmarks put it at 82% directly-mergeable outputs vs Claude Code's 52% on a 12-case suite, but at ~33% slower wall time and 1/80th the per-run cost (driven by a smaller default model, MiniMax-M2.7, plus the pre-computed index). It holds extensive Claude Code parity (33/61 rows ✅, 1 explicit gap, 5 partials, 17 igni-only extras) and ships across four surfaces (Tauri desktop + VSCode + JetBrains + browser) from a single React bundle.
+**igni is a self-hosted, air-gapped agentic platform whose multi-agent runtime (igni-core) is built on the Agno orchestration framework — released as v1.0.0 on 2026-07-30 (`git tag v1.0.0`).** Its core architectural differentiator is **CodeIndex** — a pre-built semantic + metadata index over the codebase produced by a separate backend (`igni__server`) and consumed locally as a per-commit **Neo4j graph + vector store** (BE-spawned, no Docker), so search runs on the user's machine and the server never holds a copy of the index. Self-published benchmarks put it at 82% directly-mergeable outputs vs Claude Code's 52% on a 12-case suite, but at ~33% slower wall time and 1/80th the per-run cost (driven by a smaller default model, MiniMax-M2.7, plus the pre-computed index). It holds extensive Claude Code parity (33/61 rows ✅, 1 explicit gap, 5 partials, 17 igni-only extras) and ships across four surfaces (Tauri desktop + VSCode + JetBrains + browser) from a single React bundle.
 
 ---
 
@@ -404,7 +404,7 @@ Selected key citations. Line numbers refer to the files as of the snapshot read.
 
 ## Bottom Line
 
-igni is a credible, well-engineered, multi-agent AI coding assistant whose **CodeIndex producer/consumer split is a genuinely novel architectural choice** in a category where most competitors compute context per-conversation. Its Claude Code parity (33/61 ✅) and cross-tool compatibility make it a reasonable migration target for CC users, and its feature breadth (4 surfaces, plugin primitives, output styles, plan/acceptEdits modes, knowledge base, scheduling/looping/forking) gives it competitive parity in dimensions that matter.
+igni is a credible, well-engineered, self-hosted multi-agent platform whose **CodeIndex producer/consumer split is a genuinely novel architectural choice** in a category where most competitors compute context per-conversation. Its Claude Code parity (33/61 ✅) and cross-tool compatibility make it a reasonable migration target for CC users, and its feature breadth (4 surfaces, plugin primitives, output styles, plan/acceptEdits modes, knowledge base, scheduling/looping/forking) gives it competitive parity in dimensions that matter.
 
 The **honest caveats** for a stakeholder weighing it:
 
