@@ -230,3 +230,21 @@ class TestTheOrderTheRulesRun:
 
         with pytest.raises(InstallError, match="declares secrets"):
             preflight().check(extension, record())
+
+
+class TestASidecarIsRefusedAtInstall:
+    """``igni ext doctor`` says a sidecar bundle "will not install as it is",
+    and ``igni ext install`` installed it anyway, so it failed only at the
+    next start (campaign R243). igni cannot start a container image, so the
+    install refuses it as the doctor does."""
+
+    SIDECAR = {"sidecar": {"image": "ghcr.io/acme/sc:0.1.0", "mcp": {"transport": "stdio"}}}
+
+    def _sidecar(self) -> ExtensionManifest:
+        raw = load_dev().model_dump(mode="json", by_alias=True, exclude_none=True)
+        raw.pop("dev")
+        return ExtensionManifest.model_validate({**raw, **self.SIDECAR})
+
+    def test_the_install_command_refuses_it(self):
+        with pytest.raises(InstallError, match="sidecar image"):
+            InstallPreflight.check_manifest(self._sidecar())

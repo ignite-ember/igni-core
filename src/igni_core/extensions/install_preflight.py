@@ -64,8 +64,28 @@ class InstallPreflight:
             InstallError: The bundle is not installable, and why.
         """
         cls._check_contract(manifest)
+        cls._check_packaging(manifest)
         cls._check_deliverable(manifest)
         cls._check_tool_audience(manifest)
+
+    @staticmethod
+    def _check_packaging(manifest: ExtensionManifest) -> None:
+        """Refuse a sidecar image: igni cannot start one yet.
+
+        ``igni ext doctor`` already said such a bundle "will not install as it
+        is"; without this the install stored it and the next start-up failed
+        it, so the doctor's word and the install disagreed. Only the install
+        command runs it: the installer itself records a sidecar as a FAILED
+        entry with the same reason (``ExtensionConnection.config_for``).
+        """
+        if manifest.sidecar is None:
+            return
+        raise InstallError(
+            f"{manifest.id} is packaged as a sidecar image "
+            f"({manifest.sidecar.image}), and starting container images is not "
+            "implemented yet. Use 'python' to ship a package, 'endpoint' to "
+            "register a service you run, or 'dev' to run a command locally."
+        )
 
     @staticmethod
     def _check_contract(manifest: ExtensionManifest) -> None:
