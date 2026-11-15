@@ -93,6 +93,27 @@ class NoModelConfigured(OpenAILike):
         placeholder.ERROR_MESSAGE = cls.STALE_DEFAULT_MESSAGE.format(name=name, known=listed)
         return placeholder
 
+    EXPIRED_SIGN_IN_MESSAGE = (
+        "Your igni server sign-in for {email} expired at {expires_at}, so igni "
+        "server would refuse the request; it was not sent. Run `igni login` "
+        "to sign in again."
+    )
+
+    @classmethod
+    def for_expired_sign_in(cls, email: str, expires_at: object) -> NoModelConfigured:
+        """Factory for a model that needs igni server's token, when the
+        sign-in has expired.
+
+        The expiry is known before the request (docs/TOKEN.md): the model
+        was built anyway, the request went out with no token, and igni
+        server's raw 401 followed the warning.
+        """
+        placeholder = cls()
+        placeholder.ERROR_MESSAGE = cls.EXPIRED_SIGN_IN_MESSAGE.format(
+            email=email, expires_at=expires_at
+        )
+        return placeholder
+
     @classmethod
     def for_login_required(cls) -> NoModelConfigured:
         """Factory used by ``ModelRegistry.get_model`` when the

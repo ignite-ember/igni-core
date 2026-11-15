@@ -8,7 +8,7 @@ from typing import ClassVar
 
 from agno.models.base import Model
 
-from igni_core.core.auth.credentials import CloudCredentials
+from igni_core.core.auth.credentials import CloudCredentials, CredentialsStore
 from igni_core.core.auth.http_auth import CloudTokenAuth
 from igni_core.core.config.context_window import ContextWindowResolver
 from igni_core.core.config.llm_call_logger import LlmCallLogger
@@ -111,6 +111,11 @@ class ModelRegistry:
             # by a different route, so it gets the same treatment and a
             # message naming the model that went missing.
             self._warn_stale_default(resolved_name)
+            expired = self._expired_sign_in()
+            if expired is not None:
+                # Discovery found nothing because the sign-in expired: that,
+                # not an empty registry, is what to fix.
+                return expired
             return NoModelConfigured.for_stale_default(
                 resolved_name, self.settings.models.registry.keys()
             )
@@ -130,6 +135,9 @@ class ModelRegistry:
         # needs igni server's token anywhere else.
         if ModelRegistryEntry.same_origin(builder.endpoint_for(entry), self.settings.api_url):
             cloud_token, cloud_auth = self._cloud_token, self._cloud_auth
+            expired = self._expired_sign_in() if entry.needs_cloud_token() else None
+            if expired is not None:
+                return expired
         else:
             cloud_token, cloud_auth = None, None
             if self._cloud_token and entry.needs_cloud_token():
@@ -188,6 +196,16 @@ class ModelRegistry:
         self._catalog.register(name, builder)
 
     # ── Internals ─────────────────────────────────────────────────
+
+    def _expired_sign_in(self) -> NoModelConfigured | None:
+        """The placeholder that says the sign-in expired, when it has."""
+        if self._cloud_token is not None:
+            return None
+        result = CredentialsStore(self.settings.auth.credentials_file).load()
+        creds = result.creds if result.ok else None
+        if creds is None or not creds.is_expired():
+            return None
+        return NoModelConfigured.for_expired_sign_in(creds.email, creds.expires_at)
 
     def _warn_no_model(self) -> None:
         logger.warning(
