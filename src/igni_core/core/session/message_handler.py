@@ -56,6 +56,7 @@ from igni_core.core.session.schemas import (
     StopHookPayload,
     UserPromptSubmitHookPayload,
 )
+from igni_core.core.session.token_estimate import TokenEstimate
 from igni_core.core.utils import response as response_text
 from igni_core.core.utils.audit import AuditEntry, AuditLogger
 from igni_core.core.utils.display import DisplayManager
@@ -204,7 +205,10 @@ class SessionMessageHandler:
         metrics = final_run.metrics
         if not metrics:
             return
-        input_tokens = metrics.input_tokens or 0
+        # The last model call's context, cache included; the run's own
+        # metrics sum every tool iteration and leave a cached prefix out.
+        last = TokenEstimate.last_context(getattr(final_run, "messages", None))
+        input_tokens = last if last is not None else (metrics.input_tokens or 0)
         self._deps.budget.latch(input_tokens)
         await self._deps.compact_hook(input_tokens, self._deps.budget.window)
 

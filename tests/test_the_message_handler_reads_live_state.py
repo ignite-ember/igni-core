@@ -178,6 +178,57 @@ class TestTheTokenLatchAndCompactionActuallyFire:
         assert compacted == [(44_000, 128_000)]
 
 
+class TestACachedPromptIsMeasuredWhole:
+    @pytest.mark.asyncio
+    async def test_the_last_calls_cached_context_reaches_the_compactor(self):
+        """With prompt caching the run's ``input_tokens`` is the uncached
+        tail, 1 here, while the call read 18 246 tokens of context: an
+        entry with a 22 000-token window never compacted (campaign R077).
+        The run's summed metrics are not the measure either — each tool
+        iteration re-reads the cache — the last call's context is."""
+        from agno.metrics import MessageMetrics
+        from agno.models.message import Message
+
+        class _CachedTeam(_Team):
+            async def arun(self, message: str, **kwargs):
+                self.calls.append(message)
+                return RunOutput(
+                    status=RunStatus.completed,
+                    content="answer",
+                    metrics=RunMetrics(input_tokens=2, cache_read_tokens=36_000),
+                    messages=[
+                        Message(role="user", content=message),
+                        Message(
+                            role="assistant",
+                            content="x",
+                            metrics=MessageMetrics(input_tokens=1, cache_read_tokens=17_900),
+                        ),
+                        Message(role="tool", content="t"),
+                        Message(
+                            role="assistant",
+                            content="answer",
+                            metrics=MessageMetrics(input_tokens=1, cache_read_tokens=18_246),
+                        ),
+                    ],
+                )
+
+        compacted: list = []
+        budget = ContextBudget(window=22_000)
+        handler = _build(
+            team=_CachedTeam([]),
+            hooks=_Hooks(),
+            audit=_Audit(),
+            session_id_ref=lambda: "s-1",
+            budget=budget,
+            compact_calls=compacted,
+        )
+
+        await handler.handle("hello")
+
+        assert budget.last_input_tokens == 18_247
+        assert compacted == [(18_247, 22_000)]
+
+
 class TestTheHandlerReadsTheLiveSessionId:
     @pytest.mark.asyncio
     async def test_a_rotated_id_reaches_the_hooks_and_the_audit_log(self):

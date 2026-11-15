@@ -67,7 +67,9 @@ class ContextBreakdownReporter:
         for run in getattr(agno_session, "runs", None) or []:
             msgs = getattr(run, "messages", None)
             if msgs:
-                run_messages.extend(msgs)
+                # Agno stores each run's system message with it; that is
+                # the floor every prompt carries, not a turn.
+                run_messages.extend(m for m in msgs if getattr(m, "role", None) != "system")
         runs_tokens = min(TokenEstimate.chars(run_messages), total)
 
         return ContextBreakdown.from_totals(total=total, runs=runs_tokens)

@@ -70,3 +70,23 @@ async def test_runs_are_capped_at_the_total_and_the_floor_is_zero() -> None:
     result = await _reporter(AsyncMock(return_value=agno)).report()
 
     assert (result.total, result.runs, result.floor) == (10, 10, 0)
+
+
+@pytest.mark.asyncio
+async def test_the_stored_system_message_is_floor_not_runs() -> None:
+    """Agno stores the run's system message among its messages. Counted as
+    a turn, it ate the floor: /ctx said 'Floor: 0 tokens' for a session
+    whose system prompt alone was thousands (campaign R052, R149)."""
+    system = _msg("system", "s" * 40_000)
+    user = _msg("user", "u" * 400)
+    answer = _msg("assistant", "a" * 400, i=12_000, o=100)
+    agno = SimpleNamespace(
+        runs=[SimpleNamespace(messages=[system, user, answer])],
+        get_messages=MagicMock(return_value=[user, answer]),
+    )
+
+    result = await _reporter(AsyncMock(return_value=agno)).report()
+
+    assert result.total == 12_100
+    assert result.runs == 200
+    assert result.floor == 11_900
