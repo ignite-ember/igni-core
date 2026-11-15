@@ -172,7 +172,7 @@ class SpawnSandbox:
         if not hasattr(agent, "tools") or agent.tools is None:
             return {}
         try:
-            agent.tools = [copy.copy(t) for t in agent.tools]
+            agent.tools = [SpawnSandbox._own_copy(t) for t in agent.tools]
         except Exception:
             # Some toolkits can't be shallow-copied (rare). Bail
             # without raising — partial isolation beats hard fail.
@@ -184,6 +184,31 @@ class SpawnSandbox:
                 with contextlib.suppress(Exception):
                     tool.base_dir = new_base
         return originals
+
+    @staticmethod
+    def _own_copy(toolkit: Any) -> Any:
+        """A shallow copy of ``toolkit`` whose functions call the copy.
+
+        Agno registers a toolkit's methods bound to the instance that
+        registered them, and a shallow copy shares that table: the copy's
+        ``base_dir`` moved and every call still ran on the original, so a
+        worktree-isolated agent's shell ran in the main checkout and its
+        file tools refused the worktree path.
+        """
+        clone = copy.copy(toolkit)
+        for table_name in ("functions", "async_functions"):
+            table = getattr(toolkit, table_name, None)
+            if not isinstance(table, dict):
+                continue
+            own: dict[str, Any] = {}
+            for name, function in table.items():
+                entry = getattr(function, "entrypoint", None)
+                if getattr(entry, "__self__", None) is toolkit and hasattr(entry, "__func__"):
+                    function = function.model_copy()
+                    function.entrypoint = entry.__func__.__get__(clone, type(clone))
+                own[name] = function
+            setattr(clone, table_name, type(table)(own))
+        return clone
 
     def finalize(self) -> str:
         """Restore tool ``base_dir`` rebinds and clean up the
