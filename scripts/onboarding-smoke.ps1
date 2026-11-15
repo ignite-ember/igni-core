@@ -10,7 +10,8 @@
         1. Download uv-x86_64-pc-windows-msvc.zip from GitHub releases
         2. ``uv python install 3.12``
         3. ``uv venv``
-        4. ``uv pip install igni-core[decisions]`` (or -e <repo> for --local)
+        4. ``uv pip install igni-core[decisions]`` (or -e <repo> for --local),
+           every download checked against the hash its resolution wrote down
         5. Prefetch Laya, igni's decision model
         6. Launch ``python -m igni_core.backend --ws-port 0`` and
            confirm the JSON ready line lands on stdout
@@ -170,9 +171,17 @@ Write-Host "  venv ready at $VenvDir (${Elapsed}s)"
 
 # ── Step 4: igni-core ───────────────────────────────────────────────
 $StepStart = Get-Date
+$Requirements = Join-Path $CacheDir "requirements.txt"
 if ($Local) {
     Write-Host "-> Step 4: installing $Package from local source ($RepoRoot)"
-    & $UvBin pip install --python $VenvPython -e "$($RepoRoot)[$Extras]"
+    # As onboarding-smoke.sh: the dependencies are resolved and written
+    # down with their hashes, installed only if every file matches, and
+    # the tree then goes in editable with nothing left to resolve.
+    & $UvBin pip compile --python $VenvPython --generate-hashes --extra $Extras -o $Requirements (Join-Path $RepoRoot "pyproject.toml")
+    if ($LASTEXITCODE -ne 0) { throw "uv pip compile failed" }
+    & $UvBin pip install --require-hashes --python $VenvPython -r $Requirements
+    if ($LASTEXITCODE -ne 0) { throw "uv pip install failed" }
+    & $UvBin pip install --no-deps --python $VenvPython -e "$($RepoRoot)[$Extras]"
 } else {
     # Is the version on PyPI at all? Before this repository's first
     # release there is nothing to install, and uv's "no matching
@@ -188,7 +197,11 @@ if ($Local) {
         exit 77
     }
     Write-Host "-> Step 4: installing $Package==$Version from PyPI"
-    & $UvBin pip install --python $VenvPython "$($Package)[$Extras]==$Version"
+    $RequirementsIn = Join-Path $CacheDir "requirements.in"
+    Set-Content -Path $RequirementsIn -Value "$($Package)[$Extras]==$Version"
+    & $UvBin pip compile --python $VenvPython --generate-hashes -o $Requirements $RequirementsIn
+    if ($LASTEXITCODE -ne 0) { throw "uv pip compile failed" }
+    & $UvBin pip install --require-hashes --python $VenvPython -r $Requirements
 }
 if ($LASTEXITCODE -ne 0) { throw "uv pip install failed" }
 $Elapsed = [int]((Get-Date) - $StepStart).TotalSeconds

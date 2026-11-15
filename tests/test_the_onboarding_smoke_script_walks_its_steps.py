@@ -48,6 +48,10 @@ case "$1" in -s) echo "$FAKE_OS" ;; -m) echo "$FAKE_ARCH" ;; esac
 
 UV = """#!/usr/bin/env bash
 echo "uv $*" >> "$CALLS"
+# What a compile was asked to resolve, read before the cache is swept.
+if [[ "$1 $2" == "pip compile" && "${@: -1}" == *.in ]]; then
+    echo "requirements.in: $(cat "${@: -1}")" >> "$CALLS"
+fi
 if [[ "$1" == "venv" ]]; then
     mkdir -p "$4/bin"
     cp "$PY_STUB" "$4/bin/python"
@@ -172,12 +176,7 @@ class TestArguments:
         r = smoke("--version", "1.2.3")
 
         assert "Targeting igni-core version: 1.2.3" in r.out
-        assert (
-            "uv pip install --python "
-            + str(r.cache_dir() / "venv/bin/python")
-            + " igni-core[decisions]==1.2.3"
-            in r.calls
-        )
+        assert "requirements.in: igni-core[decisions]==1.2.3" in r.calls
 
 
 class TestPlatforms:
@@ -213,17 +212,42 @@ class TestInstall:
     def test_pypi_install_is_igni_core_with_the_decisions_extra_at_the_version(self, smoke):
         r = smoke("--version", "0.3.0")
 
-        venv_python = r.cache_dir() / "venv" / "bin" / "python"
-        assert f"uv pip install --python {venv_python} igni-core[decisions]==0.3.0" in r.calls
+        cache = r.cache_dir()
+        venv_python = cache / "venv" / "bin" / "python"
+        assert "requirements.in: igni-core[decisions]==0.3.0" in r.calls
+        assert (
+            f"uv pip compile --python {venv_python} --generate-hashes"
+            f" -o {cache}/requirements.txt {cache}/requirements.in" in r.calls
+        )
         assert not any("ignite" in c for c in r.calls)
+
+    def test_pypi_install_installs_only_what_the_compile_hashed(self, smoke):
+        r = smoke("--version", "0.3.0")
+
+        cache = r.cache_dir()
+        installs = [c for c in r.calls if c.startswith("uv pip install")]
+        assert installs == [
+            f"uv pip install --require-hashes --python {cache}/venv/bin/python"
+            f" -r {cache}/requirements.txt"
+        ]
+        compile_at = next(i for i, c in enumerate(r.calls) if c.startswith("uv pip compile"))
+        assert compile_at < r.calls.index(installs[0])
 
     def test_local_install_is_editable_from_the_tree_and_never_asks_pypi(self, smoke):
         r = smoke("--local")
 
         assert r.code == 0, r.err
+        repo, cache = smoke.repo.resolve(), r.cache_dir()
+        venv_python = cache / "venv" / "bin" / "python"
+        assert (
+            f"uv pip compile --python {venv_python} --generate-hashes --extra decisions"
+            f" -o {cache}/requirements.txt {repo}/pyproject.toml" in r.calls
+        )
         installs = [c for c in r.calls if c.startswith("uv pip install")]
-        assert len(installs) == 1
-        assert installs[0].endswith(f" -e {smoke.repo.resolve()}[decisions]")
+        assert installs == [
+            f"uv pip install --require-hashes --python {venv_python} -r {cache}/requirements.txt",
+            f"uv pip install --no-deps --python {venv_python} -e {repo}[decisions]",
+        ]
         assert not any("pypi.org" in c for c in r.calls)
 
     def test_a_version_pypi_does_not_have_is_skipped_with_exit_77(self, smoke):
