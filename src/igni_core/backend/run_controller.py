@@ -262,14 +262,17 @@ class RunController:
         self._current_run_task = asyncio.current_task()
         self._transition_to(RunPhase.streaming)
         reply: list[str] = []
-        paused = False
+        # Ended only once the resumed run says so: an answer that resumed
+        # nothing (an unknown requirement) or a run that paused again has
+        # no reply for Stop to judge.
+        ended = False
         try:
             async for proto in stream:
                 yield proto
                 if isinstance(proto, msg.ContentDelta):
                     reply.append(proto.text)
-                paused = self._paused_after(proto, paused)
-            if not paused:
+                ended = not self._paused_after(proto, not ended)
+            if ended:
                 # The run ended: Stop sees its reply, and a block sends the
                 # agent back, as at the end of a run that never paused.
                 async for proto in self._stop_or_retry(self._session.main_team, "".join(reply)):

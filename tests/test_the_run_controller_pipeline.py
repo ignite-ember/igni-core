@@ -816,6 +816,16 @@ class TestAResumedRun:
 
         assert rig.hooks.responses == []
 
+    async def test_an_answer_that_resumed_nothing_fires_no_stop(self):
+        rig = _Rig()
+
+        async def resumed():
+            yield msg.Error(text="Unknown requirement: ghost")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert rig.hooks.responses == []
+
 
 # ── The todo list outlives the run's own save ────────────────────────
 
