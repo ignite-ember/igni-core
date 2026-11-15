@@ -108,7 +108,7 @@ class TestTheModel:
 
     def test_the_legacy_sentinel_means_the_default_not_itself(self, two_models) -> None:
         two_models.models.default = "other"
-        agent = _build(two_models, _definition(model="MiniMax-M2.7"))
+        agent = _build(two_models, _definition(model="igni-1.0-27b"))
         assert agent.model.id == "vendor/other"
 
     def test_a_named_model_is_used(self, two_models) -> None:

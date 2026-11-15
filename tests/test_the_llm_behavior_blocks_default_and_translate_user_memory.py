@@ -59,7 +59,7 @@ def test_only_pii_detection_is_on_among_the_guardrails():
 
 def test_evals_default_to_the_judge_three_iterations_threshold_seven_and_a_ten_minute_case():
     evals = EvalsConfig()
-    assert evals.judge_model == "MiniMax-M2.7"
+    assert evals.judge_model == "igni-1.0-27b"
     assert evals.num_iterations == 3
     assert evals.accuracy_threshold == 7.0
     assert evals.timeout_per_case == 600
