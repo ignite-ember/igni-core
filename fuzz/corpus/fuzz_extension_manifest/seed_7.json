@@ -1,0 +1,1 @@
+{"id": "acme.scanner", "version": "1.0.0", "contract": ">=1.0 <2", "trust": "partner", "sidecar": {"image": "acme__scanner:1.0.0", "mcp": {"transport": "stdio"}}, "signature": "detached"}
