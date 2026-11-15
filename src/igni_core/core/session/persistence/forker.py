@@ -58,6 +58,7 @@ class SessionForker:
             return ForkResult(
                 ok=False,
                 error=f"source session not found: {self._session_id}",
+                unsaved=True,
             )
         # Match the 8-char prefix scheme used elsewhere in the
         # codebase (``core.py``'s fresh-session mint). The full

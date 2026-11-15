@@ -236,3 +236,18 @@ async def test_a_failed_fork_with_no_reason_says_unknown_error():
     session.persistence.fork = AsyncMock(return_value=ForkResult(ok=False, error=None))
     result = await _run(session, "/fork")
     assert result.content == "Fork failed: unknown error"
+
+
+@pytest.mark.asyncio
+async def test_a_fork_of_a_session_not_saved_yet_says_to_send_a_message_first():
+    """Every new chat: the footer shows the id, and /fork said 'source
+    session not found: <that id>' (campaign R155)."""
+    session = FakeSession()
+    session.persistence.fork = AsyncMock(
+        return_value=ForkResult(ok=False, error="source session not found: x", unsaved=True)
+    )
+    result = await _run(session, "/fork")
+    assert result.is_error()
+    assert "not saved until its first message" in result.content
+    assert "source session not found" not in result.content
+    assert session.session_id == "old00000"

@@ -77,6 +77,7 @@ class TestPersistenceFork:
         result = await p.fork()
         assert result.ok is False
         assert "source session not found" in (result.error or "")
+        assert result.unsaved is True
         assert result.new_session_id == ""
 
     @pytest.mark.asyncio

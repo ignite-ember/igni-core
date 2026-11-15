@@ -256,11 +256,15 @@ class ForkResult(BaseModel):
     * ``new_session_id`` — the freshly-minted 8-char id on success;
       empty string on failure.
     * ``error`` — human-readable error string when ``ok=False``.
+    * ``unsaved`` — ``True`` when the source has no stored row yet: a
+      session is saved when its first message completes, so a new
+      chat has nothing to clone.
     """
 
     ok: bool = True
     new_session_id: str = ""
     error: str | None = None
+    unsaved: bool = False
 
 
 class PluginReloadCounts(BaseModel):

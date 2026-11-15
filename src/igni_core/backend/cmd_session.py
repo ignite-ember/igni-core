@@ -138,6 +138,13 @@ class SessionCommand:
         """
         name = args.strip() or None
         result = await self._session.persistence.fork(name=name)
+        if result.unsaved:
+            # Like /rename: a new chat has no stored row until its first
+            # message completes, so there is nothing to clone yet.
+            return CommandResult.error(
+                "Nothing to fork yet — this session is not saved until its "
+                "first message. Send one, then /fork."
+            )
         if not result.ok:
             logger.warning("/fork failed: %s", result.error)
             return CommandResult.error(f"Fork failed: {result.error or 'unknown error'}")
