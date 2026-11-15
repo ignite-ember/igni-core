@@ -90,3 +90,39 @@ async def test_the_stored_system_message_is_floor_not_runs() -> None:
     assert result.total == 12_100
     assert result.runs == 200
     assert result.floor == 11_900
+
+
+@pytest.mark.asyncio
+async def test_after_a_compaction_the_floor_is_the_one_kept_plus_the_new_summary() -> None:
+    """/compact cleared the runs, and /ctx said 'Total: 0 ... Floor: 0' while
+    the next prompt still carried ~18k of floor (campaign R052, R149)."""
+    from igni_core.core.session.compaction import ContextBreakdownReporter
+
+    system = _msg("system", "s" * 40_000)
+    user = _msg("user", "u" * 400)
+    answer = _msg("assistant", "a" * 400, i=12_000, o=100)
+    agno = SimpleNamespace(
+        runs=[SimpleNamespace(messages=[system, user, answer])],
+        session_data={"session_state": {}},
+        summary=SimpleNamespace(summary="p" * 400),
+    )
+    agno.get_messages = lambda: [m for r in agno.runs for m in r.messages if m.role != "system"]
+
+    ContextBreakdownReporter.remember_floor(agno, previous_summary="p" * 400)
+    agno.runs = []
+    agno.summary = SimpleNamespace(summary="n" * 800)
+
+    result = await _reporter(AsyncMock(return_value=agno)).report()
+
+    # floor 11 900 measured, less the old summary (100), plus the new one (200)
+    assert (result.total, result.runs, result.floor) == (12_000, 0, 12_000)
+    assert agno.session_data["session_state"] == {}
+
+
+@pytest.mark.asyncio
+async def test_a_session_never_compacted_and_never_run_is_still_empty() -> None:
+    agno = SimpleNamespace(runs=[], get_messages=MagicMock(return_value=[]), session_data=None)
+
+    result = await _reporter(AsyncMock(return_value=agno)).report()
+
+    assert (result.total, result.runs, result.floor) == (0, 0, 0)

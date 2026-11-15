@@ -160,6 +160,8 @@ class CompactionCoordinator:
                 history_cleared=False,
             )
 
+        # /ctx reads the floor off the last answer; keep it before that goes.
+        ContextBreakdownReporter.remember_floor(agno_session, previous_summary)
         agno_session.runs = []
         history_cleared = True
         try:
