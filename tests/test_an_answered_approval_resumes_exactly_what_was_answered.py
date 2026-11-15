@@ -307,33 +307,19 @@ def gate() -> Any:
     extension_hook_gate.install(None)
 
 
-async def test_an_extension_that_refuses_the_stop_says_why_and_the_configured_hooks_stay_quiet(
-    tmp_path: Path, gate: Any
-):
-    hooks = Hooks(message="configured hook says stop", should_continue=False)
+async def test_answering_fires_no_stop_hook_of_its_own(tmp_path: Path, gate: Any):
+    """R116: the continuation fired Stop with no reply, so the resumed run's
+    answer never reached a Stop hook. Stop now fires once the resumed run
+    ends, with its reply (``RunController.continue_run``)."""
+    hooks = Hooks(message="wrap up", should_continue=False)
     controller, _, store = _controller(tmp_path, hooks=hooks)
     _pend(store, "r1", "run-1")
     gate.install(Gate("keep going: the tests are red"))
 
     out = await _collect(controller.resolve_batch([_confirm("r1")]))
 
-    infos = [m.text for m in out if isinstance(m, msg.Info)]
-    assert infos == ["keep going: the tests are red"]
+    assert [m.text for m in out if isinstance(m, msg.Info)] == []
     assert hooks.executed == []
-
-
-async def test_a_configured_hook_s_message_is_shown_only_when_it_says_stop(tmp_path: Path):
-    for continues, shown in ((False, ["wrap up"]), (True, [])):
-        hooks = Hooks(message="wrap up", should_continue=continues)
-        controller, _, store = _controller(tmp_path, hooks=hooks)
-        _pend(store, "r1", "run-1")
-
-        out = await _collect(controller.resolve_batch([_confirm("r1")]))
-
-        assert [m.text for m in out if isinstance(m, msg.Info)] == shown
-        (call,) = hooks.executed
-        assert call["event"] == HookEvent.STOP.value
-        assert call["payload"].session_id == SESSION
 
 
 # ── The mark a continuation leaves ────────────────────────────────

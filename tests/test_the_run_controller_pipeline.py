@@ -780,6 +780,42 @@ class TestAResumedRun:
         assert rig.controller.phase is RunPhase.done
         assert rig.controller.current_run_task is None
 
+    async def test_a_run_that_pauses_fires_no_stop_and_the_resumed_one_does_with_its_reply(
+        self,
+    ):
+        """R116: Stop fired at the approval pause with the text from before
+        it, then after the resume with an empty reply, so a Stop hook never
+        saw the final answer and could not send the agent back."""
+        rig = _Rig([msg.ContentDelta(text="I'll run ls first."), msg.RunPaused(run_id="r1")])
+        await rig.run()
+        assert rig.hooks.responses == []
+
+        rig.hooks.stop_script = [
+            HookGateResult(should_continue=False, block_message="Say VERIFIED.")
+        ]
+        rig.stream_script = [msg.ContentDelta(text="STOPTEST VERIFIED")]
+
+        async def resumed():
+            yield msg.ContentDelta(text="STOPTEST DONE")
+            yield msg.RunCompleted(run_id="r1")
+
+        got = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert rig.hooks.responses == ["STOPTEST DONE", "STOPTEST VERIFIED"]
+        assert [m.text for m in got if isinstance(m, msg.Info)] == ["Say VERIFIED."]
+        assert rig.arun_calls[-1][0] == StopHookPayload.critique("Say VERIFIED.")
+
+    async def test_a_resumed_run_that_pauses_again_fires_no_stop(self):
+        rig = _Rig()
+
+        async def resumed():
+            yield msg.ContentDelta(text="next, pwd")
+            yield msg.RunPaused(run_id="r1")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert rig.hooks.responses == []
+
 
 # ── The todo list outlives the run's own save ────────────────────────
 

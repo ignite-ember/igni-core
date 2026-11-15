@@ -261,9 +261,19 @@ class RunController:
             return
         self._current_run_task = asyncio.current_task()
         self._transition_to(RunPhase.streaming)
+        reply: list[str] = []
+        paused = False
         try:
             async for proto in stream:
                 yield proto
+                if isinstance(proto, msg.ContentDelta):
+                    reply.append(proto.text)
+                paused = self._paused_after(proto, paused)
+            if not paused:
+                # The run ended: Stop sees its reply, and a block sends the
+                # agent back, as at the end of a run that never paused.
+                async for proto in self._stop_or_retry(self._session.main_team, "".join(reply)):
+                    yield proto
         except asyncio.CancelledError:
             yield msg.Info(text="Run cancelled by user.")
         finally:
@@ -554,6 +564,7 @@ class RunController:
         media_kwargs = media.to_kwargs() if media is not None else {}
         self._transition_to(RunPhase.streaming)
         reply: list[str] = []
+        paused = False
         try:
             stream_failure: str | None = None
             async for proto in self._stream_factory(
@@ -564,6 +575,7 @@ class RunController:
                 stream_failure = self._failure_text(proto) or stream_failure
                 if isinstance(proto, msg.ContentDelta):
                     reply.append(proto.text)
+                paused = self._paused_after(proto, paused)
             if stream_failure is not None:
                 # The stream reported a failure instead of raising —
                 # see :meth:`_failure_text`. Same bookkeeping as the
@@ -606,10 +618,24 @@ class RunController:
             if mirror is not None:
                 await asyncio.to_thread(mirror.sync)
 
-        # Fire Stop hook after the natural end-of-run.
-        async for proto in self._stop_or_retry(team, "".join(reply)):
-            yield proto
+        # Fire Stop hook after the natural end-of-run. A run that paused for
+        # the person's approval has not ended: Stop fires once the resumed
+        # run does (:meth:`continue_run`), with its reply. Fired here, it
+        # saw only the text from before the pause, and the resumed run's
+        # final answer reached no Stop hook at all.
+        if not paused:
+            async for proto in self._stop_or_retry(team, "".join(reply)):
+                yield proto
         self._transition_to(RunPhase.done)
+
+    @staticmethod
+    def _paused_after(proto: msg.Message, paused: bool) -> bool:
+        """Whether the run stands paused for a person, after ``proto``."""
+        if isinstance(proto, msg.RunPaused):
+            return True
+        if isinstance(proto, msg.RunCompleted):
+            return False
+        return paused
 
     async def _stop_or_retry(self, team: Any, response: str) -> AsyncGenerator[msg.Message, None]:
         """The Stop hook, and the agent sent back while it rejects the reply.

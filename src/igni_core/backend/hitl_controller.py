@@ -34,11 +34,7 @@ from igni_core.backend.schemas_hitl import (
     StreamFactory,
 )
 from igni_core.backend.schemas_pause import PauseHandleResult
-from igni_core.backend.schemas_run import StopHookPayload
 from igni_core.core.approvals.declined import declined_note
-from igni_core.core.hooks.events import HookEvent
-from igni_core.core.hooks.extension_gate import extension_hook_gate
-from igni_core.core.hooks.extension_values import StopValue
 from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.session.persistence.run_history import RunHistory
 from igni_core.core.utils.tool_audit import DecidedBy
@@ -127,9 +123,9 @@ class HitlController:
         refusal = self._flip_mode(decisions)
         if refusal is not None:
             yield refusal
+        # Stop fires once the resumed run ends, with its reply
+        # (``RunController.continue_run``) — not here, with none.
         async for proto in self._continue(batch):
-            yield proto
-        async for proto in self._fire_stop_hooks():
             yield proto
 
     async def resolve_single(
@@ -287,20 +283,6 @@ class HitlController:
         finally:
             if run_id:
                 self._store.end_continuing(run_id)
-
-    async def _fire_stop_hooks(self) -> AsyncIterator[msg.Message]:
-        """The Stop hook, once the continuation completes: the extensions
-        that hook it first, then the configured hooks."""
-        verdict = await extension_hook_gate.ask(StopValue(session_id=self._session.session_id))
-        if not verdict.allowed:
-            yield msg.Info(text=verdict.reason)
-            return
-        stop_result = await self._session.hook_executor.execute(
-            event=HookEvent.STOP.value,
-            payload=StopHookPayload(session_id=self._session.session_id),
-        )
-        if stop_result.message and not stop_result.should_continue:
-            yield msg.Info(text=stop_result.message)
 
     # ── Pause / stream lifecycle ────────────────────────────────
 
