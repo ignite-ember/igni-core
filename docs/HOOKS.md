@@ -11,7 +11,7 @@ Agent calls edit_file
     │
     ▼
 ┌──────────────────────┐
-│  PreToolUse hooks    │ ← can block, modify input, or add context
+│  PreToolUse hooks    │ ← can block, allow, or add context
 │  (run in parallel)   │
 └──────────┬───────────┘
            │ approved
@@ -33,7 +33,7 @@ Agent calls edit_file
 
 | Event | When It Fires | Can Block? | Use Case |
 |---|---|---|---|
-| `PreToolUse` | Before any tool call | Yes | Security validation, input modification, permission overrides |
+| `PreToolUse` | Before any tool call | Yes | Security validation, permission overrides (see [Output](#output-json-on-stdout) for what a hook may answer) |
 | `PostToolUse` | After tool succeeds | No | Auto-formatting, logging, validation |
 | `PostToolUseFailure` | After tool fails | No | Error logging, retry context |
 | `UserPromptSubmit` | When user sends a message | Yes | Prompt validation, context injection |
@@ -376,6 +376,24 @@ with the hook's `systemMessage`; it may do more work and submit again.
 }
 ```
 
+A `PreToolUse` hook may also answer
+`{"hookSpecificOutput": {"permissionDecision": "allow" | "deny" | "ask"}}`
+(or a bare `permissionDecision`). What it does, and what it cannot:
+
+- `deny` blocks the call, with the hook's `systemMessage` (or a default
+  reason) as what the agent reads; `ask` is refused too, since a hook has
+  no way to put a question to the person.
+- `allow` skips the permission rules and the bypass guard for the call;
+  protected paths and blocked commands are still checked. It cannot
+  answer an approval
+  the call has already stopped for: a tool that needs the person's
+  approval pauses *before* `PreToolUse` runs, so a run with no allow rule
+  for it still asks (or, headless, pauses and exits 1). Use an allow rule
+  for that.
+- `hookSpecificOutput.updatedInput` is **not supported**: igni ignores it
+  and the tool runs with the model's arguments. Only an extension's
+  `PreToolUse` hook can change a call's input (EXTENSIBILITY.md).
+
 ### Exit Codes
 
 | Code | Meaning |
@@ -623,7 +641,9 @@ mark.
 
 igni hooks use the **same format** as Claude Code:
 - Same event names (`PreToolUse`, `PostToolUse`, `Stop`, etc.)
-- Same input/output JSON format
+- Same input/output JSON format, except that a `PreToolUse` hook's
+  `updatedInput` is ignored and its `allow` does not answer an approval
+  pause (see [Output](#output-json-on-stdout))
 - Same exit code semantics (0 = success, 2 = block)
 - Same matcher regex patterns
 - Same settings file structure
