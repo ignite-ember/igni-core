@@ -76,6 +76,32 @@ class WorkspaceTrustTier(OrganisationOnlyTier):
         return WorkspaceTrustConfig().model_dump()
 
 
+class WorkspaceTrustFailsClosedTier(Tier):
+    """An invalid ``workspace_trust`` from the organisation means ``never``.
+
+    Runs after the group and managed tiers. A policy block the organisation
+    got wrong (an unknown mode, a remote list that is not a list) would
+    otherwise fail the whole settings load with a validation traceback, and
+    no command would start; it fails closed instead, every folder untrusted,
+    as ``OrganisationTiers.workspace_trust_policy`` decides for the gate.
+    """
+
+    def apply(self, accumulator: SettingsAccumulator) -> SettingsAccumulator:
+        block = accumulator.payload.get(WorkspaceTrustTier.BLOCK)
+        try:
+            WorkspaceTrustConfig.model_validate(block)
+        except ValueError as exc:  # pydantic's ValidationError is a ValueError
+            logger.warning(
+                "workspace_trust in the organisation's settings is invalid (%s); "
+                "treating every folder as untrusted.",
+                exc,
+            )
+            payload = dict(accumulator.payload)
+            payload[WorkspaceTrustTier.BLOCK] = WorkspaceTrustConfig(mode="never").model_dump()
+            return SettingsAccumulator(payload=payload)
+        return accumulator
+
+
 class TelemetryTier(OrganisationOnlyTier):
     """``telemetry`` (the OTLP collector) comes from the organisation.
 

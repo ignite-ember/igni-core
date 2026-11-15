@@ -84,11 +84,13 @@ class OrganisationTiers:
 
         A malformed policy fails closed: every folder is untrusted.
         """
-        block: dict[str, Any] = {}
+        block: Any = {}
         for payload in (self.group_settings(), self.managed_settings()):
             tier_block = payload.get("workspace_trust")
-            if isinstance(tier_block, dict):
+            if isinstance(tier_block, dict) and isinstance(block, dict):
                 block = DictMerger.deep(block, tier_block)
+            elif tier_block is not None:
+                block = tier_block  # not a mapping: invalid, and fails closed below
         try:
             return WorkspaceTrustConfig.model_validate(block)
         except Exception as exc:  # noqa: BLE001 — a malformed policy fails closed
