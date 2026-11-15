@@ -190,6 +190,7 @@ class HeadlessExtensions:
         self._session = session
         self._registry = ExtensionRegistry()
         self._channel: HostChannel | None = None
+        self._contributions: ExtensionContributions | None = None
 
     @property
     def registry(self) -> ExtensionRegistry:
@@ -230,7 +231,14 @@ class HeadlessExtensions:
             entry = self._registry.get(extension_id)
             if entry is not None and entry.state is not ExtensionState.READY:
                 logger.warning("extension %s is %s: %s", extension_id, entry.state, entry.reason)
+        # The one turn's prompt is built by the rebuild below: what the
+        # extensions contribute to it has to be in by then.
+        await self._contributions_settled()
         session.reload_group_agents()
+
+    async def _contributions_settled(self) -> None:
+        if self._contributions is not None:
+            await self._contributions.settled(self.START_TIMEOUT_S)
 
     def _launcher(self, store: ExtensionStore) -> ExtensionLauncher:
         """The run's host channel, hooks and installer, and the launcher over them."""
@@ -250,6 +258,7 @@ class HeadlessExtensions:
             hooks=hooks,
         )
         contributions.attach()
+        self._contributions = contributions
         model = HostModel.build(
             HostModelConfig(
                 backend=HeadlessHostBackend(Path(session.project_dir), str(session.session_id)),
