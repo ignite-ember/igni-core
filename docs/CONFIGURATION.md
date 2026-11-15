@@ -14,7 +14,7 @@ igni is configured through a layered system of config files, environment variabl
 
 A project's config counts only once you trust the folder, and some keys it may never set — see [Workspace trust](#workspace-trust).
 
-Each level deep-merges over the previous. The `~/.igni/config.yaml` file is automatically generated from defaults on first run via `yaml.dump(DEFAULT_CONFIG)` — a single source of truth.
+Each level deep-merges over the previous. On first run igni writes `~/.igni/config.yaml` as comments only — a header and commented-out examples, no active key — so it holds only what you add; the defaults live in the code and are the values this page lists.
 
 ### What in `.igni/` goes into git
 
