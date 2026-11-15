@@ -114,6 +114,7 @@ class TeamWiring:
         """Iterate every :class:`OrchestrateTools` instance attached
         to the team (there's usually one, but be defensive for
         tests / plugins that inject more)."""
-        for tool in self._session.main_team.tools or []:
+        # A team that carries no tools (a bare stand-in) has none to wire.
+        for tool in getattr(self._session.main_team, "tools", None) or []:
             if isinstance(tool, OrchestrateTools):
                 yield tool
