@@ -35,6 +35,7 @@ class ManifestCheck:
         self._dev_command(findings)
         self._wildcard_rpc(findings)
         self._tool_audience(findings)
+        self._indicators(findings)
 
     def _contract(self, findings: Findings) -> None:
         """The contract range against the contract this igni implements."""
@@ -48,6 +49,32 @@ class ManifestCheck:
             return
         if not needed.admits(CONTRACT_VERSION):
             findings.problems.append(f"contract out of range: {needed.why_not(CONTRACT_VERSION)}")
+
+    def _indicators(self, findings: Findings) -> None:
+        """An indicator's ``source`` is called as the page RPC ``ext.<id>.<source>``.
+
+        Written the way ``permissions.tools`` names a tool (``acme.kit.status``)
+        it became ``ext.acme.kit.acme.kit.status``, and a bare name with no
+        ``permissions.rpc`` grant was refused: either way the chip never
+        appeared, and the only trace was a refused-RPC line in the backend
+        log every interval (campaign R292).
+        """
+        manifest = self._manifest
+        for indicator in manifest.contributes.indicators:
+            source = indicator.source
+            if source.startswith(f"{manifest.id}.") or "." in source:
+                findings.problems.append(
+                    f"indicator {indicator.id}: source {source!r} is a tool's bare name "
+                    f"(the host calls ext.{manifest.id}.<source>), not its namespaced "
+                    f"name; write {source.rsplit('.', 1)[-1]!r}"
+                )
+                continue
+            if not manifest.grants_rpc(f"ext.{manifest.id}.{source}"):
+                findings.problems.append(
+                    f"indicator {indicator.id}: the host calls ext.{manifest.id}.{source} "
+                    f"for it, and permissions.rpc does not grant that, so the chip never "
+                    f'appears; add "ext.{manifest.id}.{source}" (or "ext.{manifest.id}.*")'
+                )
 
     def _tool_audience(self, findings: Findings) -> None:
         """``own-agents`` with no plugin: the install refuses it, so doctor says so."""

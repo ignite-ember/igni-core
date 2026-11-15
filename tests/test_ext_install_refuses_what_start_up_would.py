@@ -108,3 +108,44 @@ def test_remove_takes_the_carried_plugin_with_it(install, tmp_path):
     assert removed.exit_code == 0, removed.output
     assert not (plugins / "local.c1").exists()
     assert (plugins / "someone-elses").is_dir()
+
+
+def _doctor(tmp_path, manifest: dict):
+    bundle = tmp_path / "ind"
+    bundle.mkdir(exist_ok=True)
+    (bundle / "manifest.json").write_text(json.dumps(manifest))
+    (bundle / "server.py").write_text("")
+    return CliRunner().invoke(ext, ["doctor", "--no-start", str(bundle)])
+
+
+_INDICATOR = {"id": "local.c1.status", "label": "Kit", "source": "kit_status"}
+
+
+@pytest.mark.parametrize(
+    ("source", "rpc", "says"),
+    [
+        ("local.c1.kit_status", ["ext.local.c1.*"], "bare name"),
+        ("kit_status", ["ext.local.c1.lookup"], "permissions.rpc does not grant"),
+    ],
+)
+def test_doctor_reports_an_indicator_whose_chip_could_never_appear(tmp_path, source, rpc, says):
+    """The chip never appeared and nothing but a refused-RPC log line said
+    why (campaign R292)."""
+    manifest = {
+        **_BASE,
+        "contributes": {"indicators": [{**_INDICATOR, "source": source}]},
+        "permissions": {"rpc": rpc},
+    }
+    result = _doctor(tmp_path, manifest)
+    assert result.exit_code != 0
+    assert says in result.output
+
+
+def test_doctor_accepts_a_bare_source_the_rpc_grant_covers(tmp_path):
+    manifest = {
+        **_BASE,
+        "contributes": {"indicators": [_INDICATOR]},
+        "permissions": {"rpc": ["ext.local.c1.*"]},
+    }
+    result = _doctor(tmp_path, manifest)
+    assert "indicator" not in result.output, result.output
