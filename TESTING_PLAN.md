@@ -120,7 +120,7 @@ Plus `test_permission_eval.py::test_scoped_deny_survives_bypass_permissions` + `
 
 **32. LSP server primitive** — `tests/test_lsp.py` (33 tests). Plugin-declared LSP servers (`.lsp.json`) launch / restart / shut down with the session; `lsp_query` tool returns hover / definition / references.
 
-**33. Monitor primitive** — `tests/test_monitors.py` (26 tests). `.monitors.json`-declared processes start on session boot, supervisor restarts on crash, drains stdout into the chat-injection queue.
+**33. Monitor primitive** — `tests/test_monitors.py` (26 tests). `.monitors.json`-declared processes start when the agent calls `monitor_restart` (nothing starts them at session boot), the supervisor restarts them on crash, and stdout drains into a rolling buffer the agent reads with `monitor_output`.
 
 **34. Theme primitive** — **not shipped.** Documented gap; no automated coverage to mark.
 

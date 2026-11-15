@@ -208,7 +208,7 @@ Plugins built for Claude Code work in igni with no changes — same manifest, sa
 
 ## Limitations (v1)
 
-- **LSP servers**, **background monitors**, plugin `bin/` executables on PATH, and plugin-bundled `settings.json` defaults are recognized by Claude Code but **not loaded** by igni yet. The rest of the plugin still works.
+- A plugin's **LSP servers** (`.lsp.json`) and **background monitors** (`.monitors.json`) are loaded, namespaced `<plugin>:<name>`; a monitor runs only once the agent starts it with `monitor_restart`. Plugin `bin/` executables on PATH, and plugin-bundled `settings.json` defaults are recognized by Claude Code but **not loaded** by igni yet. The rest of the plugin still works.
 - **Hot reload** isn't supported. Enable/disable, install, update, remove all require a session restart to apply.
 - **Per-project disable** isn't supported — `~/.igni/plugins.json` is user-global.
 - **Private marketplace auth** relies on your ambient git credentials (SSH key, gh CLI, etc.). No token storage in v1.
