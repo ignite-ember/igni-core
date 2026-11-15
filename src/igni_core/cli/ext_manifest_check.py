@@ -131,6 +131,12 @@ class ManifestCheck:
     def _endpoint(self, findings: Findings) -> None:
         if self._manifest.endpoint is None:
             return
+        auth = self._manifest.endpoint.auth
+        if auth is not None and auth.kind != "none":
+            findings.problems.append(
+                f"authenticates to its endpoint with {auth.kind}, and igni does not "
+                "send endpoint credentials yet, so every call would be refused"
+            )
         permissions = self._manifest.permissions
         if not permissions.egress:
             findings.problems.append(

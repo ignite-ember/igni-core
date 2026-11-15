@@ -219,6 +219,18 @@ class InstallPreflight:
         """
         if manifest.endpoint is None:
             return
+        auth = manifest.endpoint.auth
+        if auth is not None and auth.kind != "none":
+            # igni dials an endpoint with no credential at all: a bearer or
+            # mTLS endpoint installed fine and then failed every call with
+            # a bare 401 or an empty "Client failed to connect".
+            raise InstallError(
+                f"{manifest.id} asks igni to authenticate to its endpoint with "
+                f"{auth.kind}, and sending endpoint credentials is not implemented "
+                "yet: igni would dial it with none, and it would refuse every call. "
+                "Use auth kind 'none' for an endpoint that network controls protect, "
+                "or ship the service as 'python' packaging."
+            )
         undeliverable = []
         if manifest.permissions.workspace is not Workspace.NONE:
             undeliverable.append(f"workspace: {manifest.permissions.workspace.value}")

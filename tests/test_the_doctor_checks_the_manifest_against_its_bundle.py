@@ -269,3 +269,20 @@ def test_several_problems_are_all_listed_and_counted(tmp_path):
     assert result.exit_code != 0
     assert "2 problem(s) found" in result.output
     assert result.output.count("  ! ") == 2
+
+
+def test_an_endpoint_igni_would_have_to_authenticate_to_is_a_problem(tmp_path):
+    """R242: doctor said "no problems found" for a bearer endpoint that then
+    failed every call, since igni sends it no credential."""
+    result = _doctor(
+        _bundle(
+            tmp_path,
+            endpoint={
+                "url": "https://tickets.acme.test/mcp",
+                "auth": {"kind": "bearer", "secret": "remote-token"},
+            },
+            permissions={"egress": ["tickets.acme.test"]},
+        )
+    )
+    assert result.exit_code != 0
+    assert "authenticates to its endpoint with bearer" in result.output

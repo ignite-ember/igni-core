@@ -30,7 +30,7 @@ An **extension** is a capability with a service behind it. It arrives one of two
 
 **Tools are always MCP.** We do not invent a second tool transport. What an extension needs *beyond* tools is what this document specifies.
 
-**One extension, one manifest.** Packaging decides which fields apply — an image for a sidecar, `endpoint` and auth for a remote one. Everything else is identical, so a capability is never described twice and cannot drift between deployments.
+**One extension, one manifest.** Packaging decides which fields apply — an image for a sidecar, `endpoint` and auth for a remote one (igni does not send endpoint credentials yet: `auth.kind` `bearer` and `mtls` are refused at install and by `igni ext doctor`, and only `none` installs). Everything else is identical, so a capability is never described twice and cannot drift between deployments.
 
 ---
 
@@ -531,7 +531,7 @@ Additive changes are never breaking, so omitting is cheap and premature inclusio
   },
   "endpoint": {                       // the remote form
     "url": "https://artifacts.internal/mcp",
-    "auth": { "kind": "bearer", "secret": "artifacts-token" }
+    "auth": { "kind": "none" }        // bearer / mtls: not sent yet, refused at install
   },
 
   "permissions": {
