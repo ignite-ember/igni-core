@@ -109,7 +109,7 @@ decisions = [
 ]
 dev = [
     "pytest~=9.2.0",
-    "pytest-asyncio~=1.4.1",
+    "pytest-asyncio~=1.5.0",
     # ``make test-cov`` and docs/TESTING.md both pass ``--cov``; without
     # the plugin pytest rejects the unrecognised argument and exits 4,
     # so the documented coverage command has never run.
