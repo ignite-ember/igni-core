@@ -63,7 +63,9 @@ class World:
         )
         monkeypatch.setattr(
             "igni_core.backend.headless_extensions.OneShotSync",
-            lambda store, settings: OneShotSync(store, settings, transport=transport),
+            lambda store, settings, lifecycle=None: OneShotSync(
+                store, settings, transport=transport, lifecycle=lifecycle
+            ),
         )
         monkeypatch.setattr(PolicySettingsLoader, "load", lambda _self: self.settings)
 
@@ -72,10 +74,14 @@ class World:
             Credentials.new(SESSION, "ada@acme.test", ttl=ttl)
         )
 
-    def publish(self) -> None:
-        raw = manifest()
+    def publish(self, version: str = "1.0.0") -> None:
+        raw = manifest(version=version)
         self.igni.publish(
-            Listed(bundle_archive(raw, {"wheels/placeholder.txt": b"x"}), self.publisher)
+            Listed(
+                bundle_archive(raw, {"wheels/placeholder.txt": b"x"}),
+                self.publisher,
+                version=version,
+            )
         )
 
     def sync(self, *args: str):
@@ -225,6 +231,40 @@ async def test_a_headless_run_syncs_before_it_starts_extensions(world, monkeypat
     try:
         assert world.store.provenance.of("acme.notes") is not None
         assert extensions.registry.get("acme.notes") is not None
+    finally:
+        await extensions.stop()
+
+
+async def test_a_headless_upgrade_that_does_not_start_keeps_the_version_that_worked(
+    world, monkeypatch
+):
+    """R252: the headless run's sync stored the new version without starting
+    it, deleting the one that worked; the run then left the extension FAILED
+    for good. The sync now starts the upgrade through the run's launcher, and
+    one that does not start (none starts in this test) puts the old back."""
+    world.sign_in()
+    world.publish("1.0.0")
+    first = await ext_cli.OneShotSync(world.store, world.settings).run()
+    assert first.installed, first
+    world.publish("2.0.0")
+    monkeypatch.setattr(ExtensionStore, "__init__", _rooted(world.store.root))
+    project = world.tmp / "project"
+    project.mkdir()
+    session = SimpleNamespace(
+        settings=world.settings,
+        project_dir=project,
+        session_id="s-1",
+        mcp_manager=Mcp(),
+        prompt_contributions=PromptContributions(),
+        prompt_loader=PromptLoader(PromptFragments()),
+        reload_group_agents=lambda: True,
+    )
+    extensions = HeadlessExtensions(session)
+    await extensions.start()
+    try:
+        kept = world.store.provenance.of("acme.notes")
+        assert kept is not None
+        assert kept.version == "1.0.0"
     finally:
         await extensions.stop()
 

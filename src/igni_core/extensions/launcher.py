@@ -43,13 +43,15 @@ class ExtensionLauncher:
         self._registry = registry
         self._contributions = contributions
 
-    async def start_installed(self) -> None:
-        """Start every bundle in the store."""
+    async def start_installed(self, skip: set[str] | None = None) -> None:
+        """Start every bundle in the store, but those in ``skip`` (already started)."""
         for bundle in self._store.installed():
             try:
                 extension_id = self._store.read(bundle).id
             except StoreError as exc:
                 logger.error("extension at %s was not installed: %s", bundle, exc)
+                continue
+            if skip and extension_id in skip:
                 continue
             await self.activate(extension_id, bundle)
 
