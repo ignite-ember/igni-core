@@ -62,8 +62,10 @@ _SHELL_TIMEOUT_SECONDS = 30
 class MarkdownCommandRenderer:
     """Expands one command body's tokens.
 
-    ``source`` is the command file the body came from — its directory
-    is where a relative ``@path`` is looked up. ``project_dir`` is the
+    ``source`` is the command file the body came from. A relative
+    ``@path`` is read from the project, as Claude Code reads it, and from
+    the command file's directory when the project has no such file.
+    ``project_dir`` is the
     project the command is being rendered for; it scopes both the
     shell's working directory and which ``@path`` references are
     allowed. ``shell_allowed`` is the trust decision, made by the
@@ -204,6 +206,8 @@ class MarkdownCommandRenderer:
             return Path(path_str).expanduser(), trailing
         if path_str.startswith("/"):
             return Path(path_str), trailing
+        if self._project_dir is not None and (self._project_dir / path_str).is_file():
+            return self._project_dir / path_str, trailing
         return self._source.parent / path_str, trailing
 
     def _at_path_allowed(self, resolved: Path) -> bool:
