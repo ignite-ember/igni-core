@@ -404,10 +404,24 @@ class TestReportCleanup:
             "\nWorktree preserved (has changes):",
             f"  Path:   {info.worktree_path}",
             "  Branch: rp",
-            "\nTo merge: git merge rp",
+            "\nTo merge: commit the changes in the worktree "
+            f"(git -C {info.worktree_path} add -A && git -C {info.worktree_path} commit), "
+            "then git merge rp",
             f"To remove: git worktree remove {info.worktree_path}",
         ]
         assert all(kw == {} for _, kw in out)
+
+    def test_igni_s_own_scaffold_is_no_change(self, tmp_path):
+        """A ``--worktree`` run that changed nothing was kept as "has
+        changes" for the .igni/ and igni.md igni writes itself (campaign
+        R130); and ``git merge`` alone merged nothing, the changes being
+        uncommitted."""
+        _, _, wm = _manager(tmp_path)
+        info = wm.create(branch_name="rs")
+        (info.worktree_path / ".igni").mkdir()
+        (info.worktree_path / ".igni" / "config.yaml").write_text("x")
+        (info.worktree_path / "igni.md").write_text("x")
+        assert self._collect(wm) == [("Worktree cleaned up (no changes).", {})]
 
     def test_failure_goes_to_stderr_with_path_and_branch(self, tmp_path):
         _, _, wm = _manager(tmp_path)

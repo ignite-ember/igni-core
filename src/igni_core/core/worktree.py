@@ -331,8 +331,16 @@ class WorktreeManager:
     def info(self) -> WorktreeInfo | None:
         return self._info
 
+    #: What igni itself writes into a project it opens (``igni init``'s
+    #: scaffold): untracked, it is not a change the run made.
+    SCAFFOLD: tuple[str, ...] = (".igni/", "igni.md")
+
     def has_changes(self) -> bool:
-        """Check if the worktree has uncommitted or staged changes."""
+        """Check if the worktree has uncommitted or staged changes.
+
+        igni's own untracked scaffold (:attr:`SCAFFOLD`) does not count: a
+        run that changed nothing was kept as "has changes" for it.
+        """
         if self._info is None:
             return False
         try:
@@ -344,7 +352,10 @@ class WorktreeManager:
             # The directory was deleted from under us: nothing there
             # to hold changes, and cleanup() can report the git side.
             return False
-        return bool(result.stdout.strip())
+        return any(
+            line and not (line.startswith("?? ") and line[3:] in self.SCAFFOLD)
+            for line in result.stdout.splitlines()
+        )
 
     def cleanup(self) -> WorktreeCleanupResult:
         """Remove the worktree and its branch if no changes were made.
@@ -429,7 +440,13 @@ class WorktreeManager:
             echo("\nWorktree preserved (has changes):")
             echo(f"  Path:   {info.worktree_path}")
             echo(f"  Branch: {info.branch_name}")
-            echo(f"\nTo merge: git merge {info.branch_name}")
+            # Nothing is committed for the person: ``git merge`` alone
+            # would merge a branch with none of the changes on it.
+            echo(
+                f"\nTo merge: commit the changes in the worktree "
+                f"(git -C {info.worktree_path} add -A && git -C {info.worktree_path} "
+                f"commit), then git merge {info.branch_name}"
+            )
             echo(f"To remove: git worktree remove {info.worktree_path}")
         else:
             # ``git_remove_failed`` / ``branch_delete_failed`` —
