@@ -87,7 +87,7 @@ Evals live alongside agents. Each eval is a YAML file defining test cases that m
 │       └── sample_pr.diff
 ```
 
-Built-in agents ship with built-in evals in `<install>/evals/`. Project evals in `.igni/evals/` extend or override them.
+`/evals` reads two folders of the project: `.igni/evals/` and a committed `evals/` at the project root. Same-named files in `.igni/evals/` win. igni installs no evals of its own: the suites for the bundled agents live in igni's own repository (its `evals/` folder) and run when you work in that checkout. A project with neither folder gets "No eval suites found".
 
 ---
 
