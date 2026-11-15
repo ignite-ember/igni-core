@@ -70,7 +70,7 @@ Security tab is for.
 
 **In scope:** everything this repository publishes —
 
-* the `ignite-ember` package on PyPI (the `igni` CLI and backend), and its
+* the `igni-core` package on PyPI (the `igni` CLI and backend), and its
   Homebrew formula;
 * the desktop app (macOS, Windows, Linux installers on the GitHub
   release) and its updater;

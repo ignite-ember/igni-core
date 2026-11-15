@@ -1,74 +1,128 @@
-# igni
+# igni-core
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ignite-ember/igni-core/badge)](https://scorecard.dev/viewer/?uri=github.com/ignite-ember/igni-core)
+[![PyPI](https://img.shields.io/pypi/v/igni-core)](https://pypi.org/project/igni-core/)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](pyproject.toml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-**One spark ignites a team.** An AI coding assistant built with [Agno](https://github.com/agno-agi/agno) orchestration.
+**igni is a self-hosted, air-gapped agentic platform.** Its agents work in
+your environment, with the models you choose, on infrastructure you control,
+and nothing in it needs to call home. igni-core is the agent runtime at its
+centre: the orchestrator, the tools and the policy that governs them, and
+the backend the desktop app and the web client run on.
+
+Writing and reviewing code is one thing igni's agents do, and the
+built-in agents are coding specialists. It is not the whole of it: an agent
+is a markdown file, so an organisation defines its own agents, skills, MCP
+servers and extensions for any team, and ships them to that team from its
+igni server.
 
 [ignite-ember.sh](https://ignite-ember.sh)
 
-Inspired by [Claude Code](https://github.com/anthropics/claude-code), igni is a terminal-based coding agent that assembles specialized AI teams on the fly. Describe your task — the Orchestrator picks the right agents, the right team mode, and runs them.
+## Where igni-core sits
 
-## Why igni?
+igni is several repositories, all Apache-2.0:
 
-Claude Code uses a single agent loop — powerful but monolithic. igni takes a different approach: **dynamic multi-agent orchestration**. Instead of one agent doing everything, Agno's team system decomposes tasks, routes them to specialized agents, and synthesizes results — all automatically.
-
-### The numbers
-
-Head-to-head benchmark on a 12-case software-engineering suite, 5 runs per system, deterministic grading. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for the full breakdown.
-
-| | igni (MiniMax-M2.7) + CodeIndex | Claude Code (Opus-4.7) |
-|---|---:|---:|
-| Directly mergeable (✅) | **49 / 60 (82 %)** | 31 / 60 (52 %) |
-| Needs clarification (⚠) | **4 / 60 (7 %)** | 22 / 60 (37 %) |
-| Wrong target (❌) | 7 / 60 (12 %) | 7 / 60 (12 %) |
-| Reproducibly correct cases (5/5 ✅) | **8 of 12** | 3 of 12 |
-| Cost per run | **~$0.05** | $4.01 |
-| Wall time mean | 2 331 s | **1 548 s** |
-
-**igni wins by +18 ✅ trials at 1/80th the cost.** The gap is concentrated in the ⚠ band — igni commits to a concrete answer where Claude Code stays in design-conversation mode. Both systems hit the same hard-wrong rate (12 %), so the win comes from converting partial/clarifying responses into directly-mergeable ones.
-
-The architectural choices that drive the gap: (1) **CodeIndex queried first, not files** — a pre-built semantic + metadata index lets the agent locate reuse targets and conventions by typed filter or HyDE-style code-shaped query, instead of grep-walking the repo. (2) **A mandatory "What already exists" preamble** — agent must name the reuse target, the closest near-miss it rejected, and the conventions to match before writing any code. (3) **A small, focused model with structured tools** — MiniMax-M2.7 + index access matches Opus-4.7 quality at 1/80th the price.
-
-### Feature comparison
-
-| Feature | Claude Code | igni |
+| Part | Repository | What it does |
 |---|---|---|
-| Architecture | Single agent loop | Multi-agent teams (Agno) |
-| Task routing | Manual sub-agent spawning | Automatic via Coordinate/Route modes |
-| Code intelligence | Grep + file reads | Shell-first reads; CodeIndex semantic search as a licensed extension |
-| Project knowledge | None | The Artifacts extension (licensed; its own Neo4j store), served through your igni server |
-| Planning | Plan mode (read-only) | Agno reasoning + Tasks mode |
-| IDE integration | MCP server (stdio) | None — igni ships the desktop app, the web client and the CLI; MCP client (Agno MCPTools) |
-| Extensibility | Plugins, hooks, MCP | Agents + hooks + toolkits + MCP |
-| Agent evals | Not built-in | Built-in regression testing framework |
-| Memory | File-based MEMORY.md | Agno Memory + DB-backed storage |
-| Learning | None | Agno LearningMachine (user profiles, entity memory) |
-| Guardrails | None | PII detection, prompt injection, moderation |
-| HITL | Implicit | Explicit confirmation/input requirements |
-| Default model | Anthropic Claude | Whatever your igni server routes to, or your own (model-agnostic) |
+| **igni-core** (this one) | [ignite-ember/igni-core](https://github.com/ignite-ember/igni-core) | The agent runtime and its backend: orchestration, tools, permissions, hooks, skills, MCP, extensions, sessions. Runs on a person's machine, behind the desktop app and the web client, or headless as the `igni` command. |
+| **igni server** | [ignite-ember/igni-server](https://github.com/ignite-ember/igni-server) | Self-hosted, and runs with no internet access. Identity (sign-in, OIDC, SCIM, organisations), inference routing and the model key pool (your GPU nodes or any OpenAI-compatible endpoint, Anthropic, AWS Bedrock, Vertex AI, Azure OpenAI and Microsoft Foundry, with the server holding the cloud credentials), the extensions approved services ship, group policy, and the audit trail. |
+| **igni app** | [ignite-ember/igni-app](https://github.com/ignite-ember/igni-app) | The desktop app (Tauri) and the web client: one web UI, where people chat with agents, approve what they do, and use extensions' pages. |
+| **SDKs** | [ignite-ember/igni-sdk](https://github.com/ignite-ember/igni-sdk) | `igni-service` (an extension's backend service), `igni-extension` (an extension's process), `igni-client` (a program driving an igni), `@ignite-ember/extension-bridge` (an extension's page), `@ignite-ember/ui-react` and `@ignite-ember/ui-css` (its UI). |
+
+Paid modules (CodeIndex, Artifacts, Fleet) are separate products that plug
+in through the same extension and service-identity interfaces. igni-core
+runs no graph database or embedder of its own.
+
+## What igni-core gives you
+
+- **Multi-agent orchestration.** An orchestrator reads each task and
+  assembles a team from the agent pool, in one of four team modes
+  (route, coordinate, broadcast, tasks). Any agent may spawn a sub-team,
+  within configurable depth limits, agent caps and timeouts.
+  [Agents](docs/AGENTS.md), [Architecture](docs/ARCHITECTURE.md).
+- **Tools under a permission system.** Every tool call is checked against
+  `allow` / `ask` / `deny` rules and a permission mode (default, accept
+  edits, plan, bypass, `dontAsk`). A `deny` rule holds in every mode, and
+  an organisation's managed settings set a floor no user flag gets past.
+  `--read-only` runs only reads; `--strict` denies anything without an
+  explicit allow rule. Protected paths and dangerous command shapes are
+  blocked. [Security](docs/SECURITY.md#1-permission-system), [Tools](docs/TOOLS.md).
+- **Workspace trust.** Opening a folder never runs its code: until you
+  trust it, its tools, hooks, workflows and permission settings stay off.
+  [Workspace trust](docs/CONFIGURATION.md#workspace-trust).
+- **Hooks.** Commands or HTTP calls on agent lifecycle events, which can
+  block, change or record a tool call. Hooks your organisation ships run
+  only as your `hooks.group` setting allows. [Hooks](docs/HOOKS.md).
+- **Skills.** Reusable workflows as `SKILL.md` files, invoked by slash
+  command or picked by the orchestrator. [Skills](docs/SKILLS.md).
+- **MCP.** igni is an MCP client over stdio and SSE; servers' tools reach
+  the agents you allow them for. [MCP](docs/MCP.md).
+- **Extensions.** A capability with a service behind it: tools over MCP,
+  its own page in the app, hooks and host access, each declared in a
+  manifest an administrator approves. The extension's process runs in an
+  OS sandbox (Seatbelt, bubblewrap, AppContainer) that reaches only its own
+  service and declared hosts. A bundle igni server distributes is installed
+  only if its signature verifies against the service a super admin
+  approved; anything else is a development install behind
+  `IGNI_DEV_EXTENSIONS=1`.
+  [Extensibility](docs/EXTENSIBILITY.md), [Plugins](docs/PLUGINS.md).
+- **Sessions and memory.** Sessions, scheduled tasks and memory are kept in
+  local SQLite, or in PostgreSQL through the `igni-cloud` package and
+  `storage.database_url`.
+  Resume with `-c` or `--session-id`. [Architecture](docs/ARCHITECTURE.md#session-management).
+- **Organisation policy.** igni server publishes a signed policy pack per
+  group (settings, agents, hooks, MCP servers); igni verifies the signature,
+  issuer, person and version before merging any of it.
+  [Group policy](docs/CONFIGURATION.md#organisation-group-policy).
+- **Any model.** A model registry with three providers: `openai_like` (any
+  OpenAI-compatible API: vLLM, llama.cpp, Ollama, OpenAI, Groq, …),
+  `anthropic` (Claude, or an Anthropic-compatible gateway) and `gemini`.
+  Or the models your igni server serves, with no key on the laptop.
+  [Configuration](docs/CONFIGURATION.md#model-registry).
+- **Air-gapped operation.** One switch, `air_gapped: true`, stops every
+  outbound connection igni makes on its own. [Running air-gapped](#running-air-gapped).
+- **Auditability.** A JSON-lines audit log on the machine
+  (`~/.igni/audit.log`), OpenTelemetry traces and metrics to your own
+  collector (each agent run, model call and tool call, with igni's
+  permission decision; prompts and code left out by default), and the
+  organisation's append-only audit trail in igni server.
+  [OpenTelemetry](docs/CONFIGURATION.md#opentelemetry).
+- **Verifiable releases.** Every release carries SHA-256 checksums,
+  CycloneDX SBOMs and build-provenance attestations you can check on a
+  machine with no network. [Verifying a release](docs/VERIFYING_RELEASES.md).
 
 ## Quick Start
 
 ```bash
-brew install ignite-ember/tap/igni-core  # or: pip install igni-core (the old name ignite-ember works for both)
+brew install ignite-ember/tap/igni-core  # or: pip install igni-core, or: uv tool install igni-core
 cd your-project
 igni --read-only -m "In one sentence, what does this project do?"
 ```
 
-`igni` is the command; `ignite-ember` is kept as an alias so existing
-shell aliases and scripts keep working. Both are the same entry point,
-and pip and the Homebrew formula both install both names.
-On the command line it runs **one task and exits** (`-m`, or `-p` for a
+`igni` is the command, and the only one pip, uv and the Homebrew formula
+install. It searches code with ripgrep: the formula brings Homebrew's, pip
+and uv bring the PyPI package on macOS arm64 and Linux x86_64, and
+elsewhere you install `rg` yourself (`brew install ripgrep`, `sudo apt
+install ripgrep`) — see [Quickstart](QUICKSTART.md#install). On the command line it runs **one task and exits** (`-m`, or `-p` for a
 pipe); there is no terminal chat UI any more — run it bare and it says so.
+The interactive chat is the desktop app and the web client.
 
 **What the published package holds today.** `igni-core` on PyPI is
 **v1.0.4**, and it is this repository's build: the `igni_core` module,
-the `igni` command and the decisions service. The old name installs the
-same thing — `pip install ignite-ember` resolves to `igni-core==1.0.4`
-through the alias (`packages/ignite-ember/` — metadata, and a dependency
-on `igni-core` at the same version), and the Homebrew formula installs
-`igni-core` as well. The command above works either way. To work on it
-instead of installing it:
+the `igni` command and the decisions service, and the Homebrew formula
+installs the same package. The old name, `ignite-ember`, is retired: its
+releases are yanked from PyPI and there is no formula or command by it.
+
+**Why `--read-only`.** A headless run cannot ask before it runs a command,
+so decide up front what it may do. igni reads files with the shell, which
+asks by default, so without `--read-only` the question above stops at its
+first `cat` with *"Run paused for confirmation"* and exits 1 — see
+[A headless run cannot ask you anything](QUICKSTART.md#a-headless-run-cannot-ask-you-anything).
+The first run in a folder also asks whether to trust it, and writes
+`igni.md` and `.igni/` there.
+
+To work on igni-core instead of installing it:
 
 ```bash
 git clone https://github.com/ignite-ember/igni-core.git
@@ -76,13 +130,16 @@ cd igni-core
 uv venv && uv pip install -e ".[dev]"
 source .venv/bin/activate          # puts `igni` on your PATH
 ```
-The interactive chat is the desktop app and the web client. A headless run cannot ask before it runs a command, so decide
-up front what it may do. igni reads files with the shell, which asks by
-default, so without `--read-only` the question above stops at its first
-`cat` with *"Run paused for confirmation"* and exits 1 — see
-[A headless run cannot ask you anything](QUICKSTART.md#a-headless-run-cannot-ask-you-anything).
 
-To point it at your own igni server, set `api_url` in your user config,
+## Configuration
+
+Settings merge, strongest first, from the managed-settings file (which a
+user cannot override), your organisation's group policy, command-line
+flags, a project's `.igni/config.local.yaml` and `.igni/config.yaml`
+(once you trust the folder), and your `~/.igni/config.yaml`.
+[Configuration](docs/CONFIGURATION.md) has every key.
+
+**Connecting to igni server.** To point it at your own igni server, set `api_url` in your user config,
 `~/.igni/config.yaml` — not a project's `.igni/config.yaml` or
 `config.local.yaml`, which may not name a server and are ignored for it,
 with a warning — and run `igni login` (or `igni login --token-stdin` with a
@@ -101,50 +158,170 @@ portal_url: https://igni.acme.example
 `portal_url` is worked out from `api_url` when both run under one name and
 differ by a host label (`api.acme.example` → `acme.example`); set it when
 they differ any other way, such as by port, or sign-in opens a page the API
-does not serve.
+does not serve. Signed in, the models your server serves join the registry
+with `api_key: cloud_token`, a token igni sends only to that server's
+origin. There is no default server: until you set `api_url`, igni contacts
+none.
 
-Or bring your own model (OpenAI, Anthropic, Groq, Ollama, etc.):
-
-```bash
-export OPENAI_API_KEY=sk-...
-```
+**Bringing your own model.** Add it to the registry. The endpoint can be a
+model server inside your network:
 
 ```yaml
-# .igni/config.yaml
+# ~/.igni/config.yaml
 models:
-  default: gpt-4o
+  default: local-coder
   registry:
-    gpt-4o:
-      provider: openai_like
-      model_id: gpt-4o
-      url: https://api.openai.com/v1
-      api_key: sk-...              # direct key in config
-      # api_key_env: OPENAI_API_KEY  # or from env var
-      # api_key_cmd: "op read ..."   # or from shell command
+    local-coder:
+      provider: openai_like            # vLLM, llama.cpp, Ollama, or any OpenAI-compatible API
+      model_id: qwen2.5-coder-32b
+      url: http://vllm.acme.internal:8000/v1
+      api_key_env: VLLM_API_KEY        # or api_key, or api_key_cmd: "op read ..."
 ```
 
-See [Quickstart](QUICKSTART.md) for the full setup guide.
+See [Model registry](docs/CONFIGURATION.md#model-registry) for the
+`anthropic` and `gemini` providers, and
+[Cloud models through igni server](docs/CONFIGURATION.md#cloud-models-through-igni-server)
+for Claude on Bedrock or Vertex AI and models on Azure OpenAI.
 
-### Quickstart (new setup)
+## Running air-gapped
 
-1. **Install** — `pip install 'igni-core[decisions]==1.0.4'` (or
-   `brew install ignite-ember/tap/igni-core`; the old name `ignite-ember` installs
-   the same package from either).
-2. **Configure a model** — set `OPENAI_API_KEY` (or any provider key) and add the
-   model to `.igni/config.yaml`; or point `api_url` at your igni server and run
-   `igni login`
-3. **Run** — `igni -m "…"`, or the desktop app
+Set the switch in `~/.igni/config.yaml`, in the managed-settings file
+(`/etc/igni/managed-settings.yaml` on Linux,
+`/Library/Application Support/igni/managed-settings.yaml` on macOS,
+`%PROGRAMDATA%\igni\managed-settings.yaml` on Windows), in a group's policy,
+or with `IGNI_AIR_GAPPED=1`:
 
-See [Quickstart](QUICKSTART.md) for the full guide.
+```yaml
+air_gapped: true
+network:
+  internal_hosts: ["git.acme.internal", "*.svc.acme.internal"]
+```
+
+With it on, igni makes no connection outside your network on its own:
+
+- no update check to PyPI; the desktop updater uses only your
+  `update_endpoint`, if you set one;
+- web search and URL fetch are not built at all;
+- plugins, extensions, MCP servers reached by URL, HTTP hooks and an
+  OpenTelemetry collector are allowed only on hosts inside the network —
+  loopback, local paths, the hosts of `api_url`, `portal_url`,
+  `update_endpoint` and your plugin marketplaces, and
+  `network.internal_hosts`;
+- the local decision model is loaded only from a pre-seeded cache, and the
+  desktop app downloads no runtime: it runs on the `runtime_python` you
+  provision;
+- Agno's telemetry is off, even if `AGNO_TELEMETRY=true` is set.
+
+A project's own config cannot switch it off or name a host as internal.
+What the switch does not cover: programs the agent runs (`curl`, `pip`,
+`git`), MCP servers started as local processes, command hooks, and the model
+endpoints you configure. Run igni behind a deny-all egress rule for those.
+
+Without the switch, an unconfigured install contacts no vendor service: the
+only connections it makes on its own are the daily PyPI update check
+(`update_check_ttl: 0` turns it off), the desktop app's updater and
+first-launch runtime download, and the decision model's first download.
+Web search and URL fetch ask each time.
+[Outbound connections by default](docs/SECURITY.md#outbound-connections-by-default)
+lists each one, and `tests/test_an_air_gapped_install_makes_no_outbound_call.py`
+proves each row.
+
+[Air-gapped mode](docs/CONFIGURATION.md#air-gapped-mode) covers providing
+the desktop runtime and pre-seeding the decision model. For the server side,
+igni server ships each release as one signed offline bundle
+([Offline updates](https://github.com/ignite-ember/igni-server/blob/main/docs/OFFLINE_UPDATES.md),
+[Air-gap rehearsal](https://github.com/ignite-ember/igni-server/blob/main/docs/AIR_GAP_REHEARSAL.md),
+[Self-hosting](https://github.com/ignite-ember/igni-server/blob/main/docs/self-hosting.md)).
+
+## Clients
+
+igni ships the desktop app (Tauri), the web client and the CLI. The desktop
+app and the web client share one web UI, both in
+[igni-app](https://github.com/ignite-ember/igni-app); the desktop app spawns
+this backend and talks to it over a loopback WebSocket
+(`python -m igni_core.backend --ws-port 0`) that checks the page's origin
+and a per-launch token. In a terminal, `igni -m` and `igni -p` run one task.
+
+## Documentation
+
+**Start here**
+
+- [Quickstart](QUICKSTART.md) — install, first run, permissions for a headless run
+- [Configuration](docs/CONFIGURATION.md) — settings tiers, the model registry, igni server, air-gapped mode, telemetry
+- [Security](docs/SECURITY.md) — threat model, permission system, protected paths, outbound connections, enterprise hardening
+- [Architecture](docs/ARCHITECTURE.md) — the process split, the request lifecycle, sessions
+
+**Agents and what they use**
+
+- [Agents](docs/AGENTS.md) — agent definitions, the orchestrator, team modes, sub-teams
+- [Tools](docs/TOOLS.md) — the toolkits and which agent gets which
+- [Skills](docs/SKILLS.md) — reusable workflows invoked by slash command
+- [Hooks](docs/HOOKS.md) — lifecycle hooks, including your organisation's
+- [MCP](docs/MCP.md) — connecting MCP servers
+- [Plugins](docs/PLUGINS.md) — Claude-Code-compatible bundles of skills, agents, hooks and MCP servers
+- [Onboarding](docs/ONBOARDING.md) — what the first run in a folder sets up
+
+**Extending igni**
+
+- [Extensibility](docs/EXTENSIBILITY.md) — the contract extensions build against: manifest, permissions, sandbox, trust
+- [Your first extension](https://github.com/ignite-ember/igni-sdk/blob/main/docs/YOUR_FIRST_EXTENSION.md) — from an empty directory to a running extension (in igni-sdk)
+- [Host object model](docs/HOST_OBJECT_MODEL.md) — what an extension's process and page may reach
+- [Design system](https://github.com/ignite-ember/igni-app/blob/main/docs/DESIGN_SYSTEM.md) — the UI an extension's page is drawn with (in igni-app)
+
+**Releases and assurance**
+
+- [Verifying a release](docs/VERIFYING_RELEASES.md) — checksums, SBOMs, build provenance, online and air-gapped
+- [Vulnerability management](docs/VULNERABILITY_MANAGEMENT.md) — what is scanned, what gates a release, remediation targets
+- [Reporting a vulnerability](SECURITY.md) — where to send it, and what happens next
+
+**Working on igni-core**
+
+- [Contributing](CONTRIBUTING.md) — how to send a change, and the Developer Certificate of Origin
+- [Development](docs/DEVELOPMENT.md) — project structure, setup, the Makefile
+- [Testing](docs/TESTING.md) — running the suite
+- [Evals](docs/EVALS.md) — the agent evaluation framework
+- [Benchmarks](docs/BENCHMARKS.md) — a 12-case software-engineering benchmark
+- [Migration](docs/MIGRATION.md) — coming from Claude Code or Codex
+- [Platform plan](docs/PLATFORM_PLAN.md) and [Build plan](docs/BUILD_PLAN.md) — what is still to be built, in order
+
+## Security
+
+igni-core runs on a person's own machine and executes what agents decide,
+so its defences are local: the permission system, workspace trust,
+protected paths, the extension sandbox, and an origin check plus a
+per-launch token on the backend's WebSocket.
+[docs/SECURITY.md](docs/SECURITY.md) is the threat model. Report a
+vulnerability as [SECURITY.md](SECURITY.md) says, not in a public issue.
+
+Releases are built by `.github/workflows/release.yml` and published to PyPI
+with trusted publishing (PEP 740 attestations). Each GitHub release carries
+`SHA256SUMS`, CycloneDX SBOMs and Sigstore build-provenance bundles;
+[Verifying a release](docs/VERIFYING_RELEASES.md) shows how to check them,
+including on an air-gapped machine. A cosign signature over `SHA256SUMS`
+follows once the release key exists.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Every commit carries a
+Developer Certificate of Origin sign-off (`git commit -s`).
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 ## Upgrading
 
 The VS Code and JetBrains extensions are no longer shipped or supported;
 release notes below that mention them are history.
 
+### Unreleased
+
+- **The `ignite-ember` name and command are retired.** The package is `igni-core` and the command is `igni`; nothing is published or installed under the old name any more. Every `ignite-ember` release on PyPI is yanked, the `ignite-ember` console script is gone from the package, and the Homebrew tap has a single formula, `igni-core` — `ignite-ember/tap/ignite-ember` no longer resolves. Install with `pip install igni-core`, `uv tool install igni-core` or `brew install ignite-ember/tap/igni-core`; a script that runs `ignite-ember` has to run `igni`.
+- **`pip install igni-core` works where PyPI's `ripgrep` has no wheel.** The `ripgrep` package is required only on macOS arm64 and Linux x86_64, the platforms it ships wheels for; its sdist needs Rust, so on Linux arm64 and Intel macOS the install used to fail. An `rg` on `PATH` is always used first; the package's binary is found even when the venv is not on `PATH` (a `uv tool` install, the desktop app) and is put on the agent shell's `PATH` after the user's own. With no `rg` at all, code search falls back to a slower walk and the log says how to install ripgrep (`brew install ripgrep`, `sudo apt install ripgrep`).
+
 ### The split release (v1.0.3 → v1.0.4)
 
-- **`igni-core` is on PyPI.** v1.0.4 is the first release published under igni's own name: `pip install 'igni-core[decisions]==1.0.4'` installs the `igni_core` module, the `igni` command and the decisions service. `ignite-ember` is now an alias — the same version, the same extras, nothing of its own — so `pip install ignite-ember` and the Homebrew formula install igni-core 1.0.4.
+- **`igni-core` is on PyPI.** v1.0.4 is the first release published under igni's own name: `pip install 'igni-core[decisions]==1.0.4'` installs the `igni_core` module, the `igni` command and the decisions service. The `ignite-ember` name that 1.0.4 also shipped as an alias is retired since: its PyPI releases are yanked, and the Homebrew formula is `igni-core`.
 - **The cloud layer is its own package.** `igni-cloud` holds the PostgreSQL storage and the producer/guest binding, found through the `igni.layers` and `igni.storage` entry points, rather than inside the core.
 - **The wire contract is typed.** The messages the backend and the app exchange have one definition, checked from both sides — the app's client is igni-core's contract, byte for byte.
 - **One module per concern.** The backend is split into modules that each own one thing — settings, auth, the cloud, the tools, the transport — behind interfaces the tests can substitute. Nothing reaches into another's internals.
@@ -155,7 +332,7 @@ release notes below that mention them are history.
 ### Rebrand + signed desktop app (v0.7.0 → v0.7.1)
 
 - **Rebrand to `igni`.** Shorter, single-word product name — the Tauri window, the macOS Dock, the VSCode + JetBrains marketplace listings, the welcome screen, the agent's self-identification all read `igni`. Internal identifiers (PyPI package `ignite-ember`, Python module `igni_core`, Tauri bundle id `sh.ignite-ember.desktop`, VSCode/JetBrains plugin slugs) are preserved so existing installs keep auto-updating without breakage.
-- **`igni` CLI alias.** The terminal command is now `igni` (the old `ignite-ember` invocation still works for back-compat).
+- **`igni` CLI alias.** The terminal command is now `igni` (the old `ignite-ember` invocation kept working through v1.0.4 and is retired since).
 - **Apple Developer ID signing + notarization** on the macOS desktop app. First-launch no longer triggers the "unidentified developer" Gatekeeper warning; the notarization ticket is stapled into the `.app` so offline first-launch works too. The auto-updater pulls a fully signed + notarized bundle.
 - **Mermaid diagrams in the chat.** Fenced ` ```mermaid ` blocks render as SVG (sequence / flowchart / state / ER / pie / gantt / mindmap / xy-chart / quadrant / timeline). Mermaid lazy-loads — first diagram in a session triggers the download.
 - **Collapsible code blocks.** Anything taller than ~220px starts collapsed behind a chevron with a fade overlay; click anywhere on the clip (or the chevron) to expand. Copy chip stays always-visible top-right.
@@ -243,82 +420,6 @@ brew upgrade ignite-ember/tap/igni-core
 If `brew upgrade` doesn't work or you encounter issues, manually reinstall:
 
 ```bash
-brew uninstall igni-core && brew untap ignite-ember/tap && brew tap ignite-ember/tap && brew install igni-core
+brew uninstall igni-core && brew untap ignite-ember/tap && brew install ignite-ember/tap/igni-core
 ```
 
-## Clients
-
-The Textual terminal UI was removed in v0.9.7, and the VS Code and JetBrains
-extensions are no longer shipped. igni ships the desktop app (Tauri), the web
-client and the CLI. The desktop app and the web client share one web UI,
-both in [igni-app](https://github.com/ignite-ember/igni-app); the desktop app spawns the backend and talks to it over a WebSocket
-(`python -m igni_core.backend --ws-port 0`). Features: streaming
-responses, agent tree visualization, token tracking, session picker, keyboard
-shortcuts, HITL confirmation dialogs. In a terminal, `igni -m` and `igni -p`
-run one task.
-
-## MCP
-
-igni acts as an MCP *client*: configure external MCP servers via `/mcp` or the MCP panel and their tools become available to the agent.
-
-> *Exposing igni itself as an MCP server (so any MCP-compatible IDE — Cursor, Windsurf, etc. — can connect to it) is on the roadmap; the `igni mcp serve` subcommand isn't shipped yet.*
-
-## Key Features
-
-### Project knowledge
-
-There is no knowledge base in igni itself any more: the `knowledge:` settings
-and `/knowledge` commands left with the Artifacts module, a separate licensed
-service that keeps project documents and decisions in its own Neo4j store and
-ships its extension through your igni server. A super admin approves the
-service once; signed-in people get its tools.
-
-### Learning & Reasoning
-
-- **Learning** — Agno LearningMachine builds user profiles, entity memory, and session context across conversations
-- **Reasoning tools** — `think` and `analyze` tools for step-by-step reasoning during complex tasks
-
-### Guardrails
-
-Built-in safety guardrails via Agno's pre-hook system:
-
-```yaml
-guardrails:
-  pii_detection: true          # detect and flag PII in prompts
-  prompt_injection: true       # detect injection attempts
-  moderation: true             # OpenAI moderation API
-```
-
-### Human-in-the-Loop (HITL)
-
-Agents can pause execution to request confirmation or user input before proceeding with sensitive operations. The desktop app and the web client show interactive approval dialogs; a headless `igni -m` cannot, so it follows the permission policy and stops at anything only a person could approve.
-
-## Documentation
-
-- **[Quickstart](QUICKSTART.md)** — Get up and running in under 5 minutes
-- [Architecture](docs/ARCHITECTURE.md) — System design and agent topology
-- [Agents](docs/AGENTS.md) — Specialized agents and their roles
-- [Skills](docs/SKILLS.md) — Reusable prompted workflows (`/deploy`, `/resolve-issues`, etc.)
-- [Onboarding](docs/ONBOARDING.md) — First-run setup, CodeIndex, and agent proposals
-- [Tools](docs/TOOLS.md) — Available toolkits and capabilities
-- [MCP](docs/MCP.md) — IDE integration via Model Context Protocol
-- [Configuration](docs/CONFIGURATION.md) — Settings, permissions, and customization
-- CodeIndex — semantic code intelligence engine; an extension, documented in the CodeIndex repository (`igni__code-index/docs/igni-integration.md`)
-- [Benchmarks](docs/BENCHMARKS.md) — Head-to-head comparison vs Claude Code on a 12-case suite
-- [Evals](docs/EVALS.md) — Agent evaluation framework and regression testing
-- [Hooks](docs/HOOKS.md) — Pre/post tool execution hooks
-- [Extensibility Floor](docs/EXTENSIBILITY.md) — The contract extensions build against, and what it guarantees them
-- [Platform Plan](docs/PLATFORM_PLAN.md) — What has to be built for the single-user and shared backends, in order
-- [UI package](https://github.com/ignite-ember/igni-sdk/tree/main/clients/ui) — The tokens, classes and components an extension builds against (in igni-sdk)
-- [Design System](https://github.com/ignite-ember/igni-app/blob/main/docs/DESIGN_SYSTEM.md) — The scales, the primitives, and what still needs a human eye (in igni-app)
-- [Build Plan](docs/BUILD_PLAN.md) — The same work as ordered items, with the files they touch and how each one is verified
-- [Migration](docs/MIGRATION.md) — Coming from Claude Code or Codex
-- [Security](docs/SECURITY.md) — Threat model, permissions, and enterprise hardening
-- [Reporting a vulnerability](SECURITY.md) — where to send it, and what happens next
-- [Verifying a release](docs/VERIFYING_RELEASES.md) — checksums, SBOMs, build provenance and signatures, online and air-gapped
-- [Vulnerability management](docs/VULNERABILITY_MANAGEMENT.md) — what is scanned, what gates, and the remediation targets
-- [Development](docs/DEVELOPMENT.md) — Contributing and extending igni
-
-## License
-
-Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).

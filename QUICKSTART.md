@@ -18,24 +18,41 @@ source .venv/bin/activate       # puts `igni` on your PATH
 **Homebrew:**
 
 ```bash
-brew install ignite-ember/tap/igni-core   # ignite-ember/tap/ignite-ember is an alias of it
+brew install ignite-ember/tap/igni-core
 ```
 
 **pip:**
 
 ```bash
 pip install 'igni-core[decisions]==1.0.4'
-# or, under the old name, which installs the same package:
-pip install ignite-ember
 ```
 
-Those two install **v1.0.4** — this repository's build: the `igni_core`
-module, the `igni` command and the decisions service. `igni-core` is on
-PyPI under its own name, and the `ignite-ember` alias
-(`packages/ignite-ember/` — metadata, and a dependency on `igni-core` at
-the same version) forwards to it. The formula is `igni-core`, and
-`ignite-ember` is an alias of it; either way, Homebrew and pip both
-install the `igni` command and the `ignite-ember` alias.
+**uv:**
+
+```bash
+uv tool install igni-core
+```
+
+Each of these installs **v1.0.4** — this repository's build: the
+`igni_core` module, the `igni` command and the decisions service. The
+package is `igni-core` on PyPI and the formula is `igni-core` in the tap;
+`igni` is the one command they install. The old name, `ignite-ember`, is
+retired: its PyPI releases are yanked and there is no formula or command
+by it.
+
+**ripgrep.** igni searches code with `rg`, and an `rg` on your `PATH` is
+always the one it uses. The Homebrew formula depends on Homebrew's
+ripgrep. pip and uv install the PyPI `ripgrep` package only on macOS
+arm64 and Linux x86_64, the platforms it has wheels for, and igni finds
+that binary even when it is not on `PATH`. Anywhere else (Linux arm64,
+Intel macOS) install it yourself — without it code search falls back to a
+slower walk and the agent's `rg` commands fail:
+
+```bash
+brew install ripgrep        # macOS
+sudo apt install ripgrep    # Debian/Ubuntu
+sudo dnf install ripgrep    # Fedora
+```
 
 ## What `igni` is on the command line
 

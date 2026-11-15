@@ -10,7 +10,7 @@ evidence:
 
 | Repository | Tag | Workflow | What it ships |
 |---|---|---|---|
-| `ignite-ember/igni-core` | `v<version>` | `.github/workflows/release.yml` | the `igni-core` wheel and sdist, and the `ignite-ember` shim that depends on it |
+| `ignite-ember/igni-core` | `v<version>` | `.github/workflows/release.yml` | the `igni-core` wheel and sdist |
 | `ignite-ember/igni-app` | `v<version>` | `.github/workflows/release.yml` | the desktop installers, the macOS updater payload and `latest.json` |
 | `ignite-ember/igni-sdk` | `sdk-v<version>` | `.github/workflows/sdk-release.yml` | `igni-service`, `igni-extension` and `igni-client` wheels and sdists, the three `@ignite-ember/*` npm tarballs |
 

@@ -94,13 +94,11 @@ jobs:
             exit 1
           fi
 
-      # igni-core, and ignite-ember: the old name, empty, depending on
-      # igni-core at this version (packages/ignite-ember). Both go to PyPI;
-      # each project's trusted publisher names this workflow.
+      # igni-core's wheel and sdist. They go to PyPI, whose trusted
+      # publisher for the project names this workflow.
       - name: Build packages
         run: |
           uv build
-          uv build --out-dir dist packages/ignite-ember
 
       # The same bytes PyPI gets, for release-evidence: it attaches them to
       # the GitHub release (for installs that cannot reach PyPI), lists them
@@ -487,12 +485,14 @@ jobs:
         # minutes to expose the sdist. Polling the JSON index is
         # cheap and gives an unambiguous signal (returns 200 as soon
         # as the version's release row is queryable), so we gate the
-        # download step on that instead of blindly retrying curl.
+        # download step on that instead of blindly retrying curl. The
+        # answer is kept: the next step reads the sdist's URL and
+        # digest out of it.
         run: |
           VERSION="${{ steps.version.outputs.pypi_version }}"
           URL="https://pypi.org/pypi/igni-core/${VERSION}/json"
           for i in $(seq 1 20); do
-            if curl -fsSL -o /dev/null "$URL"; then
+            if curl -fsSL -o pypi.json "$URL"; then
               echo "pypi visible after $((i*30 - 30))s"
               exit 0
             fi
@@ -502,18 +502,46 @@ jobs:
           echo "::error::PyPI JSON index never returned 200 for igni-core==$VERSION after 10 minutes"
           exit 1
 
-      - name: Download sdist and compute SHA
-        id: sha
+      # The formula names the sdist by the full hashed URL PyPI's JSON
+      # API gives (``urls[]`` where ``packagetype`` is ``sdist``):
+      # Homebrew's style check refuses the ``/packages/source/`` short
+      # URL. The sha256 is the one PyPI states, checked against the
+      # bytes the URL serves before the tap gets it.
+      - name: Find the sdist PyPI serves
+        id: sdist
         run: |
+          set -euo pipefail
           VERSION="${{ steps.version.outputs.pypi_version }}"
-          URL="https://files.pythonhosted.org/packages/source/i/igni-core/igni_core-${VERSION}.tar.gz"
+          FOUND=$(python3 - "$VERSION" <<'PY'
+          import json, sys
+
+          version = sys.argv[1]
+          with open("pypi.json") as fh:
+              release = json.load(fh)
+          sdists = [f for f in release["urls"] if f["packagetype"] == "sdist"]
+          if len(sdists) != 1:
+              sys.exit(f"igni-core {version} has {len(sdists)} sdists on PyPI, not one")
+          url, sha = sdists[0]["url"], sdists[0]["digests"]["sha256"]
+          # Homebrew reads the formula's version off the URL's file name,
+          # and the install line pins igni-core==#{version}.
+          if not url.endswith(f"/igni_core-{version}.tar.gz"):
+              sys.exit(f"the sdist URL {url} is not igni_core-{version}.tar.gz")
+          print(url, sha)
+          PY
+          )
+          read -r URL SHA <<< "$FOUND"
           # JSON index is up (previous step gated on that), but the
           # sdist file itself can lag a beat longer on the CDN. Keep
           # a shorter retry loop here as a safety net rather than the
           # sole propagation gate.
           for i in $(seq 1 10); do
             if curl -fsSL -o sdist.tar.gz "$URL"; then
-              SHA=$(sha256sum sdist.tar.gz | awk '{print $1}')
+              GOT=$(sha256sum sdist.tar.gz | awk '{print $1}')
+              if [ "$GOT" != "$SHA" ]; then
+                echo "::error::$URL serves sha256 $GOT, PyPI says $SHA"
+                exit 1
+              fi
+              echo "url=$URL" >> "$GITHUB_OUTPUT"
               echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -528,16 +556,17 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          SHA="${{ steps.sha.outputs.sha256 }}"
+          URL="${{ steps.sdist.outputs.url }}"
+          SHA="${{ steps.sdist.outputs.sha256 }}"
 
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/ignite-ember/homebrew-tap.git" /tmp/homebrew-tap
           cd /tmp/homebrew-tap
 
           # Simple formula: create venv, pip install igni-core from PyPI (uses
-          # wheels). The formula is ``igni-core``, after the package, and
-          # ``Aliases/ignite-ember`` keeps the old name installable: both
-          # ``brew install ignite-ember/tap/igni-core`` and
-          # ``.../ignite-ember`` install this one formula.
+          # wheels). The formula is ``igni-core``, after the package, and it
+          # is the tap's only one. Its version is read off the sdist URL,
+          # and the install line pins ``igni-core==#{version}``, so the URL
+          # and the sha256 are all a release changes.
           # NOTE: Homebrew derives the class name from the formula file
           # via ``Formula.class_s``: ``igni-core`` → ``IgniCore``
           # (PascalCase, hyphens dropped). A lowercase leading letter
@@ -567,16 +596,15 @@ jobs:
             skip_clean "libexec"
 
             def install
-              venv = virtualenv_create(libexec, "python3.12")
-              system libexec/"bin/python3.12", "-m", "pip", "install", "--prefer-binary", "igni-core==PLACEHOLDER_VERSION"
-              # Both console scripts from pyproject's [project.scripts].
-              # ``igni`` is the canonical command and the one README and
-              # QUICKSTART tell brew users to type; for every release up
-              # to now only ``ignite-ember`` was linked, so the
-              # documented install path shipped without the documented
-              # command. The test below runs ``igni`` for that reason —
-              # dropping this line again fails the formula's own test.
-              bin.install_symlink libexec/"bin/ignite-ember"
+              virtualenv_create(libexec, "python3.12")
+              system libexec/"bin/python3.12", "-m", "pip", "install", "--prefer-binary", "igni-core==#{version}"
+              # The console script from pyproject's [project.scripts].
+              # ``igni`` is the command README and QUICKSTART tell brew
+              # users to type; a release once linked only another name,
+              # so the documented install path shipped without the
+              # documented command. The test below runs ``igni`` for
+              # that reason — dropping this line fails the formula's
+              # own test.
               bin.install_symlink libexec/"bin/igni"
 
               # Clear dylib IDs from Rust-built Python extensions so Homebrew's
@@ -587,21 +615,15 @@ jobs:
             end
 
             test do
-              # Run the canonical name first: ``brew test`` is the only
-              # thing that would have caught the missing symlink, and it
-              # was pointed at the other binary.
-              assert_match "igni", shell_output("#{bin}/igni --version")
-              assert_match "igni", shell_output("#{bin}/ignite-ember --version")
+              assert_match version.to_s, shell_output("#{bin}/igni --version")
             end
           end
           FORMULA
 
           # Fix heredoc indentation and replace placeholders
           sed -i 's/^          //' Formula/igni-core.rb
-          PYPI_VERSION="${{ steps.version.outputs.pypi_version }}"
-          sed -i "s|PLACEHOLDER_URL|https://files.pythonhosted.org/packages/source/i/igni-core/igni_core-${PYPI_VERSION}.tar.gz|" Formula/igni-core.rb
+          sed -i "s|PLACEHOLDER_URL|${URL}|" Formula/igni-core.rb
           sed -i "s|PLACEHOLDER_SHA|${SHA}|" Formula/igni-core.rb
-          sed -i "s|PLACEHOLDER_VERSION|${VERSION}|" Formula/igni-core.rb
 
           # Belt-and-suspenders: parse the generated Ruby before we
           # push it, so a future rebrand can't silently ship an
@@ -616,13 +638,7 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # The old name is an alias of this formula. Before the rename the
-          # formula was Formula/ignite-ember.rb with an igni-core alias to
-          # it; both go, or Homebrew would see two formulae for one name.
-          git rm -q --ignore-unmatch Formula/ignite-ember.rb Aliases/igni-core
-          mkdir -p Aliases
-          ln -sfn ../Formula/igni-core.rb Aliases/ignite-ember
-          git add Formula/igni-core.rb Aliases/ignite-ember
+          git add Formula/igni-core.rb
           # ``git commit`` fails with exit 1 when nothing is staged,
           # which would fail the job on a re-run of the same tag.
           # Skip cleanly instead — the tap is already up-to-date.

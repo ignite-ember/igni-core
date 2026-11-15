@@ -38,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 from pathlib import Path
 
 from agno.tools import Toolkit
@@ -46,6 +47,7 @@ from igni_core.core.tools.managed_process import ManagedProcess
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.shell_config import ShellToolsConfig
 from igni_core.core.tools.tool_result import LLMResultBuffer
+from igni_core.core.utils.ripgrep import shell_path
 
 #: Ceiling on a single ``await_process`` call: 24 hours.
 #:
@@ -195,6 +197,8 @@ class IgniShellTools(Toolkit):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=str(self.base_dir) if self.base_dir else None,
+                # ``rg`` reachable even when only the PyPI package has it.
+                env={**os.environ, "PATH": shell_path()},
                 start_new_session=True,  # new process group for clean kills
             )
         except Exception as e:

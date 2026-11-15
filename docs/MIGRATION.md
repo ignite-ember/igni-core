@@ -19,15 +19,15 @@ Cross-tool support is **enabled by default** — igni reads `CLAUDE.md` files, `
 ## Quick Start (for Claude Code users)
 
 ```bash
-brew install ignite-ember/tap/igni-core   # ignite-ember/tap/ignite-ember works too
+brew install ignite-ember/tap/igni-core
 # or: pip install 'igni-core[decisions]==1.0.4'
 
 igni login                            # sign in to your igni server account
 igni -m "explain this repository"      # run one task from the terminal
 ```
 
-That installs v1.0.4 — this repository's build, published as `igni-core`
-(the old `ignite-ember` name installs the same package). See
+That installs v1.0.4 — this repository's build, published as `igni-core`.
+See
 [Quickstart](../README.md#quick-start) for how to run it from a checkout.
 
 The chat itself lives in the desktop app or the web client — `igni` on its
@@ -136,7 +136,7 @@ models:
 
 | Claude Code | igni | Notes |
 |---|---|---|
-| `claude` | `igni` | Main command (`ignite-ember` is the old name and still works) |
+| `claude` | `igni` | Main command |
 | `--model claude-sonnet-4-6` | `--model MiniMax-M2.7` | Different default, both support overrides |
 | `--continue` / `-c` | `--continue` | Resume last session |
 | `--resume <id>` | `--session-id <id>` | Resume specific session |
@@ -194,7 +194,7 @@ models:
 
 ### Minimal (just switch)
 
-- [ ] `brew install ignite-ember/tap/igni-core` (or `pip install igni-core`; `ignite-ember` works for both)
+- [ ] `brew install ignite-ember/tap/igni-core` (or `pip install igni-core`, or `uv tool install igni-core`)
 - [ ] `igni login` — sign in to your igni server account
 - [ ] Run `igni -m "…"` — it automatically picks up:
   - `.mcp.json` (your MCP servers)
