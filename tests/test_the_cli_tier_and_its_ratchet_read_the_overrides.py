@@ -51,7 +51,8 @@ def test_the_overrides_are_merged_over_what_is_there():
 
     merged = CliTier(overrides).apply(accumulator).payload
 
-    assert merged["permissions"]["shell_execute"] == "deny"
+    assert merged["permissions"]["shell_execute"] == "ask"
+    assert merged["permissions"]["mode"] == "dontAsk"
     assert merged["permissions"]["web_search"] == "allow"
     assert merged["hooks"] == {"group": "ask"}
 
@@ -69,10 +70,13 @@ def test_no_overrides_make_an_empty_ratchet():
     assert ratchet.hooks_group is None
 
 
-def test_strict_records_its_denies_and_the_hooks_mode():
+def test_strict_records_its_held_levels_and_the_hooks_mode():
     ratchet = CliRatchet.of(_overrides(strict=True))
 
-    assert {"shell_execute", "file_write"} <= ratchet.denied
+    assert {"shell_execute", "file_write", "git_push", "git_destructive"} <= ratchet.held
+    assert ratchet.refusals({"shell_execute": "allow", "file_write": "deny"}) == {
+        "shell_execute": "allow"
+    }
     assert ratchet.hooks_group == "ask"
 
 

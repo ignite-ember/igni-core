@@ -94,7 +94,8 @@ class TestCLIFlags:
             mock_load.return_value = Settings()
             runner.invoke(cli, ["--strict", "-m", "hi"], catch_exceptions=False)
             overrides = mock_load.call_args.kwargs["cli_overrides"]
-            assert overrides.permissions.file_write == "deny"
+            assert overrides.permissions.mode == "dontAsk"
+            assert overrides.permissions.file_write == "ask"
 
     def test_no_web_flag(self):
         runner = CliRunner()

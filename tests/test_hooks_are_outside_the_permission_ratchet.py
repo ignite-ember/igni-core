@@ -45,6 +45,7 @@ from pathlib import Path
 
 from igni_core.cli.options import CliOptions
 from igni_core.core.config.cli_overrides import CliOverrides
+from igni_core.core.config.permission_eval import PermissionMode
 from igni_core.core.hooks.handlers.command import CommandHookHandler
 from igni_core.core.hooks.schemas import HookDefinition, HookPayload
 from igni_core.core.hooks.tool_events import PreToolUsePayload
@@ -54,9 +55,13 @@ class TestStrictDeniesTheAgentsShell:
     """The premise. If this breaks, the rest of the file is moot."""
 
     def test_strict_denies_shell_execute(self):
+        """``--strict`` is ``dontAsk``: a shell call no allow rule matches is
+        denied (the category is no longer set to ``deny``, so an allow rule
+        can opt the shell back in; see
+        tests/test_strict_lets_an_allow_rule_opt_a_tool_back_in.py)."""
         overrides = CliOverrides.from_options(CliOptions(strict=True))
 
-        assert overrides.permissions.shell_execute == "deny"
+        assert overrides.permissions.mode is PermissionMode.DONT_ASK
 
 
 class TestAHookRunsAnyway:

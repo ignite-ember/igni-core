@@ -38,6 +38,11 @@ class CliRatchet(BaseModel):
 
     #: Permission fields the command line set to their tightest value.
     denied: frozenset[str] = frozenset()
+    #: Permission levels the command line held at ``ask`` (``--strict``:
+    #: ``dontAsk`` denies what no allow rule matches, so ``ask`` is as tight
+    #: as a category can be while an allow rule can still opt a tool in). A
+    #: tier above may tighten one to ``deny`` but not raise it to ``allow``.
+    held: frozenset[str] = frozenset()
     #: ``hooks.group`` as the command line set it (``--strict`` sets ``ask``).
     hooks_group: GroupHookMode | None = None
 
@@ -54,16 +59,22 @@ class CliRatchet(BaseModel):
         permissions = overrides.permissions.to_payload()
         return cls(
             denied=frozenset(f for f, v in permissions.items() if v == cls.tightest(f)),
+            held=frozenset(f for f, v in permissions.items() if v == "ask"),
             hooks_group=overrides.hooks.group,
         )
 
     def refusals(self, permissions: Mapping[str, Any]) -> dict[str, str]:
-        """The fields of ``permissions`` that would loosen a CLI deny, with the value tried."""
-        return {
+        """The fields of ``permissions`` that would loosen a CLI deny or a
+        level it held at ``ask``, with the value tried."""
+        refused = {
             field: str(permissions[field])
             for field in sorted(self.denied)
             if permissions.get(field) is not None and permissions[field] != self.tightest(field)
         }
+        refused.update(
+            {field: "allow" for field in sorted(self.held) if permissions.get(field) == "allow"}
+        )
+        return refused
 
 
 class CliTier(Tier):
