@@ -441,3 +441,19 @@ async def test_an_interrupted_run_is_not_reported_when_agno_holds_no_stored_run(
 
     assert await _collect(controller.resume_interrupted()) == []
     assert _after_a_restart(db) == []
+
+
+async def test_a_call_the_person_declines_fires_permission_denied(tmp_path: Path):
+    """R120: a call declined in the dialog never runs, so no tool hook saw
+    it, and ``PermissionDenied`` never fired."""
+    controller, session, store = _controller(tmp_path)
+    _pend(store, "r1", "run-1", command="touch forbidden.txt")
+
+    await _collect(
+        controller.resolve_batch([msg.HITLDecision(requirement_id="r1", action="reject")])
+    )
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    denied = [c for c in session.hook_executor.executed if c["event"] == "PermissionDenied"]
+    assert [(c["target"], c["payload"].reason) for c in denied] == [("run_shell_command", "person")]

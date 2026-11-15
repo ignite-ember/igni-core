@@ -39,6 +39,7 @@ from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.hooks.extension_values import StopValue, UserPromptSubmitValue
+from igni_core.core.hooks.permission_notices import PermissionNotices
 from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.session.compaction.context_budget import ContextBudget
 from igni_core.core.session.message_outcome import (
@@ -125,6 +126,7 @@ class SessionMessageHandler:
             evaluator_ref=deps.permission_evaluator_ref or _no_evaluator,
             session_id_ref=deps.session_id_ref,
             audit=deps.tool_audit,
+            notices=PermissionNotices(lambda: self._hook_executor, deps.session_id_ref),
         )
         #: Why the last :meth:`handle` failed, or ``""`` when it did not —
         #: what a headless run's exit code is made from.

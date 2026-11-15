@@ -30,6 +30,7 @@ from igni_core.core.config.permission_eval import (
     PermissionEvaluator,
     PermissionOutcome,
 )
+from igni_core.core.hooks.permission_notices import PermissionNotices
 from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.session.message_outcome import OutcomeKind, TurnOutcome
 from igni_core.core.session.message_team import AnyRunOutput, MessageTeam
@@ -57,10 +58,13 @@ class PausePolicyResolver:
         evaluator_ref: Callable[[], PermissionEvaluator | None],
         session_id_ref: Callable[[], str],
         audit: ToolAudit | None = None,
+        notices: PermissionNotices | None = None,
     ) -> None:
         self._evaluator_ref = evaluator_ref
         self._session_id_ref = session_id_ref
         self._audit = audit
+        #: ``PermissionDenied`` for a call the policy refuses at the pause.
+        self._notices = notices
 
     async def settle(self, team: MessageTeam, run: AnyRunOutput) -> AnyRunOutput:
         """Confirm or reject what the policy decided, and continue the run.
@@ -87,6 +91,7 @@ class PausePolicyResolver:
                 else:
                     requirement.reject(note=f"Blocked: {decision.reason}")
                     self._refused(evaluator, requirement, decision)
+                    await self._notify_denied(requirement)
             run = await team.acontinue_run(
                 run_response=run,
                 requirements=list(run.requirements or []),
@@ -94,6 +99,16 @@ class PausePolicyResolver:
                 stream=False,
             )
         return run
+
+    async def _notify_denied(self, requirement: RunRequirement) -> None:
+        if self._notices is None:
+            return
+        execution = requirement.tool_execution
+        await self._notices.denied(
+            str(execution.tool_name or "") if execution is not None else "",
+            dict(execution.tool_args or {}) if execution is not None else {},
+            PermissionNotices.BY_EVALUATOR,
+        )
 
     def _refused(
         self,

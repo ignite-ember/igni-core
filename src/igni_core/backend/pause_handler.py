@@ -29,6 +29,7 @@ from igni_core.backend.schemas_pause import (
     PendingRequirement,
 )
 from igni_core.core.config.permission_eval import PermissionDecision
+from igni_core.core.hooks.permission_notices import PermissionNotices
 from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.utils.tool_audit import DecidedBy, ToolAudit
 from igni_core.protocol import messages as msg
@@ -53,6 +54,7 @@ class PauseHandler:
         evaluator: Any | None,
         store: PendingRequirementsStore,
         audit: ToolAudit | None = None,
+        notices: PermissionNotices | None = None,
     ) -> None:
         """Bind the evaluator + store the handler operates on.
 
@@ -65,6 +67,9 @@ class PauseHandler:
         self._evaluator = evaluator
         self._store = store
         self._audit = audit
+        #: ``PermissionRequest`` for what is put to the person,
+        #: ``PermissionDenied`` for what the policy refuses here.
+        self._notices = notices
 
     def handle(self, event: Any) -> PauseHandleResult:
         """Route each requirement through the evaluator, deferring
@@ -100,6 +105,10 @@ class PauseHandler:
                 if result.ok:
                     if auto_decision is AutoDecision.REJECT:
                         self._record_refusal(raw_name, tool_args, reason, source)
+                        if self._notices is not None:
+                            self._notices.denied_later(
+                                raw_name, tool_args, PermissionNotices.BY_EVALUATOR
+                            )
                     auto_resolved.append(req)
                     continue
                 # Fall through to the user-prompt path on any
@@ -116,6 +125,8 @@ class PauseHandler:
                 req_id, PendingRequirement(req=req, run_id=run_id, request=request)
             )
             requirements.append(request)
+            if self._notices is not None:
+                self._notices.requested_later(raw_name, tool_args)
 
         messages: list[msg.Message] = []
         if requirements:

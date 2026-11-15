@@ -35,6 +35,7 @@ from igni_core.backend.schemas_hitl import (
 )
 from igni_core.backend.schemas_pause import PauseHandleResult
 from igni_core.core.approvals.declined import declined_note
+from igni_core.core.hooks.permission_notices import PermissionNotices
 from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.session.persistence.run_history import RunHistory
 from igni_core.core.utils.tool_audit import DecidedBy
@@ -83,10 +84,14 @@ class HitlController:
         self._session = session
         self._store = store
         self._stream_factory: StreamFactory = stream_factory or self.stream_with_subagent
+        self._notices = PermissionNotices(
+            lambda: getattr(session, "hook_executor", None), lambda: session.session_id
+        )
         self._pause_handler = pause_handler or PauseHandler(
             evaluator=session.permission_evaluator,
             store=store,
             audit=getattr(session, "tool_audit", None),
+            notices=self._notices,
         )
         self._tracer = tracer or HITLTracer(enabled=False)
 
@@ -142,12 +147,14 @@ class HitlController:
             yield proto
 
     def _record_refusal(self, req: RunRequirement) -> None:
-        """Audit a paused call the person refused: it never runs, so no
-        tool hook sees it (``core/utils/tool_audit.py``)."""
+        """Audit a paused call the person refused, and fire
+        ``PermissionDenied`` for it: it never runs, so no tool hook sees it
+        (``core/utils/tool_audit.py``)."""
+        tool = RequirementTool.of(req)
+        self._notices.denied_later(tool.name, tool.args, PermissionNotices.BY_PERSON)
         audit = getattr(self._session, "tool_audit", None)
         if audit is None:
             return
-        tool = RequirementTool.of(req)
         evaluator = getattr(self._session, "permission_evaluator", None)
         mode = getattr(getattr(evaluator, "mode", None), "value", None)
         audit.refused(

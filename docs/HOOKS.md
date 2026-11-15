@@ -47,15 +47,18 @@ Agent calls edit_file
 
 ### Permission events
 
-Fired by the permission evaluator, paired. Both carry
+Fired around a permission decision, wherever it is made — in the tool
+pipeline, or at the approval pause before it (the dialog in the app, the
+policy that settles a pause in `igni -m`). Both carry
 `{session_id, tool_name, tool_args}`; `PermissionDenied` adds a
-`reason` naming the stage that blocked the call — `pre_tool_use_hook`
-or `permission_evaluator`. There is no `rule` field on either.
+`reason` naming who blocked the call — `pre_tool_use_hook`,
+`permission_evaluator` (a deny rule, a mode, `--read-only`) or `person`
+(declined in the approval dialog). There is no `rule` field on either.
 
 | Event | When It Fires | Can Block? | Use Case |
 |---|---|---|---|
 | `PermissionRequest` | The evaluator returned `ASK` and the request is about to be put to the user | No | Audit who was asked for what; route approvals to Slack |
-| `PermissionDenied` | `DENY` won — a deny rule, a plan-mode block, or headless mode with no matching allow | No | Alerting on blocked tools; explaining refusals in your own words |
+| `PermissionDenied` | `DENY` won — a deny rule, a plan-mode block, `--read-only`, headless mode with no matching allow, or the person declined | No | Alerting on blocked tools; explaining refusals in your own words |
 
 `PreToolUse` is the one that can *change* the answer; these two
 observe the decision after it is made.
