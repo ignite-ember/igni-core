@@ -211,10 +211,8 @@ Startup
            │  With cross_tool_support: true, also scans:
            │  ├── ~/.claude/agents/        (Claude Code global)
            │  ├── ~/.claude/skills/        (Claude Code global)
-           │  ├── ~/.codex/               (Codex global)
            │  ├── .claude/agents/          (Claude Code project)
-           │  ├── .claude/skills/          (Claude Code project)
-           │  └── AGENTS.md / .codex/      (Codex project)
+           │  └── .claude/skills/          (Claude Code project)
            │
            ▼
     ┌──────────────────────────────────────────────┐
@@ -228,14 +226,14 @@ Startup
            └── Orchestrator reads pool on each request
 ```
 
-By default, igni loads agents and skills from both its own directories and Claude Code / Codex directories (`cross_tool_support` is on by default). Set `cross_tool_support: false` to only scan igni directories. See [Agents](AGENTS.md) and [Skills](SKILLS.md) for format details.
+By default, igni loads agents and skills from both its own directories and Claude Code's (`cross_tool_support` is on by default). Codex agent definitions (`AGENTS.md`, `.codex/`) are not read. Set `cross_tool_support: false` to only scan igni directories. See [Agents](AGENTS.md) and [Skills](SKILLS.md) for format details.
 
 ## Session Management
 
 Each igni session:
 
 1. **First run?** — if `.igni/agents/` doesn't exist, run the [onboarding flow](ONBOARDING.md): create default agents, ask about the user's work, fetch project context from CodeIndex, propose tailored agents
-2. **Loads** — agent pool (from igni/Claude/Codex directories), user memory, project context (`igni.md`), MCP servers, session history
+2. **Loads** — agent pool (from igni and Claude Code directories), user memory, project context (`igni.md`), MCP servers, session history
 3. **Runs** — interactive loop: user message → Orchestrator → team/agent → response
 3. **Persists** — updated memory, session state to SQLite
 4. **Cleans up** — MCP connections, temp files, background processes

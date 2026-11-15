@@ -157,26 +157,23 @@ By default, the agent pool loads from **igni directories only**:
 
 ### Cross-Tool Support (on by default)
 
-Cross-tool support is enabled by default. igni scans Claude Code and Codex directories automatically. To disable, set `agents.cross_tool_support: false`.
+Cross-tool support is enabled by default. igni scans Claude Code's agent directories automatically. Codex agent definitions (`AGENTS.md`, `.codex/`, `~/.codex/`) are not read. To disable, set `agents.cross_tool_support: false`.
 
 Additional directories scanned:
 
 | Scope | Location | Source | Format |
 |---|---|---|---|
 | Project | `.claude/agents/` | Claude Code | `.md` with YAML frontmatter (native) |
-| Project | `AGENTS.md` / `.codex/` | Codex | Markdown + TOML (parsed) |
 | Global | `~/.claude/agents/` | Claude Code | `.md` with YAML frontmatter (native) |
-| Global | `~/.codex/` | Codex | Markdown + TOML (parsed) |
 
-Within the same scope, igni directories take precedence over Claude Code, which takes precedence over Codex.
+Within the same scope, igni directories take precedence over Claude Code's.
 
 **Cross-tool compatibility:**
 
 - **Claude Code agents** — loaded natively. Same `.md` + YAML frontmatter format. No conversion needed.
-- **Codex agents** — Codex defines agent roles in `config.toml` and instructions in `AGENTS.md`. The loader parses these into the same internal representation.
 - **igni agents** — native format. Claude Code compatible fields + igni extensions (tags, reasoning, can_orchestrate).
 
-If you're coming from Claude Code or Codex, your existing agents are picked up automatically — zero migration. See [Migration](MIGRATION.md) for details.
+If you're coming from Claude Code, your existing agents are picked up automatically — zero migration. See [Migration](MIGRATION.md) for details.
 
 ### Built-in Agents
 

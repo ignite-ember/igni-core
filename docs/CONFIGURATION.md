@@ -408,10 +408,11 @@ scheduler:
   max_concurrent: 1                # Max tasks running at once (bounded by semaphore)
 
 # Agents & Skills
-# By default, igni scans its own directories AND Claude Code / Codex directories.
+# By default, igni scans its own directories AND Claude Code's. Codex
+# agent definitions (AGENTS.md, .codex/, ~/.codex/) are not read.
 # Set cross_tool_support: false to only scan igni directories.
 agents:
-  cross_tool_support: true         # also scans .claude/agents/, .codex/, etc.
+  cross_tool_support: true         # also scans .claude/agents/ and ~/.claude/agents/
   # igni dirs (always scanned):
   #   .igni/agents/              (project, committed)
   #   .igni/agents.local/        (project, gitignored)
@@ -419,8 +420,6 @@ agents:
   # Cross-tool dirs (when cross_tool_support: true):
   #   .claude/agents/             (Claude Code project)
   #   ~/.claude/agents/           (Claude Code user global)
-  #   AGENTS.md / .codex/         (Codex project)
-  #   ~/.codex/                   (Codex user global)
 
 skills:
   cross_tool_support: true         # also scans .claude/skills/
