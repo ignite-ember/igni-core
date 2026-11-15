@@ -48,8 +48,9 @@ class _Runnable:
         self.continued: list[dict[str, Any]] = []
         self.arun_calls: list[str] = []
 
-    def arun(self, task: str, *, stream: bool = True) -> Any:
+    def arun(self, task: str, *, stream: bool = True, stream_events: bool = False) -> Any:
         self.arun_calls.append(task)
+        self.stream_events = stream_events
         return self._play(self.tape)
 
     def acontinue_run(self, run_response: Any = None, **kwargs: Any) -> Any:
@@ -663,3 +664,14 @@ class TestTheContractsTheHandlerReliesOn:
     def test_an_object_missing_the_surface_is_not_a_runnable(self):
         assert not isinstance(object(), AgnoRunnable)
         assert not isinstance(object(), HitlCoordinatorProtocol)
+
+
+async def test_the_specialist_is_streamed_with_its_tool_events() -> None:
+    """Agno streams ``ToolCallStartedEvent`` only with ``stream_events``;
+    without it the agent tree said "no tools yet" and the visualizer's chart
+    was never sent (campaign R665, R666)."""
+    handler, _, runnable = _handler([])
+
+    await handler.run()
+
+    assert runnable.stream_events is True

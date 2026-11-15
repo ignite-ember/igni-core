@@ -78,6 +78,19 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         )
 
     # ── Base-class hooks ───────────────────────────────────────────
+
+    def _first_stream(self) -> Any:
+        """A fresh run of the task, with its events.
+
+        :data:`AGENT_EVENT_HANDLERS` reads Agno's tool-call events, which
+        Agno streams only with ``stream_events``: without it no
+        ``tool_started``/``tool_completed`` reached the window (the agent
+        tree said "no tools yet" after the specialist ran one) and the
+        visualizer's ``visualization_delta`` was never sent, so its chart
+        was never drawn. The lifecycle events it adds are not handled,
+        and a run's completion is said once (``record_completion``).
+        """
+        return self._context.runnable.arun(self._context.task, stream=True, stream_events=True)
     def _agent_completed_path(self) -> str:
         return self.state.agent_path_id
 
@@ -135,6 +148,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
                 session_id=session_id,
                 requirements=reqs,
                 stream=True,
+                stream_events=True,
             )
         # A headless run has nobody to answer: waiting would hang it for
         # ever, so the sub-agent's run ends at the pause, and the headless
@@ -199,6 +213,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
             session_id=session_id,
             requirements=reqs,
             stream=True,
+            stream_events=True,
         )
 
     async def _on_tool_started(self, event: agent_events.ToolCallStartedEvent) -> None:

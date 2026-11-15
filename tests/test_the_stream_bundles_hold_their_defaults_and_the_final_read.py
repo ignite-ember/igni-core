@@ -307,7 +307,7 @@ class _Tape:
     def __init__(self, tape, *, explode: BaseException | None = None, stored=None) -> None:
         self.tape, self.explode, self.stored = tape, explode, stored
 
-    def arun(self, task: str, *, stream: bool = True):
+    def arun(self, task: str, *, stream: bool = True, stream_events: bool = False):
         return self._play()
 
     async def _play(self):

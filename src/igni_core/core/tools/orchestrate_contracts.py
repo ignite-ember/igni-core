@@ -74,7 +74,7 @@ class AgnoRunnable(Protocol):
     both as optional keywords, so one method describes the shape.
     """
 
-    def arun(self, task: str, *, stream: bool = True) -> Any: ...
+    def arun(self, task: str, *, stream: bool = True, stream_events: bool = False) -> Any: ...
 
     def acontinue_run(
         self,
@@ -84,6 +84,7 @@ class AgnoRunnable(Protocol):
         requirements: Any = None,
         session_id: Any = None,
         stream: bool = True,
+        stream_events: bool = False,
     ) -> Any: ...
 
     async def aget_run_output(self, *, run_id: str, session_id: str) -> Any: ...

@@ -42,7 +42,7 @@ class _Runnable:
         self.tape, self.follow_up = tape, follow_up
         self.continued: list[dict[str, Any]] = []
 
-    def arun(self, task: str, *, stream: bool = True) -> Any:
+    def arun(self, task: str, *, stream: bool = True, stream_events: bool = False) -> Any:
         return self._play(self.tape)
 
     def acontinue_run(self, run_response: Any = None, **kwargs: Any) -> Any:
