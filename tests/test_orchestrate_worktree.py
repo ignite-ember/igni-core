@@ -258,6 +258,24 @@ class TestCreateIsolatedWorktree:
         finally:
             sandbox.finalize()
 
+    def test_a_namespaced_plugin_agent_gets_a_worktree(self, tmp_path):
+        """A plugin's agents are named ``plugin:agent`` and always run in a
+        worktree. Git refuses ``:`` in a branch name, so the campaign saw
+        every such spawn fail with "not a valid branch name"."""
+        _init_git_repo(tmp_path)
+        agent = SimpleNamespace(tools=[])
+
+        setup = _sandbox(project_dir=tmp_path, agent=agent, agent_name="igni-artifacts:archivist")
+        sandbox = setup.sandbox
+        assert setup.error is None, setup.error
+        assert sandbox is not None and sandbox.info is not None
+        try:
+            assert sandbox.info.worktree_path.is_dir()
+            assert "archivist" in sandbox.info.branch_name
+            assert ":" not in sandbox.info.branch_name
+        finally:
+            sandbox.finalize()
+
     def test_no_isolation_is_a_no_op(self, tmp_path):
         """``isolation=NONE`` never forks a worktree — and never
         touches the agent's tools."""

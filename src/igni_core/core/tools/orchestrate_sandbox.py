@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -124,7 +125,11 @@ class SpawnSandbox:
             )
         # Short, stable suffix so multiple isolated spawns
         # within one session don't collide on the worktree path.
-        wt_suffix = f"{session_id[:8] or 'sess'}-{agent_name}-{uuid.uuid4().hex[:6]}"
+        # The agent's name goes into a git branch name, and a plugin's
+        # agents are namespaced ``plugin:agent`` — git refuses ``:``
+        # (and spaces, ``~``, ``^``, ``?``, ``*``, ``[``) in a ref.
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", agent_name).strip("-.") or "agent"
+        wt_suffix = f"{session_id[:8] or 'sess'}-{safe_name}-{uuid.uuid4().hex[:6]}"
         create_result = manager.create_result(session_id=wt_suffix)
         if not create_result.ok or create_result.info is None:
             return SandboxSetupResult(
