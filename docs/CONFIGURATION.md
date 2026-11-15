@@ -96,9 +96,18 @@ When an agent references `model: <name>`:
 3. None of the above?                               → error: unknown model
 ```
 
-### Option 1: igni Account (default, zero-config)
+### Option 1: Your organisation's igni server
 
-Sign up at **https://ignite-ember.sh**. The models your igni server advertises route through it. Free tier available.
+igni server is self-hosted: your organisation runs it, and it holds the model
+keys. Point igni at it once in `~/.igni/config.yaml` and sign in; the models
+the server serves join the registry with no key on your machine. There is no
+vendor-hosted server and no default one: until `api_url` is set, igni contacts
+none.
+
+```yaml
+# ~/.igni/config.yaml
+api_url: https://igni-api.acme.example
+```
 
 ```bash
 igni login                  # opens the portal's sign-in page; /login in the desktop app
@@ -274,12 +283,13 @@ The key difference: Claude Code only supports Anthropic models through different
 # Model configuration
 #
 # Model resolution order:
-#   1. User-provided custom models (BYOM - Bring Your Own Model)
-#   2. igni hosted models (requires igni account)
+#   1. The models in models.registry: your own entries (BYOM — any
+#      OpenAI-compatible, Anthropic or Gemini endpoint), merged with
+#      the ones your igni server serves once you `igni login`
+#   2. "provider:model_id" written in place
 #
-# If no custom model is configured, igni uses its own hosted
-# MiniMax M2.7 endpoint. You need an igni account for this.
-# Sign up at https://ignite-ember.sh (free tier available).
+# There is no built-in or vendor-hosted model: configure one here, or
+# sign in to your organisation's igni server (api_url above).
 
 models:
   default: "MiniMax-M2.7"             # Default model for most agents

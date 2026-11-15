@@ -58,7 +58,7 @@ _SRC = pathlib.Path(__file__).resolve().parent.parent / "src" / "igni_core"
 #: model is vendor-routed or user-managed. That is a question about a
 #: value somebody chose, not a default, and flagging it would be the
 #: rule crying wolf.
-_VENDOR_URL = re.compile(r"https?://(?:[\w-]+\.)*ignite-ember\.sh")
+_VENDOR_URL = re.compile(r"https?://(?:[\w-]+\.)*(?:ignite-ember|igni)\.sh\b")
 
 #: The documentation host is not an endpoint. It appears in a generated
 #: config template as a link for a human to click, contacts nothing, and
@@ -84,6 +84,10 @@ class TestTheScanMeasuresSomething:
         assert _VENDOR_URL.search('api_url: str = "https://api.ignite-ember.sh"')
         assert _VENDOR_URL.search('"https://ignite-ember.sh"')
         assert _VENDOR_URL.search('"https://dev-api.ignite-ember.sh/v1"')
+        # The site moved to igni.sh (2026-11-15): a default naming it is
+        # just as much a vendor endpoint.
+        assert _VENDOR_URL.search('api_url: str = "https://api.igni.sh"')
+        assert _VENDOR_URL.search('"https://igni.sh"')
 
     def test_the_pattern_leaves_the_classification_alone(self):
         """`model_entry` asks whether a URL a user configured points at

@@ -578,7 +578,7 @@ jobs:
             include Language::Python::Virtualenv
 
             desc "AI coding assistant with multi-agent orchestration"
-            homepage "https://ignite-ember.sh"
+            homepage "https://igni.sh"
             url "PLACEHOLDER_URL"
             sha256 "PLACEHOLDER_SHA"
             # Apache-2.0, matching ``LICENSE`` at the repo root and
