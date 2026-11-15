@@ -82,3 +82,31 @@ def test_nobody_signed_in_is_one_line_and_exit_one(
 def test_the_error_is_still_the_scope_s_own():
     with pytest.raises(NoTenantError):
         tenancy.scope(shared=True)
+
+
+def test_a_database_no_package_stores_in_is_one_line_and_exit_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """R025: a signed-in run with a PostgreSQL URL and no igni-cloud died in
+    the engine on ``ModuleNotFoundError: psycopg``; set in config.yaml, the
+    refusal saying what to install was the last line of a traceback."""
+    from igni_core.core.db.locator import StorageLocator
+    from igni_core.core.db.providers import SharedStorages
+
+    monkeypatch.setattr(SharedStorages, "_found", {})
+    monkeypatch.setattr("igni_core.core.db.providers.entry_points", lambda group: [])
+    locator = StorageLocator(database_url="postgresql://u:p@127.0.0.1:1/igni", data_dir=tmp_path)
+
+    async def session(self, message: str) -> None:
+        tenancy.use(lambda: Tenant(org="acme", producer="person:1"))
+        locator.project_database(tmp_path)
+
+    monkeypatch.setattr(invocation_module.CliInvocation, "_session", session)
+    with pytest.raises(SystemExit) as exc:
+        _invocation(tmp_path / "none.json").run_message("hi")
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert "psycopg" not in err
+    assert "install igni-cloud" in err

@@ -28,6 +28,7 @@ import traceback
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from igni_core.core.db.providers import StorageUnavailable
 from igni_core.core.db.scope import NoTenantError
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,12 @@ class HeadlessRun:
                 f"Error: {exc}. Sign in with `igni login`, or unset IGNI_DATABASE_URL.",
                 file=sys.stderr,
             )
+            code = 1
+        except StorageUnavailable as exc:
+            # ``storage.database_url`` names a database no installed
+            # package stores igni's state in: what to install, not a
+            # traceback.
+            print(f"Error: {exc}.", file=sys.stderr)
             code = 1
         except BaseException:  # noqa: BLE001 — report, then still exit cleanly
             traceback.print_exc()

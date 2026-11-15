@@ -23,8 +23,9 @@ from pydantic import ValidationError
 from igni_core.core.config.settings import Settings
 from igni_core.core.data_paths import global_db_path, state_db_path
 from igni_core.core.db.database import Database
+from igni_core.core.db.providers import SharedStorages
 from igni_core.core.db.scope import StorageScope, tenancy
-from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.db.urls import DatabaseUrl, Dialect
 from igni_core.core.layer import layers
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
@@ -84,11 +85,26 @@ class StorageLocator:
     def project_database(self, project_dir: str | Path | None = None) -> Database:
         """The database a project's state is in, scoped to the project."""
         project = project_dir if project_dir is not None else Path.cwd()
-        return Database(self.project_url(project), scope=self.scope(project))
+        scope = self.scope(project)
+        return Database(self._served(self.project_url(project)), scope=scope)
 
     def global_database(self) -> Database:
         """The database for what belongs to no one project."""
-        return Database(self.global_url(), scope=self.scope().without_project())
+        scope = self.scope().without_project()
+        return Database(self._served(self.global_url()), scope=scope)
+
+    @staticmethod
+    def _served(url: DatabaseUrl) -> DatabaseUrl:
+        """``url``, once an installed package is known to store igni's state there.
+
+        Opening a PostgreSQL database without igni-cloud reached the
+        engine first, which died on the missing driver with a bare
+        ``ModuleNotFoundError: psycopg``; the refusal that says what to
+        install (:class:`StorageUnavailable`) is raised here instead.
+        """
+        if url.dialect is not Dialect.SQLITE:
+            SharedStorages.for_url(url)
+        return url
 
     @classmethod
     def database_for(
