@@ -29,3 +29,16 @@ def test_the_docs_do_not_promise_terminal_effects():
     assert "| `--verbose` | Show routing decisions and reasoning |" not in quickstart
     assert "| `--quiet` | Minimal output |" not in quickstart
     assert "Use `--verbose` to see which agents" not in quickstart
+
+
+def test_the_help_text_does_not_promise_terminal_effects():
+    """`igni --help` said --verbose "Show routing and reasoning" and --quiet
+    "Minimal output"; neither changes what ``igni -m`` prints (campaign R017)."""
+    from click.testing import CliRunner
+
+    from igni_core.cli import cli
+
+    text = " ".join(CliRunner().invoke(cli, ["--help"], terminal_width=400).output.split())
+    assert "Show routing and reasoning" not in text
+    assert "--quiet Minimal output" not in text
+    assert "display.show_routing" in text

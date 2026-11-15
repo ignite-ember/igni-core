@@ -61,8 +61,22 @@ from igni_core.core.paths import DEFAULT_DATA_DIR
 @click.group(invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="igni")
 @click.option("--model", default=None, help="Model to use")
-@click.option("--verbose", is_flag=True, help="Show routing and reasoning")
-@click.option("--quiet", is_flag=True, help="Minimal output")
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help=(
+        "Set display.show_routing and display.show_reasoning for this run "
+        "(igni -m itself prints no routing lines)"
+    ),
+)
+@click.option(
+    "--quiet",
+    is_flag=True,
+    help=(
+        "Leave out the workspace-trust notice; turn the tool-call and "
+        "routing display settings off for this run"
+    ),
+)
 @click.option("-m", "--message", default=None, help="Single message (non-interactive)")
 @click.option(
     "--continue", "-c", "continue_session", is_flag=True, help="Resume the most recent session"
