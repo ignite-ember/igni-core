@@ -50,14 +50,17 @@ The architectural choices that drive the gap: (1) **CodeIndex queried first, not
 ## Quick Start
 
 ```bash
-brew install ignite-ember/tap/igni-core  # or: pip install igni-core (the old name ignite-ember works for both)
+brew install ignite-ember/tap/igni-core  # or: pip install igni-core (pip also takes the old name ignite-ember)
 cd your-project
 igni --read-only -m "In one sentence, what does this project do?"
 ```
 
 `igni` is the command; `ignite-ember` is kept as an alias so existing
-shell aliases and scripts keep working. Both are the same entry point,
-and pip and the Homebrew formula both install both names.
+shell aliases and scripts keep working. Both are the same entry point;
+pip installs both names, the Homebrew formula links `igni` only.
+
+igni-core installs on Apple Silicon macOS and x86-64 Linux: its `ripgrep` dependency publishes wheels for those two platforms only, elsewhere (Intel macOS, Linux on ARM) it has to be built from source, which needs a Rust toolchain the Homebrew formula does not provide.
+
 On the command line it runs **one task and exits** (`-m`, or `-p` for a
 pipe); there is no terminal chat UI any more — run it bare and it says so.
 
@@ -128,8 +131,8 @@ See [Quickstart](QUICKSTART.md) for the full setup guide.
 ### Quickstart (new setup)
 
 1. **Install** — `pip install 'igni-core[decisions]==1.0.4'` (or
-   `brew install ignite-ember/tap/igni-core`; the old name `ignite-ember` installs
-   the same package from either).
+   `brew install ignite-ember/tap/igni-core`; pip also takes the old name
+   `ignite-ember`, the tap does not).
 2. **Configure a model** — set `OPENAI_API_KEY` (or any provider key) and add the
    model to `.igni/config.yaml`; or point `api_url` at your igni server and run
    `igni login`
