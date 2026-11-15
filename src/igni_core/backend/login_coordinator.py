@@ -42,6 +42,7 @@ class LoginCoordinator:
         self._backend = backend
         self._push = push_bridge
         self._task: asyncio.Task[None] | None = None
+        self._flow_id = ""
         self._signed_in: list[Callable[[], object]] = []
 
     def on_signed_in(self, callback: Callable[[], object]) -> None:
@@ -58,22 +59,39 @@ class LoginCoordinator:
         """Cancel any previous login attempt, kick off a new one,
         and ack immediately. The actual login result arrives
         asynchronously via a ``login_result`` push notification."""
-        await self.cancel()
+        await self._stop()
         flow_id = f"login-{uuid.uuid4().hex[:12]}"
         # Waits on a person signing in: not busy.
         self._task = background.daemon(self._run_login(flow_id), name="login")
+        self._flow_id = flow_id
         return LoginStarted(started=True, flow_id=flow_id)
 
     async def cancel(self) -> None:
-        """Cancel the in-flight login task (if any). Awaits the
-        task's completion so downstream state is settled before we
-        return."""
+        """Cancel the in-flight login (if any), and end its flow.
+
+        One ``login_result`` push ends a sign-in (the ``login``
+        contract), so a cancelled one ends with ``success: false`` and
+        ``result: "cancelled"``, carrying its flow id. A new
+        :meth:`start` stops the old flow without that push: only the
+        new one answers.
+        """
+        if await self._stop():
+            await self._push.on_login_result(
+                success=False, result="cancelled", flow_id=self._flow_id
+            )
+
+    async def _stop(self) -> bool:
+        """Cancel the in-flight login task, if any; ``True`` when there was one.
+
+        Awaits the task's completion so downstream state is settled
+        before returning."""
         old = self._task
         if old is None or old.done():
-            return
+            return False
         old.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await old
+        return True
 
     # ── Internals ────────────────────────────────────────────────
 
@@ -90,7 +108,7 @@ class LoginCoordinator:
                 success=res.ok, result=res.wire_result_string(), flow_id=flow_id
             )
         except asyncio.CancelledError:
-            # Cancelled via ``CancelLogin`` — no result to push.
+            # Cancelled: ``cancel`` pushes the result, a restart none.
             pass
         except Exception as exc:  # pragma: no cover — defensive
             await self._push.on_login_result(success=False, result=str(exc), flow_id=flow_id)

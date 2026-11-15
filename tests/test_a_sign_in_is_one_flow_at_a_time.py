@@ -2,7 +2,7 @@
 
 ``start`` acks at once with a flow id; the status pushes and the final
 result carry it so a window follows its own sign-in. A new start cancels
-the one in flight, a cancelled sign-in pushes no result, and listeners
+the one in flight without a result, a cancelled sign-in ends with one, and listeners
 run only after a successful one.
 """
 
@@ -168,19 +168,23 @@ async def test_a_new_start_cancels_the_login_in_flight_and_only_the_new_one_answ
     assert first.flow_id not in {flow for _, _, flow in push.results}
 
 
-async def test_a_cancelled_sign_in_pushes_no_result() -> None:
+async def test_a_cancelled_sign_in_ends_with_one_cancelled_result() -> None:
+    """The contract: one ``login_result`` push ends a sign-in. A
+    cancel_login closed the callback port and pushed nothing (campaign
+    R219)."""
     auth = Auth()
     auth.release = asyncio.Event()
     login, push = _coordinator(auth)
     seen: list[str] = []
     login.on_signed_in(lambda: seen.append("listener"))
 
-    await login.start()
+    started = await login.start()
     await asyncio.wait_for(auth.started.wait(), 2)
     await asyncio.wait_for(login.cancel(), 2)
+    await login.cancel()
 
     assert login._task is not None and login._task.done()
-    assert push.results == [] and seen == []
+    assert push.results == [(False, "cancelled", started.flow_id)] and seen == []
 
 
 async def test_cancel_with_nothing_in_flight_or_after_it_finished_does_nothing() -> None:
