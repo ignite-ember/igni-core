@@ -132,6 +132,15 @@ class ToolEventHook:
             OtelRuntime.note_permission("deny")
             return f"Blocked: {pre.reason}"
         ctx = ctx.with_args(pre.value.tool_args)
+        if args is not None and pre.value.tool_args != args:
+            # agno 3.1 calls the entrypoint with the FunctionCall's own
+            # arguments, whatever a hook hands ``func``; this hook is the
+            # outermost, so the dict it was given is those arguments, and
+            # the change reaches the tool only written into it (campaign
+            # R114, R287, R361: igni's checks saw the change, the tool ran
+            # with the model's arguments).
+            args.clear()
+            args.update(pre.value.tool_args)
         block_message = await self._pipeline.evaluate(ctx)
         if block_message is not None:
             OtelRuntime.note_permission("deny")

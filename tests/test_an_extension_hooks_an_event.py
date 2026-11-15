@@ -766,3 +766,32 @@ async def test_a_change_that_echoes_the_manifest_name_is_still_a_change(
 
     assert verdict.allowed, verdict.reason
     assert verdict.value.tool_args == {"command": "ls -l"}
+
+
+async def test_a_changed_tool_call_reaches_a_real_agno_tool() -> None:
+    """agno calls the entrypoint with the FunctionCall's own arguments,
+    whatever a hook hands ``func``: igni's checks saw the change and the
+    tool ran with the model's arguments (campaign R114, R287, R361)."""
+    from agno.tools.function import Function, FunctionCall
+
+    Gate(
+        lambda v: (
+            ExtensionHookVerdict(allowed=True, value=v.model_copy(update={"tool_args": {"x": 2}}))
+            if isinstance(v, PreToolUseValue)
+            else _go(v)
+        )
+    )
+    seen: list[int] = []
+
+    def probe(x: int) -> str:
+        seen.append(x)
+        return f"got {x}"
+
+    function = Function.from_callable(probe)
+    function.tool_hooks = [_hook()]
+    call = FunctionCall(function=function, arguments={"x": 1})
+
+    await call.aexecute()
+
+    assert seen == [2]
+    assert "got 2" in str(call.result)
