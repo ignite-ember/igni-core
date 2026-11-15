@@ -72,14 +72,16 @@ class SessionPersistence:
     reach the caller unchanged.
     """
 
-    def __init__(self, db: AgnoSessionDb | None, session_id: str) -> None:
+    def __init__(
+        self, db: AgnoSessionDb | None, session_id: str, user_id: str | None = None
+    ) -> None:
         # ``db`` is the narrow :class:`AgnoSessionDb` protocol — the
         # four coroutines the persistence layer actually calls into.
         # ``None`` means persistence is disabled (headless CLI, tests
         # without a DB); every store treats that as a no-op.
         self._db: AgnoSessionDb | None = db
         self._session_id = session_id
-        self._data = SessionDataService(db, session_id)
+        self._data = SessionDataService(db, session_id, user_id)
         self._listing = SessionListing(db)
         self._namer = SessionNamer(db, session_id, self._data)
         self._forker = SessionForker(db, session_id)

@@ -308,6 +308,24 @@ class TestFacade:
         assert await facade.get_name() == "Thread from a service"
         assert await facade._get_name_raw() == "Thread from a service"
 
+    async def test_a_title_given_before_the_first_run_is_the_row_agno_reads(
+        self, db: AsyncSqliteDb
+    ) -> None:
+        """Agno reads the session at run start filtered by the person's
+        ``user_id``. The row a pre-run title created carried none, so agno
+        found nothing, made a fresh session and upserted it over the row:
+        the service's title was gone and the auto-namer named the chat from
+        the model's reply (campaign R305, R594)."""
+        facade = SessionPersistence(db=db, session_id=SESSION, user_id="person-1")
+
+        assert (await facade.title("Case 42")).ok
+
+        read = await db.get_session(
+            session_id=SESSION, session_type=SessionType.AGENT, user_id="person-1"
+        )
+        assert read is not None
+        assert read.session_data["session_name"] == "Case 42"
+
     async def test_failed_saves_are_reported_for_every_store(self, db: AsyncSqliteDb) -> None:
         facade = SessionPersistence(db=_Flaky(db, "upsert_session"), session_id=SESSION)
         plan = await facade.save_plan_decisions(PlanDecisionsBlob(decisions={"r": "approved"}))
