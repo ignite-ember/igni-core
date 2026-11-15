@@ -217,6 +217,8 @@ safety:
 
 Protected paths are enforced at the tool layer — even if an agent tries to write to `.env`, the tool refuses. The agent is informed why and can suggest alternatives.
 
+igni's own settings files — a project's `.igni/settings*.json` and `.igni/config*.yaml` — are protected the same way whatever this list says: they carry permissions and hooks, and an agent that could write them could raise its own permissions. Only you change them.
+
 Add project-specific protected paths:
 
 ```yaml

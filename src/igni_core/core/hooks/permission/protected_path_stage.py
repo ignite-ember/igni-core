@@ -42,8 +42,20 @@ class ProtectedPathStage(PermissionStage):
         }
     )
 
+    #: igni's own settings files, protected whatever ``safety.protected_paths``
+    #: says. They carry ``permissions`` (and hooks): an agent that could
+    #: write them could raise its own permissions — with ordinary edit
+    #: approval it wrote ``.igni/settings.local.json`` allowing Bash, and
+    #: every later session in the trusted folder ran shell unasked
+    #: (campaign R110). Only the person changes these.
+    ALWAYS_PROTECTED: ClassVar[tuple[str, ...]] = (
+        ".igni/settings*.json",
+        ".igni/config*.yaml",
+        ".igni/config*.yml",
+    )
+
     def __init__(self, protected_paths: list[str]) -> None:
-        self._protected_paths = protected_paths
+        self._protected_paths = [*protected_paths, *self.ALWAYS_PROTECTED]
 
     @classmethod
     def applies_to(cls, tool_name: str) -> bool:

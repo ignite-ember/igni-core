@@ -71,3 +71,41 @@ class TestToolEventHookProtectedPaths:
             args={"file_path": "credentials.json"},
         )
         assert "ran" not in called
+
+
+class TestIgnisOwnSettingsAreAlwaysProtected:
+    """The agent cannot raise its own permissions: with ordinary edit
+    approval it wrote ``.igni/settings.local.json`` allowing Bash, and the
+    next session in the trusted folder ran shell unasked (campaign R110).
+    These files are protected whatever ``safety.protected_paths`` says."""
+
+    def _hook(self, protected: list[str]):
+        return ToolEventHook(HookExecutor({}), session_id="t", protected_paths=protected)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "path",
+        [
+            ".igni/settings.local.json",
+            ".igni/settings.json",
+            "/abs/project/.igni/config.yaml",
+            "./.igni/config.local.yaml",
+            "sub/.igni/config.yml",
+        ],
+    )
+    @pytest.mark.parametrize("protected", [[], [".env"]])
+    async def test_a_write_to_igni_settings_is_blocked(self, path, protected):
+        ran: list[str] = []
+        result = await self._hook(protected)(
+            name="save_file", func=lambda **kw: ran.append("x") or "w", args={"file_name": path}
+        )
+        assert result == f"Blocked: '{path}' is a protected path and cannot be written to."
+        assert ran == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", [".igni/agents/x.md", "config.yaml", "settings.json"])
+    async def test_other_files_are_not(self, path):
+        result = await self._hook([])(
+            name="save_file", func=lambda **kw: "ok", args={"file_name": path}
+        )
+        assert result == "ok"
