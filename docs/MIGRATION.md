@@ -227,7 +227,7 @@ Features you get that Claude Code doesn't have:
 | Feature | What It Does |
 |---|---|
 | **Dynamic team assembly** | Orchestrator auto-picks agents and team mode per task |
-| **Unlimited nesting** | Agents spawn sub-teams recursively (no depth limit) |
+| **Nested agents** | Agents spawn sub-agents and sub-teams, up to `orchestration.max_nesting_depth` levels (default 5) |
 | **CodeIndex** | Semantic code intelligence with multi-category analysis |
 | **Ephemeral agents** | Auto-generated agents for tasks no existing agent fits |
 | **Agent evals** | Built-in regression testing for agent definitions |

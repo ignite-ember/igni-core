@@ -18,7 +18,7 @@
 
 | Capability | Evidence |
 |---|---|
-| **Multi-agent team orchestration** | Orchestrator dynamically assembles 5–13 specialist agents from `.md` files using five team modes (Single, Route, Coordinate, Broadcast, Tasks). Unlimited agent nesting depth (vs Claude Code's one-level cap). |
+| **Multi-agent team orchestration** | Orchestrator dynamically assembles 5–13 specialist agents from `.md` files using five team modes (Single, Route, Coordinate, Broadcast, Tasks). Nested delegation up to `orchestration.max_nesting_depth` levels, default 5 (vs Claude Code's one-level cap). |
 | **Pre-built semantic CodeIndex** | Per-commit JSONL changeset pipeline from `igni__server` → GCS → local **Neo4j** graph+vector store (BE-spawned, one DB per commit, no Docker). The agent-facing surface is a single tool in ``core/tools/codeindex/tool.py`` — ``codeindex_cypher(cypher=..., confirm_raw_cypher=True, ...)`` — read-only Cypher over the graph store, with ``confirm_raw_cypher=True`` + ``project_hash`` scoping + ``$param`` allowlist enforced by the toolkit. The ``data-architect`` agent is the curated owner; other agents come through it. Index access is the toolkit's single seam — agents never touch the Neo4j driver directly. |
 | **Four shipping surfaces** | Tauri desktop (signed + notarized), VSCode (webview), JetBrains (JCEF), browser (Vite/React). All four surfaces load the same `clients/web` bundle. The earlier Textual TUI is no longer shipped. |
 | **Built-in specialist agents** | 10 base agents (architect, data-architect, docs, editor, explorer, qa, reviewer, security, simplifier, debugger) + 6 `.codeindex.md` variants that auto-activate when the repo has a built index. |
@@ -238,7 +238,7 @@ The CLI points at `api.ignite-ember.sh` by default. A self-hosted `igni__server`
 | Capability | Claude Code | igni | Status |
 |---|---|---|---|
 | **Multi-agent teams** | Single agent loop | Dynamic team assembly (5 modes: Single/Route/Coordinate/Broadcast/Tasks) | igni-only |
-| **Agent nesting depth** | One level (sub-agents can't spawn sub-agents) | Unlimited | igni broader |
+| **Agent nesting depth** | One level (sub-agents can't spawn sub-agents) | Up to `max_nesting_depth` (default 5) | igni broader |
 | **Code intelligence** | Grep + file reads | CodeIndex semantic+metadata index + grep | igni broader |
 | **Pre-built code index** | None shipped | Per-commit JSONL → local Neo4j (BE-spawned, per-commit DB, no Docker) via igni__server | igni-only |
 | **Knowledge base** | None | Local Neo4j + EmberEmbedder (384d), git-shareable | igni-only |
@@ -370,7 +370,7 @@ Selected key citations. Line numbers refer to the files as of the snapshot read.
 | igni__server 5-phase pipeline | `igni__code-index/docs/igni-integration.md`, `igni__server/README.md:104-125` |
 | JSONL wire contract | `igni__code-index/docs/igni-integration.md:64-76` |
 | Tree-sitter 58 languages list | `igni__code-index/docs/igni-integration.md:55-60` |
-| Orchestrator + 5 team modes + unlimited nesting | `docs/ARCHITECTURE.md:1-120` |
+| Orchestrator + 5 team modes + nested delegation | `docs/ARCHITECTURE.md:1-120` |
 | Tool surface (`Bash`/`Write`/`Edit`; `Read`/`Grep`/`Glob` not on main team by design) | `QUICKSTART.md:212-218`, `CLAUDE_CODE_PARITY.md` row 22 |
 | Apache 2.0 license | `pyproject.toml:9`, `README.md:241` |
 | Agno / Neo4j / textual dependency pins | `pyproject.toml:38-67` |

@@ -39,7 +39,7 @@ igni is a terminal-based AI coding assistant built on [Agno](https://docs.agno.c
   │              → Agent Pool (.md files)           │
 │ │              → Dynamic Team Assembly            │ │
   │                (route/coord/broadcast/tasks)    │
-│ │              → Unlimited nesting depth          │ │
+│ │              → Nested delegation (depth 5)      │ │
   └──────────────────────┬──────────────────────────┘
 │                        │                            │
   ┌──────────────────────▼──────────────────────────┐
@@ -115,13 +115,13 @@ Not every task needs a team. The Orchestrator's primary optimization is **minimi
 | Broadcast | High | Independent parallel perspectives |
 | Tasks | Highest | Large autonomous goals |
 
-### 4. Unlimited Nesting
+### 4. Nested Delegation
 
-Claude Code caps sub-agents at one level (sub-agents can't spawn sub-agents). igni has **no nesting limit**. Every agent can access the agent pool and spawn sub-teams by default (`can_orchestrate: true`). Opt out per-agent with `can_orchestrate: false`.
+Claude Code caps sub-agents at one level (sub-agents can't spawn sub-agents). In igni an agent started with `spawn_agent` may spawn agents and teams itself when it is marked `can_orchestrate: true` (the default), down to `orchestration.max_nesting_depth` levels (default 5). Opt out per-agent with `can_orchestrate: false`.
 
 This matters because **the agent closest to the problem is best positioned to decide if it needs help**. An editor mid-refactor might spawn an explorer to understand unfamiliar code. A reviewer might spawn a security-auditor for a specific concern. Each sub-team picks its own mode.
 
-Practical guardrails (configurable depth limits, agent caps, timeouts) prevent runaway recursion without restricting the design. See [Agents](AGENTS.md#recursive-nesting-agents-that-build-teams) for details.
+The depth limit, an agent cap (`max_total_agents`) and timeouts bound the recursion. See [Agents](AGENTS.md#recursive-nesting-agents-that-build-teams) for details.
 
 ### 5. Persistent Memory
 
