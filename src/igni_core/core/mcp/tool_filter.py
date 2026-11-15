@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from igni_core.core.mcp.naming import registered_tool_name
 from igni_core.core.mcp.schemas import MCPToolInfo
 from igni_core.core.mcp.tool_state import MCPToolStateStore
 
@@ -103,6 +104,7 @@ class MCPToolFilter:
         ``_clients`` dict — the manager keeps ownership of that
         lookup and only hands the resolved handle to the filter.
         """
+        tool = self._registered(server, tool, client)
         disabled = self._disabled_tools.setdefault(server, set())
         if enabled:
             disabled.discard(tool)
@@ -114,6 +116,21 @@ class MCPToolFilter:
         # when the file that keeps it for the next one cannot be written.
         self.apply(server, client)
         self._tool_state.save(self._disabled_tools)
+
+    def _registered(self, server: str, tool: str, client: MCPTools | None) -> str:
+        """The name ``tool`` is registered under, given either name for it.
+
+        The toolkit is keyed by igni's registered name
+        (``mcp_<server>_<tool>``) while the RPC contract names the
+        server's own. A bare name stored as disabled matched nothing,
+        and the agent kept the tool. A name the server does not offer is
+        kept as given.
+        """
+        known = self.list_tools(server, client)
+        if tool in known:
+            return tool
+        registered = registered_tool_name(server, tool)
+        return registered if registered in known else tool
 
     def list_disabled(self, name: str) -> list[str]:
         """Sorted list of tools the user has individually

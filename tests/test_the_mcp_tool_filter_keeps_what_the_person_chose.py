@@ -165,3 +165,24 @@ def test_a_snapshot_of_a_toolkit_whose_functions_is_not_a_dict_is_not_taken(tmp_
     filt = _filter(tmp_path)
     filt.snapshot("notes", _Toolkit(["search"]))
     assert filt.list_tools("notes", None) == []
+
+
+def test_the_servers_own_name_switches_off_the_registered_tool(tmp_path):
+    """The contract names ``tool`` as the server's own name. The toolkit is
+    keyed by igni's registered name (``mcp_<server>_<tool>``), so a bare
+    ``secret_word`` was recorded as disabled while the agent kept the tool
+    and called it (campaign R209)."""
+    from igni_core.core.mcp.naming import registered_tool_name
+
+    filt = _filter(tmp_path)
+    registered = registered_tool_name("usersrv", "secret_word")
+    kit = _Toolkit({registered: _Function("Say it."), "mcp_usersrv_other": _Function("x")})
+    filt.snapshot("usersrv", kit)
+
+    filt.set_enabled("usersrv", "secret_word", False, kit)
+
+    assert registered not in kit.functions
+    assert filt.list_disabled("usersrv") == [registered]
+    filt.set_enabled("usersrv", "secret_word", True, kit)
+    assert registered in kit.functions
+    assert filt.list_disabled("usersrv") == []
