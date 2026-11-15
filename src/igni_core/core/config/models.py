@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from typing import ClassVar
 
 from agno.models.base import Model
 
@@ -237,13 +239,39 @@ class ModelRegistry:
         """
         return bool(self._effective_default())
 
+    #: Where each provider's own SDK and tools keep its key, read by a
+    #: ``provider:model_id`` name, which has no registry row to name one.
+    SHORTHAND_KEY_ENV: ClassVar[dict[str, str]] = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai_like": "OPENAI_API_KEY",
+        "gemini": "GOOGLE_API_KEY",
+    }
+    #: And where they keep the base URL, for the providers whose builder
+    #: takes one: a key from the environment would otherwise go to the
+    #: vendor's default host instead of the endpoint it was issued for.
+    SHORTHAND_URL_ENV: ClassVar[dict[str, str]] = {
+        "anthropic": "ANTHROPIC_BASE_URL",
+        "openai_like": "OPENAI_BASE_URL",
+    }
+
     def _resolve_entry(self, name: str) -> ModelRegistryEntry | None:
         """Resolve a model name to a typed registry entry: a
-        ``models.registry`` row, else a ``provider:model_id`` name."""
+        ``models.registry`` row, else a ``provider:model_id`` name.
+
+        The shorthand reads the provider's conventional key and base-URL
+        variables: it has no row to put ``api_key_env`` or ``url`` in, and
+        without them the key sent was a placeholder every keyed provider
+        refuses.
+        """
         entry = self.settings.models.entry(name)
         if entry is not None:
             return entry
         if ":" in name:
             provider, model_id = name.split(":", 1)
-            return ModelRegistryEntry(provider=provider, model_id=model_id)
+            return ModelRegistryEntry(
+                provider=provider,
+                model_id=model_id,
+                api_key_env=self.SHORTHAND_KEY_ENV.get(provider),
+                url=os.environ.get(self.SHORTHAND_URL_ENV.get(provider, "")) or None,
+            )
         return None

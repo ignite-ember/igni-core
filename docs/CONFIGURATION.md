@@ -96,6 +96,12 @@ When an agent references `model: <name>`:
 3. None of the above?                               → error: unknown model
 ```
 
+A `provider:model_id` name has no registry row to name its key, so it reads
+the provider's own variables: `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` for
+`anthropic`, `OPENAI_API_KEY` and `OPENAI_BASE_URL` for `openai_like`,
+`GOOGLE_API_KEY` for `gemini`. For anything else, add a full registry entry
+(`provider`, `model_id` and how to find the key).
+
 ### Option 1: igni Account (default, zero-config)
 
 Sign up at **https://ignite-ember.sh**. The models your igni server advertises route through it. Free tier available.

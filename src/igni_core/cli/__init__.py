@@ -31,6 +31,7 @@ import os
 from pathlib import Path
 
 import click
+from pydantic import ValidationError
 
 from igni_core import __version__
 from igni_core.cli.ext import ext
@@ -44,6 +45,7 @@ from igni_core.cli.trust import HeldWarnings, SessionTrust, trust_command
 from igni_core.core import air_gap
 from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
+from igni_core.core.config.settings import Settings
 from igni_core.core.observability import OtelRuntime
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
@@ -185,7 +187,7 @@ def cli(ctx: click.Context, **_params: object) -> None:
     held = HeldWarnings()
     try:
         with held:
-            settings = CliSettingsLoader(options).load()
+            settings = _load_settings(options)
     except GroupPolicyUnavailable as exc:
         # ``group_policy.required`` and no verified pack: no session, and
         # the message says what to do. ``igni login`` still works — it is a
@@ -197,7 +199,7 @@ def cli(ctx: click.Context, **_params: object) -> None:
         ).settle()
         if became_trusted:
             held.discard()
-            settings = CliSettingsLoader(options).load()
+            settings = _load_settings(options)
     held.release()
 
     # A ``-m`` or pipe run starts igni's decisions service itself, and that
@@ -226,6 +228,21 @@ def cli(ctx: click.Context, **_params: object) -> None:
     # No message + no subcommand → point users at the React clients.
     invocation.echo_help_pointer()
     invocation.cleanup_worktree()
+
+
+def _load_settings(options: CliOptions) -> Settings:
+    """The run's settings; a configuration that does not validate is a
+    message naming each field, not a pydantic traceback (campaign R066)."""
+    try:
+        return CliSettingsLoader(options).load()
+    except ValidationError as exc:
+        problems = "\n".join(
+            f"  {'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+            for error in exc.errors()
+        )
+        raise click.ClickException(
+            f"igni's settings are not valid (your config.yaml or settings files):\n{problems}"
+        ) from exc
 
 
 # Registered after the callback so the module reads top to bottom.
