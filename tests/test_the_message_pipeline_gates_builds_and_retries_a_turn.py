@@ -404,3 +404,34 @@ class TestAFailedTurnIsReportedAndTold:
         assert await rig.handler.handle("hi") == "ok"
 
         assert rig.compacted == []
+
+
+@pytest.mark.asyncio
+async def test_a_user_prompt_submit_hooks_context_reaches_the_model_as_the_backend_sends_it():
+    """HOOKS.md: UserPromptSubmit does "context injection" and its
+    systemMessage is "shown to the agent". The backend appends it as a
+    <hook-context> block; igni -m dropped it (campaign R116)."""
+    hooks = _Hooks(
+        UserPromptSubmit=SimpleNamespace(
+            should_continue=True, message="The secret code word is ZEBRA-11."
+        )
+    )
+    rig = _Rig(hooks=hooks)
+
+    await rig.handler.handle("what is the code word?")
+
+    ((sent, _),) = rig.team.calls
+    assert (
+        "what is the code word?\n<hook-context>The secret code word is ZEBRA-11.</hook-context>"
+        in sent
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_hook_with_no_message_adds_no_context_block():
+    rig = _Rig()
+
+    await rig.handler.handle("hello")
+
+    ((sent, _),) = rig.team.calls
+    assert "<hook-context>" not in sent

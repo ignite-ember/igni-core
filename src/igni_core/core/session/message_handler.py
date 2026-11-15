@@ -149,12 +149,15 @@ class SessionMessageHandler:
             return self._blocked(verdict.reason)
         message = verdict.value.message
 
-        blocked = await self._check_user_prompt_hook(message)
+        blocked, context = await self._check_user_prompt_hook(message)
         if blocked is not None:
             return blocked
 
         guardrail_prefix = await self._guardrail_prefix(message)
-        effective_message = self._build_effective_message(message, guardrail_prefix)
+        # A hook's context rides on the message as the backend puts it
+        # (``RunController``): a ``<hook-context>`` block after the text.
+        prompt = f"{message}\n<hook-context>{context}</hook-context>" if context else message
+        effective_message = self._build_effective_message(prompt, guardrail_prefix)
 
         try:
             result = await self._run_turn(effective_message, media)
@@ -212,11 +215,16 @@ class SessionMessageHandler:
         self._deps.budget.latch(input_tokens)
         await self._deps.compact_hook(input_tokens, self._deps.budget.window)
 
-    async def _check_user_prompt_hook(self, message: str) -> str | None:
-        """Fire the ``UserPromptSubmit`` hook. Returns the blocked
-        message when the hook denies, ``None`` when the turn should
-        proceed. Blocked turns emit an audit entry so a policy denial
-        is traceable — otherwise the user sees "blocked" with no
+    async def _check_user_prompt_hook(self, message: str) -> tuple[str | None, str | None]:
+        """Fire the ``UserPromptSubmit`` hook: ``(blocked reply, context)``.
+
+        The blocked reply is set when the hook denies, ``None`` when the
+        turn should proceed; then the context is the hook's
+        ``systemMessage``, for the model (HOOKS.md: "context injection",
+        "shown to the agent"). The headless path dropped it, so a hook's
+        context reached the model in the app and never in ``igni -m``
+        (campaign R116). Blocked turns emit an audit entry so a policy
+        denial is traceable — otherwise the user sees "blocked" with no
         record of why."""
         payload = UserPromptSubmitHookPayload(
             message=message,
@@ -227,8 +235,8 @@ class SessionMessageHandler:
             payload=payload,
         )
         if hook_result.should_continue:
-            return None
-        return self._blocked(hook_result.message or "Blocked by UserPromptSubmit hook.")
+            return None, hook_result.message or None
+        return self._blocked(hook_result.message or "Blocked by UserPromptSubmit hook."), None
 
     def _blocked(self, blocked_msg: str) -> str:
         """A message a UserPromptSubmit hook stopped: audited, and returned as the reply."""
