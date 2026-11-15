@@ -717,9 +717,8 @@ plugins:
 
 Three ways to set it, any of which turns it on:
 
-- **The key**, in `~/.igni/config.yaml` or a project's `.igni/config.yaml`.
-  The desktop app's updater has no project when it checks, so for it use the
-  user file, managed settings or group policy.
+- **The key**, in `~/.igni/config.yaml`. A project's `.igni/config.yaml`
+  may not set it (see below): it is ignored there, with a warning.
 - **`IGNI_AIR_GAPPED=1`** in the environment (also `true`, `yes`, `on`). It
   only turns the mode on; an unset or false variable leaves the files' choice.
 - **Managed settings or group policy**, for an organisation: `air_gapped: true`
