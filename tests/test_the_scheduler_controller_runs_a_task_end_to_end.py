@@ -218,3 +218,47 @@ async def test_stop_without_a_start_does_nothing_and_a_stopped_runner_can_be_rep
         assert second is not first and second.is_running
     finally:
         await controller.stop()
+
+
+async def test_two_sessions_of_one_project_share_one_poller(store, tmp_path) -> None:
+    """R145: a window's ``scheduler.start()`` beside the boot runner made a
+    second poller over the same task store; each ran every due task and
+    scheduled its next occurrence, so a recurring task doubled each period."""
+    settings = SimpleNamespace(scheduler=SchedulerConfig(poll_interval=1))
+    boot = SchedulerController(_session(tmp_path=tmp_path), settings, gate=RunGate())  # type: ignore[arg-type]
+    window = SchedulerController(_session(tmp_path=tmp_path), settings, gate=RunGate())  # type: ignore[arg-type]
+
+    first = boot.start()
+    try:
+        assert window.start() is first
+    finally:
+        await window.stop()
+        await boot.stop()
+    # Stopped, the project has no poller: the next start makes one.
+    again = window.start()
+    try:
+        assert again is not first and again.is_running
+    finally:
+        await window.stop()
+
+
+async def test_a_task_whose_run_pauses_for_approval_fails_with_why() -> None:
+    """R145: a scheduled run that paused on a gated tool was recorded as
+    completed, its result the pause text."""
+    from agno.run.base import RunStatus
+
+    class _PausingTeam(_Team):
+        async def arun(self, prompt, stream=False, run_id=None):
+            tool = SimpleNamespace(tool_name="save_file", is_paused=True)
+            return SimpleNamespace(
+                status=RunStatus.paused,
+                content="I have tools to execute, but I need confirmation.",
+                metrics=None,
+                active_requirements=[],
+                tools=[tool],
+            )
+
+    controller = SchedulerController(_session(_PausingTeam()), None, gate=RunGate())  # type: ignore[arg-type]
+
+    with pytest.raises(RuntimeError, match="approval of save_file"):
+        await controller.execute("write gated.txt")

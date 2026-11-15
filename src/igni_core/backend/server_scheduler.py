@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar
 
 from igni_core.backend.schemas_scheduler import (
     TaskCompletedPayload,
@@ -36,6 +37,7 @@ from igni_core.core.scheduler.models import ScheduledTask
 from igni_core.core.scheduler.prompt import wrap_scheduled_prompt
 from igni_core.core.scheduler.runner import SchedulerRunner
 from igni_core.core.scheduler.store import TaskStore
+from igni_core.core.session.message_outcome import OutcomeKind, TurnOutcome
 from igni_core.core.utils.response import extract_response_text
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.enums import SchedulerEventType
@@ -67,6 +69,9 @@ class SchedulerController:
     explicit shutdown hook that composes with
     :meth:`BackendServer.shutdown`.
     """
+
+    #: The poller running for each project directory in this process.
+    _project_runners: ClassVar[dict[str, SchedulerRunner]] = {}
 
     def __init__(
         self,
@@ -128,6 +133,16 @@ class SchedulerController:
                 )
             finally:
                 CURRENT_RUN_ID.reset(token)
+            outcome = TurnOutcome.from_run(response) if hasattr(response, "status") else None
+            if outcome is not None and outcome.kind is OutcomeKind.PAUSED:
+                # Raised, not returned: the pause text ("I have tools to
+                # execute, but I need confirmation.") was recorded and
+                # pushed as the task's successful result.
+                tools = ", ".join(outcome.paused_tools) or "a tool call"
+                raise RuntimeError(
+                    f"the run stopped to ask for approval of {tools}, and a scheduled "
+                    "task has nobody to approve it: add an allow rule for it"
+                )
             return extract_response_text(response)
 
         return await self._as_run(work)
@@ -169,6 +184,15 @@ class SchedulerController:
         """
         if self._runner is not None and self._runner.is_running:
             return self._runner
+        # One poller per project in this process. Every session of a
+        # backend has its own controller over the same task store: a
+        # window's ``scheduler.start()`` beside the boot runner made two
+        # pollers, each ran every due task and scheduled its next
+        # occurrence, and a recurring task doubled every period.
+        key = self._project_key()
+        running = self._project_runners.get(key)
+        if running is not None and running.is_running:
+            return running
 
         assert self._settings is not None, (
             "SchedulerController.start requires Settings; the pump-only "
@@ -195,7 +219,11 @@ class SchedulerController:
         )
         runner.start()
         self._runner = runner
+        self._project_runners[key] = runner
         return runner
+
+    def _project_key(self) -> str:
+        return str(Path(self._session.project_dir).resolve())
 
     async def stop(self) -> None:
         """Stop the background runner. No-op when never started.
@@ -211,6 +239,9 @@ class SchedulerController:
             await runner.aclose()
         finally:
             self._runner = None
+            key = self._project_key()
+            if self._project_runners.get(key) is runner:
+                del self._project_runners[key]
 
     @property
     def runner(self) -> SchedulerRunner | None:
