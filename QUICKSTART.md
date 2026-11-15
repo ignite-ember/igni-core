@@ -40,6 +40,20 @@ package is `igni-core` on PyPI and the formula is `igni-core` in the tap;
 retired: its PyPI releases are yanked and there is no formula or command
 by it.
 
+**ripgrep.** igni searches code with `rg`, and an `rg` on your `PATH` is
+always the one it uses. The Homebrew formula depends on Homebrew's
+ripgrep. pip and uv install the PyPI `ripgrep` package only on macOS
+arm64 and Linux x86_64, the platforms it has wheels for, and igni finds
+that binary even when it is not on `PATH`. Anywhere else (Linux arm64,
+Intel macOS) install it yourself — without it code search falls back to a
+slower walk and the agent's `rg` commands fail:
+
+```bash
+brew install ripgrep        # macOS
+sudo apt install ripgrep    # Debian/Ubuntu
+sudo dnf install ripgrep    # Fedora
+```
+
 ## What `igni` is on the command line
 
 `igni` in a terminal runs **one task and exits** (`igni -m "…"`, or a pipe).

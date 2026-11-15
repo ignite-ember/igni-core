@@ -56,7 +56,10 @@ igni --read-only -m "In one sentence, what does this project do?"
 ```
 
 `igni` is the command, and the only one pip, uv and the Homebrew formula
-install. On the command line it runs **one task and exits** (`-m`, or `-p` for a
+install. It searches code with ripgrep: the formula brings Homebrew's, pip
+and uv bring the PyPI package on macOS arm64 and Linux x86_64, and
+elsewhere you install `rg` yourself (`brew install ripgrep`, `sudo apt
+install ripgrep`) — see [Quickstart](QUICKSTART.md#install). On the command line it runs **one task and exits** (`-m`, or `-p` for a
 pipe); there is no terminal chat UI any more — run it bare and it says so.
 
 **What the published package holds today.** `igni-core` on PyPI is
@@ -140,6 +143,7 @@ release notes below that mention them are history.
 ### Unreleased
 
 - **The `ignite-ember` name and command are retired.** The package is `igni-core` and the command is `igni`; nothing is published or installed under the old name any more. Every `ignite-ember` release on PyPI is yanked, the `ignite-ember` console script is gone from the package, and the Homebrew tap has a single formula, `igni-core` — `ignite-ember/tap/ignite-ember` no longer resolves. Install with `pip install igni-core`, `uv tool install igni-core` or `brew install ignite-ember/tap/igni-core`; a script that runs `ignite-ember` has to run `igni`.
+- **`pip install igni-core` works where PyPI's `ripgrep` has no wheel.** The `ripgrep` package is required only on macOS arm64 and Linux x86_64, the platforms it ships wheels for; its sdist needs Rust, so on Linux arm64 and Intel macOS the install used to fail. An `rg` on `PATH` is always used first; the package's binary is found even when the venv is not on `PATH` (a `uv tool` install, the desktop app) and is put on the agent shell's `PATH` after the user's own. With no `rg` at all, code search falls back to a slower walk and the log says how to install ripgrep (`brew install ripgrep`, `sudo apt install ripgrep`).
 
 ### The split release (v1.0.3 → v1.0.4)
 

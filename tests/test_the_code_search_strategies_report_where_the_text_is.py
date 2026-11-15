@@ -15,6 +15,7 @@ from igni_core.backend.search_strategies import (
     RgSearchStrategy,
     SearchStrategy,
 )
+from igni_core.core.utils.ripgrep import MISSING
 
 needs_rg = pytest.mark.skipif(shutil.which("rg") is None, reason="ripgrep is not installed")
 
@@ -37,16 +38,38 @@ def _lines(snippet: str) -> int:
 # ── which strategy is picked ────────────────────────────────────────
 
 
-def test_ripgrep_is_picked_when_it_is_on_the_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(search_strategies.shutil, "which", lambda name: "/bin/rg")
+def test_ripgrep_is_picked_when_there_is_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(search_strategies, "find_rg", lambda: "/bin/rg")
 
-    assert isinstance(SearchStrategy.pick(), RgSearchStrategy)
+    picked = SearchStrategy.pick()
+
+    assert isinstance(picked, RgSearchStrategy)
+    assert picked._rg_path == "/bin/rg"
 
 
-def test_the_walk_is_picked_when_ripgrep_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(search_strategies.shutil, "which", lambda name: None)
+def test_the_walk_is_picked_when_ripgrep_is_missing(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """No ``rg`` at all is not an error: the walk answers, and the log says
+    how to install ripgrep."""
+    monkeypatch.setattr(search_strategies, "find_rg", lambda: None)
 
-    assert isinstance(SearchStrategy.pick(), PythonWalkSearchStrategy)
+    with caplog.at_level("WARNING", logger=search_strategies.__name__):
+        picked = SearchStrategy.pick()
+
+    assert isinstance(picked, PythonWalkSearchStrategy)
+    assert [r.getMessage() for r in caplog.records] == [MISSING]
+
+
+def test_the_walk_answers_a_search_when_ripgrep_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write(tmp_path, "a.py", "x = 1\nneedle = 2\n")
+    monkeypatch.setattr(search_strategies, "find_rg", lambda: None)
+
+    result = SearchStrategy.pick().search(tmp_path, "needle", 1, 10)
+
+    assert [(m.path, m.line) for m in result.matches] == [("a.py", 2)]
 
 
 # ── the pure-Python walk ────────────────────────────────────────────
