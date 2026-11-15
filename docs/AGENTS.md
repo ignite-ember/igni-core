@@ -188,7 +188,6 @@ tags: [search, read-only, exploration]
 **architect.md** — Designs component architecture, data flows, and interfaces.
 ```yaml
 tools: Bash, WebSearch
-reasoning: true
 tags: [architecture, design, read-only]
 ```
 
@@ -208,14 +207,12 @@ tags: [quality, refactoring, simplification]
 ```yaml
 tools: Bash, WebFetch, WebSearch
 color: red
-reasoning: true
 tags: [review, quality, read-only]
 ```
 
 **security.md** — Vulnerability analysis, OWASP Top 10, auth and input validation review.
 ```yaml
 tools: Bash, WebSearch
-reasoning: true
 tags: [security, audit, vulnerabilities, read-only]
 ```
 
@@ -228,7 +225,6 @@ tags: [testing, qa, coverage]
 **debugger.md** — Bug diagnosis, stack trace analysis, root cause finding.
 ```yaml
 tools: Edit, Bash
-reasoning: true
 tags: [debugging, diagnostics, bug-fix]
 ```
 
@@ -238,6 +234,18 @@ tags: [debugging, diagnostics, bug-fix]
 tools: Bash, Write, Edit
 tags: [documentation, writing, docs]
 ```
+
+**plan_researcher.md** — Spawned by `enter_plan_mode`: researches the codebase read-only and reports findings and a proposed plan, which the main agent turns into the plan the person reviews.
+```yaml
+tools: Bash, WebFetch, WebSearch
+```
+
+**visualizer.md** — Renders data the caller hands over as UI (charts, tables, cards) through the `Visualize` tool. Other agents delegate to it.
+```yaml
+tools: Visualize
+```
+
+None of the bundled agents turns on `reasoning`; set `reasoning: true` in your own copy to turn it on.
 
 ---
 

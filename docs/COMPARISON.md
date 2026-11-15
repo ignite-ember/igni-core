@@ -22,7 +22,7 @@ igni inverts this: an **Orchestrator** analyzes every task, picks agents from a 
 | Aspect | Claude Code | igni |
 |---|---|---|
 | **Agent format** | `.md` files with YAML frontmatter | Same `.md` format (cross-compatible) |
-| **Built-in agents** | ~3 (main, sub-agent, plan mode) | 10 base agents (architect, data-architect, editor, explorer, reviewer, qa, security, debugger, simplifier, docs) + 6 `.codeindex.md` variants + visualizer |
+| **Built-in agents** | ~3 (main, sub-agent, plan mode) | 11 bundled agents (architect, editor, explorer, reviewer, qa, security, debugger, simplifier, docs, plan_researcher, visualizer) |
 | **Custom agents** | `.claude/agents/*.md` | `.igni/agents/*.md` + `.igni/agents.local/` (gitignored) |
 | **Agent discovery** | Static directory scan | Multi-directory scan with priority (ephemeral → local → project → global → built-in) |
 | **Sub-agent depth** | 1 level | Unlimited (configurable via `orchestration.max_nesting_depth`) |
