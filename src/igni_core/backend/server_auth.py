@@ -160,6 +160,11 @@ class AuthController:
         if portal and not is_safe_url(portal):
             return ServerChoice.refused(f"{portal} is not an https address.")
 
+        # The same server again keeps the portal it was given: a
+        # split-port deployment's portal cannot be derived, and a
+        # sign-in wall with no portal field would erase it.
+        if not portal and chosen == (self._settings.api_url or "").rstrip("/"):
+            portal = (self._settings.portal_url or "").rstrip("/")
         self._user_config_store.set_server(chosen, portal)
         # The settings object this controller was built with is the
         # one every later call reads, so it has to learn too — a

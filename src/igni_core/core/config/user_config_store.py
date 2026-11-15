@@ -97,13 +97,18 @@ class UserConfigStore:
         Sets ``api_url`` and ``portal_url``; every other key in the file
         is kept — it is the user's config, not ours to rewrite. An empty
         ``portal_url`` means "derive it from ``api_url``", so a stored one
-        — the previous server's portal — is removed. Raises
+        — the previous server's portal — is removed; choosing the server
+        already stored keeps its portal, which may be one nothing can
+        derive (a split-port local deployment). Raises
         on an unreadable or unwritable file: unlike a remembered model,
         a server that was not written down is not a choice to shrug off.
         """
         config = self.read()
+        same_server = str(config.get("api_url") or "").rstrip("/") == api_url.rstrip("/")
         config["api_url"] = api_url
-        if portal_url:
+        if same_server and not portal_url:
+            pass
+        elif portal_url:
             config["portal_url"] = portal_url
         else:
             config.pop("portal_url", None)
