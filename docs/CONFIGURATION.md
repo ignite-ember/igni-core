@@ -460,7 +460,7 @@ reasoning:
 
 # Guardrails
 guardrails:
-  pii_detection: true              # Detect PII in prompts (pre-hook)
+  pii_detection: true              # Refuse a message carrying PII, before any model call
   prompt_injection: false          # Detect injection attempts (pre-hook)
   moderation: false                # OpenAI moderation API (pre-hook)
 

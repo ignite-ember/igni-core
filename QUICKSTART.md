@@ -449,7 +449,7 @@ Built-in AI safety pre-hooks:
 
 ```yaml
 guardrails:
-  pii_detection: true          # flag PII in prompts
+  pii_detection: true          # refuse a message carrying PII
   prompt_injection: true       # detect injection attempts
   moderation: true             # content moderation
 ```

@@ -354,22 +354,22 @@ Opening a folder never runs its code or loosens safety until the person trusts i
 
 ### 9. Guardrails (AI Safety)
 
-Built-in safety guardrails run as Agno pre-hooks before each agent turn, catching problems before they reach the model:
+Built-in safety guardrails run as Agno pre-hooks on the person's message, before the model is called. A guardrail that triggers **refuses the whole message**: no model call is made, the turn ends with the reason (`Validation failed: ...`; a headless `igni -m` exits 1), and the agent never sees the message — it is not told and does not adjust. Rephrase, or turn the guardrail off, and send again.
 
-| Guardrail | What It Does | When It Triggers |
+| Guardrail | What It Checks | When It Triggers |
 |---|---|---|
-| **PII Detection** | Scans prompts for personally identifiable information (emails, phone numbers, SSNs, etc.) | Before model call — flags PII so the agent can redact or warn |
-| **Prompt Injection** | Detects injection attempts in user input and tool output (e.g., "ignore previous instructions") | Before model call — blocks the injected content |
-| **Moderation** | Content moderation via OpenAI's moderation API | Before model call — flags harmful content |
+| **PII Detection** (on by default) | The person's message, for personally identifiable information (emails, phone numbers, SSNs, credit cards) | Refuses the message before any model call |
+| **Prompt Injection** | The person's message, for injection attempts (e.g., "ignore previous instructions"). Tool output is **not** checked by this guardrail — igni wraps untrusted tool output in its own untrusted block instead | Refuses the message before any model call |
+| **Moderation** | The person's message, via OpenAI's moderation API (needs `OPENAI_API_KEY` and the `openai` package) | Refuses a flagged message; refuses every message while it cannot reach the API, rather than let one through unmoderated |
 
 ```yaml
 guardrails:
-  pii_detection: true          # detect and flag PII in prompts
-  prompt_injection: true       # detect injection attempts
+  pii_detection: true          # refuse a message that carries PII
+  prompt_injection: true       # refuse a message that looks like an injection attempt
   moderation: true             # OpenAI moderation API
 ```
 
-Guardrails are applied via `AgnoFeatures.apply_to_agent()` — they attach as pre-hooks that execute before the model is called. If a guardrail triggers, the agent is informed and can adjust its approach. Guardrails work alongside (not instead of) the permission system and protected paths.
+Guardrails work alongside (not instead of) the permission system and protected paths.
 
 **Enterprise use:** Guardrails are especially valuable for teams where agents process user-provided content (URLs, files, pasted text) that could contain injection attempts or sensitive data.
 
