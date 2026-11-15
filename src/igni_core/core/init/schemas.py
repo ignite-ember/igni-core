@@ -379,9 +379,15 @@ class InitResult(BaseModel):
 # them and the main agent never had them, so a fresh project was
 # pre-approving five tools nothing could call. Searching and reading
 # go through ``Bash`` now (``rg`` / ``cat`` / ``find``).
+#
+# ``ask: [Write, Edit, Bash, BashOutput]`` used to be here too. It asked
+# nothing ``default`` mode does not ask anyway, but an ask rule outranks
+# an allow rule: once the folder was trusted, every ``Bash(cat *)`` or
+# ``Write`` the person allowed was overridden by the rule igni wrote
+# itself — denied under ``--strict``, a pause without it.
 _DEFAULT_PROJECT_PERMISSIONS = IgniSettingsPermissionsFile(
     allow=["WebSearch", "WebFetch"],
-    ask=["Write", "Edit", "Bash", "BashOutput"],
+    ask=[],
     deny=[],
 )
 
