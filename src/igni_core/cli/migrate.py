@@ -100,7 +100,8 @@ def migrate(project_dir: Path | None, data_dir: Path | None, database_url: str |
             where = url.file if url.file is not None else url.redacted
             driver = exc.name or "its driver"
             raise click.ClickException(
-                f"could not migrate {where}: {driver} is not installed"
+                f"could not migrate {where}: {driver} is not installed. PostgreSQL "
+                "storage comes with igni-cloud: pip install igni-cloud"
             ) from exc
         click.echo(report)
 

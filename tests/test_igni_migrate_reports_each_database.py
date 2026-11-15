@@ -136,6 +136,9 @@ def test_a_database_whose_driver_is_not_installed_is_a_message_and_exit_one(
     assert isinstance(result.exception, SystemExit), "a message, not a traceback"
     assert "could not migrate postgresql+psycopg://nobody:***@127.0.0.1:1/none" in result.output
     assert "psycopg is not installed" in result.output
+    # And what to install: the core has no ``postgres`` extra; the driver
+    # comes with igni-cloud (docs/CLOUD.md §9, campaign R025).
+    assert "pip install igni-cloud" in result.output
     assert "hunter2" not in result.output
 
 

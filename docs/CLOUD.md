@@ -613,8 +613,8 @@ there wherever the package is installed.
 data directory, as before. Set, both are that one database and every row
 is scoped. The URL may be any spelling of PostgreSQL (`postgresql://`,
 `postgres://`, `+asyncpg`, `+psycopg`); igni speaks psycopg 3 to it,
-sync and async, one driver for alembic, its stores and Agno (the
-`postgres` extra). `igni migrate` (`--database-url`) prepares it; a
+sync and async, one driver for alembic, its stores and Agno (it comes
+with `igni-cloud`; the core has no PostgreSQL extra). `igni migrate` (`--database-url`) prepares it; a
 backend whose schema is current still never imports alembic.
 
 **Scoping, in one place.** Every igni table carries `org`, `producer`

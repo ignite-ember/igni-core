@@ -28,6 +28,8 @@ import traceback
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from igni_core.core.db.scope import NoTenantError
+
 logger = logging.getLogger(__name__)
 
 #: A session coroutine, as ``run_single_message`` returns it.
@@ -68,6 +70,14 @@ class HeadlessRun:
             asyncio.run(self.drain_after(session))
         except SystemExit as exc:  # a hook or handler asked for a specific code
             code = self._exit_code(exc)
+        except NoTenantError as exc:
+            # A shared database (``IGNI_DATABASE_URL``) and nobody signed in:
+            # a refusal with its remedy, not a traceback.
+            print(
+                f"Error: {exc}. Sign in with `igni login`, or unset IGNI_DATABASE_URL.",
+                file=sys.stderr,
+            )
+            code = 1
         except BaseException:  # noqa: BLE001 — report, then still exit cleanly
             traceback.print_exc()
             code = 1

@@ -23,9 +23,12 @@ from igni_core.cli.logging import AgnoLogs, DebugLogging
 from igni_core.cli.options import CliOptions
 from igni_core.cli.resume import ResumeResolver
 from igni_core.core.config.settings import Settings
+from igni_core.core.db.scope import tenancy
 from igni_core.core.session.single_message_run import SingleMessageRun
 from igni_core.core.workspace_trust import process_trust
 from igni_core.core.worktree import WorktreeManager
+from igni_core.extensions.principal import SignedInPerson
+from igni_core.extensions.store import ExtensionStore
 
 #: The console script pyproject installs. `ignite-ember` is the other
 #: one and is kept only for backwards compatibility, so it is not what
@@ -204,6 +207,10 @@ class CliInvocation:
         Stdout is the reply: agno's logs go to stderr (:class:`AgnoLogs`).
         """
         AgnoLogs.to_stderr()
+        # Asked only when ``IGNI_DATABASE_URL`` names a shared database
+        # (docs/CLOUD.md §9), as the backend's ``ProcessEnvironment`` does:
+        # without it a headless run could never open one, signed in or not.
+        tenancy.use(SignedInPerson(self._settings.auth.credentials_file, ExtensionStore()).tenant)
         self._headless_run.run(self._session(message), cleanup=self.cleanup_worktree)
 
     async def _session(self, message: str) -> None:
