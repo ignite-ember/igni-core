@@ -15,7 +15,11 @@ from agno.tools.reasoning import ReasoningTools
 
 from igni_core.core.config.schemas import GuardrailsConfig, ReasoningConfig
 from igni_core.core.config.settings import Settings
-from igni_core.core.session.agent_factory import create_guardrails, create_reasoning_tools
+from igni_core.core.session.agent_factory import (
+    FailClosedModerationGuardrail,
+    create_guardrails,
+    create_reasoning_tools,
+)
 
 
 def _guardrails(**flags: bool) -> list | None:
@@ -49,7 +53,8 @@ def test_each_guardrail_flag_alone_builds_exactly_its_hook() -> None:
 
     assert type(pii) is PIIDetectionGuardrail
     assert type(injection) is PromptInjectionGuardrail
-    assert type(moderation) is OpenAIModerationGuardrail
+    assert type(moderation) is FailClosedModerationGuardrail
+    assert isinstance(moderation, OpenAIModerationGuardrail)
 
 
 def test_every_guardrail_runs_in_the_order_pii_injection_moderation() -> None:
@@ -58,11 +63,14 @@ def test_every_guardrail_runs_in_the_order_pii_injection_moderation() -> None:
     assert [type(h) for h in hooks or []] == [
         PIIDetectionGuardrail,
         PromptInjectionGuardrail,
-        OpenAIModerationGuardrail,
+        FailClosedModerationGuardrail,
     ]
 
 
 def test_two_flags_keep_the_same_relative_order() -> None:
     hooks = _guardrails(prompt_injection=True, moderation=True)
 
-    assert [type(h) for h in hooks or []] == [PromptInjectionGuardrail, OpenAIModerationGuardrail]
+    assert [type(h) for h in hooks or []] == [
+        PromptInjectionGuardrail,
+        FailClosedModerationGuardrail,
+    ]

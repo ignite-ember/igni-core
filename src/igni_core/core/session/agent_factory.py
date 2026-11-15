@@ -28,6 +28,7 @@ attached.
 
 from __future__ import annotations
 
+from agno.exceptions import CheckTrigger, InputCheckError
 from agno.guardrails.openai import OpenAIModerationGuardrail
 from agno.guardrails.pii import PIIDetectionGuardrail
 from agno.guardrails.prompt_injection import PromptInjectionGuardrail
@@ -47,14 +48,52 @@ def create_reasoning_tools(settings: Settings) -> ReasoningTools | None:
     )
 
 
+class FailClosedModerationGuardrail(OpenAIModerationGuardrail):
+    """OpenAI moderation that refuses the turn when it cannot moderate it.
+
+    Agno's pre-hook runner logs any exception other than
+    ``InputCheckError`` and runs the turn anyway, so a missing OpenAI key
+    or SDK, or an unreachable moderation API, let every turn through
+    unmoderated with a traceback on stderr (campaign R086, R157). A
+    person who switched moderation on asked for nothing unmoderated to
+    reach the model: such a failure is an ``InputCheckError`` here.
+    """
+
+    def check(self, run_input):  # type: ignore[no-untyped-def]
+        try:
+            super().check(run_input)
+        except InputCheckError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — every failure to moderate refuses
+            raise self._could_not_moderate(exc) from exc
+
+    async def async_check(self, run_input):  # type: ignore[no-untyped-def]
+        try:
+            await super().async_check(run_input)
+        except InputCheckError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — every failure to moderate refuses
+            raise self._could_not_moderate(exc) from exc
+
+    @staticmethod
+    def _could_not_moderate(exc: Exception) -> InputCheckError:
+        return InputCheckError(
+            "guardrails.moderation is on and the message could not be moderated "
+            f"({type(exc).__name__}: {exc}); it was not sent. Set OPENAI_API_KEY "
+            "(and install the openai package), or turn guardrails.moderation off.",
+            check_trigger=CheckTrigger.INPUT_NOT_ALLOWED,
+        )
+
+
 def create_guardrails(settings: Settings) -> list | None:
     """Return a list of Agno guardrail ``pre_hooks`` from config, or
     ``None`` when no guardrail flag is enabled.
 
-    Moderation is the one with an external dependency (the OpenAI SDK),
-    and it does not surface here: the guardrail imports the SDK inside
-    ``check()``, so an env without it builds a session fine and fails
-    the first moderated turn instead.
+    Moderation is the one with an external dependency (the OpenAI SDK
+    and an OpenAI key), and it does not surface here: the guardrail
+    imports the SDK inside ``check()``, so an env without it builds a
+    session fine and refuses the first moderated turn instead
+    (:class:`FailClosedModerationGuardrail`).
     """
     hooks: list = []
     cfg = settings.guardrails
@@ -66,6 +105,6 @@ def create_guardrails(settings: Settings) -> list | None:
         hooks.append(PromptInjectionGuardrail())
 
     if cfg.moderation:
-        hooks.append(OpenAIModerationGuardrail())
+        hooks.append(FailClosedModerationGuardrail())
 
     return hooks if hooks else None
