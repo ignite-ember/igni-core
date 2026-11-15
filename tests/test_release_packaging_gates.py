@@ -10,10 +10,13 @@ rewrite that keeps the behaviour keeps passing.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -229,7 +232,7 @@ def _brew_formula() -> str:
 
 def test_homebrew_formula_symlinks_every_console_script():
     """``igni`` is the command README and QUICKSTART tell brew users to
-    run, and the formula linked only ``ignite-ember``."""
+    run, and a formula once linked only another one."""
     formula = _brew_formula()
     scripts = tomllib.loads(PYPROJECT.read_text())["project"]["scripts"]
 
@@ -237,21 +240,151 @@ def test_homebrew_formula_symlinks_every_console_script():
         assert f'bin.install_symlink libexec/"bin/{name}"' in formula, name
 
 
-def test_the_formula_is_igni_core_and_ignite_ember_is_its_alias():
-    """``brew install .../igni-core`` and ``.../ignite-ember`` install one formula: the
-    package's name, with the old one as a tap alias. The pre-rename file and its
-    igni-core alias go, or Homebrew sees two formulae for one name."""
-    run = next(
+def _tap_run() -> str:
+    return next(
         step["run"]
         for step in _release_steps("update-homebrew")
         if step.get("name") == "Update Homebrew tap"
     )
 
+
+def test_the_formula_is_igni_core_and_the_only_one():
+    """The tap has one formula, ``igni-core``: the retired ``ignite-ember``
+    name is neither a formula nor an alias, and the release writes and
+    commits nothing else."""
+    run = _tap_run()
+
     assert _brew_formula().startswith("class IgniCore < Formula\n")
-    assert "git rm -q --ignore-unmatch Formula/ignite-ember.rb Aliases/igni-core" in run
-    assert "ln -sfn ../Formula/igni-core.rb Aliases/ignite-ember" in run
-    assert "git add Formula/igni-core.rb Aliases/ignite-ember" in run
-    assert "Formula/ignite-ember.rb <<" not in run
+    assert "git add Formula/igni-core.rb\n" in run
+    assert "ignite-ember.rb" not in run
+    assert "Aliases" not in run
+    assert 'bin/ignite-ember"' not in _brew_formula()
+
+
+def test_the_formula_pins_the_version_homebrew_reads_off_its_url():
+    """Only the URL and the sha256 change per release: the version comes
+    from the sdist's file name, and pip installs exactly that."""
+    formula = _brew_formula()
+
+    assert '"--prefer-binary", "igni-core==#{version}"' in formula
+    assert 'url "PLACEHOLDER_URL"' in formula
+    assert 'sha256 "PLACEHOLDER_SHA"' in formula
+    assert 'shell_output("#{bin}/igni --version")' in formula
+    run = _tap_run()
+    assert 'sed -i "s|PLACEHOLDER_URL|${URL}|" Formula/igni-core.rb' in run
+    assert 'sed -i "s|PLACEHOLDER_SHA|${SHA}|" Formula/igni-core.rb' in run
+    assert 'URL="${{ steps.sdist.outputs.url }}"' in run
+    assert 'SHA="${{ steps.sdist.outputs.sha256 }}"' in run
+
+
+_HASHED = (
+    "https://files.pythonhosted.org/packages/ea/24/"
+    "8a44eb66f592359d85b64aa956f714dd044512bab0b221c527a851cc57a4/igni_core-1.0.4.tar.gz"
+)
+_SDIST_BYTES = b"the igni-core 1.0.4 sdist"
+_SDIST_SHA = hashlib.sha256(_SDIST_BYTES).hexdigest()
+
+
+def _pypi_json(sdist_url: str, sha: str) -> dict:
+    """What ``https://pypi.org/pypi/igni-core/<version>/json`` answers:
+    the wheel and the sdist under ``urls``."""
+    return {
+        "urls": [
+            {
+                "packagetype": "bdist_wheel",
+                "url": _HASHED.replace(".tar.gz", "-py3-none-any.whl"),
+                "digests": {"sha256": "0" * 64},
+            },
+            {"packagetype": "sdist", "url": sdist_url, "digests": {"sha256": sha}},
+        ]
+    }
+
+
+def _run_the_sdist_step(tmp_path: Path, pypi: dict, served: bytes = _SDIST_BYTES):
+    """Run the ``Find the sdist PyPI serves`` step as Actions would: a fake
+    ``curl`` on PATH serves ``served`` for any URL, and ``sha256sum`` is
+    stood in for where the host has none (macOS)."""
+    step = next(
+        s
+        for s in _release_steps("update-homebrew")
+        if s.get("name") == "Find the sdist PyPI serves"
+    )
+    script = step["run"].replace("${{ steps.version.outputs.pypi_version }}", "1.0.4")
+    (tmp_path / "pypi.json").write_text(json.dumps(pypi))
+    (tmp_path / "served").write_bytes(served)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "curl").write_text(
+        "#!/bin/sh\n"
+        'while [ $# -gt 0 ]; do [ "$1" = -o ] && { shift; out="$1"; }; last="$1"; shift; done\n'
+        'echo "$last" >> "$CURL_LOG"\n'
+        'cp "$SERVED" "$out"\n'
+    )
+    (bin_dir / "sleep").write_text("#!/bin/sh\nexit 0\n")
+    if shutil.which("sha256sum") is None:
+        (bin_dir / "sha256sum").write_text(
+            f"#!/bin/sh\nexec {sys.executable} -c "
+            "'import hashlib,sys; p=sys.argv[1]; "
+            'print(hashlib.sha256(open(p,"rb").read()).hexdigest(), p)\' "$1"\n'
+        )
+    for tool in bin_dir.iterdir():
+        tool.chmod(0o755)
+    (tmp_path / "step.sh").write_text(script)
+    output = tmp_path / "github_output"
+    output.write_text("")
+    env = dict(os.environ)
+    env.update(
+        PATH=f"{bin_dir}{os.pathsep}{env['PATH']}",
+        GITHUB_OUTPUT=str(output),
+        SERVED=str(tmp_path / "served"),
+        CURL_LOG=str(tmp_path / "curl.log"),
+    )
+    proc = subprocess.run(
+        ["bash", str(tmp_path / "step.sh")],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+    )
+    outputs = dict(line.split("=", 1) for line in output.read_text().splitlines() if "=" in line)
+    fetched = (
+        (tmp_path / "curl.log").read_text().split() if (tmp_path / "curl.log").exists() else []
+    )
+    return proc, outputs, fetched
+
+
+def test_the_formula_gets_the_hashed_sdist_url_and_digest_pypi_states(tmp_path):
+    """Homebrew's style check refuses the ``/packages/source/`` short URL,
+    so the formula takes the sdist's full URL from PyPI's JSON API, and
+    the sha256 PyPI gives for it — checked against the bytes it serves."""
+    proc, outputs, fetched = _run_the_sdist_step(tmp_path, _pypi_json(_HASHED, _SDIST_SHA))
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert outputs == {"url": _HASHED, "sha256": _SDIST_SHA}
+    assert fetched == [_HASHED]
+
+
+def test_an_sdist_that_does_not_match_its_stated_digest_stops_the_tap_update(tmp_path):
+    proc, outputs, _ = _run_the_sdist_step(
+        tmp_path, _pypi_json(_HASHED, _SDIST_SHA), served=b"something else"
+    )
+
+    assert proc.returncode != 0
+    assert "PyPI says" in proc.stdout + proc.stderr
+    assert outputs == {}
+
+
+def test_an_sdist_url_of_another_version_stops_the_tap_update(tmp_path):
+    """Homebrew reads the version off the URL and the install line pins
+    ``igni-core==#{version}``: a URL of another version would install it."""
+    other = _HASHED.replace("1.0.4", "1.0.3")
+    proc, outputs, fetched = _run_the_sdist_step(tmp_path, _pypi_json(other, _SDIST_SHA))
+
+    assert proc.returncode != 0
+    assert "is not igni_core-1.0.4.tar.gz" in proc.stdout + proc.stderr
+    assert outputs == {}
+    assert fetched == []
 
 
 def test_homebrew_formula_test_exercises_the_canonical_command():
@@ -282,7 +415,7 @@ def test_release_refuses_a_tag_that_disagrees_with_pyproject(
     advertising 1.0.4 over a bundle reporting 1.0.3 — an update the
     desktop app re-offers on every launch, forever."""
     (tmp_path / "pyproject.toml").write_text(
-        f'[project]\nname = "ignite-ember"\nversion = "{pyproject_version}"\n'
+        f'[project]\nname = "igni-core"\nversion = "{pyproject_version}"\n'
     )
     script = tmp_path / "gate.sh"
     script.write_text(_version_gate_run())

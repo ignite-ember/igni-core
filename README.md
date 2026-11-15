@@ -50,25 +50,21 @@ The architectural choices that drive the gap: (1) **CodeIndex queried first, not
 ## Quick Start
 
 ```bash
-brew install ignite-ember/tap/igni-core  # or: pip install igni-core (the old name ignite-ember works for both)
+brew install ignite-ember/tap/igni-core  # or: pip install igni-core, or: uv tool install igni-core
 cd your-project
 igni --read-only -m "In one sentence, what does this project do?"
 ```
 
-`igni` is the command; `ignite-ember` is kept as an alias so existing
-shell aliases and scripts keep working. Both are the same entry point,
-and pip and the Homebrew formula both install both names.
-On the command line it runs **one task and exits** (`-m`, or `-p` for a
+`igni` is the command, and the only one pip, uv and the Homebrew formula
+install. On the command line it runs **one task and exits** (`-m`, or `-p` for a
 pipe); there is no terminal chat UI any more — run it bare and it says so.
 
 **What the published package holds today.** `igni-core` on PyPI is
 **v1.0.4**, and it is this repository's build: the `igni_core` module,
-the `igni` command and the decisions service. The old name installs the
-same thing — `pip install ignite-ember` resolves to `igni-core==1.0.4`
-through the alias (`packages/ignite-ember/` — metadata, and a dependency
-on `igni-core` at the same version), and the Homebrew formula installs
-`igni-core` as well. The command above works either way. To work on it
-instead of installing it:
+the `igni` command and the decisions service, and the Homebrew formula
+installs the same package. The old name, `ignite-ember`, is retired: its
+releases are yanked from PyPI and there is no formula or command by it.
+To work on it instead of installing it:
 
 ```bash
 git clone https://github.com/ignite-ember/igni-core.git
@@ -128,8 +124,7 @@ See [Quickstart](QUICKSTART.md) for the full setup guide.
 ### Quickstart (new setup)
 
 1. **Install** — `pip install 'igni-core[decisions]==1.0.4'` (or
-   `brew install ignite-ember/tap/igni-core`; the old name `ignite-ember` installs
-   the same package from either).
+   `uv tool install igni-core`, or `brew install ignite-ember/tap/igni-core`).
 2. **Configure a model** — set `OPENAI_API_KEY` (or any provider key) and add the
    model to `.igni/config.yaml`; or point `api_url` at your igni server and run
    `igni login`
@@ -142,9 +137,13 @@ See [Quickstart](QUICKSTART.md) for the full guide.
 The VS Code and JetBrains extensions are no longer shipped or supported;
 release notes below that mention them are history.
 
+### Unreleased
+
+- **The `ignite-ember` name and command are retired.** The package is `igni-core` and the command is `igni`; nothing is published or installed under the old name any more. Every `ignite-ember` release on PyPI is yanked, the `ignite-ember` console script is gone from the package, and the Homebrew tap has a single formula, `igni-core` — `ignite-ember/tap/ignite-ember` no longer resolves. Install with `pip install igni-core`, `uv tool install igni-core` or `brew install ignite-ember/tap/igni-core`; a script that runs `ignite-ember` has to run `igni`.
+
 ### The split release (v1.0.3 → v1.0.4)
 
-- **`igni-core` is on PyPI.** v1.0.4 is the first release published under igni's own name: `pip install 'igni-core[decisions]==1.0.4'` installs the `igni_core` module, the `igni` command and the decisions service. `ignite-ember` is now an alias — the same version, the same extras, nothing of its own — so `pip install ignite-ember` and the Homebrew formula install igni-core 1.0.4.
+- **`igni-core` is on PyPI.** v1.0.4 is the first release published under igni's own name: `pip install 'igni-core[decisions]==1.0.4'` installs the `igni_core` module, the `igni` command and the decisions service. The `ignite-ember` name that 1.0.4 also shipped as an alias is retired since: its PyPI releases are yanked, and the Homebrew formula is `igni-core`.
 - **The cloud layer is its own package.** `igni-cloud` holds the PostgreSQL storage and the producer/guest binding, found through the `igni.layers` and `igni.storage` entry points, rather than inside the core.
 - **The wire contract is typed.** The messages the backend and the app exchange have one definition, checked from both sides — the app's client is igni-core's contract, byte for byte.
 - **One module per concern.** The backend is split into modules that each own one thing — settings, auth, the cloud, the tools, the transport — behind interfaces the tests can substitute. Nothing reaches into another's internals.
@@ -155,7 +154,7 @@ release notes below that mention them are history.
 ### Rebrand + signed desktop app (v0.7.0 → v0.7.1)
 
 - **Rebrand to `igni`.** Shorter, single-word product name — the Tauri window, the macOS Dock, the VSCode + JetBrains marketplace listings, the welcome screen, the agent's self-identification all read `igni`. Internal identifiers (PyPI package `ignite-ember`, Python module `igni_core`, Tauri bundle id `sh.ignite-ember.desktop`, VSCode/JetBrains plugin slugs) are preserved so existing installs keep auto-updating without breakage.
-- **`igni` CLI alias.** The terminal command is now `igni` (the old `ignite-ember` invocation still works for back-compat).
+- **`igni` CLI alias.** The terminal command is now `igni` (the old `ignite-ember` invocation kept working through v1.0.4 and is retired since).
 - **Apple Developer ID signing + notarization** on the macOS desktop app. First-launch no longer triggers the "unidentified developer" Gatekeeper warning; the notarization ticket is stapled into the `.app` so offline first-launch works too. The auto-updater pulls a fully signed + notarized bundle.
 - **Mermaid diagrams in the chat.** Fenced ` ```mermaid ` blocks render as SVG (sequence / flowchart / state / ER / pie / gantt / mindmap / xy-chart / quadrant / timeline). Mermaid lazy-loads — first diagram in a session triggers the download.
 - **Collapsible code blocks.** Anything taller than ~220px starts collapsed behind a chevron with a fade overlay; click anywhere on the clip (or the chevron) to expand. Copy chip stays always-visible top-right.
@@ -243,7 +242,7 @@ brew upgrade ignite-ember/tap/igni-core
 If `brew upgrade` doesn't work or you encounter issues, manually reinstall:
 
 ```bash
-brew uninstall igni-core && brew untap ignite-ember/tap && brew tap ignite-ember/tap && brew install igni-core
+brew uninstall igni-core && brew untap ignite-ember/tap && brew install ignite-ember/tap/igni-core
 ```
 
 ## Clients

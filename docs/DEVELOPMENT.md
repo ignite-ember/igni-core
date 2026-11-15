@@ -13,7 +13,7 @@ current file list inside any of them, `ls` it.
 ```
 igni/
 ├── src/igni_core/         # the Python package (import name stays `igni_core`)
-│   ├── __main__.py         # entry point behind `igni`, `ignite-ember`, `python -m igni_core`
+│   ├── __main__.py         # entry point behind `igni` and `python -m igni_core`
 │   ├── cli/                # non-interactive command surface: flags, `-m`, pipe mode, resume
 │   ├── backend/            # the long-lived server the GUI clients speak to — slash-command
 │   │   │                   # and RPC dispatch, run streaming, HITL, session pool, panels
@@ -357,7 +357,7 @@ A fixed Router → Agent hierarchy forces you to pre-decide what agents exist an
 ### Why a backend server with separate controller classes?
 
 The interactive surface is a GUI client, not a terminal app — `igni`
-and `ignite-ember` are the non-interactive CLI, and chat happens in the
+is the non-interactive CLI, and chat happens in the
 clients in igni-app, which connect to the server started by
 `python -m igni_core.backend`. Splitting the front-end out means the
 same backend serves the desktop app and the web client over one wire

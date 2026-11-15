@@ -1,7 +1,7 @@
 """Text a user reads says `igni`, never a bare `Ember`.
 
-`igni` and `ignite-ember` are both acceptable spellings of the product; a
-bare `ember` is not. `test_env_var_prefix.py` enforces that for
+The product is `igni`; `ignite-ember` is the organisation (the GitHub
+org, the npm scope, the tap), and a bare `ember` is neither. `test_env_var_prefix.py` enforces that for
 environment variables. This file does it for the other class that reaches
 people: **display strings in the client shells.**
 
@@ -130,7 +130,7 @@ def test_no_bare_ember_in_a_display_string(path: pathlib.Path):
     assert not offenders, (
         f'{path.relative_to(IGNI_APP)} has user-visible text saying "Ember".\n'
         f"  {chr(10).join('  ' + o for o in offenders)}\n"
-        '  Use "igni" (or "ignite-ember"). If this is an identifier rather '
+        '  Use "igni". If this is an identifier rather '
         "than display text, add the exact token to _ALLOWED_TOKENS."
     )
 
@@ -147,8 +147,8 @@ def test_the_rule_catches_what_it_is_meant_to():
 def test_the_rule_does_not_flag_legitimate_uses():
     assert not _offenders('import type { EmberClient } from "./client";')
     assert not _offenders('progress("Preparing the igni backend…");')
-    assert not _offenders('const pkg = "ignite-ember";')
-    assert not _offenders('spawn("uv", ["tool", "install", "ignite-ember"]);')
+    assert not _offenders('const org = "ignite-ember";')
+    assert not _offenders('import { Panel } from "@ignite-ember/ui-react";')
     # Comments are internal prose and out of scope.
     assert not _offenders("// the Ember Cloud gateway fallback")
     assert not _offenders("/* Pick a theme matching the current Ember theme */")

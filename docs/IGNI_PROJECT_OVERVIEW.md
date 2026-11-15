@@ -143,7 +143,7 @@ This is the headline story for **admins who want a curated AI experience deliver
   - MCPs → `~/.igni/group-policy/mcps/<name>.json`
   - Plugins → installed via `PluginInstaller` into `<data_dir>/group-policy/plugins/` (priority 4.5 — between project-igni and managed-igni), so the plugin loader sees them naturally
   - Settings → deep-merged into the existing settings tier stack via `core/config/merge_plan.py:250` (`GroupPolicyTier`)
-- **Zero install at the workstation.** The end user's machine only needs `brew install ignite-ember` (or the desktop app). When they log in with `/login`, the appropriate group packs are pulled automatically — they get the curated agent set, MCP servers, plugin roster, and merged config without anyone running a setup script. A backend/security team can flip the group's overrides today; every member of the group sees the change on next fetch (5-min TTL on the cache, `group_policy.py:22-24`).
+- **Zero install at the workstation.** The end user's machine only needs `brew install ignite-ember/tap/igni-core` (or the desktop app). When they log in with `/login`, the appropriate group packs are pulled automatically — they get the curated agent set, MCP servers, plugin roster, and merged config without anyone running a setup script. A backend/security team can flip the group's overrides today; every member of the group sees the change on next fetch (5-min TTL on the cache, `group_policy.py:22-24`).
 - **What this enables.** Per-department personas without per-user configuration:
   - A "Security" group gets a security-focused agent set, audit-logging MCP, and restrictive permissions.
   - A "Frontend" group gets React/Vue/Tailwind specialists + a design-system knowledge pack + the Figma MCP, no shell-write rights.

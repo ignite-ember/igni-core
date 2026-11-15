@@ -148,12 +148,7 @@ otel = [
 ]
 
 [project.scripts]
-# ``igni`` is the command. ``ignite-ember`` is kept for backwards
-# compatibility — existing shell aliases, scripts and the Homebrew
-# formula's link keep working; both point at the same entrypoint. The
-# package was called ``ignite-ember`` too, and still is on PyPI as a
-# release that only depends on this one (packages/ignite-ember).
-ignite-ember = "igni_core.__main__:main"
+# ``igni`` is the command.
 igni = "igni_core.__main__:main"
 
 [tool.hatch.build.targets.wheel]
