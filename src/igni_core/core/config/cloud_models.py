@@ -9,8 +9,10 @@ return upstream provider URLs: the CLI talks to igni server's
 ``(key, base_url)`` pair the pool picks. Leaking the upstream URL
 to the client would just expose routing internals.
 
-All cloud-discovered entries are wired to route through
-``{api_url}/v1`` on the local side. Older server deploys that
+All cloud-discovered entries route through igni server: a model the
+catalogue marks ``"api": "anthropic"`` through its ``/v1/messages``
+(an ``anthropic`` entry at ``{api_url}``), every other one through
+``{api_url}/v1`` (an ``openai_like`` entry). Older server deploys that
 still send a ``base_url`` field are tolerated — the client
 deliberately ignores it (see :class:`CloudModelEntry.model_config`,
 ``extra='allow'``).
@@ -59,6 +61,10 @@ class CloudModelEntry(BaseModel):
     # downstream construction of :class:`ModelRegistryEntry` reads
     # naturally as ``from_cloud_discovery(model_id=entry.model_id, ...)``.
     model_id: str = Field(alias="id")
+    #: The API igni server serves the model on: ``"anthropic"`` for
+    #: ``POST /v1/messages``, anything else (or nothing, from an older
+    #: server) for the ``/v1/chat/completions`` proxy.
+    api: str | None = None
 
 
 class CloudCatalogResponse(BaseModel):
@@ -214,6 +220,8 @@ class CloudModelCatalogClient:
             ModelRegistryEntry.from_cloud_discovery(
                 model_id=cloud_entry.model_id,
                 proxy_url=self._proxy_url,
+                api=cloud_entry.api,
+                server_url=self._api_url.rstrip("/"),
             )
             for cloud_entry in catalog.models
             if cloud_entry.model_id

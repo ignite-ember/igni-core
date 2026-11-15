@@ -112,7 +112,7 @@ No manual model configuration needed — the models your server advertises are m
 
 When you're logged in, igni fetches the deduplicated `(model, base_url)` catalogue from your your igni server key pool (`GET /v1/chat/models`) and merges each entry into the local registry on session start. Opening the model picker (`/model`) refreshes the catalogue so models added on the portal show up without restarting the CLI.
 
-Cloud-discovered entries always use `api_key: cloud_token` (your login credentials) and are tagged with `source: "cloud"`. **User-defined entries always win** — if your config already defines `gpt-4o`, the cloud entry with the same name is skipped, so pinned timeouts and provider overrides survive.
+Cloud-discovered entries always use `api_key: cloud_token` (your login credentials) and are tagged with `source: "cloud"`. Each is reached on the API the server names for it: a model whose catalogue row says `"api": "anthropic"` becomes a `provider: anthropic` entry at `api_url` (igni server's `POST /v1/messages`); any other is a `provider: openai_like` entry at `{api_url}/v1` (its `/v1/chat/completions`). **User-defined entries always win** — if your config already defines `gpt-4o`, the cloud entry with the same name is skipped, so pinned timeouts and provider overrides survive.
 
 Failure modes are all soft: missing token, network error, timeout (3 s), and non-200 responses each degrade silently to whatever's already in the local registry.
 
