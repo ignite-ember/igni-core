@@ -34,6 +34,7 @@ class ManifestCheck:
         self._placement(findings)
         self._dev_command(findings)
         self._wildcard_rpc(findings)
+        self._tool_audience(findings)
 
     def _contract(self, findings: Findings) -> None:
         """The contract range against the contract this igni implements."""
@@ -47,6 +48,16 @@ class ManifestCheck:
             return
         if not needed.admits(CONTRACT_VERSION):
             findings.problems.append(f"contract out of range: {needed.why_not(CONTRACT_VERSION)}")
+
+    def _tool_audience(self, findings: Findings) -> None:
+        """``own-agents`` with no plugin: the install refuses it, so doctor says so."""
+        manifest = self._manifest
+        if manifest.permissions.toolAudience == "own-agents" and not manifest.contributes.plugin:
+            findings.problems.append(
+                "offers its tools to its own agents only (toolAudience: own-agents) and "
+                "carries no plugin, so it has no agents of its own; ship them with "
+                "contributes.plugin, or use toolAudience: all-agents"
+            )
 
     def _packaging(self, findings: Findings) -> None:
         manifest = self._manifest

@@ -49,6 +49,24 @@ class InstallPreflight:
         self._check_host_grants(manifest)
         self._check_tool_audience(manifest)
 
+    @classmethod
+    def check_manifest(cls, manifest: ExtensionManifest) -> None:
+        """The rules the manifest alone decides, for ``igni ext install``.
+
+        The contract range, a grant the packaging cannot deliver, and an
+        ``own-agents`` audience with no agents: none depends on where the
+        bundle came from or which deployment it lands in, so the install
+        command refuses them before the bundle is stored, instead of the
+        next start-up refusing a bundle ``igni ext list`` calls installed
+        (``docs/EXTENSIBILITY.md`` §7: validate at install, not at use).
+
+        Raises:
+            InstallError: The bundle is not installable, and why.
+        """
+        cls._check_contract(manifest)
+        cls._check_deliverable(manifest)
+        cls._check_tool_audience(manifest)
+
     @staticmethod
     def _check_contract(manifest: ExtensionManifest) -> None:
         """Refuse a bundle whose contract range leaves out igni's contract.

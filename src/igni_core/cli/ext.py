@@ -46,6 +46,8 @@ from igni_core.core.plugins.git import GitClient
 from igni_core.extensions.bundle_source import BundleSource, BundleSourceError
 from igni_core.extensions.contract import CONTRACT_VERSION
 from igni_core.extensions.distribution.once import OneShotSync
+from igni_core.extensions.install_errors import InstallError
+from igni_core.extensions.install_preflight import InstallPreflight
 from igni_core.extensions.manifest import ExtensionManifest, Workspace
 from igni_core.extensions.profile import DEV_FLAG, DevelopmentFlag
 from igni_core.extensions.store import ExtensionStore
@@ -238,8 +240,9 @@ def install(
     try:
         with _bundle(BundleSource(source, ref=ref, subdir=subdir), network) as bundle:
             manifest = store.read(bundle)
+            InstallPreflight.check_manifest(manifest)
             target = store.add(bundle, replace=replace)
-    except (BundleSourceError, StoreError) as exc:
+    except (BundleSourceError, StoreError, InstallError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     click.echo(f"installed {manifest.display_name} ({manifest.id}) to {target} for development")
