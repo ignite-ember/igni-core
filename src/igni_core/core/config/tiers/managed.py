@@ -80,12 +80,19 @@ class ManagedOnlyTier(Tier):
     def apply(self, accumulator: SettingsAccumulator) -> SettingsAccumulator:
         managed = self.managed_values()
         defaults = GroupPolicyConfig.model_construct().model_dump()
+        # The built-in defaults the settings start from already carry the
+        # environment, so a value equal to the environment-applied default
+        # came from the environment, not from a tier below.
+        from_environment = GroupPolicyConfig().model_dump()
         payload = dict(accumulator.payload)
         block = dict(payload.get("group_policy") or {})
         refused = [
             field
             for field in self.FIELDS
-            if field not in managed and field in block and block[field] != defaults[field]
+            if field not in managed
+            and field in block
+            and block[field] != defaults[field]
+            and block[field] != from_environment[field]
         ]
         if refused:
             logger.warning(
