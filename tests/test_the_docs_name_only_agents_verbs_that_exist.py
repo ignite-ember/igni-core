@@ -13,9 +13,7 @@ import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
-_VERBS = re.findall(
-    r'case "(\w+)":', (_ROOT / "src/igni_core/backend/cmd_agents.py").read_text()
-)
+_VERBS = re.findall(r'case "(\w+)":', (_ROOT / "src/igni_core/backend/cmd_agents.py").read_text())
 
 
 def test_the_command_has_its_documented_verbs():

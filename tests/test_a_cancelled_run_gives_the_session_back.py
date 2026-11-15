@@ -38,8 +38,8 @@ from igni_core.backend.schemas_run import (
     RunPhase,
 )
 from igni_core.core.config.group_policy.gate import RunGate
-from igni_core.core.utils.media_schemas import MediaAttachments, ResolvedText
 from igni_core.core.tools.todo import TodoStore
+from igni_core.core.utils.media_schemas import MediaAttachments, ResolvedText
 from igni_core.protocol import messages as msg
 
 # ── Fakes ────────────────────────────────────────────────────────────

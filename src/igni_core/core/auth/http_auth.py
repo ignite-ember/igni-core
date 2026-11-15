@@ -20,6 +20,7 @@ from igni_core.core.auth.credentials import CloudCredentials, CredentialsStore
 
 logger = logging.getLogger(__name__)
 
+
 class CloudTokenAuth(httpx.Auth):
     """``Authorization: Bearer <the current token>`` on each request.
 

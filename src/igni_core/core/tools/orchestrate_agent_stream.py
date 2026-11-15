@@ -91,6 +91,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         and a run's completion is said once (``record_completion``).
         """
         return self._context.runnable.arun(self._context.task, stream=True, stream_events=True)
+
     def _agent_completed_path(self) -> str:
         return self.state.agent_path_id
 
