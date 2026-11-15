@@ -70,7 +70,8 @@ class TestProtectedPathStageCheckSync:
         for tool in ProtectedPathStage.WRITE_TOOL_FUNCTIONS:
             assert ProtectedPathStage.applies_to(tool)
         assert not ProtectedPathStage.applies_to("read_file")
-        assert not ProtectedPathStage.applies_to("run_shell_command")
+        # The shell is gated for what it writes through a redirect or tee.
+        assert ProtectedPathStage.applies_to("run_shell_command")
 
 
 class TestBlockedCommandStageCheckSync:

@@ -109,3 +109,52 @@ class TestIgnisOwnSettingsAreAlwaysProtected:
             name="save_file", func=lambda **kw: "ok", args={"file_name": path}
         )
         assert result == "ok"
+
+
+class TestTheShellWritingAProtectedPath:
+    """A shell redirect to a protected path was only asked about, and once
+    approved it wrote the file (campaign R109): protected paths cannot be
+    written "regardless of permission level"."""
+
+    @pytest.mark.parametrize(
+        ("command", "targets"),
+        [
+            ("echo hi > shell.secret", ["shell.secret"]),
+            ("echo hi>>a.pem; ls", ["a.pem"]),
+            ("cat x | tee -a .env other.txt", [".env", "other.txt"]),
+            ("printf x &> out.key", ["out.key"]),
+            ("make 2>&1 >/dev/null", []),
+            ("echo 'a > b'", []),
+            ("echo 'unterminated", []),
+        ],
+    )
+    def test_the_targets_a_command_writes(self, command, targets):
+        assert ProtectedPathStage.shell_write_targets(command) == targets
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "command",
+        ["echo hi > shell3.secret", "echo k | tee x.pem", "echo x >> .igni/settings.json"],
+    )
+    async def test_a_redirect_to_a_protected_path_is_blocked_before_it_runs(self, command):
+        ran: list[str] = []
+        hook = ToolEventHook(
+            HookExecutor({}), session_id="t", protected_paths=["*.secret", "*.pem"]
+        )
+        result = await hook(
+            name="run_shell_command",
+            func=lambda **kw: ran.append("x") or "ran",
+            args={"command": command},
+        )
+        assert "is a protected path and cannot be written to." in result
+        assert ran == []
+
+    @pytest.mark.asyncio
+    async def test_reading_a_protected_path_is_not_blocked(self):
+        hook = ToolEventHook(HookExecutor({}), session_id="t", protected_paths=["*.secret"])
+        result = await hook(
+            name="run_shell_command",
+            func=lambda **kw: "ran",
+            args={"command": "cat x.secret > out.txt"},
+        )
+        assert "ran" in result and "protected path" not in result
