@@ -407,7 +407,7 @@ While nesting is unlimited by design, practical safeguards prevent runaway recur
 |---|---|---|
 | `max_nesting_depth` | 5 | Yes, in config |
 | `max_total_agents` | 20 per request | Yes, in config |
-| `sub_team_timeout` | 120 seconds | Yes, per agent |
+| `sub_team_timeout` | 1800 seconds | Yes, in config |
 
 If a depth limit is reached, the agent is informed and must proceed without sub-teams. These are guardrails, not hard constraints — adjust them in `config.yaml`:
 

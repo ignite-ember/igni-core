@@ -398,7 +398,7 @@ context:
 orchestration:
   max_nesting_depth: 5             # Max recursive sub-team depth
   max_total_agents: 20             # Max agents per request
-  sub_team_timeout: 600            # Seconds before sub-team times out
+  sub_team_timeout: 1800           # Seconds before sub-team times out
   max_task_iterations: 10          # Max iterations for tasks-mode teams
 
 # Task scheduling (background jobs)
@@ -446,11 +446,11 @@ skills:
 # Learning
 learning:
   enabled: true                    # Enable learning across sessions
-  user_profile: true               # Build user preference profiles
+  user_profile: false              # Build user preference profiles
   user_memory: true                # Persist user-specific memories
-  session_context: true            # Carry session context forward
+  session_context: false           # Carry session context forward
   entity_memory: false             # Track entities across conversations
-  learned_knowledge: false         # Accumulate learned knowledge
+  learned_knowledge: false         # Not usable yet: igni wires no knowledge base, so every save fails
 
 # Reasoning tools
 reasoning:

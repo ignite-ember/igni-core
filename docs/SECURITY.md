@@ -282,7 +282,7 @@ Recursive sub-team spawning has configurable limits:
 orchestration:
   max_nesting_depth: 5           # max recursive sub-team levels
   max_total_agents: 20           # max agents per request
-  sub_team_timeout: 120          # seconds before sub-team times out
+  sub_team_timeout: 1800         # seconds before sub-team times out
 ```
 
 If limits are reached, the agent is informed and must proceed without sub-teams. These prevent:
