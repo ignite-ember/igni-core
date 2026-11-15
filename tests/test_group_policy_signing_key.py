@@ -87,6 +87,32 @@ class TestAnRsaKey:
             SigningKey(Jwk.model_validate(jwk))
 
 
+class TestAnRsaKeysLength:
+    """Best Practices ``crypto_keylength``: no RSA key under 2048 bits."""
+
+    def test_a_1024_bit_key_is_refused_naming_its_size(self):
+        with pytest.raises(
+            PackRejected, match=r"is a 1024-bit RSA key; igni accepts RSA keys of 2048"
+        ):
+            SigningKey(Jwk.model_validate(ServerKey(1024).jwk))
+
+    def test_one_bit_short_of_2048_is_refused(self):
+        with pytest.raises(PackRejected, match="2047-bit RSA key"):
+            SigningKey(Jwk.model_validate(ServerKey(2047).jwk))
+
+    @pytest.mark.parametrize("bits", [2048, 3072])
+    def test_2048_bits_and_more_verify(self, bits):
+        server = ServerKey(bits)
+        head, body, sig = server.sign_claims({"a": 1}).split(".")
+        raw = base64.urlsafe_b64decode(sig + "=" * (-len(sig) % 4))
+        key = SigningKey(Jwk.model_validate(server.jwk))
+        assert key.verifies(f"{head}.{body}".encode(), raw) is True
+
+    def test_a_short_key_in_a_set_is_left_out(self):
+        jwks = Jwks.model_validate({"keys": [ServerKey(1024).jwk, KEY.jwk]})
+        assert [k.kid for k in SigningKey.all_in(jwks)] == [KEY.kid]
+
+
 class TestAnEcKey:
     def test_it_is_es256(self):
         key = SigningKey(Jwk.model_validate(EC.jwk))

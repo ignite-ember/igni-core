@@ -362,3 +362,16 @@ class TestThePolicy:
         assert verified.policy is not None
         assert verified.policy.group_id == "7"
         assert verified.policy.entries == []
+
+
+class TestAShortRsaKey:
+    """A pack signed with an RSA key under 2048 bits is refused like a forged one."""
+
+    def test_a_pack_signed_by_a_1024_bit_key_is_refused(self):
+        weak = ServerKey(1024)
+        with pytest.raises(PackRejected, match="no igni server key to check the pack against"):
+            _verify(weak.sign_claims(_claims()), jwks=weak.key_set)
+
+    def test_the_same_pack_from_a_2048_bit_key_applies(self):
+        key = ServerKey(2048)
+        assert _verify(key.sign_claims(_claims()), jwks=key.key_set).version == 5
