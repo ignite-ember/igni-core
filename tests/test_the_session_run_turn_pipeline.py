@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
+from igni_core.core.config.schemas import ModelsConfig
 from igni_core.core.config.settings import Settings
 from igni_core.core.session.session_run import SessionRun
 from igni_core.core.utils.display_schemas import RunStats
@@ -22,10 +23,21 @@ class _Run(SessionRun):
         return None
 
 
-def _session(response: str = "Hello!", *, failure: object = "", project_dir: Path | None = None):
+def _session(
+    response: str = "Hello!",
+    *,
+    failure: object = "",
+    project_dir: Path | None = None,
+    vision: bool = False,
+):
     session = MagicMock()
     session.session_id = "s-1"
-    session.settings.models.default = "igni-1.0-4b"
+    session.settings.models = ModelsConfig(
+        default="igni-1.0-4b",
+        registry={
+            "igni-1.0-4b": {"provider": "openai_like", "model_id": "igni-1.0-4b", "vision": vision}
+        },
+    )
     session.project_dir = project_dir
     session.display = MagicMock()
     session.handle_message = AsyncMock(return_value=response)
@@ -113,6 +125,24 @@ async def test_a_referenced_file_is_resolved_to_its_path_and_named(tmp_path):
     session.display.print_info.assert_called_once_with(f"Resolved: {full}")
     (sent,) = session.handle_message.await_args.args
     assert sent == f"describe {full}"
+    # A text-only model gets the path, to read with its tools.
+    assert "media" not in session.handle_message.await_args.kwargs
+
+
+async def test_a_vision_model_is_sent_the_referenced_image_as_content(tmp_path):
+    """R078: ``vision: true`` attaches images and files as multimodal content
+    (QUICKSTART, File References). Only the app's backend did; ``igni -m``
+    sent the path as text, exactly as for a text-only model."""
+    (tmp_path / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    session = _session(project_dir=tmp_path, vision=True)
+
+    await _run(session)._run_turn("describe shot.png")
+
+    media = session.handle_message.await_args.kwargs["media"]
+    assert [str(image.filepath) for image in media.images] == [
+        str((tmp_path / "shot.png").resolve())
+    ]
+    session.display.print_info.assert_any_call("Attached: 1 file(s)")
 
 
 async def test_a_failed_turn_prints_only_the_stats_with_the_default_model_and_returns_false():

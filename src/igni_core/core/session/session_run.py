@@ -31,7 +31,7 @@ from pathlib import Path
 from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.session.core import Session
-from igni_core.core.session.schemas import SessionLifecyclePayload
+from igni_core.core.session.schemas import MessageMedia, SessionLifecyclePayload
 from igni_core.core.utils.display_schemas import RunStats
 from igni_core.core.utils.media import MediaResolver
 from igni_core.core.utils.mentions import process_file_mentions
@@ -122,16 +122,21 @@ class SessionRun(ABC):
         if resolved_files:
             display.print_info(f"Resolved: {', '.join(resolved_files)}")
 
+        media = self._vision_media(resolver, resolution.attachable)
+        if media is not None:
+            display.print_info(f"Attached: {len(resolution.attachable)} file(s)")
+
         context, self._start_context = self._start_context, ""
-        # Asked with ``context`` only when there is one: a session double
-        # that takes the message alone keeps working.
+        # Asked with ``context`` and ``media`` only when there are any: a
+        # session double that takes the message alone keeps working.
+        extra: dict[str, object] = {}
+        if context:
+            extra["context"] = context
+        if media is not None:
+            extra["media"] = media
 
         start_time = time.monotonic()
-        response = (
-            await session.handle_message(message, context=context)
-            if context
-            else await session.handle_message(message)
-        )
+        response = await session.handle_message(message, **extra)  # type: ignore[arg-type]
         elapsed = time.monotonic() - start_time
         # A failed turn was printed as an error already; its text is not a
         # reply. Typed check, as in ``_emit_pending_plan``: a loosely held
@@ -171,6 +176,27 @@ class SessionRun(ABC):
             )
         )
         return True
+
+    def _vision_media(self, resolver: MediaResolver, paths: list[str]) -> MessageMedia | None:
+        """The images and files the message names, for a ``vision: true`` model.
+
+        QUICKSTART's File References: a vision model gets them as
+        multimodal content, a text-only one the paths to read with its
+        tools. Only the app's backend attached them; ``igni -m`` sent a
+        vision model the path as text, exactly as a text-only one.
+        """
+        models = self._session.settings.models
+        if not paths or not models.has_vision(models.default):
+            return None
+        attachments = resolver.attach_local_paths(paths)
+        if attachments is None:
+            return None
+        return MessageMedia(
+            images=attachments.images or None,
+            audio=attachments.audio or None,
+            videos=attachments.videos or None,
+            files=attachments.files or None,
+        )
 
     # ── Entry point (subclass-defined shape) ─────────────────────
 
