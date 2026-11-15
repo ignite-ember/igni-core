@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from igni_core.core.mcp.person_waits import person_waits
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.members.base import Members
 from igni_core.extensions.host.members.call import Call
@@ -24,6 +25,7 @@ from igni_core.extensions.host.window_values import (
     Sidebar,
     Toast,
 )
+from igni_core.extensions.install_service import server_name
 
 
 class WindowModelMembers(Members):
@@ -220,7 +222,10 @@ class UiNoticeMembers(WindowModelMembers):
         _dialog, answer = self.host.windows.open_dialog(
             c.require_window(), spec, source=c.extension_id
         )
-        return await answer
+        # "A dialog waits for the person, with no timeout": the tool call
+        # that asked does not run out of time while it is open.
+        with person_waits.hold(server_name(c.extension_id)):
+            return await answer
 
 
 __all__ = ["UiContentMembers", "UiNavigationMembers", "UiNoticeMembers", "WindowModelMembers"]
