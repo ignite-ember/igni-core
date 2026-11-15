@@ -322,6 +322,20 @@ class StopHookPayload(BaseModel):
     session_id: str
     response: str
 
+    #: How many times a Stop hook may send the agent back.
+    MAX_RETRIES: ClassVar[int] = 3
+    #: How much of the reply the hook is shown.
+    RESPONSE_PREVIEW: ClassVar[int] = 500
+
+    @staticmethod
+    def critique(feedback: str) -> str:
+        """What the agent is sent when a Stop hook rejects its reply —
+        the same words from ``igni -m`` and from the backend."""
+        return (
+            f"[SYSTEM] Your previous response was rejected by a Stop hook: "
+            f"{feedback}\nPlease revise your response to address this issue."
+        )
+
 
 class StopFailureHookPayload(BaseModel):
     """Payload for the ``StopFailure`` hook — mirror of ``Stop``

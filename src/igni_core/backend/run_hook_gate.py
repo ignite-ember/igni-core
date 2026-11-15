@@ -14,6 +14,8 @@ reads as ``result = await self._hooks.fire_user_prompt_submit(...)``.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from igni_core.backend.schemas_run import (
     HookGateResult,
     StopHookPayload,
@@ -23,6 +25,7 @@ from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.hooks.extension_values import StopValue, UserPromptSubmitValue
+from igni_core.core.session.schemas import StopHookPayload as CoreStopHookPayload
 
 
 class RunHookGate:
@@ -32,9 +35,16 @@ class RunHookGate:
     Constructor takes the hook executor + session_id via
     composition — no reach-back into a backend attribute."""
 
-    def __init__(self, hook_executor: HookExecutor, session_id: str) -> None:
+    def __init__(self, hook_executor: HookExecutor, session_id: str | Callable[[], str]) -> None:
         self._hook_executor = hook_executor
-        self._session_id = session_id
+        # Asked per fire: New chat and a sidebar switch change the id.
+        self._session_id_of: Callable[[], str] = (
+            session_id if callable(session_id) else (lambda: session_id)
+        )
+
+    @property
+    def _session_id(self) -> str:
+        return self._session_id_of()
 
     async def fire_user_prompt_submit(self, text: str) -> HookGateResult:
         """Fire the ``UserPromptSubmit`` hook and package its
@@ -72,7 +82,7 @@ class RunHookGate:
             text=text,
         )
 
-    async def fire_stop(self) -> HookGateResult:
+    async def fire_stop(self, response: str = "") -> HookGateResult:
         """Fire the ``Stop`` hook after the natural end-of-run.
 
         Returns:
@@ -84,17 +94,22 @@ class RunHookGate:
             behavior). An extension that hooks ``Stop`` and rejects is
             a block with its reason, the same way.
         """
-        verdict = await extension_hook_gate.ask(StopValue(session_id=self._session_id))
+        verdict = await extension_hook_gate.ask(
+            StopValue(session_id=self._session_id, response=response)
+        )
         if not verdict.allowed:
             return HookGateResult(should_continue=False, block_message=verdict.reason)
-        payload = StopHookPayload(session_id=self._session_id)
+        payload = StopHookPayload(
+            session_id=self._session_id,
+            response=response[: CoreStopHookPayload.RESPONSE_PREVIEW],
+        )
         hook_result = await self._hook_executor.execute(
             event=HookEvent.STOP.value,
             payload=payload,
         )
-        if hook_result.message and not hook_result.should_continue:
+        if not hook_result.should_continue:
             return HookGateResult(
                 should_continue=False,
-                block_message=hook_result.message,
+                block_message=hook_result.message or "Response blocked by Stop hook.",
             )
         return HookGateResult(should_continue=True)

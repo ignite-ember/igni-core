@@ -65,7 +65,7 @@ class _HookGate:
     async def fire_user_prompt_submit(self, text: str) -> HookGateResult:
         return HookGateResult(should_continue=True)
 
-    async def fire_stop(self) -> HookGateResult:
+    async def fire_stop(self, response: str = "") -> HookGateResult:
         return HookGateResult(should_continue=True)
 
 

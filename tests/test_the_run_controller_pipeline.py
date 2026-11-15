@@ -24,6 +24,7 @@ from igni_core.backend.schemas_lifecycle import InterruptedRunSummary
 from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.utils.media_schemas import MediaAttachments
+from igni_core.core.session.schemas import StopHookPayload
 from igni_core.core.tools.todo import TodoItemWire, TodoStore
 from igni_core.protocol import messages as msg
 
@@ -58,6 +59,10 @@ class _Hooks:
         self.stop = HookGateResult(should_continue=True)
         self.submitted: list[str] = []
         self.stopped = 0
+        #: The replies the Stop hook was shown.
+        self.responses: list[str] = []
+        #: Answers for the next fires, before ``stop`` answers the rest.
+        self.stop_script: list[HookGateResult] = []
 
     async def fire_user_prompt_submit(self, text: str) -> HookGateResult:
         self.submitted.append(text)
@@ -65,8 +70,11 @@ class _Hooks:
             return self.submit.model_copy(update={"text": text})
         return self.submit
 
-    async def fire_stop(self) -> HookGateResult:
+    async def fire_stop(self, response: str = "") -> HookGateResult:
         self.stopped += 1
+        self.responses.append(response)
+        if self.stop_script:
+            return self.stop_script.pop(0)
         return self.stop
 
 
@@ -385,25 +393,38 @@ class TestTheBooksOfARun:
         assert rig.controller.phase is RunPhase.done
         assert rig.controller._pending_id_for_cancel is None
 
-    async def test_a_stop_hook_that_blocks_has_its_message_shown_as_info_after_the_run(self):
-        rig = _Rig([msg.ContentDelta(text="x")])
-        rig.hooks.stop = HookGateResult(should_continue=False, block_message="Run the tests.")
+    async def test_a_stop_hook_that_blocks_says_why_and_sends_the_agent_back(self):
+        """HOOKS.md: the Stop hook is given the reply, and a block sends the
+        agent its feedback to revise. The backend fired it with no reply and
+        only showed the block (campaign R116)."""
+        rig = _Rig([msg.ContentDelta(text="STOPTEST "), msg.ContentDelta(text="HELLO")])
+        rig.hooks.stop_script = [
+            HookGateResult(should_continue=False, block_message="Say VERIFIED.")
+        ]
 
         got = await rig.run()
 
         assert [(type(m), m.text) for m in got] == [
-            (msg.ContentDelta, "x"),
-            (msg.Info, "Run the tests."),
+            (msg.ContentDelta, "STOPTEST "),
+            (msg.ContentDelta, "HELLO"),
+            (msg.Info, "Say VERIFIED."),
+            (msg.ContentDelta, "STOPTEST "),
+            (msg.ContentDelta, "HELLO"),
         ]
+        assert rig.hooks.responses == ["STOPTEST HELLO", "STOPTEST HELLO"]
+        assert rig.arun_calls[1][0] == StopHookPayload.critique("Say VERIFIED.")
         assert rig.controller.phase is RunPhase.done
 
-    async def test_a_stop_hook_that_blocks_without_a_message_says_nothing(self):
+    async def test_a_stop_hook_that_keeps_blocking_sends_the_agent_back_three_times(self):
         rig = _Rig([msg.ContentDelta(text="x")])
-        rig.hooks.stop = HookGateResult(should_continue=False)
+        rig.hooks.stop = HookGateResult(should_continue=False, block_message="No.")
 
         got = await rig.run()
 
-        assert [type(m) for m in got] == [msg.ContentDelta]
+        assert rig.hooks.stopped == StopHookPayload.MAX_RETRIES == 3
+        assert len(rig.arun_calls) == 4
+        assert [m.text for m in got if isinstance(m, msg.Info)] == ["No."] * 3
+        assert rig.controller.phase is RunPhase.done
 
     async def test_a_failed_stream_does_not_fire_stop_or_complete_the_message(self):
         rig = _Rig([msg.Error(text="model connection reset")])

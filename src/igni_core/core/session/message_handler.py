@@ -316,10 +316,7 @@ class SessionMessageHandler:
             feedback = await self._stop_feedback(payload, response_text)
             if feedback is None:
                 break
-            system_msg = (
-                f"[SYSTEM] Your previous response was rejected by a Stop hook: "
-                f"{feedback}\nPlease revise your response to address this issue."
-            )
+            system_msg = StopHookPayload.critique(feedback)
             run_output = await self._team.arun(system_msg, stream=False)
             response_text = self._extract_response_text(run_output)
         return response_text, run_output

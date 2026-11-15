@@ -37,7 +37,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from agno.agent import Agent
 from agno.team import Team
@@ -55,6 +55,7 @@ from igni_core.core.activity import background
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.session.pending_messages import InterruptedReason
 from igni_core.core.session.queued_messages import DurableMessageQueue
+from igni_core.core.session.schemas import StopHookPayload
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.protocol import messages as msg
@@ -110,7 +111,7 @@ class RunController:
         self._pending_journal = PendingMessageJournal(pending_store, lambda: session.session_id)
         self._http_client_manager = http_client_manager or ModelHttpClientManager()
         self._prompt_builder = PromptBuilder(session)
-        self._hook_gate = RunHookGate(session.hook_executor, session.session_id)
+        self._hook_gate = RunHookGate(session.hook_executor, lambda: session.session_id)
         self._dispatcher = StreamEventDispatcher(session, self.checkpoint)
         self._phase = RunPhase.idle
         self._interrupted_summary: InterruptedRunSummary | None = None
@@ -546,6 +547,7 @@ class RunController:
 
         media_kwargs = media.to_kwargs() if media is not None else {}
         self._transition_to(RunPhase.streaming)
+        reply: list[str] = []
         try:
             stream_failure: str | None = None
             async for proto in self._stream_factory(
@@ -554,6 +556,8 @@ class RunController:
                 yield proto
                 await self._dispatcher.handle(proto, team)
                 stream_failure = self._failure_text(proto) or stream_failure
+                if isinstance(proto, msg.ContentDelta):
+                    reply.append(proto.text)
             if stream_failure is not None:
                 # The stream reported a failure instead of raising —
                 # see :meth:`_failure_text`. Same bookkeeping as the
@@ -597,7 +601,34 @@ class RunController:
                 await asyncio.to_thread(mirror.sync)
 
         # Fire Stop hook after the natural end-of-run.
-        stop_gate = await self._hook_gate.fire_stop()
-        if not stop_gate.should_continue and stop_gate.block_message:
-            yield msg.Info(text=stop_gate.block_message)
+        async for proto in self._stop_or_retry(team, "".join(reply)):
+            yield proto
         self._transition_to(RunPhase.done)
+
+    async def _stop_or_retry(self, team: Any, response: str) -> AsyncGenerator[msg.Message, None]:
+        """The Stop hook, and the agent sent back while it rejects the reply.
+
+        As ``igni -m`` does (docs/HOOKS.md): the hook sees the reply, and a
+        block says why and sends the agent its feedback to revise, at most
+        :attr:`StopHookPayload.MAX_RETRIES` times. The backend used to fire
+        it with no reply and only show the block.
+        """
+        for _attempt in range(StopHookPayload.MAX_RETRIES):
+            gate = await self._hook_gate.fire_stop(response)
+            if gate.should_continue:
+                return
+            yield msg.Info(text=gate.block_message)
+            revised: list[str] = []
+            try:
+                async for proto in self._stream_factory(
+                    team.arun(StopHookPayload.critique(gate.block_message), stream=True)
+                ):
+                    yield proto
+                    await self._dispatcher.handle(proto, team)
+                    if isinstance(proto, msg.ContentDelta):
+                        revised.append(proto.text)
+            except Exception as exc:
+                logger.warning("The run a Stop hook sent back failed: %s", exc)
+                yield msg.Error(text=f"The revised reply failed: {exc}")
+                return
+            response = "".join(revised)

@@ -165,6 +165,28 @@ class TestStop:
         assert event == HookEvent.STOP.value
         assert payload.session_id == "s-1"
 
+    async def test_the_hook_is_shown_the_start_of_the_reply(self):
+        """HOOKS.md: Stop input carries ``response``; the backend sent only
+        the session id (campaign R116)."""
+        executor = _Executor()
+
+        await _gate(executor).fire_stop("STOPTEST HELLO" + "x" * 1000)
+
+        [(_, payload)] = executor.calls
+        assert payload.response.startswith("STOPTEST HELLO")
+        assert len(payload.response) == 500
+
+    async def test_the_session_id_is_read_when_the_hook_fires(self):
+        """New chat and a sidebar switch change the session's id."""
+        executor = _Executor()
+        current = {"id": "boot"}
+        gate = RunHookGate(executor, lambda: current["id"])  # type: ignore[arg-type]
+        current["id"] = "new-chat"
+
+        await gate.fire_stop()
+
+        assert executor.calls[0][1].session_id == "new-chat"
+
     async def test_a_message_with_should_continue_false_blocks_with_it(self):
         executor = _Executor(HookResult(should_continue=False, message="run the tests"))
 
@@ -173,11 +195,13 @@ class TestStop:
         assert not result.should_continue
         assert result.block_message == "run the tests"
 
-    async def test_should_continue_false_without_a_message_does_not_block(self):
+    async def test_should_continue_false_without_a_message_blocks_with_a_default(self):
+        """As ``igni -m`` reads it: a Stop hook that says stop is a block,
+        with its message or a default (campaign R116)."""
         result = await _gate(_Executor(HookResult(should_continue=False))).fire_stop()
 
-        assert result.should_continue
-        assert result.block_message is None
+        assert not result.should_continue
+        assert result.block_message == "Response blocked by Stop hook."
 
     async def test_a_message_with_should_continue_true_is_dropped(self):
         result = await _gate(_Executor(HookResult(message="fyi"))).fire_stop()
