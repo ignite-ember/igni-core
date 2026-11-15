@@ -430,12 +430,9 @@ exist.
 
 ### Web Tools
 
-Web search and URL fetching ask before each request by default — each is a
-request out of your network. To install them and let them run without asking:
-
-```bash
-pip install -e ".[web]"        # adds the extra to the checkout you installed
-```
+Web search and URL fetching come with igni-core (no extra to install) and ask
+before each request by default — each is a request out of your network. To let
+them run without asking:
 
 ```yaml
 permissions:

@@ -36,3 +36,9 @@ def test_tools_md_does_not_say_web_search_needs_the_extra():
     assert rows
     for row in rows:
         assert "web` extra" not in row and ".[web]" not in row, row
+
+
+def test_quickstart_does_not_send_people_to_the_extra():
+    text = (_ROOT / "QUICKSTART.md").read_text()
+    section = text.split("### Web Tools", 1)[1].split("\n### ", 1)[0]
+    assert ".[web]" not in section and "web]" not in section
