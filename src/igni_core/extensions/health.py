@@ -268,6 +268,12 @@ class ExtensionHealth:
         self._rpc.bind(extension_id, McpExtensionService(manager=self._mcp, server_name=name))
         self._registry.set_state(extension_id, ExtensionState.READY)
         self._first_cause.pop(extension_id, None)
+        # The restarted process answered MCP's initialize and tools/list:
+        # that is its first answer, which clears a faulty mark. Nothing
+        # else could: while faulty its fail-closed hook is refused without
+        # asking it, so a hooks-and-tools extension stayed "isn't
+        # responding" until the backend restarted.
+        self._registry.faults.answered(extension_id)
         logger.info("extension %s restarted", extension_id)
         return True
 

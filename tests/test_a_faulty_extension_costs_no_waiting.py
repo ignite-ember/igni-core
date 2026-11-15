@@ -347,3 +347,24 @@ async def test_a_faulty_extension_s_process_is_ended_then_started_again(
 
     assert processes.killed == ["acme.guard"]
     assert mcp.calls == ["disconnect ext:acme.guard", "connect ext:acme.guard"]
+
+
+async def test_a_restart_that_comes_back_clears_the_faulty_mark(
+    registry: ExtensionRegistry,
+) -> None:
+    """R265: while faulty, its fail-closed hook is refused without asking
+    it, so nothing it could say reached ``answered`` and the mark stayed:
+    every tool call its hook covers was "isn't responding" until the backend
+    restarted. The restarted process answering MCP is its first answer."""
+    registry.set_faulty("acme.guard", "acme.guard isn't responding: 3 calls in a row")
+    assert registry.faults.faulty("acme.guard")
+    health = ExtensionHealth(
+        registry=registry, rpc=ExtensionRpc(registry), mcp=_Mcp(), processes=_Processes()
+    )
+
+    health.restart_faulty("acme.guard", "not responding")
+    await asyncio.sleep(0)
+    while health.pending_probes:
+        await asyncio.sleep(0.01)
+
+    assert not registry.faults.faulty("acme.guard")
