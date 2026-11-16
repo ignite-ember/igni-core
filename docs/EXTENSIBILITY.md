@@ -63,7 +63,7 @@ Everything is namespaced by extension id. A collision with a base name is a vali
 
 ### The agent's prompt
 
-An enterprise that wants its agent to work its own way gets exactly that. Per prompt — `main` (the main agent's system prompt), `plan_mode` (what it is told about plan mode), `agent:<name>` (any agent: igni's own, a plugin's `agent:acme.notes:archivist`) — an extension does one of two things:
+An enterprise that wants its agent to work its own way gets exactly that. Per prompt — `main` (the main agent's system prompt), `plan_mode` (what it is told about plan mode), `agent:<name>` (any agent: igni's own, a plugin's `agent:notes-kit:archivist` — a plugin's agents and skills are namespaced by the `name` in its `plugin.json`, as for any plugin ([PLUGINS.md](PLUGINS.md)), an extension's plugin included) — an extension does one of two things:
 
 ```json
 "prompt": {
@@ -119,7 +119,7 @@ An insert or an append is named `prompt:main+our_review` where it has to be — 
 
 Every loss says why, and the reason begins `lower priority than <extension>` — in the extensions panel (`switched_off` on `list_extensions`, and on the host model's `ExtensionInfo`), on the Services page beside each collision's winner and losers, and in the log.
 
-**Never a collision:** inserts and appends (they stack); an edit aimed at a section an override lacks (it is dropped and listed); pages, indicators and settings (namespaced by the extension id); tools (registered under the extension's server name); a plugin's own agents (under the extension's namespace); grants, egress, secrets (they only add). A `when` does not avoid a collision: two extensions replacing one section under different conditions still both claim it. Hooks never collide either, whether they reject or change an event: they are asked in priority order, each handed what the one before left, and the first reject ends it.
+**Never a collision:** inserts and appends (they stack); an edit aimed at a section an override lacks (it is dropped and listed); pages, indicators and settings (namespaced by the extension id); tools (registered under the extension's server name); grants, egress, secrets (they only add). A `when` does not avoid a collision: two extensions replacing one section under different conditions still both claim it. A plugin's own agents and skills are under its plugin's namespace, the `name` in its `plugin.json`: two plugins of one name shadow each other as any two plugins do ([PLUGINS.md](PLUGINS.md)), so give an extension's plugin a name of its own. Hooks never collide either, whether they reject or change an event: they are asked in priority order, each handed what the one before left, and the first reject ends it.
 
 **igni's own commands are nobody's.** `/clear`, `/plan` and the rest of `docs/igni-commands.json` are answered by igni before any extension, so an extension declaring one would never run — that is not a collision between extensions, and priority does not enter into it. igni server refuses such a bundle at upload; a machine running a newer igni, with a command the bundle did not know about, switches the claim off and says why (`IgniCommands`, the resolver's `reserved`). A test holds the list to the dispatcher, and igni server's copy to it.
 
