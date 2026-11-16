@@ -273,6 +273,7 @@ class RunController:
             return
         self._current_run_task = asyncio.current_task()
         self._transition_to(RunPhase.streaming)
+        events_before = self._session.event_log_store.seq
         reply: list[str] = []
         # Ended only once the resumed run says so: an answer that resumed
         # nothing (an unknown requirement) or a run that paused again has
@@ -293,6 +294,7 @@ class RunController:
             yield msg.Info(text="Run cancelled by user.")
         finally:
             self._current_run_task = None
+            await self._keep_event_log(events_before)
             if self._phase.is_active():
                 self._transition_to(RunPhase.done)
 
@@ -477,6 +479,21 @@ class RunController:
 
     # ── The locked body ─────────────────────────────────────────────
 
+    async def _keep_event_log(self, seq_before: int) -> None:
+        """Write the event log again once the run has saved its session.
+
+        As for the todo list: an entry appended during the run (the
+        visualizer's view) is written into ``session_data`` at once, and
+        Agno's end-of-run save of the session it loaded at the start wrote
+        over it, so ``get_chat_history`` lost the view after a restart.
+        """
+        log = self._session.event_log_store
+        if log.seq == seq_before:
+            return
+        result = await self._session.persistence.save_event_log(log.events)
+        if not result.ok:
+            logger.warning("Could not keep the event log: %s", result.error)
+
     async def _keep_todos(self, revision_before: int) -> None:
         """Write the todo list again once the run has saved its session.
 
@@ -575,6 +592,7 @@ class RunController:
         # Periodic checkpoint task — see SessionCheckpointer.run_forever.
         checkpoint_task = background.daemon(self.periodic_checkpoint(team), name="run-checkpoint")
         todos_before = self._session.todo_store.revision
+        events_before = self._session.event_log_store.seq
 
         media_kwargs = media.to_kwargs() if media is not None else {}
         self._transition_to(RunPhase.streaming)
@@ -631,6 +649,7 @@ class RunController:
             if self._message_queue is not None:
                 await self._message_queue.settle(self._session.db)
             await self._keep_todos(todos_before)
+            await self._keep_event_log(events_before)
             # Memory files the run wrote, whatever tool wrote them.
             mirror = self._session.memory_mirror
             if mirror is not None:

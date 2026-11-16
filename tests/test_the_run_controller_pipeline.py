@@ -23,6 +23,11 @@ from igni_core.backend.run_controller import RunCancelledError, RunController
 from igni_core.backend.schemas_lifecycle import InterruptedRunSummary
 from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
 from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.session.event_log import SessionEventLog
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaDraft,
+    VisualizationDeltaPayload,
+)
 from igni_core.core.session.schemas import StopHookPayload
 from igni_core.core.tools.todo import TodoItemWire, TodoStore
 from igni_core.core.utils.media_schemas import MediaAttachments
@@ -161,6 +166,7 @@ class _Rig:
             take_session_start_context=lambda: "",
             memory_mirror=_Mirror(),
             db="the-db",
+            event_log_store=SessionEventLog(),
         )
         c._stream_factory = _stream
         c._message_queue = _Queue()
@@ -931,6 +937,66 @@ class TestTheTodoListIsWrittenAfterTheRunSavesItsSession:
         rig, saved = self._rig(change=False)
         await rig.run()
         assert saved == []
+
+
+class TestTheEventLogIsWrittenAfterTheRunSavesItsSession:
+    """The visualizer's view goes into the event log, written into
+    ``session_data`` at once; Agno's end-of-run save of the session it loaded
+    at the start wrote over it, so ``get_chat_history`` lost the
+    visualization turn after a restart (campaign R214). A run that added to
+    the log writes it again once the run is over, resumed runs included."""
+
+    def _rig(self, add: bool) -> tuple[_Rig, list[list]]:
+        rig = _Rig()
+        saved: list[list] = []
+
+        async def save_event_log(events):
+            saved.append(events)
+            return SimpleNamespace(ok=True, error=None)
+
+        session = rig.controller._session
+        session.persistence = SimpleNamespace(save_event_log=save_event_log)
+        self.session = session
+        self.add = add
+
+        async def _stream(team_stream):
+            await self._append()
+            yield msg.Info(text="done")
+
+        rig.controller._stream_factory = _stream
+        return rig, saved
+
+    async def _append(self) -> None:
+        if self.add:
+            await self.session.event_log_store.append(
+                VisualizationDeltaDraft(
+                    run_id="sub",
+                    payload=VisualizationDeltaPayload(
+                        agent_path="visualizer", spec_id="s1", spec_json="{}", final=True
+                    ),
+                )
+            )
+
+    async def test_a_run_that_added_to_the_log_writes_it_after(self):
+        rig, saved = self._rig(add=True)
+        await rig.run()
+        assert [[e.payload.spec_id for e in events] for events in saved] == [["s1"]]
+
+    async def test_a_run_that_added_nothing_writes_nothing(self):
+        rig, saved = self._rig(add=False)
+        await rig.run()
+        assert saved == []
+
+    async def test_a_resumed_run_that_added_to_the_log_writes_it_after(self):
+        rig, saved = self._rig(add=True)
+
+        async def resumed():
+            await self._append()
+            yield msg.RunCompleted(run_id="r1")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert [[e.payload.spec_id for e in events] for events in saved] == [["s1"]]
 
 
 class TestASessionStartHookContextRidesOnTheFirstTurn:
