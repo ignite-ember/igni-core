@@ -181,15 +181,60 @@ class SessionOrchestrator:
                     )
                 )
 
+    #: How long the drain waits between looks at what it is waiting on.
+    DRAIN_LOOK_SECONDS = 0.5
+
     async def serve(self, shutdown_event: asyncio.Event) -> None:
         """Read from the windows until shutdown, each message its own task, then
-        let the ones in flight finish."""
-        async for message in self._pool_rpcs.replier.incoming():
-            if shutdown_event.is_set():
-                break
-            if isinstance(message, msg.Shutdown) and self._admission.refusal(message) is None:
-                # Only a connection that may stop igni stops it; another's
-                # ``shutdown`` is refused like any message it may not send.
-                break
-            self._tasks.spawn(self.dispatch(message))
-        await self._tasks.drain()
+        let the ones in flight finish.
+
+        A shutdown requested by a signal or the parent watchdog stops the
+        reading at once; it used to wait for the next message a window sent,
+        which may never come.
+        """
+        incoming = aiter(self._pool_rpcs.replier.incoming())
+        stopping = asyncio.ensure_future(shutdown_event.wait())
+        try:
+            while True:
+                arriving = asyncio.ensure_future(anext(incoming))
+                await asyncio.wait({arriving, stopping}, return_when=asyncio.FIRST_COMPLETED)
+                if stopping.done():
+                    arriving.cancel()
+                    break
+                try:
+                    message = arriving.result()
+                except StopAsyncIteration:
+                    break
+                if isinstance(message, msg.Shutdown) and self._admission.refusal(message) is None:
+                    # Only a connection that may stop igni stops it; another's
+                    # ``shutdown`` is refused like any message it may not send.
+                    break
+                self._tasks.spawn(self.dispatch(message))
+        finally:
+            stopping.cancel()
+        await self._drain()
+
+    async def _drain(self) -> None:
+        """Let what is in flight finish, but not wait on a person who has gone.
+
+        A run paused for an approval inside a turn (a sub-agent's, a team
+        member's, Bypass's question) waits for an answer no window will
+        give once igni is stopping, and the drain waited with it for ever
+        (campaign R647). Once every busy session is waiting only on a
+        person, what is left is cancelled: the approval is in the journal,
+        and the next start shows it again and reports the run interrupted.
+        """
+        while pending := self._tasks.pending():
+            done, _ = await asyncio.wait(pending, timeout=self.DRAIN_LOOK_SECONDS)
+            if done or not self._only_people_are_awaited():
+                continue
+            logger.info("Shutdown: %d run(s) left waiting on a person", len(pending))
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            return
+
+    def _only_people_are_awaited(self) -> bool:
+        """Some session is busy, and every busy one waits on an approval."""
+        busy = [r.backend for r in self.pool.runtimes if r.backend.processing]
+        return bool(busy) and all(b.controllers.hitl.waiting_messages() for b in busy)
