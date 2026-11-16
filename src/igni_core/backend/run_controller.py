@@ -118,6 +118,9 @@ class RunController:
         # Serialisation + cancellation state — single owner (Pattern 1).
         self._run_lock = asyncio.Lock()
         self._current_run_task: asyncio.Task | None = None
+        # The current run's stream ended paused for a person: the run is
+        # only closing, and its answer resumes it (:meth:`continue_run`).
+        self._stream_ended_paused = False
         # The task ``cancel_run`` cancelled, so the work it was running can
         # tell the person's cancel from any other.
         self._cancelled_by_person: asyncio.Task | None = None
@@ -221,6 +224,7 @@ class RunController:
         """
         async with self._run_lock:
             self._current_run_task = asyncio.current_task()
+            self._stream_ended_paused = False
             try:
                 async for proto in self._run_locked(text, media):
                     yield proto
@@ -255,6 +259,14 @@ class RunController:
         its parent run still holds it. Then the parent is the session's
         run already, and the stream passes through untouched.
         """
+        if self._current_run_task is not None and self._stream_ended_paused:
+            # The run that paused has streamed its last frame but is still
+            # closing (its checkpoint, its model client) when a quick answer
+            # arrives. It is not a parent waiting on this answer: wait for it
+            # to let go, or the resumed run passed through as a sub-agent's
+            # would, and no Stop hook saw its reply.
+            async with self._run_lock:
+                pass
         if self._current_run_task is not None:
             async for proto in stream:
                 yield proto
@@ -579,6 +591,9 @@ class RunController:
                 if isinstance(proto, msg.ContentDelta):
                     reply.append(proto.text)
                 paused = self._paused_after(proto, paused)
+            # Only once the stream is over: a sub-agent's pause shows up
+            # mid-stream while this run goes on, waiting for its answer.
+            self._stream_ended_paused = paused
             if stream_failure is not None:
                 # The stream reported a failure instead of raising —
                 # see :meth:`_failure_text`. Same bookkeeping as the

@@ -147,6 +147,7 @@ class _Rig:
         c._interrupted_summary = None
         c._pending_id_for_cancel = None
         c._current_run_task = None
+        c._stream_ended_paused = False
         c._cancelled_by_person = None
         c._run_lock = asyncio.Lock()
         c._pending_journal = self.journal
@@ -175,6 +176,10 @@ class _Rig:
 
     async def run(self, text: str = "hello", media: Any = None) -> list[msg.Message]:
         return [m async for m in self.controller.run_message(text, media)]
+
+
+async def _collect(stream) -> list[msg.Message]:
+    return [m async for m in stream]
 
 
 async def _until(predicate) -> None:
@@ -825,6 +830,68 @@ class TestAResumedRun:
         _ = [m async for m in rig.controller.continue_run(resumed())]
 
         assert rig.hooks.responses == []
+
+    async def test_an_answer_that_comes_while_the_paused_run_is_closing_still_fires_stop(self):
+        """R116: a quick approval arrived while the run that paused was
+        still closing (its model client renewed after the last frame). The
+        resumed run was taken for a sub-agent's under a running parent and
+        passed through, and no Stop hook saw its reply."""
+        rig = _Rig([msg.ContentDelta(text="I'll run ls first."), msg.RunPaused(run_id="r1")])
+        closing = asyncio.Event()
+        release = asyncio.Event()
+
+        async def _slow_close(team) -> None:
+            closing.set()
+            await release.wait()
+
+        rig.controller._http_client_manager = SimpleNamespace(close_and_replace=_slow_close)
+        first = asyncio.create_task(rig.run())
+        await asyncio.wait_for(closing.wait(), timeout=5)
+
+        async def resumed():
+            yield msg.ContentDelta(text="STOPTEST DONE")
+            yield msg.RunCompleted(run_id="r1")
+
+        async def _answer():
+            return [m async for m in rig.controller.continue_run(resumed())]
+
+        second = asyncio.create_task(_answer())
+        await asyncio.sleep(0.05)
+        release.set()
+        await asyncio.wait_for(asyncio.gather(first, second), timeout=5)
+
+        assert rig.hooks.responses == ["STOPTEST DONE"]
+        assert rig.controller.phase is RunPhase.done
+        assert rig.controller.current_run_task is None
+
+    async def test_a_sub_agent_s_answer_under_a_running_parent_passes_through(self):
+        """A sub-agent's pause shows up mid-stream while its parent run goes
+        on, waiting for the answer: that answer must not wait for the parent."""
+        answered = asyncio.Event()
+
+        async def _parent_stream(team_stream):
+            yield msg.RunPaused(run_id="sub")
+            await asyncio.wait_for(answered.wait(), timeout=5)
+            yield msg.ContentDelta(text="parent done")
+            yield msg.RunCompleted(run_id="parent")
+
+        rig = _Rig()
+        rig.controller._stream_factory = _parent_stream
+        parent = asyncio.create_task(rig.run())
+        await _until(lambda: rig.controller.current_run_task is not None)
+        await asyncio.sleep(0.01)
+
+        async def resumed():
+            yield msg.ContentDelta(text="sub done")
+
+        got = await asyncio.wait_for(
+            asyncio.ensure_future(_collect(rig.controller.continue_run(resumed()))), timeout=5
+        )
+        answered.set()
+        await asyncio.wait_for(parent, timeout=5)
+
+        assert [m.text for m in got] == ["sub done"]
+        assert rig.hooks.responses == ["parent done"]
 
 
 # ── The todo list outlives the run's own save ────────────────────────
