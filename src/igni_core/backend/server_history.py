@@ -37,6 +37,9 @@ preserve the existing ``list[dict]`` RPC contract):
 * :class:`StatsTurn` — per-run input/output token badge.
 * :class:`VisualizationTurn` — spliced from the session event
   log's ``visualization_delta`` entries.
+* :class:`WorkflowTurn` — a workflow run's card, spliced from the
+  session event log's ``workflow_event`` entries, so a chat reopened
+  after the run shows the run again.
 """
 
 from __future__ import annotations
@@ -52,6 +55,7 @@ from igni_core.backend.schemas_history import (
     TeamTurn,
     ToolTurn,
     VisualizationTurn,
+    WorkflowTurn,
 )
 from igni_core.backend.schemas_plan import PlanState
 from igni_core.backend.server_history_walker import RunWalker
@@ -59,6 +63,7 @@ from igni_core.core.session.event_log_schema import (
     SessionEvent,
     TeamProgressEntry,
     VisualizationDeltaPayload,
+    WorkflowEventEntry,
 )
 
 if TYPE_CHECKING:
@@ -142,6 +147,7 @@ class ChatHistoryRebuilder:
         # visualizer drew first, then the card of the spawn.
         self._splice_team_cards(out, event_log)
         self._splice_visualizations(out, event_log)
+        self._splice_workflow_runs(out, event_log)
         return out
 
     async def _event_log_of(self, session_id: str) -> list[SessionEvent]:
@@ -316,6 +322,64 @@ class ChatHistoryRebuilder:
                 out.extend(group)
             else:
                 out[target + 1 : target + 1] = group
+
+    def _splice_workflow_runs(self, out: list[ChatTurn], event_log: list[SessionEvent]) -> None:
+        """Put each workflow run's card back where the run happened.
+
+        A workflow started from the composer is an RPC that returns at
+        once: the run goes on in the background and its card is drawn
+        from the ``workflow_event`` pushes. A chat reopened after that
+        had no card at all — the pushes are gone, and nothing in the
+        history said the run existed (campaign R664). The run's tape is
+        in the session's event log, so the card is rebuilt from it.
+        """
+        runs: dict[str, WorkflowTurn] = {}
+        started_at: dict[str, int] = {}
+        order: list[str] = []
+        for entry in event_log:
+            if not isinstance(entry, WorkflowEventEntry):
+                continue
+            record = entry.payload
+            turn = runs.get(record.workflow_run_id)
+            if turn is None:
+                turn = runs[record.workflow_run_id] = WorkflowTurn(
+                    workflow_run_id=record.workflow_run_id,
+                    name=record.name,
+                    seq=entry.seq,
+                )
+                started_at[record.workflow_run_id] = int(record.ts) // 1000
+                order.append(record.workflow_run_id)
+            turn.events.append(record.model_dump())
+        if not runs:
+            return
+        placements = sorted(
+            (
+                (self._position_of(out, started_at[workflow_run_id]), n, runs[workflow_run_id])
+                for n, workflow_run_id in enumerate(order)
+            ),
+            key=lambda placement: (placement[0], placement[1]),
+        )
+        # The cards go in from the front, and each one lands after the
+        # cards already placed before it: the ``n`` already in the list
+        # pushed the turns that follow down by ``n``.
+        for n, (target, _, turn) in enumerate(placements):
+            out.insert(target + n, turn)
+
+    @staticmethod
+    def _position_of(out: list[ChatTurn], started_at: int) -> int:
+        """Where a run's card goes: after the last chat turn written
+        before the run started.
+
+        The conversational turns carry their own wall-clock stamp; the
+        spliced ones (the stats badge, a visualization card) do not, so
+        they are not compared — a card lands after the run it belongs
+        to rather than inside it.
+        """
+        for i, turn in enumerate(out):
+            created_at = getattr(turn, "created_at", 0)
+            if created_at and created_at > started_at:
+                return i
+        return len(out)
 
 
 __all__ = ["ChatHistoryRebuilder"]

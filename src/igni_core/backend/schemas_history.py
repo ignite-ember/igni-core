@@ -214,6 +214,35 @@ class TeamTurn(_RunOwned):
     )
 
 
+class WorkflowTurn(_RunOwned):
+    """A workflow run's card, as it was drawn during the run.
+
+    ``events`` are the run's ``workflow_event`` records in the order
+    they arrived — the very envelopes the ``workflow_event`` push
+    carried — so the card can be drawn again from the tape, exactly as
+    the live pushes drew it. Placed where the run happened, among the
+    chat turns around it.
+
+    ``run_id`` is empty: a workflow's agent calls are kept in their own
+    session, so there is no agent run to point at. Has no
+    ``created_at``. Shown only: none of it is in the model's context.
+    """
+
+    role: Literal["workflow"] = Field(
+        default="workflow", description="Turn kind; always `workflow`."
+    )
+    workflow_run_id: str = Field(default="", description="Id of the workflow run the card is for.")
+    name: str = Field(default="", description="Name of the workflow that was run.")
+    events: list[dict[str, WireJson]] = Field(
+        default_factory=list,
+        description="The run's `workflow_event` records, oldest first.",
+    )
+    seq: int = Field(
+        default=0,
+        description="Position of the run's first event in the session's event log.",
+    )
+
+
 #: Discriminated union of every turn kind the rebuilder can emit.
 #: Serialization uses ``role`` as the discriminator so every
 #: ``model_dump()`` at the wire boundary lands on the same key-set
@@ -226,7 +255,8 @@ ChatTurn = Annotated[
     | PlanTurn
     | StatsTurn
     | VisualizationTurn
-    | TeamTurn,
+    | TeamTurn
+    | WorkflowTurn,
     Field(discriminator="role"),
 ]
 
@@ -439,6 +469,7 @@ __all__ = [
     "StatsTurn",
     "VisualizationTurn",
     "TeamTurn",
+    "WorkflowTurn",
     "ChatTurn",
     "AgnoRunMessageView",
     "AgnoRunView",

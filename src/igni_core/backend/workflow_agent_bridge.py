@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 from pydantic_core import PydanticSerializationError
@@ -14,6 +15,9 @@ from igni_core.core.session.message_outcome import OutcomeKind, TurnOutcome
 from igni_core.core.session.message_pause_policy import PausePolicyResolver
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from igni_core.backend.workflow_hitl import WorkflowApprovalRelay
     from igni_core.core.session.core import Session
 
 logger = logging.getLogger(__name__)
@@ -26,11 +30,17 @@ class WorkflowAgentBridge:
     the script is blocked on it.
     """
 
-    def __init__(self, session: Session, gate: RunGate) -> None:
+    def __init__(
+        self, session: Session, gate: RunGate, relay: WorkflowApprovalRelay | None = None
+    ) -> None:
         self._session = session
         # The run gate of the backend process: no agent call answers
         # while it is closed.
         self._gate = gate
+        # The workflow's window onto the session's questions. Without
+        # one, an approval the workflow's agent call needs has nobody
+        # to answer it, and the call is refused (campaign R664).
+        self._relay = relay
 
     #: How many times one agent call may stop for an approval before the
     #: bridge gives up on it, as the headless pause policy does.
@@ -49,9 +59,10 @@ class WorkflowAgentBridge:
         if team is None:
             return AgentResponseMessage.refusal(payload.id, "session.main_team not available")
         try:
-            response, stopped = await asyncio.wait_for(
-                self._run(team, request), timeout=payload.timeout
-            )
+            async with self._relaying():
+                response, stopped = await asyncio.wait_for(
+                    self._run(team, request), timeout=payload.timeout
+                )
         except asyncio.TimeoutError:
             return AgentResponseMessage.refusal(
                 payload.id, f"agent call timed out after {payload.timeout_seconds}s"
@@ -64,6 +75,23 @@ class WorkflowAgentBridge:
         return self._serialisable(
             AgentResponseMessage.success(payload.id, self._content_of(response))
         )
+
+    @asynccontextmanager
+    async def _relaying(self) -> AsyncIterator[None]:
+        """The relay open for the length of the call, when there is one.
+
+        Without it the approval channel has nobody to ask, and the
+        call stops with ``ok=false`` — which is what a workflow's agent
+        call used to do, every time (campaign R664).
+        """
+        if self._relay is None:
+            yield
+            return
+        await self._relay.open()
+        try:
+            yield
+        finally:
+            await self._relay.close()
 
     def session_id_for(self, request: AgentRequestEvent) -> str:
         """The session a workflow run's agent calls are kept in.

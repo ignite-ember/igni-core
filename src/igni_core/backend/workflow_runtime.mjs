@@ -28,6 +28,11 @@ import { createContext, runInContext, Script } from "node:vm"
 import { readFileSync } from "node:fs"
 import { argv, cwd, exit, stdout, stdin } from "node:process"
 
+// How long the runtime waits before it forces the process down, when
+// something the script left behind keeps the event loop alive (a
+// stray ``setInterval``, say). The events are already written by then.
+const FORCE_EXIT_MS = 3000
+
 // ── CLI parsing ────────────────────────────────────────────────────
 
 function parseArgs(raw) {
@@ -131,6 +136,9 @@ if (discovery) {
       exit(3)
     }
     emit("workflow_meta", { meta, path: workflowPath })
+    // The meta must reach the reader before the process goes down, and
+    // the discovery ends here: the run path below is not taken.
+    await flushStdout()
     exit(0)
   } catch (err) {
     process.stderr.write(`workflow_runtime: discovery failed: ${err.stack || err.message}\n`)
@@ -141,7 +149,9 @@ if (discovery) {
 // ── Stdin reader (for agent responses + cancel) ────────────────────
 
 const cancelRequested = { value: false }
-const pending = new Map() // id → { resolve, reject }
+// The agent calls the script is still waiting for:
+// id → { resolve, reject, label, started_at_ms, timer }.
+const pending = new Map()
 let stdinBuf = ""
 
 stdin.setEncoding("utf8")
@@ -160,7 +170,7 @@ stdin.on("data", (chunk) => {
     }
     if (msg.type === "cancel") {
       cancelRequested.value = true
-      for (const { reject } of pending.values()) {
+      for (const { reject } of [...pending.values()]) {
         reject(new Error("workflow cancelled"))
       }
       pending.clear()
@@ -178,21 +188,64 @@ stdin.on("data", (chunk) => {
   }
 })
 stdin.on("end", () => {
-  for (const { reject } of pending.values()) {
+  for (const { reject } of [...pending.values()]) {
     reject(new Error("subprocess stdin closed"))
   }
   pending.clear()
 })
 
-function writeStdin(obj) {
-  return new Promise((resolve, reject) => {
-    const line = JSON.stringify(obj) + "\n"
-    try {
-      writeSync(1, line)
-      resolve()
-    } catch (err) {
-      reject(err)
-    }
+// ── Ending the run ─────────────────────────────────────────────────
+
+/**
+ * End the run with `code`, letting the process exit on its own.
+ *
+ * ``process.exit()`` throws away whatever is still queued on a piped
+ * stdout: the last events of a busy run were simply lost, and the run
+ * card the window drew ended on whatever came before them. Setting the
+ * exit code and letting the loop drain writes every event out first.
+ *
+ * The stdin reader is released (``pause`` + ``unref``): its ``data``
+ * listener is a live handle, so the process would otherwise never
+ * exit. A stray handle the script left behind would hang the run, so
+ * an unref'd timer forces the process down if it is still alive after
+ * a grace period.
+ */
+function shutdown(code) {
+  process.exitCode = code
+  stdin.pause()
+  // A pipe is a socket and can be released; a terminal is not, and
+  // there is nothing to release.
+  if (typeof stdin.unref === "function") stdin.unref()
+  const force = setTimeout(() => exit(code), FORCE_EXIT_MS)
+  if (typeof force.unref === "function") force.unref()
+}
+
+/**
+ * Settle every agent call the script is still waiting for.
+ *
+ * A run that ends while a call is open leaves the window showing that
+ * call as running for ever: the call is never answered, so no
+ * ``agent_completed`` ever arrives for it. Each open call is failed
+ * here, so every call the window knows about reaches a terminal state.
+ */
+function settleOpenAgents(reason) {
+  const open = [...pending.entries()]
+  for (const [id, entry] of open) {
+    pending.delete(id)
+    entry.reject(new Error(reason))
+  }
+  return open.map(([id]) => id)
+}
+
+/**
+ * Wait for what was written to reach the reader.
+ *
+ * A piped stdout is written asynchronously, so a process that goes
+ * down straight after a write can lose it.
+ */
+function flushStdout() {
+  return new Promise((resolve) => {
+    stdout.write("", () => resolve())
   })
 }
 
@@ -244,7 +297,7 @@ function agent(prompt, opts = {}) {
   } = opts
   const id = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
   const started_at_ms = Date.now()
-  return new Promise((resolve, reject) => {
+  const promise = new Promise((resolve, reject) => {
     emit("agent_started", {
       id,
       label,
@@ -270,8 +323,12 @@ function agent(prompt, opts = {}) {
       }, timeoutSeconds * 1000)
     }
     pending.set(id, {
+      label,
+      started_at_ms,
+      timer,
       resolve: (result) => {
         clearTimeout(timer)
+        pending.delete(id)
         emit("agent_completed", {
           id,
           label,
@@ -282,6 +339,7 @@ function agent(prompt, opts = {}) {
       },
       reject: (err) => {
         clearTimeout(timer)
+        pending.delete(id)
         emit("agent_completed", {
           id,
           label,
@@ -300,6 +358,11 @@ function agent(prompt, opts = {}) {
       timeout_seconds: timeoutSeconds,
     })
   })
+  // A call the script does not await must not take the runtime down
+  // when it is settled: the rejection is still there for the script
+  // that does await it, but the runtime has a handler of its own.
+  promise.catch(() => {})
+  return promise
 }
 
 function parallel(thunks) {
@@ -310,15 +373,27 @@ function parallel(thunks) {
     phase_id: phaseStack.length > 0 ? phaseStack[phaseStack.length - 1].phase_id : null,
     lane_count: thunks.length,
   })
+  // The lanes of this group and whether each has reported. A lane that
+  // is still open when the group fails is reported here: the group
+  // fails fast, so a lane that is still working is abandoned, and a
+  // lane the window never hears from stays RUNNING for ever.
+  const lanes = new Map()
+  const settleLane = (lane_id, payload) => {
+    const lane = lanes.get(lane_id)
+    if (!lane || lane.settled) return
+    lane.settled = true
+    emit("parallel_lane_completed", payload)
+  }
   return Promise.all(
     thunks.map((thunk, idx) => {
       const lane_id = `${group_id}_lane_${idx}`
+      lanes.set(lane_id, { index: idx, settled: false })
       emit("parallel_lane_started", { group_id, lane_id, index: idx })
       return Promise.resolve()
         .then(() => thunk())
         .then(
           (result) => {
-            emit("parallel_lane_completed", {
+            settleLane(lane_id, {
               group_id,
               lane_id,
               index: idx,
@@ -327,7 +402,7 @@ function parallel(thunks) {
             return result
           },
           (err) => {
-            emit("parallel_lane_completed", {
+            settleLane(lane_id, {
               group_id,
               lane_id,
               index: idx,
@@ -348,6 +423,16 @@ function parallel(thunks) {
       return results
     })
     .catch((err) => {
+      // The lanes that were still running are abandoned with the group.
+      for (const [lane_id, lane] of lanes) {
+        settleLane(lane_id, {
+          group_id,
+          lane_id,
+          index: lane.index,
+          status: "cancelled",
+          error: `the parallel group failed: ${err.message}`,
+        })
+      }
       emit("parallel_completed", {
         group_id,
         status: "failed",
@@ -455,37 +540,47 @@ const wrapper = `(async () => { ${scriptCode}\n })()`
 runInContext(wrapper, ctx, { filename: workflowPath })
   .then(async (result) => {
     if (cancelRequested.value) {
+      settleOpenAgents("the workflow was cancelled")
       flushPhases("cancelled")
       emit("workflow_completed", {
         status: "cancelled",
         duration_ms: Date.now() - started_at_ms,
       })
-      exit(0)
+      shutdown(0)
+      return
     }
+    // A call the script left open is settled before the run ends, so
+    // the window does not keep it at RUNNING under a finished card.
+    settleOpenAgents("the workflow ended before this agent call finished")
     flushPhases("completed")
     emit("workflow_completed", {
       status: "completed",
       duration_ms: Date.now() - started_at_ms,
       result: result === undefined ? null : result,
     })
-    exit(0)
+    shutdown(0)
   })
   .catch((err) => {
     if (cancelRequested.value) {
       // The cancel itself rejected the script's pending agent() call;
       // that is how a cancelled run ends, not a failure of the script.
+      settleOpenAgents("the workflow was cancelled")
       flushPhases("cancelled")
       emit("workflow_completed", {
         status: "cancelled",
         duration_ms: Date.now() - started_at_ms,
       })
-      exit(0)
+      shutdown(0)
+      return
     }
+    // The lanes the failed group abandoned are settled too: a call
+    // nobody answers is a call the window shows as running for ever.
+    settleOpenAgents("the workflow ended before this agent call finished")
     flushPhases("failed")
     emit("workflow_failed", {
       error: err.message,
       stack: err.stack,
       duration_ms: Date.now() - started_at_ms,
     })
-    exit(1)
+    shutdown(1)
   })
