@@ -80,6 +80,7 @@ class ToolsBuilder:
                 settings=registry.settings,
                 current_depth=0,
                 hook_executor=orchestration.hook_executor,
+                bypass_guard=orchestration.bypass_guard,
                 session_id=orchestration.session_id,
                 hitl_coordinator=orchestration.sub_agent_hitl,
                 project_dir=registry.project_dir,

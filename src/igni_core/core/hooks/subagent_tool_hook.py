@@ -8,8 +8,10 @@ never saw them, let alone blocked one (campaign R128).
 
 The permission side of those calls is decided at their pause
 (:class:`~igni_core.core.sub_agent_hitl.SubAgentHITLCoordinator`); this
-hook adds only the configured hooks, with the answers the main agent's
-``PreToolUse`` stage gives.
+hook adds the configured hooks, with the answers the main agent's
+``PreToolUse`` stage gives, and Bypass mode's last check. Bypass never
+pauses, so a sub-agent's ``curl | sh`` reached no check at all: the model
+could get past the guard by delegating (campaign R128).
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
+from igni_core.core.hooks.bypass_guard import BypassGuard
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.hook_firer import HookFirer
@@ -29,23 +32,37 @@ from igni_core.core.hooks.tool_events import (
     PreToolUsePayload,
 )
 
+#: The session's Bypass guard, read per call: a reload builds a new one.
+BypassGuardRef = Callable[[], BypassGuard | None]
+
 
 class SubAgentToolHook(AgnoCallableAdapter):
     """Agno tool hook: the configured tool hooks, around one sub-agent call."""
 
-    def __init__(self, executor: HookExecutor, session_id: str) -> None:
+    def __init__(
+        self,
+        executor: HookExecutor | None,
+        session_id: str,
+        bypass_guard: BypassGuardRef | None = None,
+    ) -> None:
         self._mark_as_coroutine()
-        self._firer = HookFirer(executor, session_id)
+        self._firer = HookFirer(executor, session_id) if executor is not None else None
+        self._bypass_guard = bypass_guard
 
     @classmethod
     def on(
-        cls, hooks: list[Any] | None, executor: HookExecutor | None, session_id: str
+        cls,
+        hooks: list[Any] | None,
+        executor: HookExecutor | None,
+        session_id: str,
+        bypass_guard: BypassGuardRef | None = None,
     ) -> list[Any]:
-        """``hooks`` with this one first, outermost; unchanged with no executor."""
+        """``hooks`` with this one first, outermost; unchanged with neither
+        an executor nor a guard."""
         existing = list(hooks or [])
-        if executor is None or any(isinstance(h, cls) for h in existing):
+        if (executor is None and bypass_guard is None) or any(isinstance(h, cls) for h in existing):
             return existing
-        return [cls(executor, session_id), *existing]
+        return [cls(executor, session_id, bypass_guard), *existing]
 
     async def __call__(
         self,
@@ -58,26 +75,40 @@ class SubAgentToolHook(AgnoCallableAdapter):
     ) -> Any:
         # Parameter names are Agno's (see AgnoCallableAdapter).
         call_args = args or {}
-        pre = await self._firer.fire(
-            HookEvent.PRE_TOOL_USE, name, PreToolUsePayload.from_call(name, call_args)
-        )
-        refusal = self._refusal(name, pre.permission_decision, pre.should_continue, pre.message)
-        if refusal is not None:
-            return refusal
+        hook_allowed = False
+        if self._firer is not None:
+            pre = await self._firer.fire(
+                HookEvent.PRE_TOOL_USE, name, PreToolUsePayload.from_call(name, call_args)
+            )
+            refusal = self._refusal(name, pre.permission_decision, pre.should_continue, pre.message)
+            if refusal is not None:
+                return refusal
+            hook_allowed = pre.permission_decision is PermissionDecision.ALLOW
+        # As in the main agent's pipeline: last, and a hook's allow skips it.
+        guard = self._bypass_guard() if self._bypass_guard is not None else None
+        if guard is not None and not hook_allowed:
+            caller = getattr(agent, "name", None)
+            refusal = await guard.check(name, call_args, [caller] if caller else [])
+            if refusal is not None:
+                return refusal
         try:
             result = func(**call_args) if func is not None else None
             if inspect.isawaitable(result):
                 result = await result
         except Exception as exc:
-            await self._firer.fire(
-                HookEvent.POST_TOOL_USE_FAILURE,
-                name,
-                PostToolUseFailurePayload.from_exception(name, call_args, exc),
-            )
+            if self._firer is not None:
+                await self._firer.fire(
+                    HookEvent.POST_TOOL_USE_FAILURE,
+                    name,
+                    PostToolUseFailurePayload.from_exception(name, call_args, exc),
+                )
             raise
-        await self._firer.fire(
-            HookEvent.POST_TOOL_USE, name, PostToolUsePayload.from_result(name, call_args, result)
-        )
+        if self._firer is not None:
+            await self._firer.fire(
+                HookEvent.POST_TOOL_USE,
+                name,
+                PostToolUsePayload.from_result(name, call_args, result),
+            )
         return result
 
     @staticmethod
@@ -98,4 +129,4 @@ class SubAgentToolHook(AgnoCallableAdapter):
         return None
 
 
-__all__ = ["SubAgentToolHook"]
+__all__ = ["BypassGuardRef", "SubAgentToolHook"]

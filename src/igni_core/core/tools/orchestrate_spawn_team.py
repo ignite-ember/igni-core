@@ -89,6 +89,7 @@ class TeamSpawn(SpawnRunner):
                 mode=self._state.mode_raw,
                 depth=scope.current_depth + 1,
                 hook_executor=self._context.wiring.hook_executor,
+                bypass_guard=self._context.wiring.bypass_guard,
                 session_id=self._context.wiring.session_id,
             ),
             self._context.deps,
@@ -121,6 +122,7 @@ class TeamSpawn(SpawnRunner):
                 UntrustedOutputHook.on(getattr(member, "tool_hooks", None)),
                 request.hook_executor,
                 request.session_id,
+                request.bypass_guard,
             )
             members.append(member)
 

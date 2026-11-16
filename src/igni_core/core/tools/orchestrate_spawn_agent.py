@@ -101,7 +101,7 @@ class AgentSpawn(SpawnRunner):
         # The configured PreToolUse / PostToolUse hooks see its calls too.
         wiring = self._context.wiring
         agent.tool_hooks = SubAgentToolHook.on(
-            agent.tool_hooks, wiring.hook_executor, wiring.session_id
+            agent.tool_hooks, wiring.hook_executor, wiring.session_id, wiring.bypass_guard
         )
         coordinator = self._context.wiring.sinks.hitl_coordinator
         if isinstance(coordinator, TurnResultSink):
