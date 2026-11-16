@@ -46,6 +46,7 @@ from igni_core.core.tools.orphan_rehydrator import (
     build_rehydrator,
 )
 from igni_core.core.tools.orphan_schemas import RehydrateResult
+from igni_core.core.tools.process_events import ProcessExitEvent
 from igni_core.core.tools.process_persistence import ProcessPersistenceWriter
 from igni_core.core.tools.process_registry import ProcessRegistry
 from igni_core.core.tools.process_store import BackgroundProcessStore
@@ -452,15 +453,20 @@ class TestOrphanRehydratorRun:
 
 
 class TestStopOrphanProcess:
-    async def test_killing_orphan_drops_registry_and_db_row(
+    async def test_killing_an_orphan_tells_its_exit_and_keeps_it_as_history(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, supervisor: ProcessSupervisor
     ) -> None:
+        """Campaign R674: a process adopted after a restart was deleted when
+        killed, row and all, with no exit event: the window never heard it
+        end and the history forgot it ran. A process this backend started
+        gets both, and an adopted one now does too."""
         # Use a doubly-stubbed orphan so we don't actually kill
-        # anything. Track that ``kill`` was called and that
-        # cleanup landed.
+        # anything. Track that ``kill`` was called and what was told.
         store = BackgroundProcessStore(db_path=tmp_path / "state.db")
         await store.upsert(BackgroundProcessRow(pid=12345, cmd="fake", pgid=12345, started_at=0))
         supervisor.registry.attach_persistence(store)
+        exits: list[ProcessExitEvent] = []
+        supervisor.registry.bus.on("exit", exits.append)
 
         kill_calls: list[int] = []
 
@@ -468,6 +474,9 @@ class TestStopOrphanProcess:
             def is_running(self) -> bool:  # type: ignore[override]
                 # Behaves alive until kill is called.
                 return self.pid not in kill_calls
+
+            def returncode(self) -> int | None:  # type: ignore[override]
+                return None if self.is_running() else -1
 
             def kill(self) -> None:  # type: ignore[override]
                 kill_calls.append(self.pid)
@@ -485,13 +494,16 @@ class TestStopOrphanProcess:
 
         assert result.killed is True
         assert kill_calls == [12345]
-        # Orphan path explicitly removed the registry row.
-        assert supervisor.registry.get(12345) is None
-        # And scheduled the DB delete. The fire-and-forget task
-        # runs on the loop; give it a tick to flush.
+        assert [(e.pid, e.cmd, e.exit_code) for e in exits] == [(12345, "fake", -1)]
+        # Still listed, as finished, like a process this backend started.
+        [known] = [p for p in supervisor.registry.all_known() if p.pid == 12345]
+        assert known.is_running is False
+        # The row stays as history, with its ending. The fire-and-forget
+        # write runs on the loop; give it a tick to flush.
         await asyncio.sleep(0.05)
-        rows = await store.list_all()
-        assert rows == []
+        [row] = await store.list_all()
+        assert (row.pid, row.exit_code) == (12345, -1)
+        assert row.finished_at is not None
 
         # Clean up supervisor state for test isolation.
         supervisor.registry.attach_persistence(None)

@@ -303,7 +303,9 @@ class TestStopBackgroundProcess:
         mp = MagicMock()
         mp.is_running.return_value = True
         mp.returncode.return_value = -15
-        mp._reader_task = None  # no reader to await — skip the wait_for branch
+        # A live process with no reader to await — skip the wait_for branch.
+        mp.is_orphan = False
+        mp.reader_task = None
         monkeypatch.setattr(supervisor.registry, "get", lambda _pid: mp, raising=True)
 
         processes = ProcessesController(supervisor)
