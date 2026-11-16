@@ -165,6 +165,16 @@ class TestAgentStarted:
 
         assert len(seen) == 1
 
+    def test_the_card_recorder_hears_the_started_event_too(self):
+        """Campaign R665: the history keeps a card's first event as well."""
+        shown: list[object] = []
+        kept: list[object] = []
+        sinks = StreamSinks(on_progress=shown.append, card_recorder=kept.append)
+
+        SpawnHooks(None, sinks, "c").emit_agent_started("a", "t")
+
+        assert len(shown) == 1 and kept == shown
+
     def test_a_raising_callback_is_logged_not_propagated(self, caplog):
         def boom(_event: object) -> None:
             raise RuntimeError("ui gone")

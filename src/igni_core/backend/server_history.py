@@ -49,12 +49,17 @@ from igni_core.backend.schemas_history import (
     AgnoRunView,
     ChatTurn,
     PlanTurn,
+    TeamTurn,
     ToolTurn,
     VisualizationTurn,
 )
 from igni_core.backend.schemas_plan import PlanState
 from igni_core.backend.server_history_walker import RunWalker
-from igni_core.core.session.event_log_schema import SessionEvent, VisualizationDeltaPayload
+from igni_core.core.session.event_log_schema import (
+    SessionEvent,
+    TeamProgressEntry,
+    VisualizationDeltaPayload,
+)
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session
@@ -132,7 +137,11 @@ class ChatHistoryRebuilder:
             system_chars = walker.system_chars
 
         self._fill_plan_states(out)
-        self._splice_visualizations(out, await self._event_log_of(session_id))
+        event_log = await self._event_log_of(session_id)
+        # Both go right after the spawn call they came from: a view the
+        # visualizer drew first, then the card of the spawn.
+        self._splice_team_cards(out, event_log)
+        self._splice_visualizations(out, event_log)
         return out
 
     async def _event_log_of(self, session_id: str) -> list[SessionEvent]:
@@ -182,6 +191,57 @@ class ChatHistoryRebuilder:
                 turn.state = "pending"
             else:
                 turn.state = "dismissed"
+
+    def _splice_team_cards(self, out: list[ChatTurn], event_log: list[SessionEvent]) -> None:
+        """Put each sub-agent's or team's progress card back after its spawn call.
+
+        The card's events are grouped by ``card_id`` in log order. Within a
+        run, the Nth card pairs with the Nth ``spawn_agent`` /
+        ``spawn_team`` tool turn, as the visualizer's cards do; a card with
+        no such turn goes after its run's last turn, else at the end.
+        """
+        cards: dict[str, TeamTurn] = {}
+        for entry in event_log:
+            if not isinstance(entry, TeamProgressEntry):
+                continue
+            record = entry.payload
+            card = cards.get(record.card_id)
+            if card is None:
+                card = cards[record.card_id] = TeamTurn(
+                    run_id=entry.run_id,
+                    card_id=record.card_id,
+                    tool_call_id=record.tool_call_id,
+                    seq=entry.seq,
+                )
+            card.events.append(record.event)
+        if not cards:
+            return
+        spawn_indices_by_run: dict[str, list[int]] = {}
+        last_by_run: dict[str, int] = {}
+        for i, t in enumerate(out):
+            if t.run_id:
+                last_by_run[t.run_id] = i
+            if isinstance(t, ToolTurn) and t.tool_name in _SPAWN_TOOLS and t.run_id:
+                spawn_indices_by_run.setdefault(t.run_id, []).append(i)
+        insertions: dict[int, list[TeamTurn]] = {}
+        seen_in_run: dict[str, int] = {}
+        for card in sorted(cards.values(), key=lambda c: c.seq):
+            n = seen_in_run.get(card.run_id, 0)
+            seen_in_run[card.run_id] = n + 1
+            spawn_idxs = spawn_indices_by_run.get(card.run_id, [])
+            if card.run_id and n < len(spawn_idxs):
+                target = spawn_idxs[n]
+            elif card.run_id in last_by_run:
+                target = last_by_run[card.run_id]
+            else:
+                target = -1
+            insertions.setdefault(target, []).append(card)
+        for target in sorted(insertions.keys(), reverse=True):
+            group = insertions[target]
+            if target < 0:
+                out.extend(group)
+            else:
+                out[target + 1 : target + 1] = group
 
     def _splice_visualizations(self, out: list[ChatTurn], event_log: list[SessionEvent]) -> None:
         """Splice visualizer cards from the session's ``event_log`` at

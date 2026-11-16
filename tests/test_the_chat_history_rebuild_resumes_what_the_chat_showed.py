@@ -411,3 +411,86 @@ class TestVisualizationCards:
         turns = await _rebuild(session)
 
         assert [t.role for t in turns] == ["user", "assistant", "stats", "visualization"]
+
+
+# ── Sub-agent and team cards (campaign R665) ────────────────────────
+
+
+def _card_event(seq: int, run_id: str, card_id: str, event_type: str, **event: Any):
+    from igni_core.core.session.event_log_schema import TeamProgressEntry, TeamProgressRecord
+
+    return TeamProgressEntry(
+        seq=seq,
+        run_id=run_id,
+        payload=TeamProgressRecord(
+            card_id=card_id, tool_call_id=f"call-{card_id}", event={"type": event_type, **event}
+        ),
+    )
+
+
+class TestTeamCards:
+    """The history had no turn for a sub-agent or a team, so a reopened
+    chat could not draw its TEAM PROGRESS card again."""
+
+    async def test_a_card_comes_back_after_its_spawn_call_with_its_events_in_order(self) -> None:
+        from igni_core.backend.schemas_history import TeamTurn
+
+        spawn_call = {
+            "id": "c1",
+            "function": {"name": "spawn_agent", "arguments": '{"agent_name": "scout"}'},
+        }
+        runs = [
+            _run(
+                "r1",
+                _msg("user", "find it"),
+                _msg("assistant", "", tool_calls=[spawn_call]),
+                _msg("tool", "found", tool_name="spawn_agent", tool_call_id="c1"),
+                _msg("assistant", "done"),
+            )
+        ]
+        events = [
+            _card_event(1, "r1", "k1", "agent_started", agent="scout"),
+            _card_event(2, "r1", "k1", "tool_started", tool="grep"),
+            _card_event(3, "r1", "k1", "agent_completed", agent="scout"),
+        ]
+
+        out = await _rebuild(_session(runs, events=events))
+
+        roles = [t.role for t in out]
+        spawn_at = next(i for i, t in enumerate(out) if isinstance(t, ToolTurn))
+        assert roles[spawn_at + 1] == "team"
+        card = out[spawn_at + 1]
+        assert isinstance(card, TeamTurn)
+        assert (card.run_id, card.card_id, card.tool_call_id) == ("r1", "k1", "call-k1")
+        assert [e["type"] for e in card.events] == [
+            "agent_started",
+            "tool_started",
+            "agent_completed",
+        ]
+
+    async def test_two_spawns_in_a_run_each_get_their_own_card(self) -> None:
+        from igni_core.backend.schemas_history import TeamTurn
+
+        history: list[ChatTurn] = [_spawn("r1"), _spawn("r1"), UserTurn(run_id="r2")]
+        events = [
+            _card_event(1, "r1", "a", "agent_started"),
+            _card_event(2, "r1", "b", "agent_started"),
+            _card_event(3, "r1", "a", "agent_completed"),
+        ]
+        out = list(history)
+        ChatHistoryRebuilder(_session([]))._splice_team_cards(out, events)  # type: ignore[arg-type]
+
+        assert [t.role for t in out] == ["tool", "team", "tool", "team", "user"]
+        first, second = out[1], out[3]
+        assert isinstance(first, TeamTurn) and isinstance(second, TeamTurn)
+        assert (first.card_id, len(first.events)) == ("a", 2)
+        assert second.card_id == "b"
+
+    def test_a_card_with_no_run_goes_at_the_end(self) -> None:
+        history: list[ChatTurn] = [UserTurn(run_id="r1", content="hi")]
+        out = list(history)
+        ChatHistoryRebuilder(_session([]))._splice_team_cards(  # type: ignore[arg-type]
+            out, [_card_event(1, "", "x", "agent_started")]
+        )
+
+        assert [t.role for t in out] == ["user", "team"]

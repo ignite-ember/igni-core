@@ -100,8 +100,8 @@ class SpawnHooks:
         The event travels as the model it is — the frontend's wire
         shape is produced once, at the push boundary.
         """
-        callback = self._sinks.on_progress
-        if callback is None:
+        callbacks = [c for c in (self._sinks.on_progress, self._sinks.card_recorder) if c]
+        if not callbacks:
             return
         event = AgentStartedEvent(
             agent_path=agent_name,
@@ -110,10 +110,11 @@ class SpawnHooks:
             task=task,
             card_id=self._card_id,
         )
-        try:
-            callback(event)
-        except Exception as exc:
-            _spawn_log.warning("spawn progress callback failed: %s", exc)
+        for callback in callbacks:
+            try:
+                callback(event)
+            except Exception as exc:
+                _spawn_log.warning("spawn progress callback failed: %s", exc)
 
 
 __all__ = ["SpawnHooks"]

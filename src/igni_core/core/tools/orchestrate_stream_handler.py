@@ -173,16 +173,19 @@ class BaseStreamHandler(Generic[_TState]):
         across interleaved info items, a page refresh, and concurrent
         spawns.
         """
-        callback = self._context.sinks.on_progress
-        if callback is None:
+        sinks = self._context.sinks
+        if sinks.on_progress is None and sinks.card_recorder is None:
             return
         card_id = self._context.card_id
         if card_id:
             event.card_id = card_id
-        try:
-            callback(event)
-        except Exception as exc:
-            _stream_log.warning("progress callback failed: %s", exc)
+        for callback in (sinks.on_progress, sinks.card_recorder):
+            if callback is None:
+                continue
+            try:
+                callback(event)
+            except Exception as exc:
+                _stream_log.warning("progress callback failed: %s", exc)
 
     def _latch_run_ids(self, event: object) -> None:
         """Latch the run ids off the event, and register the run with

@@ -199,3 +199,40 @@ def test_session_rebuild_applies_what_was_wired_to_the_fresh_team(monkeypatch) -
     session_core.Session.rebuild_main_team(session)  # type: ignore[arg-type]
 
     assert fresh.wiring.sinks.on_progress is progress
+
+
+def test_a_card_s_events_are_kept_in_the_event_log_under_the_spawning_run() -> None:
+    """Campaign R665: nothing kept a sub-agent's or a team's card, so a
+    reopened chat could not draw it again."""
+    from igni_core.core.session.event_log import SessionEventLog
+    from igni_core.core.session.event_log_schema import TeamProgressEntry
+    from igni_core.core.tools.orchestrate_events import AgentStartedEvent, ContentPreviewEvent
+    from igni_core.core.tools.spawn_context import ParentCall, SpawnCalls
+
+    tool = _toolkit()
+    session = _session(tool)
+    session.event_log_store = SessionEventLog()
+    TeamWiring(session).wire_event_log()  # type: ignore[arg-type]
+    record = tool.wiring.sinks.card_recorder
+    assert record is not None
+
+    parent = ParentCall(
+        agent_name="igni",
+        run_id="main-run",
+        session_id="s-1",
+        tool_call_id="call-1",
+        tool_name="spawn_agent",
+    )
+    with SpawnCalls.entered(parent):
+        record(AgentStartedEvent(agent_path="scout", agent="scout", task="t", card_id="k1"))
+        record(ContentPreviewEvent(agent_path="scout", text="...", card_id="k1"))
+        record(AgentStartedEvent(agent_path="x", agent="x", task="t"))  # no card
+
+    [entry] = session.event_log_store.events
+    assert isinstance(entry, TeamProgressEntry)
+    assert (entry.run_id, entry.payload.card_id, entry.payload.tool_call_id) == (
+        "main-run",
+        "k1",
+        "call-1",
+    )
+    assert entry.payload.event["type"] == "agent_started"

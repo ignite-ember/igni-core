@@ -22,12 +22,15 @@ from typing import TYPE_CHECKING
 
 from igni_core.core.hooks.queue import QueueBridge
 from igni_core.core.session.event_log_schema import (
+    TeamProgressDraft,
+    TeamProgressRecord,
     VisualizationDeltaDraft,
     VisualizationDeltaPayload,
 )
 from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.orchestrate_contracts import EventAppender, OnProgress
-from igni_core.core.tools.orchestrate_events import VisualizationDeltaEvent
+from igni_core.core.tools.orchestrate_events import OrchestrateEvent, VisualizationDeltaEvent
+from igni_core.core.tools.spawn_context import SpawnCalls
 
 if TYPE_CHECKING:
     from igni_core.core.session import Session
@@ -65,6 +68,22 @@ class TeamWiring:
         """
         self._keep(lambda: QueueBridge(queue=queue).register_on(self._session.main_team))
 
+    #: The progress events that make a card: who ran, what each did, how it
+    #: ended. A streaming preview and the visualizer's card (kept on its
+    #: own) are left out.
+    CARD_EVENTS: frozenset[str] = frozenset(
+        {
+            "agent_started",
+            "agent_paused",
+            "agent_completed",
+            "run_error",
+            "task_created",
+            "task_updated",
+            "tool_started",
+            "tool_completed",
+        }
+    )
+
     def wire_orchestrate_progress(self, callback: OnProgress) -> None:
         """Set a progress callback on the orchestrate tool."""
 
@@ -73,6 +92,27 @@ class TeamWiring:
                 tool.wiring.sinks.on_progress = callback
 
         self._keep(apply)
+
+    def keep_card_event(self, event: OrchestrateEvent) -> None:
+        """Record one progress-card event on the session's event log.
+
+        Filed under the main agent's run that made the spawn call (the
+        outermost call in the chain), as the visualizer's card is.
+        """
+        if event.type not in self.CARD_EVENTS or not event.card_id:
+            return
+        chain = SpawnCalls.current()
+        outermost = chain[-1] if chain else None
+        self._session.event_log_store.record(
+            TeamProgressDraft(
+                run_id=outermost.run_id if outermost is not None else "",
+                payload=TeamProgressRecord(
+                    card_id=event.card_id,
+                    tool_call_id=outermost.tool_call_id if outermost is not None else "",
+                    event=event.model_dump(by_alias=True, exclude_none=True),
+                ),
+            )
+        )
 
     def wire_orchestrate_event_appender(self, appender: EventAppender) -> None:
         """Set the session event-log appender on the orchestrate
@@ -101,6 +141,15 @@ class TeamWiring:
             await session.append_event(VisualizationDeltaDraft(payload=payload, run_id=run_id))
 
         self.wire_orchestrate_event_appender(append)
+
+        # And each progress-card event, so a reopened chat draws the card
+        # again (campaign R665): the history had no turn for a sub-agent or
+        # a team, and a reload lost the card.
+        def apply() -> None:
+            for tool in self._orchestrate_tools():
+                tool.wiring.sinks.card_recorder = self.keep_card_event
+
+        self._keep(apply)
 
     def active_subagent_runs(self) -> int:
         """Sub-agent runs the main agent has going (its spawns' registry)."""

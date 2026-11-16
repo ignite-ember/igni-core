@@ -8331,6 +8331,65 @@
       "title": "TaskUpdatedEvent",
       "type": "object"
     },
+    "TeamTurn": {
+      "description": "A sub-agent's or a team's progress card, as it was drawn during a run.\n\n`events` are the card's `orchestrate_event` payloads in the order\nthey arrived; feed them to the same reducer as the live push to draw\nthe card. Placed after the `spawn_agent` / `spawn_team` tool turn\nit came from. Has no `created_at`. Shown only: none of it is in the\nmodel's context.",
+      "properties": {
+        "card_id": {
+          "default": "",
+          "description": "The card's id, as the live events carried it.",
+          "title": "Card Id",
+          "type": "string"
+        },
+        "events": {
+          "default": [],
+          "description": "The card's `orchestrate_event` payloads, oldest first.",
+          "items": {
+            "additionalProperties": {
+              "description": "Any JSON value.",
+              "type": [
+                "object",
+                "array",
+                "string",
+                "number",
+                "integer",
+                "boolean",
+                "null"
+              ]
+            },
+            "type": "object"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "role": {
+          "const": "team",
+          "default": "team",
+          "description": "Turn kind; always `team`.",
+          "title": "Role",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "description": "Id of the agent run this turn belongs to. Pass it to `truncate_history` to edit or delete from this point.",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "default": 0,
+          "description": "Position of the card's first event in the session's event log.",
+          "title": "Seq",
+          "type": "integer"
+        },
+        "tool_call_id": {
+          "default": "",
+          "description": "Id of the `spawn_agent` / `spawn_team` call the card is for; empty if unknown.",
+          "title": "Tool Call Id",
+          "type": "string"
+        }
+      },
+      "title": "TeamTurn",
+      "type": "object"
+    },
     "ThinkingTurn": {
       "description": "The model's reasoning (\"thinking\") for part of a run.\n\nComes either from the model's separate reasoning output or from an\ninline `<think>` block in the reply.",
       "properties": {
@@ -11270,6 +11329,7 @@
               "assistant": "#/defs/AssistantTurn",
               "plan": "#/defs/PlanTurn",
               "stats": "#/defs/StatsTurn",
+              "team": "#/defs/TeamTurn",
               "thinking": "#/defs/ThinkingTurn",
               "tool": "#/defs/ToolTurn",
               "user": "#/defs/UserTurn",
@@ -11298,6 +11358,9 @@
             },
             {
               "$ref": "#/defs/VisualizationTurn"
+            },
+            {
+              "$ref": "#/defs/TeamTurn"
             }
           ]
         },
