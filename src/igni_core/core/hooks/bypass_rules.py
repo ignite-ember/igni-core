@@ -176,6 +176,42 @@ _SHELL_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
 #: Delete-style commands whose targets are judged by where they point.
 _DELETERS = {"rm", "rmdir", "shred", "unlink", "trash"}
 
+#: The downloaders the pipe rules above know, and the shells and
+#: interpreters they know how to run what comes out of one. The
+#: download-then-run check below covers the same pairs: the pipe rules
+#: catch ``curl … | sh``, and this catches the same call written as a
+#: download to a file and a run of that file (campaign R128).
+_DOWNLOADERS: frozenset[str] = frozenset({"curl", "wget", "fetch"})
+
+#: The shells — and the shell builtins that run a file in the shell
+#: itself — that count as running what was fetched. The names are
+#: matched in lower case, as the pipe rules above match them.
+_SHELLS: frozenset[str] = frozenset({"sh", "bash", "zsh", "dash", "ksh", "source", "."})
+
+#: The interpreters the pipe rules know: ``python``, ``python3``,
+#: ``python3.12``.
+_INTERPRETER = re.compile(r"python[0-9.]*")
+
+#: Where one shell command ends and the next begins — the separators a
+#: chained command is split on. A lone ``&`` is a separator too, but not
+#: the ``&`` of a ``2>&1``. The separator is kept: a pipe carries what
+#: the command before it wrote into the command after it.
+_SEGMENT_SPLIT = re.compile(r"(&&|\|\||;|\n|\||(?<![>&])&(?!>))")
+
+#: The options that name the file a download is written to.
+_OUTPUT_OPTIONS: frozenset[str] = frozenset({"-o", "-O", "--output", "--output-document"})
+
+#: The redirection operators in a command's words. A file after one of
+#: them is the command's input, not its argument.
+_REDIRECT_OPERATORS: frozenset[str] = frozenset(
+    {"<", ">", ">>", "2>", "2>>", "&>", "1>", "1>>", "<<", "<<-", ">|"}
+)
+
+#: A command longer than this is not a download-then-run: the shapes
+#: that rule catches are one or two short commands chained, and a long
+#: command is not worth splitting.
+_MAX_LENGTH = 4096
+
 
 def flag_shell(command: str, project_dir: Path | None) -> str | None:
     """Why ``command`` needs a person's yes, or None when nothing matched."""
@@ -183,10 +219,309 @@ def flag_shell(command: str, project_dir: Path | None) -> str | None:
     for pattern, why in _SHELL_RULES:
         if pattern.search(text):
             return why
+    fetched = _downloads_then_runs(text)
+    if fetched:
+        return fetched
     outside = _deletes_outside(text, project_dir)
     if outside:
         return f"deletes {outside}, outside this project"
     return None
+
+
+def _downloads_then_runs(command: str) -> str | None:
+    """Why a command that fetches a file and then runs it needs a yes.
+
+    The pipe rules catch ``curl … | sh``; the same call written as a
+    download to a file and a run of that file (``curl -o x.sh && sh
+    x.sh``) was not caught, and the file was run (campaign R128).
+
+    One file, one command: the download must come before the run, and
+    the run must be of the file the download wrote — a download of one
+    file and a run of another is ordinary work and is left alone.
+
+    What counts as the download's file: the option that names it
+    (``-o``, ``-O``, ``--output``, ``--output-document``), the file the
+    output is redirected to, or — for ``wget``, which names the file
+    after the URL — the URL's last part. A ``curl`` that writes to
+    standard output writes no file, so there is nothing for a later
+    command to run.
+    """
+    if not command or len(command) > _MAX_LENGTH:
+        return None
+    downloaded: list[str | None] = []
+    previous_files: list[str] = []
+    previous_fetched = False
+    for separator, segment in _split(command):
+        words = _words(segment)
+        tool = _tool_of(words)
+        fetched = _downloaded_file(segment, words)
+        wrote = _files_written(fetched)
+        is_tee = tool.lower() == "tee"
+        if is_tee:
+            wrote = _tee_files(words)
+        # A pipe carries what the command before it wrote into this one.
+        piped = previous_files if separator == "|" else []
+        carried = previous_fetched if separator == "|" else False
+        if is_tee:
+            if carried:
+                # ``curl … | tee x.sh``: the fetched bytes land in a file.
+                downloaded.extend(wrote)
+        elif isinstance(fetched, str):
+            downloaded.append(fetched)
+        elif fetched is None:
+            # The file's name is not known, so any later run of a file
+            # counts.
+            downloaded.append(None)
+        run = _run_target(words, piped=piped)
+        if run is not None:
+            name, kind = run
+            if any(written is None or written == name for written in downloaded):
+                return _RUN_REASON[kind]
+        previous_files = wrote
+        previous_fetched = fetched is not _NOT_A_DOWNLOAD or (is_tee and carried)
+    return None
+
+
+#: Why the call was stopped, per kind of run. The pipe rules' own
+#: wording is left alone: these are the shapes they never saw.
+_RUN_REASON: dict[str, str] = {
+    "shell": "downloads a script and runs it with a shell",
+    "python": "downloads a script and runs it with Python",
+}
+
+
+class _Sentinel:
+    """A value that says something about a download that no name can.
+
+    Two answers are not file names: the segment is not a download at
+    all, and the segment downloads but writes no file (a ``curl`` with
+    no output option writes to standard output, so there is nothing for
+    a later command to run).
+    """
+
+    def __init__(self, what: str) -> None:
+        self.what = what
+
+    def __repr__(self) -> str:
+        return self.what
+
+
+#: The segment is not a download at all.
+_NOT_A_DOWNLOAD = _Sentinel("not a download")
+
+#: The segment downloads, but writes no file.
+_NO_FILE = _Sentinel("no file")
+
+
+def _split(command: str) -> list[tuple[str, str]]:
+    """The command's segments, each with the separator that introduced it.
+
+    The separator is kept because a pipe is not a chain: what the
+    command before it wrote is what the command after it reads.
+    """
+    parts = _SEGMENT_SPLIT.split(command)
+    segments: list[tuple[str, str]] = []
+    separator = ""
+    for index, part in enumerate(parts):
+        if index % 2:
+            separator = part
+            continue
+        if part.strip():
+            segments.append((separator, part))
+    return segments
+
+
+def _words(segment: str) -> list[str]:
+    """The words of one segment, redirections removed."""
+    text = _REDIRECTION.sub(" ", segment)
+    text = _FD_REDIRECTION.sub(" ", text)
+    try:
+        return shlex.split(text)
+    except ValueError:
+        return text.split()
+
+
+#: A redirection in a segment: ``> file`` writes the command's output
+#: to ``file``, which is what a download does with it.
+_REDIRECTION = re.compile(r"(?<![0-9<>])>>?\s*(\S+)")
+
+#: A file-descriptor redirection, ``2>&1``: it names no file.
+_FD_REDIRECTION = re.compile(r"\d*>&?\d*")
+
+
+def _tool_and_rest(words: list[str]) -> tuple[str, list[str]]:
+    """The command's tool and the words after it.
+
+    ``sudo`` is skipped: it runs the command that follows it, so the
+    tool is the one after the ``sudo``.
+    """
+    if not words:
+        return "", []
+    tool = _basename(words[0])
+    rest = words
+    if tool == "sudo" and len(words) > 1:
+        rest = words[1:]
+        tool = _basename(rest[0])
+    return tool, rest
+
+
+def _basename(word: str) -> str:
+    """The last part of a path.
+
+    Not :meth:`pathlib.Path.name`, which answers nothing for ``.`` —
+    and ``.`` is the shell's own way of running a file.
+    """
+    name = word.rstrip("/").rsplit("/", 1)[-1]
+    return name or word
+
+
+def _tool_of(words: list[str]) -> str:
+    """The command's tool, without the ``sudo`` in front of it."""
+    return _tool_and_rest(words)[0]
+
+
+def _files_written(fetched: str | None | _Sentinel) -> list[str]:
+    """The file a download wrote, when it names one."""
+    if isinstance(fetched, str):
+        return [fetched]
+    return []
+
+
+def _downloaded_file(segment: str, words: list[str]) -> str | None | _Sentinel:
+    """The file a segment downloads, or what it writes instead.
+
+    The file's last part is returned when it is known. ``None`` means
+    the segment downloads but the file's name is not known (a ``wget``
+    with no output option writes the URL's last part into the working
+    directory, and the URL may not name one), so any later run of a
+    file counts. :data:`_NO_FILE` means the segment downloads but
+    writes no file at all.
+    """
+    tool, rest = _tool_and_rest(words)
+    if not tool or tool.lower() not in _DOWNLOADERS:
+        return _NOT_A_DOWNLOAD
+    for index, word in enumerate(rest[1:], start=1):
+        if word in _OUTPUT_OPTIONS and index + 1 < len(rest):
+            return _output_file(rest[index + 1])
+        for option in ("--output=", "--output-document="):
+            if word.startswith(option):
+                return _output_file(word[len(option) :])
+        if word.startswith("--"):
+            continue
+        if word[:2] in ("-o", "-O") and len(word) > 2:
+            # curl's and wget's short options: ``-ofile``, ``-Ofile``.
+            return _output_file(word[2:])
+        if _writes_to_stdout(word):
+            # ``wget -qO-``: the download goes to standard output.
+            return _NO_FILE
+    redirected = _REDIRECTION.search(segment)
+    if redirected is not None:
+        target = redirected.group(1)
+        if target.startswith("/dev/"):
+            # The output is thrown away, not written to a file.
+            return _NO_FILE
+        return Path(target).name
+    url = _url_of(words)
+    if tool.lower() in ("curl", "fetch"):
+        # A curl with no output option writes to standard output, so
+        # there is no file for a later command to run.
+        return _NO_FILE
+    if url:
+        # wget names the file after the URL's path — when the URL names
+        # no path, the name is not known, and any later run of a file
+        # counts.
+        path = url.split("://", 1)[-1].partition("/")[2]
+        return Path(path.split("?")[0].rstrip("/")).name or None
+    # A downloader with no URL fetches nothing.
+    return _NO_FILE
+
+
+def _output_file(value: str) -> str | _Sentinel:
+    """The file an output option names — or that there is none."""
+    if value == "-" or value.startswith("/dev/"):
+        return _NO_FILE
+    return Path(value).name
+
+
+def _writes_to_stdout(word: str) -> bool:
+    """True for the options that send the download to standard output."""
+    return word.startswith("-") and word.lower().endswith("o-")
+
+
+def _url_of(words: list[str]) -> str:
+    """The URL a download fetches, if it names one."""
+    for word in words:
+        if "://" in word:
+            return word
+    return ""
+
+
+def _tee_files(words: list[str]) -> list[str]:
+    """The files a ``tee`` writes."""
+    tool, rest = _tool_and_rest(words)
+    if tool.lower() != "tee":
+        return []
+    names: list[str] = []
+    for word in rest[1:]:
+        if word.startswith("-"):
+            continue
+        names.append(Path(word).name)
+    return names
+
+
+def _run_target(words: list[str], piped: list[str]) -> tuple[str, str] | None:
+    """The file a segment runs, and how — ``(name, kind)`` or None.
+
+    A segment that runs a shell or an interpreter on a file, or that
+    runs a file directly (``./x.sh``), is a run. The name is the file's
+    last part, so a download to ``/tmp/x.sh`` and a run of
+    ``/tmp/x.sh`` are the same file.
+
+    ``piped`` holds the files the command before it wrote, when the
+    two were joined by a pipe: a shell with no file of its own runs
+    what came down the pipe.
+    """
+    tool, rest = _tool_and_rest(words)
+    if not tool:
+        return None
+    name = tool.lower()
+    if name in _SHELLS:
+        kind = "shell"
+    elif _INTERPRETER.fullmatch(name):
+        kind = "python"
+    elif "/" in rest[0] or rest[0].startswith("."):
+        # A path run as a program: the fetched file, made executable.
+        return Path(rest[0]).name, "shell"
+    else:
+        return None
+    index = 1
+    while index < len(rest):
+        word = rest[index]
+        if word.startswith("-"):
+            if _INLINE_OPTION.fullmatch(word):
+                # An inline command, not a file: there is nothing to run.
+                return None
+            index += 1
+            continue
+        if word in _REDIRECT_OPERATORS:
+            if index + 1 >= len(rest):
+                return None
+            target = rest[index + 1]
+            index += 2
+            if word.startswith("<"):
+                # ``sh < x.sh`` runs the file it is given.
+                return Path(target).name, kind
+            continue
+        return Path(word).name, kind
+    if piped:
+        # Nothing of its own to run: it runs what came down the pipe.
+        return piped[0], kind
+    return None
+
+
+#: An option that carries the command itself rather than a file:
+#: ``-c``, ``-lc``, ``-e`` and its friends.
+_INLINE_OPTION = re.compile(r"-[a-zA-Z]*c[a-zA-Z]*")
 
 
 #: A secret riding in a URL: a shell variable the shell would expand, or a
