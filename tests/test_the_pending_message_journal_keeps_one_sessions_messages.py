@@ -136,3 +136,21 @@ async def test_draining_an_empty_queue_is_a_no_op(store):
     await journal.drain_queued_drops()
 
     assert await _texts(store, "s1") == ["a"]
+
+
+async def test_a_message_is_recorded_under_the_session_it_was_sent_in(store):
+    """The run controller's journal was bound to the session id the backend
+    booted with, and New chat or a sidebar switch changes the session's id on
+    the same session object. After a crash, the session the person was using
+    showed nothing and the boot session showed their prompt as interrupted
+    (campaign R652). The journal asks for the current id."""
+    current = {"id": "boot"}
+    journal = PendingMessageJournal(store, lambda: current["id"])
+
+    await journal.record("first")
+    current["id"] = "new-chat"
+    await journal.record("second")
+    assert await journal.discard_all_for_session() == 1
+
+    assert await _texts(store, "boot") == ["first"]
+    assert await _texts(store, "new-chat") == []

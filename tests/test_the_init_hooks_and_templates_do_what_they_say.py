@@ -141,9 +141,33 @@ class TestTheScriptsAreValidBash:
 
 
 class TestTheStarterFiles:
-    def test_the_project_config_parses_and_turns_guardrails_and_learning_on(self):
-        config = yaml.safe_load(PROJECT_CONFIG_TEMPLATE)
-        assert config == {"guardrails": {"pii_detection": True}, "learning": {"enabled": True}}
+    def test_the_project_config_sets_nothing_so_the_users_own_choice_holds(self):
+        """The project file outranks ~/.igni/config.yaml. Written with
+        ``pii_detection: true`` and ``learning.enabled: true`` live, it
+        silently overrode a user's ``false`` for both — against its own
+        comment, "User-level overrides go in ~/.igni/config.yaml"
+        (campaign R086, R138)."""
+        assert yaml.safe_load(PROJECT_CONFIG_TEMPLATE) is None
+
+    def test_the_commented_examples_show_the_defaults(self):
+        """Uncommented, each example is the default it documents: the
+        file said ``sub_team_timeout: 600`` over a default of 1800
+        (campaign R128)."""
+        from igni_core.core.config.settings import Settings
+
+        uncommented = re.sub(r"^(\s*)# ?", r"\1", PROJECT_CONFIG_TEMPLATE, flags=re.M)
+        examples = yaml.safe_load(
+            "\n".join(ln for ln in uncommented.splitlines() if ":" in ln and "igni" not in ln)
+        )
+        defaults = Settings().model_dump()
+        checked = 0
+        for block, values in examples.items():
+            if block == "models":
+                continue
+            for key, value in values.items():
+                assert defaults[block][key] == value, f"{block}.{key}"
+                checked += 1
+        assert checked >= 5
 
     def test_the_two_config_texts_that_carry_no_settings_parse_to_nothing(self):
         assert yaml.safe_load(CONFIG_YAML_HEADER) is None

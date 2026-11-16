@@ -187,8 +187,17 @@ class SkillPool:
         return categories
 
     def describe(self) -> str:
-        """Generate a summary of all skills for the Orchestrator, grouped by category."""
-        by_cat = self.list_by_category()
+        """Generate a summary of the skills the agent may run, grouped by category.
+
+        A ``disable-model-invocation`` skill is the person's alone: it is
+        left out, or the agent is told it can run what ``slash_command``
+        then refuses, and goes round it by reading the SKILL.md itself.
+        """
+        by_cat = {
+            cat: kept
+            for cat, skills in self.list_by_category().items()
+            if (kept := [s for s in skills if not s.disable_model_invocation])
+        }
         if not by_cat:
             return ""
 
@@ -224,3 +233,23 @@ class SkillPool:
         if skill and skill.user_invocable:
             return (skill, args)
         return None
+
+    def match_model_command(self, text: str) -> tuple[SkillDefinition, str] | None:
+        """Check if the agent's ``slash_command`` names a skill it may run.
+
+        SKILLS.md: ``user-invocable: false`` hides a skill from the person
+        only — the agent can still run it — and
+        ``disable-model-invocation: true`` keeps it the person's alone.
+        The agent was matched as the person was, so the first was
+        unusable from both sides and the second ran for anybody.
+        """
+        text = text.strip()
+        if not text.startswith("/"):
+            return None
+        parts = text[1:].split(None, 1)
+        if not parts:
+            return None
+        skill = self.get(parts[0])
+        if skill is None or skill.disable_model_invocation:
+            return None
+        return (skill, parts[1] if len(parts) > 1 else "")

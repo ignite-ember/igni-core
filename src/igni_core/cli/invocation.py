@@ -18,14 +18,17 @@ from pathlib import Path
 import click
 
 from igni_core.cli.context import CliContext
-from igni_core.cli.headless_run import HeadlessRun
+from igni_core.cli.headless_run import NO_TENANT_REMEDY, HeadlessRun
 from igni_core.cli.logging import AgnoLogs, DebugLogging
 from igni_core.cli.options import CliOptions
 from igni_core.cli.resume import ResumeResolver
 from igni_core.core.config.settings import Settings
+from igni_core.core.db.scope import tenancy
 from igni_core.core.session.single_message_run import SingleMessageRun
 from igni_core.core.workspace_trust import process_trust
 from igni_core.core.worktree import WorktreeManager
+from igni_core.extensions.principal import SignedInPerson
+from igni_core.extensions.store import ExtensionStore
 
 #: The console script pyproject installs.
 #:
@@ -86,6 +89,11 @@ class CliInvocation:
         """Fill :attr:`_resume_session_id` from ``--session-id`` or
         ``--continue`` (in that order — an explicit id wins)."""
         opts = self._options
+        if opts.session_id or opts.continue_session:
+            # The lookup reads a shared database in the signed-in person's
+            # scope, as the session will: without it ``igni -c`` never
+            # resumed with ``IGNI_DATABASE_URL`` set (campaign R025).
+            self.use_signed_in_tenancy()
         if opts.session_id:
             self._resume_session_id = opts.session_id
             if ResumeResolver(self._settings).has(opts.session_id) is False:
@@ -105,6 +113,12 @@ class CliInvocation:
         # Said on stderr, as the unknown --session-id note is: stdout is the
         # reply, and ``igni -c -m … | cat`` got "Resuming last session" in it.
         lookup = resolver.latest_id()
+        if lookup.no_tenant:
+            click.echo(
+                f"Could not look up last session: {lookup.error}. {NO_TENANT_REMEDY}",
+                err=True,
+            )
+            return
         if lookup.error is not None:
             click.echo("Could not look up last session.", err=True)
             return
@@ -202,7 +216,17 @@ class CliInvocation:
         Stdout is the reply: agno's logs go to stderr (:class:`AgnoLogs`).
         """
         AgnoLogs.to_stderr()
+        self.use_signed_in_tenancy()
         self._headless_run.run(self._session(message), cleanup=self.cleanup_worktree)
+
+    def use_signed_in_tenancy(self) -> None:
+        """Tell storage tenancy to scope a shared database to whoever is signed in.
+
+        Asked only when ``IGNI_DATABASE_URL`` names a shared database
+        (docs/CLOUD.md §9), as the backend's ``ProcessEnvironment`` does:
+        without it the CLI could never open one, signed in or not.
+        """
+        tenancy.use(SignedInPerson(self._settings.auth.credentials_file, ExtensionStore()).tenant)
 
     async def _session(self, message: str) -> None:
         # Built inside the coroutine so the session is constructed on the

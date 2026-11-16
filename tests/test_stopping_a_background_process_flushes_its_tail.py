@@ -17,6 +17,7 @@ import pytest
 
 from igni_core.backend.server_processes import ProcessesController
 from igni_core.core.tools.managed_process import ManagedProcess
+from igni_core.core.tools.process_events import ProcessExitEvent
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from tests.process_fakes import FakeTrackedProcess
 
@@ -148,13 +149,18 @@ class _Orphan(FakeTrackedProcess):
         return True
 
 
-async def test_stopping_an_orphan_takes_it_out_of_the_registry(supervisor) -> None:
+async def test_stopping_an_orphan_tells_its_exit_and_lists_it_as_finished(supervisor) -> None:
+    """Campaign R674: it was taken out of the registry with no exit event,
+    where a process this backend started is told ended and listed finished."""
     orphan = _Orphan(pid=504)
     supervisor.registry.add(orphan)
+    exits: list[ProcessExitEvent] = []
+    supervisor.registry.bus.on("exit", exits.append)
     processes = ProcessesController(supervisor)
 
     result = await processes.stop(504)
 
     assert (result.killed, result.message) == (True, "pid 504 killed")
-    assert supervisor.registry.get(504) is None
-    assert processes.list() == []
+    assert [e.pid for e in exits] == [504]
+    [row] = processes.list()
+    assert (row.pid, row.is_running) == (504, False)

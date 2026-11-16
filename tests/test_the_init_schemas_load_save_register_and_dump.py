@@ -257,8 +257,32 @@ def test_init_config_defaults():
     assert config.group_ships_hook_scripts is False
     assert config.skip_bundled_agents is False
     assert config.default_permissions.allow == ["WebSearch", "WebFetch"]
-    assert config.default_permissions.ask == ["Write", "Edit", "Bash", "BashOutput"]
+    assert config.default_permissions.ask == []
     assert config.default_permissions.deny == []
+
+
+def test_the_starter_permissions_leave_the_person_s_allow_rules_standing():
+    """R105: the scaffolded ``ask: Bash`` outranked the person's
+    ``Bash(cat *)`` in a trusted folder — denied under ``--strict``."""
+    from igni_core.core.config.permission_eval.pipeline import PermissionEvaluator
+    from igni_core.core.config.permission_eval.schemas import PermissionDecision
+
+    starter = InitConfig().default_permissions
+    for mode in ("dontAsk", "default"):
+        evaluator = PermissionEvaluator.from_strings(
+            mode=mode,
+            ask=starter.ask,
+            deny=starter.deny,
+            allow=[*starter.allow, "Bash(cat *)", "Write"],
+        )
+        assert (
+            evaluator.evaluate("run_shell_command", {"args": ["cat hello.txt"]})
+            is PermissionDecision.ALLOW
+        )
+        assert (
+            evaluator.evaluate("save_file", {"file_name": "a.txt", "contents": "x"})
+            is PermissionDecision.ALLOW
+        )
 
 
 def test_default_permissions_are_not_shared_between_instances():

@@ -104,3 +104,41 @@ def test_the_accumulator_it_was_given_is_not_changed():
     TelemetryTier().apply(accumulator)
 
     assert accumulator.payload == {"telemetry": {"x": 1}}
+
+
+def test_the_base_tier_does_not_know_its_environment_defaults():
+    with pytest.raises(NotImplementedError):
+        OrganisationOnlyTier().environment_defaults()
+
+
+def test_a_workspace_trust_block_the_environment_filled_is_not_warned_about(monkeypatch):
+    monkeypatch.setenv(WorkspaceTrustConfig.MODE_ENV, "never")
+    from_environment = WorkspaceTrustConfig().model_dump()
+    assert from_environment != TRUST_DEFAULTS
+
+    with warnings_of(LOGGER) as warnings:
+        payload = _apply(WorkspaceTrustTier(), {"workspace_trust": from_environment})
+
+    assert payload == {"workspace_trust": TRUST_DEFAULTS}
+    assert warnings == []
+
+
+def test_a_telemetry_block_the_environment_filled_is_not_warned_about(monkeypatch):
+    monkeypatch.setenv(OtlpConfig.ENDPOINT_ENV, "http://127.0.0.1:4318")
+    from_environment = TelemetryConfig().model_dump()
+    assert from_environment != TELEMETRY_DEFAULTS
+
+    with warnings_of(LOGGER) as warnings:
+        _apply(TelemetryTier(), {"telemetry": from_environment})
+
+    assert warnings == []
+
+
+def test_a_value_from_below_is_still_warned_about_when_the_environment_set_another(monkeypatch):
+    monkeypatch.setenv(OtlpConfig.ENDPOINT_ENV, "http://127.0.0.1:4318")
+    written = {"otlp": {"endpoint": "https://collector.example"}}
+
+    with warnings_of(LOGGER) as warnings:
+        _apply(TelemetryTier(), {"telemetry": written})
+
+    assert len(warnings) == 1

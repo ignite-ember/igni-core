@@ -22,7 +22,7 @@ class _Runnable:
         self.arun_calls: list[str] = []
         self.continued: list[dict[str, Any]] = []
 
-    def arun(self, task: str, *, stream: bool = True) -> Any:
+    def arun(self, task: str, *, stream: bool = True, stream_events: bool = False) -> Any:
         self.arun_calls.append(task)
         return self._play()
 
@@ -68,6 +68,7 @@ class TestTheFirstStream:
                 "session_id": "s1",
                 "requirements": reqs,
                 "stream": True,
+                "stream_events": True,
             }
         ]
         assert result == "continued answer"

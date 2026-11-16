@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import signal
 from collections.abc import Callable
 from typing import ClassVar
 
@@ -56,6 +58,7 @@ class CommandHookHandler(HookHandler):
         event: str,
         payload: HookPayload,
     ) -> HookResult:
+        proc: asyncio.subprocess.Process | None = None
         try:
             timeout_secs = hook.timeout / 1000
             payload_json = json.dumps(payload.to_wire_dict())
@@ -66,6 +69,9 @@ class CommandHookHandler(HookHandler):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                # Its own process group, so a timeout ends the command's
+                # children too, not only the ``bash`` running them.
+                start_new_session=True,
             )
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(input=payload_json.encode()),
@@ -77,6 +83,9 @@ class CommandHookHandler(HookHandler):
                 return self._handle_success(stdout)
             return self._handle_soft_error(hook, proc.returncode, stderr)
         except asyncio.TimeoutError:
+            # HOOKS.md: ``timeout`` is the milliseconds before the hook is
+            # killed. Abandoning the wait alone left it running to the end.
+            await self._kill(proc)
             # Also a fail-open, also invisible before this line: the
             # message below is dropped by every caller that isn't
             # blocking on the result.
@@ -93,6 +102,20 @@ class CommandHookHandler(HookHandler):
                 exc,
             )
             return self._non_blocking()
+
+    @staticmethod
+    async def _kill(proc: asyncio.subprocess.Process | None) -> None:
+        """End a timed-out hook's process group and reap it."""
+        if proc is None or proc.returncode is not None:
+            return
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            logger.warning("Hook process %d did not exit after SIGKILL", proc.pid)
 
     def _handle_soft_error(
         self,

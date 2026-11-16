@@ -157,6 +157,28 @@ class TestAGrantThePackagingCannotDeliver:
 
         assert "secrets" not in str(caught.value).split("and igni")[0]
 
+    @pytest.mark.parametrize("kind", ["bearer", "mtls"])
+    def test_an_endpoint_igni_would_have_to_authenticate_to_is_refused(self, kind: str) -> None:
+        """R242: igni sends an endpoint no credential, so a bearer or mTLS
+        endpoint installed and then failed every call (a bare 401, an empty
+        "Client failed to connect")."""
+        with pytest.raises(InstallError, match=f"with {kind}.*not implemented yet"):
+            preflight().check(
+                load_endpoint(
+                    endpoint={
+                        "url": "https://svc.example.com/mcp",
+                        "auth": {"kind": kind, "secret": "remote-token"},
+                    }
+                ),
+                record(),
+            )
+
+    def test_an_endpoint_with_no_auth_to_send_still_installs(self) -> None:
+        manifest = load_endpoint(
+            endpoint={"url": "https://svc.example.com/mcp", "auth": {"kind": "none"}}
+        )
+        preflight().check(manifest, record())
+
     def test_an_endpoint_that_wants_secrets_is_refused_naming_them(self) -> None:
         with pytest.raises(InstallError, match=r"declares secrets: \['ledger-token'\]"):
             preflight().check(load_endpoint(permissions={"secrets": ["ledger-token"]}), record())
@@ -230,3 +252,21 @@ class TestTheOrderTheRulesRun:
 
         with pytest.raises(InstallError, match="declares secrets"):
             preflight().check(extension, record())
+
+
+class TestASidecarIsRefusedAtInstall:
+    """``igni ext doctor`` says a sidecar bundle "will not install as it is",
+    and ``igni ext install`` installed it anyway, so it failed only at the
+    next start (campaign R243). igni cannot start a container image, so the
+    install refuses it as the doctor does."""
+
+    SIDECAR = {"sidecar": {"image": "ghcr.io/acme/sc:0.1.0", "mcp": {"transport": "stdio"}}}
+
+    def _sidecar(self) -> ExtensionManifest:
+        raw = load_dev().model_dump(mode="json", by_alias=True, exclude_none=True)
+        raw.pop("dev")
+        return ExtensionManifest.model_validate({**raw, **self.SIDECAR})
+
+    def test_the_install_command_refuses_it(self):
+        with pytest.raises(InstallError, match="sidecar image"):
+            InstallPreflight.check_manifest(self._sidecar())

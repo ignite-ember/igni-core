@@ -60,6 +60,9 @@ class _Server:
     def wire_queue_hook(self, queue: Any) -> None:
         self.queue_hook = queue
 
+    def wire_orchestrate_progress(self, callback: Any) -> None:
+        self.progress_callback = callback
+
     def register_broadcast(self, callback: Any) -> None:
         self.broadcast_bus.register(callback)
 
@@ -188,6 +191,21 @@ async def test_a_runtime_has_its_own_queue_router_and_table_and_the_backend_know
     assert isinstance(first.transport, SessionStampingTransport)
 
 
+async def test_each_runtime_wires_its_own_progress_callback(tmp_path) -> None:
+    rig = _rig(tmp_path)
+
+    first = await rig.factory.create("sess-a")
+    second = await rig.factory.create("sess-b")
+
+    # Each runtime has its own team and its own backend, so each one
+    # gets its own bridge's callback: a callback shared between two
+    # sessions would file one session's progress under another's id,
+    # and the window would drop it (campaign R665/R666).
+    assert first.backend.progress_callback is not None
+    assert second.backend.progress_callback is not None
+    assert first.backend.progress_callback.__self__ is not second.backend.progress_callback.__self__
+
+
 async def test_a_server_that_cannot_start_leaves_no_directory_record(tmp_path) -> None:
     rig = _rig(tmp_path)
     _Server.fail_startup = True
@@ -222,3 +240,70 @@ async def test_the_boot_session_becomes_the_default_on_a_transport_stamping_its_
 
     await runtime.transport.send(msg.Info(text="hi"))
     assert [m.session_id for m in rig.transport.sent] == ["boot-1"]
+
+
+async def test_a_session_is_offered_the_extensions_and_built_again_to_carry_them(
+    tmp_path,
+) -> None:
+    """The extensions run on the boot session's manager; a session the pool
+    makes had none of their tools (campaign R301)."""
+    from dataclasses import replace
+
+    rig = _rig(tmp_path)
+    owner = object()
+    shared: list[object] = []
+    reloads: list[str] = []
+    rig.factory._wiring = replace(rig.wiring, extension_mcp=owner)
+
+    def startup_with_a_manager(server: _Server) -> None:
+        server.mcp_manager = SimpleNamespace(share_extensions_of=shared.append)  # type: ignore[attr-defined]
+        server.reload_agents = lambda: reloads.append(server.session_id)  # type: ignore[attr-defined]
+
+    original = _Server.startup
+
+    async def startup(self: _Server) -> None:
+        await original(self)
+        startup_with_a_manager(self)
+
+    _Server.startup = startup  # type: ignore[method-assign]
+    try:
+        await rig.factory.create("sess-a")
+    finally:
+        _Server.startup = original  # type: ignore[method-assign]
+
+    assert shared == [owner]
+    assert reloads == ["sess-a"]
+
+
+async def test_a_session_made_after_the_folder_s_trust_changed_loads_its_settings_again(
+    tmp_path, monkeypatch
+) -> None:
+    """R333: after set_workspace_trust('trust') a session made with
+    sessions.create() still ran on the settings loaded while the folder was
+    untrusted, so it ignored the folder's allow and deny rules."""
+    trusted: set[Path] = set()
+    monkeypatch.setattr(
+        "igni_core.backend.session_runtime_factory.process_trust",
+        lambda: SimpleNamespace(decide=lambda d: SimpleNamespace(trusted=Path(d) in trusted)),
+        raising=False,
+    )
+    reloaded: list[Path] = []
+
+    def _reload(project_dir: Path, cli_overrides: object = None) -> Settings:
+        reloaded.append(project_dir)
+        return Settings(models={"default": "trusted-model"})
+
+    monkeypatch.setattr(
+        "igni_core.backend.session_runtime_factory.reload_settings", _reload, raising=False
+    )
+    rig = _rig(tmp_path)
+
+    await rig.factory.create("before")
+    trusted.add(rig.project)
+    await rig.factory.create("after")
+
+    before, after = _Server.built
+    assert reloaded == [rig.project]
+    assert before.settings is not rig.settings
+    assert after.settings is not rig.settings
+    assert rig.settings.models.default == "boot-model"

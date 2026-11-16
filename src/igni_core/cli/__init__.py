@@ -31,6 +31,7 @@ import os
 from pathlib import Path
 
 import click
+from pydantic import ValidationError
 
 from igni_core import __version__
 from igni_core.cli.ext import ext
@@ -44,6 +45,7 @@ from igni_core.cli.trust import HeldWarnings, SessionTrust, trust_command
 from igni_core.core import air_gap
 from igni_core.core.agno_telemetry import AgnoTelemetry
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
+from igni_core.core.config.settings import Settings
 from igni_core.core.observability import OtelRuntime
 from igni_core.core.paths import DEFAULT_DATA_DIR
 
@@ -61,8 +63,22 @@ from igni_core.core.paths import DEFAULT_DATA_DIR
 @click.group(invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="igni")
 @click.option("--model", default=None, help="Model to use")
-@click.option("--verbose", is_flag=True, help="Show routing and reasoning")
-@click.option("--quiet", is_flag=True, help="Minimal output")
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help=(
+        "Set display.show_routing and display.show_reasoning for this run "
+        "(igni -m itself prints no routing lines)"
+    ),
+)
+@click.option(
+    "--quiet",
+    is_flag=True,
+    help=(
+        "Leave out the workspace-trust notice; turn the tool-call and "
+        "routing display settings off for this run"
+    ),
+)
 @click.option("-m", "--message", default=None, help="Single message (non-interactive)")
 @click.option(
     "--continue", "-c", "continue_session", is_flag=True, help="Resume the most recent session"
@@ -152,6 +168,10 @@ def cli(ctx: click.Context, **_params: object) -> None:
     # A subcommand handles itself. Falling through would run the CLI's own
     # setup as well — and, with no message, print the help pointer on top
     # of it.
+    # ``--no-color``: Rich honours ``NO_COLOR`` in every console igni makes
+    # from here on (the reply, the footer, warnings), subcommands included.
+    if ctx.params.get("no_color"):
+        os.environ["NO_COLOR"] = "1"
     if ctx.invoked_subcommand is not None:
         return
 
@@ -167,7 +187,7 @@ def cli(ctx: click.Context, **_params: object) -> None:
     held = HeldWarnings()
     try:
         with held:
-            settings = CliSettingsLoader(options).load()
+            settings = _load_settings(options)
     except GroupPolicyUnavailable as exc:
         # ``group_policy.required`` and no verified pack: no session, and
         # the message says what to do. ``igni login`` still works — it is a
@@ -179,7 +199,7 @@ def cli(ctx: click.Context, **_params: object) -> None:
         ).settle()
         if became_trusted:
             held.discard()
-            settings = CliSettingsLoader(options).load()
+            settings = _load_settings(options)
     held.release()
 
     # A ``-m`` or pipe run starts igni's decisions service itself, and that
@@ -208,6 +228,21 @@ def cli(ctx: click.Context, **_params: object) -> None:
     # No message + no subcommand → point users at the React clients.
     invocation.echo_help_pointer()
     invocation.cleanup_worktree()
+
+
+def _load_settings(options: CliOptions) -> Settings:
+    """The run's settings; a configuration that does not validate is a
+    message naming each field, not a pydantic traceback (campaign R066)."""
+    try:
+        return CliSettingsLoader(options).load()
+    except ValidationError as exc:
+        problems = "\n".join(
+            f"  {'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+            for error in exc.errors()
+        )
+        raise click.ClickException(
+            f"igni's settings are not valid (your config.yaml or settings files):\n{problems}"
+        ) from exc
 
 
 # Registered after the callback so the module reads top to bottom.

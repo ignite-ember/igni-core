@@ -176,6 +176,17 @@ class TestCommandHandler:
         assert "timed out after 0.1s" in caplog.text
         assert "sleep 5" in caplog.text
 
+    async def test_a_timed_out_command_is_killed_with_its_children(self, tmp_path: Path) -> None:
+        """HOOKS.md: ``timeout`` is the milliseconds before the hook is killed.
+        Only the wait used to be abandoned, so the command ran to its end."""
+        marker = tmp_path / "done"
+        hook = _command(f"sleep 1; echo done > {marker}", timeout=100)
+
+        await CommandHookHandler().run(hook, "PreToolUse", _payload())
+        await asyncio.sleep(1.5)
+
+        assert not marker.exists()
+
     async def test_a_hook_that_cannot_be_spawned_fails_open_and_says_so(
         self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:

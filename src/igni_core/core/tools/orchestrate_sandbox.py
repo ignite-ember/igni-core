@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -124,7 +125,11 @@ class SpawnSandbox:
             )
         # Short, stable suffix so multiple isolated spawns
         # within one session don't collide on the worktree path.
-        wt_suffix = f"{session_id[:8] or 'sess'}-{agent_name}-{uuid.uuid4().hex[:6]}"
+        # The agent's name goes into a git branch name, and a plugin's
+        # agents are namespaced ``plugin:agent`` — git refuses ``:``
+        # (and spaces, ``~``, ``^``, ``?``, ``*``, ``[``) in a ref.
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", agent_name).strip("-.") or "agent"
+        wt_suffix = f"{session_id[:8] or 'sess'}-{safe_name}-{uuid.uuid4().hex[:6]}"
         create_result = manager.create_result(session_id=wt_suffix)
         if not create_result.ok or create_result.info is None:
             return SandboxSetupResult(
@@ -167,7 +172,7 @@ class SpawnSandbox:
         if not hasattr(agent, "tools") or agent.tools is None:
             return {}
         try:
-            agent.tools = [copy.copy(t) for t in agent.tools]
+            agent.tools = [SpawnSandbox._own_copy(t) for t in agent.tools]
         except Exception:
             # Some toolkits can't be shallow-copied (rare). Bail
             # without raising — partial isolation beats hard fail.
@@ -179,6 +184,31 @@ class SpawnSandbox:
                 with contextlib.suppress(Exception):
                     tool.base_dir = new_base
         return originals
+
+    @staticmethod
+    def _own_copy(toolkit: Any) -> Any:
+        """A shallow copy of ``toolkit`` whose functions call the copy.
+
+        Agno registers a toolkit's methods bound to the instance that
+        registered them, and a shallow copy shares that table: the copy's
+        ``base_dir`` moved and every call still ran on the original, so a
+        worktree-isolated agent's shell ran in the main checkout and its
+        file tools refused the worktree path.
+        """
+        clone = copy.copy(toolkit)
+        for table_name in ("functions", "async_functions"):
+            table = getattr(toolkit, table_name, None)
+            if not isinstance(table, dict):
+                continue
+            own: dict[str, Any] = {}
+            for name, function in table.items():
+                entry = getattr(function, "entrypoint", None)
+                if getattr(entry, "__self__", None) is toolkit and hasattr(entry, "__func__"):
+                    function = function.model_copy()
+                    function.entrypoint = entry.__func__.__get__(clone, type(clone))
+                own[name] = function
+            setattr(clone, table_name, type(table)(own))
+        return clone
 
     def finalize(self) -> str:
         """Restore tool ``base_dir`` rebinds and clean up the
@@ -212,11 +242,20 @@ class SpawnSandbox:
         if result.status == "cleaned":
             return f"\n\nWorktree {self.info.branch_name} (clean) — reaped."
         if result.status == "preserved_dirty":
+            # The footer tells the parent to ``git merge`` the branch, and
+            # a merge takes only what is committed: commit the agent's
+            # changes onto the branch so following it brings them over.
+            self.manager.commit_changes(f"igni: changes made in worktree {self.info.branch_name}")
+            # The commit leaves the worktree clean: a later finalize (the
+            # spawn's own cleanup hook) would take it for an unchanged one
+            # and remove the worktree this footer calls preserved. The
+            # sandbox is done with it.
+            self.manager = None
             return (
                 f"\n\nWorktree preserved: {self.info.worktree_path} "
-                f"(branch: {self.info.branch_name}) — has uncommitted changes.\n"
+                f"(branch: {self.info.branch_name}) — changes committed on the branch.\n"
                 f"To merge: git merge {self.info.branch_name}\n"
-                f"To remove: git worktree remove {self.info.worktree_path}"
+                f"To remove: git worktree remove --force {self.info.worktree_path}"
             )
         # git_remove_failed / branch_delete_failed — surface the
         # stderr so cleanup failures no longer masquerade as

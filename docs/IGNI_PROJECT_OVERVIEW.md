@@ -18,14 +18,14 @@
 
 | Capability | Evidence |
 |---|---|
-| **Multi-agent team orchestration** | Orchestrator dynamically assembles 5–13 specialist agents from `.md` files using five team modes (Single, Route, Coordinate, Broadcast, Tasks). Unlimited agent nesting depth (vs Claude Code's one-level cap). |
-| **Pre-built semantic CodeIndex** | Per-commit JSONL changeset pipeline from `igni__server` → GCS → local **Neo4j** graph+vector store (BE-spawned, one DB per commit, no Docker). The agent-facing surface is a single tool in ``core/tools/codeindex/tool.py`` — ``codeindex_cypher(cypher=..., confirm_raw_cypher=True, ...)`` — read-only Cypher over the graph store, with ``confirm_raw_cypher=True`` + ``project_hash`` scoping + ``$param`` allowlist enforced by the toolkit. The ``data-architect`` agent is the curated owner; other agents come through it. Index access is the toolkit's single seam — agents never touch the Neo4j driver directly. |
+| **Multi-agent team orchestration** | Orchestrator dynamically assembles 5–13 specialist agents from `.md` files using five team modes (Single, Route, Coordinate, Broadcast, Tasks). Nested delegation up to `orchestration.max_nesting_depth` levels, default 5 (vs Claude Code's one-level cap). |
+| **Pre-built semantic CodeIndex** | Per-commit changeset pipeline in the CodeIndex service, which an organisation runs beside igni server. igni-core itself ships no CodeIndex tool or agent: the index reaches the agent through the `igni.codeindex` extension, which the organisation distributes and `igni ext sync` installs. |
 | **Four shipping surfaces** | Tauri desktop (signed + notarized), VSCode (webview), JetBrains (JCEF), browser (Vite/React). All four surfaces load the same `clients/web` bundle. The earlier Textual TUI is no longer shipped. |
-| **Built-in specialist agents** | 10 base agents (architect, data-architect, docs, editor, explorer, qa, reviewer, security, simplifier, debugger) + 6 `.codeindex.md` variants that auto-activate when the repo has a built index. |
+| **Built-in specialist agents** | 11 bundled agents: architect, debugger, docs, editor, explorer, plan_researcher, qa, reviewer, security, simplifier, visualizer (see [AGENTS.md](AGENTS.md)). |
 | **Permission system** | 5 modes (`default`/`dontAsk`/`acceptEdits`/`bypassPermissions`/`plan`), 6-step evaluation pipeline, scope-prefixed deny rules that survive bypass mode (a `Bash(rm *)` deny holds even under `bypassPermissions`). A mode set by managed settings or group policy is a floor no `/accept`, `/bypass` or flag can switch past, and `permissions.allow_bypass: false` (organisation tiers only) turns `bypassPermissions` off; with no policy every mode, fully automatic included, is available. |
 | **Hook system** | 18 of 30 Claude Code hook events, 4 of 5 handler types, all 3 execution modes (sync / `async` / `asyncRewake`). `permissionDecision` envelope on `PreToolUse` honored. |
 | **MCP client** | MCP client fully wired (consume external servers via `/mcp`). |
-| **Output styles** | `default` / `explanatory` / `learning` markdown-defined styles; `/output-style` slash command hot-patches the live team. |
+| **Output styles** | Markdown-defined styles from `.igni/output-styles/`, `~/.igni/output-styles/`, Claude Code's directories and plugins (igni ships none); `/output-style` slash command hot-patches the live team. |
 | **Plan mode** | Read-only sandbox plus user approval workflow; both `/plan` slash command and `enter_plan_mode(reason)` agent tool; agent cannot exit on its own (security invariant). Shell runs unasked only from a read-only allow-list (`ls`, `cat`, `rg`, `git status`/`log`/`diff`, …); obvious writes are denied and every other command is asked about, and an ask rule still asks — plan mode is never looser than `default`. |
 | **Knowledge base** | Local Neo4j (BE-spawned, per-commit DB) + EmberEmbedder (384d) with `/knowledge add/search/sync-knowledge`. Per-project `.igni/artifacts.yaml` file for git-shareable knowledge sharing. |
 | **Auto-memory** | Per-project `~/.igni/projects/<slug>/memory/MEMORY.md` (200 lines / 25KB cap), with cross-tool fallback to `~/.claude/.../memory/MEMORY.md` — Claude Code users don't need to migrate their memory bank. |
@@ -51,7 +51,7 @@ Source: `README.md:1-251`, `QUICKSTART.md:1-483`, `CLAUDE_CODE_PARITY.md:13-66` 
 ┌────────────────────────────▼─────────────────────────────┐
 │ Backend process                                         │
 │  BackendServer → CommandHandler → Session → Orchestrator│
-│  Agno Agent pool (13 .md files + 6 .codeindex variants) │
+│  Agno Agent pool (11 bundled .md agents)                │
 │  Tool Layer: Bash / Write / Edit / Schedule / CodeIndex │
 │  Knowledge: local Neo4j (BE-spawned) + EmberEmbedder    │
 │  Hooks (18 events) + Permissions (5 modes, 6-step eval) │
@@ -107,8 +107,8 @@ Short list — focused on what a stakeholder will actually ask "can igni do X?" 
 
 | Use case | What igni does |
 |---|---|
-| **Long-form refactor on a real codebase** | Mandatory "What already exists" preamble forces reuse-naming first; agents come through the ``data-architect`` agent, which authors read-only ``codeindex_cypher(...)`` to identify the right target. |
-| **Triage of large repos** | The ``data-architect`` agent walks the index via ``codeindex_cypher(...)`` (multi-hop walks, aggregates, ``EXPLAIN``). Other `*.codeindex.md` specialists route their graph questions through it. |
+| **Long-form refactor on a real codebase** | Mandatory "What already exists" preamble forces reuse-naming first; the explorer and architect agents map the code before the editor changes it. |
+| **Triage of large repos** | The explorer agent searches the tree (with the `igni.codeindex` extension installed, it can also query the organisation's index). |
 | **Multi-language codebase** | Producer side covers **58 languages** via tree-sitter. |
 | **IDE work** | Four GUI surfaces — Tauri desktop, VSCode, JetBrains, browser — all load the same React bundle. |
 | **Scheduled / recurring automation** | `/schedule` (cron + one-shot), `/loop`, `/fork`. Claude Code has `/loop`/`/fork`/`CronCreate`; igni's edge is the first-class `/schedule` UI and persistent `scheduler_tasks` table. |
@@ -118,7 +118,7 @@ Short list — focused on what a stakeholder will actually ask "can igni do X?" 
 
 Each role ships as a Group in the portal — one pack, broadcast to the team, no per-machine install:
 
-- **Software engineer** — primary persona. Multi-agent teams, `.codeindex.md` specialists, 5 surfaces, fast inference tiers.
+- **Software engineer** — primary persona. Multi-agent teams, eleven bundled specialists, 5 surfaces, fast inference tiers.
 - **Security / AppSec** — security-tuned agent set, audit-logging MCP, restrictive permissions, no shell-write for non-security groups.
 - **Frontend / Design Platform** — React/Vue/Tailwind specialists, design-system knowledge pack, Figma MCP, read-only shell.
 - **Data / Analytics** — SQL/Python specialists, warehouse MCPs (Snowflake / BigQuery), knowledge entries = data dictionaries and runbook links.
@@ -238,7 +238,7 @@ The CLI points at `api.ignite-ember.sh` by default. A self-hosted `igni__server`
 | Capability | Claude Code | igni | Status |
 |---|---|---|---|
 | **Multi-agent teams** | Single agent loop | Dynamic team assembly (5 modes: Single/Route/Coordinate/Broadcast/Tasks) | igni-only |
-| **Agent nesting depth** | One level (sub-agents can't spawn sub-agents) | Unlimited | igni broader |
+| **Agent nesting depth** | One level (sub-agents can't spawn sub-agents) | Up to `max_nesting_depth` (default 5) | igni broader |
 | **Code intelligence** | Grep + file reads | CodeIndex semantic+metadata index + grep | igni broader |
 | **Pre-built code index** | None shipped | Per-commit JSONL → local Neo4j (BE-spawned, per-commit DB, no Docker) via igni__server | igni-only |
 | **Knowledge base** | None | Local Neo4j + EmberEmbedder (384d), git-shareable | igni-only |
@@ -254,7 +254,7 @@ The CLI points at `api.ignite-ember.sh` by default. A self-hosted `igni__server`
 | **Plugin monitor primitive** | yes (experimental) | yes (26 tests, supervisor + backoff) | ✅ parity |
 | **Plugin theme primitive** | yes | **not shipped** | ❌ igni gap |
 | **Surface bundle** | terminal + Anthropic desktop + claude.ai/code | Tauri desktop + VSCode + JetBrains + browser, **one React bundle** for all 4 (earlier Textual TUI removed) | ✅ parity + igni richer UI |
-| **Output styles** | yes | yes (`default`/`explanatory`/`learning`) | ✅ parity |
+| **Output styles** | yes | yes (from your style files; none ship) | ✅ parity |
 | **Plan mode** | yes | yes (`/plan`, `enter_plan_mode(reason)`) | ✅ parity |
 | **acceptEdits mode** | yes | yes (`/accept`) | ✅ parity |
 | **TodoWrite tool** | yes | yes (`todo_write(todos)` atomic replace) | ✅ parity |
@@ -370,7 +370,7 @@ Selected key citations. Line numbers refer to the files as of the snapshot read.
 | igni__server 5-phase pipeline | `igni__code-index/docs/igni-integration.md`, `igni__server/README.md:104-125` |
 | JSONL wire contract | `igni__code-index/docs/igni-integration.md:64-76` |
 | Tree-sitter 58 languages list | `igni__code-index/docs/igni-integration.md:55-60` |
-| Orchestrator + 5 team modes + unlimited nesting | `docs/ARCHITECTURE.md:1-120` |
+| Orchestrator + 5 team modes + nested delegation | `docs/ARCHITECTURE.md:1-120` |
 | Tool surface (`Bash`/`Write`/`Edit`; `Read`/`Grep`/`Glob` not on main team by design) | `QUICKSTART.md:212-218`, `CLAUDE_CODE_PARITY.md` row 22 |
 | Apache 2.0 license | `pyproject.toml:9`, `README.md:241` |
 | Agno / Neo4j / textual dependency pins | `pyproject.toml:38-67` |
@@ -378,9 +378,9 @@ Selected key citations. Line numbers refer to the files as of the snapshot read.
 | Org-level Groups + zero-install rollout | `core/config/group_policy.py:27-119` (pack + entry schema), `core/config/group_policy.py:122+` (materialization), `core/config/settings_loader.py:246`, `core/config/merge_plan.py:250` (settings tier), `igni__server/app/api/base_v1/endpoints/portal/groups.py:33+` (group API) |
 | Pricing tiers + volume discounts | `igni__server/app/api/base_v1/schema/portal/billing.py:135-200` (`PLAN_CATALOG`, `VOLUME_TIER`), `igni__server/app/services/portal/billing_service.py:60+` |
 | No hosted model; igni 1.0 27B served by the organisation's igni server | `docs/CONFIGURATION.md` (Models & Authentication) |
-| 13 base agents + 6 .codeindex.md variants | direct `ls agents/`; `QUICKSTART.md:178-196` |
+| 11 bundled agents | `ls src/igni_core/bundled_agents/`; `QUICKSTART.md:178-196` |
 | Permission modes (5) + eval pipeline (6) + scoped deny | `CLAUDE_CODE_PARITY.md` rows 7, 8, 9; `CODE_STANDARDS.md` |
-| Output styles (`default`/`explanatory`/`learning`) | `CLAUDE_CODE_PARITY.md` row 52 |
+| Output styles (from `.igni/output-styles/`; none ship) | `CLAUDE_CODE_PARITY.md` row 52 |
 | Plan mode (`/plan`, `enter_plan_mode(reason)`) | `CLAUDE_CODE_PARITY.md` row 50 |
 | acceptEdits mode + `/accept` | `CLAUDE_CODE_PARITY.md` row 51 |
 | TodoWrite (`todo_write(todos)` atomic replace) | `CLAUDE_CODE_PARITY.md` row 25 |

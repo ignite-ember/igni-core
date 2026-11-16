@@ -38,6 +38,8 @@ from igni_core.backend.schemas_run import (
     RunPhase,
 )
 from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.session.event_log import SessionEventLog
+from igni_core.core.tools.todo import TodoStore
 from igni_core.core.utils.media_schemas import MediaAttachments, ResolvedText
 from igni_core.protocol import messages as msg
 
@@ -64,7 +66,7 @@ class _HookGate:
     async def fire_user_prompt_submit(self, text: str) -> HookGateResult:
         return HookGateResult(should_continue=True)
 
-    async def fire_stop(self) -> HookGateResult:
+    async def fire_stop(self, response: str = "") -> HookGateResult:
         return HookGateResult(should_continue=True)
 
 
@@ -115,6 +117,7 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
     controller._interrupted_summary = None
     controller._pending_id_for_cancel = None
     controller._current_run_task = None
+    controller._run_session_id = ""
     controller._run_lock = asyncio.Lock()
     controller._pending_journal = _Journal()
     controller._hook_gate = _HookGate()
@@ -123,6 +126,10 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
     controller._session = SimpleNamespace(
         main_team=SimpleNamespace(arun=lambda *a, **k: None, run_id=None),
         guardrail_runner=SimpleNamespace(warning_prefix=_no_prefix),
+        todo_store=TodoStore(),
+        event_log_store=SessionEventLog(),
+        session_id="s-1",
+        take_session_start_context=lambda: "",
         memory_mirror=None,
     )
     controller._stream_factory = _stream

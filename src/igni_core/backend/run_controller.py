@@ -37,7 +37,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from agno.agent import Agent
 from agno.team import Team
@@ -53,8 +53,10 @@ from igni_core.backend.session_checkpointer import SessionCheckpointer
 from igni_core.backend.stream_event_dispatcher import StreamEventDispatcher
 from igni_core.core.activity import background
 from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.run_context import run_session
 from igni_core.core.session.pending_messages import InterruptedReason
 from igni_core.core.session.queued_messages import DurableMessageQueue
+from igni_core.core.session.schemas import StopHookPayload
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.protocol import messages as msg
@@ -91,6 +93,10 @@ class RunController:
     while it is closed.
     """
 
+    #: The pending message of a run that paused for a person: the run has
+    #: not finished, so the row stays pending until its resume ends it.
+    _paused_pending_id: str | None = None
+
     def __init__(
         self,
         session: Session,
@@ -106,16 +112,22 @@ class RunController:
         self._stream_factory = stream_factory
         self._supervisor = supervisor
         self._gate = gate
-        self._pending_journal = PendingMessageJournal(pending_store, session.session_id)
+        # Asked per write: New chat and a sidebar switch change the id.
+        self._pending_journal = PendingMessageJournal(pending_store, lambda: session.session_id)
         self._http_client_manager = http_client_manager or ModelHttpClientManager()
         self._prompt_builder = PromptBuilder(session)
-        self._hook_gate = RunHookGate(session.hook_executor, session.session_id)
+        self._hook_gate = RunHookGate(lambda: session.hook_executor, lambda: session.session_id)
         self._dispatcher = StreamEventDispatcher(session, self.checkpoint)
         self._phase = RunPhase.idle
         self._interrupted_summary: InterruptedRunSummary | None = None
         # Serialisation + cancellation state — single owner (Pattern 1).
         self._run_lock = asyncio.Lock()
         self._current_run_task: asyncio.Task | None = None
+        # The current run's stream ended paused for a person: the run is
+        # only closing, and its answer resumes it (:meth:`continue_run`).
+        self._stream_ended_paused = False
+        #: The chat the latest run belongs to; a resumed run is still it.
+        self._run_session_id = ""
         # The task ``cancel_run`` cancelled, so the work it was running can
         # tell the person's cancel from any other.
         self._cancelled_by_person: asyncio.Task | None = None
@@ -219,9 +231,13 @@ class RunController:
         """
         async with self._run_lock:
             self._current_run_task = asyncio.current_task()
+            self._stream_ended_paused = False
+            # The chat this run is, for everything it sends while it runs.
+            self._run_session_id = self._session.session_id
             try:
-                async for proto in self._run_locked(text, media):
-                    yield proto
+                with run_session(self._run_session_id):
+                    async for proto in self._run_locked(text, media):
+                        yield proto
             except asyncio.CancelledError:
                 yield msg.Info(text="Run cancelled by user.")
             finally:
@@ -253,21 +269,75 @@ class RunController:
         its parent run still holds it. Then the parent is the session's
         run already, and the stream passes through untouched.
         """
+        if self._current_run_task is not None and self._stream_ended_paused:
+            # The run that paused has streamed its last frame but is still
+            # closing (its checkpoint, its model client) when a quick answer
+            # arrives. It is not a parent waiting on this answer: wait for it
+            # to let go, or the resumed run passed through as a sub-agent's
+            # would, and no Stop hook saw its reply.
+            async with self._run_lock:
+                pass
         if self._current_run_task is not None:
             async for proto in stream:
                 yield proto
             return
         self._current_run_task = asyncio.current_task()
         self._transition_to(RunPhase.streaming)
+        events_before = self._session.event_log_store.seq
+        pending_id = self._paused_pending_id
+        reply: list[str] = []
+        # Ended only once the resumed run says so: an answer that resumed
+        # nothing (an unknown requirement) or a run that paused again has
+        # no reply for Stop to judge.
+        ended = False
         try:
-            async for proto in stream:
-                yield proto
+            # The chat of the run that paused, though New chat may have
+            # moved the session on while the approval waited.
+            with run_session(self._run_session_id or self._session.session_id):
+                async for proto in stream:
+                    yield proto
+                    if isinstance(proto, msg.ContentDelta):
+                        reply.append(proto.text)
+                    ended = not self._paused_after(proto, not ended)
+            if ended and pending_id is not None:
+                # The run that paused has finished: its message is done.
+                self._paused_pending_id = None
+                self._pending_id_for_cancel = None
+                await self._pending_journal.mark_completed(pending_id)
+            if ended:
+                # The run ended: Stop sees its reply, and a block sends the
+                # agent back, as at the end of a run that never paused.
+                async for proto in self._stop_or_retry(self._session.main_team, "".join(reply)):
+                    yield proto
         except asyncio.CancelledError:
+            # ``cancel_run`` stamped the message as cancelled.
+            self._paused_pending_id = None
             yield msg.Info(text="Run cancelled by user.")
+        except Exception as exc:
+            if pending_id is not None and self._paused_pending_id == pending_id:
+                self._paused_pending_id = None
+                self._pending_id_for_cancel = None
+                await self._pending_journal.mark_interrupted(
+                    pending_id, "errored", last_error=str(exc)
+                )
+            raise
         finally:
             self._current_run_task = None
+            await self._keep_event_log(events_before)
             if self._phase.is_active():
                 self._transition_to(RunPhase.done)
+
+    async def _close_abandoned_pause(self) -> None:
+        """A new message while a run stands paused: the person moved on from
+        that run, so its message is closed as completed, as it was before a
+        pause kept it open."""
+        pending_id = self._paused_pending_id
+        if pending_id is None:
+            return
+        self._paused_pending_id = None
+        if self._pending_id_for_cancel == pending_id:
+            self._pending_id_for_cancel = None
+        await self._pending_journal.mark_completed(pending_id)
 
     async def run_unstreamed(self, work: Callable[[], Awaitable[_T]]) -> _T:
         """Work on the session's team outside a streamed turn — a scheduled
@@ -282,7 +352,8 @@ class RunController:
             self._current_run_task = task
             self._transition_to(RunPhase.streaming)
             try:
-                return await work()
+                with run_session(self._session.session_id):
+                    return await work()
             except asyncio.CancelledError:
                 if task is None or self._cancelled_by_person is not task:
                     raise
@@ -450,6 +521,58 @@ class RunController:
 
     # ── The locked body ─────────────────────────────────────────────
 
+    async def _keep_event_log(self, seq_before: int) -> None:
+        """Write the event log again once the run has saved its session.
+
+        As for the todo list: an entry appended during the run (the
+        visualizer's view) is written into ``session_data`` at once, and
+        Agno's end-of-run save of the session it loaded at the start wrote
+        over it, so ``get_chat_history`` lost the view after a restart.
+        """
+        log = self._session.event_log_store
+        if log.seq == seq_before:
+            return
+        result = await self._session.persistence.save_event_log(log.events)
+        if not result.ok:
+            logger.warning("Could not keep the event log: %s", result.error)
+
+    async def _keep_todos(self, revision_before: int) -> None:
+        """Write the todo list again once the run has saved its session.
+
+        ``todo_write`` stores the list in ``session_data`` while the run
+        goes, and Agno saves the session it loaded at the run's start when
+        the run ends, over it: the list was live, and gone after a restart.
+        Written again here, after that save, when the run changed it.
+        """
+        todos = self._session.todo_store
+        if todos.revision == revision_before:
+            return
+        result = await self._session.persistence.save_todos(todos.items)
+        if not result.ok:
+            logger.warning("Could not keep the todo list: %s", result.error)
+
+    async def _ensure_mcp(self) -> None:
+        """Connect the session's MCP servers before a run uses the team.
+
+        The window's chat path never did this. Only the CLI's
+        ``SessionMessageHandler`` called ``ensure_mcp``, so a chat in
+        igni's window ran without the configured MCP tools until the
+        MCP page happened to call ``ensure_mcp`` itself (campaign
+        R209/R669).
+
+        A failure here must not end the chat: the run goes on without
+        the MCP tools, and the failure is already recorded in the MCP
+        failure cache for the panel to show.
+        """
+        startup = getattr(self._session, "startup", None)
+        ensure = getattr(startup, "ensure_mcp", None)
+        if not callable(ensure):
+            return
+        try:
+            await ensure()
+        except Exception as exc:
+            logger.warning("Could not connect the MCP servers before the run: %s", exc)
+
     async def _run_locked(
         self, text: str, media: MediaAttachments | None
     ) -> AsyncGenerator[msg.Message, None]:
@@ -471,12 +594,22 @@ class RunController:
             self._transition_to(RunPhase.done)
             return
 
+        # Connect the configured MCP servers before the team is read.
+        # The window's chat path never did this: only the CLI's
+        # ``SessionMessageHandler`` did, so a chat in igni's window
+        # had no MCP tools until the MCP page called ``ensure_mcp``
+        # (campaign R209/R669). The connect also rebuilds the team, so
+        # it has to happen before ``main_team`` is read — otherwise the
+        # run would use the team without the MCP tools.
+        await self._ensure_mcp()
+
         team = self._session.main_team
 
         # Consume the one-shot interrupted-summary + drain any
         # pending-message ids queued during detect_interrupted_run.
         interrupted_summary_text = self._consume_interrupted_note(text)
         await self._pending_journal.drain_queued_drops()
+        await self._close_abandoned_pause()
 
         # Fire UserPromptSubmit hook, before the prompt is built from
         # the text: an extension that hooks it may change the text.
@@ -500,8 +633,14 @@ class RunController:
         message = build.message
         media = build.media
 
-        if gate.context_message:
-            message = f"{message}\n<hook-context>{gate.context_message}</hook-context>"
+        # A SessionStart hook's context first, then the prompt hook's, as
+        # ``igni -m`` sends them: ``<hook-context>`` blocks after the text.
+        start_context = self._session.take_session_start_context()
+        message += "".join(
+            f"\n<hook-context>{context}</hook-context>"
+            for context in (start_context, gate.context_message)
+            if context
+        )
 
         # Guardrails, on the path the portal actually uses. They inform rather
         # than block, so the caveat is prepended and the model sees it before
@@ -526,9 +665,13 @@ class RunController:
 
         # Periodic checkpoint task — see SessionCheckpointer.run_forever.
         checkpoint_task = background.daemon(self.periodic_checkpoint(team), name="run-checkpoint")
+        todos_before = self._session.todo_store.revision
+        events_before = self._session.event_log_store.seq
 
         media_kwargs = media.to_kwargs() if media is not None else {}
         self._transition_to(RunPhase.streaming)
+        reply: list[str] = []
+        paused = False
         try:
             stream_failure: str | None = None
             async for proto in self._stream_factory(
@@ -537,6 +680,12 @@ class RunController:
                 yield proto
                 await self._dispatcher.handle(proto, team)
                 stream_failure = self._failure_text(proto) or stream_failure
+                if isinstance(proto, msg.ContentDelta):
+                    reply.append(proto.text)
+                paused = self._paused_after(proto, paused)
+            # Only once the stream is over: a sub-agent's pause shows up
+            # mid-stream while this run goes on, waiting for its answer.
+            self._stream_ended_paused = paused
             if stream_failure is not None:
                 # The stream reported a failure instead of raising —
                 # see :meth:`_failure_text`. Same bookkeeping as the
@@ -549,10 +698,18 @@ class RunController:
                 )
                 self._transition_to(RunPhase.errored)
                 return
-            # Natural end-of-run — mark the pre-persisted user
-            # message as completed.
-            await self._pending_journal.mark_completed(pending_id)
-            self._pending_id_for_cancel = None
+            if paused:
+                # Paused for a person: the run has not finished. The row
+                # stays pending, and a cancel still reaches it, until the
+                # resumed run ends it (:meth:`continue_run`). Completed
+                # here, a crash during the resumed part left nothing for
+                # ``get_pending_messages`` or ``get_interrupted_runs``.
+                self._paused_pending_id = pending_id
+            else:
+                # Natural end-of-run — mark the pre-persisted user
+                # message as completed.
+                await self._pending_journal.mark_completed(pending_id)
+                self._pending_id_for_cancel = None
             self._transition_to(RunPhase.finalizing)
         except Exception as exc:
             # Error mid-run: stamp the pending row as an explicit
@@ -573,13 +730,56 @@ class RunController:
             # conversation holds them (``DurableMessageQueue``).
             if self._message_queue is not None:
                 await self._message_queue.settle(self._session.db)
+            await self._keep_todos(todos_before)
+            await self._keep_event_log(events_before)
             # Memory files the run wrote, whatever tool wrote them.
             mirror = self._session.memory_mirror
             if mirror is not None:
                 await asyncio.to_thread(mirror.sync)
 
-        # Fire Stop hook after the natural end-of-run.
-        stop_gate = await self._hook_gate.fire_stop()
-        if not stop_gate.should_continue and stop_gate.block_message:
-            yield msg.Info(text=stop_gate.block_message)
+        # Fire Stop hook after the natural end-of-run. A run that paused for
+        # the person's approval has not ended: Stop fires once the resumed
+        # run does (:meth:`continue_run`), with its reply. Fired here, it
+        # saw only the text from before the pause, and the resumed run's
+        # final answer reached no Stop hook at all.
+        if not paused:
+            async for proto in self._stop_or_retry(team, "".join(reply)):
+                yield proto
         self._transition_to(RunPhase.done)
+
+    @staticmethod
+    def _paused_after(proto: msg.Message, paused: bool) -> bool:
+        """Whether the run stands paused for a person, after ``proto``."""
+        if isinstance(proto, msg.RunPaused):
+            return True
+        if isinstance(proto, msg.RunCompleted):
+            return False
+        return paused
+
+    async def _stop_or_retry(self, team: Any, response: str) -> AsyncGenerator[msg.Message, None]:
+        """The Stop hook, and the agent sent back while it rejects the reply.
+
+        As ``igni -m`` does (docs/HOOKS.md): the hook sees the reply, and a
+        block says why and sends the agent its feedback to revise, at most
+        :attr:`StopHookPayload.MAX_RETRIES` times. The backend used to fire
+        it with no reply and only show the block.
+        """
+        for _attempt in range(StopHookPayload.MAX_RETRIES):
+            gate = await self._hook_gate.fire_stop(response)
+            if gate.should_continue:
+                return
+            yield msg.Info(text=gate.block_message)
+            revised: list[str] = []
+            try:
+                async for proto in self._stream_factory(
+                    team.arun(StopHookPayload.critique(gate.block_message), stream=True)
+                ):
+                    yield proto
+                    await self._dispatcher.handle(proto, team)
+                    if isinstance(proto, msg.ContentDelta):
+                        revised.append(proto.text)
+            except Exception as exc:
+                logger.warning("The run a Stop hook sent back failed: %s", exc)
+                yield msg.Error(text=f"The revised reply failed: {exc}")
+                return
+            response = "".join(revised)

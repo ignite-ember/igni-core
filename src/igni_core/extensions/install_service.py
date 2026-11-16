@@ -136,20 +136,38 @@ class ExtensionConnection:
             "'dev' to run a command locally."
         )
 
+    #: What a person does about a service that did not start: health is
+    #: always shown with a reason and a fix (EXTENSIBILITY.md §7).
+    START_FIX = (
+        "To fix: run 'igni ext doctor' on its bundle to see why it does not start, "
+        "then install a version that starts (or ask your administrator for one)."
+    )
+
     async def start(self, config: MCPServerConfig) -> str | None:
-        """Connect to the service. Returns a reason on failure."""
+        """Connect to the service. Returns a reason, with its fix, on failure."""
         try:
             self._mcp.register_server(config)
             result = await asyncio.wait_for(self._mcp.connect(config.name), START_TIMEOUT_S)
         except TimeoutError:
-            return f"its service did not start within {START_TIMEOUT_S:g}s"
+            return f"its service did not start within {START_TIMEOUT_S:g}s. {self.START_FIX}"
         except Exception as exc:
             logger.error("extension service %s failed to start", config.name, exc_info=True)
-            return f"its service could not be started: {exc}"
+            return f"its service could not be started: {exc}. {self.START_FIX}"
 
         if not result.ok:
-            return f"its service did not start: {result.reason or 'no reason given'}"
+            reason = (result.reason or "no reason given").rstrip()
+            return f"its service did not start: {reason}\n{self.START_FIX}"
         return None
+
+    def forget(self, extension_id: str) -> None:
+        """Take the service's configuration back out of the MCP manager.
+
+        Left registered, a session that connects its servers later (a
+        headless run's) started an extension that had failed again, after
+        its sandbox profile was gone, and showed sandbox-exec's error in
+        place of the extension's own.
+        """
+        self._mcp.unregister_server(server_name(extension_id))
 
     def restrict_tools(
         self, manifest: ExtensionManifest, server: str, permissions: Permissions

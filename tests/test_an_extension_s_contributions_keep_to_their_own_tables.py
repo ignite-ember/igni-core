@@ -50,6 +50,11 @@ class FakeRpc:
         self.commands.append((extension_id, command, text))
         return self.answer
 
+    async def fetch_contribution(self, extension_id: str, tool: str) -> Any:
+        return await self.dispatch(
+            caller=extension_id, method=f"ext.{extension_id}.{tool}", args={}
+        )
+
 
 def _manifest(extension_id: str = "acme.scanner", **contributes: Any) -> ExtensionManifest:
     return ExtensionManifest.model_validate(

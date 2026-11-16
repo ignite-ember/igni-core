@@ -120,9 +120,16 @@ class TestSessionStartHook:
     async def test_the_hook_gets_the_id_and_whether_the_session_was_resumed(
         self, session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """``resumed`` is whether the stored session holds a run: a new
+        session from ``sessions.create`` is already named (campaign R117)."""
         executor = self._Executor()
         session.hook_executor = executor  # type: ignore[assignment]
-        session.identity.set_named(True)
+        session.identity.set_named(False)
+
+        async def holds_a_run() -> bool:
+            return True
+
+        monkeypatch.setattr(session, "_holds_a_run", holds_a_run)
 
         await session.fire_session_start_hook()
 
@@ -136,7 +143,7 @@ class TestSessionStartHook:
     ) -> None:
         executor = self._Executor()
         session.hook_executor = executor  # type: ignore[assignment]
-        session.identity.set_named(False)
+        session.identity.set_named(True)
 
         await session.fire_session_start_hook()
 
@@ -279,7 +286,7 @@ class TestHandleMessage:
     class _Handler:
         last_failure = "the model refused"
 
-        async def handle(self, message: str, media: Any) -> str:
+        async def handle(self, message: str, media: Any, *, context: str = "") -> str:
             return f"reply to {message}"
 
     async def test_a_debug_dump_that_raises_does_not_fail_the_turn(

@@ -222,7 +222,7 @@ def test_a_required_sandbox_stays_on_against_either_off_switch_and_says_which(tm
 # ── The user's require_sandbox ────────────────────────────────────────
 
 
-def test_a_users_require_sandbox_is_ignored_with_a_warning_naming_the_file_and_the_variable(
+def test_a_users_require_sandbox_is_ignored_with_a_warning_naming_every_source_that_may_set_it(
     tmp_path, caplog
 ):
     path = yaml_file(tmp_path, "user.yaml", "extensions:\n  require_sandbox: false\n")
@@ -230,8 +230,8 @@ def test_a_users_require_sandbox_is_ignored_with_a_warning_naming_the_file_and_t
         settings = load(user_file=path)
     assert not settings.required
     assert (
-        f"extensions.require_sandbox in {path} is ignored: only the managed settings file "
-        f"or {REQUIRE_SANDBOX_ENV} may set it"
+        f"extensions.require_sandbox in {path} is ignored: only the managed settings file, "
+        f"the organisation's group policy or {REQUIRE_SANDBOX_ENV} may set it"
     ) in caplog.text
 
 

@@ -14,7 +14,7 @@ igni is configured through a layered system of config files, environment variabl
 
 A project's config counts only once you trust the folder, and some keys it may never set — see [Workspace trust](#workspace-trust).
 
-Each level deep-merges over the previous. The `~/.igni/config.yaml` file is automatically generated from defaults on first run via `yaml.dump(DEFAULT_CONFIG)` — a single source of truth.
+Each level deep-merges over the previous. On first run igni writes `~/.igni/config.yaml` as comments only — a header and commented-out examples, no active key — so it holds only what you add; the defaults live in the code and are the values this page lists.
 
 ### What in `.igni/` goes into git
 
@@ -96,6 +96,12 @@ When an agent references `model: <name>`:
 3. None of the above?                               → error: unknown model
 ```
 
+A `provider:model_id` name has no registry row to name its key, so it reads
+the provider's own variables: `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` for
+`anthropic`, `OPENAI_API_KEY` and `OPENAI_BASE_URL` for `openai_like`,
+`GOOGLE_API_KEY` for `gemini`. For anything else, add a full registry entry
+(`provider`, `model_id` and how to find the key).
+
 ### Option 1: Your organisation's igni server
 
 igni server is self-hosted: your organisation runs it, and it holds the model
@@ -121,7 +127,7 @@ No manual model configuration needed — the models your server advertises are m
 
 When you're logged in, igni fetches the deduplicated `(model, base_url)` catalogue from your your igni server key pool (`GET /v1/chat/models`) and merges each entry into the local registry on session start. Opening the model picker (`/model`) refreshes the catalogue so models added on the portal show up without restarting the CLI.
 
-Cloud-discovered entries always use `api_key: cloud_token` (your login credentials) and are tagged with `source: "cloud"`. **User-defined entries always win** — if your config already defines `gpt-4o`, the cloud entry with the same name is skipped, so pinned timeouts and provider overrides survive.
+Cloud-discovered entries always use `api_key: cloud_token` (your login credentials) and are tagged with `source: "cloud"`. Each is reached on the API the server names for it: a model whose catalogue row says `"api": "anthropic"` becomes a `provider: anthropic` entry at `api_url` (igni server's `POST /v1/messages`); any other is a `provider: openai_like` entry at `{api_url}/v1` (its `/v1/chat/completions`). **User-defined entries always win** — if your config already defines `gpt-4o`, the cloud entry with the same name is skipped, so pinned timeouts and provider overrides survive.
 
 Failure modes are all soft: missing token, network error, timeout (3 s), and non-200 responses each degrade silently to whatever's already in the local registry.
 
@@ -413,8 +419,9 @@ storage:
 #
 # 2. **Conversation history compaction** (igni's compact_if_needed)
 #    At the same 80% threshold, igni generates a session summary covering
-#    older turns, then trims the verbatim history to keep only recent turns.
-#    Subsequent compactions halve the kept turns (minimum 2).
+#    the whole conversation, then clears the verbatim history: every turn
+#    is replaced by the summary, which every later prompt carries (as
+#    /compact does). When no summary can be produced, nothing is cleared.
 #
 # The effective context window is:
 #
@@ -455,7 +462,7 @@ context:
 orchestration:
   max_nesting_depth: 5             # Max recursive sub-team depth
   max_total_agents: 20             # Max agents per request
-  sub_team_timeout: 600            # Seconds before sub-team times out
+  sub_team_timeout: 1800           # Seconds before sub-team times out
   max_task_iterations: 10          # Max iterations for tasks-mode teams
 
 # Task scheduling (background jobs)
@@ -465,10 +472,11 @@ scheduler:
   max_concurrent: 1                # Max tasks running at once (bounded by semaphore)
 
 # Agents & Skills
-# By default, igni scans its own directories AND Claude Code / Codex directories.
+# By default, igni scans its own directories AND Claude Code's. Codex
+# agent definitions (AGENTS.md, .codex/, ~/.codex/) are not read.
 # Set cross_tool_support: false to only scan igni directories.
 agents:
-  cross_tool_support: true         # also scans .claude/agents/, .codex/, etc.
+  cross_tool_support: true         # also scans .claude/agents/ and ~/.claude/agents/
   # igni dirs (always scanned):
   #   .igni/agents/              (project, committed)
   #   .igni/agents.local/        (project, gitignored)
@@ -476,8 +484,6 @@ agents:
   # Cross-tool dirs (when cross_tool_support: true):
   #   .claude/agents/             (Claude Code project)
   #   ~/.claude/agents/           (Claude Code user global)
-  #   AGENTS.md / .codex/         (Codex project)
-  #   ~/.codex/                   (Codex user global)
 
 skills:
   cross_tool_support: true         # also scans .claude/skills/
@@ -503,11 +509,11 @@ skills:
 # Learning
 learning:
   enabled: true                    # Enable learning across sessions
-  user_profile: true               # Build user preference profiles
+  user_profile: false              # Build user preference profiles
   user_memory: true                # Persist user-specific memories
-  session_context: true            # Carry session context forward
+  session_context: false           # Carry session context forward
   entity_memory: false             # Track entities across conversations
-  learned_knowledge: false         # Accumulate learned knowledge
+  learned_knowledge: false         # Not usable yet: igni wires no knowledge base, so every save fails
 
 # Reasoning tools
 reasoning:
@@ -517,7 +523,7 @@ reasoning:
 
 # Guardrails
 guardrails:
-  pii_detection: true              # Detect PII in prompts (pre-hook)
+  pii_detection: true              # Refuse a message carrying PII, before any model call
   prompt_injection: false          # Detect injection attempts (pre-hook)
   moderation: false                # OpenAI moderation API (pre-hook)
 
@@ -530,12 +536,18 @@ evals:
 
 # Display
 display:
-  markdown: true                   # Render markdown in terminal
+  markdown: true                   # Render replies as Markdown
   show_tool_calls: true            # Show which tools agents are using
   show_routing: false              # Show Router agent decisions
   show_reasoning: false            # Show reasoning chain steps
   color_theme: "auto"              # auto, dark, light
 ```
+
+These are display preferences the host hands to the windows and to
+extensions (an extension reads them through the host's display object).
+The headless `igni -m` / `igni -p` does not apply them: it prints the reply
+alone, rendered as Markdown on a terminal and as written to a pipe, with no
+tool-call, routing or reasoning lines; `--no-color` turns its colour off.
 
 ## Organisation group policy
 
@@ -774,9 +786,8 @@ plugins:
 
 Three ways to set it, any of which turns it on:
 
-- **The key**, in `~/.igni/config.yaml` or a project's `.igni/config.yaml`.
-  The desktop app's updater has no project when it checks, so for it use the
-  user file, managed settings or group policy.
+- **The key**, in `~/.igni/config.yaml`. A project's `.igni/config.yaml`
+  may not set it (see below): it is ignored there, with a warning.
 - **`IGNI_AIR_GAPPED=1`** in the environment (also `true`, `yes`, `on`). It
   only turns the mode on; an unset or false variable leaves the files' choice.
 - **Managed settings or group policy**, for an organisation: `air_gapped: true`
@@ -972,8 +983,8 @@ igni --no-web                # disable web access
 igni --read-only             # reads files and the web; anything that changes is refused
 
 # Display
-igni --verbose               # show routing + reasoning
-igni --quiet                 # minimal output
+igni --verbose               # display.show_routing + show_reasoning on (see display below)
+igni --quiet                 # no workspace-trust notice; tool calls and routing off
 igni --no-color              # disable colors
 
 # Session

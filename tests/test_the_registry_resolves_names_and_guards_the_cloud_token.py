@@ -237,3 +237,54 @@ class TestTheCloudTokenIsWithheldFromOtherHosts:
         registry.get_model()
 
         assert builder.built[0]["token"] is None
+
+
+class TestAnExpiredSignIn:
+    """R221: the expiry is known before the request (docs/TOKEN.md), yet the
+    model was built, the request went with no token, and igni server's raw
+    401 followed the warning; with discovery only, the error blamed an empty
+    registry."""
+
+    GATEWAY = "https://igni.acme.test"
+
+    def _expired(self, tmp_path: Path, registry: dict, default: str = "m") -> Settings:
+        path = tmp_path / "credentials.json"
+        CredentialsStore(str(path)).save(Credentials.new(TOKEN, "ada@acme.test", ttl=-60))
+        settings = _settings(default, registry, api_url=self.GATEWAY)
+        settings.auth.credentials_file = str(path)
+        return settings
+
+    async def test_a_cloud_token_model_says_so_and_sends_nothing(self, tmp_path):
+        settings = self._expired(
+            tmp_path, {"m": {"provider": "fake", "model_id": "x", "api_key": "cloud_token"}}
+        )
+        registry = ModelRegistry(settings)
+        builder = RecordingBuilder(f"{self.GATEWAY}/v1")
+        registry.register_provider("fake", builder)
+
+        model = registry.get_model()
+
+        assert builder.built == []
+        assert isinstance(model, NoModelConfigured)
+        with pytest.raises(ValueError, match=r"sign-in for ada@acme.test expired.*igni login"):
+            await model.ainvoke()
+
+    async def test_a_discovery_only_default_says_the_sign_in_expired(self, tmp_path):
+        settings = self._expired(tmp_path, {}, default="MiniMax-M3.1-Flash")
+
+        model = ModelRegistry(settings).get_model()
+
+        with pytest.raises(ValueError, match=r"expired.*igni login"):
+            await model.ainvoke()
+
+    def test_a_model_with_its_own_key_is_built_as_ever(self, tmp_path):
+        settings = self._expired(
+            tmp_path, {"m": {"provider": "fake", "model_id": "x", "api_key": "sk-own"}}
+        )
+        registry = ModelRegistry(settings)
+        builder = RecordingBuilder(f"{self.GATEWAY}/v1")
+        registry.register_provider("fake", builder)
+
+        registry.get_model()
+
+        assert len(builder.built) == 1

@@ -157,26 +157,23 @@ By default, the agent pool loads from **igni directories only**:
 
 ### Cross-Tool Support (on by default)
 
-Cross-tool support is enabled by default. igni scans Claude Code and Codex directories automatically. To disable, set `agents.cross_tool_support: false`.
+Cross-tool support is enabled by default. igni scans Claude Code's agent directories automatically. Codex agent definitions (`AGENTS.md`, `.codex/`, `~/.codex/`) are not read. To disable, set `agents.cross_tool_support: false`.
 
 Additional directories scanned:
 
 | Scope | Location | Source | Format |
 |---|---|---|---|
 | Project | `.claude/agents/` | Claude Code | `.md` with YAML frontmatter (native) |
-| Project | `AGENTS.md` / `.codex/` | Codex | Markdown + TOML (parsed) |
 | Global | `~/.claude/agents/` | Claude Code | `.md` with YAML frontmatter (native) |
-| Global | `~/.codex/` | Codex | Markdown + TOML (parsed) |
 
-Within the same scope, igni directories take precedence over Claude Code, which takes precedence over Codex.
+Within the same scope, igni directories take precedence over Claude Code's.
 
 **Cross-tool compatibility:**
 
 - **Claude Code agents** — loaded natively. Same `.md` + YAML frontmatter format. No conversion needed.
-- **Codex agents** — Codex defines agent roles in `config.toml` and instructions in `AGENTS.md`. The loader parses these into the same internal representation.
 - **igni agents** — native format. Claude Code compatible fields + igni extensions (tags, reasoning, can_orchestrate).
 
-If you're coming from Claude Code or Codex, your existing agents are picked up automatically — zero migration. See [Migration](MIGRATION.md) for details.
+If you're coming from Claude Code, your existing agents are picked up automatically — zero migration. See [Migration](MIGRATION.md) for details.
 
 ### Built-in Agents
 
@@ -191,7 +188,6 @@ tags: [search, read-only, exploration]
 **architect.md** — Designs component architecture, data flows, and interfaces.
 ```yaml
 tools: Bash, WebSearch
-reasoning: true
 tags: [architecture, design, read-only]
 ```
 
@@ -211,14 +207,12 @@ tags: [quality, refactoring, simplification]
 ```yaml
 tools: Bash, WebFetch, WebSearch
 color: red
-reasoning: true
 tags: [review, quality, read-only]
 ```
 
 **security.md** — Vulnerability analysis, OWASP Top 10, auth and input validation review.
 ```yaml
 tools: Bash, WebSearch
-reasoning: true
 tags: [security, audit, vulnerabilities, read-only]
 ```
 
@@ -231,7 +225,6 @@ tags: [testing, qa, coverage]
 **debugger.md** — Bug diagnosis, stack trace analysis, root cause finding.
 ```yaml
 tools: Edit, Bash
-reasoning: true
 tags: [debugging, diagnostics, bug-fix]
 ```
 
@@ -241,6 +234,18 @@ tags: [debugging, diagnostics, bug-fix]
 tools: Bash, Write, Edit
 tags: [documentation, writing, docs]
 ```
+
+**plan_researcher.md** — Spawned by `enter_plan_mode`: researches the codebase read-only and reports findings and a proposed plan, which the main agent turns into the plan the person reviews.
+```yaml
+tools: Bash, WebFetch, WebSearch
+```
+
+**visualizer.md** — Renders data the caller hands over as UI (charts, tables, cards) through the `Visualize` tool. Other agents delegate to it.
+```yaml
+tools: Visualize
+```
+
+None of the bundled agents turns on `reasoning`; set `reasoning: true` in your own copy to turn it on.
 
 ---
 
@@ -335,9 +340,7 @@ The Orchestrator's system prompt tells it:
 
 ## Recursive Nesting: Agents That Build Teams
 
-igni currently caps sub-agents at **one level**, the same as Claude Code, though it arrives there by construction rather than by a check. `OrchestrateTools` — the toolkit carrying `spawn_agent` and `spawn_team` — is built once for the main agent; a sub-team's members are copies from the pool and never receive it, so a spawned agent has no way to spawn anything.
-
-Two settings read as though they govern this and do not: `orchestration.max_nesting_depth` guards a counter that never leaves 0, and `can_orchestrate: false` is not consulted by anything that spawns. Both are kept because they become meaningful the day nesting is made reachable — this page previously promised the opposite, that nesting was unlimited and every agent could spawn.
+An agent igni starts with `spawn_agent` gets its own `spawn_agent` / `spawn_team` when its definition says `can_orchestrate: true` — the default, and seven of the eleven bundled agents set it (architect, docs, editor, explorer, qa, reviewer, security). It can then delegate one level further down, and so on, up to `orchestration.max_nesting_depth` levels (default 5); at the last level the spawn tools are withheld rather than refused. `orchestration.max_total_agents` (default 20) caps the agents one run may start, at every level together. Members of a team started with `spawn_team` are copies from the pool and get no spawn tools of their own. Set `can_orchestrate: false` on an agent that should never delegate.
 
 ```
 Orchestrator
@@ -401,15 +404,15 @@ The key insight: **the agent closest to the problem is best positioned to decide
 
 ### Safety: Depth Limits
 
-While nesting is unlimited by design, practical safeguards prevent runaway recursion:
+Nesting is bounded; these safeguards prevent runaway recursion:
 
 | Safeguard | Default | Configurable |
 |---|---|---|
 | `max_nesting_depth` | 5 | Yes, in config |
 | `max_total_agents` | 20 per request | Yes, in config |
-| `sub_team_timeout` | 120 seconds | Yes, per agent |
+| `sub_team_timeout` | 1800 seconds | Yes, in config |
 
-If a depth limit is reached, the agent is informed and must proceed without sub-teams. These are guardrails, not hard constraints — adjust them in `config.yaml`:
+At the last level an agent gets no spawn tools, so it proceeds without sub-teams; past `max_total_agents` a spawn is refused with a message saying so. These are guardrails, not hard constraints — adjust them in `config.yaml`:
 
 ```yaml
 orchestration:
@@ -863,7 +866,7 @@ Skills use the same `SKILL.md` format as Claude Code — drop Claude Code skills
 | Tool names | `Read`, `Write`, `Glob`, `Grep`, `Bash` | Same names accepted, mapped to Agno toolkits |
 | Team composition | Static (manually spawn sub-agents) | Dynamic (Orchestrator assembles per-task) |
 | Team interaction | Single agent loop, one-level sub-agents | Agno team modes (route, coordinate, broadcast, tasks) |
-| Nesting depth | 1 level (sub-agents can't spawn sub-agents) | **Unlimited** — agents spawn sub-teams recursively |
+| Nesting depth | 1 level (sub-agents can't spawn sub-agents) | **Several levels** — an agent marked `can_orchestrate` spawns further, up to `orchestration.max_nesting_depth` (default 5) |
 | Adding agents | Drop `.md` in `.claude/agents/` | Drop `.md` in `.igni/agents/` |
 | Adding skills | Drop `SKILL.md` in `.claude/skills/name/` | Drop `SKILL.md` in `.igni/skills/name/` |
 | Agent selection | User or parent agent decides | Orchestrator decides automatically |

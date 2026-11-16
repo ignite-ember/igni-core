@@ -24,6 +24,7 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 from igni_core.core.config.tool_names import wire_name
 from igni_core.core.mcp.naming import tool_name_prefix
@@ -78,16 +79,36 @@ class NameCheck:
                     f"'{page}<tool>' or '{page}*'."
                 )
 
+    def _prompt_sources(self) -> set[str]:
+        """The tools igni calls for ``source: tool`` prompt contributions."""
+        contributes = self._manifest.contributes
+        entries = [
+            *contributes.promptFragments,
+            *contributes.prompt.overrides,
+            *contributes.prompt.edits,
+        ]
+        return {
+            str(entry.from_)
+            for entry in entries
+            if getattr(entry.source, "value", entry.source) == "tool" and entry.from_
+        }
+
     def bare(self, declared: str) -> str:
         prefix = f"{self._id}."
         return declared[len(prefix) :] if declared.startswith(prefix) else declared
 
     def compare(self, offered: list[str], findings: Findings) -> None:
         declared = {self.bare(t.name): t.name for t in self._manifest.permissions.tools}
+        prompt_sources = self._prompt_sources()
         for tool in offered:
             if tool in declared:
                 continue
-            if self._manifest.grants_rpc(f"ext.{self._id}.{tool}"):
+            if tool in prompt_sources:
+                findings.notes.append(
+                    f"{tool!r} gives prompt text: igni calls it for the contribution "
+                    "that names it, and the agent is not given it."
+                )
+            elif self._manifest.grants_rpc(f"ext.{self._id}.{tool}"):
                 findings.notes.append(
                     f"{tool!r} is for the page only: permissions.rpc grants it, and the "
                     "agent is not given it because permissions.tools does not declare it."
@@ -239,4 +260,44 @@ class ProcessProbe:
         return f"; the last of its stderr:\n{tail}"
 
 
-__all__ = ["Findings", "NameCheck", "Probe", "ProcessProbe"]
+class TrialStart:
+    """``igni ext sync``'s lifecycle: start what it stored once, as doctor does.
+
+    The terminal sync starts and stops nothing for good, so it had no
+    lifecycle, and without one the sync kept no copy of the version that
+    worked: an upgrade that could not start replaced it, was reported
+    installed, and every later run found the extension FAILED. Starting
+    the stored bundle once and stopping it lets the sync put the old
+    version back when the new one does not start (``sync.py``
+    ``_install``). An endpoint is somebody else's process: not started.
+    """
+
+    def __init__(self, store: ExtensionStoreLike, *, timeout: float = 60.0) -> None:
+        self._store = store
+        self._timeout = timeout
+        #: Why each extension that did not start did not.
+        self.failures: dict[str, str] = {}
+
+    async def activate(self, extension_id: str, bundle: Path) -> bool | None:
+        try:
+            manifest = self._store.read(bundle)
+        except Exception as exc:  # noqa: BLE001 — a bundle it cannot read did not start
+            self.failures[extension_id] = str(exc)
+            return False
+        if manifest.endpoint is not None and manifest.dev is None and manifest.python is None:
+            return None
+        probe = await ProcessProbe(manifest, bundle, timeout=self._timeout).run()
+        if probe.error is not None:
+            self.failures[extension_id] = probe.error
+            return False
+        return True
+
+    async def deactivate(self, extension_id: str) -> None:
+        """Nothing runs for good: the trial start stopped what it started."""
+
+
+class ExtensionStoreLike(Protocol):
+    def read(self, bundle: Path) -> ExtensionManifest: ...
+
+
+__all__ = ["Findings", "NameCheck", "Probe", "ProcessProbe", "TrialStart"]

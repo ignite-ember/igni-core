@@ -43,7 +43,12 @@ except ImportError:  # pragma: no cover — exercised by test_connect_import_err
     _MCPTools = None  # type: ignore[assignment,misc]
 
 from igni_core.core.mcp.approval import MCPApprovalManager
-from igni_core.core.mcp.config import MCPConfigLoader, MCPPolicy, MCPServerConfig
+from igni_core.core.mcp.config import (
+    MCP_FILE_SOURCES,
+    MCPConfigLoader,
+    MCPPolicy,
+    MCPServerConfig,
+)
 from igni_core.core.mcp.naming import tool_name_prefix
 from igni_core.core.mcp.notification_tap import McpNotificationRouter
 from igni_core.core.mcp.schemas import (
@@ -118,7 +123,13 @@ class MCPClientManager:
         # ``PluginLoader.apply_to_mcp``, but that one only ever calls
         # ``load_plugin_servers`` — a group directory passed there was
         # read by nothing.
-        self.configs = MCPConfigLoader(project_dir, group_mcps_dir=group_mcps_dir).load()
+        #
+        # The loader is kept, not thrown away. Its result used to be a
+        # one-shot snapshot, so a ``.mcp.json`` added or edited after
+        # the backend started was not seen until a restart (campaign
+        # R209/R669). :meth:`reload_configs` re-reads it.
+        self._loader = MCPConfigLoader(project_dir, group_mcps_dir=group_mcps_dir)
+        self.configs = self._loader.load()
         self._clients: dict[str, MCPTools] = {}
         self._approval = MCPApprovalManager()
         self._policy: MCPPolicy = (
@@ -148,6 +159,33 @@ class MCPClientManager:
         #: (:mod:`igni_core.core.mcp.request_meta`). The extensions layer
         #: sets it: it is how an extension learns whom a call is for.
         self.extension_request_meta: RequestMeta | None = None
+        #: The manager the backend's extensions are connected on, when
+        #: this is another session's (:meth:`share_extensions_of`).
+        self._extensions_owner: MCPClientManager | None = None
+
+    def share_extensions_of(self, owner: MCPClientManager) -> None:
+        """Offer this session the extensions connected on ``owner``.
+
+        An extension runs once per backend, connected on the boot
+        session's manager; a session a window created had its own manager
+        and so none of their tools (EXTENSION_ROUTING_AND_CONCURRENCY.md).
+        Its clients are offered here as they are there — connected and
+        disconnected by ``owner``, never by this manager.
+        """
+        if owner is not self:
+            self._extensions_owner = owner
+
+    def _shared(self) -> dict[str, MCPTools]:
+        """The extension clients connected on the owner, by name."""
+        owner = self._extensions_owner
+        if owner is None:
+            return {}
+        return {
+            name: client
+            for name, client in owner._clients.items()
+            if name not in self._clients
+            and getattr(owner.configs.get(name), "source", None) == "extension"
+        }
 
     # ── Connection gate ───────────────────────────────────────────
 
@@ -220,6 +258,78 @@ class MCPClientManager:
             config: The server to add, under ``config.name``.
         """
         self.configs[config.name] = config
+
+    def unregister_server(self, name: str) -> None:
+        """Forget a server :meth:`register_server` added. A no-op when absent."""
+        self.configs.pop(name, None)
+
+    async def reload_configs(self) -> list[str]:
+        """Re-read the ``.mcp.json`` files and apply what changed.
+
+        The configured servers used to be a one-shot snapshot taken when
+        the manager was built, so a ``.mcp.json`` added or edited after
+        the backend started was not seen until a restart (campaign
+        R209/R669).
+
+        Returns the names whose configuration changed, plus the names
+        that are no longer configured at all. Their connections are
+        dropped, so the next connect starts the server the file now
+        describes instead of reusing the old process.
+
+        Only the file tiers are replaced: the user's own config, the
+        project's and the group's. A plugin's bundled servers and an
+        extension's own service belong to other layers and stay.
+        """
+        try:
+            fresh = dict(self._loader.load())
+        except Exception as exc:  # a broken file must not break a chat
+            logger.warning("MCP: could not re-read the MCP config files: %s", exc)
+            return []
+
+        previous = {
+            name: config
+            for name, config in self.configs.items()
+            if getattr(config, "source", "") in MCP_FILE_SOURCES
+        }
+        # A file that is there but cannot be read is treated as absent by
+        # the loader. On a reload that would drop every server the file
+        # declared, so a half-written file is not taken for a withdrawn
+        # one: what that file declared stays as it was.
+        unreadable = {str(path) for path in getattr(self._loader, "unreadable_files", set())}
+        for name, config in previous.items():
+            if config.source_path in unreadable:
+                fresh[name] = config
+        changed = [
+            name
+            for name, config in fresh.items()
+            if name not in previous or previous[name] != config
+        ]
+        changed.extend(name for name in previous if name not in fresh)
+        if not changed:
+            return []
+
+        for name in changed:
+            await self.disconnect_one(name)
+
+        kept = {
+            name: config
+            for name, config in self.configs.items()
+            if getattr(config, "source", "") not in MCP_FILE_SOURCES
+        }
+        # Mutated in place: the session's plugin wiring holds this very
+        # dict, and replacing it would leave that wiring behind.
+        self.configs.clear()
+        self.configs.update(fresh)
+        # A plugin or an extension keeps its name even if a config file
+        # declares the same one: they were merged in after the file
+        # tiers, and that order still holds.
+        self.configs.update(kept)
+        logger.info(
+            "MCP: config re-read; %d server(s) changed: %s",
+            len(changed),
+            sorted(changed),
+        )
+        return changed
 
     async def connect(self, name: str) -> MCPConnectResult:
         """Connect to an MCP server by name.
@@ -397,7 +507,8 @@ class MCPClientManager:
         connected" and "disconnected" so callers get a single
         missing-client idiom.
         """
-        return self._clients.get(name)
+        client = self._clients.get(name)
+        return client if client is not None else self._shared().get(name)
 
     def all_clients(self) -> dict[str, MCPTools]:
         """Return a shallow copy of the ``name → client``
@@ -409,7 +520,7 @@ class MCPClientManager:
         attribute. The returned dict is a copy so external
         mutations don't leak into the manager's own state.
         """
-        return dict(self._clients)
+        return {**self._shared(), **self._clients}
 
     def get_tool(self, name: str, tool: str) -> Callable[..., Any] | None:
         """Return the invoker of the registered tool ``tool`` of server ``name``.
@@ -438,13 +549,19 @@ class MCPClientManager:
 
     # ── Server enumeration ────────────────────────────────────────
 
+    @property
+    def approvals(self) -> MCPApprovalManager:
+        """The first-use approvals this manager connects by."""
+        return self._approval
+
     def list_servers(self) -> list[str]:
         """List available MCP server names."""
         return list(self.configs.keys())
 
     def list_connected(self) -> list[str]:
-        """List currently connected MCP server names."""
-        return list(self._clients.keys())
+        """List currently connected MCP server names, the shared
+        extensions' included."""
+        return [*self._clients.keys(), *self._shared().keys()]
 
     def list_required(self) -> list[str]:
         """List servers required by admin policy that are not

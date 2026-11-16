@@ -25,11 +25,12 @@ class CliSettingsLoader:
     half-enforcement a policy cannot have. The cache it is read from lives
     under ``storage.data_dir``, which is itself a setting, so the first pass
     answers "which directory" from local configuration alone. Both passes
-    read a handful of small files; neither touches the network.
+    read a handful of small files; only the second may make that one call.
 
-    The fetcher reads what the backend's ``GroupPolicySync`` last cached — a
-    CLI invocation has no token of its own at settings-load time and must
-    not stall on a portal call. See ``CachedSettingsFetcher``. The pack is
+    The fetcher refreshes the cached pack from igni server first when
+    somebody is signed in — one bounded call, since a CLI run has no
+    ``GroupPolicySync`` to do it — and then reads it; a fetch that fails
+    leaves the last pack that verified. See ``CachedSettingsFetcher``. The pack is
     verified before it is merged; with ``group_policy.required`` set and no
     verified pack, the fetcher raises ``GroupPolicyUnavailable`` and this run
     starts no session (``main`` reports it).
@@ -51,7 +52,10 @@ class CliSettingsLoader:
     def load(self) -> Settings:
         with self._quiet():
             local_only = self._load(self._options, None)
-        settings = self._load(self._options, CachedSettingsFetcher.for_settings(local_only))
+        # This run has no GroupPolicySync: it fetches the pack itself, once.
+        settings = self._load(
+            self._options, CachedSettingsFetcher.for_settings(local_only, fetch_first=True)
+        )
         policy = settings.permissions.mode_policy
         if self._options.auto_approve and policy is not None and not policy.allow_bypass:
             # ``--auto-approve`` is bypass mode plus four categories set to

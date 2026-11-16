@@ -165,6 +165,28 @@ class TestStop:
         assert event == HookEvent.STOP.value
         assert payload.session_id == "s-1"
 
+    async def test_the_hook_is_shown_the_start_of_the_reply(self):
+        """HOOKS.md: Stop input carries ``response``; the backend sent only
+        the session id (campaign R116)."""
+        executor = _Executor()
+
+        await _gate(executor).fire_stop("STOPTEST HELLO" + "x" * 1000)
+
+        [(_, payload)] = executor.calls
+        assert payload.response.startswith("STOPTEST HELLO")
+        assert len(payload.response) == 500
+
+    async def test_the_session_id_is_read_when_the_hook_fires(self):
+        """New chat and a sidebar switch change the session's id."""
+        executor = _Executor()
+        current = {"id": "boot"}
+        gate = RunHookGate(executor, lambda: current["id"])  # type: ignore[arg-type]
+        current["id"] = "new-chat"
+
+        await gate.fire_stop()
+
+        assert executor.calls[0][1].session_id == "new-chat"
+
     async def test_a_message_with_should_continue_false_blocks_with_it(self):
         executor = _Executor(HookResult(should_continue=False, message="run the tests"))
 
@@ -173,11 +195,13 @@ class TestStop:
         assert not result.should_continue
         assert result.block_message == "run the tests"
 
-    async def test_should_continue_false_without_a_message_does_not_block(self):
+    async def test_should_continue_false_without_a_message_blocks_with_a_default(self):
+        """As ``igni -m`` reads it: a Stop hook that says stop is a block,
+        with its message or a default (campaign R116)."""
         result = await _gate(_Executor(HookResult(should_continue=False))).fire_stop()
 
-        assert result.should_continue
-        assert result.block_message is None
+        assert not result.should_continue
+        assert result.block_message == "Response blocked by Stop hook."
 
     async def test_a_message_with_should_continue_true_is_dropped(self):
         result = await _gate(_Executor(HookResult(message="fyi"))).fire_stop()
@@ -194,3 +218,43 @@ class TestStop:
         assert not result.should_continue
         assert result.block_message == "Run the tests."
         assert executor.calls == []
+
+
+class TestTheRunFiresTheSessionsCurrentExecutor:
+    """A plugin reload or a trust change builds the session a new executor;
+    the backend's run fires that one, not the one it was built with
+    (campaign R299: an extension's UserPromptSubmit hook never fired in the
+    boot session)."""
+
+    async def test_the_executor_is_read_when_the_hook_fires(self):
+        built_with, reloaded = _Executor(), _Executor()
+        current = {"executor": built_with}
+        gate = RunHookGate(lambda: current["executor"], "s-1")  # type: ignore[arg-type,return-value]
+        current["executor"] = reloaded
+
+        await gate.fire_user_prompt_submit("hi")
+
+        assert built_with.calls == []
+        assert [event for event, _ in reloaded.calls] == [HookEvent.USER_PROMPT_SUBMIT.value]
+
+    async def test_the_run_controller_fires_the_executor_a_reload_left(self):
+        from unittest.mock import MagicMock
+
+        from igni_core.backend.run_controller import RunController
+
+        session = MagicMock()
+        session.session_id = "s-1"
+        session.hook_executor = _Executor()
+        controller = RunController(
+            session, MagicMock(), None, MagicMock(), MagicMock(), MagicMock()
+        )
+        reloaded = _Executor()
+        session.hook_executor = reloaded
+
+        await controller._hook_gate.fire_user_prompt_submit("hi")
+        await controller._hook_gate.fire_stop("done")
+
+        assert [event for event, _ in reloaded.calls] == [
+            HookEvent.USER_PROMPT_SUBMIT.value,
+            HookEvent.STOP.value,
+        ]

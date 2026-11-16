@@ -34,7 +34,7 @@ class PersistenceBuilder:
     def build_persistence(self) -> None:
         """The persister, the memory manager and the learning manager."""
         session = self._session
-        session.persistence = SessionPersistence(session.db, session.session_id)
+        session.persistence = SessionPersistence(session.db, session.session_id, session.user_id)
         session.memory_mgr = SessionMemoryManager(session.db, session.settings, session.user_id)
 
         boot = create_learning_machine(session.settings, session.db)

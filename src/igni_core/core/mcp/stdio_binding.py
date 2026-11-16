@@ -178,6 +178,7 @@ class StdioMCPBinding:
                     read_timeout_seconds=read_timeout,
                     request_meta=request_meta,
                     busy_holder=f"mcp:{name}",
+                    person_wait_key=name,
                 )
             return ClientSession(read, write, read_timeout_seconds=read_timeout)
 

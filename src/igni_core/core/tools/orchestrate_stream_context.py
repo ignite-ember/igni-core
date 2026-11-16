@@ -43,6 +43,9 @@ class StreamSinks(BaseModel):
     hitl_coordinator: SkipValidation[HitlCoordinatorProtocol | None] = None
     #: Where the run's final visualisation goes in the event log.
     event_appender: EventAppender | None = None
+    #: Where each progress event goes to be kept for the chat's history,
+    #: beside :attr:`on_progress`, which shows it live.
+    card_recorder: OnProgress | None = None
     #: The runs a cancel has to be able to reach. A stream built
     #: without one gets an empty registry of its own — the run is then
     #: reachable only by the caller that holds it.

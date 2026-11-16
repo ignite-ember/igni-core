@@ -5,9 +5,11 @@ backend schedules its sync after a window attaches; without this, a
 developer working from a terminal — and every headless run — never
 received an extension their organisation switched on.
 
-Nothing is started or stopped here: the process that runs extensions
+``igni ext sync`` starts nothing: the process that runs extensions
 starts what is stored at its own boot. A headless run syncs *before*
-it starts them, so the run gets what was just installed.
+it starts them, so the run gets what was just installed, and hands its
+launcher in, so an upgrade that does not start puts back the version
+that worked.
 
 Never in the way, as :class:`~igni_core.extensions.distribution.sync.ExtensionDistribution`
 is not: no server, nobody signed in, an air gap that excludes the
@@ -28,7 +30,7 @@ from igni_core.core.config.endpoint import is_configured
 from igni_core.core.config.settings import Settings
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.extensions.distribution.schemas import SyncReport
-from igni_core.extensions.distribution.sync import ExtensionDistribution
+from igni_core.extensions.distribution.sync import ExtensionDistribution, ExtensionLifecycle
 from igni_core.extensions.service_token import CredentialsSession, IgniSession
 from igni_core.extensions.store import ExtensionStore
 
@@ -45,9 +47,13 @@ class OneShotSync:
         *,
         transport: httpx.AsyncBaseTransport | None = None,
         session: Callable[[], IgniSession | None] | None = None,
+        lifecycle: ExtensionLifecycle | None = None,
     ) -> None:
         """
         Args:
+            lifecycle: Starts an upgrade it stores, so one that does not
+                start puts the working version back. A headless run
+                passes its launcher; ``igni ext sync`` starts nothing.
             transport: The transport every request goes through. Set
                 by the tests, which answer for igni server themselves.
             session: Where the signed-in session comes from. The
@@ -58,6 +64,7 @@ class OneShotSync:
         self._credentials_file = settings.auth.credentials_file
         self._session = session or CredentialsSession(self._credentials_file)
         self._transport = transport
+        self._lifecycle = lifecycle
 
     @property
     def api_url(self) -> str | None:
@@ -90,6 +97,7 @@ class OneShotSync:
             self._store,
             api_url=lambda: self.api_url,
             session=self._session,
+            lifecycle=self._lifecycle,
             transport=self._transport,
         )
         try:

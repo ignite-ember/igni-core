@@ -106,6 +106,21 @@ async def test_three_silences_in_a_row_make_it_faulty_and_say_so(
     assert extension_id == "acme.guard" and "restarting" in reason
 
 
+async def test_one_that_never_started_is_refused_with_why_and_never_counted_faulty(
+    registry: ExtensionRegistry, faults: ExtensionFaults, hooks: ExtensionHooks
+) -> None:
+    """R263: a process that exited at start-up was counted as hung — after
+    three calls "isn't responding ... igni is restarting it". Its FAILED
+    state already says why, and each call is refused with that reason."""
+    registry.set_state("acme.guard", ExtensionState.FAILED, "its service did not start")
+
+    for _ in range(ExtensionFaults.LIMIT + 1):
+        verdict = await hooks.ask(CALL)
+        assert not verdict.allowed and "its service did not start" in verdict.reason
+
+    assert not faults.faulty("acme.guard")
+
+
 async def test_a_hung_extension_costs_no_waiting_once_faulty(hooks: ExtensionHooks) -> None:
     process = Process(hooks, "acme.guard", hung=True)
     await _hang_until_faulty(hooks)
@@ -347,3 +362,24 @@ async def test_a_faulty_extension_s_process_is_ended_then_started_again(
 
     assert processes.killed == ["acme.guard"]
     assert mcp.calls == ["disconnect ext:acme.guard", "connect ext:acme.guard"]
+
+
+async def test_a_restart_that_comes_back_clears_the_faulty_mark(
+    registry: ExtensionRegistry,
+) -> None:
+    """R265: while faulty, its fail-closed hook is refused without asking
+    it, so nothing it could say reached ``answered`` and the mark stayed:
+    every tool call its hook covers was "isn't responding" until the backend
+    restarted. The restarted process answering MCP is its first answer."""
+    registry.set_faulty("acme.guard", "acme.guard isn't responding: 3 calls in a row")
+    assert registry.faults.faulty("acme.guard")
+    health = ExtensionHealth(
+        registry=registry, rpc=ExtensionRpc(registry), mcp=_Mcp(), processes=_Processes()
+    )
+
+    health.restart_faulty("acme.guard", "not responding")
+    await asyncio.sleep(0)
+    while health.pending_probes:
+        await asyncio.sleep(0.01)
+
+    assert not registry.faults.faulty("acme.guard")

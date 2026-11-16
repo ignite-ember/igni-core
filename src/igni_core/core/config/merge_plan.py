@@ -49,7 +49,11 @@ from igni_core.core.config.tiers.developer import DeveloperOnlyTier
 from igni_core.core.config.tiers.files import JsonFragmentTier, YamlTier
 from igni_core.core.config.tiers.group_policy import GroupPolicyTier
 from igni_core.core.config.tiers.managed import ManagedOnlyTier, ManagedTier
-from igni_core.core.config.tiers.organisation import TelemetryTier, WorkspaceTrustTier
+from igni_core.core.config.tiers.organisation import (
+    TelemetryTier,
+    WorkspaceTrustFailsClosedTier,
+    WorkspaceTrustTier,
+)
 from igni_core.core.config.tiers.project import ProjectJsonFragmentTier, ProjectYamlTier
 from igni_core.core.layer import layers
 from igni_core.core.paths import home_config_dir, project_config_dir
@@ -165,6 +169,9 @@ class SettingsMergePlan:
             ),
             # Managed policy — last, so it wins over CLI and group policy.
             ManagedTier(path_provider=managed_path_provider),
+            # A ``workspace_trust`` block the organisation got wrong is
+            # ``never``, not a settings load that fails.
+            WorkspaceTrustFailsClosedTier(),
             # The settings that decide whether group policy is enforced at
             # all: from the managed file (or the environment), or not at all.
             ManagedOnlyTier(path_provider=managed_path_provider),

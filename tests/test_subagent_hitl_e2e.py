@@ -86,7 +86,7 @@ class _FakeAgent:
         self._final_content = "Sub-agent post-resume output"
         self._run_output = _FakeRunOutput()
 
-    def arun(self, task: str, stream: bool = False) -> Any:
+    def arun(self, task: str, stream: bool = False, stream_events: bool = False) -> Any:
         self.arun_calls.append(task)
         return self._initial_stream()
 

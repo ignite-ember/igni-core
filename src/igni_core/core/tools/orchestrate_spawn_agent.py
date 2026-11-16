@@ -17,6 +17,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from igni_core.core.hooks.subagent_tool_hook import SubAgentToolHook, safety_of
 from igni_core.core.hooks.turn_results import TurnResultHook, TurnResultSink
 from igni_core.core.hooks.untrusted import UntrustedOutputHook
 from igni_core.core.tools.orchestrate_modes import IsolationMode
@@ -97,6 +98,15 @@ class AgentSpawn(SpawnRunner):
         # not collect a hook per spawn. Its tool output is quarantined
         # whatever built it (the pool's agents already carry the hook).
         agent.tool_hooks = UntrustedOutputHook.on(getattr(agent, "tool_hooks", None))
+        # The configured PreToolUse / PostToolUse hooks see its calls too.
+        wiring = self._context.wiring
+        agent.tool_hooks = SubAgentToolHook.on(
+            agent.tool_hooks,
+            wiring.hook_executor,
+            wiring.session_id,
+            wiring.bypass_guard,
+            safety_of(self._context.scope.settings),
+        )
         coordinator = self._context.wiring.sinks.hitl_coordinator
         if isinstance(coordinator, TurnResultSink):
             agent.tool_hooks = [*agent.tool_hooks, TurnResultHook(coordinator)]

@@ -34,14 +34,13 @@ from igni_core.backend.schemas_hitl import (
     StreamFactory,
 )
 from igni_core.backend.schemas_pause import PauseHandleResult
-from igni_core.backend.schemas_run import StopHookPayload
-from igni_core.core.hooks.events import HookEvent
-from igni_core.core.hooks.extension_gate import extension_hook_gate
-from igni_core.core.hooks.extension_values import StopValue
+from igni_core.core.approvals.declined import declined_note
+from igni_core.core.hooks.permission_notices import PermissionNotices
 from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.session.persistence.run_history import RunHistory
 from igni_core.core.utils.tool_audit import DecidedBy
 from igni_core.protocol import messages as msg
+from igni_core.protocol.agno_tool_formatter import AgnoToolEventFormatter
 
 if TYPE_CHECKING:
     from igni_core.core.session import Session
@@ -52,6 +51,8 @@ _HITL_LLM_LOGGER = logging.getLogger("igni_core.llm_calls")
 
 #: Stateless, so one is shared by every controller.
 _DECISION_APPLIER = AgnoDecisionApplier()
+#: Names and argument lines for the cards of declined calls, as the stream's.
+_TOOL_FORMATTER = AgnoToolEventFormatter()
 
 
 class HitlController:
@@ -83,10 +84,14 @@ class HitlController:
         self._session = session
         self._store = store
         self._stream_factory: StreamFactory = stream_factory or self.stream_with_subagent
+        self._notices = PermissionNotices(
+            lambda: getattr(session, "hook_executor", None), lambda: session.session_id
+        )
         self._pause_handler = pause_handler or PauseHandler(
             evaluator=session.permission_evaluator,
             store=store,
             audit=getattr(session, "tool_audit", None),
+            notices=self._notices,
         )
         self._tracer = tracer or HITLTracer(enabled=False)
 
@@ -123,9 +128,9 @@ class HitlController:
         refusal = self._flip_mode(decisions)
         if refusal is not None:
             yield refusal
+        # Stop fires once the resumed run ends, with its reply
+        # (``RunController.continue_run``) — not here, with none.
         async for proto in self._continue(batch):
-            yield proto
-        async for proto in self._fire_stop_hooks():
             yield proto
 
     async def resolve_single(
@@ -142,12 +147,14 @@ class HitlController:
             yield proto
 
     def _record_refusal(self, req: RunRequirement) -> None:
-        """Audit a paused call the person refused: it never runs, so no
-        tool hook sees it (``core/utils/tool_audit.py``)."""
+        """Audit a paused call the person refused, and fire
+        ``PermissionDenied`` for it: it never runs, so no tool hook sees it
+        (``core/utils/tool_audit.py``)."""
+        tool = RequirementTool.of(req)
+        self._notices.denied_later(tool.name, tool.args, PermissionNotices.BY_PERSON)
         audit = getattr(self._session, "tool_audit", None)
         if audit is None:
             return
-        tool = RequirementTool.of(req)
         evaluator = getattr(self._session, "permission_evaluator", None)
         mode = getattr(getattr(evaluator, "mode", None), "value", None)
         audit.refused(
@@ -194,6 +201,8 @@ class HitlController:
             if not msg.HITLAction(d.action).is_confirm():
                 self._record_refusal(entry.req)
             batch.requirements.append(entry.req)
+            if d.action != msg.HITLAction.CONFIRM.value:
+                batch.declined.append(RequirementTool.of(entry.req))
             persisted = self.permissions.persist_choice(d, entry.req)
             if not persisted.ok and persisted.reason:
                 logger.debug(
@@ -227,6 +236,33 @@ class HitlController:
         _HITL_LLM_LOGGER.info("resolve_hitl_batch: atomic mode flip → %s (%s)", target, switch.text)
         return msg.Error(text=switch.text) if switch.refused else None
 
+    @staticmethod
+    def _declined_cards(batch: ResolvedBatch) -> list[msg.Message]:
+        """A started and a rejected-completed frame for each declined call.
+
+        The window draws a tool card from ``tool_started`` and marks it "Not
+        run" from ``tool_completed.is_rejected``. Agno's continuation streams
+        neither for a rejected call, so the card appeared only after a
+        reload, from the history. The result is the note the model is given.
+        """
+        cards: list[msg.Message] = []
+        run_id = batch.run_id or ""
+        for tool in batch.declined:
+            name = tool.name or "tool"
+            cards.append(
+                msg.ToolStarted(
+                    tool_name=name,
+                    friendly_name=_TOOL_FORMATTER.friendly_name(name),
+                    args_summary=_TOOL_FORMATTER.args_summary(name, tool.args),
+                    run_id=run_id,
+                )
+            )
+            note = declined_note(tool.name)
+            cards.append(
+                msg.ToolCompleted(summary=note, full_result=note, run_id=run_id, is_rejected=True)
+            )
+        return cards
+
     async def _continue(self, batch: ResolvedBatch) -> AsyncIterator[msg.Message]:
         """Continue the paused run with the answered requirements."""
         run_id = batch.run_id
@@ -238,6 +274,8 @@ class HitlController:
         # rather than leave it paused with nothing to answer.
         if run_id:
             self._store.begin_continuing(run_id)
+        for proto in self._declined_cards(batch):
+            yield proto
         try:
             async for proto in self._stream_factory(
                 self._session.main_team.acontinue_run(
@@ -252,20 +290,6 @@ class HitlController:
         finally:
             if run_id:
                 self._store.end_continuing(run_id)
-
-    async def _fire_stop_hooks(self) -> AsyncIterator[msg.Message]:
-        """The Stop hook, once the continuation completes: the extensions
-        that hook it first, then the configured hooks."""
-        verdict = await extension_hook_gate.ask(StopValue(session_id=self._session.session_id))
-        if not verdict.allowed:
-            yield msg.Info(text=verdict.reason)
-            return
-        stop_result = await self._session.hook_executor.execute(
-            event=HookEvent.STOP.value,
-            payload=StopHookPayload(session_id=self._session.session_id),
-        )
-        if stop_result.message and not stop_result.should_continue:
-            yield msg.Info(text=stop_result.message)
 
     # ── Pause / stream lifecycle ────────────────────────────────
 

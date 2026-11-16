@@ -204,6 +204,13 @@ class TodoStore:
 
     def __init__(self) -> None:
         self._items: list[TodoItemWire] = []
+        #: Bumped by every :meth:`set`, so a run can tell whether it changed the list.
+        self._revision = 0
+
+    @property
+    def revision(self) -> int:
+        """How many times the list was set."""
+        return self._revision
 
     @property
     def items(self) -> list[TodoItemWire]:
@@ -215,6 +222,7 @@ class TodoStore:
         """Replace the list atomically — the contract is "the list
         IS now this". No partial merge, no delta detection."""
         self._items = list(items)
+        self._revision += 1
 
 
 class TodoTools(Toolkit):

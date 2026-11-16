@@ -71,6 +71,10 @@ _READ_ONLY_OTHER_REASON = (
 )
 
 
+#: The characters that make a rule's pattern match more than one line.
+_GLOB_CHARS = frozenset("*?[")
+
+
 @dataclass
 class PermissionEvaluator:
     """The 6-step evaluation pipeline.
@@ -537,7 +541,12 @@ class PermissionEvaluator:
             return self._first_match(self.allow, tool_name, tool_args)
         segments = command_segments(BashCommand.from_args(tool_args).command)
         if segments is None:
-            return None
+            # Only a rule naming this very line, with no wildcard, can
+            # vouch for it: it matches nothing else. "Always allow" on
+            # ``echo X > f.txt`` saves exactly such a rule, which this
+            # refused, so the same command was asked about every time.
+            exact = [r for r in self.allow if r.pattern and not _GLOB_CHARS & set(r.pattern)]
+            return self._first_match(exact, tool_name, tool_args)
         if len(segments) <= 1:
             return self._first_match(self.allow, tool_name, tool_args)
         first: PermissionRule | None = None

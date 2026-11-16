@@ -147,6 +147,24 @@ class LayaModel:
             f"igni's decision model could not be loaded or run ({type(exc).__name__})"
         )
 
+    def prefetch(self) -> None:
+        """Download (and build once) every checkpoint, for the install step.
+
+        :meth:`load` builds laya's ``Router``, which fetches a checkpoint
+        on its first request only: a prefetch that stopped there
+        downloaded nothing and said "ready", and the ~1.7 GB still landed
+        on the first Bypass check (campaign R085, R615). ``preload``
+        fetches and builds them all now.
+        """
+        router = self.load()
+        try:
+            router.preload()
+        except Exception as exc:  # noqa: BLE001 — any fetch failure is "unavailable"
+            logger.warning("laya: could not fetch its checkpoints (%s)", type(exc).__name__)
+            raise DecisionsUnavailable(
+                f"igni's decision model could not be fetched ({type(exc).__name__}: {exc})"
+            ) from exc
+
     def load(self) -> Any:
         if self._router is not None:
             return self._router

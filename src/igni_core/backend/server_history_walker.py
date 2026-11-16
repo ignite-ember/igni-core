@@ -176,14 +176,17 @@ class RunWalker:
             if view.tool_args is None
             else AssistantContentRestorer.format_tool_args(view.tool_args)
         )
+        # A call kept from running is rejected, not failed, even where
+        # Agno flagged its result as a tool error.
+        rejected = ToolResultErrorDetector.default().is_rejected(content)
         self._out.append(
             ToolTurn(
                 tool_name=view.tool_name,
                 friendly_name=ToolFriendlyNames.friendly_name(view.tool_name),
                 args=args_summary,
                 content=content,
-                is_error=view.tool_call_error,
-                is_rejected=ToolResultErrorDetector.default().is_rejected(content),
+                is_error=bool(view.tool_call_error) and not rejected,
+                is_rejected=rejected,
                 run_id=self.run_id,
                 created_at=view.created_at,
             )

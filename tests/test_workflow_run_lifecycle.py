@@ -37,6 +37,7 @@ from igni_core.backend.workflow_runtime_process import WorkflowRuntime, Workflow
 from igni_core.core.activity import ActivityRegistry, BackgroundTasks
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.session.event_log_schema import SessionEventAppendResult
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 
 
 def _line(type_: str, payload: dict, seq: int = 0, run_id: str = "wf_1") -> bytes:
@@ -120,6 +121,10 @@ class _Session:
         self.appended: list[WorkflowEventRecord] = []
         self._append = append
         self.main_team = SimpleNamespace(arun=AsyncMock(return_value="done"))
+        # A workflow's agent call is answered through the session's
+        # approval relay (campaign R664), so the stand-in carries the
+        # coordinator that relay opens — as a real session does.
+        self.sub_agent_hitl = SubAgentHITLCoordinator()
 
     async def append_event(self, draft) -> SessionEventAppendResult:
         if self._append is not None:
@@ -262,7 +267,9 @@ async def test_an_agent_request_is_answered_from_the_team_and_never_published_as
     await run.drain()
     await _until(lambda: proc.stdin.lines)
 
-    session.main_team.arun.assert_awaited_once_with("summarise", stream=False)
+    session.main_team.arun.assert_awaited_once_with(
+        "summarise", stream=False, session_id="s-1:workflow:wf_1"
+    )
     assert proc.stdin.lines == [
         {"type": "agent_response", "id": "req_a", "ok": True, "result": "done", "error": None}
     ]
@@ -294,7 +301,7 @@ async def test_a_slow_agent_answer_does_not_stop_the_drain_from_reading_and_answ
     release = asyncio.Event()
     started: list[str] = []
 
-    async def arun(prompt, stream):
+    async def arun(prompt, stream, session_id):
         started.append(prompt)
         await release.wait()
         return f"answer:{prompt}"

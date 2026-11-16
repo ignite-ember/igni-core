@@ -39,6 +39,7 @@ from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.extension_gate import extension_hook_gate
 from igni_core.core.hooks.extension_values import StopValue, UserPromptSubmitValue
+from igni_core.core.hooks.permission_notices import PermissionNotices
 from igni_core.core.paths import MAIN_AGENT_NAME
 from igni_core.core.session.compaction.context_budget import ContextBudget
 from igni_core.core.session.message_outcome import (
@@ -56,6 +57,7 @@ from igni_core.core.session.schemas import (
     StopHookPayload,
     UserPromptSubmitHookPayload,
 )
+from igni_core.core.session.token_estimate import TokenEstimate
 from igni_core.core.utils import response as response_text
 from igni_core.core.utils.audit import AuditEntry, AuditLogger
 from igni_core.core.utils.display import DisplayManager
@@ -124,6 +126,7 @@ class SessionMessageHandler:
             evaluator_ref=deps.permission_evaluator_ref or _no_evaluator,
             session_id_ref=deps.session_id_ref,
             audit=deps.tool_audit,
+            notices=PermissionNotices(lambda: self._hook_executor, deps.session_id_ref),
         )
         #: Why the last :meth:`handle` failed, or ``""`` when it did not —
         #: what a headless run's exit code is made from.
@@ -141,8 +144,15 @@ class SessionMessageHandler:
         extract = self._deps.extract_response_text or response_text.extract_reply_text
         return extract(response)
 
-    async def handle(self, message: str, media: MessageMedia | None = None) -> str:
-        """Handle a single user message and return the response."""
+    async def handle(
+        self, message: str, media: MessageMedia | None = None, *, context: str = ""
+    ) -> str:
+        """Handle a single user message and return the response.
+
+        ``context`` is a hook's text for the agent that came before this
+        message (a ``SessionStart`` hook's); it is sent the way a
+        ``UserPromptSubmit`` hook's is, after the text.
+        """
         self.last_failure = ""
         await self._deps.ensure_mcp()
 
@@ -153,12 +163,17 @@ class SessionMessageHandler:
             return self._blocked(verdict.reason)
         message = verdict.value.message
 
-        blocked = await self._check_user_prompt_hook(message)
+        blocked, prompt_context = await self._check_user_prompt_hook(message)
         if blocked is not None:
             return blocked
 
         guardrail_prefix = await self._guardrail_prefix(message)
-        effective_message = self._build_effective_message(message, guardrail_prefix)
+        # A hook's context rides on the message as the backend puts it
+        # (``RunController``): a ``<hook-context>`` block after the text.
+        prompt = message + "".join(
+            f"\n<hook-context>{text}</hook-context>" for text in (context, prompt_context) if text
+        )
+        effective_message = self._build_effective_message(prompt, guardrail_prefix)
 
         try:
             result = await self._run_turn(effective_message, media)
@@ -209,15 +224,23 @@ class SessionMessageHandler:
         metrics = final_run.metrics
         if not metrics:
             return
-        input_tokens = metrics.input_tokens or 0
+        # The last model call's context, cache included; the run's own
+        # metrics sum every tool iteration and leave a cached prefix out.
+        last = TokenEstimate.last_context(getattr(final_run, "messages", None))
+        input_tokens = last if last is not None else (metrics.input_tokens or 0)
         self._deps.budget.latch(input_tokens)
         await self._deps.compact_hook(input_tokens, self._deps.budget.window)
 
-    async def _check_user_prompt_hook(self, message: str) -> str | None:
-        """Fire the ``UserPromptSubmit`` hook. Returns the blocked
-        message when the hook denies, ``None`` when the turn should
-        proceed. Blocked turns emit an audit entry so a policy denial
-        is traceable — otherwise the user sees "blocked" with no
+    async def _check_user_prompt_hook(self, message: str) -> tuple[str | None, str | None]:
+        """Fire the ``UserPromptSubmit`` hook: ``(blocked reply, context)``.
+
+        The blocked reply is set when the hook denies, ``None`` when the
+        turn should proceed; then the context is the hook's
+        ``systemMessage``, for the model (HOOKS.md: "context injection",
+        "shown to the agent"). The headless path dropped it, so a hook's
+        context reached the model in the app and never in ``igni -m``
+        (campaign R116). Blocked turns emit an audit entry so a policy
+        denial is traceable — otherwise the user sees "blocked" with no
         record of why."""
         payload = UserPromptSubmitHookPayload(
             message=message,
@@ -228,8 +251,8 @@ class SessionMessageHandler:
             payload=payload,
         )
         if hook_result.should_continue:
-            return None
-        return self._blocked(hook_result.message or "Blocked by UserPromptSubmit hook.")
+            return None, hook_result.message or None
+        return self._blocked(hook_result.message or "Blocked by UserPromptSubmit hook."), None
 
     def _blocked(self, blocked_msg: str) -> str:
         """A message a UserPromptSubmit hook stopped: audited, and returned as the reply."""
@@ -300,10 +323,7 @@ class SessionMessageHandler:
             feedback = await self._stop_feedback(payload, response_text)
             if feedback is None:
                 break
-            system_msg = (
-                f"[SYSTEM] Your previous response was rejected by a Stop hook: "
-                f"{feedback}\nPlease revise your response to address this issue."
-            )
+            system_msg = StopHookPayload.critique(feedback)
             run_output = await self._team.arun(system_msg, stream=False)
             response_text = self._extract_response_text(run_output)
         return response_text, run_output

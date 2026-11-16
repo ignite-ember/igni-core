@@ -123,7 +123,12 @@ def test_a_summary_without_text_gives_an_empty_summary():
 def test_the_envelopes_default_to_success_with_nothing_in_them():
     assert LoadResult().model_dump() == {"ok": True, "value": None, "error": None}
     assert PersistResult().model_dump() == {"ok": True, "error": None}
-    assert ForkResult().model_dump() == {"ok": True, "new_session_id": "", "error": None}
+    assert ForkResult().model_dump() == {
+        "ok": True,
+        "new_session_id": "",
+        "error": None,
+        "unsaved": False,
+    }
     assert CompactResult().model_dump() == {
         "ok": True,
         "status": "",

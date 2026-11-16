@@ -68,6 +68,9 @@ class FakeMcp:
         self.disconnect_raises: BaseException | None = None
         self.client: Any = object()
 
+    def unregister_server(self, name: str) -> None:
+        return None
+
     def register_server(self, config: Any) -> None:
         self.registered.append(config)
 
@@ -258,7 +261,9 @@ async def test_a_service_that_raises_on_connect_is_a_reason_not_a_raise(tmp_path
         manifest, tmp_path, Permissions(manifest), None, ProcessEnvironment()
     )
 
-    assert await connection(mcp).start(config) == "its service could not be started: boom"
+    assert await connection(mcp).start(config) == (
+        f"its service could not be started: boom. {install_service.ExtensionConnection.START_FIX}"
+    )
 
 
 async def test_a_service_that_refuses_without_a_reason_says_so(tmp_path: Path) -> None:
@@ -269,7 +274,10 @@ async def test_a_service_that_refuses_without_a_reason_says_so(tmp_path: Path) -
         manifest, tmp_path, Permissions(manifest), None, ProcessEnvironment()
     )
 
-    assert await connection(mcp).start(config) == "its service did not start: no reason given"
+    assert await connection(mcp).start(config) == (
+        "its service did not start: no reason given\n"
+        f"{install_service.ExtensionConnection.START_FIX}"
+    )
 
 
 async def test_a_service_that_never_answers_is_given_up_on(
@@ -287,7 +295,9 @@ async def test_a_service_that_never_answers_is_given_up_on(
         manifest, tmp_path, Permissions(manifest), None, ProcessEnvironment()
     )
 
-    assert await connection(mcp).start(config) == "its service did not start within 0.05s"
+    assert await connection(mcp).start(config) == (
+        f"its service did not start within 0.05s. {install_service.ExtensionConnection.START_FIX}"
+    )
 
 
 def test_only_the_tools_the_manifest_declares_stay_offered(tmp_path: Path) -> None:

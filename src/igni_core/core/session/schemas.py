@@ -256,11 +256,15 @@ class ForkResult(BaseModel):
     * ``new_session_id`` — the freshly-minted 8-char id on success;
       empty string on failure.
     * ``error`` — human-readable error string when ``ok=False``.
+    * ``unsaved`` — ``True`` when the source has no stored row yet: a
+      session is saved when its first message completes, so a new
+      chat has nothing to clone.
     """
 
     ok: bool = True
     new_session_id: str = ""
     error: str | None = None
+    unsaved: bool = False
 
 
 class PluginReloadCounts(BaseModel):
@@ -318,6 +322,20 @@ class StopHookPayload(BaseModel):
     session_id: str
     response: str
 
+    #: How many times a Stop hook may send the agent back.
+    MAX_RETRIES: ClassVar[int] = 3
+    #: How much of the reply the hook is shown.
+    RESPONSE_PREVIEW: ClassVar[int] = 500
+
+    @staticmethod
+    def critique(feedback: str) -> str:
+        """What the agent is sent when a Stop hook rejects its reply —
+        the same words from ``igni -m`` and from the backend."""
+        return (
+            f"[SYSTEM] Your previous response was rejected by a Stop hook: "
+            f"{feedback}\nPlease revise your response to address this issue."
+        )
+
 
 class StopFailureHookPayload(BaseModel):
     """Payload for the ``StopFailure`` hook — mirror of ``Stop``
@@ -352,8 +370,8 @@ class PostCompactHookPayload(BaseModel):
     fire after the summariser has run and history has been
     cleared. Cannot undo at this stage.
 
-    ``summary_chars`` is only populated on the manual path
-    (0 otherwise). Extra fields are allowed so subscribers
+    ``summary_chars`` is the length of the summary that replaced
+    the history, on both paths (0 when none was produced). Extra fields are allowed so subscribers
     can enrich the payload without a schema change here.
     """
 

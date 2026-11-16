@@ -74,14 +74,16 @@ def test_read_only_wins_over_accept_edits() -> None:
     assert perms["read_only"] is True
 
 
-def test_strict_denies_the_risky_categories_and_asks_before_a_group_hook() -> None:
+def test_strict_holds_the_risky_categories_and_asks_before_a_group_hook() -> None:
+    """``dontAsk`` denies what no allow rule matches; the categories are held
+    at ``ask``, not ``deny``, so an allow rule can opt a tool back in."""
     assert _payload(strict=True) == {
         "permissions": {
             "mode": "dontAsk",
-            "file_write": "deny",
-            "shell_execute": "deny",
-            "git_push": "deny",
-            "git_destructive": "deny",
+            "file_write": "ask",
+            "shell_execute": "ask",
+            "git_push": "ask",
+            "git_destructive": "ask",
         },
         "hooks": {"group": "ask"},
     }
@@ -91,7 +93,7 @@ def test_strict_wins_over_auto_approve() -> None:
     perms = _payload(auto_approve=True, strict=True)["permissions"]
     assert perms["mode"] == "dontAsk"
     assert {perms[k] for k in ("file_write", "shell_execute", "git_push", "git_destructive")} == {
-        "deny"
+        "ask"
     }
 
 

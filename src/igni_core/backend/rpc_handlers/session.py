@@ -13,11 +13,13 @@ from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.rpc_handlers.session_args import (
     AgentRunArgs,
     InterruptedRunArgs,
+    PendingMessageArgs,
     SessionIdArgs,
     UploadAttachmentArgs,
 )
 from igni_core.backend.schemas_context import (
     DiscardInterruptedRunResult,
+    DiscardPendingMessageResult,
     InterruptedRun,
     PendingMessage,
 )
@@ -72,9 +74,10 @@ class SessionRpcHandler(RpcHandler):
         """List a session's messages whose run started but never finished.
 
         ``session_id`` names the session. Returns the user messages still
-        pending at least a minute after they arrived — typically left by a
-        crash — oldest first, each with its text, when it arrived and its
-        ``message_id``. A storage failure answers an empty list.
+        pending — typically left by a crash — oldest first, each with its
+        text, when it arrived and its ``message_id``: one saved before this
+        igni started at once, one it received itself a minute after it
+        arrived. A storage failure answers an empty list.
         """
         return await self._ctx.backend.get_pending_messages(args.session_id)
 
@@ -115,6 +118,29 @@ class SessionRpcHandler(RpcHandler):
         when ``message_id`` is empty or the store could not be written.
         """
         return await self._controllers.context.discard_interrupted_run(
+            args.session_id, args.message_id
+        )
+
+    @rpc(
+        RpcMethod.DISCARD_PENDING_MESSAGE,
+        duration=RpcDuration.IO,
+        args=PendingMessageArgs,
+        scope=RpcScope.SESSION,
+    )
+    async def discard_pending_message(
+        self, args: PendingMessageArgs
+    ) -> DiscardPendingMessageResult:
+        """Forget one pending message, so it is not offered again.
+
+        ``message_id`` names the message (from ``get_pending_messages``);
+        ``session_id`` the session it belongs to; only that session's
+        pending message is deleted. Returns ``ok: true`` — also when no such
+        message is pending, so a retry is harmless — or ``ok: false`` with
+        ``error`` when ``message_id`` is empty, the message arrived less than
+        a minute ago while this igni runs (its run may still be finishing),
+        or the store could not be written.
+        """
+        return await self._controllers.context.discard_pending_message(
             args.session_id, args.message_id
         )
 

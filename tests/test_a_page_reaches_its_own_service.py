@@ -188,6 +188,9 @@ class StubMcp:
     def __init__(self) -> None:
         self.configs: dict[str, Any] = {}
 
+    def unregister_server(self, name: str) -> None:
+        return None
+
     def register_server(self, config: Any) -> None:
         self.configs[config.name] = config
 
@@ -437,3 +440,27 @@ async def test_the_rpc_takes_no_audience(two_pages, exchange):
     )
     answer = await rpc.answer(request)
     assert "'audience' is not an argument" in answer.error
+
+
+async def test_a_refresh_exchanges_a_new_token_the_service_has_not_refused(
+    two_pages, exchange, igni
+):
+    """The bridge's ``fetch`` "retries once with a new token after a 401".
+    The page could not ask for one: the RPC took no arguments and answered
+    the cached exchange, so the retry carried the token the service had just
+    refused (campaign R418)."""
+    rpc = PageTokenRpc(PageServiceTokens(origins=two_pages, exchange=exchange))
+
+    async def ask(args: dict[str, Any]) -> dict[str, Any]:
+        request = msg.RPCRequest(
+            id="r1", method=RpcMethod.EXTENSION_SERVICE_TOKEN, args=args, caller="acme.notes"
+        )
+        return (await rpc.answer(request)).wire_result()
+
+    first = await ask({})
+    again = await ask({})
+    refreshed = await ask({"refresh": True})
+
+    assert first["access_token"] == again["access_token"]
+    assert igni.tokens_issued == 2
+    assert refreshed["ok"] is True

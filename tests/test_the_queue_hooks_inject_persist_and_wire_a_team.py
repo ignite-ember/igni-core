@@ -313,6 +313,33 @@ def test_the_persister_appends_after_history_with_the_queue_id_then_a_second_cal
     assert len(run_output.messages) == 2
 
 
+def test_the_persister_puts_the_message_before_the_answer_that_took_it_in() -> None:
+    """Appended after the answer, the queued prompt read to the next turn
+    as one still to act on, and was applied a second time (campaign R337)."""
+    bridge = QueueBridge(queue=[])
+    bridge.buffer.append("add BANANA-77", message_id="q1")
+    bridge.buffer.append("and be brief", message_id="q2")
+    carried = "out\n\n[USER MESSAGE]\n- add BANANA-77\n- and be brief\n[END USER MESSAGE]"
+    prompt = SimpleNamespace(role="user", content="read README")
+    call = SimpleNamespace(role="assistant", content="", tool_calls=[{"id": "a"}, {"id": "b"}])
+    first = SimpleNamespace(role="tool", content=carried)
+    second = SimpleNamespace(role="tool", content="other result")
+    answer = SimpleNamespace(role="assistant", content="README says hi. BANANA-77")
+    run_output = SimpleNamespace(messages=[prompt, call, first, second, answer])
+
+    bridge.persister(run_output=run_output)
+
+    assert [m.content for m in run_output.messages] == [
+        "read README",
+        "",
+        carried,
+        "other result",
+        "add BANANA-77",
+        "and be brief",
+        "README says hi. BANANA-77",
+    ]
+
+
 def test_the_persister_clears_the_buffer_for_a_run_output_without_messages() -> None:
     bridge = QueueBridge(queue=[])
     bridge.buffer.append("lost")

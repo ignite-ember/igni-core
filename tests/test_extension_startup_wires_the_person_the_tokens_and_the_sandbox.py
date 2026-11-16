@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -41,6 +42,9 @@ class _Mcp:
     def __init__(self) -> None:
         self.extension_request_meta: Any = None
         self.refuse: set[str] = set()
+
+    def unregister_server(self, name: str) -> None:
+        return None
 
     def register_server(self, config: Any) -> None:
         return None
@@ -77,6 +81,7 @@ class _NoBackend:
 class _Orchestrator:
     def __init__(self) -> None:
         self.mounted: list[Any] = []
+        self.pool = SimpleNamespace(runtimes=[])
 
     def mount(self, rpc: Any) -> None:
         self.mounted.append(rpc)

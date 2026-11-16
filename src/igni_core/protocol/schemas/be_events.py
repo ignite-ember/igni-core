@@ -462,6 +462,10 @@ class SessionListEntry(BaseModel):
         default="", description="A short summary of the conversation; empty when there is none."
     )
     agent_name: str = Field(default="", description="The agent the session talks to.")
+    has_paused_run: bool = Field(
+        default=False,
+        description="True when this session has a run waiting for the person to answer an approval.",
+    )
 
 
 class SessionListResult(Message):

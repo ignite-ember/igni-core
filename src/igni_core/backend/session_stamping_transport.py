@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 from igni_core.backend.schemas_sessions import BackendLike, TransportLike
+from igni_core.core.run_context import CURRENT_RUN_SESSION_ID
 from igni_core.protocol import messages as msg
 
 
@@ -44,12 +45,16 @@ class SessionStampingTransport:
     async def send(self, message: msg.Message) -> None:
         """Stamp + forward. When the sender already set ``session_id``
         (typical for RPC responses that already know their bound
-        session) the message is forwarded verbatim; otherwise the
-        backend's current id is stamped in via
+        session) the message is forwarded verbatim; otherwise the id of
+        the run it was sent from, or else the backend's current id, is
+        stamped in via
         :meth:`Message.model_copy` before dispatch.
         """
         if not message.session_id:
-            sid = self._backend.session_id
+            # A run's frames and pushes are its chat's: after New chat or
+            # a switch the backend's id is another chat's, and the old
+            # run's team card turned up there (campaign R647).
+            sid = CURRENT_RUN_SESSION_ID.get() or self._backend.session_id
             if sid:
                 message = message.model_copy(update={"session_id": sid})
         await self._inner.send(message)

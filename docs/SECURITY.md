@@ -80,21 +80,20 @@ When a tool call requires approval (`ask` level), the user sees the full command
 | Allow similar | Yes | Adds a pattern (e.g., `npm *`, `pytest *`) to the allowlist |
 | Deny | No | Blocks this call, agent can try alternatives |
 
-Permanent rules are saved to `~/.igni/permissions.yaml`:
+"Always allow", "Allow similar" and a rejection with "remember" are saved as rules in the project's `.igni/settings.local.json` (in `~/.igni/settings.local.json` when igni runs with no project), in the same `permissions` shape as `settings.json`:
 
-```yaml
-# Auto-generated from approval prompts — edit to adjust
-allowlist:
-  shell_execute:
-    - "npm test"           # from "always allow"
-    - "pytest *"           # from "allow similar"
-    - "ruff check *"       # from "allow similar"
-  file_write:
-    - "src/**"
-    - "tests/**"
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm test)", "Bash(pytest *)"],
+    "deny": ["Bash(touch forbidden.txt)"]
+  }
+}
 ```
 
-Pattern matching uses glob syntax. Exact entries come from "always allow", pattern entries from "allow similar". When a new command comes in, it checks the allowlist first, then falls back to the permission level from config.
+A project's settings files are read only once the folder is trusted (see Workspace trust above). In an untrusted folder the rule is still written and the running session follows it, but no other session, and no later start, reads it until you trust the folder.
+
+Pattern matching uses glob syntax. Exact entries come from "always allow", pattern entries from "allow similar". When a new command comes in, the rules are checked first, then the permission level from config.
 
 **A rule covers one command.** A line of several commands (`a && b`, `a; b`,
 `a | b`) is allowed only when every command on it is, and deny and ask rules
@@ -216,7 +215,9 @@ safety:
     - "*.pfx"
 ```
 
-Protected paths are enforced at the tool layer — even if an agent tries to write to `.env`, the tool refuses. The agent is informed why and can suggest alternatives.
+Protected paths are enforced at the tool layer — even if an agent tries to write to `.env`, the tool refuses, and so does a shell command that writes one through a redirect (`>`, `>>`, `&>`) or `tee`. The agent is informed why and can suggest alternatives.
+
+igni's own settings files — a project's `.igni/settings*.json` and `.igni/config*.yaml` — are protected the same way whatever this list says: they carry permissions and hooks, and an agent that could write them could raise its own permissions. Only you change them.
 
 Add project-specific protected paths:
 
@@ -282,7 +283,7 @@ Recursive sub-team spawning has configurable limits:
 orchestration:
   max_nesting_depth: 5           # max recursive sub-team levels
   max_total_agents: 20           # max agents per request
-  sub_team_timeout: 120          # seconds before sub-team times out
+  sub_team_timeout: 1800         # seconds before sub-team times out
 ```
 
 If limits are reached, the agent is informed and must proceed without sub-teams. These prevent:
@@ -404,22 +405,22 @@ Opening a folder never runs its code or loosens safety until the person trusts i
 
 ### 9. Guardrails (AI Safety)
 
-Built-in safety guardrails run as Agno pre-hooks before each agent turn, catching problems before they reach the model:
+Built-in safety guardrails run as Agno pre-hooks on the person's message, before the model is called. A guardrail that triggers **refuses the whole message**: no model call is made, the turn ends with the reason (`Validation failed: ...`; a headless `igni -m` exits 1), and the agent never sees the message — it is not told and does not adjust. Rephrase, or turn the guardrail off, and send again.
 
-| Guardrail | What It Does | When It Triggers |
+| Guardrail | What It Checks | When It Triggers |
 |---|---|---|
-| **PII Detection** | Scans prompts for personally identifiable information (emails, phone numbers, SSNs, etc.) | Before model call — flags PII so the agent can redact or warn |
-| **Prompt Injection** | Detects injection attempts in user input and tool output (e.g., "ignore previous instructions") | Before model call — blocks the injected content |
-| **Moderation** | Content moderation via OpenAI's moderation API | Before model call — flags harmful content |
+| **PII Detection** (on by default) | The person's message, for personally identifiable information (emails, phone numbers, SSNs, credit cards) | Refuses the message before any model call |
+| **Prompt Injection** | The person's message, for injection attempts (e.g., "ignore previous instructions"). Tool output is **not** checked by this guardrail — igni wraps untrusted tool output in its own untrusted block instead | Refuses the message before any model call |
+| **Moderation** | The person's message, via OpenAI's moderation API (needs `OPENAI_API_KEY` and the `openai` package) | Refuses a flagged message; refuses every message while it cannot reach the API, rather than let one through unmoderated |
 
 ```yaml
 guardrails:
-  pii_detection: true          # detect and flag PII in prompts
-  prompt_injection: true       # detect injection attempts
+  pii_detection: true          # refuse a message that carries PII
+  prompt_injection: true       # refuse a message that looks like an injection attempt
   moderation: true             # OpenAI moderation API
 ```
 
-Guardrails are applied via `AgnoFeatures.apply_to_agent()` — they attach as pre-hooks that execute before the model is called. If a guardrail triggers, the agent is informed and can adjust its approach. Guardrails work alongside (not instead of) the permission system and protected paths.
+Guardrails work alongside (not instead of) the permission system and protected paths.
 
 **Enterprise use:** Guardrails are especially valuable for teams where agents process user-provided content (URLs, files, pasted text) that could contain injection attempts or sensitive data.
 
@@ -449,6 +450,7 @@ generates 32 random bytes (base64url) at each launch of the backend:
 | Step | How | Why that way |
 |---|---|---|
 | App → backend | `IGNI_WS_TOKEN` in the child's environment; the backend removes it from its own environment at start | Never on the command line, which `ps` shows; never inherited by the agent's shell commands, hooks or MCP servers |
+| App → backend (preferred) | A pipe the child inherits, named by `IGNI_WS_TOKEN_FD` (`0` = the child's stdin): the app writes the token and a newline and closes it; the backend reads one line at start, closes the descriptor and drops the variable | The environment of a running process is readable by other processes of the same user (`ps eww`, `/proc/<pid>/environ`); a pipe read once is not. A descriptor that cannot be read stops the backend rather than leaving it without a token |
 | App → its webview | The URL fragment, `index.html?ws=…#igni_ws_token=…` | A fragment is never sent to a server or written to a request log, and it survives reloads |
 | Webview → backend | `Sec-WebSocket-Protocol: igni.v1, igni-token.<token>`; the backend answers `igni.v1` only | The one handshake field a page can set; unlike a query string it ends up in no log |
 | A program on the same project | `ws_token` in `.igni/backend.lock`, which is then written owner-only (0600): a **different** token, the program token, which the backend mints | A script or the SDK attaches to the running backend instead of starting a duplicate, without holding the window's secret |
@@ -572,6 +574,8 @@ For organizations, administrators can enforce security policies that individual 
 ```json
 // /Library/Application Support/igni/managed-settings.yaml (macOS)
 // /etc/igni/managed-settings.yaml (Linux)
+// %PROGRAMDATA%\igni\managed-settings.yaml (Windows)
+// The file is YAML; JSON, as here, is valid YAML too.
 {
   "permissions": {
     "web_search": "deny",
@@ -685,7 +689,7 @@ For teams that can't send code to the cloud, self-hosted CodeIndex is planned fo
 | Audit logging | Not built-in | Built-in to `~/.igni/audit.log` |
 | Agent isolation | Tools per agent definition | Same — tools declared in `.md` |
 | Depth limits | Sub-agents capped at 1 level | Configurable: depth, agent count, timeout |
-| Managed settings | Enterprise policy files | Same — managed-settings.json |
+| Managed settings | Enterprise policy files | Same — managed-settings.yaml |
 | MCP security | Approval prompts, no passthrough | Same + tool filtering per agent |
 | Hooks | PreToolUse/PostToolUse/Stop | Same events, same format |
 | Guardrails | Not built-in | PII detection, prompt injection, moderation pre-hooks |
@@ -713,7 +717,7 @@ For teams that can't send code to the cloud, self-hosted CodeIndex is planned fo
 
 ### For Enterprise
 
-- [ ] Deploy managed-settings.json via MDM/configuration management
+- [ ] Deploy managed-settings.yaml via MDM/configuration management
 - [ ] Self-host CodeIndex for code data residency (planned — coming soon)
 - [ ] Restrict allowed MCP servers to approved list
 - [ ] Enable network deny-by-default with whitelisted domains

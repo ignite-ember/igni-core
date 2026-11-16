@@ -11,6 +11,12 @@ Owns the "swap credentials → rebuild main team" invariant so
 callers can express "log out this session" or "swap in a fresh
 JWT" without needing to know the order matters.
 
+``connected`` also says whether igni server was there the last time
+igni really asked it — see
+:mod:`igni_core.core.auth.server_reachability`. The two are separate
+questions: a live token is a credential, and a server that answers is
+a fact about the machine.
+
 Rule 6 (oop_offender #4): a coordinator class replaces the six
 sprawled fields / methods on the Session god-class.
 """
@@ -20,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from igni_core.core.auth.credentials import CloudCredentials
+from igni_core.core.auth.server_reachability import reachability_of
 from igni_core.core.session.cloud_catalog import CloudModelCatalog
 
 
@@ -61,8 +68,26 @@ class SessionCloudAuth:
 
     @property
     def connected(self) -> bool:
-        """Whether the session is authenticated with an igni server."""
-        return self._creds.is_authenticated
+        """Whether the session holds a token that has not run out, and
+        the server it belongs to is there.
+
+        Not merely a token on disk: an expired one kept the account
+        chip saying "connected" while every cloud call was refused
+        (campaign R638). And a valid token is not a server: with igni
+        server down the chip still said "Account" while nothing
+        answered. So the answer is also what the last real request to
+        that server found out — a request that never got an answer, or
+        a 5xx, says the server was not there.
+
+        Nothing is polled to find out: the answer is whatever the
+        requests igni already makes said. A refused token (401) is a
+        credentials problem, not a reachability one, and does not make
+        the server unreachable.
+        """
+        if not self._creds.is_valid:
+            return False
+        reachability = reachability_of(self._server_url)
+        return reachability.reachable if reachability is not None else True
 
     @property
     def org_id(self) -> str | None:

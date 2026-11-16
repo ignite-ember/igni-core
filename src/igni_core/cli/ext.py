@@ -35,7 +35,7 @@ from pathlib import Path
 import click
 from pydantic import ValidationError
 
-from igni_core.cli.ext_doctor import Findings, NameCheck, ProcessProbe
+from igni_core.cli.ext_doctor import Findings, NameCheck, ProcessProbe, TrialStart
 from igni_core.cli.ext_manifest_check import ManifestCheck
 from igni_core.cli.ext_scaffold import Scaffold
 from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
@@ -43,17 +43,17 @@ from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnava
 from igni_core.core.config.settings import Settings
 from igni_core.core.network_policy import NetworkPolicy
 from igni_core.core.plugins.git import GitClient
+from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.extensions.bundle_source import BundleSource, BundleSourceError
+from igni_core.extensions.contract import CONTRACT_VERSION
 from igni_core.extensions.distribution.once import OneShotSync
+from igni_core.extensions.install_contributions import ExtensionPlugin
+from igni_core.extensions.install_errors import InstallError
+from igni_core.extensions.install_preflight import InstallPreflight
 from igni_core.extensions.manifest import ExtensionManifest, Workspace
 from igni_core.extensions.profile import DEV_FLAG, DevelopmentFlag
 from igni_core.extensions.store import ExtensionStore
 from igni_core.extensions.store_errors import StoreError
-
-#: What this build of igni implements. An extension declares a range
-#: and this is what it is checked against — the only compatibility
-#: axis, and never an igni version.
-CONTRACT_VERSION = "1.0"
 
 
 @click.group("ext")
@@ -242,8 +242,9 @@ def install(
     try:
         with _bundle(BundleSource(source, ref=ref, subdir=subdir), network) as bundle:
             manifest = store.read(bundle)
+            InstallPreflight.check_manifest(manifest)
             target = store.add(bundle, replace=replace)
-    except (BundleSourceError, StoreError) as exc:
+    except (BundleSourceError, StoreError, InstallError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     click.echo(f"installed {manifest.display_name} ({manifest.id}) to {target} for development")
@@ -320,12 +321,16 @@ def sync(root: str | None, timeout: float) -> None:
     person's group, and this brings the store in step — downloading,
     verifying and storing what is new or changed, removing what is no
     longer listed, and leaving a development install of the same id
-    alone. It starts and stops nothing: igni's backend starts what is
-    stored when it boots, and an ``igni -m`` run syncs by itself first.
+    alone. It runs nothing for good: each extension it stores is started
+    once and stopped, and an upgrade that does not start puts the version
+    that worked back. igni's backend starts what is stored when it boots,
+    and an ``igni -m`` run syncs by itself first.
     """
     store = _store(root)
     settings = _settings()
-    syncer = OneShotSync(store, settings)
+    # Each upgrade it stores is started once and stopped, so one that does
+    # not start puts the version that worked back, as the other syncs do.
+    syncer = OneShotSync(store, settings, lifecycle=TrialStart(store))
     report = asyncio.run(syncer.run(timeout=timeout))
     if report.skipped is not None:
         raise click.ClickException(f"nothing was synced: {report.skipped}")
@@ -407,6 +412,12 @@ def remove(extension_id: str, root: str | None) -> None:
         raise click.ClickException(str(exc)) from exc
     if not removed:
         raise click.ClickException(f"{extension_id} is not installed")
+    # The plugin it carried was copied under its id into the plugins
+    # directory; left there, its agents, skills and hooks stayed live on
+    # every later run with the extension gone (EXTENSIBILITY.md: it "is
+    # removed, with the extension").
+    plugins_dir = PluginInstaller(data_dir=_settings().storage.data_dir).plugins_dir
+    ExtensionPlugin(plugins_dir=plugins_dir).remove(extension_id)
     click.echo(f"removed {extension_id}")
     if distributed is not None:
         click.echo(

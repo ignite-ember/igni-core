@@ -3,9 +3,10 @@
 Fires once per run, after ``run_output.messages`` is built but before
 the session is saved. Reads the shared
 :class:`~igni_core.core.hooks.queue.buffer.InjectedRunBuffer` and
-appends a proper ``role='user'`` message per drained item — so the
-conversation timeline preserves what the user typed even though the
-model first saw it embedded in a tool result.
+inserts a proper ``role='user'`` message per drained item right after
+the tool result that carried it — so the conversation timeline
+preserves what the user typed even though the model first saw it
+embedded in a tool result, and the answer that took it in follows it.
 
 The persister no longer holds an injector reference. It holds the
 shared buffer directly; both hooks are constructed with the same
@@ -57,8 +58,16 @@ class QueuePersisterHook(AgnoCallableAdapter):
             return
         if run_output.messages is None:
             run_output.messages = []
+        messages = run_output.messages
+        previous = -1
         for message in self._buffer.snapshot():
-            run_output.messages.append(
+            # Right after the tool result that carried it, ahead of the
+            # answer that took it in: appended after that answer it read
+            # to the model's next turn as a prompt still to act on, and
+            # the one queued instruction was applied twice.
+            position = max(self._after_carrier(messages, message.text), previous + 1)
+            messages.insert(
+                position,
                 Message(
                     # The id a durable queue knows it by: a backend that
                     # restarts finds it here and does not offer it again.
@@ -66,9 +75,26 @@ class QueuePersisterHook(AgnoCallableAdapter):
                     role="user",
                     content=message.text,
                     add_to_agent_memory=True,
-                )
+                ),
             )
+            previous = position
         self._buffer.clear()
+
+    @staticmethod
+    def _after_carrier(messages: list[Any], text: str) -> int:
+        """Where a drained message goes: after the run of tool results
+        holding the one that carried ``text``, so every tool result stays
+        next to its call; the end when no tool result carried it."""
+        for index in range(len(messages) - 1, -1, -1):
+            candidate = messages[index]
+            if getattr(candidate, "role", None) == "tool" and text in str(
+                getattr(candidate, "content", "") or ""
+            ):
+                end = index + 1
+                while end < len(messages) and getattr(messages[end], "role", None) == "tool":
+                    end += 1
+                return end
+        return len(messages)
 
 
 __all__ = ["QueuePersisterHook"]

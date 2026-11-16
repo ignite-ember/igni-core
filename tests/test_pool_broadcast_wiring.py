@@ -71,6 +71,11 @@ class _PooledBackend:
         # ``BackendServer`` carries one; the RPC router reads it to build
         # the workflow runner. This one is open, so a run starts.
         self.gate = gate if gate is not None else RunGate()
+        # The live sub-agent progress callback, as the real backend
+        # takes it (``TeamWiring.wire_orchestrate_progress`` puts it on
+        # the session's main team). Kept here so a test can fire one
+        # progress event and see where it goes.
+        self.progress_callback: Any = None
 
     @property
     def supervisor(self) -> ProcessSupervisor:
@@ -82,6 +87,9 @@ class _PooledBackend:
 
     def wire_queue_hook(self, queue: Any) -> None:
         pass
+
+    def wire_orchestrate_progress(self, callback: Any) -> None:
+        self.progress_callback = callback
 
     def register_broadcast(self, callback: Any) -> None:
         self.broadcast_bus.register(callback)

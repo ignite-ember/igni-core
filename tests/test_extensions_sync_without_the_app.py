@@ -59,23 +59,50 @@ class World:
         monkeypatch.setattr(
             ext_cli,
             "OneShotSync",
-            lambda store, settings: OneShotSync(store, settings, transport=transport),
+            lambda store, settings, lifecycle=None: OneShotSync(
+                store, settings, transport=transport, lifecycle=lifecycle
+            ),
         )
+        # ``igni ext sync`` starts what it stores once; here every version
+        # starts unless a test names it in ``refuses``.
+        self.refuses: set[str] = set()
+        world = self
+
+        class _Trial:
+            def __init__(self, store: Any, **_: Any) -> None:
+                self._store = store
+
+            async def activate(self, extension_id: str, bundle: Path) -> bool:
+                return world._store_version(bundle) not in world.refuses
+
+            async def deactivate(self, extension_id: str) -> None:
+                return None
+
+        monkeypatch.setattr(ext_cli, "TrialStart", _Trial)
         monkeypatch.setattr(
             "igni_core.backend.headless_extensions.OneShotSync",
-            lambda store, settings: OneShotSync(store, settings, transport=transport),
+            lambda store, settings, lifecycle=None: OneShotSync(
+                store, settings, transport=transport, lifecycle=lifecycle
+            ),
         )
         monkeypatch.setattr(PolicySettingsLoader, "load", lambda _self: self.settings)
+
+    def _store_version(self, bundle: Path) -> str:
+        return self.store.read(bundle).version
 
     def sign_in(self, *, ttl: int = 3600) -> None:
         CredentialsStore(str(self.credentials)).save(
             Credentials.new(SESSION, "ada@acme.test", ttl=ttl)
         )
 
-    def publish(self) -> None:
-        raw = manifest()
+    def publish(self, version: str = "1.0.0") -> None:
+        raw = manifest(version=version)
         self.igni.publish(
-            Listed(bundle_archive(raw, {"wheels/placeholder.txt": b"x"}), self.publisher)
+            Listed(
+                bundle_archive(raw, {"wheels/placeholder.txt": b"x"}),
+                self.publisher,
+                version=version,
+            )
         )
 
     def sync(self, *args: str):
@@ -101,6 +128,26 @@ def test_sync_installs_what_igni_lists_for_the_persons_group(world):
     assert world.store.provenance.of("acme.notes") is not None
     # What to restart, said exactly.
     assert "quit the igni app" in result.output
+
+
+def test_a_terminal_upgrade_that_does_not_start_keeps_the_version_that_worked(world):
+    """R252: ``igni ext sync`` had no lifecycle, so it stored an upgrade that
+    could not start over the version that worked, said 'installed', and
+    every later run found the extension FAILED. It now starts what it stores
+    once, and one that does not start puts the old version back."""
+    world.sign_in()
+    world.publish("1.0.0")
+    assert world.sync().exit_code == 0
+    world.publish("2.0.0")
+    world.refuses.add("2.0.0")
+
+    result = world.sync()
+
+    kept = world.store.provenance.of("acme.notes")
+    assert kept is not None and kept.version == "1.0.0"
+    assert world.store.read(world.store.path_for("acme.notes")).version == "1.0.0"
+    assert "failed" in result.output and "2.0.0 did not start; 1.0.0 runs again" in result.output
+    assert "installed  acme.notes 2.0.0" not in result.output
 
 
 def test_sync_names_the_group_not_its_id(world):
@@ -189,6 +236,9 @@ class Mcp:
     def __init__(self) -> None:
         self.configs: dict = {}
 
+    def unregister_server(self, name: str) -> None:
+        return None
+
     def register_server(self, config: Any) -> None:
         self.configs[config.name] = config
 
@@ -225,6 +275,40 @@ async def test_a_headless_run_syncs_before_it_starts_extensions(world, monkeypat
     try:
         assert world.store.provenance.of("acme.notes") is not None
         assert extensions.registry.get("acme.notes") is not None
+    finally:
+        await extensions.stop()
+
+
+async def test_a_headless_upgrade_that_does_not_start_keeps_the_version_that_worked(
+    world, monkeypatch
+):
+    """R252: the headless run's sync stored the new version without starting
+    it, deleting the one that worked; the run then left the extension FAILED
+    for good. The sync now starts the upgrade through the run's launcher, and
+    one that does not start (none starts in this test) puts the old back."""
+    world.sign_in()
+    world.publish("1.0.0")
+    first = await ext_cli.OneShotSync(world.store, world.settings).run()
+    assert first.installed, first
+    world.publish("2.0.0")
+    monkeypatch.setattr(ExtensionStore, "__init__", _rooted(world.store.root))
+    project = world.tmp / "project"
+    project.mkdir()
+    session = SimpleNamespace(
+        settings=world.settings,
+        project_dir=project,
+        session_id="s-1",
+        mcp_manager=Mcp(),
+        prompt_contributions=PromptContributions(),
+        prompt_loader=PromptLoader(PromptFragments()),
+        reload_group_agents=lambda: True,
+    )
+    extensions = HeadlessExtensions(session)
+    await extensions.start()
+    try:
+        kept = world.store.provenance.of("acme.notes")
+        assert kept is not None
+        assert kept.version == "1.0.0"
     finally:
         await extensions.stop()
 

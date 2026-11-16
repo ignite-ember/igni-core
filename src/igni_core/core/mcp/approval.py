@@ -31,6 +31,10 @@ class McpApprovalPolicy(ABC):
         """Why an unapproved server does not connect, for the log."""
         return f"MCP '{server_name}' from {config_path} is not approved — not connecting."
 
+    def revoke(self, server_name: str, config_path: str) -> bool:
+        """Withdraw an approval; ``False`` when this policy keeps them elsewhere."""
+        return False
+
 
 class MCPApprovalManager:
     """Manages first-use approval for project-scoped MCP servers.
@@ -61,6 +65,10 @@ class MCPApprovalManager:
     ) -> None:
         self._path = approval_path or (Path.home() / CONFIG_DIR / "mcp-approved.json")
         self._policy = policy if policy is not None else layers.current().mcp_approvals()
+        #: What the file looked like when it was last read: re-read when it
+        #: changes, so an approval given elsewhere (igni's window, another
+        #: session, ``igni`` in a terminal) counts without a restart.
+        self._stamp: tuple[int, int] | None = None
         self._approved: dict[str, list[str]] = {} if self._policy is not None else self._load()
 
     # ------------------------------------------------------------------
@@ -77,6 +85,7 @@ class MCPApprovalManager:
         # ``mcp.json`` auto-approved every project and every plugin
         # bundle, which made the prompt below unreachable for the two
         # sources it exists to gate. Only a recorded approval counts.
+        self._refresh()
         return config_path in self._approved.get(server_name, [])
 
     def approve(self, server_name: str, config_path: str) -> None:
@@ -84,10 +93,31 @@ class MCPApprovalManager:
         if self._policy is not None:
             self._policy.approve(server_name, config_path)
             return
+        self._refresh()
         sources = self._approved.setdefault(server_name, [])
         if config_path not in sources:
             sources.append(config_path)
             self._save()
+
+    def revoke(self, server_name: str, config_path: str) -> bool:
+        """Withdraw the approval of *server_name* from *config_path*.
+
+        ``True`` when it is no longer approved; ``False`` when it cannot be
+        withdrawn here — the user-global config is always trusted, and a
+        layer that keeps approvals elsewhere decides itself.
+        """
+        if self._policy is not None:
+            return self._policy.revoke(server_name, config_path)
+        if self._is_user_global(config_path):
+            return False
+        self._refresh()
+        sources = self._approved.get(server_name, [])
+        if config_path in sources:
+            sources.remove(config_path)
+            if not sources:
+                del self._approved[server_name]
+            self._save()
+        return True
 
     def check_approval(self, server_name: str, config_path: str) -> bool:
         """Interactive check — prompt the user if the server is not yet approved.
@@ -111,8 +141,8 @@ class MCPApprovalManager:
             logger.warning(
                 "MCP '%s' from %s needs first-use approval and there is no "
                 "interactive terminal to ask on — not connecting. Approve it "
-                "once from an interactive igni session, or add the path under "
-                "'%s' in %s.",
+                "in igni's window (set_mcp_approval), once from an interactive "
+                "igni session, or add the path under '%s' in %s.",
                 server_name,
                 config_path,
                 server_name,
@@ -162,7 +192,22 @@ class MCPApprovalManager:
         except (AttributeError, OSError, ValueError):
             return False
 
+    def _file_stamp(self) -> tuple[int, int] | None:
+        try:
+            stat = self._path.stat()
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
+
+    def _refresh(self) -> None:
+        """Read the file again when it changed since it was last read."""
+        if self._policy is not None:
+            return
+        if self._file_stamp() != self._stamp:
+            self._approved = self._load()
+
     def _load(self) -> dict[str, list[str]]:
+        self._stamp = self._file_stamp()
         if not self._path.exists():
             return {}
         try:
@@ -186,5 +231,6 @@ class MCPApprovalManager:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             with open(self._path, "w") as f:
                 json.dump(self._approved, f, indent=2)
+            self._stamp = self._file_stamp()
         except OSError as exc:
             logger.warning("Failed to save MCP approvals: %s", exc)

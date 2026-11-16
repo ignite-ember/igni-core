@@ -209,7 +209,7 @@ models:
   - `reasoning: true` for agents that need chain-of-thought
   - `can_orchestrate: false` for agents that shouldn't spawn sub-teams
 - [ ] Copy hooks from `.claude/settings.json` → `.igni/settings.json`
-- [ ] Run `/agents refresh` to reload the agent pool
+- [ ] Start igni again: the agent pool is read when a session starts; no slash command reloads it
 
 ### Optional (power features)
 
@@ -227,7 +227,7 @@ Features you get that Claude Code doesn't have:
 | Feature | What It Does |
 |---|---|
 | **Dynamic team assembly** | Orchestrator auto-picks agents and team mode per task |
-| **Unlimited nesting** | Agents spawn sub-teams recursively (no depth limit) |
+| **Nested agents** | Agents spawn sub-agents and sub-teams, up to `orchestration.max_nesting_depth` levels (default 5) |
 | **CodeIndex** | Semantic code intelligence with multi-category analysis |
 | **Ephemeral agents** | Auto-generated agents for tasks no existing agent fits |
 | **Agent evals** | Built-in regression testing for agent definitions |

@@ -62,8 +62,12 @@ class CommandHandler:
         session: Session,
         *,
         discover: DiscoverMarkdownCommands | None = None,
+        by_model: bool = False,
     ) -> None:
         """Compose the tiers.
+
+        ``by_model`` when the agent asks, through its ``slash_command``
+        tool: a skill is matched by what the agent may run.
 
         ``discover`` is the markdown tier's discovery callable. It
         defaults to :meth:`MarkdownCommand.discover`; a test hands
@@ -75,7 +79,7 @@ class CommandHandler:
             session,
             discover if discover is not None else MarkdownCommand.discover,
         )
-        self._skill_dispatcher = SkillCommandDispatcher(session)
+        self._skill_dispatcher = SkillCommandDispatcher(session, by_model=by_model)
 
     @property
     def session(self) -> Session:

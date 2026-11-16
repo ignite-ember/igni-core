@@ -27,11 +27,19 @@ class HookFailure(Exception):
     went away, or its handler raised — which is what makes an extension
     faulty (:class:`~igni_core.extensions.faults.ExtensionFaults`). An
     answer the event cannot take is the extension's bug, not a fault.
+
+    ``not_running`` when there was no process to ask — it never started,
+    or it was stopped. Its state already says why; counting that as a
+    hang made it "faulty" and restarted it, after three calls, as if it
+    had stopped answering.
     """
 
-    def __init__(self, message: str, *, unanswered: bool = False) -> None:
+    def __init__(
+        self, message: str, *, unanswered: bool = False, not_running: bool = False
+    ) -> None:
         super().__init__(message)
         self.unanswered = unanswered
+        self.not_running = not_running
 
 
 class HookConnections:

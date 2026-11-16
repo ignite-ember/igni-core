@@ -174,6 +174,7 @@ def test_the_members_still_written_json_are_exactly_the_known_ones() -> None:
         "chat.search()",
         "chat.truncate()",
         "chat.discard_interrupted()",
+        "chat.discard_pending()",
         "chat.upload()",
         "chat.views.dispatch()",
         "chat.views.dispatch(params)",

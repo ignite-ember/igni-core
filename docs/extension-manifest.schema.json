@@ -740,7 +740,7 @@
               },
               "source": {
                 "type": "string",
-                "description": "An MCP tool the host calls for the current state. It answers `{ label, tone, detail }` — `tone` being one of the four the design system publishes, so a chip cannot invent a colour igni does not have. Polled, because the bridge has no push; keep it cheap."
+                "description": "An MCP tool the host calls for the current state, by its bare name (`kit_status`, not `acme.kit.kit_status`): the host calls it as the page RPC `ext.<extension id>.<source>`, which `permissions.rpc` must grant (`ext.<extension id>.*` does). It answers `{ label, tone, detail }` — `tone` being one of the four the design system publishes, so a chip cannot invent a colour igni does not have. Polled, because the bridge has no push; keep it cheap."
               },
               "opens": {
                 "type": "string",

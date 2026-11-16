@@ -307,7 +307,7 @@ class _Tape:
     def __init__(self, tape, *, explode: BaseException | None = None, stored=None) -> None:
         self.tape, self.explode, self.stored = tape, explode, stored
 
-    def arun(self, task: str, *, stream: bool = True):
+    def arun(self, task: str, *, stream: bool = True, stream_events: bool = False):
         return self._play()
 
     async def _play(self):
@@ -473,6 +473,23 @@ class TestEmit:
         event = AgentCompletedEvent(agent_path="a")
         handler._emit(event)
         assert events == [event] and event.card_id == "card-1"
+
+    def test_the_card_recorder_hears_the_stamped_event_too(self):
+        """Campaign R665: the history keeps each card event through this sink."""
+        shown: list[Any] = []
+        kept: list[Any] = []
+        context = _ctx(_Tape([]), card_id="card-1", on_progress=shown.append)
+        context.sinks.card_recorder = kept.append
+        event = AgentCompletedEvent(agent_path="a")
+        _Probe(context)._emit(event)
+        assert shown == [event] and kept == [event] and event.card_id == "card-1"
+
+    def test_the_card_recorder_alone_still_hears_it(self):
+        kept: list[Any] = []
+        context = _ctx(_Tape([]), card_id="card-2")
+        context.sinks.card_recorder = kept.append
+        _Probe(context)._emit(AgentCompletedEvent(agent_path="a"))
+        assert [e.card_id for e in kept] == ["card-2"]
 
     def test_an_empty_card_id_leaves_the_event_untouched(self):
         events: list[Any] = []

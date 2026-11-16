@@ -14,6 +14,7 @@ import asyncio
 from pydantic import BaseModel
 
 from igni_core.core.config.settings import Settings
+from igni_core.core.db.scope import NoTenantError
 from igni_core.core.memory.manager import StorageManager
 from igni_core.core.session.persistence.listing import SessionListing
 
@@ -28,17 +29,24 @@ class ResumeLookup(BaseModel):
       previous sessions exist (fresh install / cleared DB).
     * ``error`` is set — DB lookup failed; the message is the
       exception's ``str(...)`` so the CLI can surface a hint.
+      ``no_tenant`` says the failure was a shared database
+      (``IGNI_DATABASE_URL``) with nobody signed in to scope its rows to,
+      which the CLI names with its remedy rather than as a generic failure.
     """
 
     session_id: str | None = None
     error: str | None = None
+    no_tenant: bool = False
 
 
 class ResumeResolver:
     """Resolve the most-recent session id for ``igni --continue``.
 
     Constructed with a :class:`Settings` snapshot so the DB path
-    honours the same 5-tier merge the caller performed. Kept as a
+    honours the same 5-tier merge the caller performed. A shared
+    database is read in the scope storage tenancy names, so the caller
+    tells :data:`~igni_core.core.db.scope.tenancy` who is signed in
+    first, as the session itself does. Kept as a
     dedicated class (rather than a free function) because the
     "async lookup with typed result" contract has a real amount of
     behaviour behind it that shouldn't leak into the CLI callback.
@@ -88,6 +96,8 @@ class ResumeResolver:
             except BaseException:
                 listing.close()  # not awaited when a loop is already running
                 raise
+        except NoTenantError as exc:
+            return ResumeLookup(error=str(exc), no_tenant=True)
         except Exception as exc:
             return ResumeLookup(error=str(exc))
 

@@ -152,7 +152,7 @@ class SlashCommandTool(Toolkit):
             )
 
         try:
-            result = await CommandHandler(self._session).handle(raw)
+            result = await CommandHandler(self._session, by_model=True).handle(raw)
         except Exception as exc:
             logger.warning("slash_command %s raised: %s", head, exc)
             return f"Error invoking {head}: {exc}"

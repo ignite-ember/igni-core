@@ -252,6 +252,23 @@ class TestThePluginActuallyArrives:
             assert not (plugins / "acme-scanner").exists()
 
     @pytest.mark.asyncio
+    async def test_its_agents_are_named_by_the_plugin_and_the_docs_say_so(self, bundle, tmp_path):
+        """R299: EXTENSIBILITY.md put a plugin's agents under the extension's
+        namespace (``agent:acme.notes:archivist``); like any plugin's they are
+        under the ``name`` in its ``plugin.json`` (PLUGINS.md)."""
+        from igni_core.core.plugins.loader import PluginLoader
+
+        plugins = tmp_path / "plugins"
+        async for _installer, _entry in self._install(bundle, tmp_path, plugins):
+            loader = PluginLoader(data_dir=tmp_path / "data")
+            loader._load_root("user-igni", plugins, 2)
+            assert [p.name for p in loader.list_plugins()] == ["acme-scanner"]
+
+        docs = (Path(__file__).parents[1] / "docs" / "EXTENSIBILITY.md").read_text()
+        assert "under the extension's namespace" not in docs
+        assert "namespaced by the `name` in its `plugin.json`" in docs
+
+    @pytest.mark.asyncio
     async def test_uninstalling_takes_the_agent_with_it(self, bundle, tmp_path):
         """An agent left behind is worse than one that never came:
         every tool it has fails, and it sits in the same list as the

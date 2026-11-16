@@ -23,6 +23,12 @@ class MCPTransport(str, Enum):
 # Stored file extension for per-server group policy MCP configs.
 _GROUP_MCP_SUFFIX = ".json"
 
+#: The loader tiers whose entries come from a file igni re-reads on its
+#: own: the user's home config, the project's, the group's. A reload
+#: replaces exactly these — a plugin's bundled servers and an
+#: extension's own service belong to other layers and stay put.
+MCP_FILE_SOURCES: frozenset[str] = frozenset({"user", "project", "group-policy"})
+
 
 class MCPServerConfig(BaseModel):
     """Configuration for a single MCP server."""
@@ -43,7 +49,16 @@ class MCPServerConfig(BaseModel):
     source_path: str = ""
     """Filesystem path of the .mcp.json file that defined this server."""
     source: str = "user"
-    """Loader tier — ``"user"``, ``"project"``, ``"group-policy"``, or ``"plugin"``.
+    """Loader tier — ``"user"``, ``"project"``, ``"group-policy"``,
+    ``"plugin"``, or ``"extension"``.
+
+    It says where the server was configured, so a surface can tell a
+    person's own server from one a folder, a group or a plugin brought.
+    The project tier used to say ``"user"``: the project's ``.mcp.json``
+    was read through the same call as the home config, which took the
+    default. A project's server then looked like the person's own, and
+    an approval for it could not be withdrawn from the MCP page
+    (campaign R209/R669).
 
     Group-policy servers sit above the user's home config and below
     anything the project declares, matching every other kind a group
@@ -118,6 +133,12 @@ class MCPConfigLoader:
         # a server the project declares under the same name wins — see
         # :meth:`load`.
         self.group_mcps_dir = group_mcps_dir
+        #: The files that were there but could not be read, as their
+        #: paths. A file that is missing is not in here: it was taken
+        #: away on purpose. A file that is there and unreadable is,
+        #: because a reader must not mistake a half-written file for a
+        #: withdrawn one.
+        self.unreadable_files: set[str] = set()
 
     def load(self) -> dict[str, MCPServerConfig]:
         """Load MCP server configurations from all locations.
@@ -132,10 +153,18 @@ class MCPConfigLoader:
         moved for consistency: an org sets the baseline and a repository
         can override one server by name. Managed policy is unaffected
         and still outranks everything here.
+
+        Every entry says which tier it came from, in ``source``. The
+        project's own ``.mcp.json`` used to be read through the same
+        call as the home config and so took its ``"user"`` default: a
+        repository's server looked like the person's own, the MCP page
+        offered no way to withdraw it, and the project tier was
+        invisible on the wire (campaign R209/R669).
         """
         servers: dict[str, MCPServerConfig] = {}
+        self.unreadable_files = set()
 
-        self._load_from_file(Path.home() / CONFIG_DIR / ".mcp.json", servers)
+        self._load_from_file(Path.home() / CONFIG_DIR / ".mcp.json", servers, source="user")
 
         if self.group_mcps_dir is not None and self.group_mcps_dir.is_dir():
             for path in sorted(self.group_mcps_dir.glob(f"*{_GROUP_MCP_SUFFIX}")):
@@ -145,7 +174,7 @@ class MCPConfigLoader:
             self.project_dir / ".mcp.json",
             self.project_dir / CONFIG_DIR / ".mcp.json",
         ):
-            self._load_from_file(path, servers)
+            self._load_from_file(path, servers, source="project")
 
         return servers
 
@@ -164,11 +193,13 @@ class MCPConfigLoader:
                 data = json.load(f)
         except (ValueError, OSError) as exc:
             logger.debug("Failed to parse MCP config %s: %s", path, exc)
+            self.unreadable_files.add(str(path))
             return
 
         mcp_servers = data.get("mcpServers", {}) if isinstance(data, dict) else {}
         if not isinstance(mcp_servers, dict):
             logger.warning("MCP config %s: 'mcpServers' is not an object — ignored", path)
+            self.unreadable_files.add(str(path))
             return
         for name, config in mcp_servers.items():
             try:

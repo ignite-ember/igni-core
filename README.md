@@ -101,7 +101,8 @@ igni --read-only -m "In one sentence, what does this project do?"
 ```
 
 `igni` is the command, and the only one pip, uv and the Homebrew formula
-install. It searches code with ripgrep: the formula brings Homebrew's, pip
+install. igni is supported on Apple Silicon macOS and x86-64 Linux: it
+searches code with ripgrep: the formula brings Homebrew's, pip
 and uv bring the PyPI package on macOS arm64 and Linux x86_64, and
 elsewhere you install `rg` yourself (`brew install ripgrep`, `sudo apt
 install ripgrep`) — see [Quickstart](QUICKSTART.md#install). On the command line it runs **one task and exits** (`-m`, or `-p` for a
@@ -109,7 +110,7 @@ pipe); there is no terminal chat UI any more — run it bare and it says so.
 The interactive chat is the desktop app and the web client.
 
 **What the published package holds today.** `igni-core` on PyPI is
-**v1.0.4**, and it is this repository's build: the `igni_core` module,
+**v1.0.5**, and it is this repository's build: the `igni_core` module,
 the `igni` command and the decisions service, and the Homebrew formula
 installs the same package. The old name, `ignite-ember`, is retired: its
 releases are yanked from PyPI and there is no formula or command by it.

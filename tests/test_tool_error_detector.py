@@ -131,3 +131,19 @@ def test_a_regex_without_a_group_flags_on_any_match() -> None:
 
     assert custom.is_error("panic: oh no") is True
     assert custom.is_error("calm panic") is False
+
+
+@pytest.mark.parametrize("tool_name", ["run_shell_command", ""])
+def test_a_call_the_person_declined_is_rejected_and_not_failed(detector, tool_name) -> None:
+    """The result a dialog rejection leaves is ``declined_note``'s ``Blocked: the
+    person declined …`` (campaign R641: it rendered red, as an error)."""
+    from igni_core.core.approvals.declined import declined_note
+
+    result = declined_note(tool_name)
+
+    assert detector.is_rejected(result) is True
+    assert detector.is_error(result) is False
+
+
+def test_a_policy_block_is_not_a_rejection(detector) -> None:
+    assert detector.is_rejected("Blocked: permission policy denied 'edit_file'.") is False

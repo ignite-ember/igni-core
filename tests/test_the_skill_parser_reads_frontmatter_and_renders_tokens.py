@@ -24,7 +24,8 @@ def test_every_frontmatter_field_is_read(tmp_path):
     defn = _parse(
         tmp_path,
         "---\nname: deploy\ndescription: Ship it\nversion: '2.0'\ncategory: operations\n"
-        "argument-hint: <env>\ncontext: fork\nagent: editor\nuser-invocable: false\n---\n\n"
+        "argument-hint: <env>\ncontext: fork\nagent: editor\nuser-invocable: false\n"
+        "disable-model-invocation: true\n---\n\n"
         "  Body here\n\n",
     )
     assert defn.model_dump() == {
@@ -36,6 +37,7 @@ def test_every_frontmatter_field_is_read(tmp_path):
         "context": "fork",
         "agent": "editor",
         "user_invocable": False,
+        "disable_model_invocation": True,
         "body": "Body here",
         "source_dir": tmp_path / "my-skill",
     }

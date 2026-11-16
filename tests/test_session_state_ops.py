@@ -306,6 +306,76 @@ class TestTheInstructionsPatcher:
         assert s.main_team.instructions == ["fresh team", "# Output style: default\n\nBe terse."]
 
 
+class TestTheRenderedLayout:
+    """The main agent's instructions reach Agno as ONE string: ``TrainedLayout``
+    renders the list as ``- item`` lines, so the starting style block sits
+    inside it, not as an entry of its own. The patcher pruned nothing and
+    appended the new style beside the old: the model got two contradicting
+    styles and the switch often had no effect (campaign R052)."""
+
+    @staticmethod
+    def _rendered(*items: str) -> list:
+        from igni_core.core.agents.trained_layout import TrainedLayout
+
+        rendered, _ = TrainedLayout.instructions(list(items), markdown=True)
+        return rendered
+
+    def test_the_switch_reads_as_a_fresh_build_with_the_new_style(self):
+        s = _bare_session()
+        s.main_team.instructions = self._rendered(
+            "base prompt", "# Output style: default\n\nBe terse.", "memory writeback"
+        )
+
+        _coord(s).set_output_style("explanatory")
+
+        assert s.main_team.instructions == self._rendered(
+            "base prompt", "# Output style: explanatory\n\nExplain a lot.", "memory writeback"
+        )
+
+    def test_a_style_with_no_body_takes_the_block_out(self):
+        styles = {
+            "default": OutputStyle(name="default", body="Be terse.", description="", path=None),
+            "silent": OutputStyle(name="silent", body="", description="", path=None),
+        }
+        s = _bare_session(styles)
+        s.main_team.instructions = self._rendered(
+            "base prompt", "# Output style: default\n\nBe terse.", "memory writeback"
+        )
+
+        _coord(s).set_output_style("silent")
+
+        assert s.main_team.instructions == self._rendered("base prompt", "memory writeback")
+
+    def test_switching_back_and_forth_keeps_one_block(self):
+        s = _bare_session()
+        s.main_team.instructions = self._rendered(
+            "base prompt", "# Output style: default\n\nBe terse.", "memory writeback"
+        )
+        coordinator = _coord(s)
+
+        coordinator.set_output_style("explanatory")
+        coordinator.set_output_style("default")
+
+        assert s.main_team.instructions == self._rendered(
+            "base prompt", "# Output style: default\n\nBe terse.", "memory writeback"
+        )
+
+    def test_a_style_the_session_started_without_joins_the_rendered_list(self):
+        styles = {
+            "silent": OutputStyle(name="silent", body="", description="", path=None),
+            "pirate": OutputStyle(name="pirate", body="Arr.", description="", path=None),
+        }
+        s = _bare_session(styles)
+        s.output_style.select("silent")
+        s.main_team.instructions = self._rendered("base prompt", "memory writeback")
+
+        _coord(s).set_output_style("pirate")
+
+        assert s.main_team.instructions == self._rendered(
+            "base prompt", "memory writeback", "# Output style: pirate\n\nArr."
+        )
+
+
 class TestTheStartingMode:
     def test_without_permissions_it_is_the_default_and_the_policy_is_empty(self):
         coordinator = _coord(_bare_session())

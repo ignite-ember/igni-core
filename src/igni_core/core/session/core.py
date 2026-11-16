@@ -51,6 +51,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+from agno.db.base import SessionType
+
 from igni_core.backend.schemas_model import ModelSwitchResult
 from igni_core.core.broadcast_schema import BroadcastEvent, BroadcastSink
 from igni_core.core.config.group_policy.revalidation import PolicyRevalidation
@@ -112,6 +114,14 @@ class Session(SessionSurface):
         self.permission_evaluator = None
         # The backend installs this; a session nobody drives has none.
         self.on_new_dialogue = None
+        #: The session ids the ``SessionStart`` hook fired for, and what it
+        #: last said for the agent, until a turn carries it.
+        self._session_start_fired: set[str] = set()
+        self._session_start_context = ""
+        #: What the backend wired onto the main team (progress callback,
+        #: event-log appender, queue hooks), applied again to every
+        #: fresh team :meth:`rebuild_main_team` builds.
+        self.main_team_wirings: list[Callable[[], None]] = []
         SessionComposer(
             self,
             SessionDeps(
@@ -150,6 +160,8 @@ class Session(SessionSurface):
         against the window the new model actually has.
         """
         AgentsBuilder(self).build_main_team()
+        for apply in self.main_team_wirings:
+            apply()
         self.context_budget.resize(self.settings)
 
     def set_default_model(self, model_name: str) -> ModelSwitchResult:
@@ -166,18 +178,55 @@ class Session(SessionSurface):
         return ModelSwitchResult(ok=True, model_name=model_name)
 
     async def fire_session_start_hook(self) -> None:
-        """Fire the ``SessionStart`` hook; a hook error must not gate startup."""
+        """Fire the ``SessionStart`` hook, once per session id; a hook error
+        must not gate startup.
+
+        The backend fires it when a window opens or creates a session, and a
+        window may also ask: the second ask for the same session does
+        nothing. ``resumed`` says whether the session already holds a run —
+        it said ``session_named``, which a new session from
+        ``sessions.create`` already is. The hook's ``systemMessage`` is kept
+        for the next turn (:meth:`take_session_start_context`), as ``igni
+        -m`` sends it: it was dropped, so the hook could tell the agent
+        nothing.
+        """
+        if self.session_id in self._session_start_fired:
+            return
+        self._session_start_fired.add(self.session_id)
         try:
-            await self.hook_executor.execute(
+            result = await self.hook_executor.execute(
                 event=HookEvent.SESSION_START.value,
                 payload=SessionLifecyclePayload(
-                    session_id=self.session_id, resumed=self.session_named
+                    session_id=self.session_id, resumed=await self._holds_a_run()
                 ),
             )
         except Exception as exc:
             # The hook is the user's own; a broken one is worth saying
             # out loud, even though it must not stop the session.
             logger.warning("session_start hook fire raised: %s", exc)
+            return
+        message = getattr(result, "message", "")
+        if getattr(result, "should_continue", True) is True and isinstance(message, str):
+            self._session_start_context = message
+
+    def take_session_start_context(self) -> str:
+        """What the ``SessionStart`` hook said for the agent, once."""
+        context, self._session_start_context = self._session_start_context, ""
+        return context
+
+    async def _holds_a_run(self) -> bool:
+        """Whether this session's stored conversation has a run in it."""
+        db = self.persistence.db if self.persistence is not None else None
+        if db is None:
+            return False
+        try:
+            stored = await db.get_session(
+                session_id=self.session_id, session_type=SessionType.AGENT, deserialize=True
+            )
+        except Exception as exc:  # noqa: BLE001 — a lookup must not stop the hook
+            logger.debug("session_start: could not read the stored session: %s", exc)
+            return False
+        return bool(getattr(stored, "runs", None))
 
     def reload_hooks(self) -> int:
         """Reload hooks from the settings files; returns how many are loaded."""
@@ -186,6 +235,7 @@ class Session(SessionSurface):
         # The team is the agents builder's: it is the one that knows
         # how a tool-event hook is attached to it.
         AgentsBuilder(self).replace_tool_event_hook(self.tool_event_hook())
+        AgentsBuilder(self).replace_spawn_hook_executor(self.hook_executor)
         return count
 
     def reload_plugins(self) -> PluginReloadCounts:
@@ -260,7 +310,17 @@ class Session(SessionSurface):
         self.identity.rotate(new_id)
 
     async def rebind_identity(self, session_id: str) -> None:
+        """Continue another stored session, its todo list and event log included.
+
+        Both were only read back at start-up, so after a switch
+        ``todos()`` answered the previous session's list (or none), and
+        the event log held the previous session's views: its history
+        showed them, and the next append saved them into this session.
+        """
         await self.identity.rebind(session_id)
+        if self.persistence is not None:
+            self.todo_store.set(await self.persistence.load_todos())
+            self.event_log_store.restore(await self.persistence.load_event_log())
 
     @property
     def permission_mode_value(self) -> str:
@@ -314,9 +374,15 @@ class Session(SessionSurface):
 
     # ── Message handling (headless path) ──────────────────────
 
-    async def handle_message(self, message: str, *, media: MessageMedia | None = None) -> str:
-        """Handle a single user message and return the response."""
-        result = await self.message_handler.handle(message, media)
+    async def handle_message(
+        self, message: str, *, media: MessageMedia | None = None, context: str = ""
+    ) -> str:
+        """Handle a single user message and return the response.
+
+        ``context`` is a hook's text for the agent (a ``SessionStart``
+        hook's ``systemMessage``), sent after the message.
+        """
+        result = await self.message_handler.handle(message, media, context=context)
         # A side-observer: always safe to fire once the pipeline returns.
         try:
             RunMessagesDebugDumper.dump_team(self.main_team)

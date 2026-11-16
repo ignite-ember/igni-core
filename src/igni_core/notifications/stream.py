@@ -40,6 +40,7 @@ import httpx
 from pydantic import BaseModel
 
 from igni_core.core.activity import background
+from igni_core.core.auth.server_reachability import record_answered, record_unreachable
 from igni_core.extensions.service_token import NotSignedIn
 from igni_core.notifications.server_client import SignedInServer
 
@@ -268,12 +269,20 @@ class NotificationStreamFollower:
             headers["Last-Event-ID"] = self._cursor.encode()
         connected_with = self._cursor
         opened_at: float | None = None
+        # Whether the server answered this time. The stream is long: a
+        # drop halfway through it says the server was there and closed
+        # the connection, not that it was not there at all.
+        answered = False
         timeout = httpx.Timeout(15.0, read=self.READ_TIMEOUT)
         try:
             async with (
                 httpx.AsyncClient(timeout=timeout, transport=self._transport) as client,
                 client.stream("GET", f"{api_url}{self.PATH}", headers=headers) as response,
             ):
+                # The server answered. A 5xx is an answer, but a broken
+                # one; a refused token is not a reachability problem.
+                record_answered(api_url, response.status_code)
+                answered = True
                 if response.status_code in (401, 403, 404):
                     logger.warning(
                         "igni refused the notification stream (%s)", response.status_code
@@ -307,6 +316,10 @@ class NotificationStreamFollower:
                         continue
                     self._on_wake()
         except httpx.HTTPError as exc:
+            # The server did not answer: it was not there. A stream that
+            # dropped after it had answered says nothing about that.
+            if not answered:
+                record_unreachable(api_url, exc.__class__.__name__)
             logger.info("notification stream dropped: %s", exc)
         except Exception:  # noqa: BLE001 — following must outlive one bad connection
             logger.exception("notification stream failed")

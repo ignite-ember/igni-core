@@ -104,9 +104,12 @@ class StopHookPayload(BaseModel):
 
     Both callsites (Stop hook after natural end-of-run in
     :class:`RunController`, Stop hook after
-    :meth:`HitlController.resolve_batch`) share one type."""
+    :meth:`HitlController.resolve_batch`) share one type.
+    ``response`` is the start of the reply the run gave, as
+    ``igni -m`` sends it (docs/HOOKS.md)."""
 
     session_id: str
+    response: str = ""
 
 
 class ModelConfig(BaseModel):

@@ -70,6 +70,16 @@ def test_an_exact_rule_still_matches_its_line_exactly():
     assert _decide("echo beta", allow=["Bash(echo alpha)"]) is not PermissionDecision.ALLOW
 
 
+def test_an_exact_rule_allows_the_one_line_no_glob_could_vouch_for():
+    """R333: "Always allow" on ``echo ALWAYS > always.txt`` saves exactly that
+    rule, and the redirect made every rule refuse it — asked every time. A
+    rule naming the line itself, with no wildcard, matches nothing else."""
+    rule = {"allow": ["Bash(echo ALWAYS > always.txt)", "Bash", "Bash(echo *)"]}
+    assert _decide("echo ALWAYS > always.txt", **rule) is PermissionDecision.ALLOW
+    for other in ("echo ALWAYS > other.txt", "echo ALWAYS > always.txt; rm x", "echo $(rm x)"):
+        assert _decide(other, **rule) is not PermissionDecision.ALLOW
+
+
 @pytest.mark.parametrize("command", ["cd build && rm -rf .", "ls; rm x", "ls | rm x"])
 def test_a_deny_rule_finds_its_command_anywhere_on_the_line(command: str):
     assert _decide(command, deny=["Bash(rm *)"], allow=["Bash(*)"]) is PermissionDecision.DENY

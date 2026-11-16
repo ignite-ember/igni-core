@@ -204,6 +204,18 @@ class PendingMessageStore:
             for r in rows
         ]
 
+    def received_at_of(self, session_id: str, message_id: str) -> int | None:
+        """When ``session_id``'s still-pending message arrived; ``None`` when none is."""
+        with self._db.sync_session() as session:
+            return session.scalar(
+                select(ReceivedMessageModel.received_at).where(
+                    self._mine(),
+                    ReceivedMessageModel.session_id == session_id,
+                    ReceivedMessageModel.message_id == message_id,
+                    ReceivedMessageModel.status == "pending",
+                )
+            )
+
     def discard(self, message_id: str) -> None:
         """Hard-delete a pending row.
 
@@ -300,6 +312,29 @@ class PendingMessageStore:
             for r in rows
         ]
 
+    def stamp_abandoned(self, session_id: str, before: int) -> int:
+        """Mark ``session_id``'s unstamped pending messages that arrived
+        before ``before`` as interrupted, reason ``abandoned``.
+
+        A crash stamps nothing: its message stays ``pending`` with no
+        ``interrupted_at``. The backend passes the second it started, so a
+        message no run in this process can still be working on becomes an
+        interrupted run a client can retry or discard. Returns how many.
+        """
+        with self._db.sync_session() as session, session.begin():
+            result = session.execute(
+                update(ReceivedMessageModel)
+                .where(
+                    self._mine(),
+                    ReceivedMessageModel.session_id == session_id,
+                    ReceivedMessageModel.status == "pending",
+                    ReceivedMessageModel.interrupted_at.is_(None),
+                    ReceivedMessageModel.received_at < before,
+                )
+                .values(interrupted_at=self._now(), interrupted_reason="abandoned")
+            )
+            return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
     def discard_interrupted(self, session_id: str, message_id: str) -> int:
         """Hard-delete one interrupted run of ``session_id``; how many rows went.
 
@@ -316,6 +351,23 @@ class PendingMessageStore:
                     ReceivedMessageModel.message_id == message_id,
                     ReceivedMessageModel.status == "pending",
                     ReceivedMessageModel.interrupted_at.is_not(None),
+                )
+            )
+            return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
+    def discard_pending(self, session_id: str, message_id: str) -> int:
+        """Hard-delete one still-pending message of ``session_id``; how many rows went.
+
+        Interrupted or not: what ``list_pending`` offers. A storage failure
+        raises, as for :meth:`discard_interrupted`.
+        """
+        with self._db.sync_session() as session, session.begin():
+            result = session.execute(
+                delete(ReceivedMessageModel).where(
+                    self._mine(),
+                    ReceivedMessageModel.session_id == session_id,
+                    ReceivedMessageModel.message_id == message_id,
+                    ReceivedMessageModel.status == "pending",
                 )
             )
             return int(result.rowcount or 0)  # type: ignore[attr-defined]
@@ -370,8 +422,17 @@ class PendingMessageStore:
     async def alist_interrupted(self, session_id: str) -> list[InterruptedMessage]:
         return await asyncio.to_thread(self.list_interrupted, session_id)
 
+    async def astamp_abandoned(self, session_id: str, before: int) -> int:
+        return await asyncio.to_thread(self.stamp_abandoned, session_id, before)
+
     async def adiscard_interrupted(self, session_id: str, message_id: str) -> int:
         return await asyncio.to_thread(self.discard_interrupted, session_id, message_id)
+
+    async def areceived_at_of(self, session_id: str, message_id: str) -> int | None:
+        return await asyncio.to_thread(self.received_at_of, session_id, message_id)
+
+    async def adiscard_pending(self, session_id: str, message_id: str) -> int:
+        return await asyncio.to_thread(self.discard_pending, session_id, message_id)
 
     async def adiscard_all_for_session(self, session_id: str) -> int:
         return await asyncio.to_thread(self.discard_all_for_session, session_id)

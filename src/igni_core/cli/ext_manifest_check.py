@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 
 from igni_core.cli.ext_doctor import Findings
+from igni_core.extensions.contract import CONTRACT_VERSION, ContractRange
 from igni_core.extensions.manifest import ExtensionManifest, Workspace
 from igni_core.extensions.profile import DEV_FLAG
 
@@ -26,12 +27,64 @@ class ManifestCheck:
         self._bundle = bundle
 
     def check(self, findings: Findings) -> None:
+        self._contract(findings)
         self._packaging(findings)
         self._pages(findings)
         self._endpoint(findings)
         self._placement(findings)
         self._dev_command(findings)
         self._wildcard_rpc(findings)
+        self._tool_audience(findings)
+        self._indicators(findings)
+
+    def _contract(self, findings: Findings) -> None:
+        """The contract range against the contract this igni implements."""
+        try:
+            needed = ContractRange.parse(self._manifest.contract)
+        except ValueError as exc:
+            findings.problems.append(
+                f"contract {self._manifest.contract!r} is not a range ({exc}); write one "
+                f"like '>=1.0 <2'. This igni implements contract {CONTRACT_VERSION}."
+            )
+            return
+        if not needed.admits(CONTRACT_VERSION):
+            findings.problems.append(f"contract out of range: {needed.why_not(CONTRACT_VERSION)}")
+
+    def _indicators(self, findings: Findings) -> None:
+        """An indicator's ``source`` is called as the page RPC ``ext.<id>.<source>``.
+
+        Written the way ``permissions.tools`` names a tool (``acme.kit.status``)
+        it became ``ext.acme.kit.acme.kit.status``, and a bare name with no
+        ``permissions.rpc`` grant was refused: either way the chip never
+        appeared, and the only trace was a refused-RPC line in the backend
+        log every interval (campaign R292).
+        """
+        manifest = self._manifest
+        for indicator in manifest.contributes.indicators:
+            source = indicator.source
+            if source.startswith(f"{manifest.id}.") or "." in source:
+                findings.problems.append(
+                    f"indicator {indicator.id}: source {source!r} is a tool's bare name "
+                    f"(the host calls ext.{manifest.id}.<source>), not its namespaced "
+                    f"name; write {source.rsplit('.', 1)[-1]!r}"
+                )
+                continue
+            if not manifest.grants_rpc(f"ext.{manifest.id}.{source}"):
+                findings.problems.append(
+                    f"indicator {indicator.id}: the host calls ext.{manifest.id}.{source} "
+                    f"for it, and permissions.rpc does not grant that, so the chip never "
+                    f'appears; add "ext.{manifest.id}.{source}" (or "ext.{manifest.id}.*")'
+                )
+
+    def _tool_audience(self, findings: Findings) -> None:
+        """``own-agents`` with no plugin: the install refuses it, so doctor says so."""
+        manifest = self._manifest
+        if manifest.permissions.toolAudience == "own-agents" and not manifest.contributes.plugin:
+            findings.problems.append(
+                "offers its tools to its own agents only (toolAudience: own-agents) and "
+                "carries no plugin, so it has no agents of its own; ship them with "
+                "contributes.plugin, or use toolAudience: all-agents"
+            )
 
     def _packaging(self, findings: Findings) -> None:
         manifest = self._manifest
@@ -78,6 +131,12 @@ class ManifestCheck:
     def _endpoint(self, findings: Findings) -> None:
         if self._manifest.endpoint is None:
             return
+        auth = self._manifest.endpoint.auth
+        if auth is not None and auth.kind != "none":
+            findings.problems.append(
+                f"authenticates to its endpoint with {auth.kind}, and igni does not "
+                "send endpoint credentials yet, so every call would be refused"
+            )
         permissions = self._manifest.permissions
         if not permissions.egress:
             findings.problems.append(

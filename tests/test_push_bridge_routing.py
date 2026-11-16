@@ -18,7 +18,7 @@ from typing import Any
 
 from igni_core.backend.push_bridge import PushNotificationBridge
 from igni_core.core.activity.background import background
-from igni_core.core.run_context import CURRENT_RUN_ID
+from igni_core.core.run_context import CURRENT_RUN_ID, run_session
 from igni_core.core.tools.edit import FileEditNotifier, default_file_edit_notifier
 from igni_core.core.tools.process_bus import ProcessEventBus
 from igni_core.core.tools.process_events import (
@@ -101,6 +101,17 @@ class TestThePushNamesItsRun:
 
         [push] = transport.sent
         assert push.run_id == ""
+
+    async def test_a_push_raised_inside_a_run_names_the_run_s_chat(self):
+        """Campaign R647: the stamp is the run's chat, not the one the
+        session shows by the time the push goes out."""
+        bridge, transport = await _bridge()
+        with run_session("chat-A"):
+            await asyncio.to_thread(bridge._on_file_edited, "/p/a.py")
+        bridge._on_file_edited("/p/b.py")
+        await _settle(transport, 2)
+
+        assert [push.session_id for push in transport.sent] == ["chat-A", ""]
 
     async def test_a_push_that_already_names_a_run_keeps_it(self):
         bridge, transport = await _bridge()

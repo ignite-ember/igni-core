@@ -8,6 +8,8 @@ isolation so a future refactor of the pipeline can't silently drift
 them.
 """
 
+import pytest
+
 from igni_core.core.hooks.permission.blocked_command_stage import BlockedCommandStage
 from igni_core.core.hooks.permission.context import ToolCallContext
 from igni_core.core.hooks.permission.protected_path_stage import ProtectedPathStage
@@ -68,7 +70,8 @@ class TestProtectedPathStageCheckSync:
         for tool in ProtectedPathStage.WRITE_TOOL_FUNCTIONS:
             assert ProtectedPathStage.applies_to(tool)
         assert not ProtectedPathStage.applies_to("read_file")
-        assert not ProtectedPathStage.applies_to("run_shell_command")
+        # The shell is gated for what it writes through a redirect or tee.
+        assert ProtectedPathStage.applies_to("run_shell_command")
 
 
 class TestBlockedCommandStageCheckSync:
@@ -137,3 +140,37 @@ class TestProtectedPathStageMatchesPattern:
     def test_matches_expected(self):
         assert ProtectedPathStage.matches_pattern(".env", [".env"]) is True
         assert ProtectedPathStage.matches_pattern("app.py", [".env"]) is False
+
+
+class TestProtectedPathSpellings:
+    """SECURITY.md's project example: ``terraform/*.tfstate`` and ``keys/``.
+
+    A path pattern protects the file however the tool spells it, and a
+    pattern ending in ``/`` protects the directory's contents.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "terraform/prod.tfstate",
+            "./terraform/prod.tfstate",
+            "/abs/proj/terraform/prod.tfstate",
+        ],
+    )
+    def test_a_path_pattern_matches_every_spelling(self, path):
+        assert ProtectedPathStage.matches_pattern(path, ["terraform/*.tfstate"]) is True
+
+    @pytest.mark.parametrize(
+        "path", ["keys/a.txt", "./keys/a.txt", "/abs/proj/keys/a.txt", "keys/sub/b.pem"]
+    )
+    def test_a_directory_pattern_protects_its_contents(self, path):
+        assert ProtectedPathStage.matches_pattern(path, ["keys/"]) is True
+
+    @pytest.mark.parametrize(
+        "path", ["keys", "monkeys/a.txt", "src/keys.py", "terraform.tfstate", "other/prod.tfstate"]
+    )
+    def test_neighbours_are_not_caught(self, path):
+        assert ProtectedPathStage.matches_pattern(path, ["keys/", "terraform/*.tfstate"]) is False
+
+    def test_the_basename_rule_still_holds(self):
+        assert ProtectedPathStage.matches_pattern("/abs/proj/.env", [".env"]) is True

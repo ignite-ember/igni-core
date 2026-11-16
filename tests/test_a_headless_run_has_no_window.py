@@ -175,6 +175,9 @@ class Mcp:
         self.disconnects = 0
         self.extension_request_meta: Any = None
 
+    def unregister_server(self, name: str) -> None:
+        return None
+
     def register_server(self, config: Any) -> None:
         self.configs[config.name] = config
 
@@ -282,7 +285,7 @@ async def test_an_extension_that_hangs_past_the_bound_fails_while_a_ready_one_st
     monkeypatch.setattr(HeadlessExtensions, "START_TIMEOUT_S", 0.2)
     extensions = HeadlessExtensions(Session(tmp_path))
 
-    async def start_installed(launcher: ExtensionLauncher) -> None:
+    async def start_installed(launcher: ExtensionLauncher, skip: set[str] | None = None) -> None:
         registry = extensions.registry
         registry.install(_manifest(guard), state=ExtensionState.PREPARING)
         registry.install(_manifest(ready), state=ExtensionState.READY)

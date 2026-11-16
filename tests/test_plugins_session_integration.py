@@ -69,6 +69,7 @@ def _session_under_test(tmp_path: Path):
         mocks["ModelRegistry"].return_value.get_context_window.return_value = 128_000
         cc = mocks["CloudCredentials"].return_value
         cc.is_authenticated = False
+        cc.is_valid = False
         cc.access_token = None
         cc.org_id = None
         cc.org_name = None

@@ -190,6 +190,8 @@ class HeadlessExtensions:
         self._session = session
         self._registry = ExtensionRegistry()
         self._channel: HostChannel | None = None
+        self._contributions: ExtensionContributions | None = None
+        self._plugins_dir: Path | None = None
 
     @property
     def registry(self) -> ExtensionRegistry:
@@ -200,11 +202,66 @@ class HeadlessExtensions:
         session = self._session
         settings = session.settings
         store = ExtensionStore()
-        await self._sync(store, settings)
         if not store.installed():
-            return
+            # Nothing stored, so nothing an upgrade could need to put back.
+            await self._sync(store, settings)
+            if not store.installed():
+                return
+            launcher = self._launcher(store)
+        else:
+            # The sync starts each upgrade it stores, through the run's own
+            # launcher, so one that does not start puts the working version
+            # back (sync.py ``_install``). Without it the sync deleted the
+            # version that worked and kept one that could not start.
+            launcher = self._launcher(store)
+            await self._sync(store, settings, lifecycle=launcher)
+        plugins_before = self._plugin_dirs()
+        try:
+            await asyncio.wait_for(
+                launcher.start_installed(skip=set(self._registry.ids())), self.START_TIMEOUT_S
+            )
+        except TimeoutError:
+            for extension_id in self._registry.ids():
+                entry = self._registry.get(extension_id)
+                if entry is not None and entry.state is ExtensionState.PREPARING:
+                    self._registry.set_state(
+                        extension_id,
+                        ExtensionState.FAILED,
+                        f"it did not start within {self.START_TIMEOUT_S:g}s",
+                    )
+        for extension_id in self._registry.ids():
+            entry = self._registry.get(extension_id)
+            if entry is not None and entry.state is not ExtensionState.READY:
+                logger.warning("extension %s is %s: %s", extension_id, entry.state, entry.reason)
+        # The one turn's prompt is built by the rebuild below: what the
+        # extensions contribute to it has to be in by then.
+        await self._contributions_settled()
+        if self._plugin_dirs() != plugins_before:
+            # An extension's plugin is copied in as the extension starts —
+            # after this run's skills, hooks and agents were loaded. Without
+            # a reload the first run after an install had none of them
+            # ("Unknown command"), and only the next run did.
+            session.reload_plugins()
+        session.reload_group_agents()
+
+    def _plugin_dirs(self) -> set[str]:
+        """The plugins installed now, by directory name."""
+        plugins_dir = self._plugins_dir
+        if plugins_dir is None or not plugins_dir.is_dir():
+            return set()
+        return {child.name for child in plugins_dir.iterdir() if child.is_dir()}
+
+    async def _contributions_settled(self) -> None:
+        if self._contributions is not None:
+            await self._contributions.settled(self.START_TIMEOUT_S)
+
+    def _launcher(self, store: ExtensionStore) -> ExtensionLauncher:
+        """The run's host channel, hooks and installer, and the launcher over them."""
+        session = self._session
+        settings = session.settings
         rpc = ExtensionRpc(self._registry)
         plugins_dir = PluginInstaller(data_dir=settings.storage.data_dir).plugins_dir
+        self._plugins_dir = Path(plugins_dir)
         hooks = ExtensionHooks(registry=self._registry)
         contributions = ExtensionContributions(
             registry=self._registry,
@@ -217,6 +274,7 @@ class HeadlessExtensions:
             hooks=hooks,
         )
         contributions.attach()
+        self._contributions = contributions
         model = HostModel.build(
             HostModelConfig(
                 backend=HeadlessHostBackend(Path(session.project_dir), str(session.session_id)),
@@ -249,27 +307,17 @@ class HeadlessExtensions:
             # Its air gap narrows what an extension's process may reach.
             sandbox=self._sandbox(settings),
         )
-        launcher = ExtensionLauncher(
+        return ExtensionLauncher(
             store=store, installer=installer, registry=self._registry, contributions=contributions
         )
-        try:
-            await asyncio.wait_for(launcher.start_installed(), self.START_TIMEOUT_S)
-        except TimeoutError:
-            for extension_id in self._registry.ids():
-                entry = self._registry.get(extension_id)
-                if entry is not None and entry.state is ExtensionState.PREPARING:
-                    self._registry.set_state(
-                        extension_id,
-                        ExtensionState.FAILED,
-                        f"it did not start within {self.START_TIMEOUT_S:g}s",
-                    )
-        for extension_id in self._registry.ids():
-            entry = self._registry.get(extension_id)
-            if entry is not None and entry.state is not ExtensionState.READY:
-                logger.warning("extension %s is %s: %s", extension_id, entry.state, entry.reason)
-        session.reload_group_agents()
 
-    async def _sync(self, store: ExtensionStore, settings: Settings) -> None:
+    async def _sync(
+        self,
+        store: ExtensionStore,
+        settings: Settings,
+        *,
+        lifecycle: ExtensionLauncher | None = None,
+    ) -> None:
         """Bring the store in step with igni server first, bounded.
 
         The app's backend syncs once a window attaches; a headless run
@@ -278,7 +326,9 @@ class HeadlessExtensions:
         when there is no server, nobody is signed in or the air gap
         excludes it; a failure costs the update, never the run.
         """
-        report = await OneShotSync(store, settings).run(timeout=self.SYNC_TIMEOUT_S)
+        report = await OneShotSync(store, settings, lifecycle=lifecycle).run(
+            timeout=self.SYNC_TIMEOUT_S
+        )
         if report.skipped:
             logger.info("extension sync skipped: %s", report.skipped)
         elif report.installed or report.removed or report.failed:

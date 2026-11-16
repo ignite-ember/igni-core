@@ -72,9 +72,11 @@ _DEFAULT_SHELL_EXIT_FAIL_RE = re.compile(r"^\[Exited with code (\d+)")
 _DEFAULT_ERROR_PREFIXES: tuple[str, ...] = ("Error:",)
 
 # A call kept from running because the person said no, or because
-# nobody could be asked — ``bypass_guard.NOT_RUN``. Not a failure: the
-# card shows it as rejected, neither green nor red.
-_DEFAULT_REJECTED_PREFIXES: tuple[str, ...] = ("Not run:",)
+# nobody could be asked — ``bypass_guard.NOT_RUN``, and the note a
+# rejection in the approval dialog leaves (``approvals.declined``). Not a
+# failure: the card shows it as rejected, neither green nor red. Kept
+# literal-for-literal with ``declined_note``; a test pins the two.
+_DEFAULT_REJECTED_PREFIXES: tuple[str, ...] = ("Not run:", "Blocked: the person declined")
 _DEFAULT_FAILURE_REGEXES: tuple[re.Pattern[str], ...] = (
     _DEFAULT_SHELL_EXEC_FAIL_RE,
     _DEFAULT_SHELL_BG_FAIL_RE,

@@ -58,6 +58,21 @@ async def test_the_stamp_follows_a_rename_after_construction() -> None:
     assert [m.session_id for m in inner.sent] == ["old", "renewed"]
 
 
+async def test_inside_a_run_the_stamp_is_the_run_s_chat() -> None:
+    """Campaign R647: an old run's push after ``/clear`` named the new chat."""
+    from igni_core.core.run_context import run_session
+
+    inner = _Inner()
+    backend = SimpleNamespace(session_id="new-chat")
+    transport = SessionStampingTransport(inner, backend)
+
+    with run_session("old-chat"):
+        await transport.send(msg.Info(text="old run's progress"))
+    await transport.send(msg.Info(text="the new chat's"))
+
+    assert [m.session_id for m in inner.sent] == ["old-chat", "new-chat"]
+
+
 async def test_a_message_naming_another_session_is_forwarded_as_it_is() -> None:
     inner = _Inner()
     relayed = msg.Info(text="hello", session_id="B")

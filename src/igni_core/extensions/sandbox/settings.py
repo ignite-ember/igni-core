@@ -61,7 +61,7 @@ class SandboxSettings(BaseModel):
 
     #: Confine extension processes. ``False`` only from managed or user.
     enabled: bool = True
-    #: Refuse to run one unconfined. Only from managed or the env.
+    #: Refuse to run one unconfined. Only from managed, the group policy or the env.
     required: bool = False
     #: Where ``enabled`` was turned off, for the log: ``managed`` or ``user``.
     disabled_by: str = ""
@@ -103,7 +103,7 @@ class SandboxSettings(BaseModel):
         if "require_sandbox" in user.model_fields_set:
             logger.warning(
                 "extensions.require_sandbox in %s is ignored: only the managed "
-                "settings file or %s may set it",
+                "settings file, the organisation's group policy or %s may set it",
                 user_file,
                 REQUIRE_SANDBOX_ENV,
             )

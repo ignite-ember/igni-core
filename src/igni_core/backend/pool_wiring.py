@@ -13,6 +13,7 @@ from igni_core.backend.schemas_sessions import BackendLike
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.loader import PromptLoader
@@ -68,6 +69,9 @@ class PoolWiring:
     origins: ExtensionOrigins | None = None
     extension_store: ExtensionStore | None = None
     notifications: NotificationCenter | None = None
+    #: The manager the extensions are connected on (the boot session's):
+    #: every session of the pool is offered their tools.
+    extension_mcp: MCPClientManager | None = None
 
     def stamped(self, backend: BackendLike) -> SessionStampingTransport:
         """The root transport, stamping ``backend``'s session id on everything it sends."""

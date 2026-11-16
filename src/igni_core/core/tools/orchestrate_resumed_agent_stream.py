@@ -36,12 +36,14 @@ class ResumedSubAgentStreamHandler(SubAgentStreamHandler):
                 session_id=self._resume.session_id,
                 requirements=self._resume.requirements,
                 stream=True,
+                stream_events=True,
             )
         return self._context.runnable.acontinue_run(
             run_id=self._resume.run_id,
             session_id=self._resume.session_id,
             requirements=self._resume.requirements,
             stream=True,
+            stream_events=True,
         )
 
 

@@ -63,6 +63,14 @@ class ToolAudience:
             return False
         return agent_source.resolve().is_relative_to(directory)
 
+    def kept_for(self, server: str, agent_source: Path | None) -> bool:
+        """Is ``server`` restricted to agents defined where ``agent_source`` is?
+
+        True only for a restricted server this agent is one of the owners
+        of: the extension shipped the server for exactly this agent.
+        """
+        return server in self._restricted and self.allows(server, agent_source)
+
 
 #: The table the agent builder reads when nobody passes one.
 audience = ToolAudience()

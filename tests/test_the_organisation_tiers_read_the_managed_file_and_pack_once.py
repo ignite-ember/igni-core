@@ -167,14 +167,16 @@ class TestTheWorkspaceTrustPolicy:
         assert policy.mode == "never"
         assert policy.trusted_remotes == ["group/*"]
 
-    def test_a_block_that_is_not_a_mapping_in_one_tier_is_ignored(self, tmp_path):
+    def test_a_block_that_is_not_a_mapping_fails_closed(self, tmp_path):
+        # "An invalid policy block fails closed" (CONFIGURATION.md): the
+        # settings load reads it as ``never`` too, so the gate must agree.
         tiers, _ = _tiers(
-            {"workspace_trust": "never"},
-            _pack({"workspace_trust": {"mode": "trusted_remotes"}}),
+            {"workspace_trust": "sometimes"},
+            _pack({"workspace_trust": {"mode": "ask"}}),
             tmp_path=tmp_path,
         )
 
-        assert tiers.workspace_trust_policy().mode == "trusted_remotes"
+        assert tiers.workspace_trust_policy().mode == "never"
 
     def test_an_invalid_policy_fails_closed_and_says_so(self, tmp_path, caplog):
         tiers, _ = _tiers({"workspace_trust": {"mode": "whenever"}}, tmp_path=tmp_path)

@@ -167,6 +167,9 @@ class ExtensionRuntime:
         """
         self._environment.revoke(extension_id)
         await self._process.release(extension_id)
+        # Its sandbox is gone with it: nothing may start it again from the
+        # configuration it was started with.
+        self._connection.forget(extension_id)
 
     async def stop(self, extension_id: str) -> None:
         """Stop everything this extension runs.

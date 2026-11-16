@@ -26,6 +26,7 @@ from igni_core.backend.schemas_workflows import (
     WorkflowRunPhase,
 )
 from igni_core.backend.workflow_agent_bridge import WorkflowAgentBridge
+from igni_core.backend.workflow_hitl import WorkflowApprovalRelay
 from igni_core.backend.workflow_runtime_process import WorkflowRuntimeProcess
 from igni_core.core.activity import background
 from igni_core.core.config.group_policy.gate import RunGate
@@ -101,7 +102,7 @@ class WorkflowRun:
             identity=identity,
             process=process,
             sink=WorkflowEventSink(session, push),
-            bridge=WorkflowAgentBridge(session, gate),
+            bridge=WorkflowAgentBridge(session, gate, WorkflowApprovalRelay(session, push)),
         )
 
     @property

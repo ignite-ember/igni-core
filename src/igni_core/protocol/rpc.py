@@ -69,6 +69,10 @@ class RpcMethod(StrEnum):
     GET_MCP_SERVERS = "get_mcp_servers"
     GET_MCP_SERVER_DETAILS = "get_mcp_server_details"
     SET_MCP_TOOL_ENABLED = "set_mcp_tool_enabled"
+    # First-use approval of the configured MCP servers, for a window with no
+    # terminal to answer the prompt on.
+    LIST_MCP_APPROVALS = "list_mcp_approvals"
+    SET_MCP_APPROVAL = "set_mcp_approval"
 
     # ── Session / status ──────────────────────────────────────────
     GET_SESSION_ID = "get_session_id"
@@ -86,6 +90,9 @@ class RpcMethod(StrEnum):
     # Hard-delete a single interrupted run — used by the FE's
     # "Discard" action.
     DISCARD_INTERRUPTED_RUN = "discard_interrupted_run"
+    # Hard-delete a single pending message — the FE's "Discard" on a
+    # prompt that never finished.
+    DISCARD_PENDING_MESSAGE = "discard_pending_message"
     LIST_SESSIONS = "list_sessions"
     SWITCH_SESSION = "switch_session"
     CANCEL_RUN = "cancel_run"
@@ -123,11 +130,13 @@ class RpcMethod(StrEnum):
     # ── Visualization actions (json-render round-trip) ───────────
     # User interacted with a component inside a ``<JsonRenderView>``
     # card (e.g. clicked a Button, changed a Select). The FE
-    # forwards the action name + params here so agents can react.
-    # BE keeps the last N events on ``VisualizationActionBus``
-    # and pushes ``visualization_action_dispatched`` so any
-    # listener (or a future agent tool that polls for actions) can
-    # observe them. Returns ``{ok: bool, action, params}``.
+    # forwards the action name + params here. BE keeps the last N
+    # events on ``VisualizationActionBus`` and pushes
+    # ``visualization_action_dispatched`` to the windows, extensions
+    # and SDK programs. The agent is not told: the extension or
+    # program that receives it decides whether and when to tell the
+    # agent (e.g. by posting a message through the SDK after its own
+    # request finishes). Returns ``{ok: bool, action, params}``.
     DISPATCH_VISUALIZATION_ACTION = "dispatch_visualization_action"
 
     # ── Background-process watcher panel ─────────────────────────

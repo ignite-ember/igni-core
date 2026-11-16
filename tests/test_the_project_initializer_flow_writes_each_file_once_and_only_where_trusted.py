@@ -63,7 +63,6 @@ class TestTheStarterSettings:
         assert written == {
             "permissions": {
                 "allow": ["WebSearch", "WebFetch"],
-                "ask": ["Write", "Edit", "Bash", "BashOutput"],
             }
         }
 

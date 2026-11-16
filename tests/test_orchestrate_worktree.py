@@ -226,6 +226,45 @@ class TestRebindBaseDirs:
 # ── SpawnSandbox.create (the worktree fork) ───────────────────
 
 
+class TestTheRebaseReachesTheCalls:
+    """R130: Agno registers a toolkit's methods bound to the instance, and a
+    shallow copy shares that table — the copy's ``base_dir`` moved while
+    every call still ran on the original: the isolated agent's shell ran in
+    the main checkout, and its file tools refused the worktree path."""
+
+    def test_the_file_tools_save_into_the_worktree(self, tmp_path):
+        from agno.tools.file import FileTools
+
+        project, worktree = tmp_path / "project", tmp_path / "wt"
+        project.mkdir()
+        worktree.mkdir()
+        shared = FileTools(base_dir=project)
+        agent = SimpleNamespace(tools=[shared])
+
+        SpawnSandbox.rebind_tool_base_dirs(agent, worktree)
+        (copy,) = agent.tools
+        copy.functions["save_file"].entrypoint(contents="X", file_name="iso_note.txt")
+
+        assert (worktree / "iso_note.txt").read_text() == "X"
+        assert not (project / "iso_note.txt").exists()
+        # The pool's instance still calls itself, at the project.
+        assert shared.functions["save_file"].entrypoint.__self__ is shared
+
+    def test_the_shell_runs_in_the_worktree(self, tmp_path):
+        from igni_core.core.tools.process_supervisor import ProcessSupervisor
+        from igni_core.core.tools.shell import IgniShellTools
+
+        shared = IgniShellTools(base_dir=tmp_path / "project", supervisor=ProcessSupervisor())
+        agent = SimpleNamespace(tools=[shared])
+
+        SpawnSandbox.rebind_tool_base_dirs(agent, tmp_path / "wt")
+        (copy,) = agent.tools
+
+        for function in {**copy.functions, **copy.async_functions}.values():
+            assert function.entrypoint.__self__ is copy
+        assert copy.base_dir == tmp_path / "wt"
+
+
 class TestCreateIsolatedWorktree:
     def test_returns_error_when_no_project_dir(self):
         agent = SimpleNamespace(tools=[])
@@ -255,6 +294,24 @@ class TestCreateIsolatedWorktree:
         try:
             assert sandbox.info.worktree_path.is_dir()
             assert "editor" in sandbox.info.branch_name
+        finally:
+            sandbox.finalize()
+
+    def test_a_namespaced_plugin_agent_gets_a_worktree(self, tmp_path):
+        """A plugin's agents are named ``plugin:agent`` and always run in a
+        worktree. Git refuses ``:`` in a branch name, so the campaign saw
+        every such spawn fail with "not a valid branch name"."""
+        _init_git_repo(tmp_path)
+        agent = SimpleNamespace(tools=[])
+
+        setup = _sandbox(project_dir=tmp_path, agent=agent, agent_name="igni-artifacts:archivist")
+        sandbox = setup.sandbox
+        assert setup.error is None, setup.error
+        assert sandbox is not None and sandbox.info is not None
+        try:
+            assert sandbox.info.worktree_path.is_dir()
+            assert "archivist" in sandbox.info.branch_name
+            assert ":" not in sandbox.info.branch_name
         finally:
             sandbox.finalize()
 

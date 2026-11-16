@@ -28,7 +28,14 @@ import traceback
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from igni_core.core.db.providers import StorageUnavailable
+from igni_core.core.db.scope import NoTenantError
+
 logger = logging.getLogger(__name__)
+
+#: What to do about a shared database (``IGNI_DATABASE_URL``) nobody is
+#: signed in to: said after the :class:`NoTenantError` itself.
+NO_TENANT_REMEDY = "Sign in with `igni login`, or unset IGNI_DATABASE_URL."
 
 #: A session coroutine, as ``run_single_message`` returns it.
 SessionCoroutine = Coroutine[Any, Any, None]
@@ -68,6 +75,17 @@ class HeadlessRun:
             asyncio.run(self.drain_after(session))
         except SystemExit as exc:  # a hook or handler asked for a specific code
             code = self._exit_code(exc)
+        except NoTenantError as exc:
+            # A shared database (``IGNI_DATABASE_URL``) and nobody signed in:
+            # a refusal with its remedy, not a traceback.
+            print(f"Error: {exc}. {NO_TENANT_REMEDY}", file=sys.stderr)
+            code = 1
+        except StorageUnavailable as exc:
+            # ``storage.database_url`` names a database no installed
+            # package stores igni's state in: what to install, not a
+            # traceback.
+            print(f"Error: {exc}.", file=sys.stderr)
+            code = 1
         except BaseException:  # noqa: BLE001 — report, then still exit cleanly
             traceback.print_exc()
             code = 1

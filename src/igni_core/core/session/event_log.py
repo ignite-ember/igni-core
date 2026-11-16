@@ -83,6 +83,19 @@ class SessionEventLog:
             return SessionEventAppendResult(persisted=False, error=saved.error)
         return SessionEventAppendResult(persisted=True)
 
+    def record(self, draft: SessionEventDraft) -> SessionEvent:
+        """Record ``draft`` on the log without writing it out now.
+
+        For what comes many times a run (a progress card's events): the
+        run writes the log once it ends (``RunController._keep_event_log``),
+        and any :meth:`append` before then writes it with the rest. Safe
+        to call where nothing can be awaited, as a progress callback is.
+        """
+        self._seq += 1
+        event = draft.to_event(self._seq)
+        self._events.append(event)
+        return event
+
     def restore(self, events: list[SessionEvent]) -> None:
         """Replace the in-memory log AND its seq counter atomically.
 

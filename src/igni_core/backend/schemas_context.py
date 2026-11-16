@@ -163,6 +163,17 @@ class DiscardInterruptedRunResult(BaseModel):
     error: str = Field(default="", description="Why it failed; empty when `ok` is true.")
 
 
+class DiscardPendingMessageResult(BaseModel):
+    """The outcome of discarding a pending message."""
+
+    ok: bool = Field(
+        description="`true` once the message is no longer pending, also when it was not, "
+        "so a retry is harmless. `false` when the id was empty, the message is one a run "
+        "of this backend may still be finishing, or the change could not be saved."
+    )
+    error: str = Field(default="", description="Why it failed; empty when `ok` is true.")
+
+
 class OutputStylesListView(BaseModel):
     """Wraps the discovered ``styles`` mapping + the active style
     name for the ``/output-style list`` chat card.
@@ -261,6 +272,7 @@ __all__ = [
     "InterruptedRun",
     "CompactionOutcome",
     "DiscardInterruptedRunResult",
+    "DiscardPendingMessageResult",
     "OutputStylesListView",
     "OutputStyleStatusView",
     "ContextBreakdownView",

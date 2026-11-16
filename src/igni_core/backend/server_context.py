@@ -37,6 +37,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from igni_core.backend.schemas_context import (
     PENDING_STALENESS_SECONDS,
     DiscardInterruptedRunResult,
+    DiscardPendingMessageResult,
     InterruptedRun,
     PendingMessage,
     TruncateHistoryResult,
@@ -74,6 +75,9 @@ class ContextController:
         self._pending_store = pending_store
         self._models = models
         self._pack_meta = pack_meta
+        #: When this backend started: a message still pending from before
+        #: then is no run of this process's, so igni stopped while it ran.
+        self._started_at = int(time.time())
 
     def get_status(self) -> msg.StatusUpdate:
         """Status-bar snapshot.
@@ -216,29 +220,59 @@ class ContextController:
     async def get_pending_messages(self, session_id: str) -> list[PendingMessage]:
         """Pending user messages that never completed a run.
 
-        Oldest-first order. Only rows older than the staleness
-        threshold are surfaced — a fresh row is almost always
-        "Agno is still finishing its post-stream tail" and not a
-        real interruption.
+        Oldest-first order. A row this backend received is surfaced only
+        once it is older than the staleness threshold — a fresh one is
+        almost always "Agno is still finishing its post-stream tail" and
+        not a real interruption. A row saved before this backend started
+        is surfaced at once: no run of this backend is finishing it, and
+        it was hidden for a minute after every restart (campaign R652).
         """
         try:
             rows = await self._pending_store.alist_pending(session_id)
         except SQLAlchemyError:
             logger.warning("get_pending_messages: store read failed", exc_info=True)
             return []
+        return [PendingMessage.from_pending_row(r) for r in rows if self._settled(r.received_at)]
+
+    def _settled(self, received_at: int) -> bool:
+        """Whether a pending row is past any run of this backend still finishing it."""
         cutoff = int(time.time()) - PENDING_STALENESS_SECONDS
-        rows = [r for r in rows if r.received_at <= cutoff]
-        return [PendingMessage.from_pending_row(r) for r in rows]
+        return received_at < self._started_at or received_at <= cutoff
+
+    async def discard_pending_message(
+        self, session_id: str, message_id: str
+    ) -> DiscardPendingMessageResult:
+        """Hard-delete one pending message — the FE's "Discard" on a pending prompt.
+
+        Only one :meth:`get_pending_messages` would list: a message a run
+        of this backend may still be finishing is refused, so a discard
+        never pulls the row from under a live run. Idempotent: a message
+        that is not pending (any more) answers ``ok=True``.
+        """
+        if not message_id:
+            return DiscardPendingMessageResult(ok=False, error="message_id is required")
+        try:
+            received_at = await self._pending_store.areceived_at_of(session_id, message_id)
+            if received_at is None:
+                return DiscardPendingMessageResult(ok=True)
+            if not self._settled(received_at):
+                return DiscardPendingMessageResult(
+                    ok=False, error="its run may still be finishing; try again in a minute"
+                )
+            await self._pending_store.adiscard_pending(session_id, message_id)
+        except SQLAlchemyError as exc:
+            logger.warning("discard_pending_message failed: %s", exc)
+            return DiscardPendingMessageResult(ok=False, error=str(exc))
+        return DiscardPendingMessageResult(ok=True)
 
     async def get_interrupted_runs(self, session_id: str) -> list[InterruptedRun]:
         """Durable interrupted-run records for the session.
 
         Distinct from :meth:`get_pending_messages` in three ways:
 
-        1. Returns ONLY rows explicitly stamped by the cancel +
-           error paths in :class:`RunController`. A row that's
-           ``pending`` but never stamped (very old data, or the
-           stamp write was lost on crash) is invisible here.
+        1. Returns ONLY stamped rows: by the cancel + error paths in
+           :class:`RunController`, or ``abandoned`` here, for a row still
+           ``pending`` from before this backend started (a crash).
         2. No staleness cutoff — an interrupted row that just
            landed is the most useful one to surface (the user just
            hit Esc and is staring at the spinner).
@@ -252,6 +286,8 @@ class ContextController:
         controller stays out of the field-mapping business.
         """
         try:
+            # A crash stamps nothing; its message is stamped here, once.
+            await self._pending_store.astamp_abandoned(session_id, self._started_at)
             rows = await self._pending_store.alist_interrupted(session_id)
         except SQLAlchemyError:
             logger.warning("get_interrupted_runs: store read failed", exc_info=True)

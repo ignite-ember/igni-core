@@ -24,7 +24,7 @@ brew install ignite-ember/tap/igni-core
 **pip:**
 
 ```bash
-pip install 'igni-core[decisions]==1.0.4'
+pip install 'igni-core[decisions]==1.0.5'
 ```
 
 **uv:**
@@ -33,7 +33,7 @@ pip install 'igni-core[decisions]==1.0.4'
 uv tool install igni-core
 ```
 
-Each of these installs **v1.0.4** — this repository's build: the
+Each of these installs **v1.0.5** — this repository's build: the
 `igni_core` module, the `igni` command and the decisions service. The
 package is `igni-core` on PyPI and the formula is `igni-core` in the tap;
 `igni` is the one command they install. The old name, `ignite-ember`, is
@@ -41,8 +41,9 @@ retired: its PyPI releases are yanked and there is no formula or command
 by it.
 
 **ripgrep.** igni searches code with `rg`, and an `rg` on your `PATH` is
-always the one it uses. The Homebrew formula depends on Homebrew's
-ripgrep. pip and uv install the PyPI `ripgrep` package only on macOS
+always the one it uses. igni is supported on
+Apple Silicon macOS and x86-64 Linux, and the Homebrew formula depends on
+Homebrew's ripgrep. pip and uv install the PyPI `ripgrep` package only on macOS
 arm64 and Linux x86_64, the platforms it has wheels for, and igni finds
 that binary even when it is not on `PATH`. Anywhere else (Linux arm64,
 Intel macOS) install it yourself — without it code search falls back to a
@@ -447,12 +448,9 @@ exist.
 
 ### Web Tools
 
-Web search and URL fetching ask before each request by default — each is a
-request out of your network. To install them and let them run without asking:
-
-```bash
-pip install -e ".[web]"        # adds the extra to the checkout you installed
-```
+Web search and URL fetching come with igni-core (no extra to install) and ask
+before each request by default — each is a request out of your network. To let
+them run without asking:
 
 ```yaml
 permissions:
@@ -466,7 +464,7 @@ Built-in AI safety pre-hooks:
 
 ```yaml
 guardrails:
-  pii_detection: true          # flag PII in prompts
+  pii_detection: true          # refuse a message carrying PII
   prompt_injection: true       # detect injection attempts
   moderation: true             # content moderation
 ```
@@ -505,8 +503,8 @@ All flags at a glance:
 | Flag | Description |
 |---|---|
 | `--model <name>` | Override the default model |
-| `--verbose` | Show routing decisions and reasoning |
-| `--quiet` | Minimal output |
+| `--verbose` | Sets `display.show_routing` and `display.show_reasoning` for this run (see the `display` block in CONFIGURATION.md: `igni -m` itself prints no routing lines) |
+| `--quiet` | Leaves out the workspace-trust notice, and sets `display.show_tool_calls` / `display.show_routing` off for this run |
 | `-m, --message <text>` | Single message mode (non-interactive) |
 | `-p, --pipe` | Pipe mode: read stdin, write stdout |
 | `-c, --continue` | Resume last session |
@@ -530,7 +528,6 @@ On startup, igni shows contextual tips based on your configuration. For example:
 
 - *Create an `igni.md` in your project root to give agents project-specific context.*
 - *Drop a `.md` file in `.igni/agents/` to create a project-specific agent — no code needed.*
-- *Use `--verbose` to see which agents and team mode the Orchestrator picks.*
 
 Tips adapt to your setup — if you haven't enabled the knowledge base or guardrails, you'll see suggestions for those.
 

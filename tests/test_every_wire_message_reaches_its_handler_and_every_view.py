@@ -518,3 +518,65 @@ async def test_an_extension_call_that_is_refused_fails_with_the_refusal():
     await dispatcher.dispatch(msg.RPCRequest(id="e", method="ext.acme.call", caller="acme"))
 
     assert transport.sent[0].error == "acme may not call that"
+
+
+async def test_a_message_queued_during_a_run_is_the_next_turn_when_no_tool_took_it():
+    """igni-client ``session.queue()``: "a prompt for after the run that is
+    going". Only a tool call inside the run drained the queue, so a run with
+    no tool call left the prompt waiting for good, until some unrelated run
+    called a tool and it was slipped into that answer (campaign R180, R337,
+    R645). What is still queued when a run ends runs next, in order."""
+
+    class _Queuing(_Backend):
+        async def run_message(self, text, media):
+            self.calls.append(("run_message", (text, media)))
+            if text == "write a poem":
+                await dispatcher.dispatch(msg.QueueMessage(text="then AFTER", client_id="tab"))
+                await dispatcher.dispatch(msg.QueueMessage(text="and LAST", client_id="tab"))
+            yield msg.Info(text="done")
+
+    backend = _Queuing(runtime=_Runtime())
+    dispatcher, transport, queue, _ = _dispatcher(backend)
+
+    await dispatcher.dispatch(msg.UserMessage(text="write a poem", client_id="tab"))
+
+    assert [args[0] for name, args in backend.calls if name == "run_message"] == [
+        "write a poem",
+        "then AFTER",
+        "and LAST",
+    ]
+    assert queue == []
+    assert sum(isinstance(m, msg.StreamEnd) for m in transport.sent) == 3
+
+
+async def test_a_run_paused_for_approval_keeps_the_queue_until_the_resumed_run_ends():
+    """R337: the approval pause ended the stream, and the queue drained there —
+    a second run started beside the paused one, with no view of the turn. The
+    queued prompt now waits for the resumed run: its approved tool call takes
+    it in, or it is the next turn once that run ends."""
+
+    class _Pausing(_Backend):
+        async def run_message(self, text, media):
+            self.calls.append(("run_message", (text, media)))
+            if text == "read README":
+                await dispatcher.dispatch(msg.QueueMessage(text="add TOOLQ", client_id="tab"))
+                yield msg.RunPaused(run_id="r1")
+                return
+            yield msg.RunCompleted(run_id="r2")
+
+        async def resolve_hitl(self, requirement_id, action, choice):
+            self.calls.append(("resolve_hitl", (requirement_id, action, choice)))
+            yield msg.RunCompleted(run_id="r1")
+
+    backend = _Pausing(runtime=_Runtime())
+    dispatcher, _, queue, _ = _dispatcher(backend)
+
+    await dispatcher.dispatch(msg.UserMessage(text="read README", client_id="tab"))
+
+    assert [a[0] for n, a in backend.calls if n == "run_message"] == ["read README"]
+    assert queue == ["add TOOLQ"]
+
+    await dispatcher.dispatch(msg.HITLResponse(requirement_id="q1", action="confirm"))
+
+    assert [a[0] for n, a in backend.calls if n == "run_message"] == ["read README", "add TOOLQ"]
+    assert queue == []

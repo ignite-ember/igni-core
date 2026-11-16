@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
+from typing import Any
 
 from igni_core.backend.schemas_processes import (
     ProcessRow,
@@ -88,6 +90,16 @@ class ProcessesController:
             exit_code=exit_code,
         )
 
+    #: How long a stopped orphan is given to go before its ending is told.
+    ORPHAN_EXIT_WAIT_SECONDS = 2.0
+
+    @classmethod
+    async def _until_gone(cls, mp: Any) -> None:
+        """Until a signalled orphan has gone, or the wait runs out."""
+        deadline = time.monotonic() + cls.ORPHAN_EXIT_WAIT_SECONDS
+        while mp.is_running() and time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+
     async def stop(self, pid: int) -> StopProcessResult:
         """SIGTERM a background process."""
         mp = self._supervisor.registry.get(pid)
@@ -111,11 +123,12 @@ class ProcessesController:
         # plain attribute access — not ``getattr`` with a default — is
         # the honest duck-check.
         if mp.is_orphan:
-            # ``registry.remove`` fires the persist-delete + pops
-            # the pid + cancels any pending eviction task in one
-            # atomic step — the orphan path used to do these
-            # separately.
-            self._supervisor.registry.remove(pid)
+            # Its ending is said here, as the reader task says a live
+            # one's: the exit event and the history row. It used to be
+            # deleted, row and all, so the window never heard it end
+            # and the history forgot it ran (campaign R674).
+            await self._until_gone(mp)
+            self._supervisor.registry.emit_adopted_exit(mp)
             return StopProcessResult(pid=pid, killed=True, message=f"pid {pid} killed")
         # Live-process path — await the reader task so the final
         # tail is flushed before the caller reads back. The task is

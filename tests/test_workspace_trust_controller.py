@@ -199,7 +199,7 @@ def test_reload_falls_back_to_the_local_settings_when_the_policy_is_unavailable(
     calls: list[str] = []
 
     class Loader:
-        def __init__(self, project_dir: Path) -> None:
+        def __init__(self, project_dir: Path, cli_overrides: object = None) -> None:
             calls.append("init")
 
         def local(self) -> Settings:
@@ -224,7 +224,7 @@ def test_reload_returns_the_policy_aware_load_when_it_works(
     local, loaded = Settings(), Settings()
 
     class Loader:
-        def __init__(self, project_dir: Path) -> None: ...
+        def __init__(self, project_dir: Path, cli_overrides: object = None) -> None: ...
         def local(self) -> Settings:
             return local
 

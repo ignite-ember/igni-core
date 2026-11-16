@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 
+from igni_core.extensions.contract import CONTRACT_VERSION, ContractRange
 from igni_core.extensions.host.definition import HOST_SCHEMA
 from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.install_context import InstallContext
@@ -41,11 +42,70 @@ class InstallPreflight:
         Raises:
             InstallError: The bundle is not installable here, and why.
         """
+        self._check_contract(manifest)
         self._check_trust(manifest, distribution)
         self._check_profile(manifest)
         self._check_deliverable(manifest)
         self._check_host_grants(manifest)
         self._check_tool_audience(manifest)
+
+    @classmethod
+    def check_manifest(cls, manifest: ExtensionManifest) -> None:
+        """The rules the manifest alone decides, for ``igni ext install``.
+
+        The contract range, a grant the packaging cannot deliver, and an
+        ``own-agents`` audience with no agents: none depends on where the
+        bundle came from or which deployment it lands in, so the install
+        command refuses them before the bundle is stored, instead of the
+        next start-up refusing a bundle ``igni ext list`` calls installed
+        (``docs/EXTENSIBILITY.md`` §7: validate at install, not at use).
+
+        Raises:
+            InstallError: The bundle is not installable, and why.
+        """
+        cls._check_contract(manifest)
+        cls._check_packaging(manifest)
+        cls._check_deliverable(manifest)
+        cls._check_tool_audience(manifest)
+
+    @staticmethod
+    def _check_packaging(manifest: ExtensionManifest) -> None:
+        """Refuse a sidecar image: igni cannot start one yet.
+
+        ``igni ext doctor`` already said such a bundle "will not install as it
+        is"; without this the install stored it and the next start-up failed
+        it, so the doctor's word and the install disagreed. Only the install
+        command runs it: the installer itself records a sidecar as a FAILED
+        entry with the same reason (``ExtensionConnection.config_for``).
+        """
+        if manifest.sidecar is None:
+            return
+        raise InstallError(
+            f"{manifest.id} is packaged as a sidecar image "
+            f"({manifest.sidecar.image}), and starting container images is not "
+            "implemented yet. Use 'python' to ship a package, 'endpoint' to "
+            "register a service you run, or 'dev' to run a command locally."
+        )
+
+    @staticmethod
+    def _check_contract(manifest: ExtensionManifest) -> None:
+        """Refuse a bundle whose contract range leaves out igni's contract.
+
+        Never "works mostly" (``docs/EXTENSIBILITY.md`` §7): the refusal
+        names the version and which half is behind.
+        """
+        try:
+            needed = ContractRange.parse(manifest.contract)
+        except ValueError as exc:
+            raise InstallError(
+                f"{manifest.id} declares contract {manifest.contract!r}, which is not a "
+                f"range ({exc}). Write one like '>=1.0 <2'; this igni implements "
+                f"contract {CONTRACT_VERSION}."
+            ) from exc
+        if not needed.admits(CONTRACT_VERSION):
+            raise InstallError(
+                f"{manifest.id} is not installed: {needed.why_not(CONTRACT_VERSION)}."
+            )
 
     def _check_trust(
         self, manifest: ExtensionManifest, distribution: DistributionRecord | None
@@ -159,6 +219,18 @@ class InstallPreflight:
         """
         if manifest.endpoint is None:
             return
+        auth = manifest.endpoint.auth
+        if auth is not None and auth.kind != "none":
+            # igni dials an endpoint with no credential at all: a bearer or
+            # mTLS endpoint installed fine and then failed every call with
+            # a bare 401 or an empty "Client failed to connect".
+            raise InstallError(
+                f"{manifest.id} asks igni to authenticate to its endpoint with "
+                f"{auth.kind}, and sending endpoint credentials is not implemented "
+                "yet: igni would dial it with none, and it would refuse every call. "
+                "Use auth kind 'none' for an endpoint that network controls protect, "
+                "or ship the service as 'python' packaging."
+            )
         undeliverable = []
         if manifest.permissions.workspace is not Workspace.NONE:
             undeliverable.append(f"workspace: {manifest.permissions.workspace.value}")

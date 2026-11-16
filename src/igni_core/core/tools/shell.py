@@ -39,6 +39,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import time
 from pathlib import Path
 
 from agno.tools import Toolkit
@@ -380,9 +381,19 @@ class IgniShellTools(Toolkit):
             return f"Process {pid} already finished (exit code {rc}).\nLast output:\n{output}"
 
         mp.kill()
-        # Wait up to 5s for the process to actually exit.
-        with contextlib.suppress(asyncio.TimeoutError):
-            await asyncio.wait_for(mp.proc.wait(), timeout=5.0)
+        if mp.is_orphan:
+            # Adopted after a restart: no handle to wait on and no reader
+            # to tell its ending, so it is waited for and told here, as
+            # a process this backend started is (campaign R674). It had
+            # no ``proc.wait`` at all, and the stop raised.
+            deadline = time.monotonic() + 5.0
+            while mp.is_running() and time.monotonic() < deadline:
+                await asyncio.sleep(0.05)
+            self._supervisor.registry.emit_adopted_exit(mp)
+        else:
+            # Wait up to 5s for the process to actually exit.
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(mp.proc.wait(), timeout=5.0)
         output = mp.read(tail=20)
         self._supervisor.registry.remove(pid)
         return f"Process {pid} stopped.\nLast output:\n{output}"

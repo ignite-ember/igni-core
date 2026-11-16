@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import os
+from typing import ClassVar
 
 from agno.models.base import Model
 
-from igni_core.core.auth.credentials import CloudCredentials
+from igni_core.core.auth.credentials import CloudCredentials, CredentialsStore
 from igni_core.core.auth.http_auth import CloudTokenAuth
 from igni_core.core.config.context_window import ContextWindowResolver
 from igni_core.core.config.llm_call_logger import LlmCallLogger
@@ -109,6 +111,11 @@ class ModelRegistry:
             # by a different route, so it gets the same treatment and a
             # message naming the model that went missing.
             self._warn_stale_default(resolved_name)
+            expired = self._expired_sign_in()
+            if expired is not None:
+                # Discovery found nothing because the sign-in expired: that,
+                # not an empty registry, is what to fix.
+                return expired
             return NoModelConfigured.for_stale_default(
                 resolved_name, self.settings.models.registry.keys()
             )
@@ -128,6 +135,9 @@ class ModelRegistry:
         # needs igni server's token anywhere else.
         if ModelRegistryEntry.same_origin(builder.endpoint_for(entry), self.settings.api_url):
             cloud_token, cloud_auth = self._cloud_token, self._cloud_auth
+            expired = self._expired_sign_in() if entry.needs_cloud_token() else None
+            if expired is not None:
+                return expired
         else:
             cloud_token, cloud_auth = None, None
             if self._cloud_token and entry.needs_cloud_token():
@@ -187,6 +197,16 @@ class ModelRegistry:
 
     # ── Internals ─────────────────────────────────────────────────
 
+    def _expired_sign_in(self) -> NoModelConfigured | None:
+        """The placeholder that says the sign-in expired, when it has."""
+        if self._cloud_token is not None:
+            return None
+        result = CredentialsStore(self.settings.auth.credentials_file).load()
+        creds = result.creds if result.ok else None
+        if creds is None or not creds.is_expired():
+            return None
+        return NoModelConfigured.for_expired_sign_in(creds.email, creds.expires_at)
+
     def _warn_no_model(self) -> None:
         logger.warning(
             "No model configured — returning placeholder. "
@@ -237,13 +257,39 @@ class ModelRegistry:
         """
         return bool(self._effective_default())
 
+    #: Where each provider's own SDK and tools keep its key, read by a
+    #: ``provider:model_id`` name, which has no registry row to name one.
+    SHORTHAND_KEY_ENV: ClassVar[dict[str, str]] = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai_like": "OPENAI_API_KEY",
+        "gemini": "GOOGLE_API_KEY",
+    }
+    #: And where they keep the base URL, for the providers whose builder
+    #: takes one: a key from the environment would otherwise go to the
+    #: vendor's default host instead of the endpoint it was issued for.
+    SHORTHAND_URL_ENV: ClassVar[dict[str, str]] = {
+        "anthropic": "ANTHROPIC_BASE_URL",
+        "openai_like": "OPENAI_BASE_URL",
+    }
+
     def _resolve_entry(self, name: str) -> ModelRegistryEntry | None:
         """Resolve a model name to a typed registry entry: a
-        ``models.registry`` row, else a ``provider:model_id`` name."""
+        ``models.registry`` row, else a ``provider:model_id`` name.
+
+        The shorthand reads the provider's conventional key and base-URL
+        variables: it has no row to put ``api_key_env`` or ``url`` in, and
+        without them the key sent was a placeholder every keyed provider
+        refuses.
+        """
         entry = self.settings.models.entry(name)
         if entry is not None:
             return entry
         if ":" in name:
             provider, model_id = name.split(":", 1)
-            return ModelRegistryEntry(provider=provider, model_id=model_id)
+            return ModelRegistryEntry(
+                provider=provider,
+                model_id=model_id,
+                api_key_env=self.SHORTHAND_KEY_ENV.get(provider),
+                url=os.environ.get(self.SHORTHAND_URL_ENV.get(provider, "")) or None,
+            )
         return None

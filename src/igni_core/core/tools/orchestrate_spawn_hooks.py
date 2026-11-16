@@ -82,12 +82,15 @@ class SpawnHooks:
 
         A hook that raises must not take the spawn down with it: a
         hook observes the spawn, it does not participate in it. The
-        failure is logged, not swallowed.
+        failure is logged, not swallowed. The spawned agent's name is the
+        target a hook's ``matcher`` is checked against.
         """
         if self._executor is None:
             return
+        # A hook's ``matcher`` is checked against the spawned agent's name.
+        target = getattr(payload, "agent_name", "") or ""
         try:
-            await self._executor.execute(event=event, payload=payload)
+            await self._executor.execute(event=event, payload=payload, target=target)
         except Exception as exc:
             _spawn_log.warning("spawn hook %s failed: %s", event.value, exc)
 
@@ -97,8 +100,8 @@ class SpawnHooks:
         The event travels as the model it is — the frontend's wire
         shape is produced once, at the push boundary.
         """
-        callback = self._sinks.on_progress
-        if callback is None:
+        callbacks = [c for c in (self._sinks.on_progress, self._sinks.card_recorder) if c]
+        if not callbacks:
             return
         event = AgentStartedEvent(
             agent_path=agent_name,
@@ -107,10 +110,11 @@ class SpawnHooks:
             task=task,
             card_id=self._card_id,
         )
-        try:
-            callback(event)
-        except Exception as exc:
-            _spawn_log.warning("spawn progress callback failed: %s", exc)
+        for callback in callbacks:
+            try:
+                callback(event)
+            except Exception as exc:
+                _spawn_log.warning("spawn progress callback failed: %s", exc)
 
 
 __all__ = ["SpawnHooks"]

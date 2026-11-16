@@ -1323,6 +1323,27 @@
       "title": "DiscardInterruptedRunResult",
       "type": "object"
     },
+    "DiscardPendingMessageResult": {
+      "description": "The outcome of discarding a pending message.",
+      "properties": {
+        "error": {
+          "default": "",
+          "description": "Why it failed; empty when `ok` is true.",
+          "title": "Error",
+          "type": "string"
+        },
+        "ok": {
+          "description": "`true` once the message is no longer pending, also when it was not, so a retry is harmless. `false` when the id was empty, the message is one a run of this backend may still be finishing, or the change could not be saved.",
+          "title": "Ok",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "DiscardPendingMessageResult",
+      "type": "object"
+    },
     "DiscoverServerArgs": {
       "description": "An email address to find the user's igni server from.",
       "properties": {
@@ -3500,6 +3521,60 @@
       "title": "MarketplaceUrlArgs",
       "type": "object"
     },
+    "McpApproval": {
+      "description": "Whether a configured MCP server may connect: its first-use approval.",
+      "properties": {
+        "approved": {
+          "description": "`true` when it may connect: approved once, or from the user's own `~/.igni/.mcp.json`. An unapproved one is never connected.",
+          "title": "Approved",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "The server's name, as configured.",
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "description": "Where it is configured: `user`, `project`, `plugin`, `managed`, ...",
+          "title": "Source",
+          "type": "string"
+        },
+        "source_path": {
+          "description": "The configuration file it comes from.",
+          "title": "Source Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "source_path",
+        "approved"
+      ],
+      "title": "McpApproval",
+      "type": "object"
+    },
+    "McpApprovalArgs": {
+      "description": "Arguments approving a configured MCP server, or withdrawing its approval.",
+      "properties": {
+        "approved": {
+          "description": "`true` approves it; `false` withdraws its approval and disconnects it.",
+          "title": "Approved",
+          "type": "boolean"
+        },
+        "server_name": {
+          "description": "The server's name in the MCP configuration.",
+          "title": "Server Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server_name",
+        "approved"
+      ],
+      "title": "McpApprovalArgs",
+      "type": "object"
+    },
     "McpInitResult": {
       "description": "Outcome of connecting the session's configured MCP servers.",
       "properties": {
@@ -4330,6 +4405,20 @@
       "title": "PageRequest",
       "type": "object"
     },
+    "PageTokenArgs": {
+      "additionalProperties": false,
+      "description": "The arguments of `extension_service_token`.",
+      "properties": {
+        "refresh": {
+          "default": false,
+          "description": "Exchange a new token rather than answer the one igni holds: the service refused that one (a `401`), and it would refuse it again.",
+          "title": "Refresh",
+          "type": "boolean"
+        }
+      },
+      "title": "PageTokenArgs",
+      "type": "object"
+    },
     "PageTokenReply": {
       "description": "An access token an extension page uses to call its own service.\n\nWhen there is none to give (nobody is signed in, or the extension\nhas no service), `ok` is false and `error` says why.",
       "properties": {
@@ -4446,6 +4535,27 @@
         "message_id"
       ],
       "title": "PendingMessage",
+      "type": "object"
+    },
+    "PendingMessageArgs": {
+      "description": "Arguments naming one pending message of a session.",
+      "properties": {
+        "message_id": {
+          "description": "Id of the pending message, as listed by `get_pending_messages`; must not be empty.",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Id of the session to act on.",
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "message_id"
+      ],
+      "title": "PendingMessageArgs",
       "type": "object"
     },
     "PermissionMode": {
@@ -7231,6 +7341,12 @@
           "title": "Created At",
           "type": "integer"
         },
+        "has_paused_run": {
+          "default": false,
+          "description": "True when this session has a run waiting for the person to answer an approval.",
+          "title": "Has Paused Run",
+          "type": "boolean"
+        },
         "name": {
           "default": "",
           "description": "The session's name; empty when it has none.",
@@ -8219,6 +8335,65 @@
         "agent_path"
       ],
       "title": "TaskUpdatedEvent",
+      "type": "object"
+    },
+    "TeamTurn": {
+      "description": "A sub-agent's or a team's progress card, as it was drawn during a run.\n\n`events` are the card's `orchestrate_event` payloads in the order\nthey arrived; feed them to the same reducer as the live push to draw\nthe card. Placed after the `spawn_agent` / `spawn_team` tool turn\nit came from. Has no `created_at`. Shown only: none of it is in the\nmodel's context.",
+      "properties": {
+        "card_id": {
+          "default": "",
+          "description": "The card's id, as the live events carried it.",
+          "title": "Card Id",
+          "type": "string"
+        },
+        "events": {
+          "default": [],
+          "description": "The card's `orchestrate_event` payloads, oldest first.",
+          "items": {
+            "additionalProperties": {
+              "description": "Any JSON value.",
+              "type": [
+                "object",
+                "array",
+                "string",
+                "number",
+                "integer",
+                "boolean",
+                "null"
+              ]
+            },
+            "type": "object"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "role": {
+          "const": "team",
+          "default": "team",
+          "description": "Turn kind; always `team`.",
+          "title": "Role",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "description": "Id of the agent run this turn belongs to. Pass it to `truncate_history` to edit or delete from this point.",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "default": 0,
+          "description": "Position of the card's first event in the session's event log.",
+          "title": "Seq",
+          "type": "integer"
+        },
+        "tool_call_id": {
+          "default": "",
+          "description": "Id of the `spawn_agent` / `spawn_team` call the card is for; empty if unknown.",
+          "title": "Tool Call Id",
+          "type": "string"
+        }
+      },
+      "title": "TeamTurn",
       "type": "object"
     },
     "ThinkingTurn": {
@@ -10044,6 +10219,65 @@
       "title": "WorkflowRunResponse",
       "type": "object"
     },
+    "WorkflowTurn": {
+      "description": "A workflow run's card, as it was drawn during the run.\n\n`events` are the run's `workflow_event` records in the order\nthey arrived \u2014 the very envelopes the `workflow_event` push\ncarried \u2014 so the card can be drawn again from the tape, exactly as\nthe live pushes drew it. Placed where the run happened, among the\nchat turns around it.\n\n`run_id` is empty: a workflow's agent calls are kept in their own\nsession, so there is no agent run to point at. Has no\n`created_at`. Shown only: none of it is in the model's context.",
+      "properties": {
+        "events": {
+          "default": [],
+          "description": "The run's `workflow_event` records, oldest first.",
+          "items": {
+            "additionalProperties": {
+              "description": "Any JSON value.",
+              "type": [
+                "object",
+                "array",
+                "string",
+                "number",
+                "integer",
+                "boolean",
+                "null"
+              ]
+            },
+            "type": "object"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "name": {
+          "default": "",
+          "description": "Name of the workflow that was run.",
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "const": "workflow",
+          "default": "workflow",
+          "description": "Turn kind; always `workflow`.",
+          "title": "Role",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "description": "Id of the agent run this turn belongs to. Pass it to `truncate_history` to edit or delete from this point.",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "default": 0,
+          "description": "Position of the run's first event in the session's event log.",
+          "title": "Seq",
+          "type": "integer"
+        },
+        "workflow_run_id": {
+          "default": "",
+          "description": "Id of the workflow run the card is for.",
+          "title": "Workflow Run Id",
+          "type": "string"
+        }
+      },
+      "title": "WorkflowTurn",
+      "type": "object"
+    },
     "WorkspaceTrustStatus": {
       "description": "Whether the project folder is trusted, and why.\n\nUntil a folder is trusted, its own tools, hooks, plugins and\nconfiguration are not loaded.",
       "properties": {
@@ -10924,6 +11158,25 @@
       "summary": "Forget one interrupted run, so it is not offered again.",
       "timeout_seconds": 30
     },
+    "discard_pending_message": {
+      "access": "client",
+      "area": "session",
+      "args": {
+        "$ref": "#/defs/PendingMessageArgs"
+      },
+      "correlate": null,
+      "doc": "Forget one pending message, so it is not offered again.\n\n`message_id` names the message (from `get_pending_messages`);\n`session_id` the session it belongs to; only that session's\npending message is deleted. Returns `ok: true` \u2014 also when no such\nmessage is pending, so a retry is harmless \u2014 or `ok: false` with\n`error` when `message_id` is empty, the message arrived less than\na minute ago while this igni runs (its run may still be finishing),\nor the store could not be written.",
+      "duration": "io",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/DiscardPendingMessageResult"
+      },
+      "scope": "session",
+      "streams": [],
+      "summary": "Forget one pending message, so it is not offered again.",
+      "timeout_seconds": 30
+    },
     "discover_server": {
       "access": "client",
       "area": "auth",
@@ -10977,7 +11230,7 @@
         "by": "payload.action",
         "from": "args.action"
       },
-      "doc": "Tell this session the person used a control in a view the agent drew.\n\n`action` is the control's action name; `params` the values the\nview attached to it (JSON). The action is kept for the agent and\npushed to every window as `visualization_action_dispatched`.\nReturns the action and params as recorded, with `ok`.",
+      "doc": "Tell this session the person used a control in a view the agent drew.\n\n`action` is the control's action name; `params` the values the\nview attached to it (JSON). The action is pushed to every window,\nextension and SDK program as `visualization_action_dispatched`.\nIt does not reach the agent: whoever receives it decides whether\nand when to tell the agent, for example by posting a message once\nits own request has finished. Returns the action and params as\nrecorded, with `ok`.",
       "duration": "instant",
       "may_stream": [],
       "reply": "rpc_response",
@@ -11048,10 +11301,10 @@
       "access": "page",
       "area": "page_token",
       "args": {
-        "$ref": "#/defs/NoArgs"
+        "$ref": "#/defs/PageTokenArgs"
       },
       "correlate": null,
-      "doc": "Get an access token for the calling extension's own service.\n\nOnly an extension's page asks, through igni's window, which sets the\nrequest's `caller` to the page's extension; the token's audience is\nthe service recorded for that extension, never one the page names.\nTakes no arguments.\n\nReturns `ok: true` with `access_token`, `expires_in` (seconds)\nand `service_url`; or `ok: false` with `error` when nobody is\nsigned in, the extension has no service, or igni server refused the\nexchange \u2014 states a page shows rather than failures. The answer goes\nonly to the connection that asked. Fails when the request has no\n`caller` or this igni mounts no token exchange.",
+      "doc": "Get an access token for the calling extension's own service.\n\nOnly an extension's page asks, through igni's window, which sets the\nrequest's `caller` to the page's extension; the token's audience is\nthe service recorded for that extension, never one the page names.\n`refresh: true` exchanges a new token instead of answering the held\none, for a page whose service refused it.\n\nReturns `ok: true` with `access_token`, `expires_in` (seconds)\nand `service_url`; or `ok: false` with `error` when nobody is\nsigned in, the extension has no service, or igni server refused the\nexchange \u2014 states a page shows rather than failures. The answer goes\nonly to the connection that asked. Fails when the request has no\n`caller` or this igni mounts no token exchange.",
       "duration": "network",
       "may_stream": [],
       "reply": "rpc_response",
@@ -11141,10 +11394,12 @@
               "assistant": "#/defs/AssistantTurn",
               "plan": "#/defs/PlanTurn",
               "stats": "#/defs/StatsTurn",
+              "team": "#/defs/TeamTurn",
               "thinking": "#/defs/ThinkingTurn",
               "tool": "#/defs/ToolTurn",
               "user": "#/defs/UserTurn",
-              "visualization": "#/defs/VisualizationTurn"
+              "visualization": "#/defs/VisualizationTurn",
+              "workflow": "#/defs/WorkflowTurn"
             },
             "propertyName": "role"
           },
@@ -11169,6 +11424,12 @@
             },
             {
               "$ref": "#/defs/VisualizationTurn"
+            },
+            {
+              "$ref": "#/defs/TeamTurn"
+            },
+            {
+              "$ref": "#/defs/WorkflowTurn"
             }
           ]
         },
@@ -11458,7 +11719,7 @@
         "$ref": "#/defs/SessionIdArgs"
       },
       "correlate": null,
-      "doc": "List a session's messages whose run started but never finished.\n\n`session_id` names the session. Returns the user messages still\npending at least a minute after they arrived \u2014 typically left by a\ncrash \u2014 oldest first, each with its text, when it arrived and its\n`message_id`. A storage failure answers an empty list.",
+      "doc": "List a session's messages whose run started but never finished.\n\n`session_id` names the session. Returns the user messages still\npending \u2014 typically left by a crash \u2014 oldest first, each with its\ntext, when it arrived and its `message_id`: one saved before this\nigni started at once, one it received itself a minute after it\narrived. A storage failure answers an empty list.",
       "duration": "io",
       "may_stream": [],
       "reply": "rpc_response",
@@ -11917,6 +12178,28 @@
       "scope": "igni",
       "streams": [],
       "summary": "List the installed extensions, including the ones that failed to start.",
+      "timeout_seconds": 10
+    },
+    "list_mcp_approvals": {
+      "access": "client",
+      "area": "mcp",
+      "args": {
+        "$ref": "#/defs/NoArgs"
+      },
+      "correlate": null,
+      "doc": "List this session's MCP servers that need a first-use approval.\n\nTakes no arguments. Returns one row per configured server \u2014 its\n`name`, where it is configured (`source`, `source_path`) and\nwhether it is `approved`. A server from a project's or a plugin's\n`.mcp.json` runs a command or opens a connection as the person, so\nit never connects until approved; without a terminal to ask on,\nigni's window asks instead and answers with `set_mcp_approval`. An\nextension's own service is approved by its install and not listed.",
+      "duration": "instant",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "items": {
+          "$ref": "#/defs/McpApproval"
+        },
+        "type": "array"
+      },
+      "scope": "session",
+      "streams": [],
+      "summary": "List this session's MCP servers that need a first-use approval.",
       "timeout_seconds": 10
     },
     "list_sessions": {
@@ -12532,6 +12815,25 @@
       "summary": "Change an installed extension's settings.",
       "timeout_seconds": 30
     },
+    "set_mcp_approval": {
+      "access": "window",
+      "area": "mcp",
+      "args": {
+        "$ref": "#/defs/McpApprovalArgs"
+      },
+      "correlate": null,
+      "doc": "Approve a configured MCP server, or withdraw its approval.\n\n`server_name` names the server; `approved` is the answer.\nApproving records it for that server from that configuration file\n(in `~/.igni/mcp-approved.json`, which every session reads again\nwhen it changes); the server connects on the next `mcp_connect` or\nstart. Withdrawing disconnects it if it is connected. Returns the\nserver's row as `list_mcp_approvals` would. Fails for a server not\nconfigured, an extension's, or the user's own `~/.igni/.mcp.json`,\nwhich is always trusted. Only igni's window may call it.",
+      "duration": "io",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/McpApproval"
+      },
+      "scope": "session",
+      "streams": [],
+      "summary": "Approve a configured MCP server, or withdraw its approval.",
+      "timeout_seconds": 30
+    },
     "set_mcp_tool_enabled": {
       "access": "client",
       "area": "mcp",
@@ -12817,7 +13119,7 @@
       "correlate": {
         "by": "channel"
       },
-      "doc": "Hand a cloud VM the person's session, for igni to exchange for the VM's own credential.\n\nMade by the platform's gateway when the person signs in through it.\n`session_token` is the person's igni server session; `organisation`\nthe organisation the VM signs in for (`null`: the person's own).\n\nReturns the credential's `state` after the exchange (`ready`,\n`needs_sign_in`, `needs_reissue` or `unreachable`) and a\n`message` saying what went wrong, if anything. A change of state\nis also pushed as `vm_credential`, now and whenever the credential\nis renewed later.\n\nFails when `session_token` is empty, or when this igni is not a\nproducer's VM (nothing is mounted to take the session).",
+      "doc": "Hand a cloud VM the person's session, for igni to exchange for the VM's own credential.\n\nMade by the platform's gateway when the person signs in through it.\n`session_token` is the person's igni server session; `organisation`\nthe organisation the VM signs in for (`null`: the person's own).\n\nReturns the credential's `state` after the exchange (`ready`,\n`needs_sign_in`, `needs_reissue` or `unreachable`) and a\n`message` saying what went wrong, if anything. A change of state\nis also pushed as `vm_credential`, now and whenever the credential\nis renewed later; a client that connects afterwards is sent the\nstate last pushed as it attaches.\n\nFails when `session_token` is empty, or when this igni is not a\nproducer's VM (nothing is mounted to take the session).",
       "duration": "network",
       "may_stream": [],
       "reply": "rpc_response",
@@ -13020,7 +13322,7 @@
       }
     },
     "vm_credential": {
-      "doc": "A cloud VM's own credential changed state.",
+      "doc": "A cloud VM's own credential changed state; a client that connects later is sent the state last pushed, to it alone.",
       "schema": {
         "$ref": "#/defs/VmCredentialState"
       }

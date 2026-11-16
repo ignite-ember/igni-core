@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -40,6 +41,9 @@ class StubMcp:
     def __init__(self) -> None:
         self.configs: dict[str, Any] = {}
         self.extension_request_meta: Any = None
+
+    def unregister_server(self, name: str) -> None:
+        return None
 
     def register_server(self, config: Any) -> None:
         self.configs[config.name] = config
@@ -76,6 +80,11 @@ class MountingOrchestrator:
 
     def __init__(self) -> None:
         self.mounted: list[Any] = []
+        self.reloads: list[str] = []
+        session = SimpleNamespace(reload_plugins=lambda: self.reloads.append("default"))
+        self.pool = SimpleNamespace(
+            runtimes=[SimpleNamespace(backend=SimpleNamespace(session=session))]
+        )
 
     def mount(self, rpc: Any) -> None:
         self.mounted.append(rpc)
@@ -197,4 +206,32 @@ async def test_a_sync_is_scheduled_at_start_and_on_sign_in(startup, login):
     login._notify_signed_in()
     assert startup.distribution._tasks, "a sign-in schedules another"
     await _settle(startup)
+    await startup.stop()
+
+
+async def test_a_plugin_an_extension_brings_reaches_the_session_already_open(startup, monkeypatch):
+    """R299: the extension's plugin is copied in as it starts, after the boot
+    session (the one ``sessions.default()`` and a window use) loaded its
+    skills and hooks; '/plugkit:greet' stayed 'Unknown command' there, even
+    on later turns, while sessions made afterwards had it."""
+    plugins_dir = startup._context.plugins_dir
+
+    async def start_installed(self, skip: Any = None) -> None:
+        (plugins_dir / "local.plug").mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "igni_core.backend.extension_startup.ExtensionLauncher.start_installed", start_installed
+    )
+    await startup.start()
+    await _settle(startup)
+
+    assert startup._context.orchestrator.reloads == ["default"]
+    await startup.stop()
+
+
+async def test_nothing_is_reloaded_when_no_plugin_arrived(startup):
+    await startup.start()
+    await _settle(startup)
+
+    assert startup._context.orchestrator.reloads == []
     await startup.stop()

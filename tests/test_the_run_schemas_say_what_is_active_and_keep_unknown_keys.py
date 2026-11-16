@@ -53,7 +53,10 @@ def test_the_hook_payloads_dump_exactly_what_a_hook_is_handed():
         "message": "hi",
         "session_id": "s",
     }
-    assert StopHookPayload(session_id="s").model_dump() == {"session_id": "s"}
+    assert StopHookPayload(session_id="s", response="hi").model_dump() == {
+        "session_id": "s",
+        "response": "hi",
+    }
 
 
 def test_a_model_config_with_no_fields_is_text_only_and_nameless():

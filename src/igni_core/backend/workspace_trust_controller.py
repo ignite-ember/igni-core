@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,9 @@ from igni_core.core.workspace_trust import (
     WorkspaceTrust,
     process_trust,
 )
+
+if TYPE_CHECKING:
+    from igni_core.core.config.cli_overrides import CliOverrides
 
 logger = logging.getLogger(__name__)
 
@@ -93,10 +96,11 @@ class WorkspaceTrustRefusedError(Exception):
     """An answer the backend will not record (policy, or an unknown answer)."""
 
 
-def reload_settings(project_dir: Path) -> Settings:
+def reload_settings(project_dir: Path, cli_overrides: CliOverrides | None = None) -> Settings:
     """Settings for ``project_dir`` the way the backend boots them: a local
-    pass to find the group-policy cache, then the load that counts."""
-    loader = PolicySettingsLoader(project_dir)
+    pass to find the group-policy cache, then the load that counts, with the
+    process's command-line ``cli_overrides`` at the CLI tier."""
+    loader = PolicySettingsLoader(project_dir, cli_overrides=cli_overrides)
     local_only = loader.local()
     try:
         return loader.load(local_only)

@@ -16,6 +16,7 @@ from igni_core.core.agents import AgentContributionApplier, AgentPool
 from igni_core.core.agents.tool_check import UnresolvedAgentTools
 from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.tool_permissions import ToolPermissions
+from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.session.agent_builder import MainAgentBuilder
 from igni_core.core.session.agent_factory import (
@@ -24,6 +25,7 @@ from igni_core.core.session.agent_factory import (
 )
 from igni_core.core.session.compression import MeasuredCompression
 from igni_core.core.skills.loader import SkillPool
+from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
 from igni_core.core.tools.registry import ToolRegistry
 
@@ -126,6 +128,22 @@ class AgentsBuilder:
         existing = team.tool_hooks or []
         team.tool_hooks = [h for h in existing if not isinstance(h, ToolEventHook)]
         team.tool_hooks.append(hook)
+
+    def replace_spawn_hook_executor(self, executor: HookExecutor) -> None:
+        """Hand the live team's spawn_agent / spawn_team the new executor.
+
+        The orchestrate toolkit is built with the executor of its day, and
+        ``/hooks reload`` builds a new one without rebuilding the team: the
+        sub-agents and team members went on firing the hooks the reload
+        dropped, and never the ones it added. Every copy of the toolkit
+        shares one wiring, so setting it here reaches every later spawn.
+        """
+        team = self._session.main_team
+        if team is None:
+            return
+        for toolkit in getattr(team, "tools", None) or []:
+            if isinstance(toolkit, OrchestrateTools):
+                toolkit.wiring.hook_executor = executor
 
 
 __all__ = ["AgentsBuilder"]

@@ -136,3 +136,31 @@ def test_the_disabled_plugins_reach_the_plugin_loader(tmp_path):
 def test_a_custom_loader_that_finds_nothing_adds_no_toolkit(tmp_path):
     bag = _bag(tmp_path, reasoning=None, plugins=_Plugins(), supervisor=ProcessSupervisor())
     assert ToolsBuilder(bag).custom() == []
+
+
+def test_the_main_agent_is_not_offered_a_server_kept_for_an_extension_s_own_agents(
+    tmp_path, monkeypatch
+):
+    """R276: ``toolAudience: own-agents`` offers a server's tools only to the
+    agents its extension ships. The main agent was given every connected
+    client, and called the restricted tool itself."""
+    import dataclasses
+
+    from igni_core.core.agents.tool_audience import audience
+
+    restricted, open_ = Toolkit(name="restricted"), Toolkit(name="open")
+    # A copy of the process's table, restored after the test.
+    monkeypatch.setattr(audience, "_restricted", dict(audience._restricted))
+    audience.restrict("ext:local.probeaud", tmp_path / "plugins" / "local.probeaud")
+
+    class _Connected(_Mcp):
+        def list_connected(self) -> list[str]:
+            return ["ext:local.probeaud", "ext:local.probeall"]
+
+        def get_client(self, name: str):
+            return restricted if name == "ext:local.probeaud" else open_
+
+    bag = _bag(tmp_path, reasoning=None, plugins=_Plugins(), supervisor=ProcessSupervisor())
+    bag = dataclasses.replace(bag, mcp_manager=_Connected())
+
+    assert ToolsBuilder(bag).mcp([]) == [open_]

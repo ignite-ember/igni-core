@@ -182,3 +182,87 @@ async def test_an_attach_of_a_directory_that_is_not_one_is_refused(
     refused = await rig.orchestrator.attach("", str(tmp_path / "nowhere"))
 
     assert hasattr(refused, "reason") and refused.reason
+
+
+# ── Shutdown never waits on a person (campaign R647) ─────────────────
+
+
+async def test_a_run_waiting_on_an_approval_does_not_hold_the_shutdown(
+    rig: HostRig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A turn whose sub-agent waits on the person's approval never ends by
+    itself; the drain waited on it for ever and igni never exited."""
+    assert rig.orchestrator is not None
+    backend: Any = rig.orchestrator.pool.default.backend
+    cancelled = asyncio.Event()
+
+    async def waits_on_the_person(message: msg.Message) -> None:
+        backend.processing = True
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(rig.orchestrator._sessions, "route", waits_on_the_person)
+    monkeypatch.setattr(rig.orchestrator, "DRAIN_LOOK_SECONDS", 0.05)
+    monkeypatch.setattr(
+        backend.controllers.hitl, "waiting_messages", lambda: [msg.RunPaused(run_id="r1")]
+    )
+    script(
+        rig,
+        from_(Standing.WINDOW, msg.UserMessage(id="turn", text="go")),
+        from_(Standing.WINDOW, msg.Shutdown(id="stop")),
+    )
+
+    await asyncio.wait_for(rig.orchestrator.serve(asyncio.Event()), 5)
+
+    assert cancelled.is_set()
+
+
+async def test_a_busy_run_not_waiting_on_anyone_is_still_let_finish(
+    rig: HostRig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert rig.orchestrator is not None
+    backend: Any = rig.orchestrator.pool.default.backend
+    release = asyncio.Event()
+    finished: list[str] = []
+
+    async def streaming(message: msg.Message) -> None:
+        backend.processing = True
+        await release.wait()
+        finished.append(message.id)
+
+    monkeypatch.setattr(rig.orchestrator._sessions, "route", streaming)
+    monkeypatch.setattr(rig.orchestrator, "DRAIN_LOOK_SECONDS", 0.05)
+    script(
+        rig,
+        from_(Standing.WINDOW, msg.UserMessage(id="turn", text="go")),
+        from_(Standing.WINDOW, msg.Shutdown(id="stop")),
+    )
+
+    serving = asyncio.create_task(rig.orchestrator.serve(asyncio.Event()))
+    await asyncio.sleep(0.3)
+    assert not serving.done(), "a run that is working is let finish"
+    release.set()
+    await asyncio.wait_for(serving, 5)
+
+    assert finished == ["turn"]
+
+
+async def test_a_shutdown_requested_while_no_message_comes_stops_the_loop(rig: HostRig) -> None:
+    """A signal or the parent watchdog sets the event; the loop waited for
+    the next message a window sent, which may never come."""
+    assert rig.orchestrator is not None
+
+    async def silent() -> AsyncIterator[msg.Message]:
+        await asyncio.sleep(3600)
+        yield msg.Shutdown(id="never")
+
+    rig.windows.receive = silent  # type: ignore[method-assign]
+    stopping = asyncio.Event()
+    serving = asyncio.create_task(rig.orchestrator.serve(stopping))
+    await asyncio.sleep(0.05)
+    stopping.set()
+
+    await asyncio.wait_for(serving, 5)

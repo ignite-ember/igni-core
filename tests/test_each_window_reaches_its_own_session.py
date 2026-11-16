@@ -57,6 +57,7 @@ from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
 from igni_core.core.broadcast_schema import BroadcastSink
+from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.settings import Settings
 from igni_core.core.layer import layers
@@ -110,11 +111,17 @@ class _Backend:
     def wire_queue_hook(self, queue: Any) -> None:
         self.queue_hook = queue
 
+    def wire_orchestrate_progress(self, callback: Any) -> None:
+        self.progress_callback = callback
+
     def register_broadcast(self, subscriber: BroadcastSink) -> None:
         self.broadcasts.append(subscriber)
 
     def reload_agents(self) -> None:
         self.reloads += 1
+
+    async def fire_session_start_hook(self) -> None:
+        self.session_starts = getattr(self, "session_starts", 0) + 1
 
     async def startup(self) -> None:
         pass
@@ -244,12 +251,20 @@ class _Credential(BaseModel):
 class _PooledRuntimes(SessionRuntimeFactory):
     """The real factory, resuming sessions onto a stand-in backend."""
 
-    def __init__(self, *, wiring: PoolWiring, settings: Settings, dirs: PoolDirectories) -> None:
+    def __init__(
+        self,
+        *,
+        wiring: PoolWiring,
+        settings: Settings,
+        dirs: PoolDirectories,
+        cli_overrides: CliOverrides | None = None,
+    ) -> None:
         super().__init__(
             wiring=wiring,
             settings=settings,
             dirs=dirs,
             server_cls=_Pooled,  # type: ignore[arg-type]
+            cli_overrides=cli_overrides,
         )
 
 

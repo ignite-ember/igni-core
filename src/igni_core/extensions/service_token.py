@@ -172,8 +172,12 @@ class ServiceTokenExchange:
         self._cache: dict[tuple[str, str], CachedToken] = {}
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
 
-    async def token_for(self, service_url: str) -> CachedToken:
+    async def token_for(self, service_url: str, *, refresh: bool = False) -> CachedToken:
         """A token for ``service_url``, from the cache while it is fresh.
+
+        ``refresh`` exchanges a new one even so: the service refused the
+        one it was sent (revoked, a rotated key, a wrong audience), and the
+        same token again would be refused again.
 
         Raises:
             NotSignedIn: no igni session, or no igni server configured.
@@ -193,6 +197,8 @@ class ServiceTokenExchange:
         assert api_url is not None
 
         key = (service_url, hashlib.sha256(session.access_token.encode()).hexdigest())
+        if refresh:
+            self._cache.pop(key, None)
         fresh = self._fresh(key)
         if fresh is not None:
             return fresh
@@ -295,8 +301,8 @@ class PageServiceTokens:
         self._origins = origins
         self._exchange = exchange
 
-    async def for_page(self, extension_id: str) -> TokenReply:
-        """A token for ``extension_id``'s own service.
+    async def for_page(self, extension_id: str, *, refresh: bool = False) -> TokenReply:
+        """A token for ``extension_id``'s own service; ``refresh`` a new one.
 
         Raises:
             NoService: it has no UI origin, or no service a page may reach.
@@ -306,21 +312,21 @@ class PageServiceTokens:
         service_url = self._origins.service_url_for(extension_id)
         if not service_url:
             raise NoService(f"{extension_id} has no service its page may reach")
-        token = await self._exchange.token_for(service_url)
+        token = await self._exchange.token_for(service_url, refresh=refresh)
         return TokenReply(
             access_token=token.access_token,
             expires_in=self._exchange.remaining(token),
             service_url=service_url,
         )
 
-    async def reply_for(self, extension_id: str) -> PageTokenReply:
+    async def reply_for(self, extension_id: str, *, refresh: bool = False) -> PageTokenReply:
         """``extension_service_token``'s answer for ``extension_id``'s page.
 
         Nobody signed in, no service, igni refusing: each is a state the
         page shows (``ok: false`` with the sentence), not a broken call.
         """
         try:
-            token = await self.for_page(extension_id)
+            token = await self.for_page(extension_id, refresh=refresh)
         except (NoService, NotSignedIn, TokenExchangeFailed) as exc:
             return PageTokenReply(ok=False, error=str(exc))
         return PageTokenReply(

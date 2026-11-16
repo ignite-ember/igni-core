@@ -66,27 +66,49 @@ class CachedSettingsFetcher:
     if somebody is signed in (:class:`SignedPackTransport`), and otherwise
     :class:`GroupPolicyUnavailable` — the callers start no agent session.
 
+    ## Fetching first
+
+    A process that runs a session and has no ``GroupPolicySync`` of its own
+    — a headless ``igni -m`` — builds this with ``fetch_first``: when
+    somebody is signed in, one bounded fetch refreshes the cache before it
+    is read, so an admin's change reaches the next run ("igni fetches the
+    signed-in person's pack at start", CONFIGURATION.md). A fetch that fails
+    leaves the cache as it was, and the read goes on as above.
+
     Memoized: the read happens once per fetcher.
     """
+
+    #: Seconds the start-up fetch may take before the cached pack is used.
+    START_FETCH_TIMEOUT = 5.0
 
     def __init__(
         self,
         cache: GroupPolicyCache,
         trust: PackTrust | None = None,
         transport: SignedPackTransport | None = None,
+        *,
+        fetch_first: SignedPackTransport | None = None,
     ) -> None:
         self._cache = cache
         #: Without a trust context nothing can be verified, so nothing applies.
         self._trust = trust or PackTrust()
         self._transport = transport or SignedPackTransport(self._trust)
+        self._fetch_first = fetch_first
         self._state = FetcherState()
 
     @classmethod
-    def for_settings(cls, settings: Settings) -> CachedSettingsFetcher:
-        """The fetcher for an install configured by ``settings``."""
+    def for_settings(
+        cls, settings: Settings, *, fetch_first: bool = False
+    ) -> CachedSettingsFetcher:
+        """The fetcher for an install configured by ``settings``.
+
+        ``fetch_first`` refreshes the cache from igni server before
+        reading it, when somebody is signed in.
+        """
         trust = PackTrust.from_settings(settings)
         cache = GroupPolicyCache.for_data_dir(settings.storage.data_dir)
-        return cls(cache, trust, SignedPackTransport(trust))
+        start = SignedPackTransport(trust, timeout=cls.START_FETCH_TIMEOUT) if fetch_first else None
+        return cls(cache, trust, SignedPackTransport(trust), fetch_first=start)
 
     @property
     def required(self) -> bool:
@@ -111,6 +133,10 @@ class CachedSettingsFetcher:
     def _read_once(self) -> GroupPolicyPack | None:
         """Verify the stored pack, rebuild what derives from it, and say, once, what was found."""
         root = self._cache.layout.root
+        if self._fetch_first is not None and self._trust.session.token:
+            fetched = self._fetch_first.fetch_into(self._cache)
+            if not fetched.stored:
+                logger.debug("group-policy: start-up fetch skipped (%s)", fetched.reason)
         read = self._read_stored()
         if read.status in {"missing", "rejected"}:
             # Nothing that verifies: anything left in the kind directories is

@@ -32,11 +32,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
+from igni_core.core.agents.trained_layout import MARKDOWN_LINE
 from igni_core.core.config.permission_eval import PermissionEvaluator, PermissionMode
 from igni_core.core.config.permission_eval.mode_policy import ModePolicy
 from igni_core.core.config.schemas.permissions import PermissionsConfig
+from igni_core.core.output_styles import OutputStyle
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.output_style_selection import OutputStyleSelection
 from igni_core.core.session.schemas import (
@@ -66,7 +68,13 @@ class OutputStyleInstructionsPatcher:
 
     _MARKER_PREFIX: ClassVar[str] = "# Output style:"
 
-    def apply(self, team: Agent | None, style_name: str, body: str) -> None:
+    def apply(
+        self,
+        team: Agent | None,
+        style_name: str,
+        body: str,
+        previous: OutputStyle | None = None,
+    ) -> None:
         """Replace any existing style block on ``team.instructions``
         with the new one.
 
@@ -81,6 +89,13 @@ class OutputStyleInstructionsPatcher:
           leave a bare marker line).
         * Otherwise a fresh ``# Output style: <name>\\n\\n<body>``
           block is appended.
+
+        The main agent's list reaches Agno already rendered into one
+        string (:class:`TrainedLayout`), where the starting block is a
+        ``- `` line among the others rather than an entry of its own.
+        There ``previous`` — the style the session had — names the
+        block, which is swapped in place, so the prompt reads as a
+        fresh build with the new style would.
         """
         if team is None:
             return
@@ -90,9 +105,37 @@ class OutputStyleInstructionsPatcher:
         pruned = [
             s for s in insts if not (isinstance(s, str) and s.startswith(self._MARKER_PREFIX))
         ]
+        if pruned and self._is_rendered(pruned[0]):
+            pruned[0] = self._swap_rendered(pruned[0], style_name, body, previous)
+            team.instructions = pruned
+            return
         if body:
-            pruned.append(f"{self._MARKER_PREFIX} {style_name}\n\n{body}")
+            pruned.append(self._block(style_name, body))
         team.instructions = pruned
+
+    def _block(self, style_name: str, body: str) -> str:
+        return f"{self._MARKER_PREFIX} {style_name}\n\n{body}"
+
+    @staticmethod
+    def _is_rendered(first: Any) -> bool:
+        return isinstance(first, str) and first.endswith(_RENDERED_TAIL)
+
+    def _swap_rendered(
+        self, rendered: str, style_name: str, body: str, previous: OutputStyle | None
+    ) -> str:
+        new_line = f"- {self._block(style_name, body)}\n" if body else ""
+        if previous is not None and previous.body:
+            old_line = f"- {self._block(previous.name, previous.body)}\n"
+            if old_line in rendered:
+                return rendered.replace(old_line, new_line, 1)
+        if not new_line:
+            return rendered
+        cut = rendered.rindex(_RENDERED_TAIL)
+        return rendered[:cut] + new_line + rendered[cut:]
+
+
+#: How :class:`TrainedLayout` closes the instructions it renders.
+_RENDERED_TAIL = f"<additional_information>\n- {MARKDOWN_LINE}\n</additional_information>"
 
 
 @dataclass(frozen=True)
@@ -195,6 +238,7 @@ class RuntimeModeCoordinator:
             self._deps.team_ref(),
             clean,
             selection.styles[clean].body,
+            previous=selection.styles.get(prev) if prev else None,
         )
         # Broadcast so the FE can show the active style in a status
         # chip (parallel to permission_mode_changed).

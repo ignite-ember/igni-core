@@ -129,6 +129,7 @@ class RpcWriteSignals:
     HISTORY: ClassVar[Mapping[RpcMethod, HistoryWrite]] = {
         RpcMethod.TRUNCATE_HISTORY: HistoryWrite(what="truncated", run_arg="run_id"),
         RpcMethod.DISCARD_INTERRUPTED_RUN: HistoryWrite(what="discarded", run_arg="message_id"),
+        RpcMethod.DISCARD_PENDING_MESSAGE: HistoryWrite(what="discarded", run_arg="message_id"),
     }
     #: Writes after which the loop is read again.
     LOOP_WRITES: ClassVar[frozenset[RpcMethod]] = frozenset(

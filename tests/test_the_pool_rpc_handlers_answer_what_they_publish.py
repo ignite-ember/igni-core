@@ -692,7 +692,7 @@ class _Tokens:
         self.asked: list[str] = []
         self.raises: Exception | None = None
 
-    async def reply_for(self, extension_id: str) -> PageTokenReply:
+    async def reply_for(self, extension_id: str, *, refresh: bool = False) -> PageTokenReply:
         self.asked.append(extension_id)
         if self.raises:
             raise self.raises

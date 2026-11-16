@@ -13,7 +13,7 @@ A thorough feature-by-feature comparison between igni and Claude Code.
 
 Claude Code is a **monolithic agent** — one powerful Claude model handles routing, planning, execution, and review in a single conversation loop. It can spawn sub-agents, but only one level deep, and the parent must explicitly decide when and what to delegate.
 
-igni inverts this: an **Orchestrator** analyzes every task, picks agents from a pool, selects a team mode, and assembles a disposable team. Any agent can spawn sub-teams recursively (default depth: 5, configurable).
+igni inverts this: an **Orchestrator** analyzes every task, picks agents from a pool, selects a team mode, and assembles a disposable team. An agent marked `can_orchestrate` (the default) can spawn further agents and teams, down to a configurable depth (default 5).
 
 ---
 
@@ -22,10 +22,10 @@ igni inverts this: an **Orchestrator** analyzes every task, picks agents from a 
 | Aspect | Claude Code | igni |
 |---|---|---|
 | **Agent format** | `.md` files with YAML frontmatter | Same `.md` format (cross-compatible) |
-| **Built-in agents** | ~3 (main, sub-agent, plan mode) | 10 base agents (architect, data-architect, editor, explorer, reviewer, qa, security, debugger, simplifier, docs) + 6 `.codeindex.md` variants + visualizer |
+| **Built-in agents** | ~3 (main, sub-agent, plan mode) | 11 bundled agents (architect, editor, explorer, reviewer, qa, security, debugger, simplifier, docs, plan_researcher, visualizer) |
 | **Custom agents** | `.claude/agents/*.md` | `.igni/agents/*.md` + `.igni/agents.local/` (gitignored) |
 | **Agent discovery** | Static directory scan | Multi-directory scan with priority (ephemeral → local → project → global → built-in) |
-| **Sub-agent depth** | 1 level | Unlimited (configurable via `orchestration.max_nesting_depth`) |
+| **Sub-agent depth** | 1 level | Up to `orchestration.max_nesting_depth` levels (default 5) |
 | **Ephemeral agents** | No | Yes — Orchestrator auto-generates session-scoped agents when no existing agent fits |
 | **Agent extensions** | `name`, `description`, `tools`, `model` | All Claude Code fields + `tags`, `reasoning`, `reasoning_min/max_steps`, `can_orchestrate`, `temperature`, `max_turns`, `color`, `mcp_servers` |
 | **Cross-compat** | N/A | Scans `.claude/agents/` by default (cross-tool support on) |
@@ -199,7 +199,7 @@ Claude Code has no equivalent — it's always "single agent decides everything, 
 | **NotebookEdit** | Read, edit, add, remove Jupyter notebook cells (also in Claude Code) |
 | **Dynamic team assembly** | Orchestrator auto-picks agents and mode per task |
 | **4 team modes** | Route, Coordinate, Broadcast, Tasks |
-| **Unlimited agent nesting** | Recursive sub-teams (configurable depth) |
+| **Nested agents** | Sub-agents spawn further agents and teams (configurable depth, default 5) |
 | **Ephemeral agents** | Auto-generated session-scoped agents |
 | **CodeIndex** | Semantic code intelligence (6 analysis categories) |
 | **Documents** | The Artifacts extension's document store |

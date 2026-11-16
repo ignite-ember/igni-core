@@ -25,6 +25,7 @@ class Transport:
     def __init__(self, *, failing: bool = False) -> None:
         self.sent: list[msg.Message] = []
         self.failing = failing
+        self.watchers: list[Any] = []
 
     async def send(self, message: msg.Message) -> None:
         if self.failing:
@@ -36,6 +37,13 @@ class Transport:
     @property
     def client_count(self) -> int:
         return 0
+
+    def watch_connections(self, watcher: Any) -> None:
+        self.watchers.append(watcher)
+
+    def connect(self, event: str, client_id: str) -> None:
+        for watcher in self.watchers:
+            watcher(event, client_id)
 
 
 async def after_wake(*, burst: bool = True) -> None: ...
@@ -155,3 +163,76 @@ async def test_a_push_that_cannot_be_sent_does_not_stop_the_state_being_recorded
     guest._state_moved(StateChange(state=CredentialState.READY))
     await asyncio.sleep(0.05)
     assert moved == [1]
+
+
+async def _sent(transport: Transport, count: int) -> None:
+    for _ in range(100):
+        if len(transport.sent) >= count:
+            return
+        await asyncio.sleep(0.01)
+
+
+async def test_a_client_that_attaches_after_a_refusal_is_told_it_alone() -> None:
+    """The keeper pushes on a change only: a client that connected after
+    the credential was refused never heard, and its runs failed with the
+    model provider's bare 401 (igni-sdk 5c596fd's ``vm_credential``)."""
+    guest, _ = credential()
+    transport = Transport()
+    guest.open(BOUND, lambda: "https://igni.example", transport=transport, moved=lambda: None)
+    guest.serve(RestoreWatch(Path("restored"), watch=False))
+    try:
+        await _sent(transport, 1)
+        transport.sent.clear()
+        guest._state_moved(
+            StateChange(state=CredentialState.NEEDS_SIGN_IN, message="invalid_grant: revoked")
+        )
+        await _sent(transport, 1)
+        (broadcast,) = transport.sent
+        assert broadcast.to_client == ""
+        transport.sent.clear()
+
+        transport.connect("attached", "ws-late")
+        await _sent(transport, 1)
+    finally:
+        await guest.stop()
+
+    (push,) = transport.sent
+    assert isinstance(push, msg.PushNotification)
+    assert push.channel == PushChannel.VM_CREDENTIAL
+    assert push.to_client == "ws-late"
+    assert push.payload == {"state": "needs_sign_in", "message": "invalid_grant: revoked"}
+
+
+async def test_nothing_is_sent_on_attach_before_the_keeper_said_anything() -> None:
+    guest, _ = credential()
+    transport = Transport()
+    guest.open(BOUND, lambda: "https://igni.example", transport=transport, moved=lambda: None)
+    guest.tokens.kept_by(guest.keeper)
+    transport.watch_connections(guest._client_moved)
+
+    transport.connect("attached", "ws-early")
+    await asyncio.sleep(0.05)
+
+    assert transport.sent == []
+
+
+async def test_a_client_leaving_is_sent_nothing() -> None:
+    guest, _ = credential()
+    transport = Transport()
+    guest.open(BOUND, lambda: "https://igni.example", transport=transport, moved=lambda: None)
+    guest._state_moved(StateChange(state=CredentialState.NEEDS_REISSUE))
+    await _sent(transport, 1)
+    transport.sent.clear()
+
+    guest._client_moved("detached", "ws-gone")
+    await asyncio.sleep(0.05)
+
+    assert transport.sent == []
+
+
+def test_a_vm_without_a_keeper_does_not_watch_its_clients() -> None:
+    guest, _ = credential()
+    transport = Transport()
+    guest.open(None, None, transport=transport, moved=lambda: None)
+    guest.serve(RestoreWatch(Path("restored"), watch=False))
+    assert transport.watchers == []

@@ -68,12 +68,12 @@ Deploy the application to $ARGUMENTS environment.
 | `description` | string | When to use this skill — the Orchestrator reads this to decide when to trigger |
 | `version` | string | Semantic version (informational) |
 | `argument-hint` | string | Hint shown in autocomplete (e.g., `[environment]`, `[file-path]`) |
-| `allowed-tools` | string | Comma-separated tool names (restricts which tools are available) |
-| `model` | string | Model override (`inherit`, `igni-1.0-27b`, etc.) |
-| `context` | string | `fork` = run in isolated sub-agent, default = run inline |
-| `agent` | string | When `context: fork`, which agent type to use |
-| `disable-model-invocation` | bool | If `true`, only the user can invoke (not auto-triggered) |
-| `user-invocable` | bool | If `false`, only the Orchestrator can invoke (not user slash command) |
+| `allowed-tools` | string | Comma-separated tool names. Read and kept, **not yet enforced**: the skill runs with the session's tools, under the session's permission rules |
+| `model` | string | Model override (`inherit`, `igni-1.0-27b`, etc.). **Not yet acted on**: the skill runs on the session's model |
+| `context` | string | `fork` = run in an isolated sub-agent, default = run inline. **Not yet acted on**: every skill runs inline today (see [Forked](#forked-context-fork)) |
+| `agent` | string | When `context: fork`, which agent type to use. Not yet acted on, as `context: fork` is not |
+| `disable-model-invocation` | bool | If `true`, only the user can invoke it: the agent's `slash_command` does not run it |
+| `user-invocable` | bool | If `false`, only the Orchestrator can invoke it (through `slash_command`), not the user as a slash command |
 
 ### The `description` Field
 
@@ -216,6 +216,10 @@ User: "/resolve-issues main"
 ```
 
 ### Forked (`context: fork`)
+
+> **Not yet acted on.** igni reads `context: fork` and `agent` but runs every
+> skill inline, on the main agent, with the session's tools and model. What
+> follows describes the intended behaviour.
 
 Skill runs in an isolated sub-agent with its own context. The skill's body becomes the task prompt. Useful for long-running or side-effect-heavy workflows that shouldn't pollute the main conversation.
 

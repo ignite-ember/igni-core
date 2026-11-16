@@ -7,6 +7,16 @@ up to its last answer is known exactly — that answer's input plus its
 output. Only what came after it (tool results, the next user message)
 has never been counted, and that tail is estimated from its length.
 
+With prompt caching, Anthropic's wire counts the cached part of the
+input apart: ``input_tokens`` is only the uncached tail, and the rest is
+``cache_read_input_tokens`` / ``cache_creation_input_tokens``. OpenAI's
+wire reports the cached part inside ``prompt_tokens``. agno copies both
+as they come, so :meth:`TokenEstimate.context_of` tells them apart by
+the one thing that cannot happen on OpenAI's wire — cache larger than
+the input — and adds the cache only then. When an Anthropic call's
+uncached tail is larger than its cache the count is the tail alone, a
+short count by less than half, never a doubled one.
+
 This replaced agno's ``count_tokens``, which loads tiktoken's
 ``o200k_base`` encoding: about 80 MB that stayed resident from the
 first message on, to count text the server had already counted. The
@@ -41,6 +51,32 @@ class TokenEstimate:
         return measured + cls.chars(messages[measured_at + 1 :])
 
     @classmethod
+    def last_context(cls, messages: Sequence[Any] | None) -> int | None:
+        """The context the last measured model call read, or None when none was measured.
+
+        A run's summed metrics are not this: each tool iteration re-reads
+        the whole context, so the sum grows with the number of calls.
+        """
+        if not messages:
+            return None
+        measured_at = cls._last_measured(messages)
+        if measured_at is None:
+            return None
+        return cls._input(messages[measured_at])
+
+    @staticmethod
+    def context_of(metrics: Any) -> int:
+        """The input a model call read, with the cache wherever the server counted it apart."""
+        if metrics is None:
+            return 0
+        uncached = int(getattr(metrics, "input_tokens", 0) or 0)
+        cache = int(getattr(metrics, "cache_read_tokens", 0) or 0) + int(
+            getattr(metrics, "cache_write_tokens", 0) or 0
+        )
+        # OpenAI's wire: the cached part is inside the input, so never larger.
+        return uncached + cache if cache > uncached else uncached
+
+    @classmethod
     def chars(cls, messages: Sequence[Any]) -> int:
         """The estimate for messages nobody has counted."""
         return cls.text(sum(cls._length(m) for m in messages))
@@ -65,10 +101,9 @@ class TokenEstimate:
                 return i
         return None
 
-    @staticmethod
-    def _input(message: Any) -> int:
-        metrics = getattr(message, "metrics", None)
-        return int(getattr(metrics, "input_tokens", 0) or 0)
+    @classmethod
+    def _input(cls, message: Any) -> int:
+        return cls.context_of(getattr(message, "metrics", None))
 
     @staticmethod
     def _output(message: Any) -> int:

@@ -613,8 +613,8 @@ there wherever the package is installed.
 data directory, as before. Set, both are that one database and every row
 is scoped. The URL may be any spelling of PostgreSQL (`postgresql://`,
 `postgres://`, `+asyncpg`, `+psycopg`); igni speaks psycopg 3 to it,
-sync and async, one driver for alembic, its stores and Agno (the
-`postgres` extra). `igni migrate` (`--database-url`) prepares it; a
+sync and async, one driver for alembic, its stores and Agno (it comes
+with `igni-cloud`; the core has no PostgreSQL extra). `igni migrate` (`--database-url`) prepares it; a
 backend whose schema is current still never imports alembic.
 
 **Scoping, in one place.** Every igni table carries `org`, `producer`
@@ -750,7 +750,8 @@ trip and an fsync). `invalid_grant` (revoked, reused, idle 90 days, the
 person signed out or was removed, the app deleted) removes the token and
 puts the VM in **needs sign-in** (a person) or **needs re-issue** (an
 app, logged as an error): pushed to the windows (`vm_credential`) and
-written to `activity.json` (`credential`). The node agent no longer
+written to `activity.json` (`credential`). A client that connects later
+is sent the state last pushed, to it alone, as it attaches. The node agent no longer
 writes or refreshes tokens; `IGNI_ACCESS_TOKEN` (fixed for the process)
 remains for a VM started without the guest contract.
 

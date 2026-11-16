@@ -11,6 +11,8 @@ that cannot reach igni runs what it has.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -32,6 +34,26 @@ from igni_core.extensions.python_env import PythonEnvironments
 from igni_core.extensions.sandbox import ExtensionSandbox
 from igni_core.extensions.service_token import PageServiceTokens, ServiceTokenEndpoint
 from igni_core.extensions.store import ExtensionStore
+
+logger = logging.getLogger(__name__)
+
+
+class _PluginWatchingLifecycle:
+    """The launcher, as the distribution sync drives it, telling the startup
+    after each start or stop so a plugin it brought or took is (un)loaded."""
+
+    def __init__(self, launcher: ExtensionLauncher, changed: Callable[[], None]) -> None:
+        self._launcher = launcher
+        self._changed = changed
+
+    async def activate(self, extension_id: str, bundle: Path) -> bool | None:
+        started = await self._launcher.activate(extension_id, bundle)
+        self._changed()
+        return started
+
+    async def deactivate(self, extension_id: str) -> None:
+        await self._launcher.deactivate(extension_id)
+        self._changed()
 
 
 class ExtensionStartupContext(BaseModel):
@@ -69,6 +91,7 @@ class ExtensionStartup:
         self._context = context
         self._service_tokens: ServiceTokenEndpoint | None = None
         self._distribution: ExtensionDistribution | None = None
+        self._plugins_seen: set[str] = set()
 
     @property
     def service_tokens(self) -> ServiceTokenEndpoint | None:
@@ -116,19 +139,47 @@ class ExtensionStartup:
             registry=runtime.registry,
             contributions=runtime.contributions,
         )
+        self._plugins_seen = self._plugin_dirs()
         await launcher.start_installed()
+        self._reload_plugins_if_changed()
 
         self._distribution = ExtensionDistribution(
             store,
             api_url=context.access.api_url,
             session=context.access.session,
-            lifecycle=launcher,
+            lifecycle=_PluginWatchingLifecycle(launcher, self._reload_plugins_if_changed),
             on_priority=runtime.contributions.priority_changed,
         )
         self._distribution.schedule()
         # And again whenever somebody signs in: the listing is the signed-in
         # person's, and before that there was none.
         context.login.on_signed_in(self._distribution.schedule)
+
+    def _plugin_dirs(self) -> set[str]:
+        """The plugins installed now, by directory name."""
+        plugins_dir = self._context.plugins_dir
+        if not plugins_dir.is_dir():
+            return set()
+        return {child.name for child in plugins_dir.iterdir() if child.is_dir()}
+
+    def _reload_plugins_if_changed(self) -> None:
+        """Load an extension's plugin into the sessions already open.
+
+        An extension's plugin is copied in as the extension starts — after
+        the boot session (the one a window and ``sessions.default()`` use)
+        loaded its skills, hooks and agents. Without a reload that session
+        never had them ("Unknown command"), even on later turns; only
+        sessions made afterwards did.
+        """
+        now = self._plugin_dirs()
+        if now == self._plugins_seen:
+            return
+        self._plugins_seen = now
+        for runtime in self._context.orchestrator.pool.runtimes:
+            try:
+                runtime.backend.session.reload_plugins()
+            except Exception as exc:  # noqa: BLE001 — one session must not stop the rest
+                logger.warning("could not load the extensions' plugins into a session: %s", exc)
 
     async def stop(self) -> None:
         if self._distribution is not None:

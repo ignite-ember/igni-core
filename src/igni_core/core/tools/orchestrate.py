@@ -63,6 +63,7 @@ if TYPE_CHECKING:
     from igni_core.core.agents import AgentPool
     from igni_core.core.config.settings import Settings
     from igni_core.core.hooks.executor import HookExecutor
+    from igni_core.core.hooks.subagent_tool_hook import BypassGuardRef
 
 
 def _build_agno_team(spec: TeamSpec) -> Any:
@@ -105,6 +106,7 @@ def _build_nested_toolkit(spec: NestedToolkitSpec) -> OrchestrateTools:
         settings=scope.settings,
         current_depth=spec.depth,
         hook_executor=wiring.hook_executor,
+        bypass_guard=wiring.bypass_guard,
         session_id=wiring.session_id,
         hitl_coordinator=wiring.sinks.hitl_coordinator,
         project_dir=scope.project_dir,
@@ -135,6 +137,7 @@ class OrchestrateTools(Toolkit):
         hitl_coordinator: HitlCoordinatorProtocol | None = None,
         project_dir: Path | None = None,
         budget: SpawnBudget | None = None,
+        bypass_guard: BypassGuardRef | None = None,
     ):
         super().__init__(name="ember_orchestrate")
         self.scope = OrchestrateScope(
@@ -157,6 +160,7 @@ class OrchestrateTools(Toolkit):
         self.wiring = SpawnWiring(
             session_id=session_id,
             hook_executor=hook_executor,
+            bypass_guard=bypass_guard,
             sinks=StreamSinks(hitl_coordinator=hitl_coordinator),
         )
         self.register(self.spawn_agent)

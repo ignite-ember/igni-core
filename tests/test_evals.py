@@ -431,6 +431,7 @@ class TestEvalsCommand:
                 settings=session.settings,
                 project_dir=session.project_dir,
                 agent_filter="editor",
+                case_filter=None,
             )
 
     def test_evals_registered(self):

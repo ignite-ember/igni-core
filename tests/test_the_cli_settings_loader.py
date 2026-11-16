@@ -24,6 +24,19 @@ from tests.group_policy_signing import ISSUER, sign_in, store
 
 
 @pytest.fixture(autouse=True)
+def _server_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CLI run fetches the pack at start when signed in; here the
+    server is a boundary, offline, so the run reads the stored pack."""
+    from igni_core.core.config.group_policy.transport import LiveFetchResult, SignedPackTransport
+
+    monkeypatch.setattr(
+        SignedPackTransport,
+        "fetch_into",
+        lambda self, cache: LiveFetchResult(stored=False, reason="offline in this test"),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _no_managed_file(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(ManagedPolicySource, "platform_path", staticmethod(lambda: None))
 

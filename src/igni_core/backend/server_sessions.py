@@ -47,6 +47,7 @@ class SessionsController:
         chat_history_provider: Callable[
             [str], Awaitable[list[ChatTurn] | list[ChatHistoryEntry] | list[dict]]
         ],
+        waiting_sessions: Callable[[], set[str]] | None = None,
     ) -> None:
         self._session = session
         # :meth:`ChatHistoryRebuilder.rebuild` in production; injected
@@ -54,16 +55,41 @@ class SessionsController:
         # :meth:`search_chat` normalises whatever it returns to
         # :class:`ChatHistoryEntry`.
         self._chat_history_provider = chat_history_provider
+        # The sessions that have an approval waiting on the person, as
+        # a callable so this class does not own the journal. It is the
+        # journal's answer rather than the running session's: a session
+        # that is not loaded right now still waits on somebody, and a
+        # person who just restarted the backend still has to be told.
+        self._waiting_sessions = waiting_sessions
 
     async def list_sessions(self) -> msg.SessionListResult:
         """List all sessions for this project. No cap — the FE has
         virtualisation."""
         rows = await self._session.persistence.list_sessions(limit=None)
+        waiting = self._paused_sessions()
         # The wire boundary is the one place a persistence row turns
         # into JSON — the typed row in, the wire entry out.
         return msg.SessionListResult(
-            sessions=[msg.SessionListEntry(**row.model_dump()) for row in rows]
+            sessions=[
+                msg.SessionListEntry(**row.model_dump(), has_paused_run=row.session_id in waiting)
+                for row in rows
+            ]
         )
+
+    def _paused_sessions(self) -> set[str]:
+        """The sessions with a run waiting for the person to answer.
+
+        An empty set when nothing knows: a backend built without a
+        journal (a test) says no session is waiting, rather than
+        failing the whole list.
+        """
+        if self._waiting_sessions is None:
+            return set()
+        try:
+            return self._waiting_sessions()
+        except Exception as exc:
+            logger.debug("session list: could not read the paused sessions: %s", exc)
+            return set()
 
     async def maybe_auto_name_session(self, *, model_busy: bool = False) -> AutoNameResult:
         """Auto-generate a name for the current session if it has none.

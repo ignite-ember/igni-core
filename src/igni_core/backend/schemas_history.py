@@ -188,12 +188,75 @@ class VisualizationTurn(_RunOwned):
     )
 
 
+class TeamTurn(_RunOwned):
+    """A sub-agent's or a team's progress card, as it was drawn during a run.
+
+    ``events`` are the card's ``orchestrate_event`` payloads in the order
+    they arrived; feed them to the same reducer as the live push to draw
+    the card. Placed after the ``spawn_agent`` / ``spawn_team`` tool turn
+    it came from. Has no ``created_at``. Shown only: none of it is in the
+    model's context.
+    """
+
+    role: Literal["team"] = Field(default="team", description="Turn kind; always `team`.")
+    card_id: str = Field(default="", description="The card's id, as the live events carried it.")
+    tool_call_id: str = Field(
+        default="",
+        description="Id of the `spawn_agent` / `spawn_team` call the card is for; empty if unknown.",
+    )
+    events: list[dict[str, WireJson]] = Field(
+        default_factory=list,
+        description="The card's `orchestrate_event` payloads, oldest first.",
+    )
+    seq: int = Field(
+        default=0,
+        description="Position of the card's first event in the session's event log.",
+    )
+
+
+class WorkflowTurn(_RunOwned):
+    """A workflow run's card, as it was drawn during the run.
+
+    ``events`` are the run's ``workflow_event`` records in the order
+    they arrived — the very envelopes the ``workflow_event`` push
+    carried — so the card can be drawn again from the tape, exactly as
+    the live pushes drew it. Placed where the run happened, among the
+    chat turns around it.
+
+    ``run_id`` is empty: a workflow's agent calls are kept in their own
+    session, so there is no agent run to point at. Has no
+    ``created_at``. Shown only: none of it is in the model's context.
+    """
+
+    role: Literal["workflow"] = Field(
+        default="workflow", description="Turn kind; always `workflow`."
+    )
+    workflow_run_id: str = Field(default="", description="Id of the workflow run the card is for.")
+    name: str = Field(default="", description="Name of the workflow that was run.")
+    events: list[dict[str, WireJson]] = Field(
+        default_factory=list,
+        description="The run's `workflow_event` records, oldest first.",
+    )
+    seq: int = Field(
+        default=0,
+        description="Position of the run's first event in the session's event log.",
+    )
+
+
 #: Discriminated union of every turn kind the rebuilder can emit.
 #: Serialization uses ``role`` as the discriminator so every
 #: ``model_dump()`` at the wire boundary lands on the same key-set
 #: the FE reads today.
 ChatTurn = Annotated[
-    UserTurn | AssistantTurn | ThinkingTurn | ToolTurn | PlanTurn | StatsTurn | VisualizationTurn,
+    UserTurn
+    | AssistantTurn
+    | ThinkingTurn
+    | ToolTurn
+    | PlanTurn
+    | StatsTurn
+    | VisualizationTurn
+    | TeamTurn
+    | WorkflowTurn,
     Field(discriminator="role"),
 ]
 
@@ -405,6 +468,8 @@ __all__ = [
     "PlanTurn",
     "StatsTurn",
     "VisualizationTurn",
+    "TeamTurn",
+    "WorkflowTurn",
     "ChatTurn",
     "AgnoRunMessageView",
     "AgnoRunView",

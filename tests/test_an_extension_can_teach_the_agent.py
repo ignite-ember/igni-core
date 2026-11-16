@@ -119,6 +119,20 @@ async def test_a_tool_sourced_anchor_reaches_a_prompt(wired, tmp_path):
     assert "{{" not in filled
 
 
+async def test_a_tool_sourced_anchor_needs_no_rpc_grant(wired, tmp_path):
+    """R295: igni fetched the text through the page's rpc authoriser, so an
+    extension with no ``permissions.rpc`` had its fragment refused and the
+    bare ``{{ANCHOR}}`` reached the model. igni is the caller, not a page."""
+    entry = await wired.install(bundle_at(tmp_path, permissions={}))
+    assert entry.state is ExtensionState.READY, entry.reason
+
+    assert "no plaintext secrets" in wired.fragments.expand("{{ACME_POLICY_SUMMARY}}")
+    with pytest.raises(Exception, match="not permitted"):
+        await wired.rpc.dispatch(
+            caller="acme.scanner", method="ext.acme.scanner.policy_summary", args={}
+        )
+
+
 async def test_a_file_sourced_anchor_reads_the_bundle(wired, tmp_path):
     bundle = bundle_at(
         tmp_path,

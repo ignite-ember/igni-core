@@ -11,7 +11,7 @@ Agent calls edit_file
     │
     ▼
 ┌──────────────────────┐
-│  PreToolUse hooks    │ ← can block, modify input, or add context
+│  PreToolUse hooks    │ ← can block, allow, or add context
 │  (run in parallel)   │
 └──────────┬───────────┘
            │ approved
@@ -33,7 +33,7 @@ Agent calls edit_file
 
 | Event | When It Fires | Can Block? | Use Case |
 |---|---|---|---|
-| `PreToolUse` | Before any tool call | Yes | Security validation, input modification, permission overrides |
+| `PreToolUse` | Before any tool call | Yes | Security validation, permission overrides (see [Output](#output-json-on-stdout) for what a hook may answer) |
 | `PostToolUse` | After tool succeeds | No | Auto-formatting, logging, validation |
 | `PostToolUseFailure` | After tool fails | No | Error logging, retry context |
 | `UserPromptSubmit` | When user sends a message | Yes | Prompt validation, context injection |
@@ -47,15 +47,18 @@ Agent calls edit_file
 
 ### Permission events
 
-Fired by the permission evaluator, paired. Both carry
+Fired around a permission decision, wherever it is made — in the tool
+pipeline, or at the approval pause before it (the dialog in the app, the
+policy that settles a pause in `igni -m`). Both carry
 `{session_id, tool_name, tool_args}`; `PermissionDenied` adds a
-`reason` naming the stage that blocked the call — `pre_tool_use_hook`
-or `permission_evaluator`. There is no `rule` field on either.
+`reason` naming who blocked the call — `pre_tool_use_hook`,
+`permission_evaluator` (a deny rule, a mode, `--read-only`) or `person`
+(declined in the approval dialog). There is no `rule` field on either.
 
 | Event | When It Fires | Can Block? | Use Case |
 |---|---|---|---|
 | `PermissionRequest` | The evaluator returned `ASK` and the request is about to be put to the user | No | Audit who was asked for what; route approvals to Slack |
-| `PermissionDenied` | `DENY` won — a deny rule, a plan-mode block, or headless mode with no matching allow | No | Alerting on blocked tools; explaining refusals in your own words |
+| `PermissionDenied` | `DENY` won — a deny rule, a plan-mode block, `--read-only`, headless mode with no matching allow, or the person declined | No | Alerting on blocked tools; explaining refusals in your own words |
 
 `PreToolUse` is the one that can *change* the answer; these two
 observe the decision after it is made.
@@ -67,8 +70,12 @@ tokens approach the model's context window.
 
 | Event | When It Fires | Can Block? | Payload |
 |---|---|---|---|
-| `PreCompact` | Before context is compacted | No | `{scope: "manual"\|"auto", tokens_before}` |
-| `PostCompact` | After it completes | No | `{scope, tokens_before, tokens_after, summary_chars}` |
+| `PreCompact` | Before context is compacted | Yes — exit 2 or `continue: false` cancels the compaction, manual or automatic, and `/compact` shows the hook's message | `{session_id, scope: "manual"\|"auto", tokens_before}` |
+| `PostCompact` | After it completes | No | `{session_id, scope, tokens_before, summary_chars}` |
+
+`tokens_before` is the input-token count that set off an automatic
+compaction; a manual `/compact` has no such count and sends `0`.
+`summary_chars` is the length of the summary that replaced the history.
 
 Use these for export-before-compact, or to drive your own
 context-budget strategy from a plugin.
@@ -82,15 +89,18 @@ these cover the longer-lived scheduled-execution layer.
 
 | Event | When It Fires | Can Block? | Payload |
 |---|---|---|---|
-| `TaskCreated` | A scheduled task is registered | No | `{task_id, description, scheduled_at, recurrence?}` |
-| `TaskCompleted` | It finishes, is cancelled, or errors | No | `{task_id, status, result?, error?, duration_seconds?}` |
+| `TaskCreated` | The scheduler picks a due task up and starts running it — not when it is scheduled | No | `{session_id, task_id, description}` |
+| `TaskCompleted` | The run ends, in success, an error or a timeout | No | `{session_id, task_id, description, status: "completed"\|"error"}` |
+
+`session_id` is the scheduler's own session that runs the task, not the
+session that scheduled it.
 
 ### Other
 
 | Event | When It Fires | Can Block? | Payload |
 |---|---|---|---|
 | `StopFailure` | A run ends in an unhandled exception rather than normal completion. Paired with `Stop` | No | `{session_id, error, error_type}` |
-| `InstructionsLoaded` | Project rules resolve — once at session init, and again from `RulesIndex.consume_path` when subdirectory or path-scoped rules surface lazily | No | `{source: "session_init"\|"rules_index", files: [str], bytes}` |
+| `InstructionsLoaded` | Subdirectory or path-scoped rules surface lazily (`RulesIndex.consume_path`) after a file tool with a path argument (`edit_file`, `save_file`, …) touched their folder. It does not fire at session start, and a file read through the shell (`cat sub/x.py`) surfaces nothing | No | `{session_id, source: "rules_index", files: [str], bytes}` |
 
 Every event in `HookEvent` is on this page, and
 `tests/test_every_hook_event_is_documented.py` fails if one is added
@@ -134,6 +144,8 @@ hooks:
 `--strict` means at least `ask`. Only your own `~/.igni/config.yaml` and the command line set this: a value in a project's `.igni/config*.yaml`, the group policy or the managed-settings file is ignored with a warning. A group hook that is not run is skipped the way a failing hook is: it neither runs nor blocks the tool call. Your own hooks and your project's are not affected. Delete `~/.igni/group-hook-decisions.json` to be asked again about every hook.
 
 ### Format
+
+Each entry carries its own `matcher`. Claude Code's nested form — `{"matcher": "Bash", "hooks": [{"type": "command", "command": ...}]}` — is read too, each inner hook taking the group's matcher, and so is a Claude Code plugin's `hooks/hooks.json` wrapped in `{"hooks": {...}}`. A command hook with no `command` is skipped with a warning.
 
 ```json
 {
@@ -200,16 +212,21 @@ hooks:
 |---|---|---|
 | `type` | Yes | `"command"` or `"http"` |
 | `command` / `url` | Yes | Shell command or HTTP endpoint |
-| `matcher` | No | Regex to filter which tools/agents trigger the hook |
+| `matcher` | No | Which tools/agents trigger the hook — see [Matchers](#matchers) |
 | `timeout` | No | Milliseconds before the hook is killed (default: 10 000) |
 | `background` | No | `true` for fire-and-forget hooks that don't block the agent |
+| `asyncRewake` | No | Command hooks: runs in the background like `background`, and if it exits 2 its note reaches the agent as a system reminder on the next turn. The note is the `systemMessage` of the JSON it prints on stdout; when stdout is not JSON (plain text or nothing), its stderr; and `Blocked by hook` when neither gives one. Plain text on stdout is never read. `async_rewake` is accepted too |
 | `headers` | No | HTTP headers (supports `${ENV_VAR}` expansion) |
 
 ---
 
 ## Matchers
 
-Matchers are regex patterns that filter when a hook fires. Only hooks whose matcher matches the tool name (or event type) will execute.
+Matchers filter when a hook fires. Only hooks whose matcher matches the tool name (or agent name) will execute. As in Claude Code, a matcher has three forms:
+
+- empty or `*` matches everything;
+- a plain name or a `|` list of names (`run_shell_command`, `save_file|edit_file`) is an **exact** match — `run_shell` does not match `run_shell_command`;
+- anything else is a regular expression, searched anywhere in the name (`run_shell.*`, `mcp__.*`, `^edit`).
 
 | Event | Matcher Field | Examples |
 |---|---|---|
@@ -358,6 +375,24 @@ with the hook's `systemMessage`; it may do more work and submit again.
   "systemMessage": "Optional message shown to the agent"
 }
 ```
+
+A `PreToolUse` hook may also answer
+`{"hookSpecificOutput": {"permissionDecision": "allow" | "deny" | "ask"}}`
+(or a bare `permissionDecision`). What it does, and what it cannot:
+
+- `deny` blocks the call, with the hook's `systemMessage` (or a default
+  reason) as what the agent reads; `ask` is refused too, since a hook has
+  no way to put a question to the person.
+- `allow` skips the permission rules and the bypass guard for the call;
+  protected paths and blocked commands are still checked. It cannot
+  answer an approval
+  the call has already stopped for: a tool that needs the person's
+  approval pauses *before* `PreToolUse` runs, so a run with no allow rule
+  for it still asks (or, headless, pauses and exits 1). Use an allow rule
+  for that.
+- `hookSpecificOutput.updatedInput` is **not supported**: igni ignores it
+  and the tool runs with the model's arguments. Only an extension's
+  `PreToolUse` hook can change a call's input (EXTENSIBILITY.md).
 
 ### Exit Codes
 
@@ -606,7 +641,9 @@ mark.
 
 igni hooks use the **same format** as Claude Code:
 - Same event names (`PreToolUse`, `PostToolUse`, `Stop`, etc.)
-- Same input/output JSON format
+- Same input/output JSON format, except that a `PreToolUse` hook's
+  `updatedInput` is ignored and its `allow` does not answer an approval
+  pause (see [Output](#output-json-on-stdout))
 - Same exit code semantics (0 = success, 2 = block)
 - Same matcher regex patterns
 - Same settings file structure

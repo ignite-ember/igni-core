@@ -76,6 +76,9 @@ class SessionCommand:
         # re-bound in one step.
         new_id = str(uuid.uuid4())[:8]
         self._session.rotate_id(new_id)
+        # The new conversation has drawn no views: the previous one's
+        # would show in its history and be saved into it.
+        self._session.restore_event_log([])
         # Latched ctx counter belongs to the previous conversation;
         # the backend reads this and exposes get_status().
         self._session.context_budget.latch(0)
@@ -138,6 +141,13 @@ class SessionCommand:
         """
         name = args.strip() or None
         result = await self._session.persistence.fork(name=name)
+        if result.unsaved:
+            # Like /rename: a new chat has no stored row until its first
+            # message completes, so there is nothing to clone yet.
+            return CommandResult.error(
+                "Nothing to fork yet — this session is not saved until its "
+                "first message. Send one, then /fork."
+            )
         if not result.ok:
             logger.warning("/fork failed: %s", result.error)
             return CommandResult.error(f"Fork failed: {result.error or 'unknown error'}")

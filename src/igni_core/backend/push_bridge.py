@@ -27,7 +27,8 @@ from igni_core.backend.server import BackendServer
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
 from igni_core.core.activity import background
 from igni_core.core.broadcast_schema import BroadcastEvent
-from igni_core.core.run_context import CURRENT_RUN_ID
+from igni_core.core.hitl.models import DetailUpdate
+from igni_core.core.run_context import CURRENT_RUN_ID, CURRENT_RUN_SESSION_ID
 from igni_core.core.tools.edit import (
     FileEditNotifier,
     default_file_edit_notifier,
@@ -387,6 +388,25 @@ class PushNotificationBridge:
         that run's chat item."""
         self._schedule_push(msg.push_on(PushChannel.WORKFLOW_EVENT, record.model_dump()))
 
+    # ── Run-scoped messages ─────────────────────────────────────
+
+    def run_paused(self, paused: msg.RunPaused) -> None:
+        """A run paused for the person's approval.
+
+        A plain server message, not a push: the windows read
+        ``run_paused`` where they read the chat's own pauses, and
+        answer it with ``hitl_response`` — the same card, the same
+        answer. A workflow's agent call has no chat run of its own to
+        stream on (campaign R664), so its question goes out this way.
+        """
+        self._schedule_message(paused)
+
+    def requirement_details(self, update: DetailUpdate) -> None:
+        """A better explanation for a question already on screen."""
+        self._schedule_message(
+            msg.RequirementDetails(requirement_id=update.requirement_id, details=update.details)
+        )
+
     # ── Private helpers ─────────────────────────────────────────
 
     def _schedule_push(self, push: msg.PushNotification) -> None:
@@ -406,6 +426,11 @@ class PushNotificationBridge:
             # fold it into that run's item. A push that already names a
             # run keeps the one it names.
             push = push.model_copy(update={"run_id": run_id})
+        run_session_id = CURRENT_RUN_SESSION_ID.get()
+        if run_session_id and not push.session_id:
+            # Its chat is the run's, not whichever chat the session shows
+            # by the time the stamping transport sends it.
+            push = push.model_copy(update={"session_id": run_session_id})
 
         def _send() -> None:
             # A message to the windows: too short to count as busy.
@@ -415,6 +440,25 @@ class PushNotificationBridge:
         # of crashing the callback thread. ``loop`` is optional so
         # test harnesses that only exercise sync RPC handlers can
         # construct the bridge without a running loop.
+        if self._loop is None:
+            return
+        with contextlib.suppress(RuntimeError):
+            self._loop.call_soon_threadsafe(_send)
+
+    def _schedule_message(self, message: msg.Message) -> None:
+        """Hop onto the running loop and send a plain server message.
+
+        The same contract as :meth:`_schedule_push`, for the messages
+        that are not pushes: the windows read them where they read the
+        chat's own, and they carry no channel of their own.
+        """
+
+        def _send() -> None:
+            # A message to the windows: too short to count as busy.
+            background.daemon(self._transport.send(message), name="message")
+
+        # Event loop closed during shutdown — drop the message instead
+        # of crashing the caller. See :meth:`_schedule_push`.
         if self._loop is None:
             return
         with contextlib.suppress(RuntimeError):

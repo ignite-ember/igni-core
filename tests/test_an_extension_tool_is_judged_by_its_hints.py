@@ -198,6 +198,9 @@ class HintedMcp:
         }
         self._reported = reported
 
+    def unregister_server(self, name: str) -> None:
+        return None
+
     def register_server(self, config: Any) -> None:
         self.configs[config.name] = config
 

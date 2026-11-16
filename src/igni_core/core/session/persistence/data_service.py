@@ -53,9 +53,15 @@ class SessionDataService:
     threads it into each store's constructor.
     """
 
-    def __init__(self, db: AgnoSessionDb | None, session_id: str) -> None:
+    def __init__(
+        self, db: AgnoSessionDb | None, session_id: str, user_id: str | None = None
+    ) -> None:
         self._db = db
         self._session_id = session_id
+        # Agno reads a session at run start filtered by ``user_id``: a row
+        # this service creates before the first run must carry it, or agno
+        # finds nothing, makes a fresh session and upserts it over the row.
+        self._user_id = user_id
         # Serializes ``session_data`` writes so concurrent callers
         # (event-log append, todo save, plan-decisions save) can't
         # clobber each other. Every write is a load-modify-write
@@ -151,6 +157,7 @@ class SessionDataService:
                     now = int(time.time())
                     session = AgentSession(
                         session_id=self._session_id,
+                        user_id=self._user_id,
                         session_data={key: value},
                         created_at=now,
                         updated_at=now,

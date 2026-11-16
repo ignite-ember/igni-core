@@ -24,6 +24,7 @@ of an RPC result in :mod:`igni_core.backend.rpc_result`.
 from __future__ import annotations
 
 import asyncio
+import enum
 import logging
 from collections.abc import AsyncIterator, Callable, Mapping, MutableSequence
 from typing import Any
@@ -43,6 +44,14 @@ from igni_core.protocol.schemas.push_payloads import SessionNamedPayload
 from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 logger = logging.getLogger(__name__)
+
+
+class _RunOutcome(enum.Enum):
+    """How one streamed run finished."""
+
+    ENDED = "ended"
+    PAUSED = "paused"
+    FAILED = "failed"
 
 
 class MessageDispatcher:
@@ -151,34 +160,65 @@ class MessageDispatcher:
         """
         if files:
             logger.debug("message carries %d file(s) of text", len(files))
-        if not await self._stream(self._backend.run_message(agent_text, media=None), req_id):
+        outcome = await self._stream(self._backend.run_message(agent_text, media=None), req_id)
+        if outcome is _RunOutcome.FAILED:
             return
 
         # First completed run: name the session in the background so
         # a queued follow-up isn't blocked on the naming model call.
         self._spawn_auto_name()
+        if outcome is _RunOutcome.ENDED:
+            await self._run_queued()
 
-    async def _stream(self, frames: AsyncIterator[Any], req_id: str) -> bool:
+    async def _run_queued(self) -> None:
+        """Run, in order, what was queued for after the run and is still waiting.
+
+        A tool call inside the run takes a queued message into that run
+        (``core/hooks/queue``); a run with no tool call left it waiting until
+        some later, unrelated run called a tool. A message still queued when
+        the run ends is the next turn, as ``session.queue()`` promises. It
+        leaves the queue as its run starts: the run's own pending-message
+        record is what survives a crash from then on.
+
+        A run that paused for a person's approval has not ended: the queue
+        waits for the resumed run (:meth:`_on_hitl_response`), whose
+        approved tool call takes it in. Draining at the pause started a
+        second run beside the paused one, with no view of the turn.
+        """
+        while len(self._queue):
+            text = self._queue[0]
+            del self._queue[0]
+            outcome = await self._stream(self._backend.run_message(text, media=None), "")
+            if outcome is not _RunOutcome.ENDED:
+                return
+
+    async def _stream(self, frames: AsyncIterator[Any], req_id: str) -> _RunOutcome:
         """Send ``frames`` to every view under ``req_id``, then ``StreamEnd``.
 
         ``StreamEnd`` is what a window waits for to finish the reply, and it
         waits without a timeout: a run that raised midway used to skip it,
         so the window spun forever while the error went out under the
         request's id after the fact. A failure is now an ``Error`` inside
-        the stream, and the stream still ends. False when the run failed.
+        the stream, and the stream still ends. Says whether the run failed, paused for a
+        person, or ended.
         """
+        outcome = _RunOutcome.ENDED
         try:
             async for proto in frames:
+                if isinstance(proto, msg.RunPaused):
+                    outcome = _RunOutcome.PAUSED
+                elif isinstance(proto, msg.RunCompleted):
+                    outcome = _RunOutcome.ENDED
                 if req_id:
                     proto = proto.model_copy(update={"id": req_id})
                 await self._transport.send(proto)
         except Exception as exc:
             logger.error("the run failed mid-stream: %s", exc, exc_info=True)
             await self._transport.send(msg.Error(id=req_id, text=f"The run failed: {exc}"))
-            return False
+            return _RunOutcome.FAILED
         finally:
             await self._transport.send(msg.StreamEnd(id=req_id))
-        return True
+        return outcome
 
     # ── An extension's messages ──────────────────────────────────
 
@@ -261,17 +301,21 @@ class MessageDispatcher:
         # Mirroring: dismiss the now-stale permission dialog on
         # every other view before the resumed run starts streaming.
         await self._transport.send(msg.RequirementResolved(requirement_id=message.requirement_id))
-        await self._stream(
+        outcome = await self._stream(
             self._backend.resolve_hitl(message.requirement_id, message.action, message.choice),
             req_id,
         )
+        if outcome is _RunOutcome.ENDED:
+            await self._run_queued()
 
     async def _on_hitl_response_batch(self, message: msg.HITLResponseBatch, req_id: str) -> None:
         for decision in message.decisions:
             await self._transport.send(
                 msg.RequirementResolved(requirement_id=decision.requirement_id)
             )
-        await self._stream(self._backend.resolve_hitl_batch(message.decisions), req_id)
+        outcome = await self._stream(self._backend.resolve_hitl_batch(message.decisions), req_id)
+        if outcome is _RunOutcome.ENDED:
+            await self._run_queued()
 
     async def _on_command(self, message: msg.Command, req_id: str) -> None:
         result = await self._backend.handle_command(message.text)

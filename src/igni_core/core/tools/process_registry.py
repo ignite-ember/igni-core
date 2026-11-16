@@ -235,6 +235,27 @@ class ProcessRegistry:
             ),
         )
 
+    def emit_adopted_exit(self, mp: TrackedProcess) -> None:
+        """The ending of a process adopted from a previous backend.
+
+        It has no reader task to notice its exit, so whoever ended it
+        says so here: the same ``exit`` event and the same history row
+        as :meth:`emit_completion` gives a process this backend started
+        (campaign R674). Its exit status was reaped by the system, not
+        by igni, so the code is the orphan's ``-1`` "unknown". No sleep
+        reference is released: this backend never took one for it.
+        """
+        self._persistence.record_end(mp)
+        self.bus.emit(
+            ProcessExitEvent(
+                pid=mp.proc.pid,
+                cmd=mp.cmd,
+                exit_code=mp.returncode(),
+                duration_seconds=mp.elapsed(),
+                output_tail=mp.read(tail=40),
+            ),
+        )
+
     def emit_line(self, pid: int, line: str) -> None:
         """Notify ``line`` subscribers. Hot path — the bus
         snapshots the subscriber list under its own lock, so this

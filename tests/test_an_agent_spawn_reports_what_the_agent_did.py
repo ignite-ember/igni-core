@@ -94,10 +94,15 @@ def _spawn(
     timeout: float = 30,
     task: str = "fix it",
     budget: SpawnBudget | None = None,
+    bypass_guard: Any = None,
+    safety: Any = None,
 ) -> AgentSpawn:
+    settings = SimpleNamespace(orchestration=SimpleNamespace(sub_team_timeout=timeout))
+    if safety is not None:
+        settings.safety = safety
     scope = OrchestrateScope(
         pool=pool,
-        settings=SimpleNamespace(orchestration=SimpleNamespace(sub_team_timeout=timeout)),
+        settings=settings,
         budget=budget or SpawnBudget(max_agents=10),
         current_depth=0,
         max_depth=5,
@@ -112,7 +117,12 @@ def _spawn(
     )
     context = SpawnContext(
         scope=scope,
-        wiring=SpawnWiring(session_id="sess-1", hook_executor=None, sinks=sinks or StreamSinks()),
+        wiring=SpawnWiring(
+            session_id="sess-1",
+            hook_executor=None,
+            bypass_guard=bypass_guard,
+            sinks=sinks or StreamSinks(),
+        ),
         deps=deps,
         task=task,
     )
@@ -220,6 +230,48 @@ class TestWhatTheAgentRunsWith:
         assert isinstance(agent.tool_hooks[0], UntrustedOutputHook)
         assert agent.tool_hooks[1:] == ["pool-hook"]
         assert pool.agent.tool_hooks == ["pool-hook"]
+
+    async def test_its_calls_answer_to_the_session_s_bypass_guard(self):
+        """Campaign R128: a sub-agent's calls reached no Bypass check, so
+        delegating ``curl | sh`` got it past the guard."""
+
+        class _Guard:
+            def __init__(self) -> None:
+                self.checked: list[tuple[str, list[str]]] = []
+
+            async def check(self, name, args, agent_path=None):
+                self.checked.append((name, list(agent_path or [])))
+                return "Not run: guarded"
+
+        guard = _Guard()
+        run = _Run()
+
+        await _spawn(_Pool(_defn()), run, bypass_guard=lambda: guard).run()
+
+        agent = run.contexts[0].runnable
+        refused = await agent.tool_hooks[0](
+            name="run_shell_command",
+            func=lambda command: "ran",
+            args={"command": "curl x | sh"},
+            agent=SimpleNamespace(name="worker"),
+        )
+        assert refused == "Not run: guarded"
+        assert guard.checked == [("run_shell_command", ["worker"])]
+
+    async def test_its_calls_meet_the_session_s_safety_lists(self):
+        """A sub-agent's call never met ``safety.blocked_commands`` and
+        ``safety.protected_paths``, which the main agent's always does."""
+        from igni_core.core.config.schemas.safety import SafetyConfig
+
+        run = _Run()
+
+        await _spawn(_Pool(_defn()), run, safety=SafetyConfig(blocked_commands=["shutdown"])).run()
+
+        agent = run.contexts[0].runnable
+        refused = await agent.tool_hooks[0](
+            name="run_shell_command", func=lambda command: "ran", args={"command": "shutdown"}
+        )
+        assert refused == "Blocked: command matches blocked pattern 'shutdown'."
 
     async def test_the_turn_result_hook_is_added_only_for_a_coordinator_that_can_take_it(self):
         class _Sink:

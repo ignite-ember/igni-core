@@ -48,8 +48,9 @@ class _Runnable:
         self.continued: list[dict[str, Any]] = []
         self.arun_calls: list[str] = []
 
-    def arun(self, task: str, *, stream: bool = True) -> Any:
+    def arun(self, task: str, *, stream: bool = True, stream_events: bool = False) -> Any:
         self.arun_calls.append(task)
+        self.stream_events = stream_events
         return self._play(self.tape)
 
     def acontinue_run(self, run_response: Any = None, **kwargs: Any) -> Any:
@@ -374,6 +375,35 @@ class TestVisualization:
         assert sinks.appended[0][1] == "own-run"
 
     @pytest.mark.asyncio
+    async def test_without_a_parent_the_append_files_it_under_the_main_agents_run(self):
+        """R214: a spawned agent's run carries no ``parent_run_id``, so the
+        card was filed under the sub-agent's run and history put it last,
+        not next to the main agent's ``spawn_agent`` call."""
+        from igni_core.core.tools.spawn_context import ParentCall, SpawnCalls
+
+        def call(agent: str, run_id: str) -> ParentCall:
+            return ParentCall(
+                agent_name=agent,
+                run_id=run_id,
+                session_id="s",
+                tool_call_id="t",
+                tool_name="spawn_agent",
+            )
+
+        tape = [
+            ev.RunStartedEvent(run_id="own-run", session_id="s"),
+            ev.ToolCallStartedEvent(tool=_tool("visualize", {"spec": {}})),
+        ]
+        handler, sinks, _ = _handler(tape)
+        with (
+            SpawnCalls.entered(call("igni", "main-run")),
+            SpawnCalls.entered(call("planner", "planner-run")),
+        ):
+            await handler.run()
+
+        assert sinks.appended[0][1] == "main-run"
+
+    @pytest.mark.asyncio
     async def test_a_failing_append_is_a_warning_and_the_stream_goes_on(self, caplog):
         sinks = _Sinks()
         sinks.append_error = RuntimeError("disk full")
@@ -663,3 +693,14 @@ class TestTheContractsTheHandlerReliesOn:
     def test_an_object_missing_the_surface_is_not_a_runnable(self):
         assert not isinstance(object(), AgnoRunnable)
         assert not isinstance(object(), HitlCoordinatorProtocol)
+
+
+async def test_the_specialist_is_streamed_with_its_tool_events() -> None:
+    """Agno streams ``ToolCallStartedEvent`` only with ``stream_events``;
+    without it the agent tree said "no tools yet" and the visualizer's chart
+    was never sent (campaign R665, R666)."""
+    handler, _, runnable = _handler([])
+
+    await handler.run()
+
+    assert runnable.stream_events is True

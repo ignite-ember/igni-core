@@ -26,10 +26,12 @@ from igni_core.core.tools.orchestrate_stream_context import StreamSinks
 class _Executor:
     def __init__(self, error: BaseException | None = None) -> None:
         self.calls: list[tuple[HookEvent, object]] = []
+        self.targets: list[str] = []
         self.error = error
 
-    async def execute(self, *, event: HookEvent, payload: object) -> None:
+    async def execute(self, *, event: HookEvent, payload: object, target: str = "") -> None:
         self.calls.append((event, payload))
+        self.targets.append(target)
         if self.error is not None:
             raise self.error
 
@@ -47,6 +49,19 @@ class TestSubagentStart:
         await hooks.fire_start(payload)
 
         assert executor.calls == [(HookEvent.SUBAGENT_START, payload)]
+
+    async def test_the_agent_name_is_the_target_a_matcher_is_checked_against(self):
+        """HOOKS.md: for SubagentStart / SubagentStop the matcher is checked
+        against the agent name. With no target every hook ran."""
+        executor = _Executor()
+        hooks = SpawnHooks(executor, StreamSinks(), "card")
+
+        await hooks.fire_start(
+            SubagentStartPayload(session_id="s", agent_name="editor", task="t", mode="route")
+        )
+        await hooks.fire_stop_once(SubagentStopPayload(session_id="s", agent_name="editor"))
+
+        assert executor.targets == ["editor", "editor"]
 
 
 class TestSubagentStopFiresOnce:
@@ -67,8 +82,8 @@ class TestSubagentStopFiresOnce:
         hooks: SpawnHooks
 
         class _Reentrant(_Executor):
-            async def execute(self, *, event: HookEvent, payload: object) -> None:
-                await super().execute(event=event, payload=payload)
+            async def execute(self, *, event: HookEvent, payload: object, target: str = "") -> None:
+                await super().execute(event=event, payload=payload, target=target)
                 await hooks.fire_stop_once(_stop("raced"))
 
         executor = _Reentrant()
@@ -149,6 +164,16 @@ class TestAgentStarted:
         hooks.emit_agent_started("a", "t")
 
         assert len(seen) == 1
+
+    def test_the_card_recorder_hears_the_started_event_too(self):
+        """Campaign R665: the history keeps a card's first event as well."""
+        shown: list[object] = []
+        kept: list[object] = []
+        sinks = StreamSinks(on_progress=shown.append, card_recorder=kept.append)
+
+        SpawnHooks(None, sinks, "c").emit_agent_started("a", "t")
+
+        assert len(shown) == 1 and kept == shown
 
     def test_a_raising_callback_is_logged_not_propagated(self, caplog):
         def boom(_event: object) -> None:

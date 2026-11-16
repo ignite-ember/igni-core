@@ -359,3 +359,57 @@ class TestBuiltFromSettings:
 
         assert pack is not None
         assert pack.to_settings_dict() == {"learning": {"enabled": False}}
+
+
+class TestFetchingFirst:
+    """A headless run has no GroupPolicySync: the fetcher refreshes the
+    cache itself, once, before reading it. Without it a policy change on
+    the server (a disabled hook) never reached ``igni -m`` until the next
+    browser sign-in (campaign R028, R064, R311)."""
+
+    @staticmethod
+    def _signed_in() -> PackTrust:
+        return PackTrust(
+            api_url=ISSUER, session=SignedInSession(subject=PERSON, token="tok"), required=False
+        )
+
+    def test_a_newer_pack_from_the_server_replaces_the_cached_one(self, cache):
+        store(cache.layout.root, _pack(settings={"learning": {"enabled": True}}), version=1)
+        start = _Transport(_store_pack(_pack(settings={"learning": {"enabled": False}})))
+        fetcher = CachedSettingsFetcher(cache, self._signed_in(), _Transport(), fetch_first=start)
+
+        pack = fetcher()
+
+        assert start.calls == 1
+        assert pack is not None
+        assert pack.to_settings_dict() == {"learning": {"enabled": False}}
+        fetcher()
+        assert start.calls == 1
+
+    def test_a_failed_fetch_leaves_the_cached_pack(self, cache):
+        store(cache.layout.root, _pack(settings={"learning": {"enabled": True}}), version=1)
+        start = _Transport(stored=False, reason="could not reach igni server")
+
+        pack = CachedSettingsFetcher(cache, self._signed_in(), _Transport(), fetch_first=start)()
+
+        assert pack is not None and pack.to_settings_dict() == {"learning": {"enabled": True}}
+
+    def test_nobody_signed_in_fetches_nothing(self, cache):
+        start = _Transport(_store_pack(_pack(_agent())))
+
+        assert CachedSettingsFetcher(cache, _trust(), _Transport(), fetch_first=start)() is None
+        assert start.calls == 0
+
+    def test_without_fetch_first_the_disk_alone_is_read(self, cache):
+        store(cache.layout.root, _pack(settings={"learning": {"enabled": True}}), version=1)
+        fetcher = CachedSettingsFetcher(cache, self._signed_in(), _Transport())
+
+        assert fetcher() is not None
+
+
+def test_the_cli_run_builds_its_fetcher_with_fetch_first():
+    import inspect
+
+    from igni_core.cli.run_settings import CliSettingsLoader
+
+    assert "fetch_first=True" in inspect.getsource(CliSettingsLoader.load)

@@ -44,7 +44,7 @@ from igni_core.core.tools.orchestrate_events import VisualizationDeltaEvent
 #: The kinds of event the session log holds. The set is closed: a new
 #: kind is a new draft + entry class here, not a free-form string
 #: smuggled through a payload.
-SessionEventKind = Literal["visualization_delta", "workflow_event"]
+SessionEventKind = Literal["visualization_delta", "workflow_event", "team_progress"]
 
 
 # Subclasses the wire event the visualizer and the extensions send, so
@@ -88,6 +88,27 @@ class VisualizationDeltaPayload(VisualizationDeltaEvent):
     source: str = Field(
         default="",
         description="Id of the extension that added the card. Empty for cards produced by an agent.",
+    )
+
+
+class TeamProgressRecord(BaseModel):
+    """One event of a sub-agent's or a team's progress card, as it was pushed.
+
+    Kept so a reopened chat can draw the card again: ``event`` is the
+    ``orchestrate_event`` push's payload, unchanged, and replaying a card's
+    events in ``seq`` order rebuilds it the way it was drawn live. The
+    window's record only: nothing here is replayed to the model.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    card_id: str = Field(description="The card the event belongs to; every event of one spawn.")
+    tool_call_id: str = Field(
+        default="",
+        description="Id of the `spawn_agent` / `spawn_team` call the card is for; empty if unknown.",
+    )
+    event: dict[str, Any] = Field(
+        default_factory=dict, description="The `orchestrate_event` payload, as pushed."
     )
 
 
@@ -141,9 +162,19 @@ class WorkflowEventDraft(SessionEventDraftBase):
         return WorkflowEventEntry(seq=seq, run_id=self.run_id, payload=self.payload.model_copy())
 
 
+class TeamProgressDraft(SessionEventDraftBase):
+    """A progress-card event on its way into the log."""
+
+    type: Literal["team_progress"] = "team_progress"
+    payload: TeamProgressRecord
+
+    def to_event(self, seq: int) -> TeamProgressEntry:
+        return TeamProgressEntry(seq=seq, run_id=self.run_id, payload=self.payload.model_copy())
+
+
 #: A draft — one of the kinds above, told apart by its ``type``.
 SessionEventDraft = Annotated[
-    VisualizationDeltaDraft | WorkflowEventDraft,
+    VisualizationDeltaDraft | WorkflowEventDraft | TeamProgressDraft,
     Field(discriminator="type"),
 ]
 
@@ -206,10 +237,17 @@ class WorkflowEventEntry(SessionEventBase):
         return payload.model_dump()
 
 
+class TeamProgressEntry(SessionEventBase):
+    """A ``team_progress`` entry: one event of a progress card."""
+
+    type: Literal["team_progress"] = "team_progress"
+    payload: TeamProgressRecord
+
+
 #: One entry in the log — one of the kinds above, told apart by its
 #: ``type``.
 SessionEvent = Annotated[
-    VisualizationDeltaEntry | WorkflowEventEntry,
+    VisualizationDeltaEntry | WorkflowEventEntry | TeamProgressEntry,
     Field(discriminator="type"),
 ]
 
@@ -242,6 +280,9 @@ __all__ = [
     "SessionEventDraft",
     "SessionEventDraftBase",
     "SessionEventKind",
+    "TeamProgressDraft",
+    "TeamProgressEntry",
+    "TeamProgressRecord",
     "VisualizationDeltaDraft",
     "VisualizationDeltaEntry",
     "VisualizationDeltaPayload",

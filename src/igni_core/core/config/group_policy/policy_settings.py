@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
+
+if TYPE_CHECKING:
+    from igni_core.core.config.cli_overrides import CliOverrides
 
 
 class PolicySettingsLoader:
@@ -22,19 +26,27 @@ class PolicySettingsLoader:
     backend boots with its gate closed, the CLI refuses — so :meth:`load`
     raises :class:`~.settings_fetcher.GroupPolicyUnavailable` and leaves the
     decision to them, with :meth:`local` as the fallback.
+
+    ``cli_overrides`` are the process's command-line flags, merged in both
+    passes at the CLI tier: above the folder's own files, below the
+    organisation's.
     """
 
-    def __init__(self, project_dir: Path | None = None) -> None:
+    def __init__(
+        self, project_dir: Path | None = None, *, cli_overrides: CliOverrides | None = None
+    ) -> None:
         self._project_dir = project_dir
+        self._cli_overrides = cli_overrides
 
     def local(self) -> Settings:
         """Local configuration only: the first pass."""
-        return SettingsLoader.load(project_dir=self._project_dir)
+        return SettingsLoader.load(cli_overrides=self._cli_overrides, project_dir=self._project_dir)
 
     def load(self, local: Settings | None = None) -> Settings:
         """The load that counts, from ``local`` (read now when not given)."""
         local_only = local if local is not None else self.local()
         return SettingsLoader.load(
+            cli_overrides=self._cli_overrides,
             project_dir=self._project_dir,
             group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
         )

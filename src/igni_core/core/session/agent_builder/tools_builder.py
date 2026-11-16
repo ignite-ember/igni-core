@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from agno.tools import Toolkit
 
+from igni_core.core.agents.tool_audience import audience
 from igni_core.core.tools.lsp import LspTools
 from igni_core.core.tools.monitors import MonitorTools
 from igni_core.core.tools.orchestrate import OrchestrateTools
@@ -79,6 +80,7 @@ class ToolsBuilder:
                 settings=registry.settings,
                 current_depth=0,
                 hook_executor=orchestration.hook_executor,
+                bypass_guard=orchestration.bypass_guard,
                 session_id=orchestration.session_id,
                 hitl_coordinator=orchestration.sub_agent_hitl,
                 project_dir=registry.project_dir,
@@ -133,6 +135,12 @@ class ToolsBuilder:
         manager = self._deps.mcp_manager
         extras: list[Toolkit] = []
         for name in manager.list_connected():
+            if not audience.allows(name, None):
+                # ``toolAudience: own-agents``: offered only to the agents
+                # its extension ships, which the main agent is not
+                # (``core/agents/tool_audience``). It was attached to the
+                # main agent anyway, which called the tool itself.
+                continue
             client = manager.get_client(name)
             if client and client not in tools_so_far and client not in extras:
                 extras.append(client)

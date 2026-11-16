@@ -231,7 +231,7 @@ async def test_auto_compaction_fires_both_hooks_with_the_live_session_id_and_sco
         "sess-1",
         "auto",
         8000,
-        0,
+        len("recap"),
     )
 
 

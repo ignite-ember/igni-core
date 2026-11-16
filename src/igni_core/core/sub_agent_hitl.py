@@ -45,12 +45,14 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Callable
+from typing import Any
 
 from agno.run.requirement import RunRequirement
 
 from igni_core.core.approvals.declined import declined_note
 from igni_core.core.approvals.journal import ApprovalJournal
 from igni_core.core.approvals.records import SpawnLink
+from igni_core.core.config.permission_eval import PermissionDecision, PermissionEvaluator
 from igni_core.core.hitl.ledger import ApprovalLedger
 from igni_core.core.hitl.models import (
     DetailUpdate,
@@ -87,6 +89,86 @@ class SubAgentHITLCoordinator:
         self.ledger = ApprovalLedger(self.turns)
         self.relay = RelayCounter()
         self._trace = HitlTrace()
+        self._evaluator_ref: Callable[[], PermissionEvaluator | None] = lambda: None
+        #: Nobody will ever answer here (a headless ``igni -m``).
+        self._unattended = False
+        #: The tools of sub-agent pauses nobody could be asked about.
+        self._unanswered: list[str] = []
+
+    # ── Nobody to ask ──────────────────────────────────────────────
+
+    def mark_unattended(self) -> None:
+        """Nobody will answer a question in this process: a headless run.
+
+        A sub-agent that pauses then ends its run at the pause instead of
+        waiting for an answer that never comes (campaign R092, R128: the
+        headless run hung until killed), and the run reports it.
+        """
+        self._unattended = True
+
+    @property
+    def unattended(self) -> bool:
+        """Whether nobody will answer a question in this process."""
+        return self._unattended
+
+    def record_unanswered(self, tool_names: list[str]) -> None:
+        """A sub-agent paused on these tools and nobody could be asked; each named once."""
+        self._unanswered.extend(n for n in tool_names if n not in self._unanswered)
+
+    def take_unanswered(self) -> list[str]:
+        """The tools recorded by :meth:`record_unanswered`, once."""
+        taken, self._unanswered = self._unanswered, []
+        return taken
+
+    # ── The policy ─────────────────────────────────────────────────
+
+    def use_policy(self, evaluator_ref: Callable[[], PermissionEvaluator | None]) -> None:
+        """Settle a sub-agent's pause from the session's permission policy first.
+
+        Agno pauses a sub-agent's call to a tool built with
+        ``requires_confirmation`` before any policy has seen it, exactly as
+        it pauses the main agent's. The main agent's pauses are answered
+        from the evaluator (``backend/pause_handler.py``, the headless
+        ``PausePolicyResolver``); a sub-agent's went straight to a person,
+        so under ``--read-only`` or plan mode an ``ls`` was asked about
+        instead of run, a command read-only refuses was asked about
+        instead of refused, and an allow rule was not honoured (campaign
+        R092, R106, R128, R188, R741).
+        """
+        self._evaluator_ref = evaluator_ref
+
+    def settle_by_policy(self, requirements: list[Any]) -> list[Any]:
+        """Confirm or reject what the policy decides; return the rest.
+
+        Applied as the main agent's pauses are: ALLOW confirms, DENY
+        rejects with its reason, anything else is left for a person.
+        Nothing is allowed here that the evaluator did not allow.
+        """
+        evaluator = self._evaluator_ref()
+        if evaluator is None:
+            return list(requirements)
+        undecided: list[Any] = []
+        for requirement in requirements:
+            execution = getattr(requirement, "tool_execution", None)
+            if execution is None or not getattr(requirement, "needs_confirmation", False):
+                undecided.append(requirement)
+                continue
+            name = str(execution.tool_name or "")
+            try:
+                outcome = evaluator.evaluate_outcome(name, dict(execution.tool_args or {}))
+            except Exception:  # noqa: BLE001 — an unanswerable pause goes to a person
+                logging.getLogger(__name__).warning(
+                    "permission evaluation failed for %s", name, exc_info=True
+                )
+                undecided.append(requirement)
+                continue
+            if outcome.decision is PermissionDecision.ALLOW:
+                requirement.confirm()
+            elif outcome.decision is PermissionDecision.DENY:
+                requirement.reject(note=f"Blocked: {outcome.reason}")
+            else:
+                undecided.append(requirement)
+        return undecided
 
     @property
     def new_arrival(self) -> asyncio.Event:

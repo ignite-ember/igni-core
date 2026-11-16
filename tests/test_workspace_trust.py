@@ -443,6 +443,30 @@ def test_managed_policy_is_honoured_and_reaches_the_gate(repo, managed):
     assert not _trust().is_trusted(repo)
 
 
+@pytest.mark.parametrize(
+    "block",
+    [{"mode": "sometimes"}, {"trusted_remotes": 5}, "never"],
+)
+def test_an_invalid_managed_trust_policy_fails_closed_instead_of_crashing(repo, managed, block):
+    managed({"workspace_trust": block})
+    _trust().trust(repo)
+
+    settings = SettingsLoader.load(project_dir=repo)
+
+    assert settings.workspace_trust.mode == "never"
+    assert not _trust().is_trusted(repo)
+
+
+def test_an_invalid_group_trust_policy_fails_closed_instead_of_crashing(repo):
+    class Pack:
+        def to_settings_dict(self):
+            return {"workspace_trust": {"mode": "sometimes"}}
+
+    settings = SettingsLoader.load(project_dir=repo, group_policy_fetcher=lambda: Pack())
+
+    assert settings.workspace_trust.mode == "never"
+
+
 def test_group_policy_pack_sets_workspace_trust(repo):
     class Pack:
         def to_settings_dict(self):

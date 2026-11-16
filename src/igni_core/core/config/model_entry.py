@@ -282,6 +282,8 @@ class ModelRegistryEntry(BaseModel):
         *,
         model_id: str,
         proxy_url: str,
+        api: str | None = None,
+        server_url: str | None = None,
     ) -> ModelRegistryEntry:
         """Build the canonical entry shape for a cloud-discovered model.
 
@@ -296,12 +298,21 @@ class ModelRegistryEntry(BaseModel):
         "managed by cloud" badge in the picker, say — can
         distinguish cloud-discovered rows from user-defined ones
         without adding a schema field just for the marker.
+
+        A model the server says it serves on the Anthropic Messages API
+        (``api="anthropic"``) is an ``anthropic`` entry at ``server_url``
+        instead: the SDK adds ``/v1/messages``, and the chat proxy answers
+        404 for such a model.
         """
+        if api == "anthropic" and server_url:
+            provider, url = "anthropic", server_url
+        else:
+            provider, url = "openai_like", proxy_url
         return cls.model_validate(
             {
-                "provider": "openai_like",
+                "provider": provider,
                 "model_id": model_id,
-                "url": proxy_url,
+                "url": url,
                 "api_key": CLOUD_TOKEN_SENTINEL,
                 "source": "cloud",
             }

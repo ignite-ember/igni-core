@@ -41,6 +41,7 @@ from igni_core.core.agents.pool import AgentPool
 from igni_core.core.agents.schemas import AgentDefinition
 from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.subagent_tool_hook import BypassGuardRef
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
 from igni_core.core.tools.orchestrate_modes import IsolationMode, TeamMode
 from igni_core.core.tools.orchestrate_sandbox import SpawnSandbox
@@ -61,6 +62,8 @@ class SpawnWiring(BaseModel):
     session_id: str = ""
     #: Where the spawn's hooks go, when the session has any.
     hook_executor: SkipValidation[HookExecutor | None] = None
+    #: The session's Bypass guard, which the spawn's own calls answer to.
+    bypass_guard: SkipValidation[BypassGuardRef | None] = None
     #: The four sinks the spawn and the runs under it report through.
     sinks: StreamSinks = Field(default_factory=StreamSinks)
 
@@ -168,6 +171,12 @@ class TeamBuildRequest(BaseModel):
     mode: str = ""
     #: The depth the team runs at.
     depth: int = 1
+    #: Where the members' tool hooks go, when the session has any.
+    hook_executor: SkipValidation[HookExecutor | None] = None
+    #: The session's Bypass guard, which the members' calls answer to.
+    bypass_guard: SkipValidation[BypassGuardRef | None] = None
+    #: The session the team belongs to, for those hooks' payloads.
+    session_id: str = ""
 
 
 #: The two streaming coroutines a spawn delegates to. Both answer

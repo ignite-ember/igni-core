@@ -39,7 +39,7 @@ igni is a self-hosted, air-gapped agentic platform, and igni-core is the agent r
   │              → Agent Pool (.md files)           │
 │ │              → Dynamic Team Assembly            │ │
   │                (route/coord/broadcast/tasks)    │
-│ │              → Unlimited nesting depth          │ │
+│ │              → Nested delegation (depth 5)      │ │
   └──────────────────────┬──────────────────────────┘
 │                        │                            │
   ┌──────────────────────▼──────────────────────────┐
@@ -115,13 +115,13 @@ Not every task needs a team. The Orchestrator's primary optimization is **minimi
 | Broadcast | High | Independent parallel perspectives |
 | Tasks | Highest | Large autonomous goals |
 
-### 4. Unlimited Nesting
+### 4. Nested Delegation
 
-Claude Code caps sub-agents at one level (sub-agents can't spawn sub-agents). igni has **no nesting limit**. Every agent can access the agent pool and spawn sub-teams by default (`can_orchestrate: true`). Opt out per-agent with `can_orchestrate: false`.
+Claude Code caps sub-agents at one level (sub-agents can't spawn sub-agents). In igni an agent started with `spawn_agent` may spawn agents and teams itself when it is marked `can_orchestrate: true` (the default), down to `orchestration.max_nesting_depth` levels (default 5). Opt out per-agent with `can_orchestrate: false`.
 
 This matters because **the agent closest to the problem is best positioned to decide if it needs help**. An editor mid-refactor might spawn an explorer to understand unfamiliar code. A reviewer might spawn a security-auditor for a specific concern. Each sub-team picks its own mode.
 
-Practical guardrails (configurable depth limits, agent caps, timeouts) prevent runaway recursion without restricting the design. See [Agents](AGENTS.md#recursive-nesting-agents-that-build-teams) for details.
+The depth limit, an agent cap (`max_total_agents`) and timeouts bound the recursion. See [Agents](AGENTS.md#recursive-nesting-agents-that-build-teams) for details.
 
 ### 5. Persistent Memory
 
@@ -211,10 +211,8 @@ Startup
            │  With cross_tool_support: true, also scans:
            │  ├── ~/.claude/agents/        (Claude Code global)
            │  ├── ~/.claude/skills/        (Claude Code global)
-           │  ├── ~/.codex/               (Codex global)
            │  ├── .claude/agents/          (Claude Code project)
-           │  ├── .claude/skills/          (Claude Code project)
-           │  └── AGENTS.md / .codex/      (Codex project)
+           │  └── .claude/skills/          (Claude Code project)
            │
            ▼
     ┌──────────────────────────────────────────────┐
@@ -228,14 +226,14 @@ Startup
            └── Orchestrator reads pool on each request
 ```
 
-By default, igni loads agents and skills from both its own directories and Claude Code / Codex directories (`cross_tool_support` is on by default). Set `cross_tool_support: false` to only scan igni directories. See [Agents](AGENTS.md) and [Skills](SKILLS.md) for format details.
+By default, igni loads agents and skills from both its own directories and Claude Code's (`cross_tool_support` is on by default). Codex agent definitions (`AGENTS.md`, `.codex/`) are not read. Set `cross_tool_support: false` to only scan igni directories. See [Agents](AGENTS.md) and [Skills](SKILLS.md) for format details.
 
 ## Session Management
 
 Each igni session:
 
 1. **First run?** — if `.igni/agents/` doesn't exist, run the [onboarding flow](ONBOARDING.md): create default agents, ask about the user's work, fetch project context from CodeIndex, propose tailored agents
-2. **Loads** — agent pool (from igni/Claude/Codex directories), user memory, project context (`igni.md`), MCP servers, session history
+2. **Loads** — agent pool (from igni and Claude Code directories), user memory, project context (`igni.md`), MCP servers, session history
 3. **Runs** — interactive loop: user message → Orchestrator → team/agent → response
 3. **Persists** — updated memory, session state to SQLite
 4. **Cleans up** — MCP connections, temp files, background processes

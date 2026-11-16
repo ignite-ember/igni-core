@@ -31,7 +31,7 @@ from igni_core.decisions_server.model import LayaModel
 def main() -> int:
     print("prefetch: loading igni's decision model (~1.7 GB on first run)", flush=True)
     try:
-        LayaModel().load()
+        LayaModel().prefetch()
     except Exception as exc:  # pragma: no cover — surfaced to caller
         print(f"prefetch: decision model not fetched: {exc!r}", file=sys.stderr, flush=True)
         return 0

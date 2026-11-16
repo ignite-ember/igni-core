@@ -188,3 +188,36 @@ def test_a_custom_config_name_is_the_toolkit_name(supervisor):
 def test_a_supervisor_is_required():
     with pytest.raises(TypeError):
         IgniShellTools()  # type: ignore[call-arg]
+
+
+async def test_stopping_a_process_adopted_after_a_restart_tells_its_ending(tools, supervisor):
+    """Campaign R674: an adopted process has no ``proc.wait`` and no reader;
+    the stop raised, and nobody was told it ended."""
+    from igni_core.core.tools.orphan_process import OrphanProcess
+    from igni_core.core.tools.process_events import ProcessExitEvent
+
+    killed: list[int] = []
+
+    class _Adopted(OrphanProcess):
+        def is_running(self) -> bool:  # type: ignore[override]
+            return self.pid not in killed
+
+        def returncode(self) -> int | None:  # type: ignore[override]
+            return None if self.is_running() else -1
+
+        def kill(self) -> None:  # type: ignore[override]
+            killed.append(self.pid)
+
+    adopted = _Adopted(
+        pid=4242, cmd="dev server", started_epoch=0, pgid=None, log_store=supervisor.log_store
+    )
+    supervisor.registry.add(adopted)
+    exits: list[ProcessExitEvent] = []
+    supervisor.registry.bus.on("exit", exits.append)
+
+    result = await tools.stop_process(4242)
+
+    assert result.startswith("Process 4242 stopped.\nLast output:")
+    assert killed == [4242]
+    assert [(e.pid, e.cmd, e.exit_code) for e in exits] == [(4242, "dev server", -1)]
+    assert supervisor.registry.get(4242) is None

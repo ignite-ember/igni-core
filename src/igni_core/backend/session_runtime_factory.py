@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import MutableSequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from igni_core.backend.pool_directories import PoolDirectories
 from igni_core.backend.pool_wiring import PoolWiring
@@ -13,7 +14,10 @@ from igni_core.backend.schemas_sessions import BackendLike
 from igni_core.backend.server import BackendServer
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
+from igni_core.backend.workspace_trust_controller import reload_settings
+from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.settings import Settings
+from igni_core.core.workspace_trust import process_trust
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -36,15 +40,24 @@ class SessionRuntimeFactory:
         settings: Settings,
         dirs: PoolDirectories,
         server_cls: type[BackendServer] = BackendServer,
+        cli_overrides: CliOverrides | None = None,
     ) -> None:
         self._wiring = wiring
         self._settings = settings
         self._dirs = dirs
+        # What the backend's command line set. ``settings`` hold them already,
+        # merged with the boot folder's files; a session in another folder
+        # loads that folder's files, and these go on top again.
+        self._cli_overrides = cli_overrides
         # What a resumed session runs on. A constructor argument
         # rather than a class attribute: a seam a test rebinds on the
         # class is a seam every instance of that class sees, which is
         # a global wearing a class's clothes.
         self._server_cls = server_cls
+        # Whether the folder the settings were loaded for was trusted then:
+        # a folder trusted (or distrusted) since brings (or drops) its own
+        # ``permissions`` and ``safety``, which these settings do not hold.
+        self._settings_trusted = self._trusted(dirs.project_dir)
 
     def boot(self, boot: BootRuntime) -> SessionRuntime:
         """The boot session as the pool's default, on a transport stamping its id."""
@@ -58,11 +71,10 @@ class SessionRuntimeFactory:
 
     async def create(self, session_id: str) -> SessionRuntime:
         """Resume ``session_id`` in its own directory, with its own router and queue."""
-        # Deep-copied: resuming applies the session's persisted model
-        # preference, which must not leak into other runtimes' defaults.
+        project_dir = self._dirs.dir_for(session_id)
         backend = self._server_cls(
-            self._settings.model_copy(deep=True),
-            project_dir=self._dirs.dir_for(session_id),
+            self._settings_for(project_dir),
+            project_dir=project_dir,
             resume_session_id=session_id,
             additional_dirs=self._dirs.additional_dirs,
             contributions=self._wiring.contributions,
@@ -81,12 +93,29 @@ class SessionRuntimeFactory:
             gate=self._wiring.gate,
         )
         await backend.startup()
+        if self._wiring.extension_mcp is not None:
+            # The extensions run once, on the boot session's manager; this
+            # session is offered their tools too, and its agents are built
+            # again to carry them.
+            backend.mcp_manager.share_extensions_of(self._wiring.extension_mcp)
+            backend.reload_agents()
         queue = backend.message_queue
         backend.wire_queue_hook(queue)
         stamped = self._wiring.stamped(backend)
         # The runtime's own queue: anything the bridge appends is injected
         # as a synthetic user message in the session it belongs to.
         rt_bridge = self._wiring.push_bridge.for_transport(stamped, queue=queue)
+        # The session's sub-agent progress goes out live on
+        # ``orchestrate_event``. The boot session gets that callback from
+        # the bridge's ``wire_all``; a pooled session has its own backend
+        # and its own team, so it needs its own wiring — the boot
+        # backend's callback belongs to the boot team and says nothing
+        # about this one. Without it the team card and the charts
+        # appeared only once the chat was reopened: the card was in the
+        # event log (the card recorder is wired per backend) but no push
+        # ever reached the window, so nothing was live (campaign
+        # R665/R666).
+        backend.wire_orchestrate_progress(rt_bridge.on_orchestrate_progress)
         router = self._wiring.router_for(backend, rt_bridge)
         rpc_table = router.build_table()
         self._dirs.record(backend.session_id, backend.project_dir)
@@ -96,6 +125,37 @@ class SessionRuntimeFactory:
         return self.bind(
             backend=backend, rpc_table=rpc_table, queue=queue, transport=stamped, router=router
         )
+
+    def _settings_for(self, project_dir: Path) -> Settings:
+        """The settings a session in ``project_dir`` starts on.
+
+        In the boot folder, the process's, deep-copied: resuming applies the
+        session's persisted model preference, which must not leak into other
+        runtimes' defaults. Loaded again when the folder's trust is not what
+        it was when the process's were loaded: a session made after
+        ``set_workspace_trust`` ignored the folder's allow and deny rules,
+        while its own ``check_permission`` already read them.
+
+        In any other folder, that folder's own: the process's were merged
+        from the boot folder's ``.igni`` files, and a window working in
+        another folder ran on them — the boot folder's permissions, MCP
+        servers and hooks. Loaded the way the boot folder's were, with the
+        same trust gate (an untrusted folder's ``permissions`` and ``safety``
+        are dropped by the project tiers) and the command line's overrides
+        on top.
+        """
+        if not self._is_boot_folder(project_dir) or (
+            self._trusted(project_dir) != self._settings_trusted
+        ):
+            return reload_settings(project_dir, self._cli_overrides)
+        return self._settings.model_copy(deep=True)
+
+    def _is_boot_folder(self, project_dir: Path) -> bool:
+        return Path(project_dir).resolve() == Path(self._dirs.project_dir).resolve()
+
+    @staticmethod
+    def _trusted(project_dir: Path) -> bool:
+        return process_trust().decide(project_dir).trusted
 
     @staticmethod
     def bind(

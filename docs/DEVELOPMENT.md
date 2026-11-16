@@ -166,7 +166,7 @@ The `make check` target is the single command to verify everything is clean befo
 - `mcp` — Model Context Protocol (`pip install -e ".[mcp]"`)
 - `google-genai` — Gemini models (`pip install -e ".[gemini]"`)
 - `anthropic` — Claude over the native Messages API (`pip install -e ".[anthropic]"`)
-- `duckduckgo-search` — Web search (`pip install -e ".[web]"`)
+- `duckduckgo-search` (`pip install -e ".[web]"`) — not needed for web search, which comes with the core install (`agno[ddg]` brings `ddgs`); nothing imports this package
 
 **Dev:**
 - `pytest` + `pytest-asyncio` — Testing

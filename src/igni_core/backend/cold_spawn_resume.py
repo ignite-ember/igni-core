@@ -177,6 +177,9 @@ class ColdSpawnResume:
                 names=args.team_names,
                 mode=args.mode,
                 depth=tools.current_depth + 1,
+                hook_executor=tools.wiring.hook_executor,
+                bypass_guard=tools.wiring.bypass_guard,
+                session_id=tools.wiring.session_id,
             ),
             tools.spawn_deps(),
         )

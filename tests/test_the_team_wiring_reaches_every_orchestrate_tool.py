@@ -26,7 +26,14 @@ def _toolkit() -> OrchestrateTools:
 
 def _session(*tools: object, tool_hooks=None, post_hooks=None) -> SimpleNamespace:
     team = SimpleNamespace(tools=list(tools), tool_hooks=tool_hooks, post_hooks=post_hooks)
-    return SimpleNamespace(main_team=team)
+    return SimpleNamespace(main_team=team, main_team_wirings=[])
+
+
+def _rebuild(session: SimpleNamespace, *tools: object) -> None:
+    """What ``Session.rebuild_main_team`` does: a fresh team, then the wirings again."""
+    session.main_team = SimpleNamespace(tools=list(tools), tool_hooks=None, post_hooks=None)
+    for apply in session.main_team_wirings:
+        apply()
 
 
 def test_the_queue_hook_registers_an_injector_and_a_persister_on_the_current_team() -> None:
@@ -83,7 +90,7 @@ def test_progress_and_the_event_appender_reach_every_orchestrate_tool() -> None:
 
 def test_a_team_without_tools_wires_nothing_and_counts_zero() -> None:
     for tools in (None, []):
-        session = SimpleNamespace(main_team=SimpleNamespace(tools=tools))
+        session = SimpleNamespace(main_team=SimpleNamespace(tools=tools), main_team_wirings=[])
         wiring = TeamWiring(session)  # type: ignore[arg-type]
         wiring.wire_orchestrate_progress(lambda *a: None)  # type: ignore[arg-type]
         wiring.wire_orchestrate_event_appender(lambda *a: None)  # type: ignore[arg-type]
@@ -114,3 +121,118 @@ def test_a_rebuilt_team_is_wired_not_the_stale_one() -> None:
 
     assert new_tool.wiring.sinks.on_progress is progress
     assert old_tool.wiring.sinks.on_progress is None
+
+
+def test_a_team_rebuilt_after_the_wiring_is_wired_again() -> None:
+    """The Trust click rebuilds the team after the window wired it: the
+    fresh team kept no progress callback, appender or queue hooks."""
+    session = _session(_toolkit())
+    wiring = TeamWiring(session)  # type: ignore[arg-type]
+
+    def progress(*args: object) -> None: ...
+
+    def appender(*args: object) -> None: ...
+
+    wiring.wire_orchestrate_progress(progress)  # type: ignore[arg-type]
+    wiring.wire_orchestrate_event_appender(appender)  # type: ignore[arg-type]
+    wiring.wire_queue_hook([])  # type: ignore[arg-type]
+
+    fresh = _toolkit()
+    _rebuild(session, fresh)
+
+    assert fresh.wiring.sinks.on_progress is progress
+    assert fresh.wiring.sinks.event_appender is appender
+    assert isinstance(session.main_team.tool_hooks[-1], QueueInjectorHook)
+    assert isinstance(session.main_team.post_hooks[-1], QueuePersisterHook)
+
+
+async def test_the_visualizer_card_is_kept_in_the_session_event_log() -> None:
+    from igni_core.core.session.event_log_schema import VisualizationDeltaDraft
+    from igni_core.core.tools.orchestrate_events import VisualizationDeltaEvent
+
+    drafts: list[object] = []
+
+    async def append_event(draft: object) -> None:
+        drafts.append(draft)
+
+    tool = _toolkit()
+    session = _session(tool)
+    session.append_event = append_event
+    TeamWiring(session).wire_event_log()  # type: ignore[arg-type]
+
+    event = VisualizationDeltaEvent(
+        agent_path="visualizer", spec_id="s1", spec_json='{"root": "a"}', final=True
+    )
+    await tool.wiring.sinks.event_appender(event, "run-1")  # type: ignore[misc]
+
+    assert len(drafts) == 1
+    draft = drafts[0]
+    assert isinstance(draft, VisualizationDeltaDraft)
+    assert draft.run_id == "run-1"
+    assert draft.payload.spec_id == "s1"
+    assert draft.payload.spec_json == '{"root": "a"}'
+    assert draft.payload.final is True
+
+
+def test_session_rebuild_applies_what_was_wired_to_the_fresh_team(monkeypatch) -> None:
+    from igni_core.core.session import core as session_core
+
+    fresh = _toolkit()
+
+    class _Builder:
+        def __init__(self, session: SimpleNamespace) -> None:
+            self._session = session
+
+        def build_main_team(self) -> None:
+            self._session.main_team = SimpleNamespace(
+                tools=[fresh], tool_hooks=None, post_hooks=None
+            )
+
+    monkeypatch.setattr(session_core, "AgentsBuilder", _Builder)
+    session = _session(_toolkit())
+    session.settings = object()
+    session.context_budget = SimpleNamespace(resize=lambda settings: None)
+
+    def progress(*args: object) -> None: ...
+
+    TeamWiring(session).wire_orchestrate_progress(progress)  # type: ignore[arg-type]
+    session_core.Session.rebuild_main_team(session)  # type: ignore[arg-type]
+
+    assert fresh.wiring.sinks.on_progress is progress
+
+
+def test_a_card_s_events_are_kept_in_the_event_log_under_the_spawning_run() -> None:
+    """Campaign R665: nothing kept a sub-agent's or a team's card, so a
+    reopened chat could not draw it again."""
+    from igni_core.core.session.event_log import SessionEventLog
+    from igni_core.core.session.event_log_schema import TeamProgressEntry
+    from igni_core.core.tools.orchestrate_events import AgentStartedEvent, ContentPreviewEvent
+    from igni_core.core.tools.spawn_context import ParentCall, SpawnCalls
+
+    tool = _toolkit()
+    session = _session(tool)
+    session.event_log_store = SessionEventLog()
+    TeamWiring(session).wire_event_log()  # type: ignore[arg-type]
+    record = tool.wiring.sinks.card_recorder
+    assert record is not None
+
+    parent = ParentCall(
+        agent_name="igni",
+        run_id="main-run",
+        session_id="s-1",
+        tool_call_id="call-1",
+        tool_name="spawn_agent",
+    )
+    with SpawnCalls.entered(parent):
+        record(AgentStartedEvent(agent_path="scout", agent="scout", task="t", card_id="k1"))
+        record(ContentPreviewEvent(agent_path="scout", text="...", card_id="k1"))
+        record(AgentStartedEvent(agent_path="x", agent="x", task="t"))  # no card
+
+    [entry] = session.event_log_store.events
+    assert isinstance(entry, TeamProgressEntry)
+    assert (entry.run_id, entry.payload.card_id, entry.payload.tool_call_id) == (
+        "main-run",
+        "k1",
+        "call-1",
+    )
+    assert entry.payload.event["type"] == "agent_started"

@@ -152,10 +152,16 @@ class CliOverrides(_Overrides):
             perms.read_only = True
         if opts.strict:
             perms.mode = PermissionMode.DONT_ASK
-            perms.file_write = "deny"
-            perms.shell_execute = "deny"
-            perms.git_push = "deny"
-            perms.git_destructive = "deny"
+            # ``dontAsk`` is what denies a call no allow rule matches. The
+            # categories are held at ``ask`` rather than set to ``deny``: the
+            # registry drops a tool whose level is ``deny`` before the agent is
+            # built, and the evaluator runs deny first, so no allow rule could
+            # opt ``Bash`` or ``Write`` back in. ``ask`` takes back the allows
+            # a looser flag set, and ``CliRatchet`` keeps a group from raising
+            # them to ``allow``. ``--read-only``'s ``deny`` stays.
+            for category in ("file_write", "shell_execute", "git_push", "git_destructive"):
+                if getattr(perms, category) != "deny":
+                    setattr(perms, category, "ask")
             # The agent's denies do not reach the hooks a group ships, which
             # run ``bash -c`` outside the permission system; ``--strict``
             # asks before one runs (and, headless, refuses it).

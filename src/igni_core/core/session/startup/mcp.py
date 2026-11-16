@@ -6,6 +6,12 @@ has exactly one answer. Every other reader
 (``SessionStartupCoordinator.mcp_initialized``, backend / test writes)
 routes through the property so the invariant holds.
 
+The flag says the first-connect pass has run, not that the phase is
+done for good: :meth:`ensure` is also the place a changed
+``.mcp.json`` is picked up, so a server added or edited while the
+backend was up takes effect on the next message (campaign
+R209/R669).
+
 Both entry points return a typed :class:`McpInitResult` /
 ``None`` — replacing the pre-refactor grep-parse-the-log
 diagnostic path.
@@ -45,7 +51,8 @@ class McpInitDeps:
 
 
 class McpInitPhase(SessionStartupPhase):
-    """Once-per-session MCP first-connect + agent rebuild.
+    """MCP first-connect + agent rebuild, once per session and again
+    whenever the config files change.
 
     Sole owner of the ``_initialized`` flag (Rule AP3 — one write
     site: :meth:`ensure`). Session exposes ``mcp_initialized`` as
@@ -78,19 +85,39 @@ class McpInitPhase(SessionStartupPhase):
         ``~/.igni/debug.log`` when diagnosing a "MCP says connected
         but the agent doesn't see the tools" race.
 
+        On every later call the config files are re-read. A
+        ``.mcp.json`` added or edited after the backend started used
+        to be invisible until a restart (campaign R209/R669); now the
+        next message picks it up: the changed servers are connected,
+        the vanished ones are dropped, and the team is rebuilt.
+
         Returns a :class:`McpInitResult` describing the outcome so
         callers can branch on ``connected`` / ``failed`` /
         ``rebuilt`` / ``skipped_reason`` without log-scraping.
         """
+        reloaded: list[str] = []
         if self._initialized:
-            return McpInitResult(skipped_reason="already_initialized")
-        # Single write site — every other reader routes through
-        # ``self.initialized`` / Session's compat property.
-        self._initialized = True
+            reloaded = await self._reload_configs()
+            if not reloaded:
+                return McpInitResult(skipped_reason="already_initialized")
+        else:
+            # Single write site — every other reader routes through
+            # ``self.initialized`` / Session's compat property.
+            self._initialized = True
 
         available = self._deps.mcp_manager.list_servers()
         if not available:
             logger.info("MCP init: no configured servers; skipping connect loop")
+            if reloaded:
+                # The last server was taken out of the config file:
+                # rebuild anyway, so the team drops its tools.
+                self._rebuild(McpClientBundle(clients={}))
+                return McpInitResult(
+                    connected=[],
+                    failed={},
+                    rebuilt=True,
+                    skipped_reason="no_configured_servers",
+                )
             return McpInitResult(skipped_reason="no_configured_servers")
 
         logger.info(self._MCP_CONNECT_INFO, len(available), available)
@@ -105,6 +132,17 @@ class McpInitPhase(SessionStartupPhase):
 
         if not bundle:
             logger.info("MCP init: no clients to attach; team rebuild skipped")
+            if reloaded:
+                # A server was removed from the config while another
+                # one is configured but could not be connected: rebuild
+                # so the team drops the removed server's tools.
+                self._rebuild(McpClientBundle(clients={}))
+                return McpInitResult(
+                    connected=[],
+                    failed=failed,
+                    rebuilt=True,
+                    skipped_reason="no_clients_connected",
+                )
             return McpInitResult(
                 connected=[],
                 failed=failed,
@@ -118,6 +156,33 @@ class McpInitPhase(SessionStartupPhase):
             failed=failed,
             rebuilt=True,
         )
+
+    async def _reload_configs(self) -> list[str]:
+        """Re-read the MCP config files; return the servers that changed.
+
+        Empty when nothing changed — which is the common case, and the
+        reason this stays cheap: the manager compares the config it
+        holds with the one on disk and reports only real differences.
+        """
+        manager = self._deps.mcp_manager
+        reload_configs = getattr(manager, "reload_configs", None)
+        if not callable(reload_configs):
+            # A manager stub from before the reload existed (test
+            # fixtures): there is nothing to re-read.
+            return []
+        try:
+            changed = await reload_configs()
+        except Exception as exc:  # a broken config file must not break a chat
+            logger.warning("MCP init: could not re-read the MCP config files: %s", exc)
+            return []
+        changed = list(changed or [])
+        if changed:
+            logger.info(
+                "MCP init: %d server(s) changed in the config: %s",
+                len(changed),
+                sorted(changed),
+            )
+        return changed
 
     async def _connect_all(self, available: list[str]) -> tuple[McpClientBundle, dict[str, str]]:
         """Connect every configured MCP server, logging per-server

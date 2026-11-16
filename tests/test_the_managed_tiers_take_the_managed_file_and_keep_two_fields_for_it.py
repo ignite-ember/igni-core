@@ -149,3 +149,33 @@ def test_the_accumulator_it_was_given_is_not_changed():
     _only(None).apply(accumulator)
 
     assert accumulator.payload == {"group_policy": {"required": True}}
+
+
+def test_a_group_policy_block_the_environment_filled_is_not_warned_about(monkeypatch):
+    """``IGNI_GROUP_POLICY_REQUIRED=1`` is the documented way; the built-in
+    defaults the settings start from already carry it. Every such run warned
+    that a user, project, CLI or group value was ignored (campaign R064)."""
+    from igni_core.core.config.group_policy.environment import GroupPolicyEnvironment
+    from igni_core.core.config.schemas.storage_and_paths import GroupPolicyConfig
+
+    monkeypatch.setenv(GroupPolicyEnvironment.REQUIRED_VAR, "1")
+    from_environment = GroupPolicyConfig().model_dump()
+    assert from_environment["required"] is True
+
+    with warnings_of(LOGGER) as warnings:
+        _only(None).apply(SettingsAccumulator(payload={"group_policy": from_environment}))
+
+    assert warnings == []
+
+
+def test_a_lower_value_is_still_warned_about_when_the_environment_set_another(monkeypatch):
+    from igni_core.core.config.group_policy.environment import GroupPolicyEnvironment
+
+    monkeypatch.setenv(GroupPolicyEnvironment.REQUIRED_VAR, "1")
+    accumulator = SettingsAccumulator(payload={"group_policy": {"trusted_keys": ["mine"]}})
+
+    with warnings_of(LOGGER) as warnings:
+        _only(None).apply(accumulator)
+
+    assert len(warnings) == 1
+    assert "trusted_keys" in warnings[0]

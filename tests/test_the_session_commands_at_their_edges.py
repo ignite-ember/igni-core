@@ -43,8 +43,13 @@ class FakeSession:
             fork=AsyncMock(),
         )
 
+        self.event_log: list = ["a view drawn in the old chat"]
+
     def rotate_id(self, new_id: str) -> None:
         self.session_id = new_id
+
+    def restore_event_log(self, events: list) -> None:
+        self.event_log = list(events)
 
 
 def _run(session: FakeSession, command: str):
@@ -62,6 +67,16 @@ async def test_clear_starts_a_fresh_eight_character_session_and_forgets_the_cont
     assert result.action == CommandAction.CLEAR
     assert len(session.session_id) == 8 and session.session_id != "old00000"
     assert session.context_budget.last_input_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_clear_starts_the_new_chat_with_no_views():
+    """R214: the previous chat's views stayed in the log, so the new chat's
+    history showed them and its first append saved them into it."""
+    session = FakeSession()
+    await _run(session, "/clear")
+    await background.drain()
+    assert session.event_log == []
 
 
 @pytest.mark.asyncio
@@ -236,3 +251,18 @@ async def test_a_failed_fork_with_no_reason_says_unknown_error():
     session.persistence.fork = AsyncMock(return_value=ForkResult(ok=False, error=None))
     result = await _run(session, "/fork")
     assert result.content == "Fork failed: unknown error"
+
+
+@pytest.mark.asyncio
+async def test_a_fork_of_a_session_not_saved_yet_says_to_send_a_message_first():
+    """Every new chat: the footer shows the id, and /fork said 'source
+    session not found: <that id>' (campaign R155)."""
+    session = FakeSession()
+    session.persistence.fork = AsyncMock(
+        return_value=ForkResult(ok=False, error="source session not found: x", unsaved=True)
+    )
+    result = await _run(session, "/fork")
+    assert result.is_error()
+    assert "not saved until its first message" in result.content
+    assert "source session not found" not in result.content
+    assert session.session_id == "old00000"

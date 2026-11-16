@@ -80,6 +80,9 @@ class _StandIn:
     def wire_queue_hook(self, queue: Any) -> None:
         pass
 
+    def wire_orchestrate_progress(self, callback: Any) -> None:
+        pass
+
     def register_broadcast(self, callback: Any) -> None:
         self.broadcast_bus.register(callback)
 

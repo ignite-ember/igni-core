@@ -28,6 +28,7 @@ def _request(payload: dict) -> AgentRequestEvent:
 
 def _session(arun) -> MagicMock:  # type: ignore[no-untyped-def]
     session = MagicMock()
+    session.session_id = "s-1"
     session.main_team.arun = arun
     return session
 
@@ -60,7 +61,7 @@ async def test_a_session_without_a_team_refuses() -> None:
 
 
 async def test_a_call_that_outlives_its_timeout_is_refused_naming_the_seconds() -> None:
-    async def slow(prompt, stream=False):  # type: ignore[no-untyped-def]
+    async def slow(prompt, stream=False, session_id=None):  # type: ignore[no-untyped-def]
         await asyncio.sleep(5)
 
     reply = await WorkflowAgentBridge(_session(slow), RunGate()).answer(
@@ -91,7 +92,7 @@ async def test_the_prompt_is_run_without_streaming() -> None:
         _request({"id": "r5", "prompt": "héllo"})
     )
 
-    arun.assert_awaited_once_with("héllo", stream=False)
+    arun.assert_awaited_once_with("héllo", stream=False, session_id="s-1:workflow:wf_1")
 
 
 @pytest.mark.parametrize(

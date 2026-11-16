@@ -240,7 +240,11 @@ class World:
         monkeypatch.setattr(
             ext_cli,
             "OneShotSync",
-            lambda store, settings: OneShotSync(store, settings, transport=transport),
+            # What the command says, not whether what it stores starts
+            # (``test_extensions_sync_without_the_app`` covers that).
+            lambda store, settings, lifecycle=None: OneShotSync(
+                store, settings, transport=transport
+            ),
         )
         monkeypatch.setattr(PolicySettingsLoader, "load", lambda _self: self.settings)
         CredentialsStore(str(self.credentials)).save(Credentials.new(SESSION, "ada@acme.test"))

@@ -30,7 +30,7 @@ An **extension** is a capability with a service behind it. It arrives one of two
 
 **Tools are always MCP.** We do not invent a second tool transport. What an extension needs *beyond* tools is what this document specifies.
 
-**One extension, one manifest.** Packaging decides which fields apply — an image for a sidecar, `endpoint` and auth for a remote one. Everything else is identical, so a capability is never described twice and cannot drift between deployments.
+**One extension, one manifest.** Packaging decides which fields apply — an image for a sidecar, `endpoint` and auth for a remote one (igni does not send endpoint credentials yet: `auth.kind` `bearer` and `mtls` are refused at install and by `igni ext doctor`, and only `none` installs). Everything else is identical, so a capability is never described twice and cannot drift between deployments.
 
 ---
 
@@ -63,7 +63,7 @@ Everything is namespaced by extension id. A collision with a base name is a vali
 
 ### The agent's prompt
 
-An enterprise that wants its agent to work its own way gets exactly that. Per prompt — `main` (the main agent's system prompt), `plan_mode` (what it is told about plan mode), `agent:<name>` (any agent: igni's own, a plugin's `agent:acme.notes:archivist`) — an extension does one of two things:
+An enterprise that wants its agent to work its own way gets exactly that. Per prompt — `main` (the main agent's system prompt), `plan_mode` (what it is told about plan mode), `agent:<name>` (any agent: igni's own, a plugin's `agent:notes-kit:archivist` — a plugin's agents and skills are namespaced by the `name` in its `plugin.json`, as for any plugin ([PLUGINS.md](PLUGINS.md)), an extension's plugin included) — an extension does one of two things:
 
 ```json
 "prompt": {
@@ -119,7 +119,7 @@ An insert or an append is named `prompt:main+our_review` where it has to be — 
 
 Every loss says why, and the reason begins `lower priority than <extension>` — in the extensions panel (`switched_off` on `list_extensions`, and on the host model's `ExtensionInfo`), on the Services page beside each collision's winner and losers, and in the log.
 
-**Never a collision:** inserts and appends (they stack); an edit aimed at a section an override lacks (it is dropped and listed); pages, indicators and settings (namespaced by the extension id); tools (registered under the extension's server name); a plugin's own agents (under the extension's namespace); grants, egress, secrets (they only add). A `when` does not avoid a collision: two extensions replacing one section under different conditions still both claim it. Hooks never collide either, whether they reject or change an event: they are asked in priority order, each handed what the one before left, and the first reject ends it.
+**Never a collision:** inserts and appends (they stack); an edit aimed at a section an override lacks (it is dropped and listed); pages, indicators and settings (namespaced by the extension id); tools (registered under the extension's server name); grants, egress, secrets (they only add). A `when` does not avoid a collision: two extensions replacing one section under different conditions still both claim it. A plugin's own agents and skills are under its plugin's namespace, the `name` in its `plugin.json`: two plugins of one name shadow each other as any two plugins do ([PLUGINS.md](PLUGINS.md)), so give an extension's plugin a name of its own. Hooks never collide either, whether they reject or change an event: they are asked in priority order, each handed what the one before left, and the first reject ends it.
 
 **igni's own commands are nobody's.** `/clear`, `/plan` and the rest of `docs/igni-commands.json` are answered by igni before any extension, so an extension declaring one would never run — that is not a collision between extensions, and priority does not enter into it. igni server refuses such a bundle at upload; a machine running a newer igni, with a command the bundle did not know about, switches the claim off and says why (`IgniCommands`, the resolver's `reserved`). A test holds the list to the dispatcher, and igni server's copy to it.
 
@@ -531,7 +531,7 @@ Additive changes are never breaking, so omitting is cheap and premature inclusio
   },
   "endpoint": {                       // the remote form
     "url": "https://artifacts.internal/mcp",
-    "auth": { "kind": "bearer", "secret": "artifacts-token" }
+    "auth": { "kind": "none" }        // bearer / mtls: not sent yet, refused at install
   },
 
   "permissions": {
@@ -874,7 +874,7 @@ Plus: validate at install not at use; supervise with backoff and open a circuit 
 
 Every call into a capability carries a **deadline** — the agent loop is never blocked — and a concurrency, result-size and token budget. The deadlines, all igni's: a hook event, 2 s (`ExtensionHooks.TIMEOUT_S`); an agent's tool call, the MCP session's read timeout; a page's call or a slash command, `CALL_TIMEOUT_S` over that; a prompt contribution's text, `FRAGMENT_TIMEOUT_S`; a health probe, `PROBE_TIMEOUT_S`; starting and restarting a service, `START_TIMEOUT_S` and `RESTART_TIMEOUT_S`. Signals (`@ext.on`) and the hook events that decide nothing are sent and never waited on.
 
-**Faulty after three in a row.** A deadline bounds one wait; it does not stop igni waiting on the same hung process every time. Three timeouts or crashes in a row — hooks and tool calls alike; a tool that reports an error of its own has answered — make an extension **faulty** (`extensions/faults.py`): igni ends its process group (the group the process named when it connected to the host channel, once igni has checked it started that group's leader) and starts it again, tells the person, and shows why in the extensions panel and the host model's `ExtensionInfo.faulty`. While it is faulty its hooks are not waited on: a fail-closed event is refused at once with "<extension> isn't responding", a fail-open one goes ahead without it. Its first answer after the restart clears the mark.
+**Faulty after three in a row.** A deadline bounds one wait; it does not stop igni waiting on the same hung process every time. Three timeouts or crashes in a row — hooks and tool calls alike; a tool that reports an error of its own has answered — make an extension **faulty** (`extensions/faults.py`): igni ends its process group (the group the process named when it connected to the host channel, once igni has checked it started that group's leader) and starts it again, tells the person with a notice that opens its first page (an extension with no page has nothing for a notice to open, so for it the panel is the only place), and shows why in the extensions panel and the host model's `ExtensionInfo.faulty`. While it is faulty its hooks are not waited on: a fail-closed event is refused at once with "<extension> isn't responding", a fail-open one goes ahead without it. Its first answer after the restart — the restarted process answering MCP's start-up counts — clears the mark.
 
 **Never on the loop.** An extension's process serves igni on one event loop, so the SDK runs any plain `def` an author hands it — a tool, a hook handler, a reaction, a background job — in a worker thread (`igni_extension.threads`), and calls an `async def` as it is. A sync tool that takes a second does not hold a hook that arrives meanwhile. Blocking inside an `async def` still holds the loop, and threads share the GIL: heavy CPU work belongs in a process pool the extension runs itself. The thread pool is anyio's default limiter, and since the process is the extension's, it may change it.
 

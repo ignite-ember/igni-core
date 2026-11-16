@@ -75,15 +75,17 @@ def _resolve(options: CliOptions, group_payload: dict):
 
 class TestTheRatchetHolds:
     def test_a_group_cannot_undo_strict(self):
-        """The case that was broken: ``--strict`` denies shell execution
-        and file writes, and a group said allow."""
+        """The case that was broken: ``--strict`` holds shell execution
+        and file writes at ``ask`` (``dontAsk`` denies them unless an allow
+        rule matches), and a group said allow."""
         permissions, _ = _resolve(
             CliOptions(strict=True),
             {"permissions": {"shell_execute": "allow", "file_write": "allow"}},
         )
 
-        assert permissions["shell_execute"] == "deny"
-        assert permissions["file_write"] == "deny"
+        assert permissions["shell_execute"] == "ask"
+        assert permissions["file_write"] == "ask"
+        assert permissions["mode"] == "dontAsk"
 
     def test_a_group_cannot_undo_read_only_either(self):
         """``--read-only`` is the same shape, and a fix for one flag that
@@ -199,7 +201,7 @@ class TestNothingElseChanged:
             CliOptions(strict=True), {"models": {"default": "some-model"}}
         )
 
-        assert permissions["shell_execute"] == "deny"
+        assert permissions["shell_execute"] == "ask"
         assert group_tier.refused_loosening == {}
 
     def test_no_group_at_all(self):
@@ -210,7 +212,7 @@ class TestNothingElseChanged:
         group_tier = GroupPolicyTier(fetcher=lambda: None, ratchet=CliRatchet.of(overrides))
         result = group_tier.apply(accumulator)
 
-        assert result.payload["permissions"]["shell_execute"] == "deny"
+        assert result.payload["permissions"]["shell_execute"] == "ask"
 
     def test_the_tier_works_without_a_ratchet(self):
         """``ratchet`` is optional, because tests and one-off migrations

@@ -355,3 +355,22 @@ class TestRealDbEventLog:
         assert (await persistence.load_todos()) == [TodoItemWire(content="A", status="pending")]
         assert (await persistence.load_plan_decisions()).decisions == {"r1": "approved"}
         assert len(await persistence.load_event_log()) == 1
+
+
+class TestRealDbEventLogOfAnotherSession:
+    """R214: a chat's history splices the views stored with that chat, read
+    from its own row whichever session is current."""
+
+    async def test_each_session_s_log_is_read_from_its_own_row(self, tmp_path):
+        db = _make_db(tmp_path)
+        a = SessionPersistence(db=db, session_id="A", user_id="u")
+        await a.save_event_log([VisualizationDeltaEntry(seq=1, run_id="r", payload=_card("fruit"))])
+        b = SessionPersistence(db=db, session_id="B", user_id="u")
+        await b.save_event_log([VisualizationDeltaEntry(seq=1, run_id="r", payload=_card("veg"))])
+
+        of_a = await b.load_event_log_of("A")
+        of_b = await b.load_event_log_of("B")
+
+        assert [e.payload.spec_id for e in of_a] == ["fruit"]  # type: ignore[union-attr]
+        assert [e.payload.spec_id for e in of_b] == ["veg"]  # type: ignore[union-attr]
+        assert await b.load_event_log_of("ghost") == []

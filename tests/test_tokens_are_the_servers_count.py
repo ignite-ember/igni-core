@@ -162,3 +162,72 @@ class TestNothingLoadsTiktoken:
             [sys.executable, "-c", script], capture_output=True, text=True, timeout=120
         )
         assert result.returncode == 0, result.stderr
+
+
+def cached(role: str, content: str, *, read: int, cache_read: int = 0, cache_write: int = 0):
+    return SimpleNamespace(
+        role=role,
+        content=content,
+        compressed_content=None,
+        tool_calls=None,
+        metrics=SimpleNamespace(
+            input_tokens=read,
+            output_tokens=0,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
+        ),
+    )
+
+
+class TestPromptCachingIsCounted:
+    """Anthropic's wire counts cached input apart from ``input_tokens``.
+
+    With prompt caching (igni's default for anthropic, implicit on
+    MiniMax) a call that read 18 246 cached tokens reported
+    ``input_tokens`` 1, and /ctx and auto-compaction measured 1
+    (campaign R052, R077, R149). OpenAI's wire reports the cached part
+    inside ``prompt_tokens``, so there it must not be added twice.
+    """
+
+    def test_cache_read_beside_a_small_input_is_added(self) -> None:
+        answer = cached("assistant", "a", read=1, cache_read=18_246)
+        assert TokenEstimate.context_of(answer.metrics) == 18_247
+        assert TokenEstimate.of([answer]) == 18_247
+
+    def test_a_cache_write_is_context_too(self) -> None:
+        answer = cached("assistant", "a", read=3, cache_write=9_000)
+        assert TokenEstimate.context_of(answer.metrics) == 9_003
+
+    def test_cache_inside_the_input_is_not_counted_twice(self) -> None:
+        """OpenAI's ``cached_tokens`` is part of ``prompt_tokens``."""
+        answer = cached("assistant", "a", read=20_000, cache_read=12_000)
+        assert TokenEstimate.context_of(answer.metrics) == 20_000
+
+    def test_metrics_without_cache_fields_are_their_input(self) -> None:
+        assert TokenEstimate.context_of(SimpleNamespace(input_tokens=7)) == 7
+        assert TokenEstimate.context_of(None) == 0
+
+    def test_a_cached_answer_is_found_as_the_last_measured_one(self) -> None:
+        """An answer whose ``input_tokens`` is 0 with everything from cache
+        still counts as measured."""
+        conversation = [
+            message("user", "u" * 40),
+            cached("assistant", "a", read=0, cache_read=5_000),
+        ]
+        assert TokenEstimate.of(conversation) == 5_000
+
+    def test_the_last_call_s_context_is_read_off_the_run_s_messages(self) -> None:
+        run = SimpleNamespace(
+            messages=[
+                message("user", "u"),
+                cached("assistant", "a", read=2, cache_read=17_000),
+                message("tool", "t" * 40),
+                cached("assistant", "b", read=1, cache_read=18_000),
+            ],
+            metrics=SimpleNamespace(input_tokens=3, cache_read_tokens=35_000),
+        )
+        assert TokenEstimate.last_context(run.messages) == 18_001
+
+    def test_no_measured_call_has_no_last_context(self) -> None:
+        assert TokenEstimate.last_context([message("user", "u")]) is None
+        assert TokenEstimate.last_context(None) is None

@@ -395,6 +395,7 @@ class _Store:
     def __init__(self, rows: list[object] | None = None, error: Exception | None = None) -> None:
         self._rows = rows or []
         self._error = error
+        self.discarded: list[str] = []
 
     async def alist_pending(self, session_id: str) -> list[object]:
         if self._error:
@@ -406,9 +407,24 @@ class _Store:
             raise self._error
         return self._rows
 
+    async def astamp_abandoned(self, session_id: str, before: int) -> int:
+        if self._error:
+            raise self._error
+        return 0
+
     async def adiscard_interrupted(self, session_id: str, message_id: str) -> int:
         if self._error:
             raise self._error
+        return 1
+
+    async def areceived_at_of(self, session_id: str, message_id: str) -> int | None:
+        if self._error:
+            raise self._error
+        found = [r for r in self._rows if getattr(r, "message_id", None) == message_id]
+        return found[0].received_at if found else None  # type: ignore[attr-defined]
+
+    async def adiscard_pending(self, session_id: str, message_id: str) -> int:
+        self.discarded.append(message_id)
         return 1
 
 
@@ -416,17 +432,82 @@ async def test_a_pending_message_is_shown_once_it_is_as_old_as_the_staleness_lim
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = 1_000_000
-    monkeypatch.setattr(time, "time", lambda: now)
     limit = now - PENDING_STALENESS_SECONDS
     rows = [
         PendingMessage("old", SESSION, "older", limit - 5),
         PendingMessage("edge", SESSION, "edge", limit),
         PendingMessage("fresh", SESSION, "fresh", limit + 1),
     ]
+    # This backend received all three: it started before the oldest.
+    monkeypatch.setattr(time, "time", lambda: limit - 100)
+    controller = _controller(tmp_path, pending_store=_Store(rows))
+    monkeypatch.setattr(time, "time", lambda: now)
 
-    shown = await _controller(tmp_path, pending_store=_Store(rows)).get_pending_messages(SESSION)
+    shown = await controller.get_pending_messages(SESSION)
 
     assert [(p.message_id, p.content) for p in shown] == [("old", "older"), ("edge", "edge")]
+
+
+async def test_a_pending_message_saved_before_this_backend_started_is_shown_at_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Campaign R652: a prompt the previous backend left was hidden for a
+    minute after every restart, though no run of this one was finishing it."""
+    now = 1_000_000
+    monkeypatch.setattr(time, "time", lambda: now)
+    controller = _controller(
+        tmp_path,
+        pending_store=_Store(
+            [
+                PendingMessage("before", SESSION, "left by a crash", now - 5),
+                PendingMessage("mine", SESSION, "still finishing", now),
+            ]
+        ),
+    )
+
+    shown = await controller.get_pending_messages(SESSION)
+
+    assert [p.message_id for p in shown] == ["before"]
+
+
+async def test_a_pending_message_is_discarded_and_a_retry_is_harmless(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = 1_000_000
+    monkeypatch.setattr(time, "time", lambda: now)
+    store = _Store([PendingMessage("before", SESSION, "left by a crash", now - 5)])
+    controller = _controller(tmp_path, pending_store=store)
+
+    first = await controller.discard_pending_message(SESSION, "before")
+    gone = await controller.discard_pending_message(SESSION, "not-pending")
+
+    assert (first.ok, first.error) == (True, "")
+    assert (gone.ok, gone.error) == (True, "")
+    assert store.discarded == ["before"]
+
+
+async def test_a_pending_message_a_run_may_still_be_finishing_is_not_discarded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = 1_000_000
+    monkeypatch.setattr(time, "time", lambda: now)
+    store = _Store([PendingMessage("live", SESSION, "the run in flight", now)])
+    controller = _controller(tmp_path, pending_store=store)
+
+    result = await controller.discard_pending_message(SESSION, "live")
+    empty = await controller.discard_pending_message(SESSION, "")
+
+    assert result.ok is False and "may still be finishing" in result.error
+    assert (empty.ok, empty.error) == (False, "message_id is required")
+    assert store.discarded == []
+
+
+async def test_a_pending_discard_that_fails_in_storage_is_not_ok(tmp_path: Path) -> None:
+    store = _Store(error=SQLAlchemyError("db down"))
+
+    result = await _controller(tmp_path, pending_store=store).discard_pending_message(SESSION, "m")
+
+    assert result.ok is False and "db down" in result.error
 
 
 async def test_a_pending_read_that_fails_shows_nothing(tmp_path: Path) -> None:

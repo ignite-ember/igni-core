@@ -296,6 +296,19 @@ class ExtensionContributions:
         self._pending.add(task)
         task.add_done_callback(self._pending.discard)
 
+    async def settled(self, timeout: float) -> None:
+        """Wait, at most ``timeout`` seconds, for the contributions being read.
+
+        Each READY extension's text is read in the background. A headless
+        run builds its one turn's prompt right after its extensions start:
+        without waiting, that prompt was built before any of it arrived,
+        and an ``igni -m`` run carried none of an extension's prompt
+        contributions, bundled files included.
+        """
+        pending = set(self._pending)
+        if pending:
+            await asyncio.wait(pending, timeout=timeout)
+
     # ── Applying ───────────────────────────────────────────────────
 
     async def apply(self, manifest: ExtensionManifest) -> None:
@@ -489,7 +502,7 @@ class ExtensionContributions:
         method = f"ext.{manifest.id}.{origin}"
         try:
             value = await asyncio.wait_for(
-                self._rpc.dispatch(caller=manifest.id, method=method, args={}),
+                self._rpc.fetch_contribution(manifest.id, origin),
                 timeout=FRAGMENT_TIMEOUT_S,
             )
         except Exception as exc:

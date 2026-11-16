@@ -368,8 +368,9 @@ class SuiteRunner:
         project_dir: Path,
         agent_filter: str | None = None,
         catalog: ToolNameCatalog | None = None,
+        case_filter: str | None = None,
     ) -> list[SuiteResult]:
-        """Load and run every discovered suite; optionally filter by agent name."""
+        """Load and run every discovered suite; optionally filter by agent name and case name."""
         # Pass the config down so per-case ``num_iterations`` /
         # ``accuracy_threshold`` fall back to the user's ``evals:`` block
         # rather than literals baked into the parser.
@@ -379,6 +380,12 @@ class SuiteRunner:
 
         if agent_filter:
             suites = [s for s in suites if s.agent == agent_filter]
+        if case_filter:
+            suites = [
+                s.model_copy(update={"cases": [c for c in s.cases if c.name == case_filter]})
+                for s in suites
+            ]
+            suites = [s for s in suites if s.cases]
 
         results: list[SuiteResult] = []
         for suite in suites:

@@ -23,6 +23,13 @@ from igni_core.backend.run_controller import RunCancelledError, RunController
 from igni_core.backend.schemas_lifecycle import InterruptedRunSummary
 from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
 from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.session.event_log import SessionEventLog
+from igni_core.core.session.event_log_schema import (
+    VisualizationDeltaDraft,
+    VisualizationDeltaPayload,
+)
+from igni_core.core.session.schemas import StopHookPayload
+from igni_core.core.tools.todo import TodoItemWire, TodoStore
 from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.protocol import messages as msg
 
@@ -57,6 +64,10 @@ class _Hooks:
         self.stop = HookGateResult(should_continue=True)
         self.submitted: list[str] = []
         self.stopped = 0
+        #: The replies the Stop hook was shown.
+        self.responses: list[str] = []
+        #: Answers for the next fires, before ``stop`` answers the rest.
+        self.stop_script: list[HookGateResult] = []
 
     async def fire_user_prompt_submit(self, text: str) -> HookGateResult:
         self.submitted.append(text)
@@ -64,8 +75,11 @@ class _Hooks:
             return self.submit.model_copy(update={"text": text})
         return self.submit
 
-    async def fire_stop(self) -> HookGateResult:
+    async def fire_stop(self, response: str = "") -> HookGateResult:
         self.stopped += 1
+        self.responses.append(response)
+        if self.stop_script:
+            return self.stop_script.pop(0)
         return self.stop
 
 
@@ -138,6 +152,8 @@ class _Rig:
         c._interrupted_summary = None
         c._pending_id_for_cancel = None
         c._current_run_task = None
+        c._stream_ended_paused = False
+        c._run_session_id = ""
         c._cancelled_by_person = None
         c._run_lock = asyncio.Lock()
         c._pending_journal = self.journal
@@ -147,8 +163,12 @@ class _Rig:
         c._session = SimpleNamespace(
             main_team=self.team,
             guardrail_runner=SimpleNamespace(warning_prefix=_warning_prefix),
+            todo_store=TodoStore(),
+            take_session_start_context=lambda: "",
             memory_mirror=_Mirror(),
             db="the-db",
+            event_log_store=SessionEventLog(),
+            session_id="s-1",
         )
         c._stream_factory = _stream
         c._message_queue = _Queue()
@@ -164,6 +184,10 @@ class _Rig:
 
     async def run(self, text: str = "hello", media: Any = None) -> list[msg.Message]:
         return [m async for m in self.controller.run_message(text, media)]
+
+
+async def _collect(stream) -> list[msg.Message]:
+    return [m async for m in stream]
 
 
 async def _until(predicate) -> None:
@@ -383,25 +407,38 @@ class TestTheBooksOfARun:
         assert rig.controller.phase is RunPhase.done
         assert rig.controller._pending_id_for_cancel is None
 
-    async def test_a_stop_hook_that_blocks_has_its_message_shown_as_info_after_the_run(self):
-        rig = _Rig([msg.ContentDelta(text="x")])
-        rig.hooks.stop = HookGateResult(should_continue=False, block_message="Run the tests.")
+    async def test_a_stop_hook_that_blocks_says_why_and_sends_the_agent_back(self):
+        """HOOKS.md: the Stop hook is given the reply, and a block sends the
+        agent its feedback to revise. The backend fired it with no reply and
+        only showed the block (campaign R116)."""
+        rig = _Rig([msg.ContentDelta(text="STOPTEST "), msg.ContentDelta(text="HELLO")])
+        rig.hooks.stop_script = [
+            HookGateResult(should_continue=False, block_message="Say VERIFIED.")
+        ]
 
         got = await rig.run()
 
         assert [(type(m), m.text) for m in got] == [
-            (msg.ContentDelta, "x"),
-            (msg.Info, "Run the tests."),
+            (msg.ContentDelta, "STOPTEST "),
+            (msg.ContentDelta, "HELLO"),
+            (msg.Info, "Say VERIFIED."),
+            (msg.ContentDelta, "STOPTEST "),
+            (msg.ContentDelta, "HELLO"),
         ]
+        assert rig.hooks.responses == ["STOPTEST HELLO", "STOPTEST HELLO"]
+        assert rig.arun_calls[1][0] == StopHookPayload.critique("Say VERIFIED.")
         assert rig.controller.phase is RunPhase.done
 
-    async def test_a_stop_hook_that_blocks_without_a_message_says_nothing(self):
+    async def test_a_stop_hook_that_keeps_blocking_sends_the_agent_back_three_times(self):
         rig = _Rig([msg.ContentDelta(text="x")])
-        rig.hooks.stop = HookGateResult(should_continue=False)
+        rig.hooks.stop = HookGateResult(should_continue=False, block_message="No.")
 
         got = await rig.run()
 
-        assert [type(m) for m in got] == [msg.ContentDelta]
+        assert rig.hooks.stopped == StopHookPayload.MAX_RETRIES == 3
+        assert len(rig.arun_calls) == 4
+        assert [m.text for m in got if isinstance(m, msg.Info)] == ["No."] * 3
+        assert rig.controller.phase is RunPhase.done
 
     async def test_a_failed_stream_does_not_fire_stop_or_complete_the_message(self):
         rig = _Rig([msg.Error(text="model connection reset")])
@@ -755,3 +792,348 @@ class TestAResumedRun:
         assert [m.text for m in got] == ["again"]
         assert rig.controller.phase is RunPhase.done
         assert rig.controller.current_run_task is None
+
+    async def test_a_run_that_pauses_fires_no_stop_and_the_resumed_one_does_with_its_reply(
+        self,
+    ):
+        """R116: Stop fired at the approval pause with the text from before
+        it, then after the resume with an empty reply, so a Stop hook never
+        saw the final answer and could not send the agent back."""
+        rig = _Rig([msg.ContentDelta(text="I'll run ls first."), msg.RunPaused(run_id="r1")])
+        await rig.run()
+        assert rig.hooks.responses == []
+
+        rig.hooks.stop_script = [
+            HookGateResult(should_continue=False, block_message="Say VERIFIED.")
+        ]
+        rig.stream_script = [msg.ContentDelta(text="STOPTEST VERIFIED")]
+
+        async def resumed():
+            yield msg.ContentDelta(text="STOPTEST DONE")
+            yield msg.RunCompleted(run_id="r1")
+
+        got = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert rig.hooks.responses == ["STOPTEST DONE", "STOPTEST VERIFIED"]
+        assert [m.text for m in got if isinstance(m, msg.Info)] == ["Say VERIFIED."]
+        assert rig.arun_calls[-1][0] == StopHookPayload.critique("Say VERIFIED.")
+
+    async def test_a_resumed_run_that_pauses_again_fires_no_stop(self):
+        rig = _Rig()
+
+        async def resumed():
+            yield msg.ContentDelta(text="next, pwd")
+            yield msg.RunPaused(run_id="r1")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert rig.hooks.responses == []
+
+    async def test_an_answer_that_resumed_nothing_fires_no_stop(self):
+        rig = _Rig()
+
+        async def resumed():
+            yield msg.Error(text="Unknown requirement: ghost")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert rig.hooks.responses == []
+
+    async def test_an_answer_that_comes_while_the_paused_run_is_closing_still_fires_stop(self):
+        """R116: a quick approval arrived while the run that paused was
+        still closing (its model client renewed after the last frame). The
+        resumed run was taken for a sub-agent's under a running parent and
+        passed through, and no Stop hook saw its reply."""
+        rig = _Rig([msg.ContentDelta(text="I'll run ls first."), msg.RunPaused(run_id="r1")])
+        closing = asyncio.Event()
+        release = asyncio.Event()
+
+        async def _slow_close(team) -> None:
+            closing.set()
+            await release.wait()
+
+        rig.controller._http_client_manager = SimpleNamespace(close_and_replace=_slow_close)
+        first = asyncio.create_task(rig.run())
+        await asyncio.wait_for(closing.wait(), timeout=5)
+
+        async def resumed():
+            yield msg.ContentDelta(text="STOPTEST DONE")
+            yield msg.RunCompleted(run_id="r1")
+
+        async def _answer():
+            return [m async for m in rig.controller.continue_run(resumed())]
+
+        second = asyncio.create_task(_answer())
+        await asyncio.sleep(0.05)
+        release.set()
+        await asyncio.wait_for(asyncio.gather(first, second), timeout=5)
+
+        assert rig.hooks.responses == ["STOPTEST DONE"]
+        assert rig.controller.phase is RunPhase.done
+        assert rig.controller.current_run_task is None
+
+    async def test_a_sub_agent_s_answer_under_a_running_parent_passes_through(self):
+        """A sub-agent's pause shows up mid-stream while its parent run goes
+        on, waiting for the answer: that answer must not wait for the parent."""
+        answered = asyncio.Event()
+
+        async def _parent_stream(team_stream):
+            yield msg.RunPaused(run_id="sub")
+            await asyncio.wait_for(answered.wait(), timeout=5)
+            yield msg.ContentDelta(text="parent done")
+            yield msg.RunCompleted(run_id="parent")
+
+        rig = _Rig()
+        rig.controller._stream_factory = _parent_stream
+        parent = asyncio.create_task(rig.run())
+        await _until(lambda: rig.controller.current_run_task is not None)
+        await asyncio.sleep(0.01)
+
+        async def resumed():
+            yield msg.ContentDelta(text="sub done")
+
+        got = await asyncio.wait_for(
+            asyncio.ensure_future(_collect(rig.controller.continue_run(resumed()))), timeout=5
+        )
+        answered.set()
+        await asyncio.wait_for(parent, timeout=5)
+
+        assert [m.text for m in got] == ["sub done"]
+        assert rig.hooks.responses == ["parent done"]
+
+
+class TestAPausedRunsMessageStaysPendingUntilItsResumeEnds:
+    """R180: the message was stamped completed at the approval pause, so a
+    crash during the resumed part left nothing for ``get_pending_messages``
+    or ``get_interrupted_runs`` to offer Retry/Discard for."""
+
+    PAUSED = [msg.ContentDelta(text="I'll run sleep first."), msg.RunPaused(run_id="r1")]
+
+    async def test_a_run_that_pauses_leaves_its_message_pending(self):
+        rig = _Rig(list(self.PAUSED))
+
+        await rig.run()
+
+        assert ("completed", "pending-0123456789") not in rig.journal.events
+        # A cancel while it waits still stamps it.
+        assert rig.controller._pending_id_for_cancel == "pending-0123456789"
+
+    async def test_the_resumed_run_that_ends_completes_it(self):
+        rig = _Rig(list(self.PAUSED))
+        await rig.run()
+
+        async def resumed():
+            yield msg.ContentDelta(text="SLEPT")
+            yield msg.RunCompleted(run_id="r1")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert rig.journal.events[-1] == ("completed", "pending-0123456789")
+        assert rig.controller._pending_id_for_cancel is None
+
+    async def test_a_resumed_run_that_pauses_again_keeps_it_pending(self):
+        rig = _Rig(list(self.PAUSED))
+        await rig.run()
+
+        async def resumed():
+            yield msg.RunPaused(run_id="r1")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert ("completed", "pending-0123456789") not in rig.journal.events
+
+    async def test_a_resumed_run_that_fails_records_it_interrupted(self):
+        rig = _Rig(list(self.PAUSED))
+        await rig.run()
+
+        async def resumed():
+            yield msg.ContentDelta(text="half")
+            raise RuntimeError("model gone")
+
+        with pytest.raises(RuntimeError, match="model gone"):
+            _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert rig.journal.events[-1] == (
+            "interrupted",
+            "pending-0123456789",
+            "errored",
+            "model gone",
+        )
+
+    async def test_a_new_message_instead_of_an_answer_closes_the_paused_one(self):
+        rig = _Rig(list(self.PAUSED))
+        await rig.run("first")
+        rig.stream_script = [msg.StreamingDone(run_id="r2")]
+
+        await rig.run("second")
+
+        completed = [e for e in rig.journal.events if e[0] == "completed"]
+        assert len(completed) == 2
+
+
+# ── The todo list outlives the run's own save ────────────────────────
+
+
+class TestTheTodoListIsWrittenAfterTheRunSavesItsSession:
+    """``todo_write`` stores the list in ``session_data`` during the run, and
+    Agno's end-of-run save of the session it loaded at the start wrote over
+    it: the list was live and gone after a restart (campaign R095). A run that
+    changed the list writes it again once the run is over."""
+
+    def _rig(self, change: bool) -> tuple[_Rig, list[list]]:
+        rig = _Rig()
+        saved: list[list] = []
+
+        async def save_todos(items):
+            saved.append(items)
+            return SimpleNamespace(ok=True, error=None)
+
+        session = rig.controller._session
+        session.persistence = SimpleNamespace(save_todos=save_todos)
+
+        async def _stream(team_stream):
+            if change:
+                session.todo_store.set([TodoItemWire(content="Alpha", status="in_progress")])
+            yield msg.Info(text="done")
+
+        rig.controller._stream_factory = _stream
+        return rig, saved
+
+    async def test_a_run_that_changed_the_list_writes_it_after(self):
+        rig, saved = self._rig(change=True)
+        await rig.run()
+        assert [[t.content for t in items] for items in saved] == [["Alpha"]]
+
+    async def test_a_run_that_did_not_change_it_writes_nothing(self):
+        rig, saved = self._rig(change=False)
+        await rig.run()
+        assert saved == []
+
+
+class TestTheEventLogIsWrittenAfterTheRunSavesItsSession:
+    """The visualizer's view goes into the event log, written into
+    ``session_data`` at once; Agno's end-of-run save of the session it loaded
+    at the start wrote over it, so ``get_chat_history`` lost the
+    visualization turn after a restart (campaign R214). A run that added to
+    the log writes it again once the run is over, resumed runs included."""
+
+    def _rig(self, add: bool) -> tuple[_Rig, list[list]]:
+        rig = _Rig()
+        saved: list[list] = []
+
+        async def save_event_log(events):
+            saved.append(events)
+            return SimpleNamespace(ok=True, error=None)
+
+        session = rig.controller._session
+        session.persistence = SimpleNamespace(save_event_log=save_event_log)
+        self.session = session
+        self.add = add
+
+        async def _stream(team_stream):
+            await self._append()
+            yield msg.Info(text="done")
+
+        rig.controller._stream_factory = _stream
+        return rig, saved
+
+    async def _append(self) -> None:
+        if self.add:
+            await self.session.event_log_store.append(
+                VisualizationDeltaDraft(
+                    run_id="sub",
+                    payload=VisualizationDeltaPayload(
+                        agent_path="visualizer", spec_id="s1", spec_json="{}", final=True
+                    ),
+                )
+            )
+
+    async def test_a_run_that_added_to_the_log_writes_it_after(self):
+        rig, saved = self._rig(add=True)
+        await rig.run()
+        assert [[e.payload.spec_id for e in events] for events in saved] == [["s1"]]
+
+    async def test_a_run_that_added_nothing_writes_nothing(self):
+        rig, saved = self._rig(add=False)
+        await rig.run()
+        assert saved == []
+
+    async def test_a_resumed_run_that_added_to_the_log_writes_it_after(self):
+        rig, saved = self._rig(add=True)
+
+        async def resumed():
+            await self._append()
+            yield msg.RunCompleted(run_id="r1")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert [[e.payload.spec_id for e in events] for events in saved] == [["s1"]]
+
+
+class TestASessionStartHookContextRidesOnTheFirstTurn:
+    async def test_it_comes_before_the_prompt_hook_s(self):
+        """As ``igni -m`` sends them (campaign R117)."""
+        rig = _Rig()
+        rig.controller._session.take_session_start_context = lambda: "Mascot OTTO-7."
+        rig.hooks.submit = HookGateResult(should_continue=True, context_message="Code ZEBRA.")
+
+        await rig.run("hi")
+
+        sent = rig.arun_calls[0][0]
+        assert sent.endswith(
+            "\n<hook-context>Mascot OTTO-7.</hook-context>\n<hook-context>Code ZEBRA.</hook-context>"
+        )
+
+
+class TestARunsFramesAndPushesStayInItsChat:
+    """Campaign R647: the stamping transport stamped every push with the
+    session's id at send time, so after New chat or a sidebar switch a
+    still-running run's team card turned up in the new chat."""
+
+    async def test_what_a_run_sends_after_new_chat_names_the_chat_it_began_in(self):
+        from igni_core.backend.session_stamping_transport import SessionStampingTransport
+
+        rig = _Rig()
+        session = rig.controller._session
+        session.session_id = "chat-A"
+        sent: list[msg.Message] = []
+
+        class _Wire:
+            async def send(self, message: msg.Message) -> None:
+                sent.append(message)
+
+        wire = SessionStampingTransport(_Wire(), session)  # type: ignore[arg-type]
+
+        async def _stream(team_stream):
+            yield msg.ContentDelta(text="working")
+            session.session_id = "chat-B"  # New chat, mid-run
+            # What a sub-agent's progress sends from inside the run.
+            await wire.send(msg.Info(text="team progress"))
+            yield msg.ContentDelta(text="still the old run")
+
+        rig.controller._stream_factory = _stream
+        async for frame in rig.controller.run_message("go", None):
+            await wire.send(frame)
+
+        assert {m.session_id for m in sent} == {"chat-A"}
+        # Once the run is over, the session's own id is the stamp again.
+        await wire.send(msg.Info(text="after"))
+        assert sent[-1].session_id == "chat-B"
+
+    async def test_a_resumed_run_is_the_chat_of_the_run_that_paused(self):
+        from igni_core.core.run_context import CURRENT_RUN_SESSION_ID
+
+        rig = _Rig([msg.RunPaused(run_id="r1")])
+        rig.controller._session.session_id = "chat-A"
+        await rig.run()
+        rig.controller._session.session_id = "chat-B"  # New chat while it waited
+        seen: list[str] = []
+
+        async def resumed():
+            seen.append(CURRENT_RUN_SESSION_ID.get())
+            yield msg.RunCompleted(run_id="r1")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert seen == ["chat-A"]
+        assert CURRENT_RUN_SESSION_ID.get() == ""

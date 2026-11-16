@@ -62,6 +62,9 @@ class SessionRouter:
         if isinstance(claimed, AttachRefused):
             return claimed
         runtime = await self._pool.get_or_create(claimed)
+        # HOOKS.md: SessionStart fires when a session begins or resumes —
+        # in a window, when it opens or creates one (once per session).
+        await runtime.backend.fire_session_start_hook()
         return AttachSessionResult(
             session_id=runtime.backend.session_id,
             project_dir=str(runtime.backend.project_dir),

@@ -331,8 +331,16 @@ class WorktreeManager:
     def info(self) -> WorktreeInfo | None:
         return self._info
 
+    #: What igni itself writes into a project it opens (``igni init``'s
+    #: scaffold): untracked, it is not a change the run made.
+    SCAFFOLD: tuple[str, ...] = (".igni/", "igni.md")
+
     def has_changes(self) -> bool:
-        """Check if the worktree has uncommitted or staged changes."""
+        """Check if the worktree has uncommitted or staged changes.
+
+        igni's own untracked scaffold (:attr:`SCAFFOLD`) does not count: a
+        run that changed nothing was kept as "has changes" for it.
+        """
         if self._info is None:
             return False
         try:
@@ -344,7 +352,56 @@ class WorktreeManager:
             # The directory was deleted from under us: nothing there
             # to hold changes, and cleanup() can report the git side.
             return False
-        return bool(result.stdout.strip())
+        return any(
+            line and not (line.startswith("?? ") and line[3:] in self.SCAFFOLD)
+            for line in result.stdout.splitlines()
+        )
+
+    def commit_changes(self, message: str) -> bool:
+        """Commit what the run changed in the worktree onto its branch.
+
+        A preserved worktree is merged with ``git merge <branch>``, and
+        that merges only what is committed: left uncommitted, the change
+        never reaches the branch and the merge says "Already up to date."
+        igni's own scaffold (:attr:`SCAFFOLD`) stays out of the commit.
+        The author falls back to igni when the repository names none.
+
+        Returns:
+            ``True`` when a commit was made.
+        """
+        if self._info is None:
+            return False
+        path = self._info.worktree_path
+        excludes = [f":(exclude){entry.rstrip('/')}" for entry in self.SCAFFOLD]
+        add = _run_git(["git", "add", "-A", "--", ".", *excludes], cwd=path)
+        if add.returncode != 0:
+            logger.warning("worktree add failed: %s", add.stderr.strip())
+            return False
+        commit = _run_git(
+            [
+                "git",
+                "-c",
+                f"user.name={self._author('user.name', 'igni')}",
+                "-c",
+                f"user.email={self._author('user.email', 'igni@localhost')}",
+                "commit",
+                "--no-verify",
+                "-q",
+                "-m",
+                message,
+            ],
+            cwd=path,
+        )
+        if commit.returncode != 0:
+            logger.warning("worktree commit failed: %s", commit.stderr.strip())
+            return False
+        return True
+
+    def _author(self, key: str, fallback: str) -> str:
+        """The repository's configured author field, or ``fallback``."""
+        assert self._info is not None
+        configured = _run_git(["git", "config", key], cwd=self._info.worktree_path)
+        return configured.stdout.strip() or fallback
 
     def cleanup(self) -> WorktreeCleanupResult:
         """Remove the worktree and its branch if no changes were made.
@@ -429,8 +486,18 @@ class WorktreeManager:
             echo("\nWorktree preserved (has changes):")
             echo(f"  Path:   {info.worktree_path}")
             echo(f"  Branch: {info.branch_name}")
-            echo(f"\nTo merge: git merge {info.branch_name}")
-            echo(f"To remove: git worktree remove {info.worktree_path}")
+            # Nothing is committed for the person: ``git merge`` alone
+            # would merge a branch with none of the changes on it. The
+            # add leaves igni's own scaffold out of the commit.
+            excludes = " ".join(f"':(exclude){entry.rstrip('/')}'" for entry in self.SCAFFOLD)
+            echo(
+                f"\nTo merge: commit the changes in the worktree "
+                f"(git -C {info.worktree_path} add -A -- . {excludes} && "
+                f"git -C {info.worktree_path} commit), then git merge {info.branch_name}"
+            )
+            # ``--force``: the commit above leaves the scaffold untracked,
+            # and a plain remove refuses a worktree with untracked files.
+            echo(f"To remove: git worktree remove --force {info.worktree_path}")
         else:
             # ``git_remove_failed`` / ``branch_delete_failed`` —
             # surface the stderr so cleanup failures no longer

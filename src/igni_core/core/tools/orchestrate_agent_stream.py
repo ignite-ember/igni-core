@@ -37,6 +37,7 @@ from igni_core.core.tools.orchestrate_stream_handler import (
     handler_name,
 )
 from igni_core.core.tools.orchestrate_symbols import VIS_SPEC_PREFIX, LogSymbols
+from igni_core.core.tools.spawn_context import SpawnCalls
 from igni_core.core.tools.subagent_stream import SubAgentStreamState
 
 _stream_log = logging.getLogger("igni_core.llm_calls")
@@ -78,6 +79,20 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         )
 
     # ── Base-class hooks ───────────────────────────────────────────
+
+    def _first_stream(self) -> Any:
+        """A fresh run of the task, with its events.
+
+        :data:`AGENT_EVENT_HANDLERS` reads Agno's tool-call events, which
+        Agno streams only with ``stream_events``: without it no
+        ``tool_started``/``tool_completed`` reached the window (the agent
+        tree said "no tools yet" after the specialist ran one) and the
+        visualizer's ``visualization_delta`` was never sent, so its chart
+        was never drawn. The lifecycle events it adds are not handled,
+        and a run's completion is said once (``record_completion``).
+        """
+        return self._context.runnable.arun(self._context.task, stream=True, stream_events=True)
+
     def _agent_completed_path(self) -> str:
         return self.state.agent_path_id
 
@@ -121,6 +136,33 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         state = self.state
         coordinator = self._context.sinks.hitl_coordinator
         reqs = active_requirements(event)
+        run_id = event.run_id or state.current_run_id or ""
+        session_id = event.session_id or state.current_session_id
+        # The session's permission policy answers first, as it does for the
+        # main agent; only what it leaves undecided goes to a person. A
+        # bridge without a policy (a test double, a cold resume) asks
+        # about everything, and is taken to have somebody to ask.
+        settle = getattr(coordinator, "settle_by_policy", None)
+        to_ask = settle(reqs) if settle is not None else reqs
+        if reqs and not to_ask:
+            return self._context.runnable.acontinue_run(
+                run_id=run_id,
+                session_id=session_id,
+                requirements=reqs,
+                stream=True,
+                stream_events=True,
+            )
+        # A headless run has nobody to answer: waiting would hang it for
+        # ever, so the sub-agent's run ends at the pause, and the headless
+        # run reports the tools and exits 1, as a main-agent pause does.
+        if coordinator is not None and to_ask and getattr(coordinator, "unattended", False):
+            coordinator.record_unanswered(
+                [
+                    str(getattr(getattr(r, "tool_execution", None), "tool_name", "") or "tool")
+                    for r in to_ask
+                ]
+            )
+            coordinator = None
         if coordinator is None or not reqs:
             self._log_line(
                 f"  {LogSymbols.T_TRUNK.value}  "
@@ -133,10 +175,8 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
                 )
             )
             return None
-        run_id = event.run_id or state.current_run_id or ""
-        session_id = event.session_id or state.current_session_id
         req_ids: list[str] = []
-        for req in reqs:
+        for req in to_ask:
             req_id = await coordinator.push_requirement(
                 req,
                 run_id=run_id,
@@ -175,6 +215,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
             session_id=session_id,
             requirements=reqs,
             stream=True,
+            stream_events=True,
         )
 
     async def _on_tool_started(self, event: agent_events.ToolCallStartedEvent) -> None:
@@ -234,9 +275,25 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
             # ``parent_top_run_id`` docstring on
             # :class:`SubAgentStreamState` and the ``get_chat_history``
             # splicing block in ``backend/server.py``.
-            await appender(final_event, state.parent_top_run_id or state.current_run_id or "")
+            await appender(
+                final_event,
+                state.parent_top_run_id or self._top_run_id() or state.current_run_id or "",
+            )
         except Exception as exc:  # noqa: BLE001 — a logging callback must not break the stream
             _logger.warning("visualization event log append failed: %s", exc)
+
+    @staticmethod
+    def _top_run_id() -> str:
+        """The main agent's run that is waiting on this spawn, if known.
+
+        A spawned agent's own run carries no ``parent_run_id`` (it is
+        started as a run of its own), so the card was filed under the
+        sub-agent's run: ``get_chat_history`` put it last, not next to the
+        ``spawn_agent`` call it came from. The outermost call in the spawn
+        chain is the main agent's, and its run is the one history shows.
+        """
+        chain = SpawnCalls.current()
+        return chain[-1].run_id if chain else ""
 
     async def _on_tool_completed(self, event: agent_events.ToolCallCompletedEvent) -> None:
         state = self.state

@@ -1824,6 +1824,13 @@ OBJECTS = (
                 permission="chat.control",
             ),
             method(
+                "discard_pending",
+                "Forget a message whose run never finished.",
+                param("message_id", "str"),
+                result="json",
+                permission="chat.control",
+            ),
+            method(
                 "upload",
                 "Upload an attachment for a later `post`.",
                 param("filename", "str"),

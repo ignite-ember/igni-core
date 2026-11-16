@@ -47,6 +47,7 @@ from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.tool_permissions import ToolPermissions
 from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.subagent_tool_hook import BypassGuardRef
 from igni_core.core.lsp import LspServerManager
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.monitors import MonitorManager
@@ -122,6 +123,9 @@ class OrchestrationDeps:
     session_id: str
     spawn_budget: SpawnBudget
     sub_agent_hitl: SubAgentHITLCoordinator
+    #: The session's Bypass guard, read per call: a sub-agent's calls
+    #: answer to it as the main agent's do.
+    bypass_guard: BypassGuardRef | None = None
 
 
 @dataclass(frozen=True)

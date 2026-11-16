@@ -117,6 +117,7 @@ class MainAgentBuilder:
                 session_id=s.session_id,
                 spawn_budget=s.spawn_budget,
                 sub_agent_hitl=s.sub_agent_hitl,
+                bypass_guard=lambda: s.tool_hook_factory.bypass_guard,
             ),
             mcp_manager=s.mcp_manager,
             lsp_manager=s.lsp_manager,

@@ -132,6 +132,38 @@ class ExtensionRpc:
                 self._on_failure(extension_id)
             raise ExtensionRefused(str(exc)) from exc
 
+    async def fetch_contribution(self, extension_id: str, tool: str) -> Any:
+        """Call the tool a ``source: tool`` prompt contribution names.
+
+        **Not `permissions.rpc`'s grant**, as for :meth:`invoke_command`.
+        That list is what the extension's own UI may call; here igni is the
+        caller, reading text the manifest an administrator installed says
+        comes from that tool. Requiring the grant refused every tool-sourced
+        fragment and edit of an extension without one, and the unfilled
+        anchor reached the model verbatim. The tool is the extension's own,
+        and the extension must be READY, as for every call.
+        """
+        entry = self._registry.get(extension_id)
+        if entry is None:
+            raise ExtensionRefused(f"no extension '{extension_id}' is installed.")
+        if entry.state is not ExtensionState.READY:
+            detail = f" {entry.reason}" if entry.reason else ""
+            raise ExtensionRefused(
+                f"'{extension_id}' is {entry.state.value}, not READY, so its "
+                f"tool '{tool}' cannot be called.{detail}"
+            )
+        service = self._services.get(extension_id)
+        if service is None:
+            raise ExtensionRefused(
+                f"'{extension_id}' is installed but has no service bound, so igni cannot reach it."
+            )
+        try:
+            return await self._call(extension_id, service, tool, {})
+        except ExtensionServiceError as exc:
+            if self._on_failure is not None:
+                self._on_failure(extension_id)
+            raise ExtensionRefused(str(exc)) from exc
+
     async def dispatch(self, *, caller: str | None, method: str, args: dict[str, Any]) -> Any:
         """Serve one call, or raise with a sentence naming the fix."""
         parsed = self._registry.authorise(caller=caller, method=method)
