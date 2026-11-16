@@ -35,6 +35,7 @@ from igni_core.backend.run_controller import RunController
 from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.schemas.models import ModelsConfig
+from igni_core.core.session.event_log import SessionEventLog
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.tools.process_events import ProcessExitEvent
 from igni_core.core.tools.todo import TodoStore
@@ -109,6 +110,7 @@ def _controller(stream_messages: list[msg.Message]) -> tuple[RunController, _Jou
         main_team=SimpleNamespace(arun=lambda *a, **k: None),
         guardrail_runner=SimpleNamespace(warning_prefix=_no_prefix),
         todo_store=TodoStore(),
+        event_log_store=SessionEventLog(),
         take_session_start_context=lambda: "",
         memory_mirror=None,
     )
