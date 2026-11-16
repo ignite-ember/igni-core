@@ -187,8 +187,17 @@ class SkillPool:
         return categories
 
     def describe(self) -> str:
-        """Generate a summary of all skills for the Orchestrator, grouped by category."""
-        by_cat = self.list_by_category()
+        """Generate a summary of the skills the agent may run, grouped by category.
+
+        A ``disable-model-invocation`` skill is the person's alone: it is
+        left out, or the agent is told it can run what ``slash_command``
+        then refuses, and goes round it by reading the SKILL.md itself.
+        """
+        by_cat = {
+            cat: kept
+            for cat, skills in self.list_by_category().items()
+            if (kept := [s for s in skills if not s.disable_model_invocation])
+        }
         if not by_cat:
             return ""
 

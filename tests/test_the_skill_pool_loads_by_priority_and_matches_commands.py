@@ -207,6 +207,17 @@ def test_describe_sorts_skills_by_name_and_shows_the_argument_hint(tmp_path):
     assert pool.describe() == "\n### Development\n- **/a**: first\n- **/b** <file>: second"
 
 
+def test_describe_leaves_out_a_skill_the_agent_may_not_run(tmp_path):
+    """It was listed as a skill the agent can run itself; slash_command
+    refused it and the agent read its SKILL.md instead (campaign R134)."""
+    _skill(tmp_path, "a", description="first")
+    _skill(tmp_path, "mine", description="the person's", **{"disable-model-invocation": "true"})
+    _skill(tmp_path, "solo", category="operations", **{"disable-model-invocation": "true"})
+    pool = SkillPool()
+    pool.load_directory(tmp_path)
+    assert pool.describe() == "\n### Development\n- **/a**: first"
+
+
 @pytest.fixture
 def pool(tmp_path):
     _skill(tmp_path, "review", description="r")
