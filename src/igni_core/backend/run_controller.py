@@ -111,7 +111,7 @@ class RunController:
         self._pending_journal = PendingMessageJournal(pending_store, lambda: session.session_id)
         self._http_client_manager = http_client_manager or ModelHttpClientManager()
         self._prompt_builder = PromptBuilder(session)
-        self._hook_gate = RunHookGate(session.hook_executor, lambda: session.session_id)
+        self._hook_gate = RunHookGate(lambda: session.hook_executor, lambda: session.session_id)
         self._dispatcher = StreamEventDispatcher(session, self.checkpoint)
         self._phase = RunPhase.idle
         self._interrupted_summary: InterruptedRunSummary | None = None

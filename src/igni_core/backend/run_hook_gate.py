@@ -35,8 +35,16 @@ class RunHookGate:
     Constructor takes the hook executor + session_id via
     composition — no reach-back into a backend attribute."""
 
-    def __init__(self, hook_executor: HookExecutor, session_id: str | Callable[[], str]) -> None:
-        self._hook_executor = hook_executor
+    def __init__(
+        self,
+        hook_executor: HookExecutor | Callable[[], HookExecutor],
+        session_id: str | Callable[[], str],
+    ) -> None:
+        # Asked per fire: a plugin reload or a trust change builds the
+        # session a new executor, and the run must fire that one.
+        self._hook_executor_of: Callable[[], HookExecutor] = (
+            hook_executor if callable(hook_executor) else (lambda: hook_executor)
+        )
         # Asked per fire: New chat and a sidebar switch change the id.
         self._session_id_of: Callable[[], str] = (
             session_id if callable(session_id) else (lambda: session_id)
@@ -45,6 +53,10 @@ class RunHookGate:
     @property
     def _session_id(self) -> str:
         return self._session_id_of()
+
+    @property
+    def _hook_executor(self) -> HookExecutor:
+        return self._hook_executor_of()
 
     async def fire_user_prompt_submit(self, text: str) -> HookGateResult:
         """Fire the ``UserPromptSubmit`` hook and package its

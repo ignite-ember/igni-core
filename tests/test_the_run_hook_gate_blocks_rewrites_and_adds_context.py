@@ -218,3 +218,43 @@ class TestStop:
         assert not result.should_continue
         assert result.block_message == "Run the tests."
         assert executor.calls == []
+
+
+class TestTheRunFiresTheSessionsCurrentExecutor:
+    """A plugin reload or a trust change builds the session a new executor;
+    the backend's run fires that one, not the one it was built with
+    (campaign R299: an extension's UserPromptSubmit hook never fired in the
+    boot session)."""
+
+    async def test_the_executor_is_read_when_the_hook_fires(self):
+        built_with, reloaded = _Executor(), _Executor()
+        current = {"executor": built_with}
+        gate = RunHookGate(lambda: current["executor"], "s-1")  # type: ignore[arg-type,return-value]
+        current["executor"] = reloaded
+
+        await gate.fire_user_prompt_submit("hi")
+
+        assert built_with.calls == []
+        assert [event for event, _ in reloaded.calls] == [HookEvent.USER_PROMPT_SUBMIT.value]
+
+    async def test_the_run_controller_fires_the_executor_a_reload_left(self):
+        from unittest.mock import MagicMock
+
+        from igni_core.backend.run_controller import RunController
+
+        session = MagicMock()
+        session.session_id = "s-1"
+        session.hook_executor = _Executor()
+        controller = RunController(
+            session, MagicMock(), None, MagicMock(), MagicMock(), MagicMock()
+        )
+        reloaded = _Executor()
+        session.hook_executor = reloaded
+
+        await controller._hook_gate.fire_user_prompt_submit("hi")
+        await controller._hook_gate.fire_stop("done")
+
+        assert [event for event, _ in reloaded.calls] == [
+            HookEvent.USER_PROMPT_SUBMIT.value,
+            HookEvent.STOP.value,
+        ]
