@@ -54,7 +54,7 @@ from igni_core.backend.schemas_history import (
 )
 from igni_core.backend.schemas_plan import PlanState
 from igni_core.backend.server_history_walker import RunWalker
-from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
+from igni_core.core.session.event_log_schema import SessionEvent, VisualizationDeltaPayload
 
 if TYPE_CHECKING:
     from igni_core.core.session.core import Session
@@ -132,8 +132,23 @@ class ChatHistoryRebuilder:
             system_chars = walker.system_chars
 
         self._fill_plan_states(out)
-        self._splice_visualizations(out)
+        self._splice_visualizations(out, await self._event_log_of(session_id))
         return out
+
+    async def _event_log_of(self, session_id: str) -> list[SessionEvent]:
+        """The event log of the session asked for.
+
+        The current session's is the live in-memory one; any other's is
+        read from its stored ``session_data``. The in-memory log was
+        spliced into whatever session was asked for, so one chat showed
+        another's views, and a chat reloaded after a restart lost its own.
+        """
+        if session_id == self.session.session_id:
+            return self.session.event_log
+        persistence = self.session.persistence
+        if persistence is None:
+            return []
+        return await persistence.load_event_log_of(session_id)
 
     def _fill_plan_states(self, out: list[ChatTurn]) -> None:
         """Assign ``state`` to each plan turn from
@@ -168,10 +183,9 @@ class ChatHistoryRebuilder:
             else:
                 turn.state = "dismissed"
 
-    def _splice_visualizations(self, out: list[ChatTurn]) -> None:
-        """Splice visualizer cards from
-        ``session.event_log`` at the correct chronological
-        positions.
+    def _splice_visualizations(self, out: list[ChatTurn], event_log: list[SessionEvent]) -> None:
+        """Splice visualizer cards from the session's ``event_log`` at
+        the correct chronological positions.
 
         Within each run, the Nth logged viz pairs with the Nth
         ``spawn_agent`` / ``spawn_team`` tool turn (Agno
@@ -181,7 +195,6 @@ class ChatHistoryRebuilder:
         anchors: last turn of the matching run, then
         append-at-tail.
         """
-        event_log = self.session.event_log
         viz_events = [e for e in event_log if e.type == "visualization_delta"]
         if not viz_events:
             return

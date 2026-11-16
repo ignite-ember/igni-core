@@ -145,9 +145,8 @@ class TestGetChatHistoryVizSplicing:
 
     def _splice(self, history: list[ChatTurn], event_log: list[object]) -> list[ChatTurn]:
         """Run the real splicer over a fake session's log."""
-        session = SimpleNamespace(event_log=list(event_log))
         out: list[ChatTurn] = list(history)
-        ChatHistoryRebuilder(session)._splice_visualizations(out)  # type: ignore[arg-type]
+        ChatHistoryRebuilder(SimpleNamespace())._splice_visualizations(out, list(event_log))  # type: ignore[arg-type]
         return out
 
     @staticmethod

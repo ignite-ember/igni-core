@@ -29,14 +29,33 @@ from igni_core.core.session.event_log_schema import (
 )
 
 
-def _session(runs: Any, decisions: dict[str, str] | None = None, events=()):  # type: ignore[no-untyped-def]
+class _Persistence:
+    """The stored event logs, by session."""
+
+    def __init__(self, stored: dict[str, list[Any]] | None = None) -> None:
+        self.stored = stored or {}
+
+    async def load_event_log_of(self, session_id: str) -> list[Any]:
+        return list(self.stored.get(session_id, []))
+
+
+def _session(  # type: ignore[no-untyped-def]
+    runs: Any,
+    decisions: dict[str, str] | None = None,
+    events=(),
+    *,
+    current: str = "sess-1",
+    stored: dict[str, list[Any]] | None = None,
+):
     agno_session = None if runs is None else SimpleNamespace(runs=runs)
     team = SimpleNamespace(aget_session=AsyncMock(return_value=agno_session))
     return SimpleNamespace(
         main_team=team,
         user_id="u",
+        session_id=current,
         plan_store=SimpleNamespace(decisions=decisions or {}),
         event_log=list(events),
+        persistence=_Persistence(stored),
     )
 
 
@@ -211,12 +230,55 @@ def _card(seq: int, run_id: str, spec_json: str, **payload: Any) -> Visualizatio
 
 def _spliced(history: list[ChatTurn], events: list[Any]) -> list[ChatTurn]:
     out = list(history)
-    ChatHistoryRebuilder(_session([], events=events))._splice_visualizations(out)  # type: ignore[arg-type]
+    ChatHistoryRebuilder(_session([]))._splice_visualizations(out, events)  # type: ignore[arg-type]
     return out
 
 
 def _spawn(run_id: str) -> ToolTurn:
     return ToolTurn(run_id=run_id, tool_name="spawn_agent")
+
+
+class TestTheCardsComeFromTheSessionAskedFor:
+    """R214: the splicer read the current session's in-memory log for any
+    session asked for. Session A's history ended with session B's card, and
+    after a restart A's own stored card was never spliced back."""
+
+    RUNS = [_run("r1", _msg("user", "draw it"))]
+
+    async def test_another_session_s_history_has_its_stored_cards_and_not_the_current_one_s(
+        self,
+    ) -> None:
+        session = _session(
+            self.RUNS,
+            events=[_card(1, "rB", '{"title": "Veg"}')],
+            current="B",
+            stored={"A": [_card(1, "r1", '{"title": "Fruit"}')]},
+        )
+
+        out = await ChatHistoryRebuilder(session).rebuild("A")  # type: ignore[arg-type]
+
+        cards = [t for t in out if isinstance(t, VisualizationTurn)]
+        assert [c.spec for c in cards] == [{"title": "Fruit"}]
+
+    async def test_the_current_session_s_history_has_its_live_cards(self) -> None:
+        session = _session(
+            self.RUNS,
+            events=[_card(1, "r1", '{"title": "Live"}')],
+            current="A",
+            stored={"A": []},
+        )
+
+        out = await ChatHistoryRebuilder(session).rebuild("A")  # type: ignore[arg-type]
+
+        assert [t.spec for t in out if isinstance(t, VisualizationTurn)] == [{"title": "Live"}]
+
+    async def test_without_persistence_another_session_has_no_cards(self) -> None:
+        session = _session(self.RUNS, events=[_card(1, "r1", '{"a": 1}')], current="B")
+        session.persistence = None
+
+        out = await ChatHistoryRebuilder(session).rebuild("A")  # type: ignore[arg-type]
+
+        assert not [t for t in out if isinstance(t, VisualizationTurn)]
 
 
 class TestVisualizationCards:

@@ -24,9 +24,10 @@ SPEC = {"root": "t", "elements": {"t": {"type": "Text", "props": {"text": "3 ope
 
 
 def _restored(payload: VisualizationDeltaPayload) -> VisualizationTurn:
-    session = SimpleNamespace(event_log=[VisualizationDeltaEntry(seq=1, payload=payload)])
     out: list[ChatTurn] = []
-    ChatHistoryRebuilder(session)._splice_visualizations(out)  # type: ignore[arg-type]
+    ChatHistoryRebuilder(SimpleNamespace())._splice_visualizations(  # type: ignore[arg-type]
+        out, [VisualizationDeltaEntry(seq=1, payload=payload)]
+    )
     [turn] = out
     assert isinstance(turn, VisualizationTurn)
     return turn

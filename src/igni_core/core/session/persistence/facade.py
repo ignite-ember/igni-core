@@ -81,6 +81,7 @@ class SessionPersistence:
         # without a DB); every store treats that as a no-op.
         self._db: AgnoSessionDb | None = db
         self._session_id = session_id
+        self._user_id = user_id
         self._data = SessionDataService(db, session_id, user_id)
         self._listing = SessionListing(db)
         self._namer = SessionNamer(db, session_id, self._data)
@@ -246,6 +247,19 @@ class SessionPersistence:
         (Rule 1).
         """
         result = await self._event_log_store.load()
+        return result.value or []
+
+    async def load_event_log_of(self, session_id: str) -> list[SessionEvent]:
+        """Read the persisted event log of any stored session.
+
+        A chat's history shows the views drawn in that chat, wherever
+        the session stands now: the current session's log is not the
+        one to splice into another session's history.
+        """
+        if session_id == self._session_id:
+            return await self.load_event_log()
+        store = EventLogStore(SessionDataService(self._db, session_id, self._user_id))
+        result = await store.load()
         return result.value or []
 
     async def save_event_log(self, events: list[SessionEvent]) -> PersistResult:

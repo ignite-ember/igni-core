@@ -43,8 +43,13 @@ class FakeSession:
             fork=AsyncMock(),
         )
 
+        self.event_log: list = ["a view drawn in the old chat"]
+
     def rotate_id(self, new_id: str) -> None:
         self.session_id = new_id
+
+    def restore_event_log(self, events: list) -> None:
+        self.event_log = list(events)
 
 
 def _run(session: FakeSession, command: str):
@@ -62,6 +67,16 @@ async def test_clear_starts_a_fresh_eight_character_session_and_forgets_the_cont
     assert result.action == CommandAction.CLEAR
     assert len(session.session_id) == 8 and session.session_id != "old00000"
     assert session.context_budget.last_input_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_clear_starts_the_new_chat_with_no_views():
+    """R214: the previous chat's views stayed in the log, so the new chat's
+    history showed them and its first append saved them into it."""
+    session = FakeSession()
+    await _run(session, "/clear")
+    await background.drain()
+    assert session.event_log == []
 
 
 @pytest.mark.asyncio
