@@ -24,6 +24,7 @@ from igni_core.backend.pending_requirements_store import PendingRequirementsStor
 from igni_core.backend.run_controller import RunController
 from igni_core.backend.schemas_run import RunPhase
 from igni_core.core.config.permission_eval import PermissionEvaluator
+from igni_core.core.session.event_log import SessionEventLog
 from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
 
@@ -63,12 +64,31 @@ async def test_cancelling_the_stream_cancels_the_team_s_run() -> None:
     await asyncio.wait_for(stopped.wait(), 2)
 
 
+async def _first_of(signal: Any, task: asyncio.Task) -> None:
+    """Wait for ``signal``, or re-raise what ended ``task`` before it."""
+    waiter = asyncio.ensure_future(signal)
+    done, _ = await asyncio.wait({waiter, task}, timeout=5, return_when=asyncio.FIRST_COMPLETED)
+    if waiter not in done:
+        waiter.cancel()
+        if task in done:
+            task.result()
+        raise AssertionError("the run never reached the point the test waits for")
+
+
 def _controller() -> RunController:
+    # Every attribute ``continue_run`` and ``cancel_run`` read: a missing
+    # one raised inside the consumer task, before the stream's first frame,
+    # and the test waited on that frame for ever instead of failing.
     controller = RunController.__new__(RunController)
     controller._phase = RunPhase.idle
     controller._pending_id_for_cancel = None
+    controller._paused_pending_id = None
+    controller._stream_ended_paused = False
+    controller._cancelled_by_person = None
     controller._current_run_task = None
+    controller._run_lock = asyncio.Lock()
     controller._supervisor = SimpleNamespace(cancel_foreground=lambda: False)
+    controller._session = SimpleNamespace(event_log_store=SessionEventLog(), main_team=None)
     return controller
 
 
@@ -89,7 +109,7 @@ async def test_a_resumed_run_is_the_session_s_run_and_cancel_reaches_it() -> Non
             got.append(proto)
 
     consumer = asyncio.create_task(consume())
-    await resumed.wait()
+    await _first_of(resumed.wait(), consumer)
     assert controller._phase.is_active(), "a resumed run is the session's run"
 
     controller.cancel_run()
@@ -133,7 +153,7 @@ async def test_a_scheduled_task_run_now_is_the_session_s_run() -> None:
         return "never"
 
     running = asyncio.create_task(controller.run_unstreamed(work))
-    await started.wait()
+    await _first_of(started.wait(), running)
     assert controller._phase.is_active()
 
     controller.cancel_run()

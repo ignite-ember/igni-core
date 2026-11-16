@@ -38,6 +38,7 @@ from igni_core.backend.schemas_run import (
     RunPhase,
 )
 from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.session.event_log import SessionEventLog
 from igni_core.core.tools.todo import TodoStore
 from igni_core.core.utils.media_schemas import MediaAttachments, ResolvedText
 from igni_core.protocol import messages as msg
@@ -125,6 +126,7 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
         main_team=SimpleNamespace(arun=lambda *a, **k: None, run_id=None),
         guardrail_runner=SimpleNamespace(warning_prefix=_no_prefix),
         todo_store=TodoStore(),
+        event_log_store=SessionEventLog(),
         take_session_start_context=lambda: "",
         memory_mirror=None,
     )
