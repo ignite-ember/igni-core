@@ -21,7 +21,7 @@ import copy
 from typing import Any
 
 from igni_core.core.agno_telemetry import AgnoTelemetry
-from igni_core.core.hooks.subagent_tool_hook import SubAgentToolHook
+from igni_core.core.hooks.subagent_tool_hook import SubAgentToolHook, safety_of
 from igni_core.core.hooks.untrusted import UntrustedOutputHook
 from igni_core.core.tools.orchestrate_modes import TeamMode
 from igni_core.core.tools.orchestrate_spawn_runner import SpawnRunner
@@ -123,6 +123,7 @@ class TeamSpawn(SpawnRunner):
                 request.hook_executor,
                 request.session_id,
                 request.bypass_guard,
+                safety_of(request.settings),
             )
             members.append(member)
 

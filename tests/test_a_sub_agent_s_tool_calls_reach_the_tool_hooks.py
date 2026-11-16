@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from igni_core.core.config.schemas.safety import SafetyConfig
 from igni_core.core.hooks.schemas import HookResult, PermissionDecision
 from igni_core.core.hooks.subagent_tool_hook import SubAgentToolHook
 
@@ -95,7 +96,9 @@ async def test_a_team_member_carries_it():
 
     member = SimpleNamespace(tool_hooks=None)
     pool = SimpleNamespace(get=lambda name: member, missing=lambda name: "missing", db=None)
-    settings = SimpleNamespace(orchestration=SimpleNamespace(max_task_iterations=2))
+    settings = SimpleNamespace(
+        orchestration=SimpleNamespace(max_task_iterations=2), safety=SafetyConfig()
+    )
     built: list[Any] = []
 
     deps = SimpleNamespace(
@@ -245,7 +248,8 @@ async def test_a_spawned_agent_and_a_team_member_answer_to_the_session_s_guard(t
             max_nesting_depth=2,
             generate_ephemeral=False,
             max_task_iterations=2,
-        )
+        ),
+        safety=SafetyConfig(),
     )
     tools = OrchestrateTools(
         pool=SimpleNamespace(),  # type: ignore[arg-type]
@@ -274,3 +278,91 @@ async def test_a_spawned_agent_and_a_team_member_answer_to_the_session_s_guard(t
         name="run_shell_command", func=lambda command: "ran", args=dict(CURL_SH)
     )
     assert refused != "ran"
+
+
+# ── The safety lists ─────────────────────────────────────────────────
+#
+# ``safety.protected_paths`` and ``safety.blocked_commands`` always run in
+# the main agent's pipeline, a hook's allow and Bypass included. A
+# sub-agent's or a team member's call never met them: the model could
+# write igni's settings or run a blocked command by delegating it.
+
+
+def _never(**_: Any) -> str:
+    raise AssertionError("a call the safety lists refuse ran")
+
+
+async def test_a_sub_agent_s_write_to_igni_s_settings_is_refused(tmp_path):
+    guard = _bypass_guard(tmp_path)
+    hook = SubAgentToolHook(None, "s-1", lambda: guard, SafetyConfig())
+
+    result = await hook(
+        name="save_file",
+        func=_never,
+        args={"file_name": ".igni/settings.local.json", "contents": "{}"},
+        agent=SimpleNamespace(name="editor"),
+    )
+
+    assert isinstance(result, str) and result.startswith("Blocked")
+
+
+async def test_a_sub_agent_s_blocked_command_is_refused_even_after_a_hook_s_allow():
+    hook = SubAgentToolHook(  # type: ignore[arg-type]
+        _Executor(HookResult(permission_decision=PermissionDecision.ALLOW)),
+        "s-1",
+        None,
+        SafetyConfig(blocked_commands=["rm -rf /"]),
+    )
+
+    result = await hook(name="run_shell_command", func=_never, args={"command": "rm -rf / --x"})
+
+    assert result == "Blocked: command matches blocked pattern 'rm -rf /'."
+
+
+async def test_a_call_the_lists_do_not_name_runs():
+    hook = SubAgentToolHook(None, "s-1", None, SafetyConfig(blocked_commands=["rm -rf /"]))
+
+    result = await hook(
+        name="run_shell_command", func=lambda command: "ran", args={"command": "ls"}
+    )
+
+    assert result == "ran"
+
+
+def test_the_safety_lists_alone_put_it_on():
+    hooks = SubAgentToolHook.on([], None, "s-1", None, SafetyConfig())
+    assert isinstance(hooks[0], SubAgentToolHook)
+
+
+async def test_a_team_member_is_handed_the_session_s_safety_lists():
+    """``spawn_team`` builds each member with the request's settings.safety."""
+    from igni_core.core.tools.orchestrate_spawn_team import TeamSpawn
+    from igni_core.core.tools.orchestrate_spawn_types import TeamBuildRequest
+
+    member = SimpleNamespace(tool_hooks=None)
+    pool = SimpleNamespace(get=lambda name: member, missing=lambda name: "missing", db=None)
+    settings = SimpleNamespace(
+        orchestration=SimpleNamespace(max_task_iterations=2),
+        safety=SafetyConfig(blocked_commands=["shutdown"]),
+    )
+    built: list[Any] = []
+    deps = SimpleNamespace(
+        team_factory=lambda spec: built.append(spec) or SimpleNamespace(),
+        model_registry_factory=lambda settings: SimpleNamespace(get_model=lambda name=None: None),
+    )
+    TeamSpawn.build_team(
+        TeamBuildRequest(
+            pool=pool,  # type: ignore[arg-type]
+            settings=settings,  # type: ignore[arg-type]
+            names=["explorer"],
+            mode="coordinate",
+            session_id="s-1",
+        ),
+        deps,  # type: ignore[arg-type]
+    )
+    (spec,) = built
+    (first,) = spec.members
+    hook = first.tool_hooks[0]
+    assert isinstance(hook, SubAgentToolHook)
+    result = await hook(name="run_shell_command", func=_never, args={"command": "shutdown now"})
+    assert result == "Blocked: command matches blocked pattern 'shutdown'."

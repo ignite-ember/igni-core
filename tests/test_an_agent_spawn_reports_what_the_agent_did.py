@@ -95,10 +95,14 @@ def _spawn(
     task: str = "fix it",
     budget: SpawnBudget | None = None,
     bypass_guard: Any = None,
+    safety: Any = None,
 ) -> AgentSpawn:
+    settings = SimpleNamespace(orchestration=SimpleNamespace(sub_team_timeout=timeout))
+    if safety is not None:
+        settings.safety = safety
     scope = OrchestrateScope(
         pool=pool,
-        settings=SimpleNamespace(orchestration=SimpleNamespace(sub_team_timeout=timeout)),
+        settings=settings,
         budget=budget or SpawnBudget(max_agents=10),
         current_depth=0,
         max_depth=5,
@@ -253,6 +257,21 @@ class TestWhatTheAgentRunsWith:
         )
         assert refused == "Not run: guarded"
         assert guard.checked == [("run_shell_command", ["worker"])]
+
+    async def test_its_calls_meet_the_session_s_safety_lists(self):
+        """A sub-agent's call never met ``safety.blocked_commands`` and
+        ``safety.protected_paths``, which the main agent's always does."""
+        from igni_core.core.config.schemas.safety import SafetyConfig
+
+        run = _Run()
+
+        await _spawn(_Pool(_defn()), run, safety=SafetyConfig(blocked_commands=["shutdown"])).run()
+
+        agent = run.contexts[0].runnable
+        refused = await agent.tool_hooks[0](
+            name="run_shell_command", func=lambda command: "ran", args={"command": "shutdown"}
+        )
+        assert refused == "Blocked: command matches blocked pattern 'shutdown'."
 
     async def test_the_turn_result_hook_is_added_only_for_a_coordinator_that_can_take_it(self):
         class _Sink:

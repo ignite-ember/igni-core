@@ -12,18 +12,28 @@ hook adds the configured hooks, with the answers the main agent's
 ``PreToolUse`` stage gives, and Bypass mode's last check. Bypass never
 pauses, so a sub-agent's ``curl | sh`` reached no check at all: the model
 could get past the guard by delegating (campaign R128).
+
+``safety.protected_paths`` and ``safety.blocked_commands`` are checked here
+too, as in the main pipeline: after the hooks, whatever they answered. A
+sub-agent could otherwise write ``.igni/settings.json`` or run a blocked
+command the main agent is refused, by being the one delegated to.
 """
 
 from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 from igni_core.core.hooks.bypass_guard import BypassGuard
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.hooks.executor import HookExecutor
 from igni_core.core.hooks.hook_firer import HookFirer
+from igni_core.core.hooks.permission.blocked_command_stage import BlockedCommandStage
+from igni_core.core.hooks.permission.context import ToolCallContext
+from igni_core.core.hooks.permission.outcome import Block
+from igni_core.core.hooks.permission.protected_path_stage import ProtectedPathStage
+from igni_core.core.hooks.permission.stage import PermissionStage
 from igni_core.core.hooks.queue.agno_adapter import AgnoCallableAdapter
 from igni_core.core.hooks.schemas import PermissionDecision
 from igni_core.core.hooks.tool_events import (
@@ -36,6 +46,29 @@ from igni_core.core.hooks.tool_events import (
 BypassGuardRef = Callable[[], BypassGuard | None]
 
 
+class SafetyLists(Protocol):
+    """The two safety lists a call is held against (``settings.safety``)."""
+
+    protected_paths: list[str]
+    blocked_commands: list[str]
+
+
+def safety_of(settings: Any) -> SafetyLists | None:
+    """``settings.safety``: every :class:`Settings` has one; a stand-in
+    built for a test may not, and then the lists are left out."""
+    return getattr(settings, "safety", None)
+
+
+def _safety_stages(safety: SafetyLists | None) -> tuple[PermissionStage, ...]:
+    """The main pipeline's two always-run safety stages, from ``safety``."""
+    if safety is None:
+        return ()
+    return (
+        ProtectedPathStage(list(safety.protected_paths)),
+        BlockedCommandStage(list(safety.blocked_commands)),
+    )
+
+
 class SubAgentToolHook(AgnoCallableAdapter):
     """Agno tool hook: the configured tool hooks, around one sub-agent call."""
 
@@ -44,10 +77,12 @@ class SubAgentToolHook(AgnoCallableAdapter):
         executor: HookExecutor | None,
         session_id: str,
         bypass_guard: BypassGuardRef | None = None,
+        safety: SafetyLists | None = None,
     ) -> None:
         self._mark_as_coroutine()
         self._firer = HookFirer(executor, session_id) if executor is not None else None
         self._bypass_guard = bypass_guard
+        self._safety_stages = _safety_stages(safety)
 
     @classmethod
     def on(
@@ -56,13 +91,16 @@ class SubAgentToolHook(AgnoCallableAdapter):
         executor: HookExecutor | None,
         session_id: str,
         bypass_guard: BypassGuardRef | None = None,
+        safety: SafetyLists | None = None,
     ) -> list[Any]:
-        """``hooks`` with this one first, outermost; unchanged with neither
-        an executor nor a guard."""
+        """``hooks`` with this one first, outermost; unchanged with no
+        executor, no guard and no safety lists."""
         existing = list(hooks or [])
-        if (executor is None and bypass_guard is None) or any(isinstance(h, cls) for h in existing):
+        if executor is None and bypass_guard is None and safety is None:
             return existing
-        return [cls(executor, session_id, bypass_guard), *existing]
+        if any(isinstance(h, cls) for h in existing):
+            return existing
+        return [cls(executor, session_id, bypass_guard, safety), *existing]
 
     async def __call__(
         self,
@@ -84,6 +122,12 @@ class SubAgentToolHook(AgnoCallableAdapter):
             if refusal is not None:
                 return refusal
             hook_allowed = pre.permission_decision is PermissionDecision.ALLOW
+        # Always run, as in the main pipeline: a hook's allow does not unlock them.
+        ctx = ToolCallContext(name=name, func=func, args=call_args, agent=agent, team=team)
+        for stage in self._safety_stages:
+            outcome = await stage.evaluate(ctx)
+            if isinstance(outcome, Block):
+                return outcome.message
         # As in the main agent's pipeline: last, and a hook's allow skips it.
         guard = self._bypass_guard() if self._bypass_guard is not None else None
         if guard is not None and not hook_allowed:
@@ -129,4 +173,4 @@ class SubAgentToolHook(AgnoCallableAdapter):
         return None
 
 
-__all__ = ["BypassGuardRef", "SubAgentToolHook"]
+__all__ = ["BypassGuardRef", "SafetyLists", "SubAgentToolHook", "safety_of"]
