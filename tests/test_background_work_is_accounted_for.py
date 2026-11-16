@@ -54,6 +54,11 @@ ALLOWED: dict[tuple[str, str], str] = {
         "the Windows sandbox's runner, a process of its own under igni's interpreter "
         "with -I, importing nothing of igni's; it waits there for the extension's process"
     ),
+    ("backend/session_orchestrator.py", "ensure_future"): (
+        "the serve loop's own race between the next message and the shutdown: both "
+        "futures are awaited inside the one coroutine, so neither is work behind "
+        "the caller's back, and neither may hold a busy lease"
+    ),
 }
 
 

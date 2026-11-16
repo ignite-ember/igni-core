@@ -101,7 +101,8 @@ igni --read-only -m "In one sentence, what does this project do?"
 ```
 
 `igni` is the command, and the only one pip, uv and the Homebrew formula
-install. It searches code with ripgrep: the formula brings Homebrew's, pip
+install. igni is supported on Apple Silicon macOS and x86-64 Linux: it
+searches code with ripgrep: the formula brings Homebrew's, pip
 and uv bring the PyPI package on macOS arm64 and Linux x86_64, and
 elsewhere you install `rg` yourself (`brew install ripgrep`, `sudo apt
 install ripgrep`) — see [Quickstart](QUICKSTART.md#install). On the command line it runs **one task and exits** (`-m`, or `-p` for a

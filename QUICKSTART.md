@@ -41,8 +41,9 @@ retired: its PyPI releases are yanked and there is no formula or command
 by it.
 
 **ripgrep.** igni searches code with `rg`, and an `rg` on your `PATH` is
-always the one it uses. The Homebrew formula depends on Homebrew's
-ripgrep. pip and uv install the PyPI `ripgrep` package only on macOS
+always the one it uses. igni is supported on
+Apple Silicon macOS and x86-64 Linux, and the Homebrew formula depends on
+Homebrew's ripgrep. pip and uv install the PyPI `ripgrep` package only on macOS
 arm64 and Linux x86_64, the platforms it has wheels for, and igni finds
 that binary even when it is not on `PATH`. Anywhere else (Linux arm64,
 Intel macOS) install it yourself — without it code search falls back to a

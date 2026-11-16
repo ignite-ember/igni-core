@@ -64,6 +64,9 @@ class _Server:
     def wire_queue_hook(self, queue: Any) -> None:
         return None
 
+    def wire_orchestrate_progress(self, callback: Any) -> None:
+        return None
+
     def register_broadcast(self, callback: Any) -> None:
         self.broadcast_bus.register(callback)
 

@@ -111,6 +111,9 @@ class _Backend:
     def wire_queue_hook(self, queue: Any) -> None:
         self.queue_hook = queue
 
+    def wire_orchestrate_progress(self, callback: Any) -> None:
+        self.progress_callback = callback
+
     def register_broadcast(self, subscriber: BroadcastSink) -> None:
         self.broadcasts.append(subscriber)
 
