@@ -37,6 +37,7 @@ from igni_core.core.tools.orchestrate_stream_handler import (
     handler_name,
 )
 from igni_core.core.tools.orchestrate_symbols import VIS_SPEC_PREFIX, LogSymbols
+from igni_core.core.tools.spawn_context import SpawnCalls
 from igni_core.core.tools.subagent_stream import SubAgentStreamState
 
 _stream_log = logging.getLogger("igni_core.llm_calls")
@@ -274,9 +275,25 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
             # ``parent_top_run_id`` docstring on
             # :class:`SubAgentStreamState` and the ``get_chat_history``
             # splicing block in ``backend/server.py``.
-            await appender(final_event, state.parent_top_run_id or state.current_run_id or "")
+            await appender(
+                final_event,
+                state.parent_top_run_id or self._top_run_id() or state.current_run_id or "",
+            )
         except Exception as exc:  # noqa: BLE001 — a logging callback must not break the stream
             _logger.warning("visualization event log append failed: %s", exc)
+
+    @staticmethod
+    def _top_run_id() -> str:
+        """The main agent's run that is waiting on this spawn, if known.
+
+        A spawned agent's own run carries no ``parent_run_id`` (it is
+        started as a run of its own), so the card was filed under the
+        sub-agent's run: ``get_chat_history`` put it last, not next to the
+        ``spawn_agent`` call it came from. The outermost call in the spawn
+        chain is the main agent's, and its run is the one history shows.
+        """
+        chain = SpawnCalls.current()
+        return chain[-1].run_id if chain else ""
 
     async def _on_tool_completed(self, event: agent_events.ToolCallCompletedEvent) -> None:
         state = self.state
