@@ -255,3 +255,37 @@ async def test_a_session_is_offered_the_extensions_and_built_again_to_carry_them
 
     assert shared == [owner]
     assert reloads == ["sess-a"]
+
+
+async def test_a_session_made_after_the_folder_s_trust_changed_loads_its_settings_again(
+    tmp_path, monkeypatch
+) -> None:
+    """R333: after set_workspace_trust('trust') a session made with
+    sessions.create() still ran on the settings loaded while the folder was
+    untrusted, so it ignored the folder's allow and deny rules."""
+    trusted: set[Path] = set()
+    monkeypatch.setattr(
+        "igni_core.backend.session_runtime_factory.process_trust",
+        lambda: SimpleNamespace(decide=lambda d: SimpleNamespace(trusted=Path(d) in trusted)),
+        raising=False,
+    )
+    reloaded: list[Path] = []
+
+    def _reload(project_dir: Path) -> Settings:
+        reloaded.append(project_dir)
+        return Settings(models={"default": "trusted-model"})
+
+    monkeypatch.setattr(
+        "igni_core.backend.session_runtime_factory.reload_settings", _reload, raising=False
+    )
+    rig = _rig(tmp_path)
+
+    await rig.factory.create("before")
+    trusted.add(rig.project)
+    await rig.factory.create("after")
+
+    before, after = _Server.built
+    assert reloaded == [rig.project]
+    assert before.settings is not rig.settings
+    assert after.settings is not rig.settings
+    assert rig.settings.models.default == "boot-model"
