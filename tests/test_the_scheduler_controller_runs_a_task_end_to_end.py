@@ -262,3 +262,31 @@ async def test_a_task_whose_run_pauses_for_approval_fails_with_why() -> None:
 
     with pytest.raises(RuntimeError, match="approval of save_file"):
         await controller.execute("write gated.txt")
+
+
+async def test_a_task_fires_the_hooks_of_the_session_as_it_is_now(store, tmp_path) -> None:
+    """The runner outlives a plugin reload, ``/hooks reload``, a trust
+    change and New chat; its task hooks went to the executor and session
+    id of the moment it started (campaign R671)."""
+    built_with, reloaded = _Hooks(), _Hooks()
+    session = _session(_Team(), built_with, tmp_path)
+    settings = SimpleNamespace(scheduler=SchedulerConfig(poll_interval=1))
+    controller = SchedulerController(session, settings, gate=RunGate())  # type: ignore[arg-type]
+    completed: list[tuple] = []
+    controller.start(on_task_completed=lambda *a: completed.append(a))
+    try:
+        session.hook_executor = reloaded
+        session.session_id = "sess-2"
+        task = ScheduledTask.new("after the reload", datetime.now())
+        await store.add(task)
+        for _ in range(100):
+            if completed:
+                break
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)
+
+        assert built_with.fired == []
+        assert [event for event, _ in reloaded.fired] == ["TaskCreated", "TaskCompleted"]
+        assert {p.session_id for _, p in reloaded.fired} == {"sess-2"}
+    finally:
+        await controller.stop()

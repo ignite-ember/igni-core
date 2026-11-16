@@ -201,9 +201,13 @@ class SchedulerController:
         sched_cfg = self._settings.scheduler
         store = TaskStore(project_dir=self._session.project_dir)
 
+        session = self._session
+        # Read per fire, as the run's hook gate does: a plugin reload,
+        # ``/hooks reload`` or a trust change gives the session a new
+        # executor, and New chat a new id, while the runner lives on.
         bridge = self._TaskHookBridge(
-            session_id=self._session.session_id,
-            hook_executor=self._session.hook_executor,
+            session_id=lambda: session.session_id,
+            hook_executor=lambda: session.hook_executor,
             user_on_started=on_task_started,
             user_on_completed=on_task_completed,
         )
@@ -268,13 +272,13 @@ class SchedulerController:
         def __init__(
             self,
             *,
-            session_id: str,
-            hook_executor: HookExecutor,
+            session_id: Callable[[], str],
+            hook_executor: Callable[[], HookExecutor],
             user_on_started: TaskStartedCallback,
             user_on_completed: TaskCompletedCallback,
         ) -> None:
-            self._session_id = session_id
-            self._hook_executor = hook_executor
+            self._session_id_of = session_id
+            self._hook_executor_of = hook_executor
             self._user_on_started = user_on_started
             self._user_on_completed = user_on_completed
 
@@ -284,12 +288,12 @@ class SchedulerController:
             if self._user_on_started is not None:
                 self._user_on_started(task_id, description)
             payload = TaskCreatedPayload(
-                session_id=self._session_id,
+                session_id=self._session_id_of(),
                 task_id=task_id,
                 description=description,
             )
             background.start(
-                self._hook_executor.execute(
+                self._hook_executor_of().execute(
                     event=HookEvent.TASK_CREATED.value,
                     payload=payload,
                 ),
@@ -313,7 +317,7 @@ class SchedulerController:
             # (``TaskCompletedPayload.status: Literal["completed",
             # "error"]``) that FE consumers key on.
             payload = TaskCompletedPayload(
-                session_id=self._session_id,
+                session_id=self._session_id_of(),
                 task_id=task_id,
                 description=description,
                 status=(
@@ -323,7 +327,7 @@ class SchedulerController:
                 ),
             )
             background.start(
-                self._hook_executor.execute(
+                self._hook_executor_of().execute(
                     event=HookEvent.TASK_COMPLETED.value,
                     payload=payload,
                 ),
