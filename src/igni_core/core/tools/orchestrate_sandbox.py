@@ -242,6 +242,10 @@ class SpawnSandbox:
         if result.status == "cleaned":
             return f"\n\nWorktree {self.info.branch_name} (clean) — reaped."
         if result.status == "preserved_dirty":
+            # The footer tells the parent to ``git merge`` the branch, and
+            # a merge takes only what is committed: commit the agent's
+            # changes onto the branch so following it brings them over.
+            self.manager.commit_changes(f"igni: changes made in worktree {self.info.branch_name}")
             return (
                 f"\n\nWorktree preserved: {self.info.worktree_path} "
                 f"(branch: {self.info.branch_name}) — has uncommitted changes.\n"

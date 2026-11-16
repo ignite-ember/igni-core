@@ -102,6 +102,44 @@ class TestFinalizeAgainstARealWorktree:
         assert f"To merge: git merge {sandbox.info.branch_name}" in footer
         assert (sandbox.info.worktree_path / "new.txt").exists()
 
+    def test_following_the_merge_line_brings_the_change_over(self, tmp_path):
+        """The footer said ``git merge <branch>`` with the change left
+        uncommitted: the merge said "Already up to date." and the change
+        was lost (campaign R130). igni's scaffold stays out of it."""
+        _init_git_repo(tmp_path)
+        sandbox = _create(tmp_path).sandbox
+        assert sandbox is not None and sandbox.info is not None
+        (sandbox.info.worktree_path / "iso_note.txt").write_text("ISO-X")
+        (sandbox.info.worktree_path / "igni.md").write_text("# igni")
+
+        footer = sandbox.finalize()
+        merge = next(line for line in footer.splitlines() if line.startswith("To merge: "))
+        subprocess.run(merge.removeprefix("To merge: ").split(), cwd=tmp_path, check=True)
+
+        assert (tmp_path / "iso_note.txt").read_text() == "ISO-X"
+        assert not (tmp_path / "igni.md").exists()
+
+    def test_a_repository_without_an_author_still_gets_the_commit(self, tmp_path, monkeypatch):
+        _init_git_repo(tmp_path)
+        subprocess.run(["git", "config", "--unset", "user.name"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "--unset", "user.email"], cwd=tmp_path, check=True)
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "no-global"))
+        monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+        sandbox = _create(tmp_path).sandbox
+        assert sandbox is not None and sandbox.info is not None
+        (sandbox.info.worktree_path / "n.txt").write_text("n")
+
+        sandbox.finalize()
+        log = subprocess.run(
+            ["git", "log", "-1", "--format=%an", sandbox.info.branch_name],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        assert log.stdout.strip() == "igni"
+
 
 class TestCreateReportsExpectedFailures:
     def test_a_create_that_is_not_ok_is_an_error_result(self, monkeypatch, tmp_path):

@@ -405,11 +405,31 @@ class TestReportCleanup:
             f"  Path:   {info.worktree_path}",
             "  Branch: rp",
             "\nTo merge: commit the changes in the worktree "
-            f"(git -C {info.worktree_path} add -A && git -C {info.worktree_path} commit), "
-            "then git merge rp",
+            f"(git -C {info.worktree_path} add -A -- . "
+            "':(exclude).igni' ':(exclude)igni.md' && "
+            f"git -C {info.worktree_path} commit), then git merge rp",
             f"To remove: git worktree remove {info.worktree_path}",
         ]
         assert all(kw == {} for _, kw in out)
+
+    def test_following_the_hint_merges_the_change_and_not_the_scaffold(self, tmp_path):
+        """The hint's ``add -A`` committed igni's own .igni/ and igni.md
+        along with the change (campaign R130)."""
+        repo, _, wm = _manager(tmp_path)
+        info = wm.create(branch_name="rh")
+        (info.worktree_path / "x").write_text("x")
+        (info.worktree_path / ".igni").mkdir()
+        (info.worktree_path / ".igni" / "config.yaml").write_text("a: 1")
+        (info.worktree_path / "igni.md").write_text("# igni")
+        hint = next(m for m, _ in self._collect(wm) if m.startswith("\nTo merge:"))
+        add_and_commit = hint.split("(", 1)[1].rsplit("), then", 1)[0] + " -q -m c"
+
+        subprocess.run(add_and_commit, shell=True, check=True, cwd=repo)  # noqa: S602 — the hint is a shell line
+        subprocess.run(["git", "merge", "-q", "rh"], cwd=repo, check=True)
+
+        assert (repo / "x").read_text() == "x"
+        assert not (repo / "igni.md").exists()
+        assert not (repo / ".igni").exists()
 
     def test_igni_s_own_scaffold_is_no_change(self, tmp_path):
         """A ``--worktree`` run that changed nothing was kept as "has

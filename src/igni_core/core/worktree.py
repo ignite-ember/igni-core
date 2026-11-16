@@ -357,6 +357,52 @@ class WorktreeManager:
             for line in result.stdout.splitlines()
         )
 
+    def commit_changes(self, message: str) -> bool:
+        """Commit what the run changed in the worktree onto its branch.
+
+        A preserved worktree is merged with ``git merge <branch>``, and
+        that merges only what is committed: left uncommitted, the change
+        never reaches the branch and the merge says "Already up to date."
+        igni's own scaffold (:attr:`SCAFFOLD`) stays out of the commit.
+        The author falls back to igni when the repository names none.
+
+        Returns:
+            ``True`` when a commit was made.
+        """
+        if self._info is None:
+            return False
+        path = self._info.worktree_path
+        excludes = [f":(exclude){entry.rstrip('/')}" for entry in self.SCAFFOLD]
+        add = _run_git(["git", "add", "-A", "--", ".", *excludes], cwd=path)
+        if add.returncode != 0:
+            logger.warning("worktree add failed: %s", add.stderr.strip())
+            return False
+        commit = _run_git(
+            [
+                "git",
+                "-c",
+                f"user.name={self._author('user.name', 'igni')}",
+                "-c",
+                f"user.email={self._author('user.email', 'igni@localhost')}",
+                "commit",
+                "--no-verify",
+                "-q",
+                "-m",
+                message,
+            ],
+            cwd=path,
+        )
+        if commit.returncode != 0:
+            logger.warning("worktree commit failed: %s", commit.stderr.strip())
+            return False
+        return True
+
+    def _author(self, key: str, fallback: str) -> str:
+        """The repository's configured author field, or ``fallback``."""
+        assert self._info is not None
+        configured = _run_git(["git", "config", key], cwd=self._info.worktree_path)
+        return configured.stdout.strip() or fallback
+
     def cleanup(self) -> WorktreeCleanupResult:
         """Remove the worktree and its branch if no changes were made.
 
@@ -441,11 +487,13 @@ class WorktreeManager:
             echo(f"  Path:   {info.worktree_path}")
             echo(f"  Branch: {info.branch_name}")
             # Nothing is committed for the person: ``git merge`` alone
-            # would merge a branch with none of the changes on it.
+            # would merge a branch with none of the changes on it. The
+            # add leaves igni's own scaffold out of the commit.
+            excludes = " ".join(f"':(exclude){entry.rstrip('/')}'" for entry in self.SCAFFOLD)
             echo(
                 f"\nTo merge: commit the changes in the worktree "
-                f"(git -C {info.worktree_path} add -A && git -C {info.worktree_path} "
-                f"commit), then git merge {info.branch_name}"
+                f"(git -C {info.worktree_path} add -A -- . {excludes} && "
+                f"git -C {info.worktree_path} commit), then git merge {info.branch_name}"
             )
             echo(f"To remove: git worktree remove {info.worktree_path}")
         else:
