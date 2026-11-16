@@ -15,6 +15,7 @@ from igni_core.backend.server import BackendServer
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
 from igni_core.backend.workspace_trust_controller import reload_settings
+from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.settings import Settings
 from igni_core.core.workspace_trust import process_trust
 
@@ -39,10 +40,15 @@ class SessionRuntimeFactory:
         settings: Settings,
         dirs: PoolDirectories,
         server_cls: type[BackendServer] = BackendServer,
+        cli_overrides: CliOverrides | None = None,
     ) -> None:
         self._wiring = wiring
         self._settings = settings
         self._dirs = dirs
+        # What the backend's command line set. ``settings`` hold them already,
+        # merged with the boot folder's files; a session in another folder
+        # loads that folder's files, and these go on top again.
+        self._cli_overrides = cli_overrides
         # What a resumed session runs on. A constructor argument
         # rather than a class attribute: a seam a test rebinds on the
         # class is a seam every instance of that class sees, which is
@@ -112,16 +118,29 @@ class SessionRuntimeFactory:
     def _settings_for(self, project_dir: Path) -> Settings:
         """The settings a session in ``project_dir`` starts on.
 
-        The process's, deep-copied: resuming applies the session's persisted
-        model preference, which must not leak into other runtimes' defaults.
-        Loaded again when the folder's trust is not what it was when the
-        process's were loaded: a session made after ``set_workspace_trust``
-        ignored the folder's allow and deny rules, while its own
-        ``check_permission`` already read them.
+        In the boot folder, the process's, deep-copied: resuming applies the
+        session's persisted model preference, which must not leak into other
+        runtimes' defaults. Loaded again when the folder's trust is not what
+        it was when the process's were loaded: a session made after
+        ``set_workspace_trust`` ignored the folder's allow and deny rules,
+        while its own ``check_permission`` already read them.
+
+        In any other folder, that folder's own: the process's were merged
+        from the boot folder's ``.igni`` files, and a window working in
+        another folder ran on them — the boot folder's permissions, MCP
+        servers and hooks. Loaded the way the boot folder's were, with the
+        same trust gate (an untrusted folder's ``permissions`` and ``safety``
+        are dropped by the project tiers) and the command line's overrides
+        on top.
         """
-        if self._trusted(project_dir) != self._settings_trusted:
-            return reload_settings(project_dir)
+        if not self._is_boot_folder(project_dir) or (
+            self._trusted(project_dir) != self._settings_trusted
+        ):
+            return reload_settings(project_dir, self._cli_overrides)
         return self._settings.model_copy(deep=True)
+
+    def _is_boot_folder(self, project_dir: Path) -> bool:
+        return Path(project_dir).resolve() == Path(self._dirs.project_dir).resolve()
 
     @staticmethod
     def _trusted(project_dir: Path) -> bool:

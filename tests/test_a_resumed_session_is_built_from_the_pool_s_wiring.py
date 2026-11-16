@@ -271,7 +271,7 @@ async def test_a_session_made_after_the_folder_s_trust_changed_loads_its_setting
     )
     reloaded: list[Path] = []
 
-    def _reload(project_dir: Path) -> Settings:
+    def _reload(project_dir: Path, cli_overrides: object = None) -> Settings:
         reloaded.append(project_dir)
         return Settings(models={"default": "trusted-model"})
 

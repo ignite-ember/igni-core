@@ -54,6 +54,8 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from igni_core.core.config.cli_overrides import CliOverrides
+
 
 class InterruptedRunSummary(BaseModel):
     """One-shot summary + drop list produced by ``detect_interrupted_run``.
@@ -307,3 +309,7 @@ class BackendLaunch(BaseModel):
     project_dir: Path
     resume_session_id: str | None = None
     additional_dirs: list[Path] | None = None
+    #: The settings the backend's command line overrides. Kept, not only
+    #: applied at boot: every folder a session of the pool opens loads its
+    #: own settings, and these go on top of each (``session_runtime_factory``).
+    cli_overrides: CliOverrides | None = None

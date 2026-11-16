@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.core.config.settings import Settings
+
+if TYPE_CHECKING:
+    from igni_core.core.config.cli_overrides import CliOverrides
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +30,10 @@ class BackendSettingsLoader:
     refusal.
     """
 
-    def __init__(self, project_dir: Path, gate: RunGate) -> None:
-        self._loader = PolicySettingsLoader(project_dir)
+    def __init__(
+        self, project_dir: Path, gate: RunGate, cli_overrides: CliOverrides | None = None
+    ) -> None:
+        self._loader = PolicySettingsLoader(project_dir, cli_overrides=cli_overrides)
         self._gate = gate
 
     def load(self) -> Settings:

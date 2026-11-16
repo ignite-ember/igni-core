@@ -35,6 +35,7 @@ from igni_core.backend.schemas_rpc import AttachSessionResult, SessionPoolConfig
 from igni_core.backend.session_pool import SessionPool
 from igni_core.backend.session_router import InboundWatcher, SessionRouter
 from igni_core.backend.session_runtime_factory import BootRuntime, SessionRuntimeFactory
+from igni_core.core.config.cli_overrides import CliOverrides
 from igni_core.core.config.settings import Settings
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.session.client_state import ClientStateStore
@@ -73,12 +74,19 @@ class SessionOrchestrator:
         settings: Settings,
         dirs: ProjectDirs,
         factory: type[SessionRuntimeFactory] = SessionRuntimeFactory,
+        cli_overrides: CliOverrides | None = None,
     ) -> SessionOrchestrator:
-        """The pool over the boot session, every part of it wired."""
+        """The pool over the boot session, every part of it wired.
+
+        ``cli_overrides`` are what the backend's command line set; a session
+        in another folder loads that folder's settings with them on top.
+        """
         storage = StorageLocator.from_settings(settings)
         directories = PoolDirectories(SessionDirectoryStore.from_locator(storage), dirs)
         directories.record(boot.backend.session_id, boot.backend.project_dir)
-        runtimes = factory(wiring=wiring, settings=settings, dirs=directories)
+        runtimes = factory(
+            wiring=wiring, settings=settings, dirs=directories, cli_overrides=cli_overrides
+        )
         default = runtimes.boot(boot)
         sessions = SessionRouter(
             pool=SessionPool(default, runtimes.create, config=SessionPoolConfig.from_env()),

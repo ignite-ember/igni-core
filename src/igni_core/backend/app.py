@@ -114,7 +114,9 @@ class BackendApp:
         # composition root, so the settings loader that closes it and the
         # controllers that read it share one gate.
         gate = RunGate()
-        settings = BackendSettingsLoader(self._launch.project_dir, gate).load()
+        settings = BackendSettingsLoader(
+            self._launch.project_dir, gate, self._launch.cli_overrides
+        ).load()
         store = ExtensionStore()
         ProcessEnvironment.enter(
             settings,
@@ -255,6 +257,7 @@ class BackendApp:
             dirs=ProjectDirs(
                 project_dir=launch.project_dir, additional_dirs=launch.additional_dirs
             ),
+            cli_overrides=launch.cli_overrides,
         )
         # When what extensions do to the prompts changes, every session's
         # agent is rebuilt, once, on the next turn of the loop.
