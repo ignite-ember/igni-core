@@ -778,3 +778,104 @@ async def test_a_run_is_started_for_the_session_s_own_id(tmp_path: Path) -> None
         await runner.run(request=WorkflowRunRequest(name="smoke"), session=session)  # type: ignore[arg-type]
 
     assert runtime.start.await_args.kwargs["session_id"] == "s-real"
+
+
+# ── An agent call's own session, and its pauses (campaign R664) ──────
+
+
+def _requirement(tool: str):
+    from agno.models.response import ToolExecution
+    from agno.run.requirement import RunRequirement
+
+    return RunRequirement(
+        tool_execution=ToolExecution(
+            tool_name=tool, tool_args={"command": "ls"}, requires_confirmation=True
+        )
+    )
+
+
+def _paused_run(requirement):
+    from agno.run.agent import RunOutput
+    from agno.run.base import RunStatus
+
+    return RunOutput(status=RunStatus.paused, requirements=[requirement])
+
+
+def _done_run(content: str):
+    from agno.run.agent import RunOutput
+    from agno.run.base import RunStatus
+
+    return RunOutput(status=RunStatus.completed, content=content)
+
+
+def _bridge_session(answer: bool | None, team: MagicMock):
+    from types import SimpleNamespace
+
+    asked: list[tuple[str, list[str]]] = []
+
+    async def ask(tool_name, args, reason, agent_path, *, follow_up=None):
+        asked.append((tool_name, agent_path))
+        return answer
+
+    session = SimpleNamespace(
+        session_id="chat-1",
+        main_team=team,
+        permission_evaluator=None,
+        tool_audit=None,
+        approval=SimpleNamespace(ask=ask),
+    )
+    return session, asked
+
+
+async def test_an_agent_call_is_kept_out_of_the_chat_s_history() -> None:
+    """Run under the chat's id, every call's prompt and answer were saved
+    into the chat, and the model read them back on its next turn."""
+    team = MagicMock()
+    team.arun = AsyncMock(return_value="done")
+    session, _ = _bridge_session(True, team)
+
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(  # type: ignore[arg-type]
+        _agent_request({"id": "req_1", "prompt": "p"}, run_id="wf_7")
+    )
+
+    assert reply.ok is True
+    assert team.arun.await_args.kwargs["session_id"] == "chat-1:workflow:wf_7"
+
+
+async def test_a_paused_agent_call_is_put_to_the_person_and_resumed() -> None:
+    """The pause text came back to the script as the agent's answer."""
+    requirement = _requirement("run_shell_command")
+    team = MagicMock()
+    team.arun = AsyncMock(return_value=_paused_run(requirement))
+    team.acontinue_run = AsyncMock(return_value=_done_run("listed"))
+    session, asked = _bridge_session(True, team)
+
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(  # type: ignore[arg-type]
+        _agent_request({"id": "req_2", "prompt": "list", "label": "scout"}, run_id="wf_7")
+    )
+
+    assert (reply.ok, reply.result) == (True, "listed")
+    assert asked == [("run_shell_command", ["scout"])]
+    assert requirement.confirmation is True
+    assert team.acontinue_run.await_args.kwargs["session_id"] == "chat-1:workflow:wf_7"
+
+
+@pytest.mark.parametrize(
+    ("answer", "why"),
+    [(False, "was declined"), (None, "nobody can answer")],
+)
+async def test_a_paused_call_the_person_declines_or_nobody_answers_is_not_ok(
+    answer: bool | None, why: str
+) -> None:
+    requirement = _requirement("run_shell_command")
+    team = MagicMock()
+    team.arun = AsyncMock(return_value=_paused_run(requirement))
+    team.acontinue_run = AsyncMock()
+    session, _ = _bridge_session(answer, team)
+
+    reply = await WorkflowAgentBridge(session, RunGate()).answer(  # type: ignore[arg-type]
+        _agent_request({"id": "req_3", "prompt": "list"})
+    )
+
+    assert reply.ok is False and why in (reply.error or "")
+    team.acontinue_run.assert_not_awaited()
