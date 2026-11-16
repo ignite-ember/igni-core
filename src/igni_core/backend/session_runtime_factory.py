@@ -105,6 +105,17 @@ class SessionRuntimeFactory:
         # The runtime's own queue: anything the bridge appends is injected
         # as a synthetic user message in the session it belongs to.
         rt_bridge = self._wiring.push_bridge.for_transport(stamped, queue=queue)
+        # The session's sub-agent progress goes out live on
+        # ``orchestrate_event``. The boot session gets that callback from
+        # the bridge's ``wire_all``; a pooled session has its own backend
+        # and its own team, so it needs its own wiring — the boot
+        # backend's callback belongs to the boot team and says nothing
+        # about this one. Without it the team card and the charts
+        # appeared only once the chat was reopened: the card was in the
+        # event log (the card recorder is wired per backend) but no push
+        # ever reached the window, so nothing was live (campaign
+        # R665/R666).
+        backend.wire_orchestrate_progress(rt_bridge.on_orchestrate_progress)
         router = self._wiring.router_for(backend, rt_bridge)
         rpc_table = router.build_table()
         self._dirs.record(backend.session_id, backend.project_dir)
