@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from igni_core.core.activity import background
 from igni_core.core.activity.http import busy_call
+from igni_core.core.auth.server_reachability import record_answered, record_unreachable
 from igni_core.extensions.service_events import (
     DeliveryReceipt,
     NotHandled,
@@ -149,7 +150,12 @@ class PersonEventPull:
                     headers={"Authorization": f"Bearer {session.access_token}"},
                 )
         except httpx.HTTPError as exc:
+            # The server did not answer: it was not there.
+            record_unreachable(api_url, exc.__class__.__name__)
             raise PullFailed(f"igni server could not be reached: {exc}") from exc
+        # The server answered. A 5xx is an answer, but a broken one; a
+        # refused token is not a reachability problem at all.
+        record_answered(api_url, response.status_code)
         if response.status_code == 403:
             raise PullRefused(f"{path} answered 403")
         if response.status_code != 200:

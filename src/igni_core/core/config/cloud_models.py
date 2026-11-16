@@ -37,6 +37,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.core.activity.http import busy_call
+from igni_core.core.auth.server_reachability import record_answered, record_unreachable
 from igni_core.core.config.endpoint import is_configured
 from igni_core.core.config.model_entry import ModelRegistryEntry
 
@@ -192,11 +193,17 @@ class CloudModelCatalogClient:
                 )
         except Exception as exc:
             logger.debug("cloud_models: fetch failed (%s) — skipping merge", exc)
+            if isinstance(exc, httpx.HTTPError):
+                # The request never reached a server: it was not there.
+                record_unreachable(self._api_url, exc.__class__.__name__)
             return FetchResult(
                 ok=False,
                 reason=FetchReason.DECODE_ERROR,
                 detail=exc.__class__.__name__,
             )
+
+        # The server answered. A 5xx is an answer, but a broken one.
+        record_answered(self._api_url, resp.status_code)
 
         if resp.status_code != 200:
             logger.debug("cloud_models: %s returned %s — skipping merge", url, resp.status_code)

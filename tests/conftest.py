@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.approvals.events import approval_events
+from igni_core.core.auth.server_reachability import reset_reachability
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.schemas.storage_and_paths import StorageConfig
 from igni_core.core.config.settings_loader import SettingsLoader
@@ -216,6 +217,19 @@ def _a_fresh_activity_registry():
     ActivityRegistry.reset_shared()
     yield
     ActivityRegistry.reset_shared()
+
+
+@pytest.fixture(autouse=True)
+def _a_fresh_server_reachability():
+    """What igni server answered is the process's; each test starts with none.
+
+    The recorders live for the life of the process, one per server URL:
+    a test that made a request fail would otherwise leave that server
+    recorded as away for every later test.
+    """
+    reset_reachability()
+    yield
+    reset_reachability()
 
 
 @pytest.fixture(autouse=True)
