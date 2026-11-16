@@ -11165,7 +11165,7 @@
         "by": "payload.action",
         "from": "args.action"
       },
-      "doc": "Tell this session the person used a control in a view the agent drew.\n\n`action` is the control's action name; `params` the values the\nview attached to it (JSON). The action is kept for the agent and\npushed to every window as `visualization_action_dispatched`.\nReturns the action and params as recorded, with `ok`.",
+      "doc": "Tell this session the person used a control in a view the agent drew.\n\n`action` is the control's action name; `params` the values the\nview attached to it (JSON). The action is pushed to every window,\nextension and SDK program as `visualization_action_dispatched`.\nIt does not reach the agent: whoever receives it decides whether\nand when to tell the agent, for example by posting a message once\nits own request has finished. Returns the action and params as\nrecorded, with `ok`.",
       "duration": "instant",
       "may_stream": [],
       "reply": "rpc_response",

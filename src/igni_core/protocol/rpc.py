@@ -130,11 +130,13 @@ class RpcMethod(StrEnum):
     # ── Visualization actions (json-render round-trip) ───────────
     # User interacted with a component inside a ``<JsonRenderView>``
     # card (e.g. clicked a Button, changed a Select). The FE
-    # forwards the action name + params here so agents can react.
-    # BE keeps the last N events on ``VisualizationActionBus``
-    # and pushes ``visualization_action_dispatched`` so any
-    # listener (or a future agent tool that polls for actions) can
-    # observe them. Returns ``{ok: bool, action, params}``.
+    # forwards the action name + params here. BE keeps the last N
+    # events on ``VisualizationActionBus`` and pushes
+    # ``visualization_action_dispatched`` to the windows, extensions
+    # and SDK programs. The agent is not told: the extension or
+    # program that receives it decides whether and when to tell the
+    # agent (e.g. by posting a message through the SDK after its own
+    # request finishes). Returns ``{ok: bool, action, params}``.
     DISPATCH_VISUALIZATION_ACTION = "dispatch_visualization_action"
 
     # ── Background-process watcher panel ─────────────────────────
