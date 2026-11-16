@@ -33,6 +33,10 @@ from igni_core.core.db.scope import NoTenantError
 
 logger = logging.getLogger(__name__)
 
+#: What to do about a shared database (``IGNI_DATABASE_URL``) nobody is
+#: signed in to: said after the :class:`NoTenantError` itself.
+NO_TENANT_REMEDY = "Sign in with `igni login`, or unset IGNI_DATABASE_URL."
+
 #: A session coroutine, as ``run_single_message`` returns it.
 SessionCoroutine = Coroutine[Any, Any, None]
 
@@ -74,10 +78,7 @@ class HeadlessRun:
         except NoTenantError as exc:
             # A shared database (``IGNI_DATABASE_URL``) and nobody signed in:
             # a refusal with its remedy, not a traceback.
-            print(
-                f"Error: {exc}. Sign in with `igni login`, or unset IGNI_DATABASE_URL.",
-                file=sys.stderr,
-            )
+            print(f"Error: {exc}. {NO_TENANT_REMEDY}", file=sys.stderr)
             code = 1
         except StorageUnavailable as exc:
             # ``storage.database_url`` names a database no installed
