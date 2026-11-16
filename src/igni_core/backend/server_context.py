@@ -219,19 +219,24 @@ class ContextController:
     async def get_pending_messages(self, session_id: str) -> list[PendingMessage]:
         """Pending user messages that never completed a run.
 
-        Oldest-first order. Only rows older than the staleness
-        threshold are surfaced — a fresh row is almost always
-        "Agno is still finishing its post-stream tail" and not a
-        real interruption.
+        Oldest-first order. A row this backend received is surfaced only
+        once it is older than the staleness threshold — a fresh one is
+        almost always "Agno is still finishing its post-stream tail" and
+        not a real interruption. A row saved before this backend started
+        is surfaced at once: no run of this backend is finishing it, and
+        it was hidden for a minute after every restart (campaign R652).
         """
         try:
             rows = await self._pending_store.alist_pending(session_id)
         except SQLAlchemyError:
             logger.warning("get_pending_messages: store read failed", exc_info=True)
             return []
+        return [PendingMessage.from_pending_row(r) for r in rows if self._settled(r.received_at)]
+
+    def _settled(self, received_at: int) -> bool:
+        """Whether a pending row is past any run of this backend still finishing it."""
         cutoff = int(time.time()) - PENDING_STALENESS_SECONDS
-        rows = [r for r in rows if r.received_at <= cutoff]
-        return [PendingMessage.from_pending_row(r) for r in rows]
+        return received_at < self._started_at or received_at <= cutoff
 
     async def get_interrupted_runs(self, session_id: str) -> list[InterruptedRun]:
         """Durable interrupted-run records for the session.
