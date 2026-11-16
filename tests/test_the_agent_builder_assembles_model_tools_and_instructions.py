@@ -236,6 +236,35 @@ class TestTheTools:
         assert docs not in faceless.tools
         assert docs in insider.tools and other in insider.tools
 
+    def test_an_agent_naming_no_tools_still_gets_the_server_kept_for_it(
+        self, settings, tmp_path
+    ) -> None:
+        """A plugin agent with no ``tools:`` line got no MCP tools at all,
+        so it could never use the server its extension kept for its own
+        agents (campaign R276). It gets that server, and only that one."""
+        own = tmp_path / "plugins" / "ext"
+        own.mkdir(parents=True)
+        audience = ToolAudience()
+        audience.restrict("docs", own)
+        docs, other = FakeMcp(), FakeMcp()
+        clients = {"docs": docs, "other": other}
+
+        insider = _build(
+            settings,
+            _definition(tools=[], source_path=own / "agents" / "a.md"),
+            mcp_clients=clients,
+            audience=audience,
+        )
+        outsider = _build(
+            settings,
+            _definition(tools=[], source_path=tmp_path / "x.md"),
+            mcp_clients=clients,
+            audience=audience,
+        )
+
+        assert insider.tools == [docs]
+        assert not outsider.tools
+
     def test_a_withheld_server_is_not_named_in_the_instructions(self, settings, tmp_path) -> None:
         audience = ToolAudience()
         audience.restrict("docs", tmp_path / "ext")

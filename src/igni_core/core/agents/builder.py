@@ -200,7 +200,7 @@ class AgentBuilder:
         # knows one agent.
 
         agent_mcp: dict[str, Any] = {}
-        if tools and ctx.mcp_clients:
+        if ctx.mcp_clients:
             # Empty ``mcp_servers`` means "include everything"
             # (backward-compat); a populated list is a whitelist.
             if definition.mcp_servers:
@@ -220,6 +220,16 @@ class AgentBuilder:
                 for name, client in agent_mcp.items()
                 if self._audience.allows(name, definition.source_path)
             }
+            if not tools:
+                # An agent that names no tools gets none — except a
+                # server its own extension kept for its agents: that
+                # was shipped for exactly this agent, which otherwise
+                # could never use it.
+                agent_mcp = {
+                    name: client
+                    for name, client in agent_mcp.items()
+                    if self._audience.kept_for(name, definition.source_path)
+                }
             for client in agent_mcp.values():
                 if client not in tools:
                     tools.append(client)
