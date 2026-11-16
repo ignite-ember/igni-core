@@ -79,16 +79,36 @@ class NameCheck:
                     f"'{page}<tool>' or '{page}*'."
                 )
 
+    def _prompt_sources(self) -> set[str]:
+        """The tools igni calls for ``source: tool`` prompt contributions."""
+        contributes = self._manifest.contributes
+        entries = [
+            *contributes.promptFragments,
+            *contributes.prompt.overrides,
+            *contributes.prompt.edits,
+        ]
+        return {
+            str(entry.from_)
+            for entry in entries
+            if getattr(entry.source, "value", entry.source) == "tool" and entry.from_
+        }
+
     def bare(self, declared: str) -> str:
         prefix = f"{self._id}."
         return declared[len(prefix) :] if declared.startswith(prefix) else declared
 
     def compare(self, offered: list[str], findings: Findings) -> None:
         declared = {self.bare(t.name): t.name for t in self._manifest.permissions.tools}
+        prompt_sources = self._prompt_sources()
         for tool in offered:
             if tool in declared:
                 continue
-            if self._manifest.grants_rpc(f"ext.{self._id}.{tool}"):
+            if tool in prompt_sources:
+                findings.notes.append(
+                    f"{tool!r} gives prompt text: igni calls it for the contribution "
+                    "that names it, and the agent is not given it."
+                )
+            elif self._manifest.grants_rpc(f"ext.{self._id}.{tool}"):
                 findings.notes.append(
                     f"{tool!r} is for the page only: permissions.rpc grants it, and the "
                     "agent is not given it because permissions.tools does not declare it."

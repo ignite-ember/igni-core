@@ -502,7 +502,7 @@ class ExtensionContributions:
         method = f"ext.{manifest.id}.{origin}"
         try:
             value = await asyncio.wait_for(
-                self._rpc.dispatch(caller=manifest.id, method=method, args={}),
+                self._rpc.fetch_contribution(manifest.id, origin),
                 timeout=FRAGMENT_TIMEOUT_S,
             )
         except Exception as exc:

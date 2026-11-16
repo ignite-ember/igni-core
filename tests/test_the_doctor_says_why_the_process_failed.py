@@ -258,6 +258,22 @@ def test_a_tool_nobody_is_granted_is_flagged_in_the_table_and_warned_about(tmp_p
     assert "acme.tickets.lookup_ticket with its four hints" in result.output
 
 
+def test_a_tool_that_gives_prompt_text_is_not_one_nothing_can_call(tmp_path):
+    """R295: igni calls a ``source: tool`` contribution's tool itself, with
+    no ``permissions.rpc`` grant, so doctor must not call it unreachable."""
+    bundle = _bundle(
+        tmp_path,
+        ONE_TOOL_SERVER,
+        contributes={
+            "promptFragments": [{"anchor": "ACME_T", "source": "tool", "from": "lookup_ticket"}]
+        },
+    )
+    result = _doctor(bundle)
+    assert result.exit_code == 0, result.output
+    assert "'lookup_ticket' gives prompt text" in result.output
+    assert "nothing can call it" not in result.output
+
+
 def test_a_declared_and_granted_tool_has_clean_rows(tmp_path):
     bundle = _bundle(
         tmp_path,
