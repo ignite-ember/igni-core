@@ -37,13 +37,22 @@ class WorkflowApprovalRelay:
     Opened for as long as the workflow's agent call runs, closed after.
     The session's relay is a reference count, so the chat's own
     multiplexer keeps its share while this one is open.
+
+    A workflow's lanes run in parallel and share one relay, so this
+    one counts them too: the window keeps the questions of every lane
+    that is still running, and the drain that carries them lives until
+    the last of them is done. A lane that finished used to close the
+    relay for its siblings, and the sibling's approval had nowhere to
+    go — the window never saw the card, and the call stopped with
+    "nobody can answer" (campaign R664).
     """
 
     def __init__(self, session: Session, push: PushNotificationBridge) -> None:
         self._session = session
         self._push = push
         self._drain: asyncio.Task[None] | None = None
-        self._opened = False
+        #: How many agent calls are relaying right now.
+        self._holders = 0
 
     @property
     def can_answer(self) -> bool:
@@ -56,23 +65,35 @@ class WorkflowApprovalRelay:
         return not self._session.sub_agent_hitl.unattended
 
     async def open(self) -> None:
-        """Start relaying: what the session asks reaches the window."""
-        if self._opened or not self.can_answer:
+        """Start relaying: what the session asks reaches the window.
+
+        One lane of a workflow. The relay stays open for as long as any
+        lane is running, so a lane that starts later joins the one that
+        is already open instead of opening a second window.
+        """
+        if not self.can_answer:
             return
-        self._opened = True
+        self._holders += 1
+        if self._holders > 1:
+            return
         self._session.sub_agent_hitl.open_relay()
         self._drain = background.daemon(self._relay(), name="workflow-hitl")
 
     async def close(self) -> None:
-        """Stop relaying, and let go of the session's relay."""
+        """Stop relaying, once the last lane that was relaying is done."""
+        if self._holders == 0:
+            return
+        self._holders -= 1
+        if self._holders > 0:
+            # A sibling lane is still running: its questions still have
+            # to reach the window.
+            return
         drain, self._drain = self._drain, None
         if drain is not None:
             drain.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await drain
-        if self._opened:
-            self._opened = False
-            self._session.sub_agent_hitl.close_relay()
+        self._session.sub_agent_hitl.close_relay()
 
     async def _relay(self) -> None:
         """Surface each new question to the window.
