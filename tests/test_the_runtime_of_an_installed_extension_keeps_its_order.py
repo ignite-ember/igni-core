@@ -140,6 +140,9 @@ class Collaborators:
         async def disconnect(self, extension_id: str) -> None:
             self.o.log.append("disconnect")
 
+        def forget(self, extension_id: str) -> None:
+            self.o.log.append("forget")
+
         def forget_hints(self, extension_id: str) -> None:
             self.o.log.append("forget_hints")
 
@@ -325,7 +328,7 @@ class TestLettingGo:
     ) -> None:
         await rig.runtime().abandon("acme.notes")
 
-        assert rig.log == ["revoke", "release"]
+        assert rig.log == ["revoke", "release", "forget"]
 
     async def test_stopping_unbinds_before_it_disconnects_and_forgets_last(
         self, rig: Collaborators
@@ -341,6 +344,7 @@ class TestLettingGo:
             "forget_hints",
             "revoke",
             "release",
+            "forget",
         ]
 
     async def test_stopping_what_was_never_started_is_harmless(self, rig: Collaborators) -> None:

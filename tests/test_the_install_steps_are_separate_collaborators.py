@@ -52,6 +52,9 @@ class StubMcp:
         self.result = result
         self.configs: dict[str, MCPServerConfig] = {}
 
+    def unregister_server(self, name: str) -> None:
+        return None
+
     def register_server(self, config: MCPServerConfig) -> None:
         self.configs[config.name] = config
 
@@ -132,7 +135,7 @@ async def test_a_service_that_refuses_to_start_is_recorded_with_its_reason(tmp_p
     entry = await installer.install(bundle(tmp_path))
 
     assert entry.state is ExtensionState.FAILED
-    assert entry.reason == "its service did not start: its command was not found"
+    assert entry.reason.startswith("its service did not start: its command was not found\n")
 
 
 def test_a_shipped_literal_cannot_shadow_what_igni_grants() -> None:

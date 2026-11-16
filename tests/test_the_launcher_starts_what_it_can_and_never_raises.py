@@ -28,6 +28,9 @@ class FakeMcp:
     def __init__(self, result: Any = None) -> None:
         self.result = result or MCPConnectResult.success(None)
 
+    def unregister_server(self, name: str) -> None:
+        return None
+
     def register_server(self, config: Any) -> None:
         pass
 

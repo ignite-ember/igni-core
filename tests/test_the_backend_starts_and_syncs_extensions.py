@@ -41,6 +41,9 @@ class StubMcp:
         self.configs: dict[str, Any] = {}
         self.extension_request_meta: Any = None
 
+    def unregister_server(self, name: str) -> None:
+        return None
+
     def register_server(self, config: Any) -> None:
         self.configs[config.name] = config
 

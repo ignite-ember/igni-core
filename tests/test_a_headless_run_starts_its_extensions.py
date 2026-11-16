@@ -32,6 +32,9 @@ class Mcp:
         self.configs: dict[str, Any] = {}
         self.disconnected = False
 
+    def unregister_server(self, name: str) -> None:
+        return None
+
     def register_server(self, config: Any) -> None:
         self.configs[config.name] = config
 

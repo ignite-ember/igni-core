@@ -42,6 +42,9 @@ class _Mcp:
         self.extension_request_meta: Any = None
         self.refuse: set[str] = set()
 
+    def unregister_server(self, name: str) -> None:
+        return None
+
     def register_server(self, config: Any) -> None:
         return None
 

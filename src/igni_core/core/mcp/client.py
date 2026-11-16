@@ -248,6 +248,10 @@ class MCPClientManager:
         """
         self.configs[config.name] = config
 
+    def unregister_server(self, name: str) -> None:
+        """Forget a server :meth:`register_server` added. A no-op when absent."""
+        self.configs.pop(name, None)
+
     async def connect(self, name: str) -> MCPConnectResult:
         """Connect to an MCP server by name.
 

@@ -88,6 +88,27 @@ async def test_the_reason_carries_the_process_s_last_words(wired, tmp_path):
     assert "IDE" not in entry.reason
 
 
+async def test_the_reason_says_what_to_do_about_it(wired, tmp_path):
+    """R263: health always comes with a reason and a fix (EXTENSIBILITY.md
+    §7); a process that exits at start-up had a reason and no fix."""
+    registry, installer, _ = wired
+    await installer.install(crashy_bundle(tmp_path))
+
+    entry = registry.get("acme.crashy")
+    assert entry is not None
+    assert "To fix: run 'igni ext doctor' on its bundle" in entry.reason
+
+
+async def test_a_service_that_did_not_start_is_not_left_for_a_session_to_start(wired, tmp_path):
+    """R263: its configuration stayed registered, so a headless session that
+    connected its servers started it again after its sandbox profile was
+    gone, and sandbox-exec's error replaced the extension's own."""
+    registry, installer, _ = wired
+    await installer.install(crashy_bundle(tmp_path))
+
+    assert not [name for name in installer._runtime._connection._mcp.configs if "crashy" in name]
+
+
 async def test_a_probe_and_a_failed_restart_keep_the_first_cause(wired, tmp_path):
     registry, installer, health = wired
     await installer.install(crashy_bundle(tmp_path))
