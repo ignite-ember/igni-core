@@ -90,14 +90,14 @@ class WorkflowAgentBridge:
         """
         session_id = self.session_id_for(request)
         run = await team.arun(request.payload.prompt, stream=False, session_id=session_id)
-        policy = PausePolicyResolver(
-            evaluator_ref=lambda: self._session.permission_evaluator,
-            session_id_ref=lambda: session_id,
-            audit=self._session.tool_audit,
-        )
         for _ in range(self.MAX_RESUMES):
             if not self._paused(run):
                 return run, ""
+            policy = PausePolicyResolver(
+                evaluator_ref=lambda: self._session.permission_evaluator,
+                session_id_ref=lambda: session_id,
+                audit=self._session.tool_audit,
+            )
             run = await policy.settle(team, run)
             if not self._paused(run):
                 return run, ""

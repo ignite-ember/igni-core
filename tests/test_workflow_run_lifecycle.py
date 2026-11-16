@@ -262,7 +262,9 @@ async def test_an_agent_request_is_answered_from_the_team_and_never_published_as
     await run.drain()
     await _until(lambda: proc.stdin.lines)
 
-    session.main_team.arun.assert_awaited_once_with("summarise", stream=False)
+    session.main_team.arun.assert_awaited_once_with(
+        "summarise", stream=False, session_id="s-1:workflow:wf_1"
+    )
     assert proc.stdin.lines == [
         {"type": "agent_response", "id": "req_a", "ok": True, "result": "done", "error": None}
     ]
@@ -294,7 +296,7 @@ async def test_a_slow_agent_answer_does_not_stop_the_drain_from_reading_and_answ
     release = asyncio.Event()
     started: list[str] = []
 
-    async def arun(prompt, stream):
+    async def arun(prompt, stream, session_id):
         started.append(prompt)
         await release.wait()
         return f"answer:{prompt}"
