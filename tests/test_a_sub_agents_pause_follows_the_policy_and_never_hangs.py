@@ -11,6 +11,7 @@ R092, R106, R128, R188, R741).
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -166,3 +167,63 @@ class TestNobodyToAsk:
         from igni_core.core.session.single_message_run import SingleMessageRun
 
         assert "mark_unattended()" in inspect.getsource(SingleMessageRun.run)
+
+
+class TestATeamMembersPause:
+    """The same for a spawn_team member: its pause went straight to the
+    bridge, so under ``--read-only`` its ``cat a.txt`` was asked about, and
+    in a headless run nobody answered and the team hung beyond
+    ``sub_team_timeout``, whose clock leaves the wait out (campaign R128)."""
+
+    @staticmethod
+    def _team(coordinator: SubAgentHITLCoordinator, *reqs: RunRequirement):
+        from agno.run import team as team_ev
+
+        from igni_core.core.tools.orchestrate_team_stream import TeamStreamHandler
+
+        events: list[Any] = []
+        runnable = _Runnable(
+            [team_ev.RunPausedEvent(run_id="t", session_id="s", requirements=list(reqs))],
+            [team_ev.RunCompletedEvent(content="done")],
+        )
+        handler = TeamStreamHandler(
+            StreamContext(
+                runnable=runnable,
+                task="t",
+                agent_path=["review-team"],
+                card_id="",
+                sinks=StreamSinks(
+                    on_progress=events.append,
+                    event_appender=None,
+                    hitl_coordinator=coordinator,
+                    subagent_registry=SubAgentRegistry(),
+                ),
+            )
+        )
+        return handler, runnable, events
+
+    @pytest.mark.asyncio
+    async def test_read_only_runs_a_members_read_without_asking(self):
+        coordinator = _coordinator(PermissionEvaluator.from_strings(mode="plan"))
+        cat = _requirement("cat a.txt")
+
+        handler, runnable, events = self._team(coordinator, cat)
+        await asyncio.wait_for(handler.run(), timeout=5)
+
+        assert cat.confirmation is True
+        assert not [e for e in events if isinstance(e, AgentPausedEvent)]
+        assert coordinator.waiting_count == 0
+        (call,) = runnable.continued
+        assert call["requirements"] == [cat]
+
+    @pytest.mark.asyncio
+    async def test_an_unattended_members_pause_ends_the_team_run_and_is_recorded(self):
+        coordinator = _coordinator(PermissionEvaluator.from_strings())
+        coordinator.mark_unattended()
+
+        handler, runnable, _ = self._team(coordinator, _requirement("curl example.com"))
+        await asyncio.wait_for(handler.run(), timeout=5)
+
+        assert runnable.continued == []
+        assert coordinator.waiting_count == 0
+        assert coordinator.take_unanswered() == ["run_shell_command"]

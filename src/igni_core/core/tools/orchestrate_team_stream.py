@@ -163,16 +163,41 @@ class TeamStreamHandler(BaseStreamHandler[TeamStreamState]):
         state = self.state
         coordinator = self._context.sinks.hitl_coordinator
         reqs = active_requirements(event)
+        run_id = event.run_id or state.current_run_id or ""
+        session_id = event.session_id or state.current_session_id
+        # As for a spawned agent (``orchestrate_agent_stream``): the
+        # session's permission policy answers first — ``--read-only``'s
+        # reads, an allow or deny rule — and only what it leaves undecided
+        # goes to a person.
+        settle = getattr(coordinator, "settle_by_policy", None)
+        to_ask = settle(reqs) if settle is not None else reqs
+        if reqs and not to_ask:
+            return self._context.runnable.acontinue_run(
+                run_id=run_id,
+                session_id=session_id,
+                requirements=reqs,
+                stream=True,
+            )
+        # A headless run has nobody to answer: waiting hung the team (and
+        # the run) for ever, the wait being outside ``sub_team_timeout``.
+        # The team's run ends at the pause, and the headless run reports
+        # the tools and exits 1, as a main-agent pause does.
+        if coordinator is not None and to_ask and getattr(coordinator, "unattended", False):
+            coordinator.record_unanswered(
+                [
+                    str(getattr(getattr(r, "tool_execution", None), "tool_name", "") or "tool")
+                    for r in to_ask
+                ]
+            )
+            coordinator = None
         if coordinator is None or not reqs:
             self._log_line(
                 f"  {LogSymbols.T_TRUNK.value}  "
                 f"{LogSymbols.WARNING.value} paused: no HITL bridge available"
             )
             return None
-        run_id = event.run_id or state.current_run_id or ""
-        session_id = event.session_id or state.current_session_id
         req_ids: list[str] = []
-        for req in reqs:
+        for req in to_ask:
             # If Agno tagged the requirement with a member name (set
             # for team-internal pauses), append it to the path so
             # the FE shows e.g. ``review-team → security``.
