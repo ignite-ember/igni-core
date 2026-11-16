@@ -5327,6 +5327,23 @@
           "elsewhere": null
         },
         {
+          "name": "discard_pending",
+          "params": [
+            {
+              "name": "message_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "json",
+          "doc": "Forget a message whose run never finished.",
+          "permission": "chat.control",
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
           "name": "upload",
           "params": [
             {

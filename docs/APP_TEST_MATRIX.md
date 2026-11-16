@@ -167,6 +167,7 @@ History that survives a restart.
 | `get_session_id` | Before the first message is sent. | `verified` |
 | `get_interrupted_runs` | A run interrupted by a crash rather than a cancel. Sweep: **answers** (default run). | `answers` |
 | `discard_interrupted_run` | Discarding one that has already resumed. Sweep: **answers** (`--mutating`). | `answers` |
+| `discard_pending_message` | Discarding a prompt this igni received less than a minute ago (refused: its run may still be finishing); one already gone (`ok`). The app's Discard button on a pending prompt. | `todo` |
 | `fire_session_start_hook` | A hook that fails; one that never returns. Sweep: **answers** (`--mutating`). | `answers` |
 | `get_project_dir` | A directory that no longer exists. | `verified` |
 

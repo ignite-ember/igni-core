@@ -30,6 +30,16 @@ class InterruptedRunArgs(SessionIdArgs):
     )
 
 
+class PendingMessageArgs(SessionIdArgs):
+    """Arguments naming one pending message of a session."""
+
+    message_id: str = Field(
+        description=(
+            "Id of the pending message, as listed by `get_pending_messages`; must not be empty."
+        )
+    )
+
+
 class UploadAttachmentArgs(SessionRpcArgs):
     """Arguments for uploading a file to attach to a message."""
 

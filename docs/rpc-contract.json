@@ -1323,6 +1323,27 @@
       "title": "DiscardInterruptedRunResult",
       "type": "object"
     },
+    "DiscardPendingMessageResult": {
+      "description": "The outcome of discarding a pending message.",
+      "properties": {
+        "error": {
+          "default": "",
+          "description": "Why it failed; empty when `ok` is true.",
+          "title": "Error",
+          "type": "string"
+        },
+        "ok": {
+          "description": "`true` once the message is no longer pending, also when it was not, so a retry is harmless. `false` when the id was empty, the message is one a run of this backend may still be finishing, or the change could not be saved.",
+          "title": "Ok",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "DiscardPendingMessageResult",
+      "type": "object"
+    },
     "DiscoverServerArgs": {
       "description": "An email address to find the user's igni server from.",
       "properties": {
@@ -4460,6 +4481,27 @@
         "message_id"
       ],
       "title": "PendingMessage",
+      "type": "object"
+    },
+    "PendingMessageArgs": {
+      "description": "Arguments naming one pending message of a session.",
+      "properties": {
+        "message_id": {
+          "description": "Id of the pending message, as listed by `get_pending_messages`; must not be empty.",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Id of the session to act on.",
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "message_id"
+      ],
+      "title": "PendingMessageArgs",
       "type": "object"
     },
     "PermissionMode": {
@@ -10938,6 +10980,25 @@
       "summary": "Forget one interrupted run, so it is not offered again.",
       "timeout_seconds": 30
     },
+    "discard_pending_message": {
+      "access": "client",
+      "area": "session",
+      "args": {
+        "$ref": "#/defs/PendingMessageArgs"
+      },
+      "correlate": null,
+      "doc": "Forget one pending message, so it is not offered again.\n\n`message_id` names the message (from `get_pending_messages`);\n`session_id` the session it belongs to; only that session's\npending message is deleted. Returns `ok: true` \u2014 also when no such\nmessage is pending, so a retry is harmless \u2014 or `ok: false` with\n`error` when `message_id` is empty, the message arrived less than\na minute ago while this igni runs (its run may still be finishing),\nor the store could not be written.",
+      "duration": "io",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/DiscardPendingMessageResult"
+      },
+      "scope": "session",
+      "streams": [],
+      "summary": "Forget one pending message, so it is not offered again.",
+      "timeout_seconds": 30
+    },
     "discover_server": {
       "access": "client",
       "area": "auth",
@@ -11472,7 +11533,7 @@
         "$ref": "#/defs/SessionIdArgs"
       },
       "correlate": null,
-      "doc": "List a session's messages whose run started but never finished.\n\n`session_id` names the session. Returns the user messages still\npending at least a minute after they arrived \u2014 typically left by a\ncrash \u2014 oldest first, each with its text, when it arrived and its\n`message_id`. A storage failure answers an empty list.",
+      "doc": "List a session's messages whose run started but never finished.\n\n`session_id` names the session. Returns the user messages still\npending \u2014 typically left by a crash \u2014 oldest first, each with its\ntext, when it arrived and its `message_id`: one saved before this\nigni started at once, one it received itself a minute after it\narrived. A storage failure answers an empty list.",
       "duration": "io",
       "may_stream": [],
       "reply": "rpc_response",

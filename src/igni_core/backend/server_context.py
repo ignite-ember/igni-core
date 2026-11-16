@@ -37,6 +37,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from igni_core.backend.schemas_context import (
     PENDING_STALENESS_SECONDS,
     DiscardInterruptedRunResult,
+    DiscardPendingMessageResult,
     InterruptedRun,
     PendingMessage,
     TruncateHistoryResult,
@@ -237,6 +238,32 @@ class ContextController:
         """Whether a pending row is past any run of this backend still finishing it."""
         cutoff = int(time.time()) - PENDING_STALENESS_SECONDS
         return received_at < self._started_at or received_at <= cutoff
+
+    async def discard_pending_message(
+        self, session_id: str, message_id: str
+    ) -> DiscardPendingMessageResult:
+        """Hard-delete one pending message — the FE's "Discard" on a pending prompt.
+
+        Only one :meth:`get_pending_messages` would list: a message a run
+        of this backend may still be finishing is refused, so a discard
+        never pulls the row from under a live run. Idempotent: a message
+        that is not pending (any more) answers ``ok=True``.
+        """
+        if not message_id:
+            return DiscardPendingMessageResult(ok=False, error="message_id is required")
+        try:
+            received_at = await self._pending_store.areceived_at_of(session_id, message_id)
+            if received_at is None:
+                return DiscardPendingMessageResult(ok=True)
+            if not self._settled(received_at):
+                return DiscardPendingMessageResult(
+                    ok=False, error="its run may still be finishing; try again in a minute"
+                )
+            await self._pending_store.adiscard_pending(session_id, message_id)
+        except SQLAlchemyError as exc:
+            logger.warning("discard_pending_message failed: %s", exc)
+            return DiscardPendingMessageResult(ok=False, error=str(exc))
+        return DiscardPendingMessageResult(ok=True)
 
     async def get_interrupted_runs(self, session_id: str) -> list[InterruptedRun]:
         """Durable interrupted-run records for the session.

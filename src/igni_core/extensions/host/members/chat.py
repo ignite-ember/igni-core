@@ -146,6 +146,11 @@ class ChatWriteMembers(Members):
         args = DiscardInterruptedArgs(session_id=c.session_id, message_id=c.params["message_id"])
         return await self.rpc(RpcMethod.DISCARD_INTERRUPTED_RUN, args, c=c)
 
+    @call("chat.discard_pending")
+    async def discard_pending(self, c: Call) -> Any:
+        args = DiscardInterruptedArgs(session_id=c.session_id, message_id=c.params["message_id"])
+        return await self.rpc(RpcMethod.DISCARD_PENDING_MESSAGE, args, c=c)
+
     @call("chat.upload")
     async def upload(self, c: Call) -> Any:
         args = UploadArgs(filename=c.params["filename"], content_base64=c.params["content_base64"])

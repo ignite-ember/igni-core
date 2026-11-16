@@ -86,6 +86,9 @@ class RpcMethod(StrEnum):
     # Hard-delete a single interrupted run — used by the FE's
     # "Discard" action.
     DISCARD_INTERRUPTED_RUN = "discard_interrupted_run"
+    # Hard-delete a single pending message — the FE's "Discard" on a
+    # prompt that never finished.
+    DISCARD_PENDING_MESSAGE = "discard_pending_message"
     LIST_SESSIONS = "list_sessions"
     SWITCH_SESSION = "switch_session"
     CANCEL_RUN = "cancel_run"

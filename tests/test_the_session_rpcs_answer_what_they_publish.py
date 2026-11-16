@@ -206,6 +206,45 @@ async def test_discarding_with_an_empty_message_id_is_refused_in_the_answer(tabl
         table[RpcMethod.DISCARD_INTERRUPTED_RUN]({"session_id": "s-a"})
 
 
+# ── pending messages (campaign R652) ──────────────────────────────
+
+
+async def test_a_pending_message_left_before_the_start_is_listed_and_discarded(backend, table):
+    store = backend.controllers.context._pending_store
+    left = store.record_received("s-a", "left by a crash")
+    theirs = store.record_received("s-b", "theirs")
+    # Both were saved by the backend before this one.
+    backend.controllers.context._started_at += 10
+
+    (row,) = await _ask(table, RpcMethod.GET_PENDING_MESSAGES, {"session_id": "s-a"})
+    assert (row.message_id, row.content) == (left, "left by a crash")
+
+    wrong_session = await _ask(
+        table, RpcMethod.DISCARD_PENDING_MESSAGE, {"session_id": "s-a", "message_id": theirs}
+    )
+    done = await _ask(
+        table, RpcMethod.DISCARD_PENDING_MESSAGE, {"session_id": "s-a", "message_id": left}
+    )
+
+    assert (wrong_session.ok, done.ok) == (True, True)
+    assert await _ask(table, RpcMethod.GET_PENDING_MESSAGES, {"session_id": "s-a"}) == []
+    assert len(await _ask(table, RpcMethod.GET_PENDING_MESSAGES, {"session_id": "s-b"})) == 1
+    with pytest.raises(RpcArgsError, match="'message_id' is required"):
+        table[RpcMethod.DISCARD_PENDING_MESSAGE]({"session_id": "s-a"})
+
+
+async def test_a_message_this_backend_just_received_is_not_discarded(backend, table):
+    store = backend.controllers.context._pending_store
+    live = store.record_received("s-a", "the run in flight")
+
+    answer = await _ask(
+        table, RpcMethod.DISCARD_PENDING_MESSAGE, {"session_id": "s-a", "message_id": live}
+    )
+
+    assert answer.ok is False
+    assert [m.message_id for m in store.list_pending("s-a")] == [live]
+
+
 # ── cancelling ────────────────────────────────────────────────────
 
 
@@ -268,6 +307,7 @@ def test_each_call_declares_how_long_it_takes_and_what_it_acts_on():
         RpcMethod.GET_PENDING_MESSAGES,
         RpcMethod.GET_INTERRUPTED_RUNS,
         RpcMethod.DISCARD_INTERRUPTED_RUN,
+        RpcMethod.DISCARD_PENDING_MESSAGE,
         RpcMethod.LIST_SESSIONS,
         RpcMethod.SWITCH_SESSION,
     }

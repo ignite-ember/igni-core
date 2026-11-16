@@ -120,6 +120,7 @@ RPC: dict[RpcMethod, str] = {
     RpcMethod.GET_PENDING_MESSAGES: "chat.pending",
     RpcMethod.GET_INTERRUPTED_RUNS: "chat.interrupted_runs",
     RpcMethod.DISCARD_INTERRUPTED_RUN: "chat.discard_interrupted",
+    RpcMethod.DISCARD_PENDING_MESSAGE: "chat.discard_pending",
     RpcMethod.LIST_SESSIONS: "sessions.list",
     RpcMethod.SWITCH_SESSION: "sessions.open",
     RpcMethod.CANCEL_RUN: "chat.cancel",

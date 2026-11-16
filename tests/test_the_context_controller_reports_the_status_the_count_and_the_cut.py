@@ -470,6 +470,46 @@ async def test_a_pending_message_saved_before_this_backend_started_is_shown_at_o
     assert [p.message_id for p in shown] == ["before"]
 
 
+async def test_a_pending_message_is_discarded_and_a_retry_is_harmless(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = 1_000_000
+    monkeypatch.setattr(time, "time", lambda: now)
+    store = _Store([PendingMessage("before", SESSION, "left by a crash", now - 5)])
+    controller = _controller(tmp_path, pending_store=store)
+
+    first = await controller.discard_pending_message(SESSION, "before")
+    gone = await controller.discard_pending_message(SESSION, "not-pending")
+
+    assert (first.ok, first.error) == (True, "")
+    assert (gone.ok, gone.error) == (True, "")
+    assert store.discarded == ["before"]
+
+
+async def test_a_pending_message_a_run_may_still_be_finishing_is_not_discarded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = 1_000_000
+    monkeypatch.setattr(time, "time", lambda: now)
+    store = _Store([PendingMessage("live", SESSION, "the run in flight", now)])
+    controller = _controller(tmp_path, pending_store=store)
+
+    result = await controller.discard_pending_message(SESSION, "live")
+    empty = await controller.discard_pending_message(SESSION, "")
+
+    assert result.ok is False and "may still be finishing" in result.error
+    assert (empty.ok, empty.error) == (False, "message_id is required")
+    assert store.discarded == []
+
+
+async def test_a_pending_discard_that_fails_in_storage_is_not_ok(tmp_path: Path) -> None:
+    store = _Store(error=SQLAlchemyError("db down"))
+
+    result = await _controller(tmp_path, pending_store=store).discard_pending_message(SESSION, "m")
+
+    assert result.ok is False and "db down" in result.error
+
+
 async def test_a_pending_read_that_fails_shows_nothing(tmp_path: Path) -> None:
     store = _Store(error=SQLAlchemyError("db down"))
 
