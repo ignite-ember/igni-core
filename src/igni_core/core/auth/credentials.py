@@ -342,6 +342,28 @@ class CloudCredentials:
         return self.access_token is not None
 
     @property
+    def is_expired(self) -> bool:
+        """Whether the token has run out by now — read at every call.
+
+        The file is read once per instance, so a token good at load
+        could be past its ``expires_at`` an hour later and still read
+        as signed in. The token's own ``exp`` counts too: a file
+        written without ``expires_at`` never expired at all.
+        """
+        self._load()
+        if self._creds is None:
+            return False
+        if self._creds.is_expired():
+            return True
+        exp = self._claims.exp if self._claims is not None else None
+        return bool(exp) and datetime.now(timezone.utc).timestamp() >= float(exp or 0)
+
+    @property
+    def is_valid(self) -> bool:
+        """A token is kept and it has not run out: what "connected" means."""
+        return self.is_authenticated and not self.is_expired
+
+    @property
     def email(self) -> str | None:
         self._load()
         return self._creds.email if self._creds else None

@@ -61,8 +61,13 @@ class SessionCloudAuth:
 
     @property
     def connected(self) -> bool:
-        """Whether the session is authenticated with an igni server."""
-        return self._creds.is_authenticated
+        """Whether the session holds a token that has not run out.
+
+        Not merely a token on disk: an expired one kept the account
+        chip saying "connected" while every cloud call was refused
+        (campaign R638).
+        """
+        return self._creds.is_valid
 
     @property
     def org_id(self) -> str | None:

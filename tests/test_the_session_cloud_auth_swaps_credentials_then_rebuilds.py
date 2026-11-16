@@ -52,6 +52,56 @@ def test_a_signed_in_session_reports_its_account(tmp_path: Path) -> None:
     assert auth.credentials is creds
 
 
+def test_a_token_past_its_own_exp_is_not_connected(tmp_path: Path) -> None:
+    """The file carries no ``expires_at``; the token's ``exp`` has passed.
+    The chip said "connected" for a token every call was refused with
+    (campaign R638)."""
+    import time
+
+    auth = _auth(_creds(tmp_path, _jwt({"org": "org_42", "exp": int(time.time()) - 60})))
+
+    assert auth.connected is False
+
+
+def test_a_token_that_runs_out_after_it_was_read_is_no_longer_connected(tmp_path: Path) -> None:
+    """The file is read once; the expiry is judged at every look."""
+    from datetime import datetime, timedelta, timezone
+
+    path = tmp_path / "credentials.json"
+    soon = datetime.now(timezone.utc) + timedelta(hours=1)
+    path.write_text(
+        json.dumps({"access_token": _jwt({}), "email": "m@a.test", "expires_at": soon.isoformat()})
+    )
+    creds = CloudCredentials(str(path))
+    auth = _auth(creds)
+    assert auth.connected is True
+
+    # An hour on: the same cached credentials, now past their expiry.
+    later = soon + timedelta(seconds=1)
+
+    class _Later(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            return later
+
+    import igni_core.core.auth.credentials as credentials_module
+
+    original = credentials_module.datetime
+    credentials_module.datetime = _Later  # type: ignore[misc]
+    try:
+        assert auth.connected is False
+    finally:
+        credentials_module.datetime = original  # type: ignore[misc]
+
+
+def test_a_token_with_time_left_is_connected(tmp_path: Path) -> None:
+    import time
+
+    auth = _auth(_creds(tmp_path, _jwt({"exp": int(time.time()) + 3600})))
+
+    assert auth.connected is True
+
+
 def test_a_logged_out_session_reports_nothing() -> None:
     auth = _auth(CloudCredentials.empty())
 
