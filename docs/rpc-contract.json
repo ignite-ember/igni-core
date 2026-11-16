@@ -13050,7 +13050,7 @@
       "correlate": {
         "by": "channel"
       },
-      "doc": "Hand a cloud VM the person's session, for igni to exchange for the VM's own credential.\n\nMade by the platform's gateway when the person signs in through it.\n`session_token` is the person's igni server session; `organisation`\nthe organisation the VM signs in for (`null`: the person's own).\n\nReturns the credential's `state` after the exchange (`ready`,\n`needs_sign_in`, `needs_reissue` or `unreachable`) and a\n`message` saying what went wrong, if anything. A change of state\nis also pushed as `vm_credential`, now and whenever the credential\nis renewed later.\n\nFails when `session_token` is empty, or when this igni is not a\nproducer's VM (nothing is mounted to take the session).",
+      "doc": "Hand a cloud VM the person's session, for igni to exchange for the VM's own credential.\n\nMade by the platform's gateway when the person signs in through it.\n`session_token` is the person's igni server session; `organisation`\nthe organisation the VM signs in for (`null`: the person's own).\n\nReturns the credential's `state` after the exchange (`ready`,\n`needs_sign_in`, `needs_reissue` or `unreachable`) and a\n`message` saying what went wrong, if anything. A change of state\nis also pushed as `vm_credential`, now and whenever the credential\nis renewed later; a client that connects afterwards is sent the\nstate last pushed as it attaches.\n\nFails when `session_token` is empty, or when this igni is not a\nproducer's VM (nothing is mounted to take the session).",
       "duration": "network",
       "may_stream": [],
       "reply": "rpc_response",
@@ -13253,7 +13253,7 @@
       }
     },
     "vm_credential": {
-      "doc": "A cloud VM's own credential changed state.",
+      "doc": "A cloud VM's own credential changed state; a client that connects later is sent the state last pushed, to it alone.",
       "schema": {
         "$ref": "#/defs/VmCredentialState"
       }

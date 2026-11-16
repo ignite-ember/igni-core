@@ -750,7 +750,8 @@ trip and an fsync). `invalid_grant` (revoked, reused, idle 90 days, the
 person signed out or was removed, the app deleted) removes the token and
 puts the VM in **needs sign-in** (a person) or **needs re-issue** (an
 app, logged as an error): pushed to the windows (`vm_credential`) and
-written to `activity.json` (`credential`). The node agent no longer
+written to `activity.json` (`credential`). A client that connects later
+is sent the state last pushed, to it alone, as it attaches. The node agent no longer
 writes or refreshes tokens; `IGNI_ACCESS_TOKEN` (fixed for the process)
 remains for a VM started without the guest contract.
 

@@ -5,6 +5,12 @@
 one igni server's clients read (:class:`~igni_cloud.credentials.EnvironmentCredentials`),
 each change of its state is pushed to the windows and rewritten into
 ``activity.json``, and it is renewed after a restore.
+
+A change is pushed once, to the clients connected then. A client that
+connects later is sent the state last pushed, to it alone, as it
+attaches: one that connected after the credential was refused would
+otherwise never learn it, and see its runs fail with the model
+provider's bare 401 instead.
 """
 
 from __future__ import annotations
@@ -44,6 +50,8 @@ class GuestCredential:
         self.keeper: VmCredentials | None = None
         self._transport: GuestTransport | None = None
         self._moved: Callable[[], None] = lambda: None
+        #: The state last pushed to the windows; ``None`` before the keeper said any.
+        self._last: StateChange | None = None
 
     def open(
         self,
@@ -79,6 +87,9 @@ class GuestCredential:
             return
         # Its token is the one igni server's clients read: never handed out expired.
         self.tokens.kept_by(keeper)
+        if self._transport is not None:
+            # A client that connects after a change still hears of it.
+            self._transport.watch_connections(self._client_moved)
         restores.on_restore(self._renew, when=RestoreStep.LATER)
         background.start(keeper.start(), holder="vm-credential", reason="a token from it")
 
@@ -101,16 +112,23 @@ class GuestCredential:
         """Tell the windows, and the node agent through ``activity.json``."""
         if change.state is not CredentialState.READY:
             logger.warning("VM credential: %s (%s)", change.state.value, change.message)
-        if self._transport is not None:
-            background.daemon(
-                self._transport.send(
-                    msg.PushNotification(
-                        channel=PushChannel.VM_CREDENTIAL, payload=change.model_dump()
-                    )
-                ),
-                name="push-vm-credential",
-            )
+        self._last = change
+        self._push(change)
         self._moved()
+
+    def _client_moved(self, event: str, client_id: str) -> None:
+        """A client attached: send it the state last pushed, to it alone."""
+        if event != "attached" or self._last is None:
+            return
+        self._push(self._last, to_client=client_id)
+
+    def _push(self, change: StateChange, *, to_client: str = "") -> None:
+        if self._transport is None:
+            return
+        push = msg.PushNotification(channel=PushChannel.VM_CREDENTIAL, payload=change.model_dump())
+        background.daemon(
+            self._transport.send(push.address_to(to_client)), name="push-vm-credential"
+        )
 
     async def _renew(self, _restored: Restored) -> None:
         if self.keeper is not None:

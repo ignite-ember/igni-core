@@ -171,7 +171,9 @@ PUSH_PAYLOADS: Mapping[PushChannel, PushPayload] = {
         "or open it while ``state`` is ``ask``.",
     ),
     PushChannel.VM_CREDENTIAL: PushPayload(
-        VmCredentialState, "A cloud VM's own credential changed state."
+        VmCredentialState,
+        "A cloud VM's own credential changed state; a client that connects later "
+        "is sent the state last pushed, to it alone.",
     ),
 }
 

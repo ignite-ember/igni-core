@@ -67,7 +67,8 @@ class VmSignInRpc(PoolRpc):
         ``needs_sign_in``, ``needs_reissue`` or ``unreachable``) and a
         ``message`` saying what went wrong, if anything. A change of state
         is also pushed as ``vm_credential``, now and whenever the credential
-        is renewed later.
+        is renewed later; a client that connects afterwards is sent the
+        state last pushed as it attaches.
 
         Fails when ``session_token`` is empty, or when this igni is not a
         producer's VM (nothing is mounted to take the session).
