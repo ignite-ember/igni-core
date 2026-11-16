@@ -246,6 +246,11 @@ class SpawnSandbox:
             # a merge takes only what is committed: commit the agent's
             # changes onto the branch so following it brings them over.
             self.manager.commit_changes(f"igni: changes made in worktree {self.info.branch_name}")
+            # The commit leaves the worktree clean: a later finalize (the
+            # spawn's own cleanup hook) would take it for an unchanged one
+            # and remove the worktree this footer calls preserved. The
+            # sandbox is done with it.
+            self.manager = None
             return (
                 f"\n\nWorktree preserved: {self.info.worktree_path} "
                 f"(branch: {self.info.branch_name}) — has uncommitted changes.\n"
