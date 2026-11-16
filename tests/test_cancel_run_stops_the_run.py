@@ -84,11 +84,14 @@ def _controller() -> RunController:
     controller._pending_id_for_cancel = None
     controller._paused_pending_id = None
     controller._stream_ended_paused = False
+    controller._run_session_id = ""
     controller._cancelled_by_person = None
     controller._current_run_task = None
     controller._run_lock = asyncio.Lock()
     controller._supervisor = SimpleNamespace(cancel_foreground=lambda: False)
-    controller._session = SimpleNamespace(event_log_store=SessionEventLog(), main_team=None)
+    controller._session = SimpleNamespace(
+        event_log_store=SessionEventLog(), main_team=None, session_id="s-1"
+    )
     return controller
 
 

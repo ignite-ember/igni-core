@@ -53,6 +53,7 @@ from igni_core.backend.session_checkpointer import SessionCheckpointer
 from igni_core.backend.stream_event_dispatcher import StreamEventDispatcher
 from igni_core.core.activity import background
 from igni_core.core.config.group_policy.gate import RunGate
+from igni_core.core.run_context import run_session
 from igni_core.core.session.pending_messages import InterruptedReason
 from igni_core.core.session.queued_messages import DurableMessageQueue
 from igni_core.core.session.schemas import StopHookPayload
@@ -125,6 +126,8 @@ class RunController:
         # The current run's stream ended paused for a person: the run is
         # only closing, and its answer resumes it (:meth:`continue_run`).
         self._stream_ended_paused = False
+        #: The chat the latest run belongs to; a resumed run is still it.
+        self._run_session_id = ""
         # The task ``cancel_run`` cancelled, so the work it was running can
         # tell the person's cancel from any other.
         self._cancelled_by_person: asyncio.Task | None = None
@@ -229,9 +232,12 @@ class RunController:
         async with self._run_lock:
             self._current_run_task = asyncio.current_task()
             self._stream_ended_paused = False
+            # The chat this run is, for everything it sends while it runs.
+            self._run_session_id = self._session.session_id
             try:
-                async for proto in self._run_locked(text, media):
-                    yield proto
+                with run_session(self._run_session_id):
+                    async for proto in self._run_locked(text, media):
+                        yield proto
             except asyncio.CancelledError:
                 yield msg.Info(text="Run cancelled by user.")
             finally:
@@ -285,11 +291,14 @@ class RunController:
         # no reply for Stop to judge.
         ended = False
         try:
-            async for proto in stream:
-                yield proto
-                if isinstance(proto, msg.ContentDelta):
-                    reply.append(proto.text)
-                ended = not self._paused_after(proto, not ended)
+            # The chat of the run that paused, though New chat may have
+            # moved the session on while the approval waited.
+            with run_session(self._run_session_id or self._session.session_id):
+                async for proto in stream:
+                    yield proto
+                    if isinstance(proto, msg.ContentDelta):
+                        reply.append(proto.text)
+                    ended = not self._paused_after(proto, not ended)
             if ended and pending_id is not None:
                 # The run that paused has finished: its message is done.
                 self._paused_pending_id = None
@@ -343,7 +352,8 @@ class RunController:
             self._current_run_task = task
             self._transition_to(RunPhase.streaming)
             try:
-                return await work()
+                with run_session(self._session.session_id):
+                    return await work()
             except asyncio.CancelledError:
                 if task is None or self._cancelled_by_person is not task:
                     raise

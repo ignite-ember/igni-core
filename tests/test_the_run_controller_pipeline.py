@@ -153,6 +153,7 @@ class _Rig:
         c._pending_id_for_cancel = None
         c._current_run_task = None
         c._stream_ended_paused = False
+        c._run_session_id = ""
         c._cancelled_by_person = None
         c._run_lock = asyncio.Lock()
         c._pending_journal = self.journal
@@ -167,6 +168,7 @@ class _Rig:
             memory_mirror=_Mirror(),
             db="the-db",
             event_log_store=SessionEventLog(),
+            session_id="s-1",
         )
         c._stream_factory = _stream
         c._message_queue = _Queue()
@@ -1081,3 +1083,57 @@ class TestASessionStartHookContextRidesOnTheFirstTurn:
         assert sent.endswith(
             "\n<hook-context>Mascot OTTO-7.</hook-context>\n<hook-context>Code ZEBRA.</hook-context>"
         )
+
+
+class TestARunsFramesAndPushesStayInItsChat:
+    """Campaign R647: the stamping transport stamped every push with the
+    session's id at send time, so after New chat or a sidebar switch a
+    still-running run's team card turned up in the new chat."""
+
+    async def test_what_a_run_sends_after_new_chat_names_the_chat_it_began_in(self):
+        from igni_core.backend.session_stamping_transport import SessionStampingTransport
+
+        rig = _Rig()
+        session = rig.controller._session
+        session.session_id = "chat-A"
+        sent: list[msg.Message] = []
+
+        class _Wire:
+            async def send(self, message: msg.Message) -> None:
+                sent.append(message)
+
+        wire = SessionStampingTransport(_Wire(), session)  # type: ignore[arg-type]
+
+        async def _stream(team_stream):
+            yield msg.ContentDelta(text="working")
+            session.session_id = "chat-B"  # New chat, mid-run
+            # What a sub-agent's progress sends from inside the run.
+            await wire.send(msg.Info(text="team progress"))
+            yield msg.ContentDelta(text="still the old run")
+
+        rig.controller._stream_factory = _stream
+        async for frame in rig.controller.run_message("go", None):
+            await wire.send(frame)
+
+        assert {m.session_id for m in sent} == {"chat-A"}
+        # Once the run is over, the session's own id is the stamp again.
+        await wire.send(msg.Info(text="after"))
+        assert sent[-1].session_id == "chat-B"
+
+    async def test_a_resumed_run_is_the_chat_of_the_run_that_paused(self):
+        from igni_core.core.run_context import CURRENT_RUN_SESSION_ID
+
+        rig = _Rig([msg.RunPaused(run_id="r1")])
+        rig.controller._session.session_id = "chat-A"
+        await rig.run()
+        rig.controller._session.session_id = "chat-B"  # New chat while it waited
+        seen: list[str] = []
+
+        async def resumed():
+            seen.append(CURRENT_RUN_SESSION_ID.get())
+            yield msg.RunCompleted(run_id="r1")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert seen == ["chat-A"]
+        assert CURRENT_RUN_SESSION_ID.get() == ""

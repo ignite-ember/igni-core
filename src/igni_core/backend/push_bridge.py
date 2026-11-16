@@ -27,7 +27,7 @@ from igni_core.backend.server import BackendServer
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
 from igni_core.core.activity import background
 from igni_core.core.broadcast_schema import BroadcastEvent
-from igni_core.core.run_context import CURRENT_RUN_ID
+from igni_core.core.run_context import CURRENT_RUN_ID, CURRENT_RUN_SESSION_ID
 from igni_core.core.tools.edit import (
     FileEditNotifier,
     default_file_edit_notifier,
@@ -406,6 +406,11 @@ class PushNotificationBridge:
             # fold it into that run's item. A push that already names a
             # run keeps the one it names.
             push = push.model_copy(update={"run_id": run_id})
+        run_session_id = CURRENT_RUN_SESSION_ID.get()
+        if run_session_id and not push.session_id:
+            # Its chat is the run's, not whichever chat the session shows
+            # by the time the stamping transport sends it.
+            push = push.model_copy(update={"session_id": run_session_id})
 
         def _send() -> None:
             # A message to the windows: too short to count as busy.

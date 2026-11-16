@@ -117,6 +117,7 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
     controller._interrupted_summary = None
     controller._pending_id_for_cancel = None
     controller._current_run_task = None
+    controller._run_session_id = ""
     controller._run_lock = asyncio.Lock()
     controller._pending_journal = _Journal()
     controller._hook_gate = _HookGate()
@@ -127,6 +128,7 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
         guardrail_runner=SimpleNamespace(warning_prefix=_no_prefix),
         todo_store=TodoStore(),
         event_log_store=SessionEventLog(),
+        session_id="s-1",
         take_session_start_context=lambda: "",
         memory_mirror=None,
     )
