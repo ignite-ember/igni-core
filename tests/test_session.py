@@ -145,6 +145,7 @@ def _start_patches(patches):
     if "CloudCredentials" in mocks:
         cc = mocks["CloudCredentials"].return_value
         cc.is_authenticated = False
+        cc.is_valid = False
         cc.access_token = None
         cc.org_id = None
         cc.org_name = None
@@ -202,6 +203,7 @@ class TestSessionConstruction:
 
             cc = cc_patched.return_value
             cc.is_authenticated = True
+            cc.is_valid = True
             cc.access_token = "tok-123"
             cc.org_id = "org_42"
             cc.org_name = "Acme"
