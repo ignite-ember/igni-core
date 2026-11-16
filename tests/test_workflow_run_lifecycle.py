@@ -37,6 +37,7 @@ from igni_core.backend.workflow_runtime_process import WorkflowRuntime, Workflow
 from igni_core.core.activity import ActivityRegistry, BackgroundTasks
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.session.event_log_schema import SessionEventAppendResult
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 
 
 def _line(type_: str, payload: dict, seq: int = 0, run_id: str = "wf_1") -> bytes:
@@ -120,6 +121,10 @@ class _Session:
         self.appended: list[WorkflowEventRecord] = []
         self._append = append
         self.main_team = SimpleNamespace(arun=AsyncMock(return_value="done"))
+        # A workflow's agent call is answered through the session's
+        # approval relay (campaign R664), so the stand-in carries the
+        # coordinator that relay opens — as a real session does.
+        self.sub_agent_hitl = SubAgentHITLCoordinator()
 
     async def append_event(self, draft) -> SessionEventAppendResult:
         if self._append is not None:
