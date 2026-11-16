@@ -16,11 +16,28 @@ process. Two checks run at the handshake, before the upgrade:
   refused. A
   request without ``Origin`` is a non-browser client.
 * **Token.** When whoever launched the backend gave it a per-launch
-  secret (``IGNI_WS_TOKEN``, set by the desktop shell in the child's
-  environment, never on its command line), every connection must offer
-  it as a WebSocket subprotocol: ``Sec-WebSocket-Protocol: igni.v1,
-  igni-token.<token>``. The server answers with ``igni.v1`` only, so the
-  token is never echoed. Compared with :func:`hmac.compare_digest`.
+  secret, every connection must offer it as a WebSocket subprotocol:
+  ``Sec-WebSocket-Protocol: igni.v1, igni-token.<token>``. The server
+  answers with ``igni.v1`` only, so the token is never echoed. Compared
+  with :func:`hmac.compare_digest`.
+
+  The launcher hands the secret over one of two ways, never on the
+  command line:
+
+  - **An inherited file descriptor** (preferred). The launcher makes a
+    pipe, lets the child inherit its read end, writes the token and a
+    newline to the write end and closes it, and names the read end in
+    ``IGNI_WS_TOKEN_FD`` (the descriptor's *number*, which is no
+    secret). ``IGNI_WS_TOKEN_FD=0`` means the child's stdin: the
+    launcher pipes the token into it, which works on every platform.
+    The backend reads one line at start, closes the descriptor (stdin is
+    pointed at the null device instead), and drops the variable. Unlike
+    the environment, which another process of the same user can read
+    (``ps eww``, ``/proc/<pid>/environ``), a pipe is read once and is
+    gone (campaign R622). A descriptor that cannot be read stops the
+    backend rather than leaving it without a token.
+  - ``IGNI_WS_TOKEN`` in the child's environment, the older way, kept so
+    current launchers work. Removed from the environment at once.
 
 The token a connection offered also decides what it may do
 (:class:`~igni_core.protocol.schemas.envelope.Standing`):
@@ -81,11 +98,13 @@ __all__ = [
     "SUBPROTOCOL",
     "TAURI_ORIGINS",
     "TOKEN_ENV",
+    "TOKEN_FD_ENV",
     "TOKEN_PROTOCOL_PREFIX",
     "HandshakeGuard",
     "Standing",
     "frame_ancestor_sources",
     "origin_allowed",
+    "read_token_fd",
     "take_token_from_environment",
     "take_window_token",
 ]
@@ -94,6 +113,10 @@ logger = logging.getLogger(__name__)
 
 #: The environment variable the launcher hands the per-launch secret in.
 TOKEN_ENV = "IGNI_WS_TOKEN"  # noqa: S105 — an environment variable's name, not a secret
+#: The environment variable naming the inherited descriptor the secret is read from.
+TOKEN_FD_ENV = "IGNI_WS_TOKEN_FD"  # noqa: S105 — an environment variable's name, not a secret
+#: The most a token line read from the descriptor may be.
+_TOKEN_FD_LIMIT = 4096
 #: Development escape hatch: no token, with a loud warning.
 DEV_NO_TOKEN_ENV = "IGNI_DEV_NO_WS_TOKEN"  # noqa: S105 — an environment variable's name, not a secret
 #: The subprotocol igni's clients speak and the server selects.
@@ -135,10 +158,14 @@ def take_token_from_environment(environ: MutableMapping[str, str] | None = None)
     """The launcher's token, removed from the environment.
 
     Removed so the agent's shell commands, hooks and MCP servers (which
-    inherit this process's environment) never see it.
+    inherit this process's environment) never see it. A token on the
+    descriptor ``IGNI_WS_TOKEN_FD`` names wins over one in
+    ``IGNI_WS_TOKEN``; both variables are removed either way.
     """
     env = os.environ if environ is None else environ
-    token = (env.pop(TOKEN_ENV, None) or "").strip() or None
+    from_env = (env.pop(TOKEN_ENV, None) or "").strip() or None
+    fd_name = (env.pop(TOKEN_FD_ENV, None) or "").strip()
+    token = read_token_fd(fd_name) if fd_name else from_env
     if _dev_opt_out(env):
         logger.warning(
             "%s=1: the WebSocket accepts connections WITHOUT a token. Any local process "
@@ -147,6 +174,49 @@ def take_token_from_environment(environ: MutableMapping[str, str] | None = None)
         )
         return None
     return token
+
+
+def read_token_fd(fd_name: str) -> str:
+    """The token line on the inherited descriptor ``fd_name``, which is closed.
+
+    Read up to the first newline or the end of the pipe. Raises
+    :class:`RuntimeError` when the descriptor is not a number, cannot be
+    read or carries no token: a launcher that meant to hand a secret over
+    must not get a backend that runs without one.
+    """
+    try:
+        fd = int(fd_name)
+    except ValueError:
+        raise RuntimeError(f"{TOKEN_FD_ENV}={fd_name!r} is not a file descriptor") from None
+    data = b""
+    try:
+        while b"\n" not in data and len(data) < _TOKEN_FD_LIMIT:
+            chunk = os.read(fd, _TOKEN_FD_LIMIT - len(data))
+            if not chunk:
+                break
+            data += chunk
+    except OSError as exc:
+        raise RuntimeError(f"{TOKEN_FD_ENV}={fd}: the token could not be read: {exc}") from exc
+    finally:
+        _let_go_of(fd)
+    token = data.split(b"\n", 1)[0].decode("utf-8", errors="replace").strip()
+    if not token:
+        raise RuntimeError(f"{TOKEN_FD_ENV}={fd}: no token was written to it")
+    return token
+
+
+def _let_go_of(fd: int) -> None:
+    """Close ``fd``; stdin is pointed at the null device rather than closed,
+    so the next file opened does not become descriptor 0."""
+    try:
+        if fd == 0:
+            null = os.open(os.devnull, os.O_RDONLY)
+            os.dup2(null, 0)
+            os.close(null)
+        else:
+            os.close(fd)
+    except OSError as exc:
+        logger.debug("could not let go of the token descriptor %d: %s", fd, exc)
 
 
 def _dev_opt_out(env: MutableMapping[str, str]) -> bool:

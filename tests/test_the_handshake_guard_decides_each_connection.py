@@ -9,6 +9,7 @@ and what the environment helper does with odd values.
 from __future__ import annotations
 
 import logging
+import os
 from http import HTTPStatus
 
 import pytest
@@ -20,9 +21,11 @@ from igni_core.transport.ws_auth import (
     DEV_NO_TOKEN_ENV,
     SUBPROTOCOL,
     TOKEN_ENV,
+    TOKEN_FD_ENV,
     HandshakeGuard,
     origin_allowed,
     take_token_from_environment,
+    take_window_token,
 )
 
 SECRET = "launch-secret-0123456789"
@@ -226,3 +229,112 @@ def test_the_names_the_launcher_and_clients_speak_are_igni_s():
         "http://tauri.localhost",
         "https://tauri.localhost",
     }
+
+
+# ── The token on an inherited descriptor (campaign R622) ─────────────
+#
+# The environment is readable by any process of the same user (``ps eww``,
+# ``/proc/<pid>/environ``); a pipe the launcher writes once is not.
+
+
+def _pipe_with(text: bytes, *, close: bool = True) -> tuple[int, int]:
+    read_end, write_end = os.pipe()
+    os.write(write_end, text)
+    if close:
+        os.close(write_end)
+        write_end = -1
+    return read_end, write_end
+
+
+def _is_open(fd: int) -> bool:
+    try:
+        os.fstat(fd)
+    except OSError:
+        return False
+    return True
+
+
+def test_the_token_is_read_from_the_descriptor_named_and_it_is_closed():
+    read_end, _ = _pipe_with(f"{SECRET}\n".encode())
+    env = {TOKEN_FD_ENV: str(read_end)}
+
+    assert take_token_from_environment(env) == SECRET
+    assert TOKEN_FD_ENV not in env
+    assert not _is_open(read_end)
+
+
+def test_one_line_is_enough_and_the_launcher_need_not_close_the_pipe():
+    read_end, write_end = _pipe_with(f"{SECRET}\nnot read\n".encode(), close=False)
+    try:
+        assert take_token_from_environment({TOKEN_FD_ENV: str(read_end)}) == SECRET
+    finally:
+        os.close(write_end)
+
+
+def test_the_descriptor_wins_over_the_environment_and_both_are_removed():
+    read_end, _ = _pipe_with(b"from-the-pipe")
+    env = {TOKEN_FD_ENV: str(read_end), TOKEN_ENV: SECRET}
+
+    assert take_token_from_environment(env) == "from-the-pipe"
+    assert TOKEN_ENV not in env and TOKEN_FD_ENV not in env
+
+
+@pytest.mark.parametrize("written", [b"", b"   \n"])
+def test_a_descriptor_with_no_token_stops_the_backend(written: bytes):
+    read_end, _ = _pipe_with(written)
+
+    with pytest.raises(RuntimeError, match="no token was written"):
+        take_token_from_environment({TOKEN_FD_ENV: str(read_end)})
+    assert not _is_open(read_end)
+
+
+@pytest.mark.parametrize("name", ["stdin", "-x"])
+def test_a_descriptor_that_is_not_one_stops_the_backend(name: str):
+    with pytest.raises(RuntimeError, match=TOKEN_FD_ENV):
+        take_token_from_environment({TOKEN_FD_ENV: name})
+
+
+def test_a_descriptor_that_cannot_be_read_stops_the_backend():
+    read_end, _ = _pipe_with(b"x")
+    os.close(read_end)
+
+    with pytest.raises(RuntimeError, match="could not be read"):
+        take_token_from_environment({TOKEN_FD_ENV: str(read_end)})
+
+
+def test_without_the_descriptor_the_environment_still_hands_the_token():
+    env = {TOKEN_ENV: SECRET}
+    assert take_token_from_environment(env) == SECRET
+    assert TOKEN_ENV not in env
+
+
+def test_the_window_token_comes_off_the_descriptor_and_is_not_minted():
+    read_end, _ = _pipe_with(f"{SECRET}\n".encode())
+
+    assert take_window_token({TOKEN_FD_ENV: str(read_end)}, mint=True) == (SECRET, False)
+
+
+def test_stdin_carries_the_token_and_is_left_on_the_null_device():
+    """``IGNI_WS_TOKEN_FD=0``: the launcher pipes the token into stdin, the
+    one way that works on every platform. Descriptor 0 must not be left
+    closed, or the next file opened would become stdin."""
+    import subprocess
+    import sys
+
+    script = (
+        "import os\n"
+        "from igni_core.transport.ws_auth import take_token_from_environment\n"
+        "print(take_token_from_environment())\n"
+        "print(os.read(0, 10) == b'')\n"
+        "print('IGNI_WS_TOKEN_FD' in os.environ)\n"
+    )
+    done = subprocess.run(  # noqa: S603 — this interpreter, a fixed script
+        [sys.executable, "-c", script],
+        input=f"{SECRET}\n".encode(),
+        env={**os.environ, TOKEN_FD_ENV: "0"},
+        capture_output=True,
+        timeout=60,
+        check=True,
+    )
+
+    assert done.stdout.decode().split() == [SECRET, "True", "False"]

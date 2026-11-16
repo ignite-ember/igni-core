@@ -450,6 +450,7 @@ generates 32 random bytes (base64url) at each launch of the backend:
 | Step | How | Why that way |
 |---|---|---|
 | App → backend | `IGNI_WS_TOKEN` in the child's environment; the backend removes it from its own environment at start | Never on the command line, which `ps` shows; never inherited by the agent's shell commands, hooks or MCP servers |
+| App → backend (preferred) | A pipe the child inherits, named by `IGNI_WS_TOKEN_FD` (`0` = the child's stdin): the app writes the token and a newline and closes it; the backend reads one line at start, closes the descriptor and drops the variable | The environment of a running process is readable by other processes of the same user (`ps eww`, `/proc/<pid>/environ`); a pipe read once is not. A descriptor that cannot be read stops the backend rather than leaving it without a token |
 | App → its webview | The URL fragment, `index.html?ws=…#igni_ws_token=…` | A fragment is never sent to a server or written to a request log, and it survives reloads |
 | Webview → backend | `Sec-WebSocket-Protocol: igni.v1, igni-token.<token>`; the backend answers `igni.v1` only | The one handshake field a page can set; unlike a query string it ends up in no log |
 | A program on the same project | `ws_token` in `.igni/backend.lock`, which is then written owner-only (0600): a **different** token, the program token, which the backend mints | A script or the SDK attaches to the running backend instead of starting a duplicate, without holding the window's secret |
