@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -80,6 +81,7 @@ class _NoBackend:
 class _Orchestrator:
     def __init__(self) -> None:
         self.mounted: list[Any] = []
+        self.pool = SimpleNamespace(runtimes=[])
 
     def mount(self, rpc: Any) -> None:
         self.mounted.append(rpc)
