@@ -92,6 +92,10 @@ class RunController:
     while it is closed.
     """
 
+    #: The pending message of a run that paused for a person: the run has
+    #: not finished, so the row stays pending until its resume ends it.
+    _paused_pending_id: str | None = None
+
     def __init__(
         self,
         session: Session,
@@ -274,6 +278,7 @@ class RunController:
         self._current_run_task = asyncio.current_task()
         self._transition_to(RunPhase.streaming)
         events_before = self._session.event_log_store.seq
+        pending_id = self._paused_pending_id
         reply: list[str] = []
         # Ended only once the resumed run says so: an answer that resumed
         # nothing (an unknown requirement) or a run that paused again has
@@ -285,18 +290,45 @@ class RunController:
                 if isinstance(proto, msg.ContentDelta):
                     reply.append(proto.text)
                 ended = not self._paused_after(proto, not ended)
+            if ended and pending_id is not None:
+                # The run that paused has finished: its message is done.
+                self._paused_pending_id = None
+                self._pending_id_for_cancel = None
+                await self._pending_journal.mark_completed(pending_id)
             if ended:
                 # The run ended: Stop sees its reply, and a block sends the
                 # agent back, as at the end of a run that never paused.
                 async for proto in self._stop_or_retry(self._session.main_team, "".join(reply)):
                     yield proto
         except asyncio.CancelledError:
+            # ``cancel_run`` stamped the message as cancelled.
+            self._paused_pending_id = None
             yield msg.Info(text="Run cancelled by user.")
+        except Exception as exc:
+            if pending_id is not None and self._paused_pending_id == pending_id:
+                self._paused_pending_id = None
+                self._pending_id_for_cancel = None
+                await self._pending_journal.mark_interrupted(
+                    pending_id, "errored", last_error=str(exc)
+                )
+            raise
         finally:
             self._current_run_task = None
             await self._keep_event_log(events_before)
             if self._phase.is_active():
                 self._transition_to(RunPhase.done)
+
+    async def _close_abandoned_pause(self) -> None:
+        """A new message while a run stands paused: the person moved on from
+        that run, so its message is closed as completed, as it was before a
+        pause kept it open."""
+        pending_id = self._paused_pending_id
+        if pending_id is None:
+            return
+        self._paused_pending_id = None
+        if self._pending_id_for_cancel == pending_id:
+            self._pending_id_for_cancel = None
+        await self._pending_journal.mark_completed(pending_id)
 
     async def run_unstreamed(self, work: Callable[[], Awaitable[_T]]) -> _T:
         """Work on the session's team outside a streamed turn — a scheduled
@@ -536,6 +568,7 @@ class RunController:
         # pending-message ids queued during detect_interrupted_run.
         interrupted_summary_text = self._consume_interrupted_note(text)
         await self._pending_journal.drain_queued_drops()
+        await self._close_abandoned_pause()
 
         # Fire UserPromptSubmit hook, before the prompt is built from
         # the text: an extension that hooks it may change the text.
@@ -624,10 +657,18 @@ class RunController:
                 )
                 self._transition_to(RunPhase.errored)
                 return
-            # Natural end-of-run — mark the pre-persisted user
-            # message as completed.
-            await self._pending_journal.mark_completed(pending_id)
-            self._pending_id_for_cancel = None
+            if paused:
+                # Paused for a person: the run has not finished. The row
+                # stays pending, and a cancel still reaches it, until the
+                # resumed run ends it (:meth:`continue_run`). Completed
+                # here, a crash during the resumed part left nothing for
+                # ``get_pending_messages`` or ``get_interrupted_runs``.
+                self._paused_pending_id = pending_id
+            else:
+                # Natural end-of-run — mark the pre-persisted user
+                # message as completed.
+                await self._pending_journal.mark_completed(pending_id)
+                self._pending_id_for_cancel = None
             self._transition_to(RunPhase.finalizing)
         except Exception as exc:
             # Error mid-run: stamp the pending row as an explicit

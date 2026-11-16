@@ -900,6 +900,75 @@ class TestAResumedRun:
         assert rig.hooks.responses == ["parent done"]
 
 
+class TestAPausedRunsMessageStaysPendingUntilItsResumeEnds:
+    """R180: the message was stamped completed at the approval pause, so a
+    crash during the resumed part left nothing for ``get_pending_messages``
+    or ``get_interrupted_runs`` to offer Retry/Discard for."""
+
+    PAUSED = [msg.ContentDelta(text="I'll run sleep first."), msg.RunPaused(run_id="r1")]
+
+    async def test_a_run_that_pauses_leaves_its_message_pending(self):
+        rig = _Rig(list(self.PAUSED))
+
+        await rig.run()
+
+        assert ("completed", "pending-0123456789") not in rig.journal.events
+        # A cancel while it waits still stamps it.
+        assert rig.controller._pending_id_for_cancel == "pending-0123456789"
+
+    async def test_the_resumed_run_that_ends_completes_it(self):
+        rig = _Rig(list(self.PAUSED))
+        await rig.run()
+
+        async def resumed():
+            yield msg.ContentDelta(text="SLEPT")
+            yield msg.RunCompleted(run_id="r1")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert rig.journal.events[-1] == ("completed", "pending-0123456789")
+        assert rig.controller._pending_id_for_cancel is None
+
+    async def test_a_resumed_run_that_pauses_again_keeps_it_pending(self):
+        rig = _Rig(list(self.PAUSED))
+        await rig.run()
+
+        async def resumed():
+            yield msg.RunPaused(run_id="r1")
+
+        _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert ("completed", "pending-0123456789") not in rig.journal.events
+
+    async def test_a_resumed_run_that_fails_records_it_interrupted(self):
+        rig = _Rig(list(self.PAUSED))
+        await rig.run()
+
+        async def resumed():
+            yield msg.ContentDelta(text="half")
+            raise RuntimeError("model gone")
+
+        with pytest.raises(RuntimeError, match="model gone"):
+            _ = [m async for m in rig.controller.continue_run(resumed())]
+
+        assert rig.journal.events[-1] == (
+            "interrupted",
+            "pending-0123456789",
+            "errored",
+            "model gone",
+        )
+
+    async def test_a_new_message_instead_of_an_answer_closes_the_paused_one(self):
+        rig = _Rig(list(self.PAUSED))
+        await rig.run("first")
+        rig.stream_script = [msg.StreamingDone(run_id="r2")]
+
+        await rig.run("second")
+
+        completed = [e for e in rig.journal.events if e[0] == "completed"]
+        assert len(completed) == 2
+
+
 # ── The todo list outlives the run's own save ────────────────────────
 
 
