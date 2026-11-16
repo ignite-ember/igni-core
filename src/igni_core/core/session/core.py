@@ -235,6 +235,7 @@ class Session(SessionSurface):
         # The team is the agents builder's: it is the one that knows
         # how a tool-event hook is attached to it.
         AgentsBuilder(self).replace_tool_event_hook(self.tool_event_hook())
+        AgentsBuilder(self).replace_spawn_hook_executor(self.hook_executor)
         return count
 
     def reload_plugins(self) -> PluginReloadCounts:

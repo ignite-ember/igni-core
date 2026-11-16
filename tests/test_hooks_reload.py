@@ -65,6 +65,29 @@ class TestHooksReload:
         session.reload_hooks()
         assert "Stop" in session.hooks_map
 
+    def test_reload_reaches_the_spawn_tools_of_the_live_team(self, session):
+        """A sub-agent spawned after ``/hooks reload`` fires the new hooks.
+
+        The team is not rebuilt on a hooks reload, and its orchestrate
+        toolkit kept the executor it was built with (campaign R671).
+        """
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        from igni_core.core.tools.orchestrate import OrchestrateTools
+
+        built_with = MagicMock(name="the executor the team was built with")
+        toolkit = OrchestrateTools(pool=MagicMock(), settings=Settings(), hook_executor=built_with)
+        session.main_team = SimpleNamespace(tools=[toolkit], tool_hooks=[])
+        session.hooks._loader.load.return_value = _load_result(
+            {"SubagentStart": [HookDefinition(type="command", command="echo start")]}
+        )
+
+        session.reload_hooks()
+
+        assert session.hook_executor is not built_with
+        assert toolkit.wiring.hook_executor is session.hook_executor
+
     def test_reload_calls_hook_loader(self, session):
         """reload_hooks() calls the loader to refresh hooks."""
         session.hooks._loader.load.return_value = _load_result({})
