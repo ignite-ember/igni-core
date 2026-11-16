@@ -24,6 +24,7 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 from igni_core.core.config.tool_names import wire_name
 from igni_core.core.mcp.naming import tool_name_prefix
@@ -239,4 +240,44 @@ class ProcessProbe:
         return f"; the last of its stderr:\n{tail}"
 
 
-__all__ = ["Findings", "NameCheck", "Probe", "ProcessProbe"]
+class TrialStart:
+    """``igni ext sync``'s lifecycle: start what it stored once, as doctor does.
+
+    The terminal sync starts and stops nothing for good, so it had no
+    lifecycle, and without one the sync kept no copy of the version that
+    worked: an upgrade that could not start replaced it, was reported
+    installed, and every later run found the extension FAILED. Starting
+    the stored bundle once and stopping it lets the sync put the old
+    version back when the new one does not start (``sync.py``
+    ``_install``). An endpoint is somebody else's process: not started.
+    """
+
+    def __init__(self, store: ExtensionStoreLike, *, timeout: float = 60.0) -> None:
+        self._store = store
+        self._timeout = timeout
+        #: Why each extension that did not start did not.
+        self.failures: dict[str, str] = {}
+
+    async def activate(self, extension_id: str, bundle: Path) -> bool | None:
+        try:
+            manifest = self._store.read(bundle)
+        except Exception as exc:  # noqa: BLE001 — a bundle it cannot read did not start
+            self.failures[extension_id] = str(exc)
+            return False
+        if manifest.endpoint is not None and manifest.dev is None and manifest.python is None:
+            return None
+        probe = await ProcessProbe(manifest, bundle, timeout=self._timeout).run()
+        if probe.error is not None:
+            self.failures[extension_id] = probe.error
+            return False
+        return True
+
+    async def deactivate(self, extension_id: str) -> None:
+        """Nothing runs for good: the trial start stopped what it started."""
+
+
+class ExtensionStoreLike(Protocol):
+    def read(self, bundle: Path) -> ExtensionManifest: ...
+
+
+__all__ = ["Findings", "NameCheck", "Probe", "ProcessProbe", "TrialStart"]

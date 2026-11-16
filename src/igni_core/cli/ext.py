@@ -35,7 +35,7 @@ from pathlib import Path
 import click
 from pydantic import ValidationError
 
-from igni_core.cli.ext_doctor import Findings, NameCheck, ProcessProbe
+from igni_core.cli.ext_doctor import Findings, NameCheck, ProcessProbe, TrialStart
 from igni_core.cli.ext_manifest_check import ManifestCheck
 from igni_core.cli.ext_scaffold import Scaffold
 from igni_core.core.config.group_policy.policy_settings import PolicySettingsLoader
@@ -321,12 +321,16 @@ def sync(root: str | None, timeout: float) -> None:
     person's group, and this brings the store in step — downloading,
     verifying and storing what is new or changed, removing what is no
     longer listed, and leaving a development install of the same id
-    alone. It starts and stops nothing: igni's backend starts what is
-    stored when it boots, and an ``igni -m`` run syncs by itself first.
+    alone. It runs nothing for good: each extension it stores is started
+    once and stopped, and an upgrade that does not start puts the version
+    that worked back. igni's backend starts what is stored when it boots,
+    and an ``igni -m`` run syncs by itself first.
     """
     store = _store(root)
     settings = _settings()
-    syncer = OneShotSync(store, settings)
+    # Each upgrade it stores is started once and stopped, so one that does
+    # not start puts the version that worked back, as the other syncs do.
+    syncer = OneShotSync(store, settings, lifecycle=TrialStart(store))
     report = asyncio.run(syncer.run(timeout=timeout))
     if report.skipped is not None:
         raise click.ClickException(f"nothing was synced: {report.skipped}")

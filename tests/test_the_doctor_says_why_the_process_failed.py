@@ -22,7 +22,14 @@ import pytest
 from click.testing import CliRunner
 
 from igni_core.cli.ext import ext
-from igni_core.cli.ext_doctor import STDERR_LINES, Findings, NameCheck, Probe, ProcessProbe
+from igni_core.cli.ext_doctor import (
+    STDERR_LINES,
+    Findings,
+    NameCheck,
+    Probe,
+    ProcessProbe,
+    TrialStart,
+)
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.python_env import PythonEnvironmentError, PythonEnvironments
 
@@ -433,3 +440,42 @@ def test_an_environment_is_not_inherited_from_the_test_process(tmp_path, monkeyp
     assert probe.error is not None
     assert "flavour=from-the-host" not in probe.error
     assert os.environ["FLAVOUR"] == "from-the-host"
+
+
+# ── igni ext sync's trial start ─────────────────────────────────────
+
+
+class _Store:
+    def read(self, bundle: Path) -> ExtensionManifest:
+        return ExtensionManifest.load(bundle / "manifest.json")
+
+
+def test_the_sync_s_trial_start_says_an_upgrade_that_dies_did_not_start(tmp_path):
+    """R252: what ``igni ext sync`` stores is started once, as doctor does,
+    so the sync can put the working version back."""
+    trial = TrialStart(_Store(), timeout=30.0)
+    bundle = _bundle(
+        tmp_path, "import sys\nprint('cannot open db', file=sys.stderr)\nsys.exit(3)\n"
+    )
+
+    assert asyncio.run(trial.activate("acme.tickets", bundle)) is False
+    assert "cannot open db" in trial.failures["acme.tickets"]
+
+
+def test_the_sync_s_trial_start_passes_one_that_answers(tmp_path):
+    trial = TrialStart(_Store(), timeout=30.0)
+    bundle = _bundle(tmp_path, QUIET_SERVER)
+
+    started = asyncio.run(trial.activate("acme.tickets", bundle))
+
+    assert trial.failures == {}
+    assert started is True
+
+
+def test_the_sync_s_trial_start_says_a_bundle_it_cannot_read_did_not_start(tmp_path):
+    trial = TrialStart(_Store(), timeout=30.0)
+    bundle = tmp_path / "b"
+    bundle.mkdir()
+
+    assert asyncio.run(trial.activate("acme.tickets", bundle)) is False
+    assert "acme.tickets" in trial.failures
