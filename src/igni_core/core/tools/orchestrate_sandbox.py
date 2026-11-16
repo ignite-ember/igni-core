@@ -253,9 +253,9 @@ class SpawnSandbox:
             self.manager = None
             return (
                 f"\n\nWorktree preserved: {self.info.worktree_path} "
-                f"(branch: {self.info.branch_name}) — has uncommitted changes.\n"
+                f"(branch: {self.info.branch_name}) — changes committed on the branch.\n"
                 f"To merge: git merge {self.info.branch_name}\n"
-                f"To remove: git worktree remove {self.info.worktree_path}"
+                f"To remove: git worktree remove --force {self.info.worktree_path}"
             )
         # git_remove_failed / branch_delete_failed — surface the
         # stderr so cleanup failures no longer masquerade as

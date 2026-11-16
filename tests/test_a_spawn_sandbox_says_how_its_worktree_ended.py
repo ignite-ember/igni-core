@@ -66,10 +66,25 @@ class TestTheFooterSaysWhatCleanupDid:
         footer = _sandbox_ending_with(WorktreeCleanupResult(status="preserved_dirty")).finalize()
 
         assert footer == (
-            "\n\nWorktree preserved: /wt/x (branch: br-x) — has uncommitted changes.\n"
+            "\n\nWorktree preserved: /wt/x (branch: br-x) — changes committed on the branch.\n"
             "To merge: git merge br-x\n"
-            "To remove: git worktree remove /wt/x"
+            "To remove: git worktree remove --force /wt/x"
         )
+
+    def test_the_dirty_footer_matches_the_fine_tuning_text_character_for_character(self):
+        """The fine-tuning data carries this exact footer (campaign R130,
+        owner-approved wording): the em dash, the clause after it and the
+        ``--force`` are pinned code point by code point."""
+        footer = _sandbox_ending_with(WorktreeCleanupResult(status="preserved_dirty")).finalize()
+
+        template = (
+            "\n\nWorktree preserved: {path} (branch: {branch})"
+            " \u2014 changes committed on the branch."
+            "\nTo merge: git merge {branch}"
+            "\nTo remove: git worktree remove --force {path}"
+        )
+        assert footer == template.format(path="/wt/x", branch="br-x")
+        assert "uncommitted" not in footer
 
     @pytest.mark.parametrize("status", ["git_remove_failed", "branch_delete_failed"])
     def test_a_failed_cleanup_surfaces_its_status_and_stderr(self, status):
@@ -98,8 +113,12 @@ class TestFinalizeAgainstARealWorktree:
 
         footer = sandbox.finalize()
 
-        assert "Worktree preserved:" in footer
-        assert f"To merge: git merge {sandbox.info.branch_name}" in footer
+        assert footer == (
+            f"\n\nWorktree preserved: {sandbox.info.worktree_path} "
+            f"(branch: {sandbox.info.branch_name}) — changes committed on the branch.\n"
+            f"To merge: git merge {sandbox.info.branch_name}\n"
+            f"To remove: git worktree remove --force {sandbox.info.worktree_path}"
+        )
         assert (sandbox.info.worktree_path / "new.txt").exists()
 
     def test_following_the_merge_line_brings_the_change_over(self, tmp_path):
@@ -118,6 +137,23 @@ class TestFinalizeAgainstARealWorktree:
 
         assert (tmp_path / "iso_note.txt").read_text() == "ISO-X"
         assert not (tmp_path / "igni.md").exists()
+
+    def test_following_the_remove_line_removes_the_worktree(self, tmp_path):
+        """igni's scaffold stays out of the commit, so the worktree is
+        left with untracked files: a plain ``git worktree remove`` refuses
+        it. The footer's line says ``--force`` and works as written."""
+        _init_git_repo(tmp_path)
+        sandbox = _create(tmp_path).sandbox
+        assert sandbox is not None and sandbox.info is not None
+        worktree = sandbox.info.worktree_path
+        (worktree / "iso_note.txt").write_text("ISO-X")
+        (worktree / "igni.md").write_text("# igni")
+
+        footer = sandbox.finalize()
+        remove = next(line for line in footer.splitlines() if line.startswith("To remove: "))
+        subprocess.run(remove.removeprefix("To remove: ").split(), cwd=tmp_path, check=True)
+
+        assert not worktree.exists()
 
     def test_a_repository_without_an_author_still_gets_the_commit(self, tmp_path, monkeypatch):
         _init_git_repo(tmp_path)
