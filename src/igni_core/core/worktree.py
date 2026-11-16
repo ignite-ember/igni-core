@@ -495,7 +495,9 @@ class WorktreeManager:
                 f"(git -C {info.worktree_path} add -A -- . {excludes} && "
                 f"git -C {info.worktree_path} commit), then git merge {info.branch_name}"
             )
-            echo(f"To remove: git worktree remove {info.worktree_path}")
+            # ``--force``: the commit above leaves the scaffold untracked,
+            # and a plain remove refuses a worktree with untracked files.
+            echo(f"To remove: git worktree remove --force {info.worktree_path}")
         else:
             # ``git_remove_failed`` / ``branch_delete_failed`` —
             # surface the stderr so cleanup failures no longer

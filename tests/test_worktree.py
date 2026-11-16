@@ -408,7 +408,7 @@ class TestReportCleanup:
             f"(git -C {info.worktree_path} add -A -- . "
             "':(exclude).igni' ':(exclude)igni.md' && "
             f"git -C {info.worktree_path} commit), then git merge rp",
-            f"To remove: git worktree remove {info.worktree_path}",
+            f"To remove: git worktree remove --force {info.worktree_path}",
         ]
         assert all(kw == {} for _, kw in out)
 
@@ -430,6 +430,25 @@ class TestReportCleanup:
         assert (repo / "x").read_text() == "x"
         assert not (repo / "igni.md").exists()
         assert not (repo / ".igni").exists()
+
+    def test_after_the_merge_hint_the_remove_hint_removes_the_worktree(self, tmp_path):
+        """The hint's commit leaves igni's scaffold untracked, and a plain
+        ``git worktree remove`` refuses a worktree with untracked files
+        (campaign R130)."""
+        repo, _, wm = _manager(tmp_path)
+        info = wm.create(branch_name="rr")
+        (info.worktree_path / "x").write_text("x")
+        (info.worktree_path / "igni.md").write_text("# igni")
+        out = [m for m, _ in self._collect(wm)]
+        merge = next(m for m in out if m.startswith("\nTo merge:"))
+        add_and_commit = merge.split("(", 1)[1].rsplit("), then", 1)[0] + " -q -m c"
+        remove = next(m for m in out if m.startswith("To remove: "))[len("To remove: ") :]
+        subprocess.run(add_and_commit, shell=True, check=True, cwd=repo)  # noqa: S602 — the hint is a shell line
+
+        done = subprocess.run(remove, shell=True, cwd=repo, capture_output=True, text=True)  # noqa: S602 — the hint is a shell line
+
+        assert done.returncode == 0, done.stderr
+        assert not info.worktree_path.exists()
 
     def test_igni_s_own_scaffold_is_no_change(self, tmp_path):
         """A ``--worktree`` run that changed nothing was kept as "has
