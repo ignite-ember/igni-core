@@ -167,6 +167,8 @@ History that survives a restart.
 | `get_session_id` | Before the first message is sent. | `verified` |
 | `get_interrupted_runs` | A run interrupted by a crash rather than a cancel. Sweep: **answers** (default run). | `answers` |
 | `discard_interrupted_run` | Discarding one that has already resumed. Sweep: **answers** (`--mutating`). | `answers` |
+| `list_mcp_approvals` | A project `.mcp.json` server unapproved, then approved; the user-global config always approved; an extension's service not listed. | `todo` |
+| `set_mcp_approval` | Approving with no terminal (the desktop app), then `mcp_connect`; withdrawing a connected server disconnects it; a program connection is refused; the user-global config cannot be withdrawn. | `todo` |
 | `discard_pending_message` | Discarding a prompt this igni received less than a minute ago (refused: its run may still be finishing); one already gone (`ok`). The app's Discard button on a pending prompt. | `todo` |
 | `fire_session_start_hook` | A hook that fails; one that never returns. Sweep: **answers** (`--mutating`). | `answers` |
 | `get_project_dir` | A directory that no longer exists. | `verified` |

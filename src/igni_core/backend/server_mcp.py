@@ -37,6 +37,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from igni_core.backend.schemas_mcp import (
+    McpApproval,
     MCPServerSnapshot,
     MCPServerSummary,
     MCPToolToggleResult,
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "McpApproval",
     "MCPServerSnapshot",
     "MCPServerSummary",
     "MCPToolToggleResult",
@@ -137,6 +139,55 @@ class McpController:
             raise ValueError(f"Could not connect MCP {server_name}: {result.reason}")
         self._session.startup.rebuild_mcp()
         return msg.Info(text=f"Connected MCP: {server_name}")
+
+    def approvals(self) -> list[McpApproval]:
+        """Every configured server that needs a first-use approval, and whether it has one.
+
+        An extension's own service is approved by its install and is not
+        listed.
+        """
+        mgr = self._session.mcp_manager
+        return [
+            McpApproval(
+                name=name,
+                source=config.source,
+                source_path=config.source_path,
+                approved=mgr.approvals.is_approved(name, config.source_path),
+            )
+            for name, config in mgr.configs.items()
+            if config.source != "extension"
+        ]
+
+    async def set_approval(self, server_name: str, approved: bool) -> McpApproval:
+        """Approve a configured server, or withdraw its approval.
+
+        Approving only records it: the server connects on the next connect
+        (``mcp_connect``) or start. Withdrawing disconnects it if it is
+        connected. Raises :class:`ValueError` for a server not configured,
+        an extension's, or an approval that cannot be withdrawn here.
+        """
+        mgr = self._session.mcp_manager
+        config = mgr.configs.get(server_name)
+        if config is None:
+            raise ValueError(f"No MCP server named {server_name!r} is configured")
+        if config.source == "extension":
+            raise ValueError(f"{server_name!r} is an extension's service, approved by its install")
+        if approved:
+            mgr.approvals.approve(server_name, config.source_path)
+        else:
+            if not mgr.approvals.revoke(server_name, config.source_path):
+                raise ValueError(
+                    f"The approval of {server_name!r} from {config.source_path} cannot be "
+                    "withdrawn here"
+                )
+            if server_name in mgr.list_connected():
+                await self.disconnect(server_name)
+        return McpApproval(
+            name=server_name,
+            source=config.source,
+            source_path=config.source_path,
+            approved=mgr.approvals.is_approved(server_name, config.source_path),
+        )
 
     async def disconnect(self, server_name: str) -> msg.Info:
         """Disconnect a single MCP server."""

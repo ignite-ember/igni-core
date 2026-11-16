@@ -3521,6 +3521,60 @@
       "title": "MarketplaceUrlArgs",
       "type": "object"
     },
+    "McpApproval": {
+      "description": "Whether a configured MCP server may connect: its first-use approval.",
+      "properties": {
+        "approved": {
+          "description": "`true` when it may connect: approved once, or from the user's own `~/.igni/.mcp.json`. An unapproved one is never connected.",
+          "title": "Approved",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "The server's name, as configured.",
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "description": "Where it is configured: `user`, `project`, `plugin`, `managed`, ...",
+          "title": "Source",
+          "type": "string"
+        },
+        "source_path": {
+          "description": "The configuration file it comes from.",
+          "title": "Source Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "source_path",
+        "approved"
+      ],
+      "title": "McpApproval",
+      "type": "object"
+    },
+    "McpApprovalArgs": {
+      "description": "Arguments approving a configured MCP server, or withdrawing its approval.",
+      "properties": {
+        "approved": {
+          "description": "`true` approves it; `false` withdraws its approval and disconnects it.",
+          "title": "Approved",
+          "type": "boolean"
+        },
+        "server_name": {
+          "description": "The server's name in the MCP configuration.",
+          "title": "Server Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server_name",
+        "approved"
+      ],
+      "title": "McpApprovalArgs",
+      "type": "object"
+    },
     "McpInitResult": {
       "description": "Outcome of connecting the session's configured MCP servers.",
       "properties": {
@@ -11994,6 +12048,28 @@
       "summary": "List the installed extensions, including the ones that failed to start.",
       "timeout_seconds": 10
     },
+    "list_mcp_approvals": {
+      "access": "client",
+      "area": "mcp",
+      "args": {
+        "$ref": "#/defs/NoArgs"
+      },
+      "correlate": null,
+      "doc": "List this session's MCP servers that need a first-use approval.\n\nTakes no arguments. Returns one row per configured server \u2014 its\n`name`, where it is configured (`source`, `source_path`) and\nwhether it is `approved`. A server from a project's or a plugin's\n`.mcp.json` runs a command or opens a connection as the person, so\nit never connects until approved; without a terminal to ask on,\nigni's window asks instead and answers with `set_mcp_approval`. An\nextension's own service is approved by its install and not listed.",
+      "duration": "instant",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "items": {
+          "$ref": "#/defs/McpApproval"
+        },
+        "type": "array"
+      },
+      "scope": "session",
+      "streams": [],
+      "summary": "List this session's MCP servers that need a first-use approval.",
+      "timeout_seconds": 10
+    },
     "list_sessions": {
       "access": "client",
       "area": "session",
@@ -12605,6 +12681,25 @@
       "scope": "igni",
       "streams": [],
       "summary": "Change an installed extension's settings.",
+      "timeout_seconds": 30
+    },
+    "set_mcp_approval": {
+      "access": "window",
+      "area": "mcp",
+      "args": {
+        "$ref": "#/defs/McpApprovalArgs"
+      },
+      "correlate": null,
+      "doc": "Approve a configured MCP server, or withdraw its approval.\n\n`server_name` names the server; `approved` is the answer.\nApproving records it for that server from that configuration file\n(in `~/.igni/mcp-approved.json`, which every session reads again\nwhen it changes); the server connects on the next `mcp_connect` or\nstart. Withdrawing disconnects it if it is connected. Returns the\nserver's row as `list_mcp_approvals` would. Fails for a server not\nconfigured, an extension's, or the user's own `~/.igni/.mcp.json`,\nwhich is always trusted. Only igni's window may call it.",
+      "duration": "io",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/McpApproval"
+      },
+      "scope": "session",
+      "streams": [],
+      "summary": "Approve a configured MCP server, or withdraw its approval.",
       "timeout_seconds": 30
     },
     "set_mcp_tool_enabled": {

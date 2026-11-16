@@ -118,3 +118,54 @@ class TestMCPApprovalManager:
         assert path.exists()
         data = json.loads(path.read_text())
         assert "s" in data
+
+
+class TestApprovalsGivenElsewhereAndWithdrawn:
+    """Campaign R669 / R209: the approval file was read once, at start, so an
+    approval given from igni's window or another session did not count until
+    a restart; and nothing could withdraw one."""
+
+    def test_an_approval_written_by_another_manager_counts_at_once(self, tmp_path):
+        path = tmp_path / "approved.json"
+        session_a = MCPApprovalManager(approval_path=path)
+        session_b = MCPApprovalManager(approval_path=path)
+        assert session_a.is_approved("s", "/p/.mcp.json") is False
+
+        session_b.approve("s", "/p/.mcp.json")
+
+        assert session_a.is_approved("s", "/p/.mcp.json") is True
+
+    def test_two_managers_approving_keep_each_other_s_approvals(self, tmp_path):
+        path = tmp_path / "approved.json"
+        session_a = MCPApprovalManager(approval_path=path)
+        session_b = MCPApprovalManager(approval_path=path)
+
+        session_a.approve("one", "/p/.mcp.json")
+        session_b.approve("two", "/p/.mcp.json")
+
+        assert json.loads(path.read_text()) == {"one": ["/p/.mcp.json"], "two": ["/p/.mcp.json"]}
+
+    def test_a_withdrawn_approval_no_longer_counts_anywhere(self, tmp_path):
+        path = tmp_path / "approved.json"
+        session_a = MCPApprovalManager(approval_path=path)
+        session_b = MCPApprovalManager(approval_path=path)
+        session_a.approve("s", "/p/.mcp.json")
+        assert session_b.is_approved("s", "/p/.mcp.json") is True
+
+        assert session_a.revoke("s", "/p/.mcp.json") is True
+
+        assert session_b.is_approved("s", "/p/.mcp.json") is False
+        assert json.loads(path.read_text()) == {}
+        # Withdrawing what is not approved is harmless.
+        assert session_a.revoke("s", "/p/.mcp.json") is True
+
+    def test_the_user_global_config_cannot_be_withdrawn(self, tmp_path):
+        mgr = MCPApprovalManager(approval_path=tmp_path / "approved.json")
+
+        assert mgr.revoke("any", _USER_GLOBAL_MCP) is False
+        assert mgr.is_approved("any", _USER_GLOBAL_MCP) is True
+
+    def test_without_a_terminal_it_still_fails_closed(self, tmp_path):
+        mgr = MCPApprovalManager(approval_path=tmp_path / "approved.json")
+        with patch.object(MCPApprovalManager, "_can_prompt", return_value=False):
+            assert mgr.check_approval("s", "/p/.mcp.json") is False

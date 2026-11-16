@@ -243,3 +243,83 @@ def test_keys_a_newer_client_adds_are_ignored() -> None:
         {"server": "s", "tool": "t", "enabled": False, "later": 1}
     )
     assert (toggle.server, toggle.tool, toggle.enabled) == ("s", "t", False)
+
+
+# ── First-use approval from the window (campaign R669 / R209) ─────────
+
+
+def _approving_manager(tmp_path: Path) -> MCPClientManager:
+    from igni_core.core.mcp.approval import MCPApprovalManager
+    from igni_core.core.mcp.config import MCPServerConfig
+
+    manager = _manager(tmp_path)
+    manager.configs.clear()
+    manager._approval = MCPApprovalManager(approval_path=tmp_path / "approved.json")  # noqa: SLF001
+    project = str(tmp_path / ".mcp.json")
+    manager.register_server(MCPServerConfig(name="tracker", source="project", source_path=project))
+    manager.register_server(MCPServerConfig(name="svc", source="extension"))
+    return manager
+
+
+def test_the_servers_waiting_for_approval_are_listed_without_an_extension_s(
+    tmp_path: Path,
+) -> None:
+    manager = _approving_manager(tmp_path)
+
+    rows = _handler(_session(manager)).methods()[RpcMethod.LIST_MCP_APPROVALS]({})
+
+    assert [(r.name, r.source, r.approved) for r in rows] == [("tracker", "project", False)]
+
+
+async def test_the_window_approves_a_server_and_every_session_sees_it(tmp_path: Path) -> None:
+    """There was no terminal to answer the prompt on in the desktop app, and
+    no other way to approve: a project's server could never connect there."""
+    from igni_core.core.mcp.approval import MCPApprovalManager
+
+    manager = _approving_manager(tmp_path)
+    other_session = MCPApprovalManager(approval_path=tmp_path / "approved.json")
+    source = str(tmp_path / ".mcp.json")
+
+    row = await _handler(_session(manager)).methods()[RpcMethod.SET_MCP_APPROVAL](
+        {"server_name": "tracker", "approved": True}
+    )
+
+    assert (row.name, row.approved) == ("tracker", True)
+    assert manager.approvals.is_approved("tracker", source)
+    assert other_session.is_approved("tracker", source)
+
+
+async def test_withdrawing_an_approval_disconnects_a_connected_server(tmp_path: Path) -> None:
+    manager = _approving_manager(tmp_path)
+    source = str(tmp_path / ".mcp.json")
+    manager.approvals.approve("tracker", source)
+    manager._clients["tracker"] = MagicMock()  # noqa: SLF001 — connected
+    manager.disconnect_one = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    session = _session(manager)
+
+    row = await _handler(session).methods()[RpcMethod.SET_MCP_APPROVAL](
+        {"server_name": "tracker", "approved": False}
+    )
+
+    assert row.approved is False
+    manager.disconnect_one.assert_awaited_once_with("tracker")
+    session.startup.rebuild_mcp.assert_called_once_with()
+
+
+@pytest.mark.parametrize("name", ["nowhere", "svc"])
+async def test_a_server_not_configured_or_an_extension_s_is_refused(
+    tmp_path: Path, name: str
+) -> None:
+    manager = _approving_manager(tmp_path)
+
+    with pytest.raises(ValueError, match=repr(name)):
+        await _handler(_session(manager)).methods()[RpcMethod.SET_MCP_APPROVAL](
+            {"server_name": name, "approved": True}
+        )
+
+
+def test_only_the_window_may_approve_a_server() -> None:
+    from igni_core.backend.standing_policy import WINDOW_ONLY_RPCS
+
+    assert RpcMethod.SET_MCP_APPROVAL in WINDOW_ONLY_RPCS
+    assert RpcMethod.LIST_MCP_APPROVALS not in WINDOW_ONLY_RPCS

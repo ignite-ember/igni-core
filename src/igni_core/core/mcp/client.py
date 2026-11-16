@@ -470,6 +470,11 @@ class MCPClientManager:
 
     # ── Server enumeration ────────────────────────────────────────
 
+    @property
+    def approvals(self) -> MCPApprovalManager:
+        """The first-use approvals this manager connects by."""
+        return self._approval
+
     def list_servers(self) -> list[str]:
         """List available MCP server names."""
         return list(self.configs.keys())

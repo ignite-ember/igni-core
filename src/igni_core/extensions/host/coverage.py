@@ -69,9 +69,11 @@ NOT_REACHABLE: tuple[Unreachable, ...] = (
     Unreachable(
         key="workspace_trust",
         what="Workspace trust (`get_workspace_trust`, `set_workspace_trust`, the "
-        "`workspace_trust_required` push)",
-        why="Trusting a folder lets it run its own code; that is the person's decision, "
-        "made in igni's own dialog or `igni trust`, never an extension's.",
+        "`workspace_trust_required` push) and approving a configured MCP server "
+        "(`list_mcp_approvals`, `set_mcp_approval`)",
+        why="Trusting a folder, or one of its MCP servers, lets it run its own code; that "
+        "is the person's decision, made in igni's own dialog or `igni trust`, never an "
+        "extension's.",
     ),
     Unreachable(
         key="service",
@@ -212,6 +214,8 @@ RPC_UNREACHABLE: dict[RpcMethod, str] = {
     RpcMethod.VM_SIGN_IN: "credentials",
     RpcMethod.GET_WORKSPACE_TRUST: "workspace_trust",
     RpcMethod.SET_WORKSPACE_TRUST: "workspace_trust",
+    RpcMethod.LIST_MCP_APPROVALS: "workspace_trust",
+    RpcMethod.SET_MCP_APPROVAL: "workspace_trust",
     RpcMethod.MINT_APPROVER_TOKEN: "approver_tokens",
     RpcMethod.REVOKE_APPROVER_TOKENS: "approver_tokens",
 }

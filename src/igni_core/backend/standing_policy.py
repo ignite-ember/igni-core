@@ -54,6 +54,7 @@ WINDOW_ONLY_RPCS: frozenset[str] = frozenset(
     {
         RpcMethod.SAVE_PERMISSION_RULE,
         RpcMethod.SET_WORKSPACE_TRUST,
+        RpcMethod.SET_MCP_APPROVAL,
         RpcMethod.RUN_SHELL,
         RpcMethod.INSTALL_PLUGIN,
         RpcMethod.UPDATE_PLUGIN,

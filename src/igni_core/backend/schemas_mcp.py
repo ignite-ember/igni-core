@@ -59,6 +59,20 @@ class MCPToolToggleResult(BaseModel):
     enabled: bool = Field(description="The tool's state now: `true` if the agent may use it.")
 
 
+class McpApproval(BaseModel):
+    """Whether a configured MCP server may connect: its first-use approval."""
+
+    name: str = Field(description="The server's name, as configured.")
+    source: str = Field(
+        description="Where it is configured: `user`, `project`, `plugin`, `managed`, ..."
+    )
+    source_path: str = Field(description="The configuration file it comes from.")
+    approved: bool = Field(
+        description="`true` when it may connect: approved once, or from the user's own "
+        "`~/.igni/.mcp.json`. An unapproved one is never connected."
+    )
+
+
 class MCPServerSummary(BaseModel):
     """An MCP server's name and whether it is connected.
 

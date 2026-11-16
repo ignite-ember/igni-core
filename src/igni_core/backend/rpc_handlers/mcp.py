@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from igni_core.backend.rpc_binding import NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.schemas_mcp import (
+    McpApproval,
     MCPServerSnapshot,
     MCPServerSummary,
     MCPToolToggleResult,
@@ -32,6 +33,17 @@ class McpToolEnabledArgs(BaseModel):
     server: str = Field(description="Name of the MCP server; not checked to exist.")
     tool: str = Field(description="Name of the server's tool; not checked to exist.")
     enabled: bool = Field(description="The tool's new state: `true` lets the agent use it.")
+
+
+class McpApprovalArgs(BaseModel):
+    """Arguments approving a configured MCP server, or withdrawing its approval."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    server_name: str = Field(description="The server's name in the MCP configuration.")
+    approved: bool = Field(
+        description="`true` approves it; `false` withdraws its approval and disconnects it."
+    )
 
 
 class McpRpcHandler(RpcHandler):
@@ -138,3 +150,37 @@ class McpRpcHandler(RpcHandler):
             tool=args.tool,
             enabled=args.enabled,
         )
+
+    @rpc(RpcMethod.LIST_MCP_APPROVALS, args=NoArgs, scope=RpcScope.SESSION)
+    def list_mcp_approvals(self, args: NoArgs) -> list[McpApproval]:
+        """List this session's MCP servers that need a first-use approval.
+
+        Takes no arguments. Returns one row per configured server — its
+        ``name``, where it is configured (``source``, ``source_path``) and
+        whether it is ``approved``. A server from a project's or a plugin's
+        ``.mcp.json`` runs a command or opens a connection as the person, so
+        it never connects until approved; without a terminal to ask on,
+        igni's window asks instead and answers with ``set_mcp_approval``. An
+        extension's own service is approved by its install and not listed.
+        """
+        return self._controllers.mcp.approvals()
+
+    @rpc(
+        RpcMethod.SET_MCP_APPROVAL,
+        duration=RpcDuration.IO,
+        args=McpApprovalArgs,
+        scope=RpcScope.SESSION,
+    )
+    async def set_mcp_approval(self, args: McpApprovalArgs) -> McpApproval:
+        """Approve a configured MCP server, or withdraw its approval.
+
+        ``server_name`` names the server; ``approved`` is the answer.
+        Approving records it for that server from that configuration file
+        (in ``~/.igni/mcp-approved.json``, which every session reads again
+        when it changes); the server connects on the next ``mcp_connect`` or
+        start. Withdrawing disconnects it if it is connected. Returns the
+        server's row as ``list_mcp_approvals`` would. Fails for a server not
+        configured, an extension's, or the user's own ``~/.igni/.mcp.json``,
+        which is always trusted. Only igni's window may call it.
+        """
+        return await self._controllers.mcp.set_approval(args.server_name, args.approved)

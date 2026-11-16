@@ -69,6 +69,10 @@ class RpcMethod(StrEnum):
     GET_MCP_SERVERS = "get_mcp_servers"
     GET_MCP_SERVER_DETAILS = "get_mcp_server_details"
     SET_MCP_TOOL_ENABLED = "set_mcp_tool_enabled"
+    # First-use approval of the configured MCP servers, for a window with no
+    # terminal to answer the prompt on.
+    LIST_MCP_APPROVALS = "list_mcp_approvals"
+    SET_MCP_APPROVAL = "set_mcp_approval"
 
     # ── Session / status ──────────────────────────────────────────
     GET_SESSION_ID = "get_session_id"
