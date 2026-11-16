@@ -71,7 +71,12 @@ def test_an_entry_is_mapped_field_by_field_with_its_file_and_tier(
     assert files.args == ["-r", "/"]
     assert files.env == {"K": "v"}
     assert files.source_path == str(path)
-    assert files.source == "user"
+    # A repository's server is the project's, not the person's own.
+    # It used to say "user": the project's file was read through the
+    # same call as the home config, so it took the default tier, and
+    # the MCP page then offered no way to withdraw it (campaign
+    # R209/R669).
+    assert files.source == "project"
     remote = servers["remote"]
     assert remote.type is MCPTransport.sse
     assert remote.url == "https://x.example/sse"
@@ -114,9 +119,12 @@ def test_the_order_is_home_then_group_then_project_then_project_igni(
         "d": "project-igni",
     }
     assert servers["a"].source_path == str(home / ".igni" / ".mcp.json")
+    assert servers["a"].source == "user"
     assert servers["b"].source == "group-policy"
     assert servers["c"].source_path == str(project / ".mcp.json")
+    assert servers["c"].source == "project"
     assert servers["d"].source_path == str(project / ".igni" / ".mcp.json")
+    assert servers["d"].source == "project"
 
 
 def test_group_files_are_read_in_name_order_and_only_when_they_end_in_json(

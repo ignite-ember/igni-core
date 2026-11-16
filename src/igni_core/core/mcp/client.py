@@ -43,7 +43,12 @@ except ImportError:  # pragma: no cover — exercised by test_connect_import_err
     _MCPTools = None  # type: ignore[assignment,misc]
 
 from igni_core.core.mcp.approval import MCPApprovalManager
-from igni_core.core.mcp.config import MCPConfigLoader, MCPPolicy, MCPServerConfig
+from igni_core.core.mcp.config import (
+    MCP_FILE_SOURCES,
+    MCPConfigLoader,
+    MCPPolicy,
+    MCPServerConfig,
+)
 from igni_core.core.mcp.naming import tool_name_prefix
 from igni_core.core.mcp.notification_tap import McpNotificationRouter
 from igni_core.core.mcp.schemas import (
@@ -118,7 +123,13 @@ class MCPClientManager:
         # ``PluginLoader.apply_to_mcp``, but that one only ever calls
         # ``load_plugin_servers`` — a group directory passed there was
         # read by nothing.
-        self.configs = MCPConfigLoader(project_dir, group_mcps_dir=group_mcps_dir).load()
+        #
+        # The loader is kept, not thrown away. Its result used to be a
+        # one-shot snapshot, so a ``.mcp.json`` added or edited after
+        # the backend started was not seen until a restart (campaign
+        # R209/R669). :meth:`reload_configs` re-reads it.
+        self._loader = MCPConfigLoader(project_dir, group_mcps_dir=group_mcps_dir)
+        self.configs = self._loader.load()
         self._clients: dict[str, MCPTools] = {}
         self._approval = MCPApprovalManager()
         self._policy: MCPPolicy = (
@@ -251,6 +262,74 @@ class MCPClientManager:
     def unregister_server(self, name: str) -> None:
         """Forget a server :meth:`register_server` added. A no-op when absent."""
         self.configs.pop(name, None)
+
+    async def reload_configs(self) -> list[str]:
+        """Re-read the ``.mcp.json`` files and apply what changed.
+
+        The configured servers used to be a one-shot snapshot taken when
+        the manager was built, so a ``.mcp.json`` added or edited after
+        the backend started was not seen until a restart (campaign
+        R209/R669).
+
+        Returns the names whose configuration changed, plus the names
+        that are no longer configured at all. Their connections are
+        dropped, so the next connect starts the server the file now
+        describes instead of reusing the old process.
+
+        Only the file tiers are replaced: the user's own config, the
+        project's and the group's. A plugin's bundled servers and an
+        extension's own service belong to other layers and stay.
+        """
+        try:
+            fresh = dict(self._loader.load())
+        except Exception as exc:  # a broken file must not break a chat
+            logger.warning("MCP: could not re-read the MCP config files: %s", exc)
+            return []
+
+        previous = {
+            name: config
+            for name, config in self.configs.items()
+            if getattr(config, "source", "") in MCP_FILE_SOURCES
+        }
+        # A file that is there but cannot be read is treated as absent by
+        # the loader. On a reload that would drop every server the file
+        # declared, so a half-written file is not taken for a withdrawn
+        # one: what that file declared stays as it was.
+        unreadable = {str(path) for path in getattr(self._loader, "unreadable_files", set())}
+        for name, config in previous.items():
+            if config.source_path in unreadable:
+                fresh[name] = config
+        changed = [
+            name
+            for name, config in fresh.items()
+            if name not in previous or previous[name] != config
+        ]
+        changed.extend(name for name in previous if name not in fresh)
+        if not changed:
+            return []
+
+        for name in changed:
+            await self.disconnect_one(name)
+
+        kept = {
+            name: config
+            for name, config in self.configs.items()
+            if getattr(config, "source", "") not in MCP_FILE_SOURCES
+        }
+        # Mutated in place: the session's plugin wiring holds this very
+        # dict, and replacing it would leave that wiring behind.
+        self.configs.clear()
+        self.configs.update(fresh)
+        # A plugin or an extension keeps its name even if a config file
+        # declares the same one: they were merged in after the file
+        # tiers, and that order still holds.
+        self.configs.update(kept)
+        logger.info(
+            "MCP: config re-read; %d server(s) changed: %s",
+            len(changed),
+            sorted(changed),
+        )
+        return changed
 
     async def connect(self, name: str) -> MCPConnectResult:
         """Connect to an MCP server by name.

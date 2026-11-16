@@ -551,6 +551,28 @@ class RunController:
         if not result.ok:
             logger.warning("Could not keep the todo list: %s", result.error)
 
+    async def _ensure_mcp(self) -> None:
+        """Connect the session's MCP servers before a run uses the team.
+
+        The window's chat path never did this. Only the CLI's
+        ``SessionMessageHandler`` called ``ensure_mcp``, so a chat in
+        igni's window ran without the configured MCP tools until the
+        MCP page happened to call ``ensure_mcp`` itself (campaign
+        R209/R669).
+
+        A failure here must not end the chat: the run goes on without
+        the MCP tools, and the failure is already recorded in the MCP
+        failure cache for the panel to show.
+        """
+        startup = getattr(self._session, "startup", None)
+        ensure = getattr(startup, "ensure_mcp", None)
+        if not callable(ensure):
+            return
+        try:
+            await ensure()
+        except Exception as exc:
+            logger.warning("Could not connect the MCP servers before the run: %s", exc)
+
     async def _run_locked(
         self, text: str, media: MediaAttachments | None
     ) -> AsyncGenerator[msg.Message, None]:
@@ -571,6 +593,15 @@ class RunController:
             yield msg.Error(text=refusal)
             self._transition_to(RunPhase.done)
             return
+
+        # Connect the configured MCP servers before the team is read.
+        # The window's chat path never did this: only the CLI's
+        # ``SessionMessageHandler`` did, so a chat in igni's window
+        # had no MCP tools until the MCP page called ``ensure_mcp``
+        # (campaign R209/R669). The connect also rebuilds the team, so
+        # it has to happen before ``main_team`` is read — otherwise the
+        # run would use the team without the MCP tools.
+        await self._ensure_mcp()
 
         team = self._session.main_team
 

@@ -60,6 +60,9 @@ class _Server:
     def wire_queue_hook(self, queue: Any) -> None:
         self.queue_hook = queue
 
+    def wire_orchestrate_progress(self, callback: Any) -> None:
+        self.progress_callback = callback
+
     def register_broadcast(self, callback: Any) -> None:
         self.broadcast_bus.register(callback)
 
@@ -186,6 +189,21 @@ async def test_a_runtime_has_its_own_queue_router_and_table_and_the_backend_know
     assert first.rpc_table
     assert first.backend.runtime is first
     assert isinstance(first.transport, SessionStampingTransport)
+
+
+async def test_each_runtime_wires_its_own_progress_callback(tmp_path) -> None:
+    rig = _rig(tmp_path)
+
+    first = await rig.factory.create("sess-a")
+    second = await rig.factory.create("sess-b")
+
+    # Each runtime has its own team and its own backend, so each one
+    # gets its own bridge's callback: a callback shared between two
+    # sessions would file one session's progress under another's id,
+    # and the window would drop it (campaign R665/R666).
+    assert first.backend.progress_callback is not None
+    assert second.backend.progress_callback is not None
+    assert first.backend.progress_callback.__self__ is not second.backend.progress_callback.__self__
 
 
 async def test_a_server_that_cannot_start_leaves_no_directory_record(tmp_path) -> None:
