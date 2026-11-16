@@ -182,6 +182,36 @@ class ApprovalJournal(JournalTable):
         )
         return [stored for row in rows if (stored := self._stored(row)) is not None]
 
+    def waiting_sessions(self) -> set[str]:
+        """The sessions that have an approval waiting on the person.
+
+        One query over the whole table, so a session that is not loaded
+        right now still says it is waiting: the row is written when the
+        approval is raised and deleted when it is answered, whichever
+        backend raised it — so the answer survives a restart, which is
+        what a person opening the session list after a crash needs.
+
+        Only the rows that ask a person count. ``auto_resolved`` and
+        ``continuing`` are kept for a run's resume, not for a person,
+        and a session holding only those is not waiting on anybody.
+        """
+        origins = [origin.value for origin in ApprovalOrigin if origin.asks_a_person]
+        rows: list[str] = self._read(
+            "read the waiting sessions",
+            lambda session: list(
+                session.scalars(
+                    select(WaitingApprovalModel.session_id)
+                    .where(
+                        self._db.scope.where(WaitingApprovalModel),
+                        WaitingApprovalModel.origin.in_(origins),
+                    )
+                    .distinct()
+                ).all()
+            ),
+            [],
+        )
+        return set(rows)
+
     def _delete(self, *conditions: ColumnElement[bool]) -> JournalWrite:
         mine = (self._db.scope.where(WaitingApprovalModel), *conditions)
         gone: list[tuple[str, str, str, str]] = []

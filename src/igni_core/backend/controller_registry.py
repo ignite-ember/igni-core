@@ -35,6 +35,7 @@ from igni_core.backend.server_search import SearchController
 from igni_core.backend.server_sessions import SessionsController
 from igni_core.backend.team_wiring import TeamWiring
 from igni_core.backend.visualization_action_bus import VisualizationActionBus
+from igni_core.core.approvals.journal import ApprovalJournal
 from igni_core.core.auth.discovery import ServerDiscovery
 from igni_core.core.auth.portal_client import PortalClient
 from igni_core.core.config.group_policy.gate import RunGate
@@ -127,6 +128,7 @@ class ControllerRegistry:
         message_queue: DurableMessageQueue | None,
         supervisor: ProcessSupervisor,
         gate: RunGate,
+        journal: ApprovalJournal | None = None,
     ) -> Controllers:
         """Full production wiring — every controller built eagerly.
 
@@ -137,6 +139,10 @@ class ControllerRegistry:
         one. ``gate`` is injected for the same reason: it is the one
         gate of the process, and every controller that starts an agent
         run asks it before it starts one.
+
+        ``journal`` is the project's record of the approvals waiting on
+        the person. The session list asks it which sessions are
+        waiting, so a session nobody has loaded still says so.
         """
         # ── Foundation controllers (session-only deps) ──────────────
         mcp = McpController(session)
@@ -182,6 +188,7 @@ class ControllerRegistry:
         sessions = SessionsController(
             session=session,
             chat_history_provider=chat_history.rebuild,
+            waiting_sessions=journal.waiting_sessions if journal is not None else None,
         )
 
         # One portal client, shared: sign-in and the group-policy fetch

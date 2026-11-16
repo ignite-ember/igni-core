@@ -7341,6 +7341,12 @@
           "title": "Created At",
           "type": "integer"
         },
+        "has_paused_run": {
+          "default": false,
+          "description": "True when this session has a run waiting for the person to answer an approval.",
+          "title": "Has Paused Run",
+          "type": "boolean"
+        },
         "name": {
           "default": "",
           "description": "The session's name; empty when it has none.",
@@ -10213,6 +10219,65 @@
       "title": "WorkflowRunResponse",
       "type": "object"
     },
+    "WorkflowTurn": {
+      "description": "A workflow run's card, as it was drawn during the run.\n\n`events` are the run's `workflow_event` records in the order\nthey arrived \u2014 the very envelopes the `workflow_event` push\ncarried \u2014 so the card can be drawn again from the tape, exactly as\nthe live pushes drew it. Placed where the run happened, among the\nchat turns around it.\n\n`run_id` is empty: a workflow's agent calls are kept in their own\nsession, so there is no agent run to point at. Has no\n`created_at`. Shown only: none of it is in the model's context.",
+      "properties": {
+        "events": {
+          "default": [],
+          "description": "The run's `workflow_event` records, oldest first.",
+          "items": {
+            "additionalProperties": {
+              "description": "Any JSON value.",
+              "type": [
+                "object",
+                "array",
+                "string",
+                "number",
+                "integer",
+                "boolean",
+                "null"
+              ]
+            },
+            "type": "object"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "name": {
+          "default": "",
+          "description": "Name of the workflow that was run.",
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "const": "workflow",
+          "default": "workflow",
+          "description": "Turn kind; always `workflow`.",
+          "title": "Role",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "description": "Id of the agent run this turn belongs to. Pass it to `truncate_history` to edit or delete from this point.",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "default": 0,
+          "description": "Position of the run's first event in the session's event log.",
+          "title": "Seq",
+          "type": "integer"
+        },
+        "workflow_run_id": {
+          "default": "",
+          "description": "Id of the workflow run the card is for.",
+          "title": "Workflow Run Id",
+          "type": "string"
+        }
+      },
+      "title": "WorkflowTurn",
+      "type": "object"
+    },
     "WorkspaceTrustStatus": {
       "description": "Whether the project folder is trusted, and why.\n\nUntil a folder is trusted, its own tools, hooks, plugins and\nconfiguration are not loaded.",
       "properties": {
@@ -11333,7 +11398,8 @@
               "thinking": "#/defs/ThinkingTurn",
               "tool": "#/defs/ToolTurn",
               "user": "#/defs/UserTurn",
-              "visualization": "#/defs/VisualizationTurn"
+              "visualization": "#/defs/VisualizationTurn",
+              "workflow": "#/defs/WorkflowTurn"
             },
             "propertyName": "role"
           },
@@ -11361,6 +11427,9 @@
             },
             {
               "$ref": "#/defs/TeamTurn"
+            },
+            {
+              "$ref": "#/defs/WorkflowTurn"
             }
           ]
         },

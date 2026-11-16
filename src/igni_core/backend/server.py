@@ -129,6 +129,7 @@ class BackendServer:
             message_queue=bootstrap.message_queue,
             supervisor=self._supervisors.supervisor,
             gate=self._gate,
+            journal=bootstrap.journal,
         )
         self._adopt(bootstrap.session, bootstrap.settings, controllers, bootstrap.message_queue)
 

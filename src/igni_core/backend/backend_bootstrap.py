@@ -113,6 +113,11 @@ class BackendBootstrap:
         # approval journal, and read back what a previous backend
         # left waiting — so a restart does not lose a question.
         journal = ApprovalJournal(project_db)
+        #: The project's record of what waits on the person. Kept here
+        #: as well as inside the two stores that write to it: the
+        #: session list asks it which sessions are waiting (so a session
+        #: that is not loaded still says so).
+        self.journal = journal
         self.hitl_store = PendingRequirementsStore(journal, session_id=lambda: session.session_id)
         self.hitl_store.restore(session.session_id)
         session.sub_agent_hitl.attach_journal(journal, session_id=lambda: session.session_id)
