@@ -729,7 +729,11 @@ def test_refreshing_all_summarises_ok_and_failed_as_markdown(monkeypatch, tmp_pa
 def _toggle_session(tmp_path: Path, names: list[str], disabled: list[str]) -> MagicMock:
     session = _session(tmp_path)
     session.plugin_state = PluginsState(disabled=list(disabled))
-    session.plugin_loader.get.side_effect = lambda n: object() if n in names else None
+    # A stand-in for a plugin definition: the toggle path reads the
+    # managed flag off it, so the stub carries that one flag.
+    session.plugin_loader.get.side_effect = lambda n: (
+        SimpleNamespace(is_managed=False) if n in names else None
+    )
     return session
 
 

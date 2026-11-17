@@ -39,6 +39,22 @@ PluginRoot = Literal[
 ]
 
 
+def managed_disable_refusal(name: str) -> str:
+    """The one answer to "a managed plugin may not be disabled".
+
+    A managed plugin is a sysadmin's decision, made in a directory the
+    person cannot write. Both ways of asking to turn one off — the
+    panel's RPC and the CLI's ``/plugins disable`` — answer with these
+    words, so the person gets the same explanation whichever way they
+    ask, and neither path writes a disabled entry it will not honour.
+    """
+    return (
+        f"Plugin '{name}' is managed (sysadmin-enforced) and cannot be "
+        "disabled. Remove it from the managed plugins directory to "
+        "uninstall."
+    )
+
+
 class PluginManifest(BaseModel):
     """The ``.claude-plugin/plugin.json`` schema.
 

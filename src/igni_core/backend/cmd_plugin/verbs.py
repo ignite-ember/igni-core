@@ -35,6 +35,7 @@ from igni_core.backend.plugin_schemas import (
     RemoveArgs,
     UpdateArgs,
 )
+from igni_core.core.plugins.models import managed_disable_refusal
 from igni_core.core.plugins.state import save_state
 
 if TYPE_CHECKING:
@@ -299,11 +300,19 @@ class _PluginsToggleBase(PluginVerb):
         loader = session.plugin_loader
         state = session.plugin_state
 
-        if loader.get(args.name) is None:
+        plugin = loader.get(args.name)
+        if plugin is None:
             return CommandResult.error(
                 f"No plugin named '{args.name}' is installed. "
                 "Run `/plugins` to list installed plugins."
             )
+        if plugin.is_managed and self._target_in_disabled:
+            # A managed plugin is the sysadmin's, and the session drops
+            # managed plugins from the disabled set anyway — so a
+            # "disabled" answer here would be a lie, and the entry it
+            # left behind would disable the plugin for good the day
+            # the managed directory went away. Say why instead.
+            return CommandResult.info(managed_disable_refusal(args.name))
         disabled_set = set(state.disabled)
         currently_disabled = args.name in disabled_set
 
