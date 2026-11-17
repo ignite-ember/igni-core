@@ -17,6 +17,14 @@ is a markdown file, so an organisation defines its own agents, skills, MCP
 servers and extensions for any team, and ships them to that team from its
 igni server.
 
+Ignite Ember, the company that builds igni, hosts nothing and has no route
+in: no one outside your organisation can access your code — not even the
+company that builds igni.
+
+igni ships a model family of its own too — 4B for a laptop, 27B for one
+data-centre GPU — tuned from open weights, so it can be air-gapped like
+everything else around it.
+
 [igni.sh](https://igni.sh)
 
 ## Where igni-core sits
@@ -31,8 +39,10 @@ igni is several repositories, all Apache-2.0:
 | **SDKs** | [ignite-ember/igni-sdk](https://github.com/ignite-ember/igni-sdk) | `igni-service` (an extension's backend service), `igni-extension` (an extension's process), `igni-client` (a program driving an igni), `@ignite-ember/extension-bridge` (an extension's page), `@ignite-ember/ui-react` and `@ignite-ember/ui-css` (its UI). |
 
 Paid modules (CodeIndex, Artifacts, Fleet) are separate products that plug
-in through the same extension and service-identity interfaces. igni-core
-runs no graph database or embedder of its own.
+in through the same extension and service-identity interfaces. The Factory
+and Autopilot tune open models into your own domain experts — on your
+hardware, inside your network. igni-core runs no graph database or embedder
+of its own.
 
 ## What igni-core gives you
 
