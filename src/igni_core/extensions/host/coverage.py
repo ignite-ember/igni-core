@@ -91,6 +91,14 @@ NOT_REACHABLE: tuple[Unreachable, ...] = (
         "mint the token could approve its own agent's calls (SECURITY §10).",
     ),
     Unreachable(
+        key="verdict",
+        what="The verdict on the card the agent drew (`report_visualization_verdict`)",
+        why="Only the client that draws the agent's card has a verdict to give: it is "
+        "what the agent is told about the card it drew. An extension's own view "
+        "(`host.chat.append`) is shown to the person and never sent to the model, so "
+        "there is no agent's card for it to be a verdict about.",
+    ),
+    Unreachable(
         key="dead_channel",
         what="The push channels nothing produces (`orchestrate_progress`, `scheduler_event`)",
         why="No producer sends them: a run's progress goes on `orchestrate_event`, and a "
@@ -218,6 +226,7 @@ RPC_UNREACHABLE: dict[RpcMethod, str] = {
     RpcMethod.SET_MCP_APPROVAL: "workspace_trust",
     RpcMethod.MINT_APPROVER_TOKEN: "approver_tokens",
     RpcMethod.REVOKE_APPROVER_TOKENS: "approver_tokens",
+    RpcMethod.REPORT_VISUALIZATION_VERDICT: "verdict",
 }
 
 
