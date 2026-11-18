@@ -37,7 +37,7 @@ from igni_core.core.plugins import installer as _plugin_installer
 from igni_core.core.plugins import state as _plugin_state
 from igni_core.core.plugins.git import GitClient, GitError
 from igni_core.core.plugins.marketplace_store import MarketplaceRegistryStore
-from igni_core.core.plugins.models import PluginInfo
+from igni_core.core.plugins.models import PluginInfo, managed_disable_refusal
 from igni_core.core.plugins.source_policy import PluginSourcePolicy
 from igni_core.protocol import messages as msg
 
@@ -187,14 +187,9 @@ class PluginController:
         if plugin.is_managed and not enabled:
             # Managed plugins are sysadmin-enforced; refuse the
             # disable attempt explicitly so the user knows why
-            # rather than seeing a silent no-op.
-            return msg.Info(
-                text=(
-                    f"Plugin '{name}' is managed (sysadmin-enforced) and cannot be "
-                    "disabled. Remove it from the managed plugins directory to "
-                    "uninstall."
-                )
-            )
+            # rather than seeing a silent no-op. The CLI's
+            # ``/plugins disable`` answers with the same words.
+            return msg.Info(text=managed_disable_refusal(name))
 
         disabled_set = set(state.disabled)
         if enabled:

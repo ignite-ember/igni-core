@@ -15,10 +15,12 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from igni_core.backend.command_handler import CommandHandler
 from igni_core.core.config.managed_policy import ManagedPolicySource
 from igni_core.core.paths import CONFIG_DIR
 from igni_core.core.plugins import state as state_mod
@@ -29,6 +31,7 @@ from igni_core.core.plugins.models import (
     PluginManifest,
     PluginSource,
 )
+from igni_core.core.session.core import PluginReloadCounts
 from tests.backend_server_factory import make_backend
 
 # Alias for the deleted ``settings._platform_managed_settings_path``
@@ -262,3 +265,58 @@ class TestSetPluginEnabledRefusesManaged:
         # No managed-refusal text in the reply.
         assert "cannot be disabled" not in result.text.lower()
         assert "enabled" in result.text.lower()
+
+
+# ── the slash command refuses to disable a managed plugin ─────────
+
+
+class TestSlashDisableRefusesManaged:
+    """``/plugins disable`` must refuse a managed plugin, the way the
+    panel's RPC does.
+
+    The RPC refuses explicitly, so the person learns why. The slash
+    command used to write the name into the disabled list and answer
+    "disabled" — and since the session drops managed plugins from the
+    disabled set, the plugin stayed on and the answer was a lie. It
+    also left a stale entry behind: should the managed directory ever
+    go away, that entry would disable the plugin for good.
+    """
+
+    def _handler(self, tmp_path: Path, monkeypatch) -> CommandHandler:
+        managed = tmp_path / "managed"
+        _make_plugin(managed / CONFIG_DIR / "plugins", "org-policy")
+
+        loader = PluginLoader()
+        monkeypatch.setattr(
+            "igni_core.core.plugins.loader._platform_managed_plugins_root",
+            lambda: managed,
+        )
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        loader.load_all(project_dir=tmp_path / "proj")
+
+        session = MagicMock()
+        session.plugin_loader = loader
+        session.plugin_state = state_mod.PluginsState(disabled=[])
+        session.settings.storage.data_dir = str(tmp_path / "data")
+        session.plugin_data_dir = str(tmp_path / "data")
+        session.reload_plugins.return_value = PluginReloadCounts(
+            plugins=0, skills=0, agents=0, hooks=0
+        )
+        return CommandHandler(session)
+
+    def test_the_command_refuses_and_says_why(self, tmp_path: Path, monkeypatch) -> None:
+        """The answer names the plugin and says it is managed."""
+        h = self._handler(tmp_path, monkeypatch)
+        result = asyncio.run(h.handle("/plugins disable org-policy"))
+        assert result.kind == "info"
+        assert "managed" in result.content.lower()
+        assert "cannot be disabled" in result.content.lower()
+
+    def test_nothing_is_written_to_the_state(self, tmp_path: Path, monkeypatch) -> None:
+        """No disabled entry, and the session was not reloaded — the
+        refusal happens before any state is touched."""
+        h = self._handler(tmp_path, monkeypatch)
+        asyncio.run(h.handle("/plugins disable org-policy"))
+        persisted = state_mod.load_state(data_dir=tmp_path / "data")
+        assert persisted.disabled == []
+        h._session.reload_plugins.assert_not_called()  # type: ignore[attr-defined]
