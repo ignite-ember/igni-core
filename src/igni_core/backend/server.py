@@ -24,6 +24,7 @@ from igni_core.backend.backend_bootstrap import BackendBootstrap
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.backend.controller_registry import ControllerRegistry, Controllers
 from igni_core.backend.schemas_sessions import AutoNameResult
+from igni_core.backend.schemas_visualization import VisualizationVerdictResult
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustController, reload_settings
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.group_policy.gate import RunGate
@@ -62,7 +63,6 @@ if TYPE_CHECKING:
     from igni_core.backend.schemas_visualization import (
         VisualizationAction,
         VisualizationActionResult,
-        VisualizationVerdictResult,
     )
     from igni_core.backend.server_files import ReadFileResult
     from igni_core.backend.server_processes import ProcessRow
