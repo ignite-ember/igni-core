@@ -1408,6 +1408,25 @@
       "title": "DisplayConfig",
       "type": "object"
     },
+    "ElementFailureArgs": {
+      "description": "One element of a card the client could not draw.",
+      "properties": {
+        "message": {
+          "default": "",
+          "description": "Why the client could not draw it, in the client's words.",
+          "title": "Message",
+          "type": "string"
+        },
+        "type": {
+          "default": "",
+          "description": "The element's type, e.g. `BarGraph`.",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "title": "ElementFailureArgs",
+      "type": "object"
+    },
     "Error": {
       "description": "An error message to show the person.",
       "properties": {
@@ -9526,6 +9545,19 @@
           "title": "Json",
           "type": "string"
         },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which draw of the card this is. The first draw is 1. The client sends it back with its verdict, so the verdict names the draw it is about. Null on a partial frame, which is not a draw.",
+          "title": "Revision"
+        },
         "source": {
           "default": "",
           "description": "Id of the extension that added the card. Empty for cards produced by an agent.",
@@ -9621,6 +9653,92 @@
         }
       },
       "title": "VisualizationTurn",
+      "type": "object"
+    },
+    "VisualizationVerdictArgs": {
+      "description": "Arguments for reporting what the client drew of a card the agent\ndrew.",
+      "properties": {
+        "failed": {
+          "default": [],
+          "description": "The elements the client could not draw.",
+          "items": {
+            "$ref": "#/defs/ElementFailureArgs"
+          },
+          "title": "Failed",
+          "type": "array"
+        },
+        "issues": {
+          "default": [],
+          "description": "What was wrong with the card's shape.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Issues",
+          "type": "array"
+        },
+        "revision": {
+          "default": 0,
+          "description": "Which draw of the card this is; the first draw is 1.",
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "spec_id": {
+          "description": "The card the verdict is about.",
+          "title": "Spec Id",
+          "type": "string"
+        },
+        "total": {
+          "default": 0,
+          "description": "How many elements the card has.",
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "spec_id"
+      ],
+      "title": "VisualizationVerdictArgs",
+      "type": "object"
+    },
+    "VisualizationVerdictResult": {
+      "description": "Confirmation that a card's verdict was recorded.\n\nEchoes the card the verdict is about and what the client drew of\nit, so the client can show that its word was taken.",
+      "properties": {
+        "drawn": {
+          "description": "How many elements the client drew.",
+          "title": "Drawn",
+          "type": "integer"
+        },
+        "ok": {
+          "description": "`true` when the verdict was recorded.",
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "revision": {
+          "description": "Which draw of the card this is.",
+          "title": "Revision",
+          "type": "integer"
+        },
+        "spec_id": {
+          "description": "The card the verdict is about.",
+          "title": "Spec Id",
+          "type": "string"
+        },
+        "total": {
+          "description": "How many elements the card has.",
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ok",
+        "spec_id",
+        "revision",
+        "drawn",
+        "total"
+      ],
+      "title": "VisualizationVerdictResult",
       "type": "object"
     },
     "VmCredentialState": {
@@ -12665,6 +12783,25 @@
       "streams": [],
       "summary": "Uninstall a plugin.",
       "timeout_seconds": 30
+    },
+    "report_visualization_verdict": {
+      "access": "client",
+      "area": "panels",
+      "args": {
+        "$ref": "#/defs/VisualizationVerdictArgs"
+      },
+      "correlate": null,
+      "doc": "Tell this session what the client drew of a card the agent drew.\n\n`spec_id` is the card, `revision` which draw of it (the first\nis 1), `total` how many elements the card has, `failed` the\nelements the client could not draw \u2014 each with its type and the\nclient's word for why \u2014 and `issues` what was wrong with the\ncard's shape. The verdict is kept against that card and draw,\nand the visualizer's recap quotes it, so the agent says what is\non the screen. Returns the card, the draw and how much of it\nwas drawn.",
+      "duration": "instant",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/VisualizationVerdictResult"
+      },
+      "scope": "session",
+      "streams": [],
+      "summary": "Tell this session what the client drew of a card the agent drew.",
+      "timeout_seconds": 10
     },
     "revoke_approver_tokens": {
       "access": "window",

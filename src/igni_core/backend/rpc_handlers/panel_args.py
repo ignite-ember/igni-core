@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from igni_core.core.tools.visualization_verdicts import ElementFailure, VisualizationVerdict
+
 
 class PanelArgs(BaseModel):
     """Base for every panel RPC's arguments: keys a newer client adds
@@ -116,6 +118,45 @@ class VisualizationActionArgs(PanelArgs):
     params: dict[str, JsonValue] | None = Field(
         default=None, description="Values the visualization attached to the action; omit for none."
     )
+
+
+class ElementFailureArgs(PanelArgs):
+    """One element of a card the client could not draw."""
+
+    type: str = Field(default="", description="The element's type, e.g. ``BarGraph``.")
+    message: str = Field(
+        default="", description="Why the client could not draw it, in the client's words."
+    )
+
+
+class VisualizationVerdictArgs(PanelArgs):
+    """Arguments for reporting what the client drew of a card the agent
+    drew."""
+
+    spec_id: str = Field(description="The card the verdict is about.")
+    revision: int = Field(
+        default=0, ge=0, description="Which draw of the card this is; the first draw is 1."
+    )
+    total: int = Field(default=0, ge=0, description="How many elements the card has.")
+    failed: list[ElementFailureArgs] = Field(
+        default_factory=list, description="The elements the client could not draw."
+    )
+    issues: list[str] = Field(
+        default_factory=list, description="What was wrong with the card's shape."
+    )
+
+    def verdict(self) -> VisualizationVerdict:
+        """The verdict these arguments describe."""
+        return VisualizationVerdict(
+            spec_id=self.spec_id,
+            revision=self.revision,
+            total=self.total,
+            failed=tuple(
+                ElementFailure(type=failure.type, message=failure.message)
+                for failure in self.failed
+            ),
+            issues=tuple(self.issues),
+        )
 
 
 class ProcessTailArgs(PanelArgs):

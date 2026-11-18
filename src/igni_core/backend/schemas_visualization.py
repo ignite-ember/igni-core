@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from igni_core.core.broadcast_schema import BroadcastEvent
+from igni_core.core.tools.visualization_verdicts import VisualizationVerdict
 
 
 class VisualizationAction(BaseModel):
@@ -53,3 +54,27 @@ class VisualizationActionResult(BaseModel):
     @classmethod
     def echo(cls, entry: VisualizationAction) -> VisualizationActionResult:
         return cls(ok=True, action=entry.action, params=entry.params)
+
+
+class VisualizationVerdictResult(BaseModel):
+    """Confirmation that a card's verdict was recorded.
+
+    Echoes the card the verdict is about and what the client drew of
+    it, so the client can show that its word was taken.
+    """
+
+    ok: bool = Field(description="`true` when the verdict was recorded.")
+    spec_id: str = Field(description="The card the verdict is about.")
+    revision: int = Field(description="Which draw of the card this is.")
+    drawn: int = Field(description="How many elements the client drew.")
+    total: int = Field(description="How many elements the card has.")
+
+    @classmethod
+    def of(cls, verdict: VisualizationVerdict) -> VisualizationVerdictResult:
+        return cls(
+            ok=True,
+            spec_id=verdict.spec_id,
+            revision=verdict.revision,
+            drawn=verdict.drawn,
+            total=verdict.total,
+        )

@@ -39,6 +39,7 @@ from igni_core.core.tools.orchestrate_stream_handler import (
 from igni_core.core.tools.orchestrate_symbols import VIS_SPEC_PREFIX, LogSymbols
 from igni_core.core.tools.spawn_context import SpawnCalls
 from igni_core.core.tools.subagent_stream import SubAgentStreamState
+from igni_core.core.tools.visualization_verdicts import VERDICTS
 
 _stream_log = logging.getLogger("igni_core.llm_calls")
 _logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
     def _agent_completed_path(self) -> str:
         return self.state.agent_path_id
 
-    def _shape_final(self, final: str) -> str:
+    async def _shape_final(self, final: str) -> str:
         # For the visualizer sub-agent, the tool call already streamed
         # progressive ``visualization_delta`` events to the FE (see
         # ``_on_custom_event`` below), so the card is already
@@ -105,8 +106,32 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         # parent just quotes the summary to the user.
         path = self._context.agent_path
         if path and path[-1] == "visualizer":
-            return "Emitted visualization to the client."
+            return await self._visualizer_recap()
         return final
+
+    async def _visualizer_recap(self) -> str:
+        """What the parent agent is told about the card.
+
+        "Emitted visualization to the client." says the card went
+        out. What the card *shows* is the client's own word for it:
+        the client renders the card and reports what it drew of it,
+        and that verdict is what the parent is told — so the parent
+        says what is on the screen instead of what the model hoped
+        for (R666).
+
+        The wait is bounded and short: the client answers while the
+        visualizer is still writing its own summary, so by the time
+        the run ends the verdict is usually already there. A run with
+        no client on it — a headless run — never gets one, and the
+        recap stays what it was.
+        """
+        state = self.state
+        if state.vis_revision <= 0:
+            return "Emitted visualization to the client."
+        verdict = await VERDICTS.await_verdict(state.vis_spec_id, state.vis_revision)
+        if verdict is None:
+            return "Emitted visualization to the client."
+        return f"Emitted visualization to the client. {verdict.said()}"
 
     # ── Dispatch ───────────────────────────────────────────────────
     async def _handle(self, event: Any) -> Any:
@@ -228,7 +253,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         tc_id = getattr(te, "tool_call_id", None) if te else None
         state.current_tool = tn
         if tn == "visualize" and isinstance(ta, dict) and isinstance(ta.get("spec"), dict):
-            await self._emit_visualizer_final_delta(ta["spec"])
+            await self._emit_visualizer_final_delta(ta["spec"], state.next_vis_revision())
         self._log_line(
             f"  {LogSymbols.T_TRUNK.value}  {LogSymbols.T_BRANCH.value} {tn}({args_full})"
         )
@@ -241,7 +266,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
             )
         )
 
-    async def _emit_visualizer_final_delta(self, spec: dict[str, Any]) -> None:
+    async def _emit_visualizer_final_delta(self, spec: dict[str, Any], revision: int) -> None:
         """Visualizer final delta.
 
         The model finished streaming args, ``ta["spec"]`` now holds
@@ -249,6 +274,10 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
         delta so the FE can transition the card out of "streaming"
         mode, and log to the session event log so a reload replays
         it.
+
+        The delta carries the draw's ``revision``: the client sends it
+        back with its verdict, so the verdict names the draw it is
+        about.
 
         The spec also goes to the activity log, which is how it
         reaches the agent that asked for it — see
@@ -264,6 +293,7 @@ class SubAgentStreamHandler(BaseStreamHandler[SubAgentStreamState]):
             spec_id=state.vis_spec_id,
             spec_json=spec_json,
             final=True,
+            revision=revision,
         )
         self._emit(final_event)
         appender = self._context.sinks.event_appender
