@@ -573,3 +573,133 @@ class TestLspTools:
         tool = LspTools(manager)
         out = tool.lsp_list_servers()
         assert "No LSP servers configured" in out
+
+
+# ── Notification methods ──────────────────────────────────────
+
+
+class TestNotificationMethods:
+    """A method the LSP spec defines as a notification goes out as a
+    notification — no id, no reply — and every other method keeps
+    being a request. The refusal of a notification sent as a request
+    is the bug this split fixes: the document never opened, so the
+    diagnostics that depend on it came back empty."""
+
+    @pytest.mark.asyncio
+    async def test_a_notification_method_is_sent_as_a_notification(self):
+        manager = MagicMock()
+        manager.notify = AsyncMock(return_value=None)
+        manager.query = AsyncMock(return_value={"items": []})
+        tool = LspTools(manager)
+        params = {"textDocument": {"uri": "file:///x.py", "text": "import os\n"}}
+        out = await tool.lsp_query("ruff", "textDocument/didOpen", json.dumps(params))
+        assert json.loads(out) == {"notification": "textDocument/didOpen", "sent": True}
+        manager.notify.assert_called_once_with("ruff", "textDocument/didOpen", params)
+        manager.query.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_request_method_is_still_a_request(self):
+        manager = MagicMock()
+        manager.notify = AsyncMock(return_value=None)
+        manager.query = AsyncMock(return_value={"items": [], "kind": "full"})
+        tool = LspTools(manager)
+        out = await tool.lsp_query("ruff", "textDocument/diagnostic", "{}")
+        assert json.loads(out) == {"items": [], "kind": "full"}
+        manager.query.assert_called_once_with("ruff", "textDocument/diagnostic", {})
+        manager.notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_method_we_do_not_know_is_still_a_request(self):
+        """An unknown method still reaches the server as a request,
+        so the server's own answer is what the agent reads."""
+        manager = MagicMock()
+        manager.notify = AsyncMock(return_value=None)
+        manager.query = AsyncMock(return_value={"ok": True})
+        tool = LspTools(manager)
+        await tool.lsp_query("ruff", "textDocument/somethingNew", "{}")
+        manager.query.assert_called_once_with("ruff", "textDocument/somethingNew", {})
+        manager.notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_lifecycle_methods_stay_requests(self):
+        """``exit`` would shut the server down under the session and
+        ``initialized`` belongs to the handshake — neither is routed
+        as a notification."""
+        manager = MagicMock()
+        manager.notify = AsyncMock(return_value=None)
+        manager.query = AsyncMock(return_value=None)
+        tool = LspTools(manager)
+        await tool.lsp_query("ruff", "exit", "{}")
+        await tool.lsp_query("ruff", "initialized", "{}")
+        assert manager.notify.call_count == 0
+        assert manager.query.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_failing_notification_surfaces_as_an_error(self):
+        manager = MagicMock()
+        manager.notify = AsyncMock(side_effect=LspClientError("server gone"))
+        tool = LspTools(manager)
+        out = await tool.lsp_query("ruff", "textDocument/didOpen", "{}")
+        assert "Error" in out
+        assert "server gone" in out
+
+    @pytest.mark.asyncio
+    async def test_params_that_are_not_json_never_reach_the_server(self):
+        manager = MagicMock()
+        manager.notify = AsyncMock(return_value=None)
+        manager.query = AsyncMock(return_value=None)
+        tool = LspTools(manager)
+        out = await tool.lsp_query("ruff", "textDocument/didOpen", "{not json")
+        assert "Error" in out
+        manager.notify.assert_not_called()
+        manager.query.assert_not_called()
+
+    def test_the_notification_set_is_the_specs_own(self):
+        from igni_core.core.lsp.methods import NOTIFICATION_METHODS, is_notification_method
+
+        assert is_notification_method("textDocument/didOpen")
+        assert is_notification_method("textDocument/didChange")
+        assert is_notification_method("$/cancelRequest")
+        assert not is_notification_method("textDocument/diagnostic")
+        assert not is_notification_method("textDocument/hover")
+        assert not is_notification_method("exit")
+        assert not is_notification_method("initialized")
+        assert "exit" not in NOTIFICATION_METHODS
+        assert "initialized" not in NOTIFICATION_METHODS
+
+
+class TestManagerNotify:
+    @pytest.mark.asyncio
+    async def test_notify_routes_through_ensure(self, tmp_path, monkeypatch):
+        configs = {"x": LspServerConfig(name="x", command="x")}
+        manager = LspServerManager(configs, tmp_path)
+
+        captured = []
+
+        class _Recording:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def start(self):
+                pass
+
+            async def shutdown(self):
+                pass
+
+            async def request(self, method, params):
+                captured.append(("request", method, params))
+                return {"result_for": method}
+
+            async def notify(self, method, params):
+                captured.append(("notify", method, params))
+
+        monkeypatch.setattr(manager_mod, "LspClient", _Recording)
+        await manager.notify("x", "textDocument/didOpen", {"uri": "file:///x"})
+        assert captured == [("notify", "textDocument/didOpen", {"uri": "file:///x"})]
+
+    @pytest.mark.asyncio
+    async def test_notify_on_an_unconfigured_server_raises(self, tmp_path):
+        manager = LspServerManager({}, tmp_path)
+        with pytest.raises(LspClientError) as exc_info:
+            await manager.notify("nope", "textDocument/didOpen", {})
+        assert "not configured" in str(exc_info.value)
