@@ -19,6 +19,14 @@ extension only the result.
 is ``{"access_token", "expires_in", "service_url"}``; ``401`` for a
 wrong secret, ``503`` when nobody is signed in to igni.
 
+**A refused token, asked for again.** The answer is the token the host
+holds, and the host keeps it until shortly before it expires. When the
+service refuses it — a revoked grant, a rotated key, a wrong audience
+— the same token would be refused again, so the process asks for a new
+one with ``X-Igni-Token-Refresh: 1`` and the host exchanges another.
+The audience is still not a parameter: a refresh is for the same
+service, and the secret still decides which one.
+
 **The secret is the only thing that names the extension.** One
 listener serves every extension, and the secret decides which
 extension is asking and therefore which service's token it gets — an
@@ -81,6 +89,10 @@ logger = logging.getLogger(__name__)
 ENV_SERVICE_URL = "IGNI_SERVICE_URL"
 ENV_TOKEN_URL = "IGNI_SERVICE_TOKEN_URL"  # noqa: S105 — an environment variable's name, not a secret
 ENV_TOKEN_SECRET = "IGNI_SERVICE_TOKEN_SECRET"  # noqa: S105 — an environment variable's name, not a secret
+
+#: The header a process sends when the service refused the token it was
+#: given, and the same one again would be refused again.
+REFRESH_HEADER = "X-Igni-Token-Refresh"  # noqa: S105 — a header's name, not a secret
 
 #: RFC 8693, as igni server's token endpoint names them.
 TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"  # noqa: S105 — an OAuth grant type URN, not a secret
@@ -475,7 +487,9 @@ class ServiceTokenEndpoint:
             )
 
         try:
-            token = await self._exchange.token_for(grant.service_url)
+            token = await self._exchange.token_for(
+                grant.service_url, refresh=self._wants_refresh(headers)
+            )
         except NotSignedIn as exc:
             return self._error(503, "Service Unavailable", str(exc))
         except TokenExchangeFailed as exc:
@@ -488,6 +502,16 @@ class ServiceTokenEndpoint:
             service_url=grant.service_url,
         ).model_dump_json()
         return HttpReply(200, "OK", body=body.encode(), content_type=_JSON)
+
+    @staticmethod
+    def _wants_refresh(headers: dict[str, str]) -> bool:
+        """Whether the process asks for a token that is not the held one.
+
+        The header is the only thing that can ask: the audience is not a
+        parameter, and a refresh does not change who the token is for —
+        the secret still decides that.
+        """
+        return headers.get(REFRESH_HEADER.lower(), "").strip().lower() in {"1", "true"}
 
     def _is_signed_in(self, named: str) -> bool:
         """Whether ``person:<id>`` is who this backend serves.

@@ -433,9 +433,12 @@ or the extension's `serviceUrl` setting for a development install),
 `{"access_token", "expires_in", "service_url"}`, `401` for any other
 secret, `503` when nobody is signed in. The secret decides the
 audience, so an extension can only ever get its own service's token.
-It is a listener of its own rather than the extension's UI origin,
-which lives in a browser. (`extensions/service_token.py`) A service
-token is never a `permissions.secrets` grant.
+A process whose service refused the token it was sent asks for another
+with `X-Igni-Token-Refresh: 1`, and the host exchanges one: the
+refused token would be refused again. It is a listener of its own
+rather than the extension's UI origin, which lives in a browser.
+(`extensions/service_token.py`) A service token is never a
+`permissions.secrets` grant.
 
 **Its home on the web.** The service's URL — the distribution record's
 `service_url` — is the service's `client_uri`, which RFC 7591 defines as
