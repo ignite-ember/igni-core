@@ -1233,6 +1233,35 @@ Status legend:
   `_resolve_at_path` was previously only indirectly covered
   via integration tests — pinning it directly makes the
   traversal-defense contract explicit.
+- 2026-11-18: row 32's LSP tool now speaks both halves of JSON-RPC —
+  `lsp_query` routed **every** method out as a *request*, so
+  `textDocument/didOpen` — a notification — came back as
+  `-32601 Unknown request`, the document was never opened, and
+  `textDocument/diagnostic` answered with an empty `items` array.
+  The client could already send notifications (`LspClient.notify`);
+  the tool could not reach that path.
+  `core/lsp/methods.py` now names the methods the spec defines as
+  notifications — `textDocument/didOpen`, `didChange`, `didClose`,
+  `didSave`, `workspace/didChangeConfiguration`,
+  `workspace/didChangeWatchedFiles`, `$/cancelRequest`, `$/setTrace`
+  — with `initialized` and `exit` deliberately absent: the first
+  belongs to the handshake and the second would shut the server down
+  under the session. `LspServerManager.notify` sends them without an
+  id, and the tool answers
+  `{"notification": "<method>", "sent": true}`. Every other method
+  is still a request, so a method this list has never heard of still
+  reaches the server and still reports the server's own answer.
+  **The model-facing schema did not move**: the summary and the
+  three argument descriptions are byte-identical to
+  `lsp_tool_schemas.canonical.json` in the fine-tuning corpus, and
+  are now pinned by
+  `tests/test_the_lsp_tool_schema_the_model_reads_has_not_moved.py`
+  — so the split is described in the part of the docstring the model
+  does not read. Covered end to end by
+  `tests/test_the_lsp_tool_opens_a_document_the_way_the_spec_says.py`
+  (tool → manager → client → a real server process on the wire: the
+  didOpen arrives without an id, the diagnostics that follow carry
+  the findings).
 
 ## Notes
 
