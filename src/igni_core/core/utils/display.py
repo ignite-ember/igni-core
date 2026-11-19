@@ -47,6 +47,26 @@ class DisplayManager:
         #: written as the model wrote it, not rendered into an 80-column box
         #: padded with spaces.
         self._plain = console is None and not self.console.is_terminal
+        #: The same for the diagnostics stream, which is a stream of its
+        #: own: stderr may be a terminal while stdout is a pipe, and the
+        #: other way round.
+        self._plain_diagnostics = (
+            console is None and diagnostics is None and not self.diagnostics.is_terminal
+        )
+
+    def _out(self, console: Console, plain: bool, text: str, markup: str) -> None:
+        """Write ``text``: as Rich markup in a terminal, as it is to a pipe.
+
+        Rich wraps at the console's width, and a console whose file is
+        not a terminal is 80 columns wide — so a path or a message came
+        out split across two lines, and a reader had to join them again
+        by hand. A stream that is not a terminal gets the text as it is:
+        no wrapping, no cropping, no markup.
+        """
+        if plain:
+            console.out(text, highlight=False)
+            return
+        console.print(markup)
 
     def print_markdown(self, text: str) -> None:
         """Render markdown text in the terminal; as it is, to a pipe."""
@@ -58,7 +78,7 @@ class DisplayManager:
     def print_response(self, text: str, agent_name: str | None = None) -> None:
         """Print an agent response with optional agent label."""
         if agent_name:
-            self.console.print(f"[dim]{escape(agent_name)}[/dim]")
+            self._out(self.console, self._plain, agent_name, f"[dim]{escape(agent_name)}[/dim]")
         self.print_markdown(text)
 
     def print_tool_call(self, call: ToolCallDisplay) -> None:
@@ -70,19 +90,34 @@ class DisplayManager:
         marker ``>`` — no emoji icons (Rule 3).
         """
         args_str = call.format_args()
-        self.console.print(f"[dim]  > {escape(call.tool_name)}{escape(args_str)}[/dim]")
+        self._out(
+            self.console,
+            self._plain,
+            f"  > {call.tool_name}{args_str}",
+            f"[dim]  > {escape(call.tool_name)}{escape(args_str)}[/dim]",
+        )
 
     def print_error(self, message: str) -> None:
         """Print an error message."""
-        self.diagnostics.print(f"[red]Error:[/red] {escape(message)}")
+        self._out(
+            self.diagnostics,
+            self._plain_diagnostics,
+            f"Error: {message}",
+            f"[red]Error:[/red] {escape(message)}",
+        )
 
     def print_warning(self, message: str) -> None:
         """Print a warning message."""
-        self.diagnostics.print(f"[yellow]Warning:[/yellow] {escape(message)}")
+        self._out(
+            self.diagnostics,
+            self._plain_diagnostics,
+            f"Warning: {message}",
+            f"[yellow]Warning:[/yellow] {escape(message)}",
+        )
 
     def print_info(self, message: str) -> None:
         """Print an info message."""
-        self.console.print(f"[dim]{escape(message)}[/dim]")
+        self._out(self.console, self._plain, message, f"[dim]{escape(message)}[/dim]")
 
     def print_run_stats(self, stats: RunStats) -> None:
         """Print run statistics after a completed run.
@@ -91,7 +126,13 @@ class DisplayManager:
         :meth:`RunStats.format_summary`; this method just wraps
         it in the ``── … ──`` separator and hands it to Rich.
         """
-        self.diagnostics.print(f"[dim]  ── {escape(stats.format_summary())} ──[/dim]")
+        summary = stats.format_summary()
+        self._out(
+            self.diagnostics,
+            self._plain_diagnostics,
+            f"  ── {summary} ──",
+            f"[dim]  ── {escape(summary)} ──[/dim]",
+        )
 
     def print_welcome(self, version: str) -> None:
         """Print the welcome banner."""

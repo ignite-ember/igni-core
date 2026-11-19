@@ -39,7 +39,7 @@ def test_an_explicit_default_counts():
 
 def test_a_discovered_model_counts_even_without_a_default():
     """Cloud discovery merges entries without necessarily setting a
-    default; `_effective_default` falls through to the first key, so a
+    default; `effective_default` falls through to the first key, so a
     logged-in user with models is configured."""
     registry = ModelRegistry(
         _settings(

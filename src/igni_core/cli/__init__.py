@@ -213,6 +213,12 @@ def cli(ctx: click.Context, **_params: object) -> None:
     invocation = CliInvocation(options, settings, HeadlessRun())
     invocation.enable_debug_logging()
 
+    if starts_session:
+        # A model that resolves to nothing is refused here: before the
+        # resume lookup, before the worktree, before a session is made —
+        # and so before a failed run is saved as one.
+        invocation.check_model()
+
     invocation.resolve_resume_id()
     invocation.setup_worktree()
     invocation.carry_trust_into_worktree(folder)

@@ -22,8 +22,10 @@ from igni_core.cli.headless_run import NO_TENANT_REMEDY, HeadlessRun
 from igni_core.cli.logging import AgnoLogs, DebugLogging
 from igni_core.cli.options import CliOptions
 from igni_core.cli.resume import ResumeResolver
+from igni_core.core.config.models import ModelRegistry
 from igni_core.core.config.settings import Settings
 from igni_core.core.db.scope import tenancy
+from igni_core.core.session.cloud_catalog import CloudModelCatalog
 from igni_core.core.session.single_message_run import SingleMessageRun
 from igni_core.core.workspace_trust import process_trust
 from igni_core.core.worktree import WorktreeManager
@@ -84,6 +86,41 @@ class CliInvocation:
             return
         log_path = DebugLogging.enable()
         click.echo(f"Debug logging enabled → {log_path}")
+
+    def check_model(self) -> None:
+        """Refuse a model this run cannot use, before the session starts.
+
+        ``--model`` names a model. When the name resolves to nothing the
+        run used to start anyway: the session built a placeholder, the
+        agent called it, and the failure reached stderr three times over
+        — the registry's own warning, agno's error line and igni's error
+        line — with a timing footer after it, and the failed run was
+        saved as a session.
+
+        Here the run never starts. The name is said once, with the
+        remedy, on stderr; the exit code is 1; nothing is written.
+
+        The cloud catalogue is refreshed first when the name is not a
+        local registry row: a signed-in person may name a model their
+        server offers and this machine has never seen. A name that
+        resolves to nothing after that resolves to nothing.
+        """
+        registry = ModelRegistry(self._settings)
+        name = registry.effective_default()
+        if not name:
+            # Nothing is named at all: the placeholder's own remedy says
+            # what to do, and the session still starts — a first run
+            # reaches ``/login`` that way.
+            return
+        if registry.unresolvable_reason(name) is None:
+            return
+        CloudModelCatalog(self._settings).refresh()
+        name = registry.effective_default()
+        reason = registry.unresolvable_reason(name)
+        if reason is None:
+            return
+        click.echo(f"Error: {reason}", err=True)
+        raise SystemExit(1)
 
     def resolve_resume_id(self) -> None:
         """Fill :attr:`_resume_session_id` from ``--session-id`` or
