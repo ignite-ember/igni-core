@@ -141,8 +141,21 @@ class LayaModel:
 
     @staticmethod
     def _unavailable(exc: Exception) -> DecisionsUnavailable:
-        """The router loads each checkpoint the first time it is asked for it."""
+        """The router loads each checkpoint the first time it is asked for it.
+
+        Air-gapped, the copy on this machine is the only copy there is, so
+        the refusal says how to make one: the router builds without its
+        checkpoints and reaches for them at the first question, so a copy
+        that missed a file fails here rather than at the load (campaign
+        R085).
+        """
         logger.warning("laya: could not run (%s: %s)", type(exc).__name__, exc)
+        if air_gapped_by_environment():
+            cache = hub.HF_HUB_CACHE
+            return DecisionsUnavailable(
+                f"igni is air-gapped and its decision model in {cache} is incomplete "
+                f"({type(exc).__name__}). " + PRESEED_HINT.format(cache=cache)
+            )
         return DecisionsUnavailable(
             f"igni's decision model could not be loaded or run ({type(exc).__name__})"
         )

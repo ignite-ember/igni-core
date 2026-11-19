@@ -83,7 +83,7 @@ class ModelRegistry:
         Raises :class:`ValueError` for user-configuration errors
         (unknown model name, unknown provider).
         """
-        resolved_name = name if name else self._effective_default()
+        resolved_name = name if name else self.effective_default()
         if not resolved_name:
             self._warn_no_model()
             return NoModelConfigured.for_login_required()
@@ -160,6 +160,30 @@ class ModelRegistry:
         model.retries = self.settings.models.retries
         return model
 
+    def unresolvable_reason(self, name: str) -> str | None:
+        """Why the model ``name`` cannot be used, or ``None`` when it can.
+
+        No model is built and no request is made: the CLI asks this
+        before a run starts, so a name that resolves to nothing is
+        refused with one message instead of being found out when the
+        agent calls a provider that does not exist — and the failed run
+        is saved as a session on the way there.
+
+        The message is the one the run would have failed with, so the
+        refusal and the failure say the same thing.
+        """
+        if not name:
+            return None
+        entry = self._resolve_entry(name)
+        if entry is None:
+            return NoModelConfigured.stale_default_message(
+                name, self.settings.models.registry.keys()
+            )
+        if self._catalog.builder_for(entry.provider) is None:
+            available = ", ".join(sorted(self._catalog.available_providers())) or "(none)"
+            return f"Unknown provider {entry.provider!r}. Available: {available}."
+        return None
+
     def get_context_window(self, name: str | None = None) -> int:
         """Get the context window size for a model.
 
@@ -169,7 +193,7 @@ class ModelRegistry:
         even when cloud discovery hasn't populated the registry yet
         — otherwise the user can't reach ``/login`` to fix it.
         """
-        resolved_name = name if name else self._effective_default()
+        resolved_name = name if name else self.effective_default()
         if not resolved_name:
             return self.settings.models.max_context_window
         entry = self._resolve_entry(resolved_name)
@@ -178,7 +202,7 @@ class ModelRegistry:
 
     async def aget_context_window(self, name: str | None = None) -> int:
         """Get the context window size, with async API fallback."""
-        resolved_name = name if name else self._effective_default()
+        resolved_name = name if name else self.effective_default()
         if not resolved_name:
             return self.settings.models.max_context_window
         entry = self._resolve_entry(resolved_name)
@@ -219,7 +243,7 @@ class ModelRegistry:
             name,
         )
 
-    def _effective_default(self) -> str:
+    def effective_default(self) -> str:
         """Return the active default model name, or ``""`` when none.
 
         Resolution order:
@@ -255,7 +279,7 @@ class ModelRegistry:
         the placeholder's id string, which meant the sentinel was a
         contract between two files that had no idea they shared one.
         """
-        return bool(self._effective_default())
+        return bool(self.effective_default())
 
     #: Where each provider's own SDK and tools keep its key, read by a
     #: ``provider:model_id`` name, which has no registry row to name one.
