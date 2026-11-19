@@ -163,5 +163,22 @@ class PendingRegistry:
             ready.append(RestoredRun(run_id=run_id, requirements=requirements))
         return ready
 
+    def drop_restored(self) -> list[PendingHandle]:
+        """Drop every question read back after a restart, and return them.
+
+        Nothing in this process waits on one, so nothing else would ever
+        let it go. A question a stream handler is blocked on is not
+        touched: it goes with its run.
+        """
+        dropped = [
+            PendingHandle(requirement_id=requirement_id, entry=entry)
+            for requirement_id, entry in self._entries.items()
+            if requirement_id in self._restored
+        ]
+        for handle in dropped:
+            self._entries.pop(handle.requirement_id, None)
+        self._restored.clear()
+        return dropped
+
 
 __all__ = ["PendingRegistry"]

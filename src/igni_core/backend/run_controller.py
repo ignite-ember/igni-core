@@ -96,6 +96,10 @@ class RunController:
     #: The pending message of a run that paused for a person: the run has
     #: not finished, so the row stays pending until its resume ends it.
     _paused_pending_id: str | None = None
+    #: Drops the approvals the session's runs left waiting; returns how
+    #: many. A cancel calls it, so no later answer continues a run the
+    #: person stopped (:meth:`HitlController.drop_waiting`).
+    _drop_approvals: Callable[[], int] | None = None
 
     def __init__(
         self,
@@ -106,8 +110,10 @@ class RunController:
         supervisor: ProcessSupervisor,
         gate: RunGate,
         http_client_manager: ModelHttpClientManager | None = None,
+        drop_approvals: Callable[[], int] | None = None,
     ) -> None:
         self._session = session
+        self._drop_approvals = drop_approvals
         self._message_queue = message_queue
         self._stream_factory = stream_factory
         self._supervisor = supervisor
@@ -382,10 +388,17 @@ class RunController:
         interruption from a dangling pending row + the legacy
         ``RunStatus.running`` heuristic. The stamp is fire-and-
         forget so the cancel response doesn't wait on the disk.
+
+        A run paused on an approval has no task left to cancel, and is
+        ended all the same: its approvals are dropped, so answering one
+        later runs nothing, and the cancel answers ``True``. It used to
+        answer ``False`` and leave the approval waiting — the next
+        window was offered it, and answering it ran the tool.
         """
         self._cancel_own_foreground()
 
         self._stamp_interrupted("cancelled", last_error=None)
+        ended_a_pause = self._end_pause()
 
         task = self._current_run_task
         if task and not task.done():
@@ -393,7 +406,24 @@ class RunController:
             self._cancelled_by_person = task
             task.cancel()
             return True
-        return False
+        return ended_a_pause
+
+    def _end_pause(self) -> bool:
+        """End the run that stands paused for a person; ``True`` when one did.
+
+        Its approvals go — the ones this backend asked and the ones a
+        previous backend left — and its message, already stamped
+        cancelled, is no longer the paused run's: a later message must
+        not close it as completed (:meth:`_close_abandoned_pause`).
+        """
+        paused = self._paused_pending_id is not None
+        if paused:
+            self._paused_pending_id = None
+            self._pending_id_for_cancel = None
+        dropped = self._drop_approvals() if self._drop_approvals is not None else 0
+        if dropped:
+            logger.info("Cancel dropped %d waiting approval(s)", dropped)
+        return paused or dropped > 0
 
     def _cancel_own_foreground(self) -> None:
         """Kill the foreground shell — but only if this session

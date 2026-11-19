@@ -322,6 +322,14 @@ class HitlController:
         """Drop pending + auto-resolved entries for a finished run."""
         self._store.sweep_run(run_id)
 
+    def drop_waiting(self) -> int:
+        """The person cancelled the session's run: drop every approval it
+        left waiting — the main agent's, and the sub-agents' a previous
+        backend left — so no later answer runs the call it asked about,
+        and no window attaching afterwards is offered it. Returns how
+        many approvals were dropped."""
+        return self._store.drop_waiting() + self._session.sub_agent_hitl.drop_restored()
+
     # ── What survives a reload or a restart ─────────────────────
 
     def waiting_messages(self) -> list[msg.RunPaused]:

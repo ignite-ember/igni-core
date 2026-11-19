@@ -346,7 +346,7 @@ the run starts: `--auto-approve` runs in `bypassPermissions`,
 
 ## Run Cancellation
 
-A running agent or team can be cancelled mid-execution: the client sends a `Cancel` message, and the backend's `RunController.cancel_run()` (`backend/run_controller.py`) cancels the running task, kills the foreground shell that session owns, and stamps the pending message as an interrupted run (`reason='cancelled'`) so the record survives the restart.
+A running agent or team can be cancelled mid-execution: the client sends a `Cancel` message, and the backend's `RunController.cancel_run()` (`backend/run_controller.py`) cancels the running task, kills the foreground shell that session owns, and stamps the pending message as an interrupted run (`reason='cancelled'`) so the record survives the restart. A run paused on an approval has no task left to cancel and is ended all the same: the cancel drops its waiting approvals (`HitlController.drop_waiting`, the journal's rows included), so answering one afterwards runs nothing and a window that attaches is not offered it, and it answers `cancelled: true`.
 
 ## CLI Architecture
 

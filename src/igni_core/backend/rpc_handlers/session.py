@@ -222,10 +222,14 @@ class SessionRpcHandler(RpcHandler):
         """Stop the turn this session is running.
 
         Takes no arguments. Returns ``cancelled``: whether a turn was
-        running. Its stream then ends with an ``info`` saying it was
-        cancelled and its ``stream_end``, and the run is recorded as
-        interrupted; a foreground shell command the turn started is killed.
-        With no turn running nothing happens and nothing is streamed.
+        running or paused on an approval. A running turn's stream then
+        ends with an ``info`` saying it was cancelled and its
+        ``stream_end``, and the run is recorded as interrupted; a
+        foreground shell command the turn started is killed. A turn paused
+        on an approval is recorded as interrupted too, and its waiting
+        approvals are dropped: answering one afterwards runs nothing, and
+        a window that attaches is not offered it. With no turn running or
+        paused nothing happens and nothing is streamed.
         """
         return CancelRunResult(cancelled=self._ctx.backend.cancel_run())
 
