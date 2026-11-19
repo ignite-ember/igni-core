@@ -266,7 +266,10 @@ class TestSessionMessageHandling:
     async def test_handle_message_error(self, session):
         session.main_team.arun = AsyncMock(side_effect=RuntimeError("LLM failed"))
         result = await session.handle_message("test")
-        assert "Error" in result
+        # The failure is the error's own text: the display prints it with
+        # its own ``Error:`` in front of it, and the caller is given it
+        # as it is.
+        assert result == "LLM failed"
 
     @pytest.mark.asyncio
     async def test_handle_message_error_fires_stop_failure_hook(self, session):

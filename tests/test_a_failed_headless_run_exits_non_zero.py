@@ -146,7 +146,8 @@ async def test_a_sub_agent_pause_nobody_could_answer_exits_non_zero():
     assert code == SingleMessageRun.FAILED_EXIT_CODE
     assert coordinator.unattended is True
     (message,), _ = session.display.print_error.call_args
-    assert "sub-agent's run paused for confirmation on ['run_shell_command']" in message
+    assert "sub-agent's run paused for confirmation on run_shell_command" in message
+    assert "['run_shell_command']" not in message
 
 
 async def test_a_headless_session_removes_the_ephemeral_agents_it_made_when_it_ends():

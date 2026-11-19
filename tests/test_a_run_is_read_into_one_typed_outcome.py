@@ -20,6 +20,7 @@ from igni_core.core.session.message_outcome import (
     TurnFailure,
     TurnOutcome,
     TurnResult,
+    tools_as_prose,
 )
 
 
@@ -107,7 +108,7 @@ class TestTheFailuresATurnCanEndIn:
         assert failure.kind is FailureKind.PAUSED
         assert failure.error_type == "paused"
         assert failure.message == (
-            "Run paused for confirmation on ['run_shell_command', 'write'] but this session "
+            "Run paused for confirmation on run_shell_command and write but this session "
             "cannot resolve a pause; the tool did not run. Decide up front what it may do: "
             "--read-only to only read, or a permissions.allow rule in ~/.igni/config.yaml "
             "(with --accept-edits for edits); --auto-approve allows everything. Or use a "
@@ -123,7 +124,7 @@ class TestTheFailuresATurnCanEndIn:
     def test_a_pause_with_no_paused_tool_says_unknown_tool(self):
         failure = TurnFailure.paused(TurnOutcome(kind=OutcomeKind.PAUSED))
 
-        assert "on ['unknown tool'] but" in failure.message
+        assert "on unknown tool but" in failure.message
 
     def test_a_failed_run_tells_its_own_content(self):
         failure = TurnFailure.failed(TurnOutcome(kind=OutcomeKind.FAILED, content="rate limited"))
@@ -150,6 +151,20 @@ class TestTheFailuresATurnCanEndIn:
         failure = TurnFailure.from_exception(RuntimeError())
 
         assert (failure.message, failure.error_type) == ("", "RuntimeError")
+
+
+class TestHowTheToolsAreSaid:
+    def test_one_tool_is_named(self):
+        assert tools_as_prose(["run_shell_command"]) == "run_shell_command"
+
+    def test_two_tools_are_joined_with_and(self):
+        assert tools_as_prose(["run_shell_command", "write"]) == "run_shell_command and write"
+
+    def test_three_tools_read_as_names_and_a_last_and(self):
+        assert tools_as_prose(["a", "b", "c"]) == "a, b and c"
+
+    def test_no_tool_says_unknown_tool(self):
+        assert tools_as_prose([]) == "unknown tool"
 
 
 class TestWhatATurnProduced:
