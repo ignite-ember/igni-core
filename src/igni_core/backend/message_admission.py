@@ -5,8 +5,9 @@ Four checks, in order, before anything routes it:
 * the connection's standing (``backend/standing_policy.py``): a program
   with the lockfile's token decides nothing for the person;
 * ``caller``: a message saying it speaks for an extension is honoured only
-  where the layer lets a connection do that, for an installed extension,
-  and only for what that extension's page may call;
+  where the layer lets a connection do that — in the cloud, only on a
+  connection the node agent marked as hosting pages — for an installed
+  extension, and only for what that extension's page may call;
 * the platform's calls (:data:`PLATFORM_RPCS`): a layer may take them from
   its control connection alone;
 * the calls that open a native dialog (:data:`NATIVE_DIALOG_RPCS`): refused
@@ -77,11 +78,20 @@ class MessageAdmission:
         """``caller`` is set by igni's window for the extension page it hosts
         (``IgniClient.asExtension``); it is a field of the message, so it is
         honoured only where the layer says a connection may speak for an
-        extension (never in the cloud)."""
+        extension (in the cloud, only on a page host's connection)."""
         if not isinstance(message, msg.RPCRequest) or not message.caller:
             return None
-        if not layers.current().connections_speak_for_extensions():
+        layer = layers.current()
+        if not layer.connections_speak_for_extensions():
             return f"{message.method}: no connection to this igni speaks for an extension"
+        if layer.extension_calls_need_page_mark() and not message.via_page_host:
+            # The mark is the node agent's word, read off the connection's
+            # handshake: a control stream carries ``control``, never
+            # ``pages``, and a program that did not ask for it has none.
+            return (
+                f"{message.method}: only a connection that hosts extension pages "
+                "speaks for an extension"
+            )
         try:
             self._extensions.registry.authorise_caller(
                 caller=message.caller,

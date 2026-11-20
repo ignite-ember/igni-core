@@ -100,6 +100,9 @@ CONTENT_TYPES: Mapping[str, str] = {
     ".woff2": "font/woff2",
 }
 
+#: The only methods an origin answers.
+METHODS = ("GET", "HEAD")
+
 #: Anything else. Not a guess — a type the browser will not execute,
 #: render or sniff, which is the right answer for a file we have no
 #: rule for.
@@ -369,7 +372,7 @@ class ExtensionOrigin:
             return bad, False
         headers = self._parse_headers(lines[1:])
 
-        if method not in ("GET", "HEAD"):
+        if method not in METHODS:
             return self._error(405, "Method Not Allowed", allow="GET, HEAD"), False
 
         # From here the method is known, and HEAD means headers only
@@ -390,9 +393,24 @@ class ExtensionOrigin:
             )
             return self._error(421, "Misdirected Request"), headers_only
 
+        return self.answer(method, target), headers_only
+
+    def answer(self, method: str, target: str) -> HttpReply:
+        """The reply to ``method`` on ``target``, once the request is known to be ours.
+
+        The file resolution, the refusal of every escape from the root, the
+        content type and the CSP — everything but reading the head and the
+        Host check, which belong to whoever received the request. This
+        origin's own listener asks it, and so does igni's port in the cloud
+        (``extensions/page_files.py``), which checks its own Host.
+        ``target`` is origin-form: a path from ``/``, with any query.
+        """
+        if method not in METHODS:
+            return self._error(405, "Method Not Allowed", allow="GET, HEAD")
+
         target_path = self._resolve(target)
         if target_path is None:
-            return self._error(404, "Not Found"), headers_only
+            return self._error(404, "Not Found")
 
         try:
             length = target_path.stat().st_size
@@ -403,9 +421,9 @@ class ExtensionOrigin:
                 target_path,
                 exc,
             )
-            return self._error(404, "Not Found"), headers_only
+            return self._error(404, "Not Found")
 
-        reply = HttpReply(
+        return HttpReply(
             200,
             "OK",
             file=target_path,
@@ -413,7 +431,6 @@ class ExtensionOrigin:
             content_type=self._content_type(target_path),
             extra={"Content-Security-Policy": self._csp()},
         )
-        return reply, headers_only
 
     def _request_line(self, line: str) -> tuple[str, str, HttpReply | None]:
         """``method``, ``target`` — or the reply explaining why not."""
@@ -635,6 +652,10 @@ class ExtensionOrigins:
             await origin.start()
             self._origins[extension_id] = origin
             return origin
+
+    def get(self, extension_id: str) -> ExtensionOrigin | None:
+        """The running origin for this extension, or ``None``."""
+        return self._origins.get(extension_id)
 
     def url_for(self, extension_id: str) -> str | None:
         """Where this extension's UI is, or ``None`` if it has none."""

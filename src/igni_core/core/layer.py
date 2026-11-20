@@ -22,6 +22,10 @@ otherwise:
   (:meth:`Layer.opens_native_dialogs`), and whether it runs on the
   person's own computer, which their group's mode governs
   (:meth:`Layer.runs_on_the_persons_computer`);
+* which connections speak for an extension
+  (:meth:`Layer.connections_speak_for_extensions`,
+  :meth:`Layer.extension_calls_need_page_mark`), and whether igni's own
+  port serves the extensions' page files (:meth:`Layer.serves_page_files`);
 * what a backend does around its boot and serving (:meth:`Layer.backend`).
 
 **Choosing one.** :data:`layers`, the process's :class:`Layers`, reads
@@ -161,8 +165,33 @@ class Layer:
         extension pages and forwards their calls. The boundary is the OS
         user — the token is in an owner-only lockfile, and a process that
         can read it can read the person's credentials too (SECURITY.md §10).
+
+        A layer may narrow it to the connections the platform marked as
+        hosting pages (:meth:`extension_calls_need_page_mark`).
         """
         return True
+
+    def extension_calls_need_page_mark(self) -> bool:
+        """Only a connection marked ``X-Igni-Gateway: pages`` speaks for an extension.
+
+        Not on the desktop: igni's window is the page host, and the
+        per-launch token is what says a connection is that window. In the
+        cloud every client comes through the gateway, and the node agent
+        marks the streams of a person's desktop, which frames the pages
+        (``Message.via_page_host``).
+        """
+        return False
+
+    def serves_page_files(self) -> bool:
+        """igni's own WebSocket port answers ``GET /.igni/pages/<id>/…`` with page files.
+
+        Not on the desktop: each extension's page has its own loopback
+        origin there (``extensions/origin.py``), which the window frames
+        directly. In the cloud those origins are inside the VM, so the
+        gateway fetches the files over igni's port, on a stream marked
+        ``pages`` (``extensions/page_files.py``).
+        """
+        return False
 
     def fetches_own_events(self) -> bool:
         """igni pulls the person's service events itself, with their session, while online."""

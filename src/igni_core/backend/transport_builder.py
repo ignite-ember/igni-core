@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from igni_core.backend.schemas_rpc import BackendReadyLine
+from igni_core.core.layer import layers
+from igni_core.extensions.page_files import PageFiles
 from igni_core.transport.base import ListeningTransport
 from igni_core.transport.composite import CompositeTransport
 from igni_core.transport.unix_socket import UnixSocketServerTransport
@@ -27,6 +29,9 @@ class TransportBuilder:
         # (the cloud, or the development opt-out).
         self._ws_token = ws_token
         self._ws_transport: WebSocketServerTransport | None = None
+        # Where the layer serves page files on igni's own port (the cloud):
+        # built with the transport, bound once the extension runtime exists.
+        self._page_files: PageFiles | None = None
 
     @property
     def program_token(self) -> str | None:
@@ -36,6 +41,11 @@ class TransportBuilder:
         if self._ws_transport is None:
             return None
         return self._ws_transport.program_token
+
+    @property
+    def page_files(self) -> PageFiles | None:
+        """What answers page-file requests on the WS port, where the layer serves them."""
+        return self._page_files
 
     @property
     def ws_transport(self) -> WebSocketServerTransport | None:
@@ -52,7 +62,11 @@ class TransportBuilder:
         if self._socket_path is not None:
             children.append(UnixSocketServerTransport(self._socket_path))
         if self._ws_port is not None:
-            self._ws_transport = WebSocketServerTransport(port=self._ws_port, token=self._ws_token)
+            if layers.current().serves_page_files():
+                self._page_files = PageFiles()
+            self._ws_transport = WebSocketServerTransport(
+                port=self._ws_port, token=self._ws_token, pages=self._page_files
+            )
             children.append(self._ws_transport)
 
         transport: ListeningTransport = (

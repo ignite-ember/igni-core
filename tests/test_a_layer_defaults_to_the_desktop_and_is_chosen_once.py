@@ -56,6 +56,10 @@ class TestTheDesktopDefaults:
         assert desktop.platform_calls_need_control() is False
         assert desktop.connections_speak_for_extensions() is True
         assert desktop.fetches_own_events() is True
+        assert desktop.opens_native_dialogs() is True
+        assert desktop.runs_on_the_persons_computer() is True
+        assert desktop.extension_calls_need_page_mark() is False
+        assert desktop.serves_page_files() is False
 
     def test_the_desktop_writes_log_files_so_has_no_log_handler(self):
         with pytest.raises(NotImplementedError, match="log files"):

@@ -23,6 +23,13 @@ Other properties callers should know about:
   and any local process can reach ``127.0.0.1``. A foreign ``Origin``
   is refused, and when the launcher gave a per-launch token every
   connection must offer it (see :mod:`igni_core.transport.ws_auth`).
+* **Marked streams, in the cloud.** The node agent marks the gateway's
+  own stream ``X-Igni-Gateway: control`` and a person's desktop's
+  ``pages`` (:class:`StreamMark`); every message carries its
+  connection's mark, never one read from the message.
+* **Page files, where the layer serves them.** Given a
+  :class:`~igni_core.extensions.page_files.PageFiles`, a plain ``GET``
+  under ``/.igni/pages/`` is answered as HTTP before any upgrade.
 * **A chunk trace, on request.** With ``IGNI_CHUNK_TRACE=1`` every
   chunk the transport broadcasts leaves a line in
   ``~/.igni/chunk_trace.log``, so an operator can see whether the
@@ -36,6 +43,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from websockets.asyncio.server import serve
@@ -52,7 +60,9 @@ from igni_core.transport.ws_auth import HandshakeGuard, Standing
 
 if TYPE_CHECKING:
     from websockets.asyncio.server import Server, ServerConnection
-    from websockets.http11 import Request
+    from websockets.http11 import Request, Response
+
+    from igni_core.extensions.page_files import PageFiles
 
 __all__ = ["WebSocketServerTransport"]
 
@@ -71,6 +81,16 @@ _MAX_FRAME_BYTES = 64 * 1024 * 1024
 _BROADCAST_SEND_TIMEOUT = 2.0
 
 
+class StreamMark(StrEnum):
+    """What the platform says a connection is, on its handshake (``X-Igni-Gateway``)."""
+
+    NONE = ""
+    #: The gateway's own control stream: the platform's calls come on it.
+    CONTROL = "control"
+    #: A person's desktop, which frames extension pages: it speaks for them.
+    PAGES = "pages"
+
+
 class WebSocketServerTransport(ListeningTransport):
     """BE-side transport: loopback WS server, N mirrored clients."""
 
@@ -82,8 +102,12 @@ class WebSocketServerTransport(ListeningTransport):
         registry: MessageRegistry | None = None,
         token: str | None = None,
         chunk_trace: ChunkTrace | None = None,
+        pages: PageFiles | None = None,
     ):
         self._host = host
+        # What answers ``GET /.igni/pages/…`` on this port, where the layer
+        # serves page files (the cloud); ``None`` answers no file at all.
+        self._pages = pages
         # Origin always; the token too when the launcher gave one.
         self._guard = HandshakeGuard(token)
         self._port = port
@@ -130,7 +154,7 @@ class WebSocketServerTransport(ListeningTransport):
             self._host,
             self._port,
             max_size=_MAX_FRAME_BYTES,
-            process_request=self._guard.process_request,
+            process_request=self._process_request,
             select_subprotocol=self._guard.select_subprotocol,
         )
         # ``Server.sockets`` may be empty on platforms that don't expose
@@ -197,25 +221,42 @@ class WebSocketServerTransport(ListeningTransport):
         self._connected.clear()
         self._event_seq = 0
 
-    #: The header a platform's own connection carries (``X-Igni-Gateway: control``).
-    #: In the cloud the node agent adds it to the gateway's control streams and
-    #: strips it from every other, so the connection's own request says it.
+    #: The header the platform marks a connection with. In the cloud the node
+    #: agent strips it from every client's upgrade and adds one value on the
+    #: gateway's word — ``control`` for its own stream, ``pages`` for a
+    #: person's desktop — so the connection's own request says it.
     CONTROL_HEADER = "X-Igni-Gateway"
-    CONTROL_VALUE = "control"
+    CONTROL_VALUE = StreamMark.CONTROL.value
+    PAGE_HOST_VALUE = StreamMark.PAGES.value
 
     @classmethod
-    def _is_control(cls, conn: ServerConnection) -> bool:
-        """Whether this connection is the platform's own control stream.
+    def _mark_of(cls, conn: ServerConnection) -> StreamMark:
+        """The platform's mark on this connection.
 
-        The marker is on the connection's handshake request, never on a
-        message: a client cannot claim to be the platform. A connection
-        with no request (never one that got this far) is not control.
+        On the connection's handshake request, never on a message: a client
+        cannot claim it. A connection with no request (never one that got
+        this far) has none.
         """
         request = conn.request
-        if request is None:
-            return False
-        value = request.headers.get(cls.CONTROL_HEADER) or ""
-        return value.strip().lower() == cls.CONTROL_VALUE
+        return cls._mark_of_request(request) if request is not None else StreamMark.NONE
+
+    @classmethod
+    def _mark_of_request(cls, request: Request) -> StreamMark:
+        """``X-Igni-Gateway`` trimmed and lowercased: ``control``, ``pages``, or no mark."""
+        value = (request.headers.get(cls.CONTROL_HEADER) or "").strip().lower()
+        if value == cls.CONTROL_VALUE:
+            return StreamMark.CONTROL
+        if value == cls.PAGE_HOST_VALUE:
+            return StreamMark.PAGES
+        return StreamMark.NONE
+
+    def _process_request(self, connection: ServerConnection, request: Request) -> Response | None:
+        """``websockets`` hook: a page file where this port serves them, else the guard's."""
+        pages = self._pages
+        if pages is not None and pages.asks_for_pages(request):
+            marked = self._mark_of_request(request) is StreamMark.PAGES
+            return pages.respond(request, port=self._port, marked=marked)
+        return self._guard.process_request(connection, request)
 
     def _standing_of(self, conn: ServerConnection) -> Standing:
         """What a connection may do, decided by the token it offered.
@@ -250,7 +291,7 @@ class WebSocketServerTransport(ListeningTransport):
         client = MirroredClient(client_id=client_id, conn=conn)
         self._conns[client_id] = client
         self._connected.set()
-        control = self._is_control(conn)
+        mark = self._mark_of(conn)
         # Decided by the token offered at the handshake, which let it in.
         standing = self._standing_of(conn)
         self._standings[client_id] = standing
@@ -273,8 +314,10 @@ class WebSocketServerTransport(ListeningTransport):
                     # Which connection said it: from the connection, never
                     # from the message (see ``Message.from_client``).
                     msg.mark_from(client_id, standing)
-                    if control:
+                    if mark is StreamMark.CONTROL:
                         msg.mark_control()
+                    elif mark is StreamMark.PAGES:
+                        msg.mark_page_host()
                     await self._inbox.put(msg)
         except Exception as exc:
             logger.info("WS client %s ended: %s", client_id, exc)

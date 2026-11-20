@@ -20,6 +20,10 @@ installs it when the image sets ``IGNI_PROFILE=cloud`` — for the backend,
 * **the platform's calls** — ``deliver_service_events`` and
   ``vm_sign_in`` only on the gateway's control stream; igni pulls no
   events itself;
+* **extension pages** — a person's desktop frames them: a connection the
+  node agent marked ``X-Igni-Gateway: pages`` speaks for an extension, no
+  other does, and igni's own port serves the pages' files to the gateway
+  on such a stream (``igni_core.extensions.page_files``);
 * **native dialogs** — none: nobody sees the VM's screen, so a call that
   would open one (``pick_dir_native``) is refused as an RPC error;
 * **the group's mode** — this igni *is* the cloud a ``cloud`` group sends
@@ -97,11 +101,24 @@ class CloudLayer(Layer):
         return True
 
     def connections_speak_for_extensions(self) -> bool:
-        # No. Every client of a VM's igni is the producer, through the
-        # gateway — igni's web UI, or a program with their token — and none
-        # of them hosts an extension's page. A Fleet UI that does will need
-        # a mark the node agent attests, as the control header is.
-        return False
+        # Yes, but only a page host's (``extension_calls_need_page_mark``):
+        # every client of a VM's igni is the producer, through the gateway,
+        # and the one that frames extension pages — the person's desktop —
+        # asks the gateway for a page-host stream, which the node agent
+        # marks as it marks the control stream. A program that did not ask
+        # has no mark, and its ``caller`` is refused.
+        return True
+
+    def extension_calls_need_page_mark(self) -> bool:
+        # The node agent strips ``X-Igni-Gateway`` from every client's
+        # upgrade and adds ``pages`` only on the gateway's word, given after
+        # it verified a person's session: the mark cannot come from outside.
+        return True
+
+    def serves_page_files(self) -> bool:
+        # The pages' own origins listen inside the VM, out of the desktop's
+        # reach; the gateway fetches their files over igni's port instead.
+        return True
 
     def fetches_own_events(self) -> bool:
         # The gateway pulls them and delivers them on its control stream.

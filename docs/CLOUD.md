@@ -174,7 +174,7 @@ Clients of that API:
 
 | Client | Notes |
 |---|---|
-| igni's web UI | a person's windows; extension pages load here |
+| igni's web UI | a person's windows; extension pages load here: the desktop asks the gateway for a page-host stream (`/v1/connect?pages=1`), which the node agent marks `X-Igni-Gateway: pages`, and fetches the pages' files from `GET /v1/pages/{extension}/…`, which the gateway reads off igni's own port (`/.igni/pages/…`, section 12) |
 | `igni-client` (Python SDK, `packages/igni-client`) | built: connects as a person, an app or a space; sessions, runs, approvals, any RPC; commands and identity through the gateway. Speaks igni's client protocol, not yet the host object model (below) |
 | Apps | have no windows; window-only members stay app-only, sessions and messages work without a window |
 
@@ -182,8 +182,9 @@ Clients of that API:
 `user_message` / run-event / `rpc_request` protocol the web UI speaks —
 not the host object model. The model is reachable on that socket only
 through the `host_model` RPC made for an extension's page, and in the
-cloud no connection speaks for an extension ([SECURITY.md](SECURITY.md)
-§10). So `igni-client` 0.1 is built on the client protocol, which works locally
+cloud only a connection the node agent marked as a page host speaks for
+an extension ([SECURITY.md](SECURITY.md) §10); `igni-client` asks for no
+such mark. So `igni-client` 0.1 is built on the client protocol, which works locally
 and through Fleet with no change to igni or the gateway, and its
 contract with igni is held by `tests/test_igni_client_matches_the_protocol.py`.
 Typed host-model access for a producer's own client (`client.host`, with
@@ -736,10 +737,13 @@ on its control stream. **Both platform calls are taken only from the
 platform's control connection:** the node agent adds `X-Igni-Gateway:
 control` to the upgrade of the gateway's `stream?control=1` and strips
 it from every other stream, and igni reads it off the connection, never
-off a message (a client sending either call gets an error). **No connection
-speaks for an extension:** a message naming one (`caller`) is refused from
-any stream, so no Fleet client reaches an extension's host-model grants,
-its `ext.*` methods or a token for its service;
+off a message (a client sending either call gets an error). **Only a page
+host speaks for an extension:** a message naming one (`caller`) is honoured
+only on a stream the node agent marked `X-Igni-Gateway: pages` — a
+person's desktop, which asked the gateway for it after the gateway
+verified their session — and refused on every other, the control stream
+included, so a program reaches no extension's host-model grants, `ext.*`
+methods or service token;
 igni exchanges it (`vm-sign-in` grant). An app's the node agent writes to
 the volume once; igni takes it when it appears, without a restart. The
 credential lives in `IGNI_VM_CREDENTIAL_FILE` (on the volume, `0600`,
@@ -1217,6 +1221,31 @@ extensions start).
 or `cloud`, and serves only the owner: the desktop's pull idles on its
 `409` (section 6), the gateway's pull for that person comes back empty.
 Neither side has to tell the other anything.
+
+**Extension pages in cloud mode.** An extension's pages, its indicators
+and its place in the list work as they do on the desktop
+(`docs/design/local-cloud-switch.md` §15). Two things in igni make that so:
+
+- *The page mark.* The node agent marks a person's desktop stream
+  `X-Igni-Gateway: pages`, as it marks the gateway's own `control`, and
+  strips the header from every client's. igni reads it off the handshake
+  (`StreamMark`, `Message.via_page_host`), never off a message. The cloud
+  layer lets a connection speak for an extension
+  (`Layer.connections_speak_for_extensions`) only with that mark
+  (`Layer.extension_calls_need_page_mark`): `caller` on any other
+  connection is refused before any handler, and past the mark
+  `authorise_caller` decides what the page may reach, as on the desktop.
+- *Page files on igni's port.* Each extension's origin still listens
+  inside the VM, where the desktop cannot reach it. Where the layer serves
+  page files (`Layer.serves_page_files`, the cloud), a plain `GET
+  /.igni/pages/<extension>/<path>` on igni's own WebSocket port, before any
+  upgrade, is answered by that extension's origin
+  (`extensions/page_files.py`, `ExtensionOrigin.answer`): the same files,
+  refusals, content types and CSP. Only a request with the `pages` mark and
+  igni's own `Host` gets a file; anything else is `404` (`421` for a Host).
+  A file is held in memory to answer, so one over 32 MiB is not served.
+  The gateway's `/v1/pages/{extension}/…` route fetches them, and the
+  desktop serves them to the frame from a loopback origin per extension.
 
 **What makes no sense on a VM.** A call that opens one of the operating
 system's dialogs — `pick_dir_native` — is refused in the cloud as an RPC
