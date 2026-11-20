@@ -192,12 +192,20 @@ def test_a_new_dialogue_revalidates_the_group_policy() -> None:
 
 
 def test_a_server_has_no_runtime_until_one_is_attached() -> None:
-    server = _server()
-    runtime = object()
+    told: list[object] = []
+    controllers = _Spy()
+    controllers.runs = SimpleNamespace(stream_to=told.append)
+    server = _server(controllers=controllers)
+
+    async def send(message: object) -> None:
+        return None
+
+    runtime = SimpleNamespace(transport=SimpleNamespace(send=send))
 
     assert server.runtime is None
     server.attach_runtime(runtime)  # type: ignore[arg-type]
     assert server.runtime is runtime
+    assert told == [send], "the runs stream what ends outside a run through its transport"
 
 
 def test_a_server_assembled_from_parts_answers_with_the_supervisor_and_gate_it_was_given() -> None:

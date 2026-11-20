@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from igni_core.backend.activity import ActivityState
 from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.members.answers import CompactResult, ContextUsage
@@ -24,6 +25,9 @@ from igni_core.extensions.host.rpc_wire.chat import (
 from igni_core.extensions.host.spec import ErrorCode
 from igni_core.extensions.host.values import SessionStatus
 from igni_core.protocol.rpc import RpcMethod
+
+#: The grant that answers the agent's approval requests (``host.chat.approvals``).
+APPROVALS = "chat.approvals"
 
 
 class ChatReadMembers(Members):
@@ -77,6 +81,10 @@ class ChatReadMembers(Members):
 class ChatWriteMembers(Members):
     @call("chat.post")
     async def post(self, c: Call) -> None:
+        """Post as the extension. In the session on screen the message starts
+        a run, and a run waiting on an approval ends with it, its approvals
+        dropped: that is refusing them, so it needs ``chat.approvals`` too
+        (``backend/standing_policy.py``). Elsewhere it waits for the run."""
         text = str(c.params["text"])
         if not text.strip():
             raise HostModelError(ErrorCode.INVALID, "an empty message is not posted")
@@ -93,6 +101,8 @@ class ChatWriteMembers(Members):
             if not posted.ok:
                 raise HostModelError(ErrorCode.REFUSED, posted.reason)
             return
+        if self._waits_on_a_person(c.session_id) and not c.grants.allows(APPROVALS):
+            raise c.not_granted("posting while the run waits on an approval", APPROVALS)
         await self.host.backend.post(
             session_id=c.session_id,
             extension_id=c.extension_id,
@@ -116,7 +126,19 @@ class ChatWriteMembers(Members):
 
     @call("chat.cancel")
     async def cancel(self, c: Call) -> None:
+        """Stop the session's run. A run waiting on an approval is ended
+        only by an extension that may answer it: ending it refuses the
+        approval (``backend/standing_policy.py``)."""
+        if self._waits_on_a_person(c.session_id) and not c.grants.allows(APPROVALS):
+            raise c.not_granted("ending a run that waits on an approval", APPROVALS)
         await self.rpc(RpcMethod.CANCEL_RUN, c=c)
+
+    def _waits_on_a_person(self, session_id: str) -> bool:
+        """Whether ``session_id`` has nothing working and an approval waiting."""
+        return any(
+            s.session_id == session_id and s.state is ActivityState.WAITING
+            for s in self.host.backend.activity().sessions
+        )
 
     @call("chat.cancel_agent")
     async def cancel_agent(self, c: Call) -> None:

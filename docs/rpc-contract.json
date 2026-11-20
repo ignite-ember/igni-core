@@ -572,10 +572,10 @@
       "type": "object"
     },
     "CancelRunResult": {
-      "description": "Result of cancelling the current turn: whether one was running.",
+      "description": "Result of cancelling the current turn: whether one was running or paused.",
       "properties": {
         "cancelled": {
-          "description": "`true` when a turn was running and is being stopped: its stream ends with an `info` and a `stream_end`. `false` when nothing was running.",
+          "description": "`true` when a turn was running or paused on an approval and is being stopped: the session then streams an `info` and a `stream_end`. `false` when nothing was running or paused, and nothing is streamed.",
           "title": "Cancelled",
           "type": "boolean"
         }
@@ -9275,7 +9275,7 @@
       "type": "object"
     },
     "UserMessage": {
-      "description": "The person sends a chat message, starting a run.",
+      "description": "The person sends a chat message, starting a run.\n\nA run waiting on an approval ends with it, and its approvals are\ndropped. That refuses them, so it takes what answering takes: from a\nprogram without an approver token it is refused while the session\nwaits, with an `error` and the stream's end, and nothing is dropped.",
       "properties": {
         "client_id": {
           "default": "",
@@ -10826,7 +10826,7 @@
     },
     "user_message": {
       "direction": "to_igni",
-      "doc": "The person sends a chat message, starting a run.",
+      "doc": "The person sends a chat message, starting a run.\n\nA run waiting on an approval ends with it, and its approvals are\ndropped. That refuses them, so it takes what answering takes: from a\nprogram without an approver token it is refused while the session\nwaits, with an `error` and the stream's end, and nothing is dropped.",
       "schema": {
         "$ref": "#/defs/UserMessage"
       }
@@ -10993,7 +10993,7 @@
         "by": "session_id",
         "from": "request.session_id"
       },
-      "doc": "Stop the turn this session is running.\n\nTakes no arguments. Returns `cancelled`: whether a turn was\nrunning. Its stream then ends with an `info` saying it was\ncancelled and its `stream_end`, and the run is recorded as\ninterrupted; a foreground shell command the turn started is killed.\nWith no turn running nothing happens and nothing is streamed.",
+      "doc": "Stop the turn this session is running.\n\nTakes no arguments. Returns `cancelled`: whether a turn was\nrunning or paused on an approval. Either way the session then\nstreams an `info` saying it was cancelled and a `stream_end`,\nafter the answer; the run is recorded as interrupted, and a\nforeground shell command the turn started is killed. A turn paused\non an approval has its waiting approvals dropped: answering one\nafterwards runs nothing, and a window that attaches is not offered\nit. Ending a paused turn\nrefuses its approval, so it takes what answering takes: from a\nprogram without an approver token it is refused, `forbidden`,\nand nothing is dropped. With no turn running or paused nothing\nhappens and nothing is streamed.",
       "duration": "instant",
       "may_stream": [],
       "reply": "rpc_response",

@@ -24,6 +24,8 @@ import asyncio
 import contextlib
 import logging
 
+from igni_core.backend import standing_policy
+from igni_core.backend.activity import ActivityState
 from igni_core.backend.in_flight_tasks import InFlightTasks
 from igni_core.backend.message_admission import MessageAdmission
 from igni_core.backend.pool_directories import PoolDirectories
@@ -172,8 +174,11 @@ class SessionOrchestrator:
         """
         try:
             refusal = self._admission.refusal(message)
+            ending = None if refusal is not None else await self._pause_ending_refusal(message)
             if refusal is not None:
                 await self._pool_rpcs.replier.refuse(message, refusal.reason)
+            elif ending is not None:
+                await self._pool_rpcs.replier.refuse(message, ending)
             elif self._pool_rpcs.handles(message):
                 await self._pool_rpcs.handle(message)
             else:
@@ -188,6 +193,25 @@ class SessionOrchestrator:
                         text=f"session routing failed: {exc}",
                     )
                 )
+
+    async def _pause_ending_refusal(self, message: Message) -> str | None:
+        """Why ``message`` may not stop its session's run, or ``None``.
+
+        Ending a run that waits on an approval refuses the approval, so it
+        takes the standing answering it takes (``standing_policy``); a new
+        message into the session ends that run as a cancel does. That
+        depends on the session's state, which the admission gate does not
+        see: it is asked here, of the session the message is routed to,
+        and only for a message the standing alone would not let end a
+        pause. A run that is working stays anybody's to stop.
+        """
+        reason = standing_policy.pause_ending_refusal(message)
+        if reason is None:
+            return None
+        runtime = await self._sessions.pool.get_or_create(message.session_id)
+        if runtime.backend.activity().state is not ActivityState.WAITING:
+            return None
+        return reason
 
     #: How long the drain waits between looks at what it is waiting on.
     DRAIN_LOOK_SECONDS = 0.5

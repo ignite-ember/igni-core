@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from igni_core.backend.activity import Activity
 from igni_core.core.session.client_state import ClientStateRead, ClientStateResult
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.host_state import HostState
@@ -77,7 +78,8 @@ class Backend:
         self.delivery = SimpleNamespace(ok=True, reason="")
         self.shown: list[dict[str, Any]] = []
         self.shown_views: list[Any] = ["a view"]
-        self.the_activity = "idle"
+        # Nothing running and nothing waiting: ``chat.post`` on screen asks it.
+        self.the_activity: Any = Activity.of([])
 
     async def post(self, **kw: Any) -> None:
         self.posted.append(kw)
@@ -92,7 +94,7 @@ class Backend:
     def views(self, session_id: str) -> list[Any]:
         return [session_id, *self.shown_views]
 
-    def activity(self) -> str:
+    def activity(self) -> Any:
         return self.the_activity
 
 

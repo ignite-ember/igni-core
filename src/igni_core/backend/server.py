@@ -198,6 +198,7 @@ class BackendServer:
         """Called by :class:`SessionRuntimeFactory` once the runtime
         that owns this backend is built."""
         self._runtime = runtime
+        self.controllers.runs.stream_to(runtime.transport.send)
 
     @property
     def runtime(self) -> SessionRuntime | None:

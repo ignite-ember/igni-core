@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import logging
+from types import SimpleNamespace
 from typing import get_args
 
 import pytest
@@ -68,7 +69,8 @@ def test_the_project_and_its_mcp_manager_are_the_sessions(backend, tmp_path):
     assert backend.mcp_manager is backend._session.mcp_manager
     assert backend.runtime is None
 
-    sentinel = object()
+    # A runtime always has a transport: a cancelled pause's stream ends through it.
+    sentinel = SimpleNamespace(transport=SimpleNamespace(send=None))
     backend.attach_runtime(sentinel)
 
     assert backend.runtime is sentinel
