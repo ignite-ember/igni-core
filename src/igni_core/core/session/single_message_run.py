@@ -24,6 +24,7 @@ from __future__ import annotations
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.backend.headless_extensions import HeadlessExtensions
 from igni_core.core.session.commands import InteractiveCommandDispatcher
+from igni_core.core.session.message_outcome import tools_as_prose
 from igni_core.core.session.session_run import SessionRun
 from igni_core.protocol.messages import CommandAction
 
@@ -139,9 +140,9 @@ class SingleMessageRun(SessionRun):
         if not isinstance(tools, list) or not tools:
             return True
         self._session.display.print_error(
-            f"A sub-agent's run paused for confirmation on {tools} but this session "
-            "cannot resolve a pause; the tool did not run. Decide up front what it may "
-            "do: --read-only to only read, or a permissions.allow rule in "
+            f"A sub-agent's run paused for confirmation on {tools_as_prose(tools)} but "
+            "this session cannot resolve a pause; the tool did not run. Decide up front "
+            "what it may do: --read-only to only read, or a permissions.allow rule in "
             "~/.igni/config.yaml (with --accept-edits for edits); --auto-approve allows "
             "everything. Or use a client that supports confirmations."
         )
