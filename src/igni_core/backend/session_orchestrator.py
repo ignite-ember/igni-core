@@ -198,7 +198,8 @@ class SessionOrchestrator:
         """Why ``message`` may not stop its session's run, or ``None``.
 
         Ending a run that waits on an approval refuses the approval, so it
-        takes the standing answering it takes (``standing_policy``). That
+        takes the standing answering it takes (``standing_policy``); a new
+        message into the session ends that run as a cancel does. That
         depends on the session's state, which the admission gate does not
         see: it is asked here, of the session the message is routed to,
         and only for a message the standing alone would not let end a

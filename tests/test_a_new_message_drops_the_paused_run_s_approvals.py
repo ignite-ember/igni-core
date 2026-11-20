@@ -8,9 +8,9 @@ them as a cancel does (``tests/test_cancel_ends_a_paused_run.py``) —
 the store's, the journal's, and the sub-agent approvals a previous
 backend left — so the old requirement is unknown and runs nothing.
 
-A program may send that message, as it may send any: a program runs
-sessions. It does not answer the approval by doing so — dropping runs
-nothing — and the run it abandoned is one it could have started itself.
+Dropping them refuses them, so only who may answer may send that
+message: igni's window, or a program the window made an approver
+(``tests/test_only_an_approver_writes_into_a_session_waiting_on_an_approval.py``).
 
 Every test runs the orchestrator the app builds over a real backend —
 only the team is replaced — and sends what the connection would.
@@ -149,12 +149,12 @@ async def test_answering_the_old_approval_after_a_new_message_runs_nothing(pause
     assert _errors_for(paused, "h-1") == [f"Unknown requirement: {requirement_id}"]
 
 
-async def test_a_program_s_new_message_is_answered_and_drops_the_approval(paused) -> None:
+async def test_an_approver_s_new_message_is_answered_and_drops_the_approval(paused) -> None:
     (requirement_id,) = _waiting(paused.backend)
 
-    await _send(paused, msg.UserMessage(id="m-2", text="status?"), Standing.PROGRAM)
+    await _send(paused, msg.UserMessage(id="m-2", text="status?"), Standing.APPROVER)
 
-    assert paused.team.runs == 2, "a program runs sessions, as it always has"
+    assert paused.team.runs == 2, "an approver runs sessions, as a program does"
     assert _waiting(paused.backend) == []
     assert paused.team.ran == []
 

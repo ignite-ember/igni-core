@@ -81,6 +81,10 @@ class ChatReadMembers(Members):
 class ChatWriteMembers(Members):
     @call("chat.post")
     async def post(self, c: Call) -> None:
+        """Post as the extension. In the session on screen the message starts
+        a run, and a run waiting on an approval ends with it, its approvals
+        dropped: that is refusing them, so it needs ``chat.approvals`` too
+        (``backend/standing_policy.py``). Elsewhere it waits for the run."""
         text = str(c.params["text"])
         if not text.strip():
             raise HostModelError(ErrorCode.INVALID, "an empty message is not posted")
@@ -97,6 +101,8 @@ class ChatWriteMembers(Members):
             if not posted.ok:
                 raise HostModelError(ErrorCode.REFUSED, posted.reason)
             return
+        if self._waits_on_a_person(c.session_id) and not c.grants.allows(APPROVALS):
+            raise c.not_granted("posting while the run waits on an approval", APPROVALS)
         await self.host.backend.post(
             session_id=c.session_id,
             extension_id=c.extension_id,

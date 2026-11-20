@@ -503,6 +503,12 @@ It is refused, before any handler runs:
   it may still stop. This one depends on the session's state, so the
   orchestrator asks it of the session the message goes to; an extension's
   `chat.cancel` is held to it by the `chat.approvals` grant;
+- a new message (`user_message`) into a session whose run waits on an
+  approval, unless it is an approver: the message ends that run and drops
+  its approvals, which refuses them. Nothing is dropped and nothing is
+  queued. A session that waits on nobody it may still write to. It is the
+  same check as the cancel's; an extension's `chat.post` into the session
+  on screen is held to it by the `chat.approvals` grant;
 - speaking for an extension (`caller`, `host_model`, `window_model`,
   `extension_service_token`);
 - loosening a rule: the `/bypass` and `/accept` modes, a saved permission

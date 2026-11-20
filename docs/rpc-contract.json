@@ -9275,7 +9275,7 @@
       "type": "object"
     },
     "UserMessage": {
-      "description": "The person sends a chat message, starting a run.",
+      "description": "The person sends a chat message, starting a run.\n\nA run waiting on an approval ends with it, and its approvals are\ndropped. That refuses them, so it takes what answering takes: from a\nprogram without an approver token it is refused while the session\nwaits, with an `error` and the stream's end, and nothing is dropped.",
       "properties": {
         "client_id": {
           "default": "",
@@ -10826,7 +10826,7 @@
     },
     "user_message": {
       "direction": "to_igni",
-      "doc": "The person sends a chat message, starting a run.",
+      "doc": "The person sends a chat message, starting a run.\n\nA run waiting on an approval ends with it, and its approvals are\ndropped. That refuses them, so it takes what answering takes: from a\nprogram without an approver token it is refused while the session\nwaits, with an `error` and the stream's end, and nothing is dropped.",
       "schema": {
         "$ref": "#/defs/UserMessage"
       }

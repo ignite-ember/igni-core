@@ -52,8 +52,9 @@ class PoolReplier:
         """Tell the connection that sent ``message`` why it was not done.
 
         An RPC gets its error, a slash command an error result, and an
-        approval an ``Error`` and the end of the stream it would have
-        resumed, so a client following that stream stops waiting.
+        approval or a chat message an ``Error`` and the end of the stream
+        it would have resumed or started, so a client following that
+        stream stops waiting.
         """
         if isinstance(message, msg.RPCRequest):
             # An empty reason would make the answer a success with no payload:
