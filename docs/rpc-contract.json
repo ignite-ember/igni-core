@@ -572,10 +572,10 @@
       "type": "object"
     },
     "CancelRunResult": {
-      "description": "Result of cancelling the current turn: whether one was running.",
+      "description": "Result of cancelling the current turn: whether one was running or paused.",
       "properties": {
         "cancelled": {
-          "description": "`true` when a turn was running and is being stopped: its stream ends with an `info` and a `stream_end`. `false` when nothing was running.",
+          "description": "`true` when a turn was running or paused on an approval and is being stopped: the session then streams an `info` and a `stream_end`. `false` when nothing was running or paused, and nothing is streamed.",
           "title": "Cancelled",
           "type": "boolean"
         }
@@ -10993,7 +10993,7 @@
         "by": "session_id",
         "from": "request.session_id"
       },
-      "doc": "Stop the turn this session is running.\n\nTakes no arguments. Returns `cancelled`: whether a turn was\nrunning or paused on an approval. A running turn's stream then\nends with an `info` saying it was cancelled and its\n`stream_end`, and the run is recorded as interrupted; a\nforeground shell command the turn started is killed. A turn paused\non an approval is recorded as interrupted too, and its waiting\napprovals are dropped: answering one afterwards runs nothing, and\na window that attaches is not offered it. Ending a paused turn\nrefuses its approval, so it takes what answering takes: from a\nprogram without an approver token it is refused, `forbidden`,\nand nothing is dropped. With no turn running or paused nothing\nhappens and nothing is streamed.",
+      "doc": "Stop the turn this session is running.\n\nTakes no arguments. Returns `cancelled`: whether a turn was\nrunning or paused on an approval. Either way the session then\nstreams an `info` saying it was cancelled and a `stream_end`,\nafter the answer; the run is recorded as interrupted, and a\nforeground shell command the turn started is killed. A turn paused\non an approval has its waiting approvals dropped: answering one\nafterwards runs nothing, and a window that attaches is not offered\nit. Ending a paused turn\nrefuses its approval, so it takes what answering takes: from a\nprogram without an approver token it is refused, `forbidden`,\nand nothing is dropped. With no turn running or paused nothing\nhappens and nothing is streamed.",
       "duration": "instant",
       "may_stream": [],
       "reply": "rpc_response",

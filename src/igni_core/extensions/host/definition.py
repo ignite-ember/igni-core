@@ -1794,7 +1794,9 @@ OBJECTS = (
             method(
                 "cancel",
                 "Stop the run. A run waiting on an approval is ended only with "
-                "`chat.approvals` too: ending it refuses the approval.",
+                "`chat.approvals` too: ending it refuses the approval. Either way the "
+                "chat then gets an `info` saying the run was cancelled and its "
+                "`streaming_done`.",
                 permission="chat.control",
             ),
             method(

@@ -51,7 +51,7 @@ from igni_core.backend.schemas_lifecycle import InterruptedRunSummary
 from igni_core.backend.schemas_run import CancelAgentRunResult, RunPhase
 from igni_core.backend.session_checkpointer import SessionCheckpointer
 from igni_core.backend.stream_event_dispatcher import StreamEventDispatcher
-from igni_core.core.activity import background
+from igni_core.core.activity import BusyKind, background
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.run_context import run_session
 from igni_core.core.session.pending_messages import InterruptedReason
@@ -70,6 +70,10 @@ logger = logging.getLogger(__name__)
 
 
 _T = TypeVar("_T")
+
+#: What a cancelled run's stream says before it ends: shown to the person,
+#: never given to the model.
+CANCELLED_BY_USER = "Run cancelled by user."
 
 
 class RunCancelledError(RuntimeError):
@@ -100,6 +104,9 @@ class RunController:
     #: many. A cancel calls it, so no later answer continues a run the
     #: person stopped (:meth:`HitlController.drop_waiting`).
     _drop_approvals: Callable[[], int] | None = None
+    #: Sends a message to every client of the session: where the stream of
+    #: a run a cancel ended paused gets its end (:meth:`stream_to`).
+    _send: Callable[[msg.Message], Awaitable[None]] | None = None
 
     def __init__(
         self,
@@ -245,7 +252,7 @@ class RunController:
                     async for proto in self._run_locked(text, media):
                         yield proto
             except asyncio.CancelledError:
-                yield msg.Info(text="Run cancelled by user.")
+                yield self.cancelled_info()
             finally:
                 self._current_run_task = None
                 # A cancelled run reaches none of ``_run_locked``'s
@@ -318,7 +325,7 @@ class RunController:
         except asyncio.CancelledError:
             # ``cancel_run`` stamped the message as cancelled.
             self._paused_pending_id = None
-            yield msg.Info(text="Run cancelled by user.")
+            yield self.cancelled_info()
         except Exception as exc:
             if pending_id is not None and self._paused_pending_id == pending_id:
                 self._paused_pending_id = None
@@ -373,7 +380,7 @@ class RunController:
                 if task is None or self._cancelled_by_person is not task:
                     raise
                 task.uncancel()
-                raise RunCancelledError("Run cancelled by user.") from None
+                raise RunCancelledError(CANCELLED_BY_USER) from None
             finally:
                 self._current_run_task = None
                 self._cancelled_by_person = None
@@ -415,7 +422,47 @@ class RunController:
             self._cancelled_by_person = task
             task.cancel()
             return True
+        if ended_a_pause:
+            self._end_cancelled_pause()
         return ended_a_pause
+
+    @staticmethod
+    def cancelled_info() -> msg.Info:
+        """What a cancelled run's stream says last, before its ``StreamEnd``."""
+        return msg.Info(text=CANCELLED_BY_USER)
+
+    def stream_to(self, send: Callable[[msg.Message], Awaitable[None]]) -> None:
+        """Send what this session streams outside a run through ``send``:
+        the runtime's transport, which every client of the session reads."""
+        self._send = send
+
+    def _end_cancelled_pause(self) -> None:
+        """The stream of a run a cancel ended paused ends as a cancelled
+        running run's does: an ``info`` saying so, then a ``StreamEnd``.
+
+        The paused run streamed its last frame long ago, so a client told
+        ``cancelled: true`` waited for a ``stream_end`` that never came.
+        Sent after the cancel answers, as a running run's are once its
+        task unwinds.
+        """
+        send = self._send
+        if send is None:
+            return
+        # The chat of the run that paused, though New chat may have moved
+        # the session on while the approval waited (as :meth:`continue_run`).
+        chat = self._run_session_id or self._session.session_id
+
+        async def end() -> None:
+            with run_session(chat):
+                await send(self.cancelled_info())
+                await send(msg.StreamEnd())
+
+        background.start_if_running(
+            end(),
+            holder="run-cancel",
+            reason="ending the stream of a cancelled pause",
+            kind=BusyKind.POST_RUN,
+        )
 
     def _end_pause(self) -> bool:
         """End the run that stands paused for a person; ``True`` when one did.

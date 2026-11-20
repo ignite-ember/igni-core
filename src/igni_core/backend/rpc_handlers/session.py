@@ -222,13 +222,13 @@ class SessionRpcHandler(RpcHandler):
         """Stop the turn this session is running.
 
         Takes no arguments. Returns ``cancelled``: whether a turn was
-        running or paused on an approval. A running turn's stream then
-        ends with an ``info`` saying it was cancelled and its
-        ``stream_end``, and the run is recorded as interrupted; a
+        running or paused on an approval. Either way the session then
+        streams an ``info`` saying it was cancelled and a ``stream_end``,
+        after the answer; the run is recorded as interrupted, and a
         foreground shell command the turn started is killed. A turn paused
-        on an approval is recorded as interrupted too, and its waiting
-        approvals are dropped: answering one afterwards runs nothing, and
-        a window that attaches is not offered it. Ending a paused turn
+        on an approval has its waiting approvals dropped: answering one
+        afterwards runs nothing, and a window that attaches is not offered
+        it. Ending a paused turn
         refuses its approval, so it takes what answering takes: from a
         program without an approver token it is refused, ``forbidden``,
         and nothing is dropped. With no turn running or paused nothing
