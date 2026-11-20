@@ -33,7 +33,10 @@ from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.session.client_state import ClientStateRead, ClientStateResult
 from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
 from igni_core.core.session.schemas import PersistResult
-from igni_core.extensions.contributions import ExtensionContributions
+from igni_core.extensions.contributions import (
+    ExtensionConditionReceiver,
+    ExtensionContributions,
+)
 from igni_core.extensions.distribution.once import OneShotSync
 from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.host.broadcasts.views import ViewShown
@@ -275,6 +278,7 @@ class HeadlessExtensions:
         )
         contributions.attach()
         self._contributions = contributions
+        self._hear_conditions(contributions)
         model = HostModel.build(
             HostModelConfig(
                 backend=HeadlessHostBackend(Path(session.project_dir), str(session.session_id)),
@@ -309,6 +313,28 @@ class HeadlessExtensions:
         )
         return ExtensionLauncher(
             store=store, installer=installer, registry=self._registry, contributions=contributions
+        )
+
+    def _hear_conditions(self, contributions: ExtensionContributions) -> None:
+        """Route ``notifications/igni/conditions`` to this run's prompt table.
+
+        A ``when`` on an extension's prompt contribution names a condition
+        only its process can judge, and it says so on its own MCP
+        connection — as in the app's backend
+        (:class:`~igni_core.backend.backend_notifications.BackendNotifications`).
+        Unrouted, the MCP SDK drops the notification as unknown, and a
+        ``when`` contribution could never apply to a headless run.
+        """
+        router = getattr(self._session.mcp_manager, "notifications", None)
+        if router is None:
+            return
+        router.handle(
+            ExtensionConditionReceiver.METHOD,
+            ExtensionConditionReceiver(
+                registry=self._registry,
+                prompts=self._session.prompt_contributions,
+                refetch=contributions.refetch,
+            ),
         )
 
     async def _sync(
