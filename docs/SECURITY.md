@@ -476,6 +476,15 @@ token) before it opens a stream; the gateway's own connections are marked
 `X-Igni-Gateway: control` by the node agent, which strips that header from
 every other stream. See [CLOUD.md](CLOUD.md).
 
+**The account-only backend.** (`python -m igni_core.backend
+--account-only`, which the desktop app starts when the person's group runs
+igni in the cloud.) The same door: loopback, `Origin`, the launcher's
+per-launch token. It writes no lockfile, so no program can attach to it. It
+answers only signing in, the server, the plan and the status
+(`ACCOUNT_RPCS`), judges each message's standing first, refuses a chat
+message with the run gate's reason and every other call as `unavailable`,
+and holds no session, agent, tool or extension a connection could reach.
+
 **Development.** `IGNI_DEV_NO_WS_TOKEN=1` drops the token requirement (a
 hand-started backend then takes no token at all, only the Origin check). The
 desktop app honours it only in a debug build (`cargo tauri dev`) and strips
