@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING
 from igni_core.backend.schemas_auth import CloudSwitchOutcome
 
 if TYPE_CHECKING:
-    from igni_core.core.session import Session
+    from igni_core.backend.sign_in_holder import SignInHolder
 
 
-def switch_off_cloud(session: Session) -> CloudSwitchOutcome:
+def switch_off_cloud(session: SignInHolder) -> CloudSwitchOutcome:
     """After a sign-out: if the session's model routes through igni
     server, make a non-cloud entry the default and rebuild the main team.
     The returned :class:`CloudSwitchOutcome` names the three possible
