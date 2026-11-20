@@ -354,8 +354,14 @@ class SessionMessageHandler:
         same payload shape family, same non-blocking semantics — so
         plugins can observe both success and failure with a single
         subscription pair.
+
+        The message is the failure's own. It used to be wrapped in an
+        internal label, and the display puts its own ``Error:`` in
+        front of what it is given — so the person read ``Error: Error
+        handling message: …``, an internal name for something that is
+        not an internal thing.
         """
-        error_msg = f"Error handling message: {failure.message}"
+        error_msg = failure.message
         self.last_failure = error_msg
         self._deps.display.print_error(error_msg)
 
