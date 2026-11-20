@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from igni_core.backend.message_admission import MessageAdmission, access_of
+from igni_core.backend.message_admission import NATIVE_DIALOG_RPCS, MessageAdmission, access_of
 from igni_core.backend.rpc_handlers.pool_guard import PAGE_RPCS, PLATFORM_RPCS
 from igni_core.backend.standing_policy import APPROVAL_RPCS, WINDOW_ONLY_RPCS
 from igni_core.core.layer import Layer, layers
@@ -24,6 +24,7 @@ from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.protocol import messages as msg
 from igni_core.protocol.rpc import RpcAccess, RpcMethod
 from igni_core.protocol.schemas.envelope import Standing
+from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 
 def _manifest(rpc: list[str] | None = None) -> ExtensionManifest:
@@ -211,4 +212,60 @@ def test_the_caller_is_judged_before_the_platform_control(as_layer):
     refusal = _gate().refusal(_rpc(RpcMethod.VM_SIGN_IN, caller="acme.notes"))
 
     assert refusal is not None
+    assert "no extension 'acme.notes' is installed" in refusal.reason
+
+
+# ── Native dialogs ────────────────────────────────────────────────
+
+
+class _NoScreen(Layer):
+    def opens_native_dialogs(self) -> bool:
+        return False
+
+
+def test_the_native_dialog_calls_are_the_folder_picker():
+    assert {RpcMethod.PICK_DIR_NATIVE} == NATIVE_DIALOG_RPCS
+
+
+def test_on_the_desktop_a_native_dialog_call_is_admitted():
+    assert Layer().opens_native_dialogs() is True
+    assert _gate().refusal(_rpc(RpcMethod.PICK_DIR_NATIVE)) is None
+
+
+def test_where_nobody_sees_the_screen_a_native_dialog_call_is_unavailable(as_layer):
+    as_layer(_NoScreen())
+
+    refusal = _gate().refusal(_rpc(RpcMethod.PICK_DIR_NATIVE))
+
+    assert refusal is not None
+    assert refusal.code is RpcErrorCode.UNAVAILABLE
+    assert refusal.reason.startswith("pick_dir_native: ")
+    assert "cannot open a dialog" in refusal.reason
+
+
+def test_where_nobody_sees_the_screen_every_other_call_is_admitted(as_layer):
+    as_layer(_NoScreen())
+
+    for method in (RpcMethod.LIST_DIRS, RpcMethod.LIST_SESSIONS, RpcMethod.GET_STATUS):
+        assert _gate().refusal(_rpc(method)) is None, method
+    assert _gate().refusal(msg.UserMessage(text="pick_dir_native")) is None
+
+
+def test_the_other_refusals_keep_their_forbidden_code(as_layer):
+    as_layer(_ControlOnly())
+
+    refusal = _gate().refusal(_rpc(RpcMethod.VM_SIGN_IN))
+
+    assert refusal is not None and refusal.code is RpcErrorCode.FORBIDDEN
+
+
+def test_the_standing_is_judged_before_the_missing_screen(as_layer):
+    """A refusal for who is asking comes first, and keeps its own code."""
+    as_layer(_NoScreen())
+    request = _rpc(RpcMethod.PICK_DIR_NATIVE, caller="acme.notes")
+
+    refusal = _gate().refusal(request)
+
+    assert refusal is not None
+    assert refusal.code is RpcErrorCode.FORBIDDEN
     assert "no extension 'acme.notes' is installed" in refusal.reason

@@ -18,6 +18,8 @@ otherwise:
 * whether the platform's calls need its control connection
   (:meth:`Layer.platform_calls_need_control`), and whether igni fetches
   the person's service events itself (:meth:`Layer.fetches_own_events`);
+* whether igni can open a native dialog where it runs
+  (:meth:`Layer.opens_native_dialogs`);
 * what a backend does around its boot and serving (:meth:`Layer.backend`).
 
 **Choosing one.** :data:`layers`, the process's :class:`Layers`, reads
@@ -162,6 +164,17 @@ class Layer:
 
     def fetches_own_events(self) -> bool:
         """igni pulls the person's service events itself, with their session, while online."""
+        return True
+
+    def opens_native_dialogs(self) -> bool:
+        """igni can open the operating system's own dialogs (``pick_dir_native``).
+
+        On the desktop, yes: igni runs on the person's computer, and the
+        dialog appears in front of them. Where nobody sits at igni's
+        screen, a call that would open one is refused instead
+        (``backend/message_admission.py``), so the client gets an answer
+        and not a call that never returns.
+        """
         return True
 
     def backend(self) -> BackendHooks:

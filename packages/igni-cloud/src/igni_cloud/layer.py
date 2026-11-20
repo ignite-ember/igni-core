@@ -20,6 +20,8 @@ installs it when the image sets ``IGNI_PROFILE=cloud`` — for the backend,
 * **the platform's calls** — ``deliver_service_events`` and
   ``vm_sign_in`` only on the gateway's control stream; igni pulls no
   events itself;
+* **native dialogs** — none: nobody sees the VM's screen, so a call that
+  would open one (``pick_dir_native``) is refused as an RPC error;
 * **the backend's boot and serving** — the guest contract with the VM's
   agents: ``ready``, late binding to its producer, ``activity.json``,
   restores, the VM's own credential (:mod:`igni_cloud.guest`).
@@ -101,6 +103,13 @@ class CloudLayer(Layer):
 
     def fetches_own_events(self) -> bool:
         # The gateway pulls them and delivers them on its control stream.
+        return False
+
+    def opens_native_dialogs(self) -> bool:
+        # A VM has no display anybody looks at: a folder picker would open
+        # nowhere and its call would wait for ever. The desktop's window
+        # hides the picker in cloud mode; this is the answer any other
+        # client, or an old one, gets.
         return False
 
     def backend(self) -> BackendHooks:

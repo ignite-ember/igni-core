@@ -176,7 +176,7 @@ class SessionOrchestrator:
             refusal = self._admission.refusal(message)
             ending = None if refusal is not None else await self._pause_ending_refusal(message)
             if refusal is not None:
-                await self._pool_rpcs.replier.refuse(message, refusal.reason)
+                await self._pool_rpcs.replier.refuse(message, refusal.reason, refusal.code)
             elif ending is not None:
                 await self._pool_rpcs.replier.refuse(message, ending)
             elif self._pool_rpcs.handles(message):
