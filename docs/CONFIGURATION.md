@@ -321,9 +321,9 @@ models:
   # frontmatter, `igni --model <id>`, or `/model` in a session.
   registry:
     # Example: Gemini (direct API key)
-    # gemini-2.5-flash:
+    # gemini-3.8-flash:
     #   provider: openai_like
-    #   model_id: gemini-2.5-flash
+    #   model_id: gemini-3.8-flash
     #   url: https://generativelanguage.googleapis.com/v1beta/openai/
     #   api_key: AIzaSy...
 
