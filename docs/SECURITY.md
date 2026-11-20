@@ -498,6 +498,11 @@ It is refused, before any handler runs:
 
 - answering an approval request (`hitl_response`, `hitl_response_batch`,
   `approve_plan`), unless it is an approver;
+- ending a run that waits on an approval (`cancel_run`, `cancel`) unless
+  it is an approver: ending it refuses the approval. A run that is working
+  it may still stop. This one depends on the session's state, so the
+  orchestrator asks it of the session the message goes to; an extension's
+  `chat.cancel` is held to it by the `chat.approvals` grant;
 - speaking for an extension (`caller`, `host_model`, `window_model`,
   `extension_service_token`);
 - loosening a rule: the `/bypass` and `/accept` modes, a saved permission

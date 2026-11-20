@@ -228,8 +228,11 @@ class SessionRpcHandler(RpcHandler):
         foreground shell command the turn started is killed. A turn paused
         on an approval is recorded as interrupted too, and its waiting
         approvals are dropped: answering one afterwards runs nothing, and
-        a window that attaches is not offered it. With no turn running or
-        paused nothing happens and nothing is streamed.
+        a window that attaches is not offered it. Ending a paused turn
+        refuses its approval, so it takes what answering takes: from a
+        program without an approver token it is refused, ``forbidden``,
+        and nothing is dropped. With no turn running or paused nothing
+        happens and nothing is streamed.
         """
         return CancelRunResult(cancelled=self._ctx.backend.cancel_run())
 

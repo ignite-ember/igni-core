@@ -5236,7 +5236,7 @@
           "name": "cancel",
           "params": [],
           "result": "None",
-          "doc": "Stop the run.",
+          "doc": "Stop the run. A run waiting on an approval is ended only with `chat.approvals` too: ending it refuses the approval.",
           "permission": "chat.control",
           "inherit_permission": true,
           "stage": 1,

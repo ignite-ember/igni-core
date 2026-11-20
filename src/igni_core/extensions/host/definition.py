@@ -1789,7 +1789,12 @@ OBJECTS = (
                 result="list[json]",
                 elsewhere="chat.read",
             ),
-            method("cancel", "Stop the run.", permission="chat.control"),
+            method(
+                "cancel",
+                "Stop the run. A run waiting on an approval is ended only with "
+                "`chat.approvals` too: ending it refuses the approval.",
+                permission="chat.control",
+            ),
             method(
                 "cancel_agent",
                 "Stop one sub-agent's run.",
