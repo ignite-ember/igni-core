@@ -347,3 +347,33 @@ def test_igni_with_no_run_is_not_refused_in_cloud_mode(capsys):
     cli.main([], standalone_mode=False)
 
     assert REASON not in capsys.readouterr().err
+
+
+# ── A pack igni server really signed ──────────────────────────────
+
+_SERVER_PACK = Path(__file__).parent / "fixtures" / "contracts" / "group-pack-with-mode.json"
+
+
+def test_a_pack_igni_server_signed_verifies_and_carries_its_mode_after_the_theme():
+    """igni-server's own signer made this (its ``group-pack-with-mode.json``,
+    with a throwaway key): igni's verifier accepts it, and reads ``mode`` from
+    the signed ``policy`` payload, where it follows ``theme``."""
+    from igni_core.core.config.group_policy.issuer import IgniServerUrl
+    from igni_core.core.config.group_policy.jwks import Jwks
+    from igni_core.core.config.group_policy.signature import PackSignatureVerifier
+
+    fixture = json.loads(_SERVER_PACK.read_text())
+    verifier = PackSignatureVerifier(
+        issuer=IgniServerUrl(url=fixture["issuer"]), subject=fixture["subject"], org=fixture["org"]
+    )
+
+    verified = verifier.verify(fixture["signed_pack"], Jwks.model_validate(fixture["jwks"]))
+
+    assert verified.policy is not None
+    segment = fixture["signed_pack"].split(".")[1]
+    policy = json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))["policy"]
+    keys = list(policy)
+    assert keys.index("mode") == keys.index("theme") + 1, keys
+    assert verified.policy.mode is GroupMode(policy["mode"])
+    pack = GroupPolicyPack.from_signed(verified.policy)
+    assert pack.mode is GroupMode(policy["mode"])

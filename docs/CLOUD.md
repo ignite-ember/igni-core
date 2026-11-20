@@ -1180,7 +1180,7 @@ subnet; 8 GB sparse image, loop device, dm-crypt `aes-xts-plain64`, p50 ms):
 The desktop app can chat with a person's igni in the cloud as well as with
 the one on their computer: a Local / Cloud switch, and a group mode the
 admin sets in the portal. The design, and every repository's part of it, is
-`docs/design/local-cloud-switch.md`. igni-core's part:
+the design doc docs/design/local-cloud-switch.md. igni-core's part:
 
 **The group's mode.** igni server signs it into the group pack as a
 top-level `mode`: `local`, `cloud` or `local_and_cloud`
@@ -1224,7 +1224,7 @@ Neither side has to tell the other anything.
 
 **Extension pages in cloud mode.** An extension's pages, its indicators
 and its place in the list work as they do on the desktop
-(`docs/design/local-cloud-switch.md` §15). Two things in igni make that so:
+(the design doc docs/design/local-cloud-switch.md §15). Two things in igni make that so:
 
 - *The page mark.* The node agent marks a person's desktop stream
   `X-Igni-Gateway: pages`, as it marks the gateway's own `control`, and

@@ -21,6 +21,8 @@ from pathlib import Path
 
 import click
 
+from igni_core.backend.account_backend import AccountBackend
+from igni_core.backend.app import BackendApp
 from igni_core.backend.logging_setup import configure_logging
 from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.core.data_paths import canonical_project_dir
@@ -136,17 +138,8 @@ def main(
         additional_dirs=extra_dirs,
         ws_token=ws_token,
     )
-    # Imported here, each only when it is the one asked for: the account-only
-    # backend builds none of the full backend's parts (extensions, host
-    # model, sessions) and need not import their composition.
-    if account_only:
-        from igni_core.backend.account_backend import AccountBackend
-
-        asyncio.run(AccountBackend(launch).run())
-        return
-    from igni_core.backend.app import BackendApp
-
-    asyncio.run(BackendApp(launch).run())
+    app = AccountBackend(launch) if account_only else BackendApp(launch)
+    asyncio.run(app.run())
 
 
 if __name__ == "__main__":
