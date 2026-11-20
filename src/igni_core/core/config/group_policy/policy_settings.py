@@ -5,7 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
+from igni_core.core.config.group_policy.pack import GroupMode
+from igni_core.core.config.group_policy.settings_fetcher import (
+    CachedSettingsFetcher,
+    GroupPolicyUnavailable,
+)
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
 
@@ -30,6 +34,9 @@ class PolicySettingsLoader:
     ``cli_overrides`` are the process's command-line flags, merged in both
     passes at the CLI tier: above the folder's own files, below the
     organisation's.
+
+    :meth:`mode` says where the pack the last :meth:`load` applied says igni
+    runs for the group, so the caller can refuse runs in ``cloud`` mode.
     """
 
     def __init__(
@@ -37,6 +44,8 @@ class PolicySettingsLoader:
     ) -> None:
         self._project_dir = project_dir
         self._cli_overrides = cli_overrides
+        #: The fetcher the last :meth:`load` read the pack through.
+        self._fetcher: CachedSettingsFetcher | None = None
 
     def local(self) -> Settings:
         """Local configuration only: the first pass."""
@@ -45,11 +54,32 @@ class PolicySettingsLoader:
     def load(self, local: Settings | None = None) -> Settings:
         """The load that counts, from ``local`` (read now when not given)."""
         local_only = local if local is not None else self.local()
+        self._fetcher = CachedSettingsFetcher.for_settings(local_only)
         return SettingsLoader.load(
             cli_overrides=self._cli_overrides,
             project_dir=self._project_dir,
-            group_policy_fetcher=CachedSettingsFetcher.for_settings(local_only),
+            group_policy_fetcher=self._fetcher,
         )
 
+    def mode(self) -> GroupMode:
+        """The group's mode, as the pack the last :meth:`load` applied says it.
 
-__all__ = ["PolicySettingsLoader"]
+        No load yet, no verified pack, or a required one that could not be
+        had: :attr:`GroupMode.local_and_cloud`, what igni did before there
+        was a mode. Reads nothing more: the fetcher remembers its pack.
+        """
+        return mode_of(self._fetcher)
+
+
+def mode_of(fetcher: CachedSettingsFetcher | None) -> GroupMode:
+    """The mode of the pack ``fetcher`` read; :attr:`GroupMode.local_and_cloud` without one."""
+    if fetcher is None:
+        return GroupMode.local_and_cloud
+    try:
+        pack = fetcher()
+    except GroupPolicyUnavailable:
+        return GroupMode.local_and_cloud
+    return pack.mode if pack is not None else GroupMode.local_and_cloud
+
+
+__all__ = ["PolicySettingsLoader", "mode_of"]

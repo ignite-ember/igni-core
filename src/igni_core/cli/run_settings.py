@@ -10,6 +10,8 @@ import click
 
 from igni_core.cli.options import CliOptions
 from igni_core.core.config.cli_overrides import CliOverrides
+from igni_core.core.config.group_policy.pack import GroupMode
+from igni_core.core.config.group_policy.policy_settings import mode_of
 from igni_core.core.config.group_policy.settings_fetcher import CachedSettingsFetcher
 from igni_core.core.config.settings import Settings
 from igni_core.core.config.settings_loader import SettingsLoader
@@ -48,14 +50,19 @@ class CliSettingsLoader:
 
     def __init__(self, options: CliOptions) -> None:
         self._options = options
+        #: The fetcher the settings returned last were read with.
+        self._fetcher: CachedSettingsFetcher | None = None
+
+    def mode(self) -> GroupMode:
+        """Where the pack the last :meth:`load` applied says igni runs for the group."""
+        return mode_of(self._fetcher)
 
     def load(self) -> Settings:
         with self._quiet():
             local_only = self._load(self._options, None)
         # This run has no GroupPolicySync: it fetches the pack itself, once.
-        settings = self._load(
-            self._options, CachedSettingsFetcher.for_settings(local_only, fetch_first=True)
-        )
+        self._fetcher = CachedSettingsFetcher.for_settings(local_only, fetch_first=True)
+        settings = self._load(self._options, self._fetcher)
         policy = settings.permissions.mode_policy
         if self._options.auto_approve and policy is not None and not policy.allow_bypass:
             # ``--auto-approve`` is bypass mode plus four categories set to
@@ -70,10 +77,10 @@ class CliSettingsLoader:
                 "(permissions.allow_bypass: false); running without it.",
                 err=True,
             )
+            self._fetcher = CachedSettingsFetcher.for_settings(local_only)
             with self._quiet():
                 settings = self._load(
-                    self._options.model_copy(update={"auto_approve": False}),
-                    CachedSettingsFetcher.for_settings(local_only),
+                    self._options.model_copy(update={"auto_approve": False}), self._fetcher
                 )
         return settings
 

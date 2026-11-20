@@ -22,6 +22,8 @@ installs it when the image sets ``IGNI_PROFILE=cloud`` — for the backend,
   events itself;
 * **native dialogs** — none: nobody sees the VM's screen, so a call that
   would open one (``pick_dir_native``) is refused as an RPC error;
+* **the group's mode** — this igni *is* the cloud a ``cloud`` group sends
+  its people to, so the mode never closes its run gate;
 * **the backend's boot and serving** — the guest contract with the VM's
   agents: ``ready``, late binding to its producer, ``activity.json``,
   restores, the VM's own credential (:mod:`igni_cloud.guest`).
@@ -110,6 +112,10 @@ class CloudLayer(Layer):
         # nowhere and its call would wait for ever. The desktop's window
         # hides the picker in cloud mode; this is the answer any other
         # client, or an old one, gets.
+        return False
+
+    def runs_on_the_persons_computer(self) -> bool:
+        # The VM is where a ``cloud`` group's people run igni.
         return False
 
     def backend(self) -> BackendHooks:

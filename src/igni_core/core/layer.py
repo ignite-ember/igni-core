@@ -19,7 +19,9 @@ otherwise:
   (:meth:`Layer.platform_calls_need_control`), and whether igni fetches
   the person's service events itself (:meth:`Layer.fetches_own_events`);
 * whether igni can open a native dialog where it runs
-  (:meth:`Layer.opens_native_dialogs`);
+  (:meth:`Layer.opens_native_dialogs`), and whether it runs on the
+  person's own computer, which their group's mode governs
+  (:meth:`Layer.runs_on_the_persons_computer`);
 * what a backend does around its boot and serving (:meth:`Layer.backend`).
 
 **Choosing one.** :data:`layers`, the process's :class:`Layers`, reads
@@ -174,6 +176,17 @@ class Layer:
         screen, a call that would open one is refused instead
         (``backend/message_admission.py``), so the client gets an answer
         and not a call that never returns.
+        """
+        return True
+
+    def runs_on_the_persons_computer(self) -> bool:
+        """igni runs on the person's own computer, where their group's mode applies.
+
+        A group's ``mode`` (``GroupPolicyPack.mode``) says where igni runs
+        for its people: ``cloud`` means not on their computer, and the run
+        gate closes there (``core/config/group_policy/gate.py``). An igni
+        that *is* the cloud the mode sends people to reads the same pack
+        and must keep running.
         """
         return True
 
