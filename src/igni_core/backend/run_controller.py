@@ -336,7 +336,16 @@ class RunController:
     async def _close_abandoned_pause(self) -> None:
         """A new message while a run stands paused: the person moved on from
         that run, so its message is closed as completed, as it was before a
-        pause kept it open."""
+        pause kept it open.
+
+        Its approvals go too, as a cancel drops them (:meth:`_end_pause`):
+        left waiting, answering one continued the abandoned run and ran
+        its tool in the middle of the new conversation. That includes the
+        ones a previous backend left, which no paused message here names.
+        """
+        dropped = self._drop_approvals() if self._drop_approvals is not None else 0
+        if dropped:
+            logger.info("A new message dropped %d waiting approval(s)", dropped)
         pending_id = self._paused_pending_id
         if pending_id is None:
             return
