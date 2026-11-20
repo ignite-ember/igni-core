@@ -1,6 +1,7 @@
 # Design: the desktop's Local / Cloud switch and the group mode
 
-Status: **proposed, for the owner's approval.** No code is written yet.
+Status: **approved 2026-11-20; built in full (no phases); extensions in
+cloud mode included; recommendations Q1–Q11 accepted.**
 Tracker row R691 ("Switch the desktop app between a local backend and a
 cloud (Fleet) backend"). The work item is the `docs/TODO.md` entry "A person
 uses their cloud VM from the desktop app, not only the local backend",
@@ -18,6 +19,10 @@ Every "today" statement below was read from the code on 2026-11-20:
 - igni-sdk origin/main `80e29ee`;
 - igni__cloudvm `10a8e5b` (crate `crates/gateway`).
 
+§15 (extensions in cloud mode) was read on the same day against igni-core
+`51aa1b89`, igni__cloudvm origin/master `17528d7` (crates `gateway`,
+`node-agent`, `guest-agent`) and igni-app origin/main `b27c81bb`.
+
 Paths are given relative to each repo.
 
 ---
@@ -30,13 +35,14 @@ Paths are given relative to each repo.
 | D2 | Auth hand-off | **The token never enters the webview.** The Tauri shell runs a loopback **relay**: windows connect to it exactly as they connect to a local backend (per-launch token, Origin check), and the relay dials `wss://<gateway>/v1/connect` with `Authorization: Bearer <session>` read from `~/.igni/credentials.json`. "Refresh" means re-dialling with the current token. The CSP stays loopback-only. |
 | D3 | Switch UX / state | One app-wide choice, owned by the shell and remembered per account. It is a two-way control, *This computer · Cloud*, in the account menu, with a backend chip in the status line. Flipping re-points every window, the same way a backend restart does today. The local backend keeps running. |
 | D4 | Group mode | A first-class column, `org_groups.mode ∈ {local, cloud, local_and_cloud}`, defaulting to `local_and_cloud` (today's behaviour). It is carried as a top-level `mode` in the signed group pack. It is enforced in four places:<br>• the shell, offline, from the verified pack;<br>• igni-core's run gate, offline;<br>• igni server: the producer feed marks a local-only person inactive, and the `vm-sign-in` grant refuses them;<br>• the gateway, which refuses and kicks inactive producers. |
-| D5 | Cloud mode, phase 1 | Chat works: sessions, runs, approvals, models, attachments (uploaded as bytes). Hidden: extensions, the folder picker, New Window's folder choice, "open in editor" and "reveal" for paths, the hooks panel's file links. The cloud layer also refuses `pick_dir_native` on its own side. |
+| D5 | Cloud mode, phase 1 (*superseded 2026-11-20: extensions work in cloud mode, D12*) | Chat works: sessions, runs, approvals, models, attachments (uploaded as bytes). Hidden: extensions, the folder picker, New Window's folder choice, "open in editor" and "reveal" for paths, the hooks panel's file links. The cloud layer also refuses `pick_dir_native` on its own side. |
 | D6 | Events | **igni server picks one owner per person** (`local` or `cloud`), so the two sides never race for the lease. Owner by mode: `local` → local; `cloud` → cloud; `local_and_cloud` → the person's last switch, stored server-side, `local` until they first switch. A desktop pull while the owner is `cloud` gets `409`. A gateway pull while the owner is `local` gets nothing. |
 | D7 | Errors | Each error state gets one shell state and one banner. Waking is driven by the client, because the gateway sends nothing while it wakes a VM. `needs_sign_in` gets a **Sign in** button (the shell calls `POST /v1/sign-in`). An unreachable gateway retries with backoff and offers a way back to local. A mode change applies live (a kick, or a drain then a switch). |
 | D8 | Contracts | One schema, `cloud-discovery.schema.json`, lives in igni-sdk `contracts/`. igni-server, igni-client and the shell are tested against it. The pack gains `mode`. The feed gains `inactive_reason`. **The client protocol does not change.** |
 | D9 | Security | The session token stays in Rust memory and on disk at 0600, where it already is. The relay accepts only the webview's origins plus its own per-launch token. The gateway gains an Origin allow-list (no browser origins by default). TLS is always verified. |
 | D10 | Model contract | **No model-facing text changes.** None of this touches prompts, tools, injected blocks or result formats. One trap is named in §11 so nobody falls into it later. |
-| D11 | Phasing | Five phases, one PR per repo per phase, merged igni-server → igni__cloudvm → igni-core → igni-sdk → igni-app. Phases 1–3 come to about **25 engineer-days** plus about **4 days** of live E2E (§13). |
+| D11 | Phasing (*superseded 2026-11-20: one build, §13*) | Five phases, one PR per repo per phase, merged igni-server → igni__cloudvm → igni-core → igni-sdk → igni-app. Phases 1–3 come to about **25 engineer-days** plus about **4 days** of live E2E (§13). |
+| D12 | Extensions in cloud mode | **Built with the rest.** The relay dials with `?pages=1`; the node agent attests that stream with `X-Igni-Gateway: pages`; the cloud igni honours `caller` only on a connection with that mark. Page files come through a new gateway route `GET /v1/pages/{extension}/{path}` and a loopback origin per extension in the shell, so the CSP stays loopback-only. The host object model and `extension_service_token` ride the client protocol unchanged (§15). |
 
 ---
 
@@ -451,7 +457,7 @@ new `ws=`. One web-client change is needed for the cloud:
 | Attachments (composer upload, drag and drop) | **Works.** The bytes go through `upload_attachment{filename, content_base64}` and land on the VM | Already an upload, not a path. The 5 MiB composer limit holds |
 | File pills / code pills: open in editor, reveal in folder | **Hidden.** The in-app preview is kept where the backend serves the content | The path is on the VM. `plugin:opener` would open a missing or wrong local file |
 | Project folder picker, New Window's folder choice | **Hidden.** New Window opens on the VM's workspace | `pick_dir_native` would open a dialog on a VM without a display |
-| Extensions (pages, indicators, list) | **Hidden** | The gateway relays the client protocol, and the cloud refuses `caller` (`SECURITY.md` §10, L541/L555). Phase 4 |
+| Extensions (pages, indicators, list) | **Works** (§15) | Pages are framed from a loopback origin the shell serves per extension; their calls speak for the extension on a connection the node agent marks `pages`. Nothing about extensions is hidden in cloud mode |
 | Hooks panel's "open file" | **Hidden** | Local path |
 | File › Restart Backend / Reinstall | **Kept, labelled "(this computer)"** | They act on the local backend, which keeps running |
 | Account menu, Log out | **Works.** Log out signs the desktop out, which also ends the cloud connection (the relay sees `credentials.json` change) | One identity |
@@ -738,8 +744,9 @@ never have to coordinate.
    - A local user who can write `~/.igni` cannot forge `mode`.
    - They can delete the pack, which means `local_and_cloud` on the shell.
      That is acceptable, because the server enforces `local` (§6.3).
-7. **Extension iframes** are not shown in cloud mode (phase 1), so no
-   third-party page shares a window with a cloud connection.
+7. **Extension iframes** are shown in cloud mode. What keeps that safe —
+   the page mark, the shell's page origins and the token's path — is
+   §15.6.
 8. **The session token reaching the VM** through `vm_sign_in` is existing
    behaviour (`CLOUD.md`). This design adds nothing to it.
 
@@ -963,6 +970,8 @@ reaching the host's gateway through a tunnel. One script,
     - The relay refuses a foreign Origin.
     - The gateway refuses an unlisted browser Origin.
 
+11. **Extensions in the cloud.** §15.8.
+
 This run also closes **R321's live proof** (step 5, against a real
 gateway). R691 goes green on steps 1–4 and 6–7 at the end of phase 2,
 and is re-run in full after phase 3.
@@ -970,6 +979,12 @@ and is re-run in full after phase 3.
 ---
 
 ## 13. Phasing, merge order and estimates (D11)
+
+> **2026-11-20: the phases are now one build.** The owner asked for the
+> switch to be built in full, extensions included. Phases 1–4 land
+> together, as one branch per repo, merged in the order below; the
+> tables stay as the breakdown of the work. Phase 4 is specified in §15.
+> Phase 5 (a window per side) is out of scope.
 
 One PR per repo per phase, merged in this order inside each phase:
 **igni-server → igni__cloudvm → igni-core → igni-sdk → igni-app.**
@@ -1015,7 +1030,7 @@ engineer-days, and include tests and docs.
 | Live E2E | Steps 8–10, then a full re-run | 1.5 |
 | **Total** | | **11.5** |
 
-### Phase 4: extensions over the gateway (outline; its own design doc)
+### Phase 4: extensions over the gateway (specified in §15)
 
 Phase 4 needs three things:
 
@@ -1026,10 +1041,10 @@ Phase 4 needs three things:
   relay also proxies page origins.
 - **`extension_service_token`** in the cloud.
 
-Rough size: 2–3 weeks across igni-core, igni__cloudvm and igni-app. It
-is not estimated further here.
+§15.7 estimates it at about 9 engineer-days across igni-core,
+igni__cloudvm and igni-app, plus half a day of live E2E.
 
-### Phase 5: both side by side (maybe)
+### Phase 5: both side by side (out of scope, 2026-11-20)
 
 A window per side, so `local_and_cloud` people can keep a local chat
 next to a cloud one. Most of the groundwork comes earlier: the per-window
@@ -1080,3 +1095,744 @@ design. It is left out, because the decision of 2026-11-12 settles the
 part that touches the switch: **the switch only ever connects as the
 person**, never as an app. That item's allow-list and SDK command can
 follow as their own section once this one is approved.
+
+---
+
+## 15. Extensions in cloud mode (D12)
+
+Owner's decision of 2026-11-20 (option A): an extension's pages, its
+indicators and its place in the list work in cloud mode exactly as they
+do locally. This section replaces "Phase 4" in §13 and the "Hidden" row
+in §5. Each part names its wire contract, its security argument, the
+files that change in each repo, its tests, and where it plugs into the
+relay (§3) and the state machine (§4).
+
+### 15.1 What stands in the way today
+
+Read from the code on 2026-11-20:
+
+1. **`caller` is refused in the cloud.**
+   - `MessageAdmission._caller_refusal` (`src/igni_core/backend/message_admission.py`)
+     refuses any `RPCRequest` with a `caller` when
+     `Layer.connections_speak_for_extensions()` is false.
+   - `CloudLayer` answers false (`packages/igni-cloud/src/igni_cloud/layer.py:95`).
+     The comment there, and `docs/SECURITY.md` ("A Fleet UI that hosts
+     extension pages will need a mark the node agent attests, as it attests
+     the control stream"), name the fix.
+   - Everything a page or an indicator does goes through `caller`:
+     - `host_model`;
+     - `extension_service_token`;
+     - `ext.<id>.*`, which includes the indicators' `source` calls
+       (`StatusLine.tsx` → `client.asExtension(id).rpc`).
+2. **The page files are out of reach.**
+   - Each extension's UI is served by `ExtensionOrigin`
+     (`src/igni_core/extensions/origin.py`) on its own **ephemeral**
+     `127.0.0.1` port.
+   - In the VM, the node agent can reach only the ports the guest agent
+     forwards: `--forward-port`, which defaults to 8765, igni's WebSocket
+     (`crates/guest-agent/src/main.rs:20`, `docs/guest-protocol.md`).
+   - `list_extensions` reports that VM-internal address as `origin`. On the
+     desktop the address means nothing, or worse: it means some other
+     local port.
+3. **The desktop can frame only loopback.** The CSP is
+   `frame-src http://127.0.0.1:* http://localhost:*` (`tauri.conf.json`),
+   and §3 keeps it that way.
+
+**What already works and needs no change:**
+
+- The relay (§3) and the gateway (`crates/gateway/src/relay.rs`) pass
+  frames through unchanged. So `host_model`, `host_signal`,
+  `extension_service_token` and `list_extensions` already travel, once
+  igni accepts the caller.
+- Replies that carry a secret or one extension's data are addressed to
+  the connection that asked (`Message.address_to`). One gateway client
+  connection is one window connection.
+- **The host object model "over the gateway"** for pages is the
+  `host_model` RPC on the client protocol (`pool_rpcs/host_model.py`). No
+  host-model endpoint is added to the gateway.
+  - `CLOUD.md` §3's typed `client.host` for *programs* (a host-model
+    endpoint without a `caller`) is a different feature. It stays out of
+    scope.
+- **The service token's exchange works from a VM.**
+  - `ServiceTokenExchange` trades the VM's own access token
+    (`EnvironmentCredentials`) as `subject_token`.
+  - igni server's exchange (`app/services/identity/token_exchange.py`)
+    takes any token with a `user_id` as a person's session, and the
+    holder of a person's VM token gets a person token. App and space VMs
+    already do this (`packages/igni-cloud/tests/test_an_apps_vm_gets_its_services_tokens.py`).
+  - Only the `caller` refusal stands in the way.
+
+### 15.2 The page mark
+
+**Decision.** A connection speaks for an extension in the cloud only if
+the node agent marked its stream `pages`. The mark is attested exactly as
+the control mark is: the node agent strips every `X-Igni-Gateway` header
+from a client's upgrade, then adds the one value the gateway asked for.
+igni reads the mark off the connection's handshake, never off a message.
+
+**Wire contract, client → gateway (igni__cloudvm).**
+
+- **The query.** `GET /v1/connect?pages=1[&sign_in=1]`, WebSocket.
+  - `pages=1` or `pages=true` asks for a page-host connection. Any other
+    value, or no value, means no.
+  - It is parsed like `sign_in`, in `ConnectQuery::pages()`.
+- **Who may ask.** A person's token only. An app or a space has no
+  windows.
+  - `pages=1` with any other kind of token is refused **before the
+    upgrade**: HTTP `403 {"error":"not_a_person","error_description":"only a person's desktop hosts extension pages"}`.
+- **The rest is unchanged.** Auth, the Origin rule (§9.4), the close codes
+  and the subprotocol echo (`igni.v1`) all stay as they are.
+- **Reconnects keep the mark.** The gateway remembers `pages` for the
+  life of the client connection. Every `igni_ws_timed` it makes for that
+  connection asks for the mark, including the reconnects behind the
+  socket after a node move.
+- **Old nodes.** If the node does not advertise the capability
+  `page_host_mark`:
+  - the gateway connects **without** the mark;
+  - it counts `page_mark_unsupported_total`;
+  - it logs once per connection.
+
+  Chat still works. igni refuses the extension calls (below), and the
+  frame shows that refusal. Merging igni__cloudvm before igni-app (§13)
+  keeps this to mixed-version clusters.
+
+**Wire contract, gateway → node agent.**
+
+- **The query.** `GET /v1/producers/{id}/stream?port=8765&mark=<m>`, where
+  `m` is one of:
+  - `control`: the gateway's own stream;
+  - `pages`: a page host's stream.
+  - `control=1` stays as an alias of `mark=control`, for gateways older
+    than this change.
+- **Refusals.** Each is `400` from the node agent:
+  - `control=1` together with `mark=pages`;
+  - an unknown `mark`;
+  - two `mark` parameters.
+- **What the node agent writes.** In `rewrite_upgrade_head`, every
+  `X-Igni-Gateway` header from the client is dropped, as today. Then
+  exactly one header is added:
+  - `X-Igni-Gateway: control` for `control`;
+  - `X-Igni-Gateway: pages` for `pages`;
+  - none for no mark.
+- **The capability.** `page_host_mark` joins `Node::capabilities()`.
+- **A page-file stream (§15.3) never takes a parked warm stream.**
+  - The stream query gains `warm=0`. Absent, it means `1`, which is
+    today's behaviour.
+  - `open_stream` gains `take_warm: bool`, read from that parameter.
+  - With `take_warm=false`, a parked stream is neither taken nor
+    aborted. Today a port mismatch **aborts** it (`node.rs:856`), so the
+    page route must not touch it at all; the parked stream stays for the
+    relay.
+
+**Wire contract, inside igni (igni-core).**
+
+| Piece | Change |
+|---|---|
+| `WebSocketTransport` (`transport/websocket.py`) | `_is_control` becomes `_mark_of(conn) -> StreamMark`, where `StreamMark` is `NONE`, `CONTROL` or `PAGES`. It reads `X-Igni-Gateway`, trimmed and lowercased: `control` gives `CONTROL`, `pages` gives `PAGES`, anything else gives `NONE`. `_handler` calls `msg.mark_control()` or `msg.mark_page_host()` from it |
+| `Message` (`protocol/schemas/envelope.py`) | Adds `_via_page_host: bool` as a `PrivateAttr`, the `via_page_host` property and `mark_page_host()`, beside `_via_control`. It is never serialised and never read from a message |
+| `Layer` (`core/layer.py`) | Adds `extension_calls_need_page_mark() -> bool`. The desktop answers `False`. The docstring of `connections_speak_for_extensions` says the mark may narrow it |
+| `CloudLayer` | `connections_speak_for_extensions()` → `True`, and `extension_calls_need_page_mark()` → `True`. The comment says why: the node agent attests the mark |
+| `MessageAdmission._caller_refusal` | After the existing check, when `extension_calls_need_page_mark()` is true and `not message.via_page_host`, it refuses with `"{method}: only a connection that hosts extension pages speaks for an extension"`. A control stream carries `CONTROL`, never `PAGES`, so the gateway's own stream still never speaks for an extension. `authorise_caller` runs unchanged after the check |
+
+On the desktop nothing changes. The layer does not ask for the mark, and
+an `X-Igni-Gateway` header a desktop client sends is read and ignored by
+admission, as `control` already is.
+
+**Security argument.**
+
+1. **Unforgeable from outside the VM.** No client can set the header: the
+   node agent removes it from every client stream and adds it only on the
+   gateway's word. The gateway gives that word only after it has verified
+   a person's session token, the same check every connection already
+   passes.
+2. **No new authority.**
+   - Whoever holds the person's session token can already:
+     - exchange it at igni server for a token for **any** service URL
+       (`token_exchange.py`: "the session is the credential, and whoever
+       holds it has everything already");
+     - drive the person's igni as a window. Every Fleet connection is a
+       window today: the cloud backend takes no token.
+   - What the mark unlocks is a subset of that:
+     - an extension's own `ext.*` methods;
+     - the host model under that extension's grants;
+     - a token for that extension's own service.
+   - The mark makes "speaks for an extension" a deliberate, attested
+     property of a connection. It does not hand out power the token did
+     not already carry.
+3. **Programs that did not ask stay out.** igni-client, the gateway's
+   control stream and any other Fleet client never send `pages=1`, so a
+   `caller` on their connections is still refused. That keeps the
+   desktop's rule ("a program decides nothing for the person, and speaks
+   for no extension") as close as the cloud allows.
+4. **`authorise_caller` still decides what a page may do.** The extension
+   must be installed, and its page may call only its own methods, the
+   host model, its service token, and the base methods its manifest
+   grants.
+5. **The known gap stays known, and gets no wider.**
+   - A process inside the VM can reach `127.0.0.1:8765` directly and send
+     either header itself (`docs/SECURITY.md`, "Known, not yet closed").
+   - Such a process is already a window, which is more than a page.
+   - The fix named there (the guest bridge holds a launch secret) closes
+     both marks at once, because both are read the same way, off the
+     handshake.
+   - The igni-core lane adds the page mark to that bullet.
+
+**Plugs into §3.** The relay's upstream dial becomes
+`wss://<gateway>/v1/connect?pages=1` (`&sign_in=1` when §8 asks for it),
+for every window connection. All windows host pages, so there is no
+per-window choice.
+
+**Plugs into §4.** There is no new state. A `403 not_a_person` on the
+upgrade cannot happen for a desktop session. If it does, it is
+`Refused("not_a_person")`.
+
+### 15.3 Page files: the gateway route and igni's page answer
+
+**Decision.**
+
+- The page files travel over the one port the guest already forwards:
+  **igni's own WebSocket port, 8765.** A plain `GET` under a reserved
+  prefix is answered as HTTP by the transport's `process_request` hook,
+  before any upgrade.
+- The gateway fetches them on a stream marked `pages`, behind a new
+  public route.
+- The shell serves them to the frame from a loopback origin per
+  extension (§15.4).
+
+**Why port 8765 and not a second forwarded port.** A second port (say
+8766, with the guest agent forwarding it) would serve whatever listens
+there. If igni ever restarted, a process the agent started could take the
+port first. Its pages would then be framed by the desktop and handed the
+bridge as that extension. On 8765, pages come from the process that holds
+igni's socket: the same trust anchor as the chat. No guest-agent or image
+change is needed.
+
+**Wire contract, the gateway's public route (igni__cloudvm).**
+
+```
+GET /v1/pages/{extension_id}/{path…}
+Authorization: Bearer <person session>
+```
+
+| Rule | Answer |
+|---|---|
+| No bearer, or a bad one | `401` / `503`, as `authenticate` already answers |
+| A token that is not a person's | `403 {"error":"not_a_person"}` |
+| An `Origin` header not in `public.allowed_origins` (§9.4) | `403`, as the connect route |
+| `extension_id` does not match `^[a-z][a-z0-9]*(\.[a-z][a-z0-9-]*)+$` (igni-core's `EXTENSION_ID`) | `400 {"error":"bad_extension_id"}` |
+| The raw path, once percent-decoded, has a `..` or `.` segment, a NUL, a `\`, or `//`, or the raw path is over 2048 bytes | `400 {"error":"bad_page_path"}` |
+| The producer is not running (`gw_producers`, the same read as `/v1/me`'s `vm.state`, §2.2) | `409 {"error":"not_running"}`. **The route never wakes a VM.** A page is fetched only while the window's own connection holds the VM awake |
+| The node does not advertise `page_host_mark` | `501 {"error":"pages_unsupported"}` |
+| The node answers 404 on the stream (the VM went away) | `409 {"error":"not_running"}` |
+| Stream or HTTP failure inside | `502 {"error":"page_failed"}` |
+| igni's response is over `public.max_page_bytes` (default 32 MiB) | The body is cut and the connection reset. If the over-size `Content-Length` is known up front, it is `502 page_failed` |
+| Any method but `GET` | `405` (axum) |
+
+**What the gateway sends and returns.**
+
+- **Upstream.** The gateway opens `nodes.stream(url, p, stream_port,
+  Mark::Pages)` with `take_warm=false`, then writes exactly:
+  ```
+  GET /.igni/pages/{extension_id}{raw path} HTTP/1.1\r\n
+  Host: 127.0.0.1:{stream_port}\r\n
+  Connection: close\r\n
+  User-Agent: igni-gateway\r\n
+  \r\n
+  ```
+  - The raw path keeps the client's percent-encoding. The query string is
+    dropped.
+  - **No client header is forwarded**: no cookie, no authorisation, no
+    Origin.
+  - The response is read with `hyper::client::conn::http1` over the
+    upgraded stream.
+- **Downstream.** The status and only these response headers are passed
+  on, and the body is streamed:
+  - `Content-Type`;
+  - `Content-Length`;
+  - `Content-Security-Policy`;
+  - `X-Content-Type-Options`;
+  - `Cross-Origin-Resource-Policy`;
+  - `Cache-Control`;
+  - `Referrer-Policy`.
+- **Metrics:** `page_requests_total{status}` and `page_ms`.
+
+New config, both with defaults:
+
+- `public.max_page_bytes` (32 MiB);
+- `public.page_timeout_s` (30).
+
+**Wire contract, igni's answer (igni-core).**
+
+- **Where it lives.** `WebSocketTransport` takes an optional `pages:
+  PageFiles` (new, `src/igni_core/extensions/page_files.py`).
+- **The hook.** Its `process_request` wraps the guard's:
+  1. If `pages` is set, **and** the request has no `Upgrade` header,
+     **and** its path starts with `/.igni/pages/`, then:
+     - the request must carry `X-Igni-Gateway: pages`. Without it the
+       answer is a plain `404`, the same answer as an unknown file;
+     - the request must name a `Host` of `127.0.0.1:<bound port>`, or the
+       answer is `421`;
+     - `PageFiles.answer(extension_id, target)` gives the reply.
+  2. Every other request goes to `HandshakeGuard.process_request`,
+     unchanged.
+- **`PageFiles.answer`:**
+  - looks up the extension's `ExtensionOrigin` with a new
+    `ExtensionOrigins.get(extension_id)`. No origin gives `404`;
+  - calls `ExtensionOrigin.answer("GET", target)`. That method is
+    extracted from `_reply_to`: the same file resolution, the same refusal
+    of escapes and symlinks out of the root, the same content-type table
+    and the same CSP. `_reply_to` keeps the Host check and the head
+    parsing, then calls it;
+  - turns the `HttpReply` into a `websockets` `Response`. The headers are
+    exactly `HttpReply.headers()`, so the CSP's `frame-ancestors` is
+    still `frame_ancestor_sources()`: the Tauri origins and loopback;
+  - holds the body in memory, because `websockets` cannot stream one. A
+    file over `PageFiles.MAX_BYTES` (32 MiB) answers `404`, and the log
+    line says why.
+- **Only `GET`.** `websockets` never hands a `POST` or `HEAD` to the hook
+  (`origin.py`'s note), so nothing else is answerable.
+- **Which layers serve pages.** A new `Layer.serves_page_files() -> bool`
+  decides whether `PageFiles` is built at all. The desktop answers
+  `False`, so a desktop backend's port never serves files. `CloudLayer`
+  answers `True`.
+  - `TransportBuilder` (`backend/transport_builder.py`, called from
+    `BackendApp._listen`) builds the transport with `pages=PageFiles()`
+    when the layer says so.
+  - The transport listens before the extension runtime exists, so
+    `PageFiles` starts unbound and answers `404`.
+  - `BackendApp._assemble` binds it to `ExtensionsRuntime.origins` with
+    `PageFiles.bind(origins)` once the runtime is built.
+- **Unchanged:** the per-extension listeners in the VM. They keep running
+  and keep answering `127.0.0.1:<ephemeral>` inside the VM, for anything
+  in the VM that uses them.
+
+**Security argument.**
+
+- **The files are public to the person.** They are the bundle the
+  extension's distribution shipped: not a secret. The gateway serves them
+  only to the producer's own person token, on the producer's own VM. The
+  route never wakes, so it cannot be used to run up compute.
+- **Resolution is the tested code.** File resolution stays in
+  `ExtensionOrigin`, whose escape, symlink, `//` and NUL refusals are
+  already covered.
+- **Defence in depth.** The gateway refuses traversal and bad ids before
+  opening a stream.
+- **The mark is required on page-file requests too.** Fetching pages and
+  speaking for an extension are the same attested property of a stream.
+- **No header crosses.** The gateway forwards no client header up and
+  only the allow-list down, so no cookie, credential or hop header
+  crosses either way.
+
+### 15.4 The shell's page origins (igni-app)
+
+**Decision.**
+
+- In cloud mode the shell serves each extension's page from a loopback
+  origin of its own, `http://127.0.0.1:<port>`, one listener per
+  extension.
+- Each listener proxies `GET` to the gateway route of §15.3, with the
+  session token added in Rust.
+- This is the same "one origin per extension" isolation `origin.py`
+  argues for. The CSP stays loopback-only (`config_contracts.rs`
+  unchanged).
+
+**Tauri command.**
+
+```
+cloud_page_origin(extension_id: String) -> Result<String, String>
+```
+
+- `Ok("http://127.0.0.1:<port>")`. The listener for that extension is
+  started on first ask, and the same port is returned for the life of
+  the cloud side.
+- `Err(…)` in three cases:
+  - the extension id does not match the `EXTENSION_ID` pattern;
+  - the active side is not the cloud: `"not in cloud mode"`;
+  - the listener could not bind.
+- It never returns or takes a token.
+
+**The listener** (`src/cloud/pages.rs`, next to the relay of §3):
+
+| Rule | Behaviour |
+|---|---|
+| Bind | `127.0.0.1:0`, one per extension id. Never off-host |
+| Method | `GET` only. Anything else gets `405` with `Allow: GET` |
+| `Host` | Must equal `127.0.0.1:<port>`, or the answer is `421`. This stops DNS rebinding, as `ExtensionOrigin._host_is_ours` does |
+| Head | At most 16 KiB, read within 10 s, then `431` or `408`. One request per connection, `Connection: close` |
+| Path | The query is dropped. The raw path is checked by the same rules as the gateway's (`..` or `.` segments, NUL, `\`, `//`, over 2048 bytes give `404`). It is then forwarded as `GET {gateway_url}/v1/pages/{extension_id}{raw path}` |
+| Upstream headers | `Authorization: Bearer <session>`, read from `credentials.json` **on every request**, as the relay reads it on every dial. Plus `User-Agent: igni-desktop/<version>`. **No header from the frame is forwarded.** No `Origin` is sent, so the gateway's Origin rule (§9.4) lets it in as a program |
+| TLS, proxy | The relay's own client settings: rustls with the platform roots, `HTTPS_PROXY` and `NO_PROXY`, and an `https` gateway only outside a debug build (§9.2, Q10). One shared `CloudHttp` value builds both |
+| Response headers | Only the allow-list of §15.3 is copied. **A `200` without a `Content-Security-Policy` is refused** with `502`: the shell never serves a page whose CSP igni did not write. `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: no-store` and `Referrer-Policy: no-referrer` are always set, whatever came back |
+| Status mapping | `200` and `404` pass through. `401`, `403`, `409`, `5xx` and network errors become `503` with `Retry-After: 2` and a one-line text body. **A page fetch never moves the state machine**: the relay's dial is the one source of state (§4.2) |
+| Size and time | The body is streamed. A body over 32 MiB is cut. 10 s to connect, 60 s in all |
+| Logs | The extension id, the path length, the status and the time. **Never the token, never the path's content** (a log-capture test) |
+
+**Lifecycle (plugs into §4.2).**
+
+- `PageOrigins` is owned by the shell's backend-state owner, beside the
+  relay.
+- `cloud_page_origin` answers only while the active side is the cloud:
+  `Dialing`, `Waking`, `CloudReady`, `CloudNeedsSignIn` or
+  `CloudUnreachable`.
+- On any transition **into** `Local`, `Refused(_)` or
+  `NeedsDesktopSignIn`, and whenever `credentials.json` changes to
+  another `iss|org|sub`, every page listener is stopped with
+  `PageOrigins::stop_all()`.
+- So a port never outlives the account and gateway it served. The next
+  cloud side gets new ports, which means new origins and a fresh
+  page-side `localStorage`. That matches local, where `ExtensionOrigin`'s
+  ports change on every backend start.
+- A node move (a second `welcome`, §4.3) leaves the listeners alone: the
+  origin is the shell's and stays stable.
+
+**Plugs into §3.** The relay and the page listeners share the gateway
+URL, `CloudHttp` and the credentials reader. They are started and
+stopped together.
+
+**Security argument.**
+
+1. **The token stays in Rust**, as in §9.1. It goes only to the
+   `gateway_url` that `api_url` returned (§9.2). No command, URL or
+   response header carries it.
+2. **Origin per extension.** Two cloud extensions are two origins, and a
+   cloud extension and the same extension locally are two origins too.
+   The frame keeps `SANDBOX = "allow-scripts allow-forms allow-same-origin"`
+   and is never same-origin with the app.
+3. **What another local process can do with the port.** It can read the
+   extension's bundle files, which it can do locally too through
+   `ExtensionOrigin`. It cannot read anything else: the path is confined
+   to `/v1/pages/{this extension}`, and igni resolves it inside the
+   bundle's root.
+   - A web page in the person's browser cannot read responses across
+     origins: there are no CORS headers and CORP is `same-origin`.
+   - Rebinding is closed by the Host check.
+4. **The CSP is igni's, as locally.** The person's own igni writes
+   `frame-ancestors`, `connect-src 'self' <service> <egress>` and the
+   rest. The shell refuses a page without one. `'self'` is now the
+   shell's origin, which serves only that extension's files.
+
+### 15.5 The extension list, indicators and frames (igni-app web client)
+
+**The list.**
+
+- `list_extensions` and `set_extension_settings` are plain RPCs. They
+  travel through the relay unchanged.
+- **In cloud mode the backend's `origin` is discarded, unconditionally,
+  before anything stores it.** It is a VM-internal address. Framed on the
+  desktop, it would load whatever local server owns that port, and the
+  bridge would then talk to it as the extension.
+- New file `clients/web/src/extensions/cloudPageOrigins.ts` exports
+  `localiseOrigins(listed, side)`:
+  - locally, it returns the list as it is;
+  - in the cloud, every non-empty `origin` is replaced by
+    `invoke("cloud_page_origin", {extensionId})`;
+  - a failed invoke gives `origin: ""`. `ExtensionPage` already shows
+    "is READY but its UI is not being served" for that case.
+- `useExtensions.ts` passes every list through it: the one fetched on
+  connect, **and** every `setExtensions` the settings panel makes. The
+  returned `setExtensions` localises before it stores, so no path
+  bypasses it.
+
+**Frames.**
+
+- `ExtensionPage` mounts `ExtensionFrame` in the cloud only while the
+  backend state is `CloudReady`. In other states the §4.2 overlay or
+  banner covers the page, and no frame loads against a VM that cannot
+  answer.
+- `ExtensionPageHost.tsx` keys each frame by the client's connection
+  generation (incremented on every `connected`, including the
+  second-`welcome` resync of §4.3).
+  - After a node move, the frame remounts with a new nonce, sends `hello`
+    again and re-subscribes. Its subscriptions lived in the igni process
+    that went away.
+  - Locally the same key remounts frames after a backend restart, which
+    is correct there too.
+- `ExtensionFrame`'s four checks are unchanged:
+  - the window;
+  - the origin, which is now the shell's origin;
+  - the nonce;
+  - the method.
+
+**Indicators, menu items, `host_signal`.** No change in the web client.
+They go through `client.asExtension(id)`, so they work as soon as §15.2
+lands. The phase-1 code that would have hidden extensions in cloud mode is
+**not written**: §5 says "Works".
+
+**The service token** (`bridge.service`). There is no change in the web
+client or the bridge:
+
+1. The window forwards `extension_service_token` with the frame's
+   extension as `caller`.
+2. The relay and the gateway pass it through.
+3. The VM's igni exchanges its own access token for a token whose
+   audience is the service recorded on that extension's origin.
+4. The answer is addressed to the asking connection only, so it is never
+   broadcast to the person's other Fleet clients.
+5. The page then reaches its service **directly from the desktop
+   webview**, as locally, under the `connect-src` its CSP admits.
+
+### 15.6 Security summary
+
+| Threat | Closed by |
+|---|---|
+| A Fleet client (igni-client, the control stream) speaks for an extension | No `pages=1`, so no mark, so `caller` is refused (§15.2) |
+| A client forges `X-Igni-Gateway: pages` | The node agent strips it from every client stream (§15.2) |
+| An app or a space asks for a page host | `403 not_a_person` before the upgrade |
+| A web page drives the person's cloud extensions | The relay's door, an Origin and per-launch token (§9.3). The page origins give only static bundle files, with no CORS (§15.4) |
+| The desktop frames a VM-internal port | The web client discards the backend's `origin` in cloud mode (§15.5) |
+| A squatter in the VM serves pages | Pages are served only by the process holding igni's socket (§15.3) |
+| A page reaches another extension's data | One origin per extension, and `authorise_caller` with the frame's `caller` (unchanged) |
+| The session token reaches a page | It stays in Rust: the relay header and the page proxy header only (§15.4) |
+| A service token reaches another client | It is addressed to the asking connection (`Message.address_to`, unchanged) |
+| `host_signal` reaches other Fleet clients | Broadcast to every connection of the person's own igni, as on the desktop. Values are filtered by the extension's grants, and every recipient is the same person. `docs/SECURITY.md`'s "in the cloud nothing can subscribe" is rewritten to say this |
+| A process inside the VM forges a mark | Known and unchanged (`docs/SECURITY.md`). Such a process is already a window, and the launch-secret fix closes both marks |
+
+**No model-facing text changes.** The refusal strings, HTTP error bodies
+and banners are person- or program-facing. Prompts, tools, injected
+blocks and result formats are untouched. `make contracts` must show no
+diff: no RPC, no wire message and no host-schema member is added.
+
+### 15.7 Files, by repo, and the tests
+
+#### igni-core
+
+**Files.**
+
+| File | Change |
+|---|---|
+| `src/igni_core/protocol/schemas/envelope.py` | `_via_page_host`, `via_page_host`, `mark_page_host()` |
+| `src/igni_core/transport/websocket.py` | `StreamMark`, `_mark_of`, a `PAGE_HOST_VALUE = "pages"` constant beside `CONTROL_VALUE`. `pages: PageFiles \| None` and the `process_request` wrapper |
+| `src/igni_core/extensions/page_files.py` (new) | `PageFiles`: the `/.igni/pages/` prefix, the mark and Host checks, the size cap, `HttpReply` → `Response` |
+| `src/igni_core/extensions/origin.py` | Extract `ExtensionOrigin.answer(method, target)` out of `_reply_to`. Add `ExtensionOrigins.get(extension_id)` |
+| `src/igni_core/core/layer.py` | `extension_calls_need_page_mark()` and `serves_page_files()`, both `False` |
+| `packages/igni-cloud/src/igni_cloud/layer.py` | `connections_speak_for_extensions()` → `True`, plus the two seams → `True`. The module docstring gains an "extension pages" bullet |
+| `src/igni_core/backend/message_admission.py` | The page-mark refusal (§15.2) |
+| `src/igni_core/backend/transport_builder.py`, `src/igni_core/backend/app.py` | The builder gives the transport a `PageFiles` when `serves_page_files()` is true. `_assemble` calls `PageFiles.bind(extensions.origins)` |
+| `docs/SECURITY.md` | The table row "in the cloud, none" becomes "in the cloud, only a connection the node agent marked `pages`". The sentence about a Fleet UI needing a mark becomes a description of the mark. The `host_signal` paragraph changes. The known-gap bullet names both marks |
+| `docs/CLOUD.md` | §3: "igni's web UI … extension pages load here" now says how. The VM-credential paragraph's "No connection speaks for an extension" becomes the mark rule |
+
+**Tests (pytest).** Each fails on today's code.
+
+- `packages/igni-cloud/tests/test_in_the_cloud_no_connection_speaks_for_an_extension.py`
+  is **replaced** by `test_in_the_cloud_only_a_page_host_speaks_for_an_extension.py`:
+  - `host_model`, `extension_service_token` and `ext.acme.reviewer.search`
+    with a `caller`, on an unmarked connection, are refused with the new
+    text, addressed to that connection, and no handler is reached;
+  - the same on a control-marked connection: refused;
+  - the same on a page-marked connection: `handle_page` is reached, the
+    token RPC answers, and the `ext.*` call is routed;
+  - page-marked, with an extension that is not installed: refused by
+    `authorise_caller`;
+  - page-marked, with `attach_session` and a `caller`: refused as
+    pool-level;
+  - `CloudLayer().extension_calls_need_page_mark() is True`, and the
+    desktop's is `False`.
+- `packages/igni-cloud/tests/test_a_page_host_is_marked_by_its_handshake.py`,
+  beside `test_platform_calls_come_on_the_control_stream.py`:
+  - `X-Igni-Gateway: pages` → `via_page_host`, not `via_control`;
+  - `control` → the reverse;
+  - `Pages`, ` pages `, `page` and `pages,control` → `pages`, `pages`,
+    neither and neither;
+  - no message field can set either mark.
+- `tests/backend/test_a_desktop_caller_needs_no_mark.py`: on the desktop
+  layer an unmarked window's `caller` is honoured as today, and a
+  `pages` header changes nothing.
+- `tests/extensions/test_page_files.py`, against a real
+  `WebSocketTransport` with a real `ExtensionOrigins`:
+  - `GET /.igni/pages/acme.reviewer/index.html` with the mark and the
+    right Host answers `200`. It carries the extension's CSP, with
+    `frame-ancestors` equal to `frame_ancestor_sources()`, plus
+    `nosniff`, CORP and `no-store`;
+  - the same without the mark: `404`;
+  - a wrong Host: `421`;
+  - an unknown extension, `..`, a symlink out of the root, `//x`, or a
+    NUL: `404`;
+  - a file over the cap: `404`;
+  - a directory: its `index.html`;
+  - with the layer's `serves_page_files()` false, the same request gets
+    the guard's answer (`403` or a failed upgrade), never a file;
+  - a normal WebSocket upgrade on the same port still connects;
+  - a reinstall that changes the root serves the new files.
+- `tests/extensions/test_extension_origin_answer.py`: the extracted
+  `answer()` gives byte-identical replies to `_reply_to` for the existing
+  origin cases. This is a parametrised table over the current origin
+  tests' fixtures.
+- `packages/igni-cloud/tests/test_a_persons_vm_gets_its_pages_service_tokens.py`:
+  - a person's VM token in `IGNI_ACCESS_TOKEN_FILE` and a fake igni
+    server token endpoint;
+  - a page-marked `extension_service_token` answers `ok: true`, with
+    `service_url` equal to the origin's service;
+  - the exchange posted `subject_token` = the VM token and the service as
+    the audience;
+  - `refresh: true` exchanges again;
+  - no service → `ok: false`.
+- `make contracts`: no diff.
+
+The full gate is `make lint` plus the Linux core-only test job in a
+container (memory: "full CI locally before pushing").
+
+#### igni__cloudvm
+
+**Files.**
+
+| File | Change |
+|---|---|
+| `crates/node-agent/src/api.rs` | `StreamQuery.mark`, an `enum Mark { None, Control, Pages }` parsed from `mark` and the `control` alias, the 400 rules. `rewrite_upgrade_head(r, mark)` writes the one header |
+| `crates/node-agent/src/node.rs` | `open_stream(p, port, take_warm)`: when `take_warm` is false, the parked entry is neither taken nor aborted. `"page_host_mark"` joins `capabilities()` |
+| `crates/gateway/src/node_client.rs` | `stream(base, p, port, mark: Mark, take_warm)` sends `&mark=control` or `&mark=pages`, and `&warm=0` when `take_warm` is false. `control` still goes as `&control=1` to a node without `page_host_mark`, so a new gateway works with old nodes |
+| `crates/gateway/src/control.rs` | `igni_ws_timed(url, p, mark)` |
+| `crates/gateway/src/api.rs` | `ConnectQuery::pages()`, the `not_a_person` refusal, `pages` handed to `relay`. The new `GET /v1/pages/{extension_id}/{*path}` handler (`pages.rs`) |
+| `crates/gateway/src/pages.rs` (new) | The route of §15.3: checks, the running check, the stream, the HTTP/1 request, the header allow-list, the cap and the metrics |
+| `crates/gateway/src/relay.rs` | `relay(…, pages: bool, …)`. Every `igni_ws_timed` asks for `Mark::Pages` when the node has `page_host_mark`, otherwise `Mark::None` plus the metric |
+| `crates/gateway/src/config.rs` | `public.max_page_bytes`, `public.page_timeout_s` |
+| `docs/gateway.md`, `docs/node-agent.md` | The route, `pages=1`, `mark=`, the capability, the new 400s and the metric names |
+
+**Tests (cargo; `GATEWAY_TEST_DATABASE_URL` for the gateway).**
+
+- Node agent, `api.rs` unit tests:
+  - `rewrite_upgrade_head` with `Mark::Pages` adds exactly one
+    `X-Igni-Gateway: pages` and drops a client's `control` and `pages`;
+  - `Mark::None` adds none;
+  - the `mark` parse table: `control`, `pages`, the `control=1` alias,
+    both together → 400, unknown → 400, repeated → 400;
+  - `capabilities()` contains `page_host_mark`.
+- Node agent, `node.rs`: with a parked warm stream, `open_stream(…,
+  take_warm=false)` leaves it parked, and the next `take_warm=true` takes
+  it. This test fails on today's abort.
+- Gateway, `tests/api.rs` and `tests/cluster.rs` with the fake node:
+  - `connect?pages=1` with a person's token: the fake node sees
+    `mark=pages`;
+  - with an app token: `403 not_a_person` and no stream;
+  - without `pages`: no mark;
+  - after a node move (the existing reconnect case) the second stream is
+    `mark=pages` too;
+  - a node without `page_host_mark`: no mark, and the metric counts.
+- Gateway, the pages route:
+  - no bearer → 401;
+  - an app token → 403;
+  - a bad id → 400;
+  - `..`, `%2e%2e`, `%00` and `//` → 400;
+  - a producer not running → 409, with **no `ensure-running` call** on
+    the fake node;
+  - a running producer: the fake node gets `mark=pages&warm=0`, the
+    request head on the stream is exactly the four lines of §15.3, with
+    no client header (the test sends a cookie and an `X-Igni-Gateway`
+    and asserts neither arrives), and only the allow-listed response
+    headers come back;
+  - an over-cap body → 502 or a cut;
+  - an unlisted `Origin` → 403;
+  - a node without the capability → 501.
+
+The gate is the repo's own `cargo fmt --check`, `cargo clippy -D
+warnings` and `cargo test` for the three crates, run locally (CI minutes
+are a budget).
+
+#### igni-app
+
+**Files.**
+
+| File | Change |
+|---|---|
+| `clients/tauri/src-tauri/src/cloud/relay.rs` (the §3 relay) | The dial URL gains `pages=1`, and `403 not_a_person` maps to `Refused` |
+| `clients/tauri/src-tauri/src/cloud/pages.rs` (new) | `PageOrigins`: the listener of §15.4, `start_for(id)`, `stop_all()`, and the header allow-list and CSP rule |
+| `clients/tauri/src-tauri/src/cloud/http.rs` (new, or wherever the relay keeps its client) | `CloudHttp`: rustls, platform roots, proxy and the https rule, shared by the relay and the pages |
+| `clients/tauri/src-tauri/src/cloud/state.rs` (the §4.2 owner) | Holds `PageOrigins`, and calls `stop_all()` on the transitions of §15.4 |
+| `clients/tauri/src-tauri/src/lib.rs` | Registers `cloud_page_origin` |
+| `clients/tauri/src-tauri/Cargo.toml` | `hyper` 1 and `hyper-util` (server, http1) for the listeners, if the relay lane has not added them. The HTTP client is the one `CloudHttp` uses |
+| `clients/web/src/extensions/cloudPageOrigins.ts` (new) | `localiseOrigins` |
+| `clients/web/src/extensions/useExtensions.ts` | Localises on fetch and in `setExtensions` |
+| `clients/web/src/extensions/ExtensionPage.tsx` | Mounts the frame in the cloud only in `CloudReady` |
+| `clients/web/src/extensions/ExtensionPageHost.tsx` | Keys frames by the connection generation |
+| `clients/tauri/src-tauri/tauri.conf.json` | **Unchanged.** `config_contracts.rs` is unchanged and still passes |
+
+**Tests.**
+
+- Rust (`cargo test`), `pages.rs` against a stand-in gateway
+  (`hyper`, in the test):
+  - `GET /index.html` reaches `/v1/pages/acme.reviewer/index.html` with
+    `Authorization: Bearer <token from a temp credentials.json>`, with
+    no `Origin`, cookie or other frame header forwarded;
+  - the token is re-read: change the file between two requests, and the
+    second carries the new token;
+  - `POST` → 405;
+  - a wrong `Host` → 421;
+  - `..` and `%2e%2e` → 404, and nothing reaches the gateway;
+  - a `200` without a CSP → 502;
+  - an extra upstream header (`Set-Cookie`) is not copied;
+  - the forced headers are present;
+  - `401`, `409` and `503` upstream → `503` with `Retry-After`;
+  - an over-size body is cut;
+  - a log capture never contains the token;
+  - `cloud_page_origin` refuses a bad id and refuses outside cloud mode,
+    and returns the same port twice;
+  - `stop_all()` closes the port: connecting fails afterwards.
+- Rust, the state-machine table test of §12.1 gains rows for each
+  transition into `Local`, `Refused`, `NeedsDesktopSignIn` and an account
+  change. Each asserts `stop_all()`. A second-`welcome` row asserts the
+  ports are kept.
+- Rust, relay: the upstream URL carries `pages=1` (with and without
+  `sign_in=1`), and `403 not_a_person` → `Refused`.
+- Web (vitest):
+  - `localiseOrigins` in the cloud never returns the backend's origin.
+    A failing invoke gives `""`, and locally the list is untouched;
+  - `useExtensions`' `setExtensions` localises too;
+  - `ExtensionPage` mounts no frame in the cloud outside `CloudReady`;
+  - the frame remounts, with a new nonce, on a new connection
+    generation.
+- Playwright (mock backend, `cloud` fixture): an extension page renders
+  in a frame whose `src` is the shell stub's origin, and an indicator
+  shows. New visual baselines are made with `scripts/baselines-linux.sh`.
+- Desktop CI (the §12.1 Rust integration test) grows by one step. The
+  stand-in gateway relays to a real igni-core backend running with a test
+  layer whose `extension_calls_need_page_mark()` and
+  `serves_page_files()` are true. The step installs a test extension with
+  a page, then asserts:
+  - the frame's file arrives through `cloud_page_origin`;
+  - a `host_model` `get` answers;
+  - `extension_service_token` answers `ok`.
+
+**Estimate.**
+
+| Repo | Days |
+|---|---|
+| igni-core | 2.0 |
+| igni__cloudvm | 2.5 |
+| igni-app | 4.0 |
+| Live E2E | 0.5 |
+| **Total** | **9.0** |
+
+igni-server and igni-sdk change nothing for §15. The exchange that a
+person's VM token goes through already exists. The live step below
+proves it against the real server.
+
+### 15.8 Live E2E (step 11 of §12.2)
+
+On the ember-dev host, with the person in `local_and_cloud`. igni server
+lists the starter extension (`igni__extension-starter`), built with:
+
+- a page;
+- an indicator;
+- a `sessions` host grant;
+- a service.
+
+Steps:
+
+1. **The extension shows.** Switch to Cloud. The extension is listed and
+   its indicator shows. The page opens in a frame whose origin is
+   `http://127.0.0.1:<shell port>`, not the VM's port.
+2. **The host model answers.** `bridge.host` `get` on `sessions` answers,
+   and a subscription's `host_signal` arrives after a chat turn.
+3. **The service token works.** The page's service accepts the token,
+   and the service's log shows `aud` = its URL and the person's `sub`.
+4. **Programs still speak for no extension.** An igni-client connection
+   to the same gateway (no `pages=1`) sending `host_model` with a
+   `caller` is refused with the page-mark text.
+5. **A forged header is stripped.** A hand-made connect that sends
+   `X-Igni-Gateway: pages` without `pages=1` is refused in the same way.
+6. **Node move.** Drain the node. The frame remounts, re-subscribes, and
+   the next signal arrives.
+7. **Back to local.** Flip to This computer. The shell's page port no
+   longer answers, and the local extension's page loads from igni-core's
+   own origin.
+8. **No token in the webview.** The devtools search of §12.2 step 10 also
+   covers frame URLs and the page proxy's responses.
