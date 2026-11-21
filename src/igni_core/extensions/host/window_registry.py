@@ -3,6 +3,11 @@ which has focus.
 
 A window is a view of igni — a desktop window, an IDE panel, a browser
 tab — with a stable id that survives reloads. This is the list of them.
+
+One window can be on several connections at once: every tab of one
+browser profile keeps the same id (it lives in ``localStorage``), so
+two tabs are one window that two connections show. The window is open
+while any of them is, and closes when the last one does.
 """
 
 from __future__ import annotations
@@ -20,7 +25,9 @@ class WindowRecord(BaseModel):
 
     id: str
     kind: str = "web"
-    connection_id: str = ""
+    #: The connections showing this window, oldest first. Two tabs of
+    #: one browser are one window on two connections.
+    connections: list[str] = Field(default_factory=list)
     connected: bool = True
 
 
@@ -74,8 +81,8 @@ class WindowRegistry:
             record = WindowRecord(id=window_id)
             self._windows[window_id] = record
         record.connected = True
-        if connection_id:
-            record.connection_id = connection_id
+        if connection_id and connection_id not in record.connections:
+            record.connections.append(connection_id)
         if kind:
             record.kind = kind
         self.touch(window_id)
@@ -83,9 +90,14 @@ class WindowRegistry:
             self._notifier.window_moved("opened", self.describe(window_id))
 
     def detached(self, connection_id: str) -> None:
-        """A connection closed; the window on it is gone."""
+        """A connection closed. The window on it is gone once no other
+        connection shows it: closing one of two tabs leaves the window
+        open in the other."""
         for record in self._windows.values():
-            if record.connection_id == connection_id and record.connected:
+            if connection_id not in record.connections:
+                continue
+            record.connections.remove(connection_id)
+            if record.connected and not record.connections:
                 record.connected = False
                 if self._cursor.active == record.id:
                     self._cursor.active = None
@@ -108,7 +120,7 @@ class WindowRegistry:
     def by_connection(self, connection_id: str) -> str | None:
         """The window on this connection, if it is open."""
         for record in self._windows.values():
-            if record.connection_id == connection_id and record.connected:
+            if connection_id in record.connections and record.connected:
                 return record.id
         return None
 
