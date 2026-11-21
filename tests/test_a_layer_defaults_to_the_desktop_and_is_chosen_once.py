@@ -89,6 +89,7 @@ class TestTheDoNothingBackendHooks:
                 notifications=object(),  # type: ignore[arg-type]
                 on_rebind=lambda: None,
                 api_url=lambda: None,
+                on_signed_in=lambda: None,
             )
             is None
         )
