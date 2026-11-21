@@ -665,6 +665,13 @@ and igni server signs it into the pack as `mode`:
 A mode this igni does not know is read as `local_and_cloud`, with a warning.
 The mode is read from the verified pack, so it holds offline.
 
+**`cloud` needs a desktop app that knows the mode:** the first igni-app
+release after 1.0.5. An older desktop app ignores `mode` and keeps running
+igni on the person's computer, so update your people's desktops before you
+switch a group to `cloud`. `local` holds for every desktop, old or new:
+igni server and the gateway refuse the person a cloud igni whatever the app
+does.
+
 ### Managed-only settings
 
 `group_policy.trusted_keys` and `group_policy.required` are honoured **only**
