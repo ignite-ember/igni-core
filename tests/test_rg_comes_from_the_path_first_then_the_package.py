@@ -184,26 +184,29 @@ def test_the_missing_message_says_how_to_install_ripgrep():
 
 # ── packaging ───────────────────────────────────────────────────────
 
-_WHEEL_PLATFORMS = (
-    "(sys_platform == 'darwin' and platform_machine == 'arm64') or "
-    "(sys_platform == 'linux' and platform_machine == 'x86_64')"
-)
+_MACOS_ARM64 = "sys_platform == 'darwin' and platform_machine == 'arm64'"
+_LINUX_X86_64 = "sys_platform == 'linux' and platform_machine == 'x86_64'"
 
 
 def test_the_ripgrep_package_is_required_only_where_it_has_a_wheel():
+    """macOS arm64 takes 15.1; Linux x86_64 takes 14.1.0, the last release
+    whose Linux wheel runs on glibc older than 2.39 (Ubuntu 22.04)."""
     deps = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]
     ripgrep_deps = [d for d in deps if re.match(r"ripgrep\b", d)]
 
-    assert ripgrep_deps == [f"ripgrep~=15.1.0; {_WHEEL_PLATFORMS}"]
+    assert ripgrep_deps == [
+        f"ripgrep~=15.1.0; {_MACOS_ARM64}",
+        f"ripgrep==14.1.0; {_LINUX_X86_64}",
+    ]
 
 
-def test_the_lock_carries_the_same_marker():
+def test_the_lock_carries_the_same_markers():
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
     core = next(p for p in lock["package"] if p["name"] == "igni-core")
-    entry = next(d for d in core["dependencies"] if d["name"] == "ripgrep")
+    entries = {d["version"]: d["marker"] for d in core["dependencies"] if d["name"] == "ripgrep"}
 
-    assert "marker" in entry, entry
+    assert set(entries) == {"15.1.0", "14.1.0"}, entries
     for clause in ("sys_platform == 'darwin'", "platform_machine == 'arm64'"):
-        assert clause in entry["marker"]
+        assert clause in entries["15.1.0"]
     for clause in ("sys_platform == 'linux'", "platform_machine == 'x86_64'"):
-        assert clause in entry["marker"]
+        assert clause in entries["14.1.0"]
