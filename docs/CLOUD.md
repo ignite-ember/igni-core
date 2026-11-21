@@ -1167,8 +1167,10 @@ subnet; 8 GB sparse image, loop device, dm-crypt `aes-xts-plain64`, p50 ms):
    those listed in `plugins.marketplaces`
    (`src/igni_core/core/plugins/source_policy.py`). See
    `docs/CONFIGURATION.md`, "Air-gapped mode".
-6. **Linux arm64:** `ripgrep~=15.1.0` has no wheel there, so installing
-   needs Rust. Fix before offering Graviton nodes?
+6. **Linux arm64:** igni-core requires PyPI's `ripgrep` only on macOS
+   arm64 and Linux x86_64, so an arm64 node needs a system `rg`. The
+   Linux pin, `ripgrep==14.1.0`, has a `manylinux_2_17` aarch64 wheel
+   too: extend its marker before offering Graviton nodes?
 7. **Deploy manifests:** the gateway, the node agent, per-node services
    and the shared base snapshot need Helm and compose definitions. This
    belongs with the delivery overhaul (Helm charts per server, an igni
