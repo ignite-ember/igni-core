@@ -19,7 +19,8 @@ its shared-backend sections are superseded by this document),
   - **apps**, which act only as themselves (no group, never on behalf
     of a person).
 - **The desktop stays as it is.** One person, one local backend, local
-  extension processes. No microVMs locally.
+  extension processes. No microVMs locally. The desktop app can also chat
+  with the person's cloud igni, through a Local / Cloud switch (section 12).
 
 ## 2. One microVM per producer
 
@@ -1182,7 +1183,10 @@ subnet; 8 GB sparse image, loop device, dm-crypt `aes-xts-plain64`, p50 ms):
 The desktop app can chat with a person's igni in the cloud as well as with
 the one on their computer: a Local / Cloud switch, and a group mode the
 admin sets in the portal. The design, and every repository's part of it, is
-the design doc docs/design/local-cloud-switch.md. igni-core's part:
+the design doc `docs/design/local-cloud-switch.md`. It is built and merged:
+igni-core #44 and #46, igni-server #91, igni__cloudvm #12, igni-app #104 and
+#106, igni-sdk #41. The desktop side first ships in the first igni-app
+release after 1.0.5. igni-core's part:
 
 **The group's mode.** igni server signs it into the group pack as a
 top-level `mode`: `local`, `cloud` or `local_and_cloud`
@@ -1199,8 +1203,10 @@ refused with it, and `igni -m` / `igni -p` stops on the command line with
 the same words. The igni in the VM reads the same pack and keeps running:
 it is where the runs go (`Layer.runs_on_the_persons_computer`, false for
 the cloud layer). This is a policy, not a sandbox: an old igni ignores the
-field. The guarantee `local` mode needs — no cloud compute — is igni
-server's and the gateway's, not the desktop's.
+field, and so does a desktop app older than the first igni-app release
+after 1.0.5, which keeps running igni locally in a `cloud` group. The
+guarantee `local` mode needs — no cloud compute — is igni server's and the
+gateway's, not the desktop's, so it holds for every desktop.
 
 **The account-only backend.** In `cloud` mode the desktop app starts
 `python -m igni_core.backend --account-only` instead of a full backend
@@ -1226,7 +1232,7 @@ Neither side has to tell the other anything.
 
 **Extension pages in cloud mode.** An extension's pages, its indicators
 and its place in the list work as they do on the desktop
-(the design doc docs/design/local-cloud-switch.md §15). Two things in igni make that so:
+(the design doc `docs/design/local-cloud-switch.md` §15). Two things in igni make that so:
 
 - *The page mark.* The node agent marks a person's desktop stream
   `X-Igni-Gateway: pages`, as it marks the gateway's own `control`, and

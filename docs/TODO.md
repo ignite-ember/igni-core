@@ -67,52 +67,6 @@ already has data. None of those are reachable from unit tests.
 
 ---
 
-## A person uses their cloud VM from the desktop app, not only the local backend
-
-**What.** The desktop app (igni-app, Tauri + web) talks to exactly one
-backend: the local one, over loopback. A person whose group gives them a
-Fleet VM has no app to use it with. Build the switch:
-
-1. **Discovery.** After sign-in, igni server tells the app whether the
-   person has a cloud VM: the gateway's address and the VM's state
-   (running, asleep, needs sign-in). A new small endpoint; nothing lists
-   a person's VM today, and nothing reads the advertised `igni_gateway`.
-2. **A Local / Cloud switch**, shown only when a cloud VM exists.
-   Flipping reconnects every window to the gateway's `/v1/connect` and
-   reloads state; the local backend keeps running.
-3. **Auth.** The web client sends the person's own token the way the
-   gateway expects from a browser (subprotocol `igni.bearer.<token>`) and
-   refreshes it; the Tauri shell hands the token over.
-4. **Real time.** The VM waking is shown, the gateway's "the VM needs
-   sign-in" push is handled, and the client reconnects when the gateway
-   moves the session.
-5. **Per-backend state.** The `client_id` localStorage key gets a backend id.
-6. **Group mode in the portal: local only, cloud only, or both.** Carried
-   in the signed group pack so the shell enforces it offline, and
-   enforced by the gateway: a local-only group's person is refused;
-   cloud-only means the desktop never starts a local backend.
-
-**Why.** Fleet exists for people on paper only: the gateway is reachable
-through the `igni-client` SDK and the tests, and the portal is for
-admins. A real person signing in is also the first end-to-end proof of
-Fleet — wake, sign-in, the session moving between nodes, the group mode —
-all of which is tested today only piece by piece against mocks.
-
-**The awkward part.** Extension pages: the gateway relays the client
-protocol, not the host object model (`CLOUD.md`, the client-protocol
-section). Local-only ideas — attachments, the project folder, "open in
-editor" — need a cloud meaning. And only one side may pull
-`/v1/me/events` at a time.
-
-**Order.** Discovery and the switch for chat only (extensions hidden in
-cloud) → VM wake, sign-in and status → the group mode in the portal and
-its enforcement → extensions over the gateway → maybe both side by side.
-Repos: igni-server (endpoint, group mode, portal), igni-app (shell and
-web), igni-core (the event-pull rule, cloud-only startup), igni-sdk
-(shared discovery). Write the design doc before any code.
-
----
-
 ## Seeing what an app does, without signing in as the app
 
 **What.** An app (a producer an org admin registers, signing in only with
@@ -144,8 +98,10 @@ automated app.
 
 **Where it belongs.** The command in `igni-client` (igni-sdk); the
 allow-list where the gateway and the VM report (igni__cloudvm, igni-core
-telemetry); the view in igni-server's portal. A section of the same
-design doc as the cloud switch above.
+telemetry); the view in igni-server's portal. A section of the cloud
+switch's design doc, `docs/design/local-cloud-switch.md`, which leaves it
+out of scope (§14): the switch is built and merged, and only ever connects
+as the person, never as an app.
 
 ---
 
