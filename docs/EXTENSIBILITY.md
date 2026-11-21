@@ -333,7 +333,9 @@ There is no extension marketplace and no group policy that pushes one.
 3. **An org admin switches it on for a group** (§4). Until one does,
    nobody in that organisation is offered it.
 4. **Every signed-in igni in that group installs it.** At session
-   start-up, on sign-in, and on `igni ext sync`, the host lists
+   start-up, on sign-in, every `group_policy.poll_seconds` while it
+   runs (five minutes; a tick whose listing is the one already applied
+   stops there), and on `igni ext sync`, the host lists
    `GET {igni}/v1/extensions` as the signed-in
    person, and for each entry whose version or digest differs from what
    is installed downloads `GET /v1/extensions/{id}/bundle`, verifies
@@ -741,7 +743,7 @@ The threat model is not a hostile stranger on a marketplace. It is **a trusted a
 
 | Arrived | Trusted because | Installed by |
 |---|---|---|
-| distributed by igni server | its bundle's JWS verifies against the key of the service a super admin approved, and the archive is the one signed | the host, at start-up and sign-in, for every signed-in person |
+| distributed by igni server | its bundle's JWS verifies against the key of the service a super admin approved, and the archive is the one signed | the host, at start-up, sign-in and on the group pack's timer, for every signed-in person |
 | anything else — a directory, a clone | it is not; it is a development install | the person at the keyboard, with `IGNI_DEV_EXTENSIONS=1` |
 
 The manifest's `trust` (`first-party` / `partner` / `unsigned`) is the author's label, shown to an administrator, and not consulted for trust: a bundle igni distributed is trusted whatever it says, and a development install needs the flag whatever it says. One rule hangs off it: `dev` packaging requires `unsigned` — and igni never runs `dev` packaging that arrived from a service.
@@ -943,7 +945,7 @@ These three are a promise. **Everything else about igni's appearance is not**, a
 | Prompt fragments, prompt overrides and edits as contributions | **shipped** (`extensions/contributions.py`, tied to `READY` rather than to being installed) |
 | Impact, and collisions settled by priority | **shipped** (`extensions/impact.py`; igni server's Services page) |
 | Manifest + validation | **shipped** (`docs/extension-manifest.schema.json` for the author's editor, `extensions/manifest.py` for the installer, held to each other by `tests/test_the_manifest_model_and_its_schema_agree.py`) |
-| Distribution from services (signed bundle, JWS verified against the approved service's key, sync at start-up and sign-in) | **shipped** (`extensions/distribution/`, `extensions/bundle_signature.py`) — the manifest `signature` field and the Ed25519 trust store are removed |
+| Distribution from services (signed bundle, JWS verified against the approved service's key, sync at start-up, sign-in and every `group_policy.poll_seconds`) | **shipped** (`extensions/distribution/`, `extensions/bundle_signature.py`) — the manifest `signature` field and the Ed25519 trust store are removed |
 | `python` packaging, offline from the bundle's wheelhouse | **shipped** (`extensions/python_env.py`) |
 | Service tokens by exchange, served on loopback | **shipped** (`extensions/service_token.py`) |
 | `ext.<id>.*` RPC namespace | **shipped** (`extensions/registry.py`, `extensions/rpc.py`, `extensions/service.py`) |

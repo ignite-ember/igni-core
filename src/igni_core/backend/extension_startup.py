@@ -154,6 +154,11 @@ class ExtensionStartup:
         # And again whenever somebody signs in: the listing is the signed-in
         # person's, and before that there was none.
         context.login.on_signed_in(self._distribution.schedule)
+        # And on the group pack's timer: an extension an admin switches on
+        # for the person's group is a change to that group, and reaches a
+        # running igni as the rest of the group's changes do — without a
+        # restart or a new sign-in.
+        self._distribution.start_polling(context.settings.group_policy.poll_seconds)
 
     def _plugin_dirs(self) -> set[str]:
         """The plugins installed now, by directory name."""

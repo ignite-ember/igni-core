@@ -381,6 +381,7 @@ class Nothing:
         from igni_core.backend import app, extensions_runtime, session_runtime_factory
         from igni_core.core.mcp import client
         from igni_core.extensions import event_pull
+        from igni_core.extensions.distribution import sync as distribution
 
         def refuse(name: str):
             def started(*args: Any, **kwargs: Any) -> Any:
@@ -396,6 +397,15 @@ class Nothing:
         )
         monkeypatch.setattr(client.MCPClientManager, "__init__", refuse("an MCP manager"))
         monkeypatch.setattr(event_pull.PersonEventPull, "start", refuse("the event pull"))
+        # Nor the distributed extensions' sync, at start or on its timer.
+        monkeypatch.setattr(
+            distribution.ExtensionDistribution, "__init__", refuse("the extension distribution")
+        )
+        monkeypatch.setattr(
+            distribution.ExtensionDistribution,
+            "start_polling",
+            refuse("the extension distribution's timer"),
+        )
 
 
 @pytest.fixture

@@ -228,6 +228,40 @@ async def test_stop_stops_the_sync_and_the_token_endpoint(rig: Rig, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_the_sync_runs_again_on_the_group_pack_s_timer(rig: Rig, monkeypatch):
+    """An extension an admin switches on reaches a running igni without a
+    restart: the sync passes again every ``group_policy.poll_seconds``."""
+    intervals: list[float] = []
+    real = ExtensionDistribution.start_polling
+
+    def spy(self: ExtensionDistribution, interval: float) -> None:
+        intervals.append(interval)
+        real(self, interval)
+
+    monkeypatch.setattr(ExtensionDistribution, "start_polling", spy)
+    await rig.startup.start()
+    try:
+        assert intervals == [rig.settings.group_policy.poll_seconds] == [300]
+        assert rig.startup.distribution is not None and rig.startup.distribution.polling
+    finally:
+        await _settle(rig.startup)
+        await rig.startup.stop()
+    assert not rig.startup.distribution.polling
+
+
+@pytest.mark.asyncio
+async def test_a_zero_poll_interval_leaves_only_start_up_and_sign_in(rig: Rig):
+    rig.settings.group_policy.poll_seconds = 0
+    await rig.startup.start()
+    try:
+        assert rig.startup.distribution is not None
+        assert not rig.startup.distribution.polling
+    finally:
+        await _settle(rig.startup)
+        await rig.startup.stop()
+
+
+@pytest.mark.asyncio
 async def test_every_call_into_an_extension_is_for_the_person_signed_in_here(rig: Rig):
     sign_in(rig.credentials)
     await rig.startup.start()
