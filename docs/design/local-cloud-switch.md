@@ -1,11 +1,15 @@
 # Design: the desktop's Local / Cloud switch and the group mode
 
 Status: **approved 2026-11-20; built in full (no phases); extensions in
-cloud mode included; recommendations Q1–Q11 accepted.**
+cloud mode included; recommendations Q1–Q11 accepted. Merged 2026-11-21:**
+igni-core #44 and #46 (two tabs of one window), igni-server #91,
+igni__cloudvm #12, igni-app #104 and #106, igni-sdk #41. The desktop side
+first ships in the first igni-app release after 1.0.5 (Q5).
 Tracker row R691 ("Switch the desktop app between a local backend and a
 cloud (Fleet) backend"). The work item is the `docs/TODO.md` entry "A person
 uses their cloud VM from the desktop app, not only the local backend",
-agreed on 2026-11-08 and written down in PR #15.
+agreed on 2026-11-08 and written down in PR #15; the entry left the TODO
+once the work was merged.
 
 This doc is in igni-core because the TODO, `CLOUD.md` and `SECURITY.md` are
 here. Most of the code lands in igni-app and igni-server, so each of those
@@ -462,7 +466,7 @@ new `ws=`. One web-client change is needed for the cloud:
 | File › Restart Backend / Reinstall | **Kept, labelled "(this computer)"** | They act on the local backend, which keeps running |
 | Account menu, Log out | **Works.** Log out signs the desktop out, which also ends the cloud connection (the relay sees `credentials.json` change) | One identity |
 | Updater, theme, group indicator | Unchanged | Shell-side |
-| Backend version chip | Shows the VM's igni version | See below |
+| Backend version chip | **Shows a plain "cloud" label**, not a version (`clients/web/src/components/StatusBits.tsx`) | `welcome` carries no version, so the relay cannot see the VM's (below, Q6) |
 
 **Version skew.**
 
@@ -531,7 +535,7 @@ The shell can already read settings entries, so it is tempting. But:
   shell's serde struct ignore unknown fields, so an old client treats
   every group as `local_and_cloud`. Server-side enforcement (§6.3) still
   holds for `local`. For `cloud`, an old desktop keeps running locally
-  until it updates (Q5).
+  until it updates to the first igni-app release after 1.0.5 (Q5).
 - **A pack without `mode`** (an older server) means `local_and_cloud`.
 
 ### 6.3 Enforcement points
@@ -1081,7 +1085,7 @@ means accepting every recommendation.
 | Q2 | Token hand-off: the shell relays, with the token kept out of the webview, instead of the webview sending `igni.bearer.<token>` as the TODO says | **Relay.** The gateway's token is the 30-day session token, and the CSP stays loopback-only |
 | Q3 | Should the gateway close sockets at token `exp`? And should a future hosted web UI get short-lived person tokens? | **Yes to both, later.** Closing at `exp` lands in phase 2 (cheap, harmless for the relay). Short tokens are needed only when a browser UI exists |
 | Q4 | When a group switches to `local`, are its people's VMs kept (inactive) or erased? | **Kept**, under the profile's idle-erasure rule. Flipping a group back must not lose work. An admin can reset a VM explicitly |
-| Q5 | Older desktops ignore `mode`. Do we force an update for `cloud` groups? | **No force.** `local` is enforced server-side regardless. For `cloud`, document "requires desktop ≥ X". Optionally the portal shows members on older versions later |
+| Q5 | Older desktops ignore `mode`. Do we force an update for `cloud` groups? | **No force.** `local` is enforced server-side regardless. For `cloud`, document "requires desktop ≥ X". Optionally the portal shows members on older versions later. *As built:* a `cloud` group needs a desktop that understands `mode`, which is the first igni-app release after 1.0.5 (the first to include igni-app #104; 1.0.5 is the latest tag on 2026-11-21). An older desktop ignores `mode` and keeps running igni locally, because the igni-core it pins predates the field; `local` mode holds for every desktop, because igni server and the gateway enforce it. Documented for admins in `docs/CONFIGURATION.md` |
 | Q6 | Should the app refuse a cloud igni with a different wire major? That needs a version field in `welcome`, a client-protocol change but not a model-facing one | **Not in phase 1.** Rely on additive compatibility. Add `welcome.wire_version` only if a breaking protocol change is ever planned |
 | Q7 | In `cloud` mode, may the desktop still run a local Python process (the account-only backend), or must sign-in move into the Rust shell? | **The account-only backend.** It reuses the tested sign-in and pack code and runs no agent. Moving sign-in to Rust is about 3 extra days in the shell and duplicates anti-rollback |
 | Q8 | In `cloud` mode with the gateway unreachable, fall back to local? | **No.** The admin chose cloud. Show unreachable and wait |
