@@ -106,10 +106,14 @@ class BackendHooks:
         notifications: NotificationCenter,
         on_rebind: Callable[[], None],
         api_url: Callable[[], str | None],
+        on_signed_in: Callable[[], None],
     ) -> None:
         """The backend serves: its host model, transport, pool-level RPC mount and
-        notification centre are up; ``on_rebind`` asks it to shut down, and
-        ``api_url`` says igni server's URL as configured now."""
+        notification centre are up; ``on_rebind`` asks it to shut down,
+        ``api_url`` says igni server's URL as configured now, and
+        ``on_signed_in`` tells it the process is signed in now by the
+        layer's own means, so the work that waits on a sign-in runs (the
+        extensions igni server distributes are fetched)."""
 
     async def stop(self) -> None:
         pass

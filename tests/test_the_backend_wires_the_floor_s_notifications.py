@@ -149,7 +149,7 @@ async def test_a_sign_in_schedules_the_centers_refresh_and_stop_ends_it(tmp_path
     )
     rig = _Rig(tmp_path)
 
-    rig.login._notify_signed_in()
+    rig.login.notify_signed_in()
 
     assert scheduled == ["signed in"]
     await rig.notifications.stop()

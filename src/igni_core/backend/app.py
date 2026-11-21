@@ -301,6 +301,7 @@ class BackendApp:
             notifications=notifications.center,
             on_rebind=supervisor.request_shutdown,
             api_url=access.api_url,
+            on_signed_in=login.notify_signed_in,
         )
         startup = ExtensionStartup(
             runtime=extensions,

@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from igni_core.backend.app import BackendApp
+from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.schemas_lifecycle import BackendLaunch
 from igni_core.backend.schemas_rpc import LifecyclePhase
 from igni_core.core.layer import BackendHooks, Layer, layers
@@ -105,9 +106,14 @@ async def test_the_seams_run_in_order_and_serving_is_handed_the_backends_parts(p
         "notifications",
         "on_rebind",
         "api_url",
+        "on_signed_in",
     }
     assert hooks.serving_kwargs["transport"] is hooks.transport_when_listening
     assert callable(hooks.serving_kwargs["api_url"])
+    # A layer signed in by its own means (the cloud VM's credential) tells
+    # the backend's sign-in listeners, as the desktop's own sign-in does.
+    on_signed_in = hooks.serving_kwargs["on_signed_in"]
+    assert on_signed_in.__func__ is LoginCoordinator.notify_signed_in
     assert app.supervisor is not None and app.supervisor.phase is LifecyclePhase.STOPPED
 
 
