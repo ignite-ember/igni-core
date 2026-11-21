@@ -68,7 +68,16 @@ dependencies = [
     # needs Rust, which made ``pip install igni-core`` fail everywhere
     # else (linux/arm64, Intel macOS). There, install ripgrep from the
     # system's package manager.
-    "ripgrep~=15.1.0; (sys_platform == 'darwin' and platform_machine == 'arm64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    #
+    # Linux takes 14.1.0, pinned exactly: from 15.0 the only Linux wheel
+    # is ``manylinux_2_39`` (glibc 2.39), so on Ubuntu 22.04, Debian 12
+    # or RHEL 9 the install fell to the sdist and needed Rust. 14.1.0's
+    # wheel is ``manylinux_2_17`` and runs on any glibc since 2.17. A
+    # marker cannot say which glibc a host has, and pip and uv take the
+    # newest version even when only its sdist fits, so a range would not
+    # do: the pin is what keeps the install a wheel.
+    "ripgrep~=15.1.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "ripgrep==14.1.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     # Ed25519 verification of extension bundle signatures
     # (``extensions/signature.py``). It was already importable as a
     # transitive dependency, which a security control may not rely on.
