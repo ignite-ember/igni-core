@@ -476,6 +476,15 @@ token) before it opens a stream; the gateway's own connections are marked
 `X-Igni-Gateway: control` by the node agent, which strips that header from
 every other stream. See [CLOUD.md](CLOUD.md).
 
+**The account-only backend.** (`python -m igni_core.backend
+--account-only`, which the desktop app starts when the person's group runs
+igni in the cloud.) The same door: loopback, `Origin`, the launcher's
+per-launch token. It writes no lockfile, so no program can attach to it. It
+answers only signing in, the server, the plan and the status
+(`ACCOUNT_RPCS`), judges each message's standing first, refuses a chat
+message with the run gate's reason and every other call as `unavailable`,
+and holds no session, agent, tool or extension a connection could reach.
+
 **Development.** `IGNI_DEV_NO_WS_TOKEN=1` drops the token requirement (a
 hand-started backend then takes no token at all, only the Origin check). The
 desktop app honours it only in a debug build (`cargo tauri dev`) and strips
@@ -538,7 +547,7 @@ does not take it on trust (`MessageAdmission.refusal`,
 | Rule | Where |
 |---|---|
 | Every message carries the connection it arrived on, stamped by the transport and never read from the message (`Message.from_client`) | `transport/websocket.py` |
-| A `caller` is honoured only from igni's window, and only where the layer lets a connection speak for an extension: on the desktop, the window's connections; **in the cloud, none** — no Fleet client hosts a page, so `host_model`, `extension_service_token` and `ext.*` with a caller are refused before any handler runs | `Layer.connections_speak_for_extensions` |
+| A `caller` is honoured only from igni's window, and only where the layer lets a connection speak for an extension: on the desktop, the window's connections; **in the cloud, only a connection the node agent marked `pages`** — a person's desktop, which frames the pages; on any other (`igni-client`, the gateway's control stream) `host_model`, `extension_service_token` and `ext.*` with a caller are refused before any handler runs | `Layer.connections_speak_for_extensions`, `Layer.extension_calls_need_page_mark` |
 | The extension must be installed, and its page may call only its own `ext.<id>.*`, the host model, its service token, and base methods its manifest grants — never igni's pool-level calls (`attach_session`, `window_model`, the platform's) | `ExtensionRegistry.authorise_caller` |
 | An answer that carries a secret or one extension's data — a page's service token, a host-model reply, an extension call's result — goes to the connection that asked, not to every client attached (`Message.to_client`) | `PoolReplier.reply`, `MessageDispatcher._reply` |
 | A window's connection, and the window framing a page (`home_window`), are the server's to know | `window_model`, `host_model` handlers |
@@ -552,21 +561,35 @@ read anything the lockfile holds, and the person's approvals mean nothing if
 the agent can give them. The secret stays out of every file the agent's
 tools can reach. Messages are not signed: the standing is the connection's,
 decided once at its handshake, and a signing key would sit where the secret
-does. A Fleet UI that hosts extension pages will need a mark the node agent
-attests, as it attests the control stream.
+does. In the cloud the page host is marked instead: the desktop asks the
+gateway for a page-host stream, the gateway asks for it only after it has
+verified a person's session, and the node agent strips `X-Igni-Gateway`
+from every client's upgrade and adds `pages` on the gateway's word, as it
+adds `control` to the gateway's own stream. igni reads the mark off the
+handshake, never off a message. It hands out no power the person's token
+did not carry — whoever holds it can drive their igni as a window already —
+but makes speaking for an extension a deliberate, attested property of a
+connection: a program that did not ask has no mark. The same mark is
+required of a request for a page's files on igni's port
+(`/.igni/pages/…`, `extensions/page_files.py`), which answers only with
+igni's own `Host`, and only from the extension's own origin.
 
 Host signals for a page's subscriptions (`host_signal`) are still broadcast
 to every window: there is one subscriber per extension, shared by its pages
-in every window, its values are filtered by that extension's grants, and in
-the cloud nothing can subscribe.
+in every window, and its values are filtered by that extension's grants. In
+the cloud they go to every connection of the person's own igni — their
+desktop's windows and any program they connected — and every recipient is
+the same person.
 
 **Known, not yet closed.**
 
 - In a cloud VM the backend listens on `127.0.0.1:8765` without a token,
   because the gateway authenticates every client before the node agent opens
   a stream. The agent's shell in that VM can reach the port too, and every
-  connection there is a window. The fix is for the guest's bridge to hold a
-  launch secret, as the desktop app does.
+  connection there is a window; it can also send either mark itself,
+  `control` or `pages`, and fetch page files. The fix is for the guest's
+  bridge to hold a launch secret, as the desktop app does, which closes both
+  marks at once, since both are read the same way, off the handshake.
 - The agent can still edit what igni reads from disk: a permission rule or
   a hook in the project's `.igni/` files. In the default mode that write
   needs an approval; in the modes that skip asking it does not.

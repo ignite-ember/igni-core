@@ -19,6 +19,15 @@ A full page is followed at once by the next; otherwise igni asks again
 after :attr:`PersonEventPull.INTERVAL_SECONDS`. Nobody signed in, or no
 server: it waits and asks again. An app's token is refused (403): an
 app's events reach it through the gateway, so the pull stops.
+
+**One side owns the events.** igni server serves a person's events to
+one side at a time (``docs/design/local-cloud-switch.md`` §7): this
+desktop, or their igni in the cloud. While the cloud owns them the pull
+answers ``409 {"error": "events_owned_elsewhere", "owner": "cloud"}``.
+That is no failure: the pull idles, says so once, and asks again after
+the interval, so it takes them back as soon as the person switches back.
+Acknowledgements are never refused for it, so a delivery already under
+way finishes.
 """
 
 from __future__ import annotations
@@ -65,6 +74,24 @@ class PullFailed(Exception):
     """igni server could not be reached, or answered in a shape not understood."""
 
 
+class EventsOwnedElsewhere(Exception):
+    """igni server serves this person's events to their other side now (409).
+
+    ``owner`` is the side it names, ``"cloud"`` today.
+    """
+
+    def __init__(self, owner: str) -> None:
+        super().__init__(f"the events go to the {owner or 'other'} side")
+        self.owner = owner
+
+
+class OwnedElsewhere(BaseModel):
+    """The body of the pull's ``409``."""
+
+    error: str
+    owner: str = ""
+
+
 class PersonEventPull:
     """Pulls the signed-in person's events, delivers them, acknowledges what was taken."""
 
@@ -72,8 +99,11 @@ class PersonEventPull:
     ACK_PATH: ClassVar[str] = "/v1/me/events/ack"
     #: igni server hands out at most this many at once.
     PAGE: ClassVar[int] = 100
-    #: Between pulls when the last one was not a full page.
+    #: Between pulls when the last one was not a full page, or the
+    #: events go to the person's other side.
     INTERVAL_SECONDS: ClassVar[float] = 60.0
+    #: The ``error`` of a ``409`` that means another side owns the events.
+    OWNED_ELSEWHERE: ClassVar[str] = "events_owned_elsewhere"
     TIMEOUT_SECONDS: ClassVar[float] = 15.0
 
     def __init__(
@@ -87,6 +117,13 @@ class PersonEventPull:
         self._inbox = inbox
         self._transport = transport
         self._task: asyncio.Future[None] | None = None
+        #: Whether the pull is idling because the other side owns the events.
+        self._idle = False
+
+    @property
+    def idle(self) -> bool:
+        """The last pull found the events owned by the person's other side."""
+        return self._idle
 
     async def once(self) -> tuple[int, DeliveryReceipt]:
         """One pull: ``(events pulled, what became of them)``.
@@ -94,6 +131,7 @@ class PersonEventPull:
         Raises:
             NotSignedIn: nobody is signed in, or no server is configured.
             PullRefused: this caller gets no events.
+            EventsOwnedElsewhere: the person's other side gets them now.
             PullFailed: igni server could not be reached.
         """
         answer = await self._call(self.PULL_PATH, {})
@@ -129,9 +167,18 @@ class PersonEventPull:
             except PullRefused as exc:
                 logger.info("events: igni server hands this caller none (%s); not pulling", exc)
                 return
+            except EventsOwnedElsewhere as exc:
+                if not self._idle:
+                    logger.info("events: %s; asking again every %gs", exc, self.INTERVAL_SECONDS)
+                self._idle = True
+                pulled = 0
             except (NotSignedIn, PullFailed) as exc:
                 logger.debug("events: not pulled now: %s", exc)
                 pulled = 0
+            else:
+                if self._idle:
+                    logger.info("events: this side gets them again")
+                self._idle = False
             if pulled < self.PAGE:
                 await asyncio.sleep(self.INTERVAL_SECONDS)
 
@@ -158,9 +205,30 @@ class PersonEventPull:
         record_answered(api_url, response.status_code)
         if response.status_code == 403:
             raise PullRefused(f"{path} answered 403")
+        if response.status_code == 409:
+            raise self._conflict(path, response)
         if response.status_code != 200:
             raise PullFailed(f"{path} answered {response.status_code}")
         return response
 
+    @classmethod
+    def _conflict(cls, path: str, response: httpx.Response) -> Exception:
+        """A ``409``: the events owned elsewhere, or a conflict not understood."""
+        try:
+            body = OwnedElsewhere.model_validate_json(response.content)
+        except ValidationError:
+            return PullFailed(f"{path} answered 409")
+        if body.error != cls.OWNED_ELSEWHERE:
+            return PullFailed(f"{path} answered 409 ({body.error})")
+        return EventsOwnedElsewhere(body.owner)
 
-__all__ = ["Acknowledgement", "PersonEventPull", "PullFailed", "PullRefused", "PulledEvents"]
+
+__all__ = [
+    "Acknowledgement",
+    "EventsOwnedElsewhere",
+    "OwnedElsewhere",
+    "PersonEventPull",
+    "PullFailed",
+    "PullRefused",
+    "PulledEvents",
+]

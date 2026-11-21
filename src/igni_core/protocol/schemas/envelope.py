@@ -95,6 +95,10 @@ class Message(BaseModel):
     #: by the transport from the connection, never read from the message,
     #: so a client cannot claim it. See :meth:`via_control`.
     _via_control: bool = PrivateAttr(default=False)
+    #: Arrived on a connection the platform marked as hosting extension
+    #: pages (a person's desktop, in the cloud): set by the transport from
+    #: the connection, never read from the message. See :meth:`via_page_host`.
+    _via_page_host: bool = PrivateAttr(default=False)
     #: The connection this arrived on — set by the transport, never read
     #: from the message, so a client cannot speak as another connection.
     #: Empty for a message from a transport without connections (the
@@ -114,6 +118,13 @@ class Message(BaseModel):
 
     def mark_control(self) -> None:
         self._via_control = True
+
+    @property
+    def via_page_host(self) -> bool:
+        return self._via_page_host
+
+    def mark_page_host(self) -> None:
+        self._via_page_host = True
 
     @property
     def from_client(self) -> str:

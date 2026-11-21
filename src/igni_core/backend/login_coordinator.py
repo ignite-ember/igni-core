@@ -103,7 +103,7 @@ class LoginCoordinator:
             res: LoginResult = await self._backend.controllers.auth.login(on_status=on_status)
             if res.ok:
                 self._backend.controllers.auth.reload_cloud_credentials()
-                self._notify_signed_in()
+                self.notify_signed_in()
             await self._push.on_login_result(
                 success=res.ok, result=res.wire_result_string(), flow_id=flow_id
             )
@@ -113,7 +113,15 @@ class LoginCoordinator:
         except Exception as exc:  # pragma: no cover — defensive
             await self._push.on_login_result(success=False, result=str(exc), flow_id=flow_id)
 
-    def _notify_signed_in(self) -> None:
+    def notify_signed_in(self) -> None:
+        """Call the :meth:`on_signed_in` listeners: somebody is signed in now.
+
+        This coordinator's own flow calls it after a successful sign-in. A
+        layer whose process is signed in another way calls it too — the
+        cloud VM, whose igni starts before any credential and is signed in
+        when the VM's own credential becomes good (``Layer.serving``'s
+        ``on_signed_in``).
+        """
         for callback in list(self._signed_in):
             try:
                 callback()

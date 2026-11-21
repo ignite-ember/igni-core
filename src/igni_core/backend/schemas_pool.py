@@ -195,3 +195,5 @@ class Refusal(BaseModel):
     """Why a message is not handled at all, from the connection it came on."""
 
     reason: str
+    #: The code an RPC refused for it answers with.
+    code: RpcErrorCode = RpcErrorCode.FORBIDDEN

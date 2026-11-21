@@ -5,6 +5,13 @@ matters — the priority order first, so an extension installed below
 starts with its collisions already settled; and the old version keeps
 running until the new one is stored, so a download that fails costs an
 update and never the extension that works.
+
+A pass runs at start-up, at each sign-in, and on a timer
+(:meth:`ExtensionDistribution.start_polling`), so an extension an admin
+switches on reaches a running igni without a restart. The timer's pass
+asks for the listing and stops there when it is the one the last clean
+pass applied: igni server's listing carries no ETag, but it is one small
+JSON body, and nothing is downloaded or touched on disk for it.
 """
 
 from __future__ import annotations
@@ -26,7 +33,11 @@ from igni_core.extensions.assets import AssetPlatform, ExtensionAssets
 from igni_core.extensions.distribution.bundle import BundleVerifier
 from igni_core.extensions.distribution.client import DistributionClient
 from igni_core.extensions.distribution.errors import DistributionError
-from igni_core.extensions.distribution.schemas import DistributedExtension, SyncReport
+from igni_core.extensions.distribution.schemas import (
+    DistributedExtension,
+    DistributionListing,
+    SyncReport,
+)
 from igni_core.extensions.manifest import ExtensionManifest
 from igni_core.extensions.provenance import DistributionRecord
 from igni_core.extensions.service_token import IgniSession
@@ -72,6 +83,12 @@ class ExtensionDistribution:
         self._transport = transport
         self._lock = asyncio.Lock()
         self._tasks: set[asyncio.Task[SyncReport | None]] = set()
+        #: The periodic pass, if one is running.
+        self._poll_task: asyncio.Future[None] | None = None
+        #: The listing the last pass applied with nothing failed; ``None``
+        #: until there is one, and after a pass where something failed,
+        #: so the next tick tries again.
+        self._applied: DistributionListing | None = None
 
     def schedule(self) -> asyncio.Task[SyncReport | None]:
         """Sync in the background. Nothing waits for it.
@@ -87,25 +104,79 @@ class ExtensionDistribution:
         task.add_done_callback(self._tasks.discard)
         return task
 
+    def start_polling(self, interval: float) -> None:
+        """Sync again every ``interval`` seconds, until :meth:`stop`.
+
+        Without it a running igni learned of an extension an admin
+        switched on only at its next start or sign-in. The pass a tick
+        runs asks nothing while nobody is signed in, and applies nothing
+        when the listing is the one already applied.
+
+        Zero or less turns it off; a second call, or one with no running
+        loop, does nothing.
+        """
+        if interval <= 0 or self._poll_task is not None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._poll_task = background.daemon(
+            self._poll(interval), name="extension-distribution-poll", loop=loop
+        )
+
+    @property
+    def polling(self) -> bool:
+        """Whether the timer is running."""
+        return self._poll_task is not None
+
+    async def _poll(self, interval: float) -> None:
+        """A pass every ``interval`` seconds, forever, until cancelled.
+
+        A failure is a reason to keep going: igni down, a laptop asleep,
+        a session that expired and comes back with the next sign-in.
+        """
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                await self._sync_logged(unless_unchanged=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — the loop outlives its errors
+                logger.debug("extension distribution poll failed: %s", exc)
+
     async def stop(self) -> None:
-        """Cancel the syncs in flight and wait for them to let go."""
+        """Stop the timer, cancel the syncs in flight and wait for them to let go."""
+        if self._poll_task is not None:
+            self._poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._poll_task
+            self._poll_task = None
         for task in list(self._tasks):
             task.cancel()
         for task in list(self._tasks):
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-    async def _sync_logged(self) -> SyncReport | None:
-        """One sync, logged; a failure is never the caller's problem."""
+    async def _sync_logged(self, *, unless_unchanged: bool = False) -> SyncReport | None:
+        """One sync, logged; a failure is never the caller's problem.
+
+        A timer's pass that skips says so only at debug: every five
+        minutes, "nobody is signed in" is not news.
+        """
         try:
-            report = await self.sync()
+            report = await self.sync(unless_unchanged=unless_unchanged)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 — a background sync must not take anything down
             logger.exception("extension distribution sync failed")
             return None
         if report.skipped:
-            logger.info("extension distribution skipped: %s", report.skipped)
+            logger.log(
+                logging.DEBUG if unless_unchanged else logging.INFO,
+                "extension distribution skipped: %s",
+                report.skipped,
+            )
         elif report.installed or report.removed or report.failed:
             logger.info(
                 "extension distribution: installed %s, removed %s, failed %s",
@@ -115,8 +186,14 @@ class ExtensionDistribution:
             )
         return report
 
-    async def sync(self) -> SyncReport:
-        """One pass: list, update what differs, remove what is gone."""
+    async def sync(self, *, unless_unchanged: bool = False) -> SyncReport:
+        """One pass: list, update what differs, remove what is gone.
+
+        Args:
+            unless_unchanged: Stop after the listing when it is the one
+                the last clean pass applied — the timer's pass. Start-up
+                and sign-in always apply it.
+        """
         async with self._lock:
             session = self._session()
             if session is None:
@@ -134,6 +211,11 @@ class ExtensionDistribution:
                 # answer" is not "the service is gone".
                 logger.warning("extension listing failed, keeping what is installed: %s", exc)
                 return SyncReport(skipped=str(exc))
+            if unless_unchanged and listing == self._applied:
+                return SyncReport(skipped="the listing has not changed")
+            # Until this pass ends clean: one that raises half-way must
+            # not leave the next tick thinking it was applied.
+            self._applied = None
 
             report = SyncReport()
             entitled = listing.entitled()
@@ -150,6 +232,7 @@ class ExtensionDistribution:
             # service is.
             await self._remove_unlisted({entry.extension_id for entry in entitled}, report)
             self._store.prune_assets()
+            self._applied = None if report.failed else listing
             return report
 
     async def _bring_up_to_date(

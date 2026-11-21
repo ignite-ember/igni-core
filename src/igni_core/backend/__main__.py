@@ -4,6 +4,9 @@ Usage: python -m igni_core.backend --socket <path>
 
 Starts a :class:`BackendApp`, listens on the given Unix socket
 and/or WebSocket port, and processes FE messages until shutdown.
+With ``--account-only`` it starts an
+:class:`~igni_core.backend.account_backend.AccountBackend` instead: sign-in,
+the server, the plan and the status, and nothing that runs.
 The real work lives in :mod:`igni_core.backend.app` — this module
 is the CLI + the module-load side effects (logging config).
 """
@@ -18,6 +21,7 @@ from pathlib import Path
 
 import click
 
+from igni_core.backend.account_backend import AccountBackend
 from igni_core.backend.app import BackendApp
 from igni_core.backend.logging_setup import configure_logging
 from igni_core.backend.schemas_lifecycle import BackendLaunch
@@ -76,6 +80,14 @@ def warn_if_unsupported_python(emit: Callable[..., None] = logger.warning) -> bo
 @click.option("--resume-session", "resume_session_id", default=None)
 @click.option("--additional-dirs", multiple=True, default=())
 @click.option("--debug", is_flag=True, default=False)
+@click.option(
+    "--account-only",
+    is_flag=True,
+    default=False,
+    help="Serve only signing in, the server, the plan and the status, and keep the group "
+    "policy fresh: no agent, tools, MCP servers, extensions or event pull. For a desktop "
+    "whose organisation runs igni for it in the cloud.",
+)
 def main(
     socket_path: str | None,
     ws_port: int | None,
@@ -83,6 +95,7 @@ def main(
     resume_session_id: str | None,
     additional_dirs: tuple[str, ...],
     debug: bool,
+    account_only: bool,
 ) -> None:
     """Start the igni backend server."""
     if socket_path is None and ws_port is None:
@@ -117,16 +130,15 @@ def main(
     # One spelling of the project dir, shared with ``igni migrate`` and
     # every store, so all of them open the same ``state.db``.
     resolved_project = canonical_project_dir(project_dir)
-    app = BackendApp(
-        BackendLaunch(
-            socket_path=socket_path,
-            ws_port=ws_port,
-            project_dir=resolved_project,
-            resume_session_id=resume_session_id,
-            additional_dirs=extra_dirs,
-            ws_token=ws_token,
-        )
+    launch = BackendLaunch(
+        socket_path=socket_path,
+        ws_port=ws_port,
+        project_dir=resolved_project,
+        resume_session_id=resume_session_id,
+        additional_dirs=extra_dirs,
+        ws_token=ws_token,
     )
+    app = AccountBackend(launch) if account_only else BackendApp(launch)
     asyncio.run(app.run())
 
 

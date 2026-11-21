@@ -23,8 +23,8 @@ from igni_core.core.auth.portal_client import PortalClient
 from igni_core.core.config.group_policy.revalidation import PolicyRevalidation
 
 if TYPE_CHECKING:
+    from igni_core.backend.sign_in_holder import SignInHolder
     from igni_core.core.config.settings import Settings
-    from igni_core.core.session import Session
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class GroupPolicySync:
     #: startup on a slow network would undo it.
     NEW_DIALOGUE_TIMEOUT = 3.0
 
-    def __init__(self, session: Session, settings: Settings, portal: PortalClient) -> None:
+    def __init__(self, session: SignInHolder, settings: Settings, portal: PortalClient) -> None:
         self._session = session
         self._settings = settings
         self._hydrator = GroupPackHydrator(settings, portal)

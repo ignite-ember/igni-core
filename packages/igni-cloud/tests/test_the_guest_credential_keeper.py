@@ -236,3 +236,57 @@ def test_a_vm_without_a_keeper_does_not_watch_its_clients() -> None:
     guest.open(None, None, transport=transport, moved=lambda: None)
     guest.serve(RestoreWatch(Path("restored"), watch=False))
     assert transport.watchers == []
+
+
+async def test_igni_is_told_it_is_signed_in_each_time_the_credential_becomes_good() -> None:
+    # igni starts before the VM has a credential (a warm base binds later):
+    # what waits on a sign-in, the extensions igni server distributes, runs
+    # when the credential becomes good, and again after a sign-in anew.
+    guest, _ = credential()
+    signed_in: list[int] = []
+    guest.open(
+        None, None, transport=Transport(), moved=lambda: None, signed_in=lambda: signed_in.append(1)
+    )
+    guest._state_moved(StateChange(state=CredentialState.NEEDS_SIGN_IN, message="none yet"))
+    assert signed_in == []
+    guest._state_moved(StateChange(state=CredentialState.READY))
+    assert signed_in == [1]
+    guest._state_moved(StateChange(state=CredentialState.READY, message="renewed"))
+    assert signed_in == [1], "a renewal is not a new sign-in"
+    guest._state_moved(StateChange(state=CredentialState.NEEDS_SIGN_IN, message="revoked"))
+    guest._state_moved(StateChange(state=CredentialState.READY))
+    assert signed_in == [1, 1]
+
+
+async def test_the_first_good_credential_counts_as_a_sign_in() -> None:
+    guest, _ = credential()
+    signed_in: list[int] = []
+    guest.open(
+        None, None, transport=Transport(), moved=lambda: None, signed_in=lambda: signed_in.append(1)
+    )
+    guest._state_moved(StateChange(state=CredentialState.READY))
+    assert signed_in == [1]
+
+
+async def test_a_sign_in_listener_that_fails_is_logged_and_the_state_still_moves(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    guest, _ = credential()
+    moved: list[int] = []
+
+    def boom() -> None:
+        raise RuntimeError("listener")
+
+    guest.open(None, None, transport=Transport(), moved=lambda: moved.append(1), signed_in=boom)
+    with caplog.at_level(logging.ERROR, logger="igni_cloud.guest.sign_in"):
+        guest._state_moved(StateChange(state=CredentialState.READY))
+    assert moved == [1]
+    assert guest._last is not None and guest._last.state is CredentialState.READY
+    assert "telling igni the VM is signed in failed" in caplog.text
+
+
+async def test_without_a_sign_in_listener_a_good_credential_is_only_recorded() -> None:
+    guest, _ = credential()
+    guest.open(None, None, transport=Transport(), moved=lambda: None)
+    guest._state_moved(StateChange(state=CredentialState.READY))
+    assert guest._last is not None and guest._last.state is CredentialState.READY
