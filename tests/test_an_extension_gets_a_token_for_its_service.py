@@ -169,6 +169,22 @@ async def test_signed_out_is_not_signed_in_and_forgets_the_cache(exchange, igni,
     assert igni.tokens_issued == 2, "nothing cached may outlive a sign-out"
 
 
+async def test_a_token_cached_before_a_vm_slept_is_not_served_after_it(igni, signed, monkeypatch):
+    # A cloud VM paused or suspended: the monotonic clock stood still, the
+    # wall clock (the one a token's exp is on) did not.
+    wall = [1_000_000.0]
+    monkeypatch.setattr("time.time", lambda: wall[0])
+    monkeypatch.setattr("time.monotonic", lambda: 5.0)
+    exchange = ServiceTokenExchange(
+        api_url=lambda: API_URL, session=signed, transport=igni.transport()
+    )
+    await exchange.token_for(NOTES)
+    wall[0] += 3600
+    token = await exchange.token_for(NOTES)
+    assert igni.tokens_issued == 2, "an hour asleep: the cached token has expired"
+    assert exchange.remaining(token) > 60
+
+
 async def test_no_server_configured_is_not_signed_in(igni, signed):
     exchange = ServiceTokenExchange(api_url=lambda: "", session=signed, transport=igni.transport())
     with pytest.raises(NotSignedIn, match="no igni server"):

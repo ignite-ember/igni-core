@@ -170,15 +170,18 @@ class ServiceTokenExchange:
         session: Callable[[], IgniSession | None],
         ready: Callable[[], Awaitable[None]] | None = None,
         renew_before: float = RENEW_BEFORE_SECONDS,
-        clock: Callable[[], float] = time.monotonic,
+        clock: Callable[[], float] | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = 15.0,
     ) -> None:
+        """``clock`` is the wall clock unless a test passes one: a token's ``exp`` is. The monotonic
+        clock stops while a cloud VM is paused or suspended, so a token
+        cached before a sleep looked fresh long after it had expired."""
         self._api_url = api_url
         self._session = session
         self._ready = ready
         self._renew_before = renew_before
-        self.clock = clock
+        self.clock = clock if clock is not None else time.time
         self._transport = transport
         self._timeout = timeout
         self._cache: dict[tuple[str, str], CachedToken] = {}
