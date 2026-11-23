@@ -119,6 +119,7 @@ RPC: dict[RpcMethod, str] = {
     RpcMethod.GET_PROCESSING: "chat.processing",
     RpcMethod.GET_CHAT_HISTORY: "chat.messages",
     RpcMethod.SEARCH_CHAT: "chat.search",
+    RpcMethod.SEARCH_ALL_CHATS: "chat.search_all",
     RpcMethod.GET_PENDING_MESSAGES: "chat.pending",
     RpcMethod.GET_INTERRUPTED_RUNS: "chat.interrupted_runs",
     RpcMethod.DISCARD_INTERRUPTED_RUN: "chat.discard_interrupted",

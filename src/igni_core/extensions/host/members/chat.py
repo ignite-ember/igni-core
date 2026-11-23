@@ -16,6 +16,7 @@ from igni_core.extensions.host.rpc_wire.chat import (
     DiscardInterruptedArgs,
     LearningsArgs,
     RunIdArgs,
+    SearchAllChatsArgs,
     SearchChatArgs,
     SessionArgs,
     TruncateArgs,
@@ -72,6 +73,11 @@ class ChatReadMembers(Members):
             session_id=c.session_id, query=c.params["query"], limit=c.params.get("limit") or 50
         )
         return await self.rpc(RpcMethod.SEARCH_CHAT, args, c=c)
+
+    @call("chat.search_all")
+    async def search_all(self, c: Call) -> Any:
+        args = SearchAllChatsArgs(query=c.params["query"], limit=c.params.get("limit") or 50)
+        return await self.rpc(RpcMethod.SEARCH_ALL_CHATS, args, c=c)
 
 
 class ChatWriteMembers(Members):

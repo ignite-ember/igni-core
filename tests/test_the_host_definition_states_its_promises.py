@@ -172,6 +172,7 @@ def test_the_members_still_written_json_are_exactly_the_known_ones() -> None:
         "chat.append(view)",
         "chat.replace(view)",
         "chat.search()",
+        "chat.search_all()",
         "chat.truncate()",
         "chat.discard_interrupted()",
         "chat.discard_pending()",

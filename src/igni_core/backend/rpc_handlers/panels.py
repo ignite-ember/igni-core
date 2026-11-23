@@ -23,6 +23,7 @@ from igni_core.backend.rpc_handlers.panel_args import (
     ProcessTailArgs,
     PromoteAgentArgs,
     ReadFileArgs,
+    ReadFileBytesArgs,
     RunShellArgs,
     SearchCodeArgs,
     VisualizationActionArgs,
@@ -46,7 +47,7 @@ from igni_core.backend.schemas_visualization import (
     VisualizationAction,
     VisualizationActionResult,
 )
-from igni_core.backend.server_files import ReadFileResult
+from igni_core.backend.server_files import ReadFileBytesResult, ReadFileResult
 from igni_core.core.agents import AgentInfo
 from igni_core.core.tools.todo import TodoItemWire
 from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
@@ -85,6 +86,23 @@ class PanelRpcHandler(RpcHandler):
         client read.
         """
         return self._ctx.backend.read_file(args.path)
+
+    @rpc(
+        RpcMethod.READ_FILE_BYTES,
+        duration=RpcDuration.IO,
+        args=ReadFileBytesArgs,
+        scope=RpcScope.SESSION,
+    )
+    def read_file_bytes(self, args: ReadFileBytesArgs) -> ReadFileBytesResult:
+        """Read a file's raw bytes (base64) to preview an image or a PDF.
+
+        The same sandbox as ``read_file`` with a larger cap (10 MiB).
+        Returns the resolved ``path``, the base64 ``data``, its ``size``
+        and a ``media_type`` hint; or ``error`` when the file is missing,
+        a directory, too large, unreadable, or outside the folders igni
+        lets a client read.
+        """
+        return self._ctx.backend.read_file_bytes(args.path)
 
     @rpc(
         RpcMethod.SEARCH_CODE, duration=RpcDuration.IO, args=SearchCodeArgs, scope=RpcScope.SESSION

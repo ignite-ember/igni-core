@@ -42,6 +42,8 @@ from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.group_policy.meta import PackMetaStore
 from igni_core.core.config.models import ModelRegistry
+from igni_core.core.db.locator import StorageLocator
+from igni_core.core.session.session_directories import SessionDirectoryStore
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 
 if TYPE_CHECKING:
@@ -185,10 +187,12 @@ class ControllerRegistry:
         )
 
         chat_history = ChatHistoryRebuilder(session=session)
+        session_dirs = SessionDirectoryStore.from_locator(StorageLocator.from_settings(settings))
         sessions = SessionsController(
             session=session,
             chat_history_provider=chat_history.rebuild,
             waiting_sessions=journal.waiting_sessions if journal is not None else None,
+            session_dir_lookup=session_dirs.get_dir,
         )
 
         # One portal client, shared: sign-in and the group-policy fetch

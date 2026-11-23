@@ -81,6 +81,7 @@ class RpcMethod(StrEnum):
     GET_PROCESSING = "get_processing"
     GET_CHAT_HISTORY = "get_chat_history"
     SEARCH_CHAT = "search_chat"
+    SEARCH_ALL_CHATS = "search_all_chats"
     GET_PENDING_MESSAGES = "get_pending_messages"
     # Explicit interrupted-run record (durable; survives restart).
     # The FE renders these as banners with Retry/Discard/Edit-prompt
@@ -243,6 +244,7 @@ class RpcMethod(StrEnum):
 
     # ── File access (sandboxed to project/.igni) ────────────────
     READ_FILE = "read_file"
+    READ_FILE_BYTES = "read_file_bytes"
     TRUNCATE_HISTORY = "truncate_history"
     SEARCH_CODE = "search_code"
 

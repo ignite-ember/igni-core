@@ -5233,6 +5233,29 @@
           "elsewhere": "chat.read"
         },
         {
+          "name": "search_all",
+          "params": [
+            {
+              "name": "query",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "limit",
+              "type": "int",
+              "doc": "At most this many in total; 50 by default.",
+              "optional": true
+            }
+          ],
+          "result": "list[json]",
+          "doc": "Search the transcripts of every session in the project.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": "chat.read"
+        },
+        {
           "name": "cancel",
           "params": [],
           "result": "None",

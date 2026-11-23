@@ -1789,6 +1789,14 @@ OBJECTS = (
                 result="list[json]",
                 elsewhere="chat.read",
             ),
+            method(
+                "search_all",
+                "Search the transcripts of every session in the project.",
+                param("query", "str"),
+                param("limit", "int", "At most this many in total; 50 by default.", optional=True),
+                result="list[json]",
+                elsewhere="chat.read",
+            ),
             method("cancel", "Stop the run.", permission="chat.control"),
             method(
                 "cancel_agent",

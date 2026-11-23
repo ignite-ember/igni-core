@@ -22,6 +22,7 @@ import pytest
 from igni_core.backend.rpc_binding import Correlation, NoArgs, RpcArgsError, RpcBinding
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.rpc_handlers.session_args import (
+    SearchAllChatsArgs,
     SearchChatArgs,
     SessionIdArgs,
     TruncateHistoryArgs,
@@ -138,6 +139,7 @@ async def test_a_missing_or_unexpected_argument_is_refused_naming_the_method(
     [
         (RpcMethod.GET_CHAT_HISTORY, SessionIdArgs, RpcDuration.IO),
         (RpcMethod.SEARCH_CHAT, SearchChatArgs, RpcDuration.IO),
+        (RpcMethod.SEARCH_ALL_CHATS, SearchAllChatsArgs, RpcDuration.IO),
         (RpcMethod.TRUNCATE_HISTORY, TruncateHistoryArgs, RpcDuration.IO),
         (RpcMethod.COUNT_CONTEXT_TOKENS, NoArgs, RpcDuration.IO),
         (RpcMethod.GET_CONTEXT_BREAKDOWN, NoArgs, RpcDuration.IO),
@@ -154,6 +156,7 @@ def test_each_history_rpc_is_registered_with_its_arguments_duration_and_scope(
     assert set(SessionHistoryRpcHandler(MagicMock()).methods()) == {
         RpcMethod.GET_CHAT_HISTORY,
         RpcMethod.SEARCH_CHAT,
+        RpcMethod.SEARCH_ALL_CHATS,
         RpcMethod.TRUNCATE_HISTORY,
         RpcMethod.COUNT_CONTEXT_TOKENS,
         RpcMethod.GET_CONTEXT_BREAKDOWN,
