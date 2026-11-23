@@ -204,7 +204,9 @@ class Scaffold:
     def _write(self, relative: str, text: str) -> None:
         target = self.directory / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text)
+        # UTF-8 whatever the platform's default: the templates carry
+        # ``→`` and ``—``, which cp1252 (Windows) cannot encode.
+        target.write_text(text, encoding="utf-8")
 
     def _render(self, relative: str, template: str, parts: Mapping[str, str] | None = None) -> None:
         self._write(relative, self._fill(template, parts))

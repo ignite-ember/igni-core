@@ -22,7 +22,13 @@ from igni_core.protocol.schemas.envelope import Direction, Message
 
 
 class UserMessage(Message):
-    """The person sends a chat message, starting a run."""
+    """The person sends a chat message, starting a run.
+
+    A run waiting on an approval ends with it, and its approvals are
+    dropped. That refuses them, so it takes what answering takes: from a
+    program without an approver token it is refused while the session
+    waits, with an `error` and the stream's end, and nothing is dropped.
+    """
 
     type: Literal["user_message"] = "user_message"
     direction: ClassVar[Direction] = Direction.TO_IGNI

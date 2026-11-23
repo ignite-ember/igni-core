@@ -283,7 +283,7 @@ def test_hydrating_opens_the_window_and_answers_its_whole_model() -> None:
     assert answer.state.composer.mode == "chat"
     assert rig.windows.registry.known("w-1")
     record = rig.windows.registry.record("w-1")
-    assert (record.connection_id, record.kind) == ("ws-1", "tauri")
+    assert (record.connections, record.kind) == (["ws-1"], "tauri")
     assert [(what, info.id) for what, info in rig.opened] == [("opened", "w-1")]
 
 

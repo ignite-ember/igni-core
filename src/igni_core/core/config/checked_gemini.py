@@ -8,6 +8,10 @@ for OpenAI-compatible servers before ``reply_ending.py``. This class
 applies the same rule (:class:`ReplyEnding` with the :data:`GEMINI`
 words).
 
+It also offers Gemini every tool: :class:`GeminiToolSchemas` gives each
+array in a tool's schema the ``items`` Gemini requires and other
+providers do not (see :mod:`igni_core.core.config.gemini_schemas`).
+
 Importing this module imports the ``google-genai`` SDK, so only
 :class:`~igni_core.core.config.provider_builders.GeminiBuilder` imports
 it, and only inside a try: an install without the SDK still starts.
@@ -17,12 +21,13 @@ from __future__ import annotations
 
 from agno.models.google import Gemini
 
+from igni_core.core.config.gemini_schemas import GeminiToolSchemas
 from igni_core.core.config.reply_ending import GEMINI, ReplyCutRetries, ReplyEnding
 from igni_core.core.config.tool_names import ToolNameBoundary
 
 
-class CheckedGemini(ToolNameBoundary, ReplyCutRetries, Gemini):
-    """Agno's ``Gemini``, failing a reply that did not finish."""
+class CheckedGemini(ToolNameBoundary, GeminiToolSchemas, ReplyCutRetries, Gemini):
+    """Agno's ``Gemini``, failing a reply that did not finish and sent arrays it accepts."""
 
     def invoke_stream(self, *args, **kwargs):
         ending = self._reply_ending()

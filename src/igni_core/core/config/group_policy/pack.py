@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -27,6 +28,40 @@ class PackTheme(BaseModel):
     model_config = ConfigDict(frozen=True, extra="allow")
 
 
+class GroupMode(StrEnum):
+    """Where igni runs for a group's people, as the admin chose it.
+
+    ``docs/design/local-cloud-switch.md`` §6. igni server carries it as
+    the pack's top-level ``mode``:
+
+    * ``local`` — on their own computers only;
+    * ``cloud`` — in the cloud only: on the desktop the run gate closes,
+      and the app connects to the cloud;
+    * ``local_and_cloud`` — either, as each person switches. What a pack
+      without ``mode`` means (an igni server from before it), and so
+      what every group had before there was a choice.
+    """
+
+    local = "local"
+    cloud = "cloud"
+    local_and_cloud = "local_and_cloud"
+
+    @classmethod
+    def read(cls, value: object) -> GroupMode:
+        """``value`` as a mode: absent is :attr:`local_and_cloud`, and so,
+        with a warning, is a value this igni does not know."""
+        if value is None or value == "":
+            return cls.local_and_cloud
+        try:
+            return cls(value)
+        except ValueError:
+            # A newer server's mode. Running as before is what an igni that
+            # ignored the field would do; igni server enforces ``local``
+            # on its own side whatever a desktop makes of it.
+            logger.warning("group policy: unknown mode %r; read as local_and_cloud", value)
+            return cls.local_and_cloud
+
+
 class SignedPolicy(BaseModel):
     """The verified ``policy`` claim of a pack, as igni server signed it.
 
@@ -43,6 +78,7 @@ class SignedPolicy(BaseModel):
     entries: list[GroupPolicyEntry] = []
     default_model: str | None = None
     theme: PackTheme | None = None
+    mode: GroupMode = GroupMode.local_and_cloud
 
     @field_validator("group_id", "group_name", mode="before")
     @classmethod
@@ -58,6 +94,11 @@ class SignedPolicy(BaseModel):
     @classmethod
     def _absent_is_no_entries(cls, value: object) -> object:
         return value or []
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _known_mode(cls, value: object) -> GroupMode:
+        return GroupMode.read(value)
 
 
 class GroupPolicyPack(BaseModel):
@@ -80,6 +121,10 @@ class GroupPolicyPack(BaseModel):
     #: Group-level UI config for the frontend, not an entry: entries are
     #: materialised as files for agents to read. See :class:`PackTheme`.
     theme: PackTheme | None = None
+
+    #: Where igni runs for the group's people. Signed with the rest; a pack
+    #: from before igni server had it means :attr:`GroupMode.local_and_cloud`.
+    mode: GroupMode = GroupMode.local_and_cloud
 
     #: The same pack as igni server signed it — a compact JWS, kept exactly
     #: as received. Only a pack that arrived with one, and whose signature
@@ -107,9 +152,15 @@ class GroupPolicyPack(BaseModel):
             entries=policy.entries,
             default_model=policy.default_model,
             theme=policy.theme,
+            mode=policy.mode,
             etag=etag,
             signed_pack=signed_pack,
         )
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _known_mode(cls, value: object) -> GroupMode:
+        return GroupMode.read(value)
 
     def to_settings_dict(self) -> dict:
         """The enabled ``settings`` entries, deep-merged, for the accumulator.

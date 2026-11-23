@@ -321,9 +321,9 @@ models:
   # frontmatter, `igni --model <id>`, or `/model` in a session.
   registry:
     # Example: Gemini (direct API key)
-    # gemini-2.5-flash:
+    # gemini-3.8-flash:
     #   provider: openai_like
-    #   model_id: gemini-2.5-flash
+    #   model_id: gemini-3.8-flash
     #   url: https://generativelanguage.googleapis.com/v1beta/openai/
     #   api_key: AIzaSy...
 
@@ -650,6 +650,27 @@ Deleting the pack is something no signature can prevent. That is what
 The desktop app's own four settings never fail closed: with no verified pack
 it uses the managed-settings file and `~/.igni/config.yaml` alone. Put a
 setting that must hold for the desktop shell in the managed-settings file.
+
+### Where igni runs: the group's mode
+
+An admin chooses, per group in the portal, where igni runs for its people,
+and igni server signs it into the pack as `mode`:
+
+| `mode` | On the person's computer |
+|---|---|
+| `local_and_cloud` (default; also a pack without `mode`) | igni runs here, and the desktop app offers a switch to the person's cloud igni where they have one |
+| `local` | igni runs here only; igni server and the gateway refuse the person a cloud igni |
+| `cloud` | no agent run here: the backend boots so the person can sign in, but refuses every run, scheduled task and workflow agent step, and `igni -m` exits, saying "Your organisation runs igni for you in the cloud." The desktop app chats with their cloud igni instead |
+
+A mode this igni does not know is read as `local_and_cloud`, with a warning.
+The mode is read from the verified pack, so it holds offline.
+
+**`cloud` needs a desktop app that knows the mode:** the first igni-app
+release after 1.0.5. An older desktop app ignores `mode` and keeps running
+igni on the person's computer, so update your people's desktops before you
+switch a group to `cloud`. `local` holds for every desktop, old or new:
+igni server and the gateway refuse the person a cloud igni whatever the app
+does.
 
 ### Managed-only settings
 

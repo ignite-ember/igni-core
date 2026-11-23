@@ -4,6 +4,10 @@ What a run produced (:class:`TurnOutcome`), what a turn returned
 (:class:`TurnResult`), and why a turn produced no reply
 (:class:`TurnFailure`) — all as models.
 
+The names of the tools a pause is told about are said in prose
+(:func:`tools_as_prose`): the person reads the same name the tool
+call carried.
+
 The run outputs Agno hands back are read in exactly one place,
 :meth:`TurnOutcome.from_run`. The pipeline used to probe every run
 object with ``getattr`` and compare statuses as lower-cased strings,
@@ -20,6 +24,25 @@ from agno.run.requirement import RunRequirement
 from pydantic import BaseModel, ConfigDict, Field
 
 from igni_core.core.session.message_team import AnyRunOutput
+
+
+def tools_as_prose(tools: list[str]) -> str:
+    """The tool names as a person reads them, not as a Python list.
+
+    ``repr`` gives a list its brackets and quotes; the person at the
+    terminal is told which tool stopped the run, and the tool's own
+    name — the one the tool call on screen and the audit row carry —
+    is what they read. So the name is kept verbatim and only the list
+    around it is dropped.
+    """
+    names = [tool for tool in tools if tool]
+    if not names:
+        return "unknown tool"
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return ", ".join(names[:-1]) + f" and {names[-1]}"
 
 
 class OutcomeKind(str, Enum):
@@ -121,8 +144,11 @@ class TurnFailure(BaseModel):
         on this path the placeholder must not be printed as the
         assistant's answer — a turn that silently dropped the work it
         asked for is worse than a reported failure.
+
+        The tools are named in prose (:func:`tools_as_prose`): the
+        person reads the same name the tool call carried.
         """
-        tools = outcome.paused_tools or ["unknown tool"]
+        tools = tools_as_prose(outcome.paused_tools)
         # The remedies are QUICKSTART's, in its order. This offered only
         # ``--auto-approve`` (which the docs warn against) and "a settings
         # rule", and not ``--read-only``, which is what a question needs.
@@ -188,4 +214,5 @@ __all__ = [
     "TurnFailure",
     "TurnOutcome",
     "TurnResult",
+    "tools_as_prose",
 ]

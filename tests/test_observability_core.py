@@ -13,7 +13,10 @@ import logging
 import subprocess
 import sys
 import textwrap
+from collections.abc import Iterator
+from contextlib import contextmanager
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from opentelemetry import trace as otel_trace
@@ -60,6 +63,30 @@ def memory_sinks() -> tuple[OtelSinks, InMemorySpanExporter, InMemoryMetricReade
     spans = InMemorySpanExporter()
     metrics = InMemoryMetricReader()
     return OtelSinks(span_exporter=spans, metric_reader=metrics), spans, metrics
+
+
+def _nothing_to_collect(*_args: Any, **_kwargs: Any) -> Any:
+    """A collect callback for a reader that has nothing to collect."""
+    return None
+
+
+@contextmanager
+def otlp_sinks(config: OtlpConfig) -> Iterator[OtelSinks]:
+    """OTLP sinks whose metric reader is stopped again when the test ends.
+
+    ``OtelSinks.otlp`` builds a reader that starts its export thread at
+    once. A reader that is never registered on a meter provider keeps that
+    thread running, and a minute later it logs that it cannot collect —
+    into whichever test is running then, which is not the one that opened
+    it. The reader is given nothing to collect before it is stopped, so
+    its last collection is quiet too.
+    """
+    sinks = OtelSinks.otlp(config)
+    sinks.metric_reader._set_collect_callback(_nothing_to_collect)
+    try:
+        yield sinks
+    finally:
+        sinks.metric_reader.shutdown()
 
 
 def finished_spans(build) -> list[ReadableSpan]:
@@ -589,34 +616,52 @@ class TestOtlpTarget:
 
 class TestOtelSinks:
     def test_http_exporters_go_to_the_signal_paths_under_the_endpoint(self):
-        sinks = OtelSinks.otlp(OtlpConfig(endpoint="http://otel.acme.com:4318///"))
-        assert sinks.span_exporter._endpoint == "http://otel.acme.com:4318/v1/traces"
-        assert sinks.metric_reader._exporter._endpoint == "http://otel.acme.com:4318/v1/metrics"
+        with otlp_sinks(OtlpConfig(endpoint="http://otel.acme.com:4318///")) as sinks:
+            assert sinks.span_exporter._endpoint == "http://otel.acme.com:4318/v1/traces"
+            assert sinks.metric_reader._exporter._endpoint == "http://otel.acme.com:4318/v1/metrics"
 
     def test_metrics_are_pushed_every_sixty_seconds(self):
-        sinks = OtelSinks.otlp(OtlpConfig(endpoint="http://otel.acme.com:4318"))
-        assert OtelSinks.METRIC_INTERVAL_MS == 60_000
-        assert sinks.metric_reader._export_interval_millis == 60_000
+        with otlp_sinks(OtlpConfig(endpoint="http://otel.acme.com:4318")) as sinks:
+            assert OtelSinks.METRIC_INTERVAL_MS == 60_000
+            assert sinks.metric_reader._export_interval_millis == 60_000
 
     def test_grpc_to_an_http_endpoint_is_insecure_and_strips_the_slash(self):
         config = OtlpConfig(
             endpoint="http://otel.acme.com:4317/", protocol="grpc", headers={"x-key": "k"}
         )
-        sinks = OtelSinks.otlp(config)
-        metric_exporter = sinks.metric_reader._exporter
-        for exporter in (sinks.span_exporter, metric_exporter):
-            assert exporter._endpoint == "otel.acme.com:4317"
-            assert exporter._insecure is True
-            assert ("x-key", "k") in exporter._headers
+        with otlp_sinks(config) as sinks:
+            metric_exporter = sinks.metric_reader._exporter
+            for exporter in (sinks.span_exporter, metric_exporter):
+                assert exporter._endpoint == "otel.acme.com:4317"
+                assert exporter._insecure is True
+                assert ("x-key", "k") in exporter._headers
 
     def test_grpc_to_an_https_endpoint_is_secure(self):
-        sinks = OtelSinks.otlp(OtlpConfig(endpoint="https://otel.acme.com:4317", protocol="grpc"))
-        assert sinks.span_exporter._insecure is False
-        assert sinks.metric_reader._exporter._insecure is False
+        config = OtlpConfig(endpoint="https://otel.acme.com:4317", protocol="grpc")
+        with otlp_sinks(config) as sinks:
+            assert sinks.span_exporter._insecure is False
+            assert sinks.metric_reader._exporter._insecure is False
 
     def test_grpc_scheme_in_upper_case_is_still_insecure(self):
-        sinks = OtelSinks.otlp(OtlpConfig(endpoint="HTTP://otel.acme.com:4317", protocol="grpc"))
-        assert sinks.span_exporter._insecure is True
+        config = OtlpConfig(endpoint="HTTP://otel.acme.com:4317", protocol="grpc")
+        with otlp_sinks(config) as sinks:
+            assert sinks.span_exporter._insecure is True
+
+    def test_a_sink_closes_its_metric_reader_and_leaves_no_warning_behind(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A reader that outlives its test logs into another test.
+
+        The reader of an OTLP sink starts its export thread at once. Left
+        alone it keeps that thread running, and a minute later it logs
+        that it cannot collect — into whichever test is running then.
+        """
+        with otlp_sinks(OtlpConfig(endpoint="http://otel.acme.com:4318")) as sinks:
+            reader = sinks.metric_reader
+
+        thread = getattr(reader, "_daemon_thread", None)
+        assert thread is None or not thread.is_alive()
+        assert not [record for record in caplog.records if "Cannot call collect" in record.message]
 
 
 class TestOtelPipeline:

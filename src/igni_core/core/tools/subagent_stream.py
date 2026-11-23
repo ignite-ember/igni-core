@@ -80,6 +80,10 @@ class SubAgentStreamState(StreamState):
     #: Last visualization-delta emission time (``time.monotonic``).
     #: 50 ms throttle prevents wire spam on fast models.
     vis_last_emit_at: float = 0.0
+    #: How many times the visualizer has drawn on this stream. Each
+    #: draw is its own revision of the card, so the client's verdict
+    #: about one draw cannot answer for another.
+    vis_revision: int = 0
 
     # ── Parent run identity ─────────────────────────────────────────
     #: ``RunStartedEvent.parent_run_id`` — the TOP-LEVEL run that
@@ -124,6 +128,17 @@ class SubAgentStreamState(StreamState):
         partial-args string of length ``partial_len``."""
         self.vis_last_emitted_len = partial_len
         self.vis_last_emit_at = now_s
+
+    def next_vis_revision(self) -> int:
+        """Count the next draw of the card and return its number.
+
+        The first draw is revision 1: the card's own ``spec_id`` says
+        which card this is, and the revision says which draw of it —
+        a card drawn twice is two revisions of one card, and the
+        client's verdict names the one it drew.
+        """
+        self.vis_revision += 1
+        return self.vis_revision
 
     def append_content_delta(self, chunk: str) -> str | None:
         """Buffer a streaming content chunk and return a preview

@@ -317,6 +317,7 @@ The window around the conversation.
 | `get_group_policy` | No group — the footer shows "Group none" today. | `verified` |
 | `get_todos` | No todos; a todo list longer than the panel. Sweep: **answers** (default run). | `answers` |
 | `dispatch_visualization_action` | An action for a chart that has been replaced. Sweep: **answers** (`--mutating`). | `answers` |
+| `report_visualization_verdict` | A card that drew nothing: the verdict names the element it could not draw. A verdict that names a draw the backend has not heard of; a card that names no draw, so nothing is said. Sweep: **never called** — it wants a card drawn first — never called. | `todo` |
 | `shutdown` | Shutdown mid-run; shutdown with background processes alive. Sweep: **never called** — irreversible or blocking — never called. | `todo` |
 
 ## Defects found

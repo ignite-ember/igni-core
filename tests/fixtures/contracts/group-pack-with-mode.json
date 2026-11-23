@@ -1,0 +1,19 @@
+{
+  "description": "A group pack signed by igni server's own GroupPackSigner, carrying `mode` after `theme`, with the public key it verifies under. Made once with KeyRing.generated(), whose private key was never written down; tests/test_a_group_says_where_igni_runs.py holds it to what the server signs today. igni-core's verifier checks a copy (igni-core docs/design/local-cloud-switch.md \u00a76.2, \u00a712.1).",
+  "issuer": "https://igni.example.com",
+  "subject": "2b9c41d0-8e7f-4a3b-b5c6-1d2e3f4a5b6c",
+  "org": "0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0",
+  "jwks": {
+    "keys": [
+      {
+        "kty": "RSA",
+        "kid": "jzwyv4Sk-wVhIpQZOeIQ5Il4OGw8WoQpA5kcptY-SdI",
+        "use": "sig",
+        "alg": "RS256",
+        "n": "zU5B3bv-KqH5jJQUll_HRKwZDcUUAMj0zeGLSjeZH2j3MOvhBsbC3P4TGYHeNWH4yJCVHDgCJfH0C64BdPVIpRht8H2RCPN_Zo-sthJ9C4cMeP757GsZF4OnH9Lau1u7QfI-YimvE9SinmEblb01PG7WQhSZTKa0AcEX4q--M3etgwb3q8m_7efw0J1m3y4osY3LUn6H127VACpHaGZh7DsfnbD5YTItfcTNW_npf10X4Aqn-XjESe5Dl4fN56Ni95UImyJ0imttSY1FA-A3HIIFVxu87C7JX-61AgG1inwOWcPLbQF-umih8_MDl1gTYYBDOavfj--MTpIAsY1Mqw",
+        "e": "AQAB"
+      }
+    ]
+  },
+  "signed_pack": "eyJhbGciOiJSUzI1NiIsImtpZCI6Imp6d3l2NFNrLXdWaElwUVpPZUlRNUlsNE9HdzhXb1FwQTVrY3B0WS1TZEkiLCJ0eXAiOiJpZ25pLWdyb3VwLXBvbGljeStqd3QifQ.eyJpc3MiOiJodHRwczovL2lnbmkuZXhhbXBsZS5jb20iLCJzdWIiOiIyYjljNDFkMC04ZTdmLTRhM2ItYjVjNi0xZDJlM2Y0YTViNmMiLCJvcmciOiIwYjFjMmQzZS00ZjUwLTYxNzItODM5NC1hNWI2YzdkOGU5ZjAiLCJpYXQiOjE3OTUyMDQ5MjgsInZlcnNpb24iOjE3OTUyMDQ5MjgyNjIsInRva2VuX3VzZSI6Imdyb3VwX3BvbGljeSIsInBvbGljeSI6eyJncm91cF9pZCI6IjdmM2U5YTUyLTRjMWQtNGI4ZS05ZjJhLTBkNmMzYjFlNWE3NyIsImdyb3VwX25hbWUiOiJFbmdpbmVlcmluZyIsImZldGNoZWRfYXQiOiIyMDI2LTExLTIwVDEyOjAwOjAwWiIsImVudHJpZXMiOltdLCJkZWZhdWx0X21vZGVsIjpudWxsLCJ0aGVtZSI6bnVsbCwibW9kZSI6ImNsb3VkIn19.CR7bnpEFu08JPOCCq_Wcn7bbxrNvnzL3UCMy7AckLzHN_QAFUxrvASWxTCshSSLH7D83evJrIJX3-eKTS4Zu29WBJlLwMBBcKUTHOum3-mhmvBu49v3lGiHR94P5Ng9WJniR5YMNMwf5wHQz5qSZIOazvx7DDKG2-x_y4MW8KEE-4VskTOQFMjX5wrRwaxo3MhCQSA4caNZsWMBWpprq1ErmcDZ3dkhiAvZeZLhexUl7hMdgUcKKvrauomEbvXJ9hVTtCBcm48L4YOZ06GApukY4anlrEmM_tyFLyE4NLINDHzJiOGWO-l2EpgrvxizRD5_7NdMagwrLUxfyYFH7hw"
+}

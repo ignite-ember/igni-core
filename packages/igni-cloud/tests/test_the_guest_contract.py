@@ -776,7 +776,16 @@ async def test_bound_before_any_sign_in_says_so_to_the_windows_and_the_node_agen
         def listen(self, listener: Any) -> None:
             pass
 
-    guest.serving(model=Model(), transport=Transport(), api_url=lambda: "https://igni.test")
+    def signed_in() -> None: ...
+
+    guest.serving(
+        model=Model(),
+        transport=Transport(),
+        api_url=lambda: "https://igni.test",
+        on_signed_in=signed_in,
+    )
+    # The keeper tells igni when the credential becomes good (the extensions' sync waits on it).
+    assert guest.credential._signed_in is signed_in
     try:
         for _ in range(100):
             if guest.credential.state() == "needs_sign_in" and sent:

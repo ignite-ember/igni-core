@@ -140,6 +140,15 @@ class RpcMethod(StrEnum):
     # request finishes). Returns ``{ok: bool, action, params}``.
     DISPATCH_VISUALIZATION_ACTION = "dispatch_visualization_action"
 
+    # ── Visualization verdicts (what the card drew) ─────────────
+    # The client rendered a card the agent drew and says what it drew
+    # of it: which elements it could not draw, and what was wrong with
+    # the card's shape. The backend keeps that verdict against the
+    # card's spec id and revision, and the visualizer's recap quotes
+    # it — so the agent is told what is on the screen rather than what
+    # it hoped for. Returns ``{ok, spec_id, revision, drawn, total}``.
+    REPORT_VISUALIZATION_VERDICT = "report_visualization_verdict"
+
     # ── Background-process watcher panel ─────────────────────────
     # The FE's right-side watcher panel surfaces every
     # backgrounded ``run_shell_command`` for view-only tail +

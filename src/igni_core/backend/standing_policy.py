@@ -17,7 +17,13 @@ sessions but not decide for the person:
   extension setting, no shell command outside a run, no change of whom
   igni signs in to;
 * it mints no approver token;
-* it stops nothing: no ``shutdown`` message, no ``shutdown`` call.
+* it stops nothing: no ``shutdown`` message, no ``shutdown`` call;
+* it ends no run waiting on an approval (``cancel_run``, ``cancel``), and
+  sends no new message into its session (``user_message``), which ends it
+  as well: ending it refuses the approval, which is answering it. A run
+  that is working it may stop, and a session that waits on nobody it may
+  write to. Whether the session waits is the session's state, so the
+  orchestrator asks :func:`pause_ending_refusal` only when it does.
 
 An approver is a program in every other respect. What a program may not do
 it is told plainly, so the SDK can say why.
@@ -36,6 +42,7 @@ __all__ = [
     "ApproverTokens",
     "WINDOW_ONLY_COMMANDS",
     "WINDOW_ONLY_RPCS",
+    "pause_ending_refusal",
     "refusal",
 ]
 
@@ -120,6 +127,33 @@ def refusal(message: Any) -> str | None:
     return None
 
 
+def pause_ending_refusal(message: Any) -> str | None:
+    """Why ``message`` may not end the run its session has waiting on an
+    approval, or ``None``: the window and an approver may, as they may
+    answer it.
+
+    Asked only while the session waits on the person. A new message ends
+    that run too: it drops the run's approvals (``RunController``), so it
+    takes the same standing. A message that does not stop a run is not
+    this check's business.
+    """
+    name: str
+    if isinstance(message, msg.UserMessage):
+        name, why = message.type, _A_MESSAGE_ENDS_A_PAUSE
+    elif isinstance(message, msg.RPCRequest) and message.method == RpcMethod.CANCEL_RUN:
+        name, why = message.method, _ENDS_A_PAUSE
+        if message.caller:
+            return f"{name}: {why}; an extension's page answers no approval"
+    elif isinstance(message, msg.Cancel):
+        name, why = message.type, _ENDS_A_PAUSE
+    else:
+        return None
+    standing = getattr(message, "standing", Standing.WINDOW)
+    if standing in (Standing.WINDOW, Standing.APPROVER):
+        return None
+    return f"{name}: {why}; {_NOT_AN_APPROVER}"
+
+
 def _beyond_this_once(message: msg.HITLResponse | msg.HITLResponseBatch) -> str | None:
     """Why an approver's answer is refused: it would outlast this one pause.
 
@@ -142,4 +176,10 @@ def _beyond_this_once(message: msg.HITLResponse | msg.HITLResponseBatch) -> str 
 _NOT_AN_APPROVER = (
     "a program answers approval requests only with an approver token, "
     "which the person makes in igni's window"
+)
+
+_ENDS_A_PAUSE = "the run is waiting on an approval, and ending it refuses that approval"
+
+_A_MESSAGE_ENDS_A_PAUSE = (
+    "the run is waiting on an approval, and a new message ends it, which refuses that approval"
 )

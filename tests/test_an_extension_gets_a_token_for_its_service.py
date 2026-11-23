@@ -32,6 +32,7 @@ from igni_core.extensions.service_token import (
     ENV_SERVICE_URL,
     ENV_TOKEN_SECRET,
     ENV_TOKEN_URL,
+    REFRESH_HEADER,
     TOKEN_EXCHANGE_GRANT,
     IgniSession,
     NotSignedIn,
@@ -117,6 +118,15 @@ async def test_a_fresh_token_is_served_from_the_cache(exchange, igni, clock):
     assert exchange.remaining(second) == 300
 
 
+async def test_a_refresh_exchanges_another_token(exchange, igni):
+    """The service refused the token it was sent, and the same one
+    again would be refused again."""
+    held = await exchange.token_for(NOTES)
+    fresh = await exchange.token_for(NOTES, refresh=True)
+    assert fresh.access_token != held.access_token
+    assert igni.tokens_issued == 2
+
+
 async def test_it_is_renewed_shortly_before_it_expires(exchange, igni, clock):
     await exchange.token_for(NOTES)
     clock.now += 600 - 59  # inside the last minute
@@ -157,6 +167,22 @@ async def test_signed_out_is_not_signed_in_and_forgets_the_cache(exchange, igni,
     signed.session = IgniSession(access_token=SESSION)
     await exchange.token_for(NOTES)
     assert igni.tokens_issued == 2, "nothing cached may outlive a sign-out"
+
+
+async def test_a_token_cached_before_a_vm_slept_is_not_served_after_it(igni, signed, monkeypatch):
+    # A cloud VM paused or suspended: the monotonic clock stood still, the
+    # wall clock (the one a token's exp is on) did not.
+    wall = [1_000_000.0]
+    monkeypatch.setattr("time.time", lambda: wall[0])
+    monkeypatch.setattr("time.monotonic", lambda: 5.0)
+    exchange = ServiceTokenExchange(
+        api_url=lambda: API_URL, session=signed, transport=igni.transport()
+    )
+    await exchange.token_for(NOTES)
+    wall[0] += 3600
+    token = await exchange.token_for(NOTES)
+    assert igni.tokens_issued == 2, "an hour asleep: the cached token has expired"
+    assert exchange.remaining(token) > 60
 
 
 async def test_no_server_configured_is_not_signed_in(igni, signed):
@@ -236,6 +262,50 @@ async def test_the_secret_decides_the_audience(endpoint):
     got = await _get(ledger[ENV_TOKEN_URL], secret=ledger[ENV_TOKEN_SECRET])
     assert got.json()["service_url"] == LEDGER
     assert got.json()["access_token"].endswith(LEDGER)
+
+
+async def test_the_held_token_is_answered_without_a_refresh(endpoint, igni):
+    """One exchange per ten minutes: the second ask is the same token."""
+    env = await endpoint.grant("acme.notes", NOTES)
+
+    first = await _get(env[ENV_TOKEN_URL], secret=env[ENV_TOKEN_SECRET])
+    second = await _get(env[ENV_TOKEN_URL], secret=env[ENV_TOKEN_SECRET])
+
+    assert first.json()["access_token"] == second.json()["access_token"]
+    assert igni.tokens_issued == 1
+
+
+async def test_a_refused_token_is_asked_for_again(endpoint, igni):
+    """The service refused the token it was sent, so the process asks
+    for another: the held one would be refused again."""
+    env = await endpoint.grant("acme.notes", NOTES)
+    held = await _get(env[ENV_TOKEN_URL], secret=env[ENV_TOKEN_SECRET])
+    assert held.json()["access_token"] == f"token-1-for-{NOTES}"
+
+    fresh = await _get(
+        env[ENV_TOKEN_URL], secret=env[ENV_TOKEN_SECRET], headers={REFRESH_HEADER: "1"}
+    )
+
+    assert fresh.status_code == 200
+    assert fresh.json()["access_token"] == f"token-2-for-{NOTES}"
+    assert igni.tokens_issued == 2, "a refresh exchanges another token"
+
+
+async def test_a_refresh_is_for_the_same_service(endpoint, igni):
+    """The audience is not a parameter, and a refresh does not change it."""
+    await endpoint.grant("acme.notes", NOTES)
+    ledger = await endpoint.grant("acme.ledger", LEDGER)
+    await _get(ledger[ENV_TOKEN_URL], secret=ledger[ENV_TOKEN_SECRET])
+
+    fresh = await _get(
+        ledger[ENV_TOKEN_URL],
+        secret=ledger[ENV_TOKEN_SECRET],
+        headers={REFRESH_HEADER: "1"},
+    )
+
+    assert fresh.json()["service_url"] == LEDGER
+    assert fresh.json()["access_token"].endswith(LEDGER)
+    assert igni.tokens_issued == 2
 
 
 async def test_a_revoked_secret_is_401(endpoint):

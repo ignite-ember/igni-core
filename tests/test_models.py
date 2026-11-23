@@ -132,7 +132,7 @@ class TestModelRegistry:
 
 
 class TestEffectiveDefault:
-    """``ModelRegistry._effective_default`` resolves the active model
+    """``ModelRegistry.effective_default`` resolves the active model
     name when callers don't pass one. After dropping the hardcoded
     bundled default, the fallback chain is:
 
@@ -152,7 +152,7 @@ class TestEffectiveDefault:
                 "beta": {"provider": "openai_like", "model_id": "b"},
             },
         )
-        assert ModelRegistry(s)._effective_default() == "alpha"
+        assert ModelRegistry(s).effective_default() == "alpha"
 
     def test_empty_default_falls_back_to_first_registry_key(self):
         """Cloud discovery merges entries in response order. When the
@@ -165,20 +165,20 @@ class TestEffectiveDefault:
                 "beta": {"provider": "openai_like", "model_id": "b"},
             },
         )
-        assert ModelRegistry(s)._effective_default() == "alpha"
+        assert ModelRegistry(s).effective_default() == "alpha"
 
     def test_empty_default_and_empty_registry_returns_empty(self):
         """Brand-new install with no login + no user override →
-        ``_effective_default`` returns ``""`` so the session can
+        ``effective_default`` returns ``""`` so the session can
         still construct. :meth:`get_model` maps the empty case to a
         :class:`NoModelConfigured` placeholder — see
         ``test_get_model_returns_placeholder_when_unconfigured``."""
         s = self._settings_with("", {})
-        assert ModelRegistry(s)._effective_default() == ""
+        assert ModelRegistry(s).effective_default() == ""
 
     def test_get_model_uses_effective_default(self):
         """``get_model(None)`` and ``get_model("")`` both flow through
-        ``_effective_default`` so callers don't need to special-case
+        ``effective_default`` so callers don't need to special-case
         the empty string."""
         s = self._settings_with(
             "",
@@ -194,7 +194,7 @@ class TestEffectiveDefault:
         reg = ModelRegistry(s)
         # Don't actually construct the Agno client — just check
         # entry resolution under the same fallback path.
-        entry = reg._resolve_entry(reg._effective_default())
+        entry = reg._resolve_entry(reg.effective_default())
         assert entry is not None
         assert entry.model_id == "a"
 

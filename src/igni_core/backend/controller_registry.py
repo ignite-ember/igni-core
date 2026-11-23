@@ -175,6 +175,7 @@ class ControllerRegistry:
             stream_factory=hitl.stream_with_subagent,
             supervisor=supervisor,
             gate=gate,
+            drop_approvals=hitl.drop_waiting,
         )
 
         # Context needs pending_store for the crash-survival RPC.

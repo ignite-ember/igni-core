@@ -139,12 +139,13 @@ class HttpClientCloseResult(BaseModel):
 
 
 class CancelRunResult(BaseModel):
-    """Result of cancelling the current turn: whether one was running."""
+    """Result of cancelling the current turn: whether one was running or paused."""
 
     cancelled: bool = Field(
         description=(
-            "`true` when a turn was running and is being stopped: its stream "
-            "ends with an `info` and a `stream_end`. `false` when nothing was running."
+            "`true` when a turn was running or paused on an approval and is being "
+            "stopped: the session then streams an `info` and a `stream_end`. "
+            "`false` when nothing was running or paused, and nothing is streamed."
         )
     )
 

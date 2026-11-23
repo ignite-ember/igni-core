@@ -35,8 +35,8 @@ from igni_core.core.config.user_config_store import UserConfigStore
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
+    from igni_core.backend.sign_in_holder import SignInHolder
     from igni_core.core.config.settings import Settings
-    from igni_core.core.session import Session
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class AuthController:
 
     def __init__(
         self,
-        session: Session,
+        session: SignInHolder,
         settings: Settings,
         status_provider: Callable[[], msg.StatusUpdate],
         *,

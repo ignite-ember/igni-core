@@ -10,6 +10,7 @@ faked.
 from __future__ import annotations
 
 import re
+from io import StringIO
 from types import SimpleNamespace
 from typing import Any
 
@@ -19,11 +20,13 @@ from agno.models.response import ToolExecution
 from agno.run.agent import RunOutput
 from agno.run.base import RunStatus
 from pydantic import BaseModel
+from rich.console import Console
 
 from igni_core.core.hooks.extension_gate import ExtensionHookVerdict, extension_hook_gate
 from igni_core.core.session.compaction.context_budget import ContextBudget
 from igni_core.core.session.message_handler import MessageHandlerDeps, SessionMessageHandler
 from igni_core.core.session.schemas import MessageMedia
+from igni_core.core.utils.display import DisplayManager
 
 
 class _Hooks:
@@ -98,6 +101,7 @@ class _Rig:
         *,
         reminders: list[str] | None = None,
         prefix: str = "",
+        display: Any | None = None,
     ) -> None:
         self.team = team or _Team()
         self.hooks = hooks or _Hooks()
@@ -111,7 +115,7 @@ class _Rig:
             MessageHandlerDeps(
                 hooks=SimpleNamespace(executor=self.hooks),
                 audit=self.audit,
-                display=SimpleNamespace(print_error=self.errors.append),
+                display=display or SimpleNamespace(print_error=self.errors.append),
                 guardrail_runner=self.guardrails,
                 team_ref=lambda: self.team,
                 pending_reminders_drain=self._drain,
@@ -342,7 +346,7 @@ class TestAFailedTurnIsReportedAndTold:
         with caplog.at_level("WARNING"):
             reply = await rig.handler.handle("hi")
 
-        assert reply == "Error handling message: provider down"
+        assert reply == "provider down"
         assert rig.handler.last_failure == reply
         assert rig.errors == [reply]
         assert "the StopFailure hook failed" in caplog.text
@@ -365,7 +369,7 @@ class TestAFailedTurnIsReportedAndTold:
 
         reply = await rig.handler.handle("hi")
 
-        assert reply == "Error handling message: model not configured"
+        assert reply == "model not configured"
         assert rig.hooks.payloads("Stop") == []
         assert rig.hooks.payloads("StopFailure")[0].error_type == "failed"
         assert rig.audit.entries[0].details.error_type == "failed"
@@ -373,7 +377,7 @@ class TestAFailedTurnIsReportedAndTold:
     async def test_a_failed_run_with_no_content_says_the_run_failed(self):
         rig = _Rig(_Team(RunOutput(status=RunStatus.error, content=None)))
 
-        assert await rig.handler.handle("hi") == "Error handling message: The run failed."
+        assert await rig.handler.handle("hi") == "The run failed."
 
     async def test_a_pause_with_no_evaluator_names_the_tool_it_stopped_at(self):
         paused = RunOutput(
@@ -385,9 +389,43 @@ class TestAFailedTurnIsReportedAndTold:
 
         reply = await rig.handler.handle("hi")
 
-        assert "['run_shell_command']" in reply
+        assert "on run_shell_command but" in reply
+        assert "['run_shell_command']" not in reply
         assert "I need confirmation." not in reply
         assert rig.hooks.payloads("StopFailure")[0].error_type == "paused"
+
+    async def test_the_line_on_stderr_names_the_tool_and_nothing_internal(self):
+        """The whole line, through the real display.
+
+        The failure path used to wrap its message in an internal label
+        and to print the tool list as Python's ``repr``, so the person
+        at the terminal read ``Error: Error handling message: Run paused
+        for confirmation on ['run_shell_command'] but …`` — a line that
+        reads like a stack trace, and a tool name written as a Python
+        literal rather than as a name.
+        """
+        paused = RunOutput(
+            status=RunStatus.paused,
+            content="I need confirmation.",
+            tools=[ToolExecution(tool_name="run_shell_command", requires_confirmation=True)],
+        )
+        printed = StringIO()
+        rig = _Rig(
+            _Team(paused),
+            display=DisplayManager(console=Console(file=printed, no_color=True, width=1000)),
+        )
+
+        await rig.handler.handle("hi")
+
+        line = printed.getvalue()
+        assert "Error: Run paused for confirmation on run_shell_command but" in line
+        assert "Error handling message" not in line
+        assert "['run_shell_command']" not in line
+        assert line.count("Error:") == 1
+        # The three ways to decide up front survive the change.
+        assert "--read-only" in line
+        assert "permissions.allow" in line
+        assert "--auto-approve" in line
 
     async def test_a_failure_does_not_stick_to_the_next_turn(self):
         rig = _Rig(_Team(RuntimeError("once"), _done("fine")))

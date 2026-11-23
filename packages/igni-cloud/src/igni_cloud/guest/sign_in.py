@@ -50,6 +50,7 @@ class GuestCredential:
         self.keeper: VmCredentials | None = None
         self._transport: GuestTransport | None = None
         self._moved: Callable[[], None] = lambda: None
+        self._signed_in: Callable[[], None] = lambda: None
         #: The state last pushed to the windows; ``None`` before the keeper said any.
         self._last: StateChange | None = None
 
@@ -60,13 +61,18 @@ class GuestCredential:
         *,
         transport: GuestTransport,
         moved: Callable[[], None],
+        signed_in: Callable[[], None] | None = None,
     ) -> None:
         """Make the keeper, for a VM bound to a producer through ``producer.env``.
 
-        ``moved`` is called after each change of its state has been pushed.
+        ``moved`` is called after each change of its state has been pushed;
+        ``signed_in`` each time the state becomes ``ready`` from anything
+        else (the first good credential, a sign-in after a refusal).
         """
         self._transport = transport
         self._moved = moved
+        if signed_in is not None:
+            self._signed_in = signed_in
         if bound is None or api_url is None:
             return
         # Read now: ``producer.env`` named the files after igni started.
@@ -112,9 +118,15 @@ class GuestCredential:
         """Tell the windows, and the node agent through ``activity.json``."""
         if change.state is not CredentialState.READY:
             logger.warning("VM credential: %s (%s)", change.state.value, change.message)
+        was_ready = self._last is not None and self._last.state is CredentialState.READY
         self._last = change
         self._push(change)
         self._moved()
+        if change.state is CredentialState.READY and not was_ready:
+            try:
+                self._signed_in()
+            except Exception:  # noqa: BLE001 — a listener must not undo the credential
+                logger.exception("telling igni the VM is signed in failed")
 
     def _client_moved(self, event: str, client_id: str) -> None:
         """A client attached: send it the state last pushed, to it alone."""

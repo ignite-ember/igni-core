@@ -203,7 +203,7 @@ async def test_a_sync_is_scheduled_at_start_and_on_sign_in(startup, login):
     assert startup.distribution._tasks, "start-up schedules a sync without waiting for it"
     await _settle(startup)
 
-    login._notify_signed_in()
+    login.notify_signed_in()
     assert startup.distribution._tasks, "a sign-in schedules another"
     await _settle(startup)
     await startup.stop()

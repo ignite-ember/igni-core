@@ -1749,7 +1749,9 @@ OBJECTS = (
                 "Post a message in the chat, labelled as this extension. The agent "
                 "sees it and answers in the chat as usual. In a session that is not on "
                 "screen it starts a run, or is queued for the run going there (working "
-                "or waiting on an approval) — then without attachments.",
+                "or waiting on an approval) — then without attachments. In the session "
+                "on screen a run waiting on an approval ends with it, which refuses the "
+                "approval, so there it needs `chat.approvals` too.",
                 param("text", "str"),
                 param("attachments", "dict[str, str]", "Path → content.", optional=True),
                 permission="chat.post",
@@ -1797,7 +1799,14 @@ OBJECTS = (
                 result="list[json]",
                 elsewhere="chat.read",
             ),
-            method("cancel", "Stop the run.", permission="chat.control"),
+            method(
+                "cancel",
+                "Stop the run. A run waiting on an approval is ended only with "
+                "`chat.approvals` too: ending it refuses the approval. Either way the "
+                "chat then gets an `info` saying the run was cancelled and its "
+                "`streaming_done`.",
+                permission="chat.control",
+            ),
             method(
                 "cancel_agent",
                 "Stop one sub-agent's run.",

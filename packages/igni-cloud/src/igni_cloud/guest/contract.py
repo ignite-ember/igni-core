@@ -200,10 +200,22 @@ class CloudGuest(BackendHooks):
         notifications: ResumingNotifications | None = None,
         on_rebind: Callable[[], None] | None = None,
         api_url: Callable[[], str | None] | None = None,
+        on_signed_in: Callable[[], None] | None = None,
     ) -> None:
-        """Start what runs while igni serves the producer."""
+        """Start what runs while igni serves the producer.
+
+        ``on_signed_in`` is called each time the VM's credential becomes
+        good: igni started before the VM had one (a warm base binds later),
+        so what waits on a sign-in — the extensions igni server
+        distributes — runs then, and again after the person signs the VM
+        in anew.
+        """
         self.credential.open(
-            self.binding.bound, api_url, transport=transport, moved=self._rewrite_now
+            self.binding.bound,
+            api_url,
+            transport=transport,
+            moved=self._rewrite_now,
+            signed_in=on_signed_in,
         )
         if orchestrator is not None:
             orchestrator.mount(VmSignInRpc(self.vm_sign_in))

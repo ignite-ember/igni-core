@@ -97,12 +97,13 @@ class BaseStreamHandler(Generic[_TState]):
         """
         raise NotImplementedError
 
-    def _shape_final(self, final: str) -> str:
+    async def _shape_final(self, final: str) -> str:
         """Post-loop transformation of the raw final answer string.
 
         Default: return unchanged. The sub-agent handler overrides so
         a visualizer returns a short summary line instead of the raw
-        spec JSON.
+        spec JSON — and so it can wait, briefly, for the client's
+        verdict on the card before it says what the card shows.
         """
         return final
 
@@ -151,7 +152,7 @@ class BaseStreamHandler(Generic[_TState]):
 
         self._ensure_agent_completed_emitted()
         final = await self._finalizer().final_content()
-        return self._shape_final(final), self.state.log
+        return await self._shape_final(final), self.state.log
 
     def _first_stream(self) -> Any:
         """The stream the run starts with: a fresh run of the task."""

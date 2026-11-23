@@ -167,6 +167,25 @@ class PendingRequirementsStore:
             )
         return len(stale)
 
+    def drop_waiting(self) -> int:
+        """Drop every approval waiting on the person, with what the
+        evaluator decided for the same runs: the person cancelled the run
+        they paused, so no later answer may continue it.
+
+        The journal's rows go too, so a restart does not ask again.
+        Returns the number of approvals dropped.
+        """
+        dropped = list(self._pending)
+        runs = list(self._auto_resolved)
+        self._pending.clear()
+        self._auto_resolved.clear()
+        if self._journal is not None:
+            for req_id in dropped:
+                self._journal.forget(req_id)
+            for run_id in runs:
+                self._journal.forget_run(run_id, origin=ApprovalOrigin.AUTO_RESOLVED)
+        return len(dropped)
+
     # ── Read/mutate the auto-resolved bucket ──────────────────────
 
     def stash_auto_resolved(self, run_id: str, reqs: list[RunRequirement]) -> None:

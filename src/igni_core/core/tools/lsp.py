@@ -11,6 +11,14 @@ field back. Errors (server not configured, launch failed,
 server-side JSON-RPC error, timeout) come back as ``Error: ...``
 strings.
 
+The passthrough speaks both halves of JSON-RPC: a method the LSP
+spec defines as a notification is sent as a notification (no
+``id``, no reply — see :mod:`igni_core.core.lsp.methods`), and
+every other method is sent as a request. Without that split a
+notification sent as a request is refused with ``-32601 Unknown
+request``, the document is never opened, and the diagnostics that
+depend on it come back empty.
+
 Convenience wrappers (``lsp_definition``, ``lsp_hover``, …) are
 intentionally deferred: the model handles the LSP spec well in
 practice given its method/params shape, and a low-level
@@ -25,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 from agno.tools import Toolkit
 
 from igni_core.core.lsp.client import LspClientError
+from igni_core.core.lsp.methods import is_notification_method
 
 if TYPE_CHECKING:
     from igni_core.core.lsp.manager import LspServerManager
@@ -73,6 +82,25 @@ class LspTools(Toolkit):
 
         Returns the ``result`` field of the JSON-RPC response as
         a JSON string. ``Error: ...`` on any failure path.
+
+        A method the LSP spec defines as a notification —
+        ``textDocument/didOpen``, ``textDocument/didChange``,
+        ``textDocument/didClose``, ``textDocument/didSave``,
+        ``workspace/didChangeConfiguration``,
+        ``workspace/didChangeWatchedFiles``, ``$/cancelRequest``,
+        ``$/setTrace`` — is the one exception: it goes out as a
+        notification, with no id and no reply, and the answer is
+        ``{"notification": "<method>", "sent": true}``. A language
+        server answers a diagnostics request for a document only
+        after that document has been opened, so ``textDocument/didOpen``
+        comes first, with the file's ``text`` in the params.
+
+        The summary above and the argument descriptions are the
+        model's contract — the fine-tuning corpus pins them
+        character for character — so the split between a request
+        and a notification is described here, in the part of the
+        docstring the model does not read, rather than in the
+        summary.
         """
         parsed_params: Any = None
         if params:
@@ -81,6 +109,9 @@ class LspTools(Toolkit):
             except json.JSONDecodeError as exc:
                 return f"Error: params is not valid JSON — {exc}"
         try:
+            if is_notification_method(method):
+                await self._manager.notify(server, method, parsed_params)
+                return json.dumps({"notification": method, "sent": True}, indent=2)
             result = await self._manager.query(server, method, parsed_params)
         except LspClientError as exc:
             return f"Error: {exc}"

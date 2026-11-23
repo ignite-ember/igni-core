@@ -224,6 +224,22 @@ class SubAgentHITLCoordinator:
         """The run is over: its spawn link is of no use to anybody."""
         self.ledger.forget_spawn(run_id)
 
+    def drop_restored(self) -> int:
+        """The person cancelled the session's run: drop the approvals a
+        previous backend left, so answering one continues nothing.
+
+        Their rows and spawn links leave the journal, so a restart does
+        not ask again. A question a running spawn waits on is not
+        dropped here: cancelling the run stops the spawn, and the spawn
+        drops its own questions (``cleanup``). Returns how many went.
+        """
+        dropped = self.pending.drop_restored()
+        for handle in dropped:
+            self.ledger.forget(handle.requirement_id)
+        for run_id in {handle.entry.run_id for handle in dropped}:
+            self.ledger.forget_spawn(run_id)
+        return len(dropped)
+
     # ── Questions ─────────────────────────────────────────────────
 
     def waiting_requests(self) -> list[msg.RunPaused]:

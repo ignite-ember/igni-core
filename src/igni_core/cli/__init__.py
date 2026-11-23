@@ -44,6 +44,7 @@ from igni_core.cli.run_settings import CliSettingsLoader
 from igni_core.cli.trust import HeldWarnings, SessionTrust, trust_command
 from igni_core.core import air_gap
 from igni_core.core.agno_telemetry import AgnoTelemetry
+from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.group_policy.settings_fetcher import GroupPolicyUnavailable
 from igni_core.core.config.settings import Settings
 from igni_core.core.observability import OtelRuntime
@@ -213,6 +214,12 @@ def cli(ctx: click.Context, **_params: object) -> None:
     invocation = CliInvocation(options, settings, HeadlessRun())
     invocation.enable_debug_logging()
 
+    if starts_session:
+        # A model that resolves to nothing is refused here: before the
+        # resume lookup, before the worktree, before a session is made —
+        # and so before a failed run is saved as one.
+        invocation.check_model()
+
     invocation.resolve_resume_id()
     invocation.setup_worktree()
     invocation.carry_trust_into_worktree(folder)
@@ -232,9 +239,14 @@ def cli(ctx: click.Context, **_params: object) -> None:
 
 def _load_settings(options: CliOptions) -> Settings:
     """The run's settings; a configuration that does not validate is a
-    message naming each field, not a pydantic traceback (campaign R066)."""
+    message naming each field, not a pydantic traceback (campaign R066).
+
+    A run whose group has igni run for its people in the cloud starts no
+    session here: the run gate's refusal, said on the command line.
+    """
+    loader = CliSettingsLoader(options)
     try:
-        return CliSettingsLoader(options).load()
+        settings = loader.load()
     except ValidationError as exc:
         problems = "\n".join(
             f"  {'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
@@ -243,6 +255,10 @@ def _load_settings(options: CliOptions) -> Settings:
         raise click.ClickException(
             f"igni's settings are not valid (your config.yaml or settings files):\n{problems}"
         ) from exc
+    gate = RunGate()
+    if (options.message or options.pipe) and gate.close_for_mode(loader.mode()):
+        raise click.ClickException(gate.reason or RunGate.IN_THE_CLOUD)
+    return settings
 
 
 # Registered after the callback so the module reads top to bottom.

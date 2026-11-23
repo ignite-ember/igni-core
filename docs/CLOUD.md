@@ -19,7 +19,8 @@ its shared-backend sections are superseded by this document),
   - **apps**, which act only as themselves (no group, never on behalf
     of a person).
 - **The desktop stays as it is.** One person, one local backend, local
-  extension processes. No microVMs locally.
+  extension processes. No microVMs locally. The desktop app can also chat
+  with the person's cloud igni, through a Local / Cloud switch (section 12).
 
 ## 2. One microVM per producer
 
@@ -174,7 +175,7 @@ Clients of that API:
 
 | Client | Notes |
 |---|---|
-| igni's web UI | a person's windows; extension pages load here |
+| igni's web UI | a person's windows; extension pages load here: the desktop asks the gateway for a page-host stream (`/v1/connect?pages=1`), which the node agent marks `X-Igni-Gateway: pages`, and fetches the pages' files from `GET /v1/pages/{extension}/…`, which the gateway reads off igni's own port (`/.igni/pages/…`, section 12) |
 | `igni-client` (Python SDK, `packages/igni-client`) | built: connects as a person, an app or a space; sessions, runs, approvals, any RPC; commands and identity through the gateway. Speaks igni's client protocol, not yet the host object model (below) |
 | Apps | have no windows; window-only members stay app-only, sessions and messages work without a window |
 
@@ -182,8 +183,9 @@ Clients of that API:
 `user_message` / run-event / `rpc_request` protocol the web UI speaks —
 not the host object model. The model is reachable on that socket only
 through the `host_model` RPC made for an extension's page, and in the
-cloud no connection speaks for an extension ([SECURITY.md](SECURITY.md)
-§10). So `igni-client` 0.1 is built on the client protocol, which works locally
+cloud only a connection the node agent marked as a page host speaks for
+an extension ([SECURITY.md](SECURITY.md) §10); `igni-client` asks for no
+such mark. So `igni-client` 0.1 is built on the client protocol, which works locally
 and through Fleet with no change to igni or the gateway, and its
 contract with igni is held by `tests/test_igni_client_matches_the_protocol.py`.
 Typed host-model access for a producer's own client (`client.host`, with
@@ -327,7 +329,11 @@ Both travel the same way:
    with the same body; a full page (100) is followed at once by the
    next, otherwise it asks again a minute later. An app's token gets a
    403 and the pull stops; the cloud layer leaves pulling to its gateway
-   (`Layer.fetches_own_events`).
+   (`Layer.fetches_own_events`). igni server serves a person's events to
+   one side at a time (section 12): while their cloud igni owns them, the
+   desktop's pull answers `409 {"error": "events_owned_elsewhere",
+   "owner": "cloud"}`, and the pull idles — no failure, one line in the
+   log — asking again each minute until the events are this side's again.
 3. **An event** is handed to the extension it is for, over its host
    socket (`ServiceEvent`; 10 s at most). igni posts nothing for it. A
    handler for its type took it: delivered. None for its type, the
@@ -591,8 +597,10 @@ which the core never imports (a test holds it to that). The core asks
 seams instead of where it runs (`core/layer.py`): where logs go, where
 credentials come from, whether settings files under `~/.igni` count,
 whether state must be in a database, whether igni server's listing is
-kept in files, how MCP servers are approved, and what a backend does
-around its boot and serving. Each has the desktop's answer by default.
+kept in files, how MCP servers are approved, whether igni can open a
+native dialog, whether it runs on the person's own computer (which a
+group's mode governs, section 12), and what a backend does around its
+boot and serving. Each has the desktop's answer by default.
 `IGNI_PROFILE=cloud`, set by the image, is read in one place
 (`Layers`): it installs the layer the `igni.layers` entry point `cloud`
 names — `igni-cloud`'s `CloudLayer` — for the backend, `igni migrate` and
@@ -730,10 +738,13 @@ on its control stream. **Both platform calls are taken only from the
 platform's control connection:** the node agent adds `X-Igni-Gateway:
 control` to the upgrade of the gateway's `stream?control=1` and strips
 it from every other stream, and igni reads it off the connection, never
-off a message (a client sending either call gets an error). **No connection
-speaks for an extension:** a message naming one (`caller`) is refused from
-any stream, so no Fleet client reaches an extension's host-model grants,
-its `ext.*` methods or a token for its service;
+off a message (a client sending either call gets an error). **Only a page
+host speaks for an extension:** a message naming one (`caller`) is honoured
+only on a stream the node agent marked `X-Igni-Gateway: pages` — a
+person's desktop, which asked the gateway for it after the gateway
+verified their session — and refused on every other, the control stream
+included, so a program reaches no extension's host-model grants, `ext.*`
+methods or service token;
 igni exchanges it (`vm-sign-in` grant). An app's the node agent writes to
 the volume once; igni takes it when it appears, without a restart. The
 credential lives in `IGNI_VM_CREDENTIAL_FILE` (on the volume, `0600`,
@@ -1157,10 +1168,100 @@ subnet; 8 GB sparse image, loop device, dm-crypt `aes-xts-plain64`, p50 ms):
    those listed in `plugins.marketplaces`
    (`src/igni_core/core/plugins/source_policy.py`). See
    `docs/CONFIGURATION.md`, "Air-gapped mode".
-6. **Linux arm64:** `ripgrep~=15.1.0` has no wheel there, so installing
-   needs Rust. Fix before offering Graviton nodes?
+6. **Linux arm64:** igni-core requires PyPI's `ripgrep` only on macOS
+   arm64 and Linux x86_64, so an arm64 node needs a system `rg`. The
+   Linux pin, `ripgrep==14.1.0`, has a `manylinux_2_17` aarch64 wheel
+   too: extend its marker before offering Graviton nodes?
 7. **Deploy manifests:** the gateway, the node agent, per-node services
    and the shared base snapshot need Helm and compose definitions. This
    belongs with the delivery overhaul (Helm charts per server, an igni
    platform chart, compose, an offline bundle) that is already on the
    later TODO.
+
+## 12. The desktop and the person's cloud igni
+
+The desktop app can chat with a person's igni in the cloud as well as with
+the one on their computer: a Local / Cloud switch, and a group mode the
+admin sets in the portal. The design, and every repository's part of it, is
+the design doc `docs/design/local-cloud-switch.md`. It is built and merged:
+igni-core #44 and #46, igni-server #91, igni__cloudvm #12, igni-app #104 and
+#106, igni-sdk #41. The desktop side first ships in the first igni-app
+release after 1.0.5. igni-core's part:
+
+**The group's mode.** igni server signs it into the group pack as a
+top-level `mode`: `local`, `cloud` or `local_and_cloud`
+(`GroupPolicyPack.mode`, `GroupMode`). A pack without it, from an igni
+server that predates it, means `local_and_cloud`, which is how every group
+ran before; so, with a warning, does a value this igni does not know. The
+pack is verified before its mode is read, like everything else in it.
+
+**`cloud` closes the run gate on the person's computer.** The desktop's
+backend still boots, so signing in and the status work, but its `RunGate`
+is closed with the reason "Your organisation runs igni for you in the
+cloud." A chat message, a scheduled task and a workflow's agent call are
+refused with it, and `igni -m` / `igni -p` stops on the command line with
+the same words. The igni in the VM reads the same pack and keeps running:
+it is where the runs go (`Layer.runs_on_the_persons_computer`, false for
+the cloud layer). This is a policy, not a sandbox: an old igni ignores the
+field, and so does a desktop app older than the first igni-app release
+after 1.0.5, which keeps running igni locally in a `cloud` group. The
+guarantee `local` mode needs — no cloud compute — is igni server's and the
+gateway's, not the desktop's, so it holds for every desktop.
+
+**The account-only backend.** In `cloud` mode the desktop app starts
+`python -m igni_core.backend --account-only` instead of a full backend
+(`backend/account_backend.py`). It serves signing in and out, finding and
+choosing the server, the plan and the status — `login`,
+`reload_cloud_credentials`, `clear_cloud_credentials`, `get_cloud_plan`,
+`discover_server`, `set_server`, `get_status`, validated by the full
+backend's own bindings and answered by the same auth controller — and keeps
+the group pack in step with igni server, which is how the app learns of a
+mode change. It builds no session: no agent, tools, MCP server, extension,
+watcher, scheduler or event pull. Its run gate is closed for good: a chat
+message or a command is refused with the gate's reason, every other call
+with `unavailable`. It writes no discovery lockfile. Measured on macOS
+arm64, nobody signed in, 8 s after the ready line: 184 MB resident, against
+194 MB for a full backend before any window connects (most of either is
+imports; a full backend grows from there as sessions, MCP servers and
+extensions start).
+
+**Who pulls the events.** igni server holds one owner per person, `local`
+or `cloud`, and serves only the owner: the desktop's pull idles on its
+`409` (section 6), the gateway's pull for that person comes back empty.
+Neither side has to tell the other anything.
+
+**Extension pages in cloud mode.** An extension's pages, its indicators
+and its place in the list work as they do on the desktop
+(the design doc `docs/design/local-cloud-switch.md` §15). Two things in igni make that so:
+
+- *The page mark.* The node agent marks a person's desktop stream
+  `X-Igni-Gateway: pages`, as it marks the gateway's own `control`, and
+  strips the header from every client's. igni reads it off the handshake
+  (`StreamMark`, `Message.via_page_host`), never off a message. The cloud
+  layer lets a connection speak for an extension
+  (`Layer.connections_speak_for_extensions`) only with that mark
+  (`Layer.extension_calls_need_page_mark`): `caller` on any other
+  connection is refused before any handler, and past the mark
+  `authorise_caller` decides what the page may reach, as on the desktop.
+- *Page files on igni's port.* Each extension's origin still listens
+  inside the VM, where the desktop cannot reach it. Where the layer serves
+  page files (`Layer.serves_page_files`, the cloud), a plain `GET
+  /.igni/pages/<extension>/<path>` on igni's own WebSocket port, before any
+  upgrade, is answered by that extension's origin
+  (`extensions/page_files.py`, `ExtensionOrigin.answer`): the same files,
+  refusals, content types and CSP. Only a request with the `pages` mark and
+  igni's own `Host` gets a file; anything else is `404` (`421` for a Host).
+  A file is held in memory to answer, so one over 32 MiB is not served.
+  The gateway's `/v1/pages/{extension}/…` route fetches them, and the
+  desktop serves them to the frame from a loopback origin per extension.
+
+**What makes no sense on a VM.** A call that opens one of the operating
+system's dialogs — `pick_dir_native` — is refused in the cloud as an RPC
+error with the code `unavailable`, before any handler runs
+(`Layer.opens_native_dialogs`, `NATIVE_DIALOG_RPCS`). The app hides the
+folder picker in cloud mode; this is the answer for any other client.
+
+**The model sees none of it.** The client protocol is relayed unchanged;
+prompts, tools, injected blocks and result formats are those of the igni
+that runs the session. The run gate's reason is said to the person, never
+to the model.

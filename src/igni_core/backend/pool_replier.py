@@ -48,19 +48,21 @@ class PoolReplier:
             response = msg.RPCResponse.ok(request.id, answer.wire_result())
         await self._answer(request, response)
 
-    async def refuse(self, message: Message, reason: str) -> None:
+    async def refuse(
+        self, message: Message, reason: str, code: RpcErrorCode = RpcErrorCode.FORBIDDEN
+    ) -> None:
         """Tell the connection that sent ``message`` why it was not done.
 
         An RPC gets its error, a slash command an error result, and an
-        approval an ``Error`` and the end of the stream it would have
-        resumed, so a client following that stream stops waiting.
+        approval or a chat message an ``Error`` and the end of the stream
+        it would have resumed or started, so a client following that
+        stream stops waiting. ``code`` is the RPC's error code: by default
+        the connection may not make the call.
         """
         if isinstance(message, msg.RPCRequest):
             # An empty reason would make the answer a success with no payload:
             # a refusal must always read as one.
-            await self.reply(
-                message, PoolAnswer.failed(reason or "Refused.", RpcErrorCode.FORBIDDEN)
-            )
+            await self.reply(message, PoolAnswer.failed(reason or "Refused.", code))
             return
         if isinstance(message, msg.Command):
             await self._answer(

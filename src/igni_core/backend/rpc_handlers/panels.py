@@ -27,6 +27,7 @@ from igni_core.backend.rpc_handlers.panel_args import (
     RunShellArgs,
     SearchCodeArgs,
     VisualizationActionArgs,
+    VisualizationVerdictArgs,
 )
 from igni_core.backend.schemas_panels import (
     DiscardEphemeralResult,
@@ -46,6 +47,7 @@ from igni_core.backend.schemas_search import SearchCodeResult
 from igni_core.backend.schemas_visualization import (
     VisualizationAction,
     VisualizationActionResult,
+    VisualizationVerdictResult,
 )
 from igni_core.backend.server_files import ReadFileBytesResult, ReadFileResult
 from igni_core.core.agents import AgentInfo
@@ -261,6 +263,28 @@ class PanelRpcHandler(RpcHandler):
         return self._ctx.backend.dispatch_visualization_action(
             VisualizationAction(action=args.action, params=args.params or {})
         )
+
+    @rpc(
+        RpcMethod.REPORT_VISUALIZATION_VERDICT,
+        duration=RpcDuration.INSTANT,
+        args=VisualizationVerdictArgs,
+        scope=RpcScope.SESSION,
+    )
+    def report_visualization_verdict(
+        self, args: VisualizationVerdictArgs
+    ) -> VisualizationVerdictResult:
+        """Tell this session what the client drew of a card the agent drew.
+
+        ``spec_id`` is the card, ``revision`` which draw of it (the first
+        is 1), ``total`` how many elements the card has, ``failed`` the
+        elements the client could not draw — each with its type and the
+        client's word for why — and ``issues`` what was wrong with the
+        card's shape. The verdict is kept against that card and draw,
+        and the visualizer's recap quotes it, so the agent says what is
+        on the screen. Returns the card, the draw and how much of it
+        was drawn.
+        """
+        return self._ctx.backend.report_visualization_verdict(args.verdict())
 
     @rpc(RpcMethod.LIST_BACKGROUND_PROCESSES, args=NoArgs, scope=RpcScope.IGNI)
     def list_bg_processes(self, args: NoArgs) -> list[ProcessRow]:

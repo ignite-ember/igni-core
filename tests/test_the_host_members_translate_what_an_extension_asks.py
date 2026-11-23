@@ -16,6 +16,7 @@ import pytest
 from pydantic import ValidationError
 
 from igni_core import __version__
+from igni_core.backend.activity import Activity
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.grants import HostGrants
 from igni_core.extensions.host.members import ALL_MEMBERS
@@ -82,6 +83,10 @@ class Backend:
 
     def waiting_approvals(self, session_id: str) -> list[msg.Message]:
         return list(self.waiting)
+
+    def activity(self) -> Activity:
+        """Nothing running and nothing waiting: ``chat.cancel`` asks it."""
+        return Activity.of([])
 
 
 def host_of(gateway: Gateway, backend: Backend | None = None) -> Any:

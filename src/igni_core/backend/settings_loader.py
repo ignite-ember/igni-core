@@ -27,7 +27,9 @@ class BackendSettingsLoader:
 
     The gate is the one the composition root built and handed over, so the
     run controller, the scheduler and the workflow bridge all see the same
-    refusal.
+    refusal. A verified pack whose ``mode`` is ``cloud`` closes it too
+    (:meth:`RunGate.close_for_mode`): the organisation runs igni for this
+    person in the cloud.
     """
 
     def __init__(
@@ -39,8 +41,11 @@ class BackendSettingsLoader:
     def load(self) -> Settings:
         local_only = self._loader.local()
         try:
-            return self._loader.load(local_only)
+            settings = self._loader.load(local_only)
         except GroupPolicyUnavailable as exc:
             logger.error("group-policy: %s", exc)
             self._gate.close(str(exc))
             return local_only
+        if self._gate.close_for_mode(self._loader.mode()):
+            logger.info("group-policy: the group runs igni in the cloud; no agent run here")
+        return settings

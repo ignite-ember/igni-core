@@ -111,6 +111,16 @@ class LspServerManager:
         client = await self.ensure(name)
         return await client.request(method, params)
 
+    async def notify(self, name: str, method: str, params: Any) -> None:
+        """Send a single LSP notification — no reply expected.
+
+        The mirror of :meth:`query`: the same launch and the same
+        error normalisation, but the message goes out without an
+        ``id``, as the spec asks of a notification. A server that
+        answers anyway is ignored — the answer is not ours to read."""
+        client = await self.ensure(name)
+        await client.notify(method, params)
+
     async def shutdown_all(self) -> None:
         """Gracefully shut down every running client. Safe to call
         multiple times — already-stopped clients are no-ops."""

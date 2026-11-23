@@ -210,6 +210,10 @@ class BackendApp:
             login=login,
         )
         extensions.attach_faults(notifications.center)
+        # Where igni's port serves the pages' files (the cloud), from the
+        # origins the extension runtime starts.
+        if builder.page_files is not None:
+            builder.page_files.bind(extensions.origins)
         router = RpcRouter(
             backend=backend,
             login=login,
@@ -297,6 +301,7 @@ class BackendApp:
             notifications=notifications.center,
             on_rebind=supervisor.request_shutdown,
             api_url=access.api_url,
+            on_signed_in=login.notify_signed_in,
         )
         startup = ExtensionStartup(
             runtime=extensions,

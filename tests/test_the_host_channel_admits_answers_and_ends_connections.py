@@ -383,7 +383,13 @@ def test_a_signal_for_a_subscriber_that_is_not_reading_is_dropped_with_a_warning
     message = SignalMessage(signal="chat.run_completed", value=1)
     for _ in range(10_000):
         sink.deliver(message)
-    assert sink.queue.full() and not caplog.records
+    # The channel's own warnings, not anyone's: another library may log
+    # from a thread of its own while this test runs, and that is not this
+    # channel's silence to answer for.
+    channel_records = [
+        record for record in caplog.records if record.name == channel_module.__name__
+    ]
+    assert sink.queue.full() and not channel_records
 
     with caplog.at_level(logging.WARNING):
         sink.deliver(message)

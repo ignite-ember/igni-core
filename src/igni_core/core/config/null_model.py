@@ -76,6 +76,17 @@ class NoModelConfigured(OpenAILike):
     )
 
     @classmethod
+    def stale_default_message(cls, name: str, known: Iterable[str] = ()) -> str:
+        """The message for a model nobody registers.
+
+        One place, so the refusal the CLI gives before a run starts and
+        the failure the run would have hit say the same thing.
+        """
+        names = sorted(known)
+        listed = f"the models there: {', '.join(names)}" if names else "it is empty"
+        return cls.STALE_DEFAULT_MESSAGE.format(name=name, known=listed)
+
+    @classmethod
     def for_stale_default(cls, name: str, known: Iterable[str] = ()) -> NoModelConfigured:
         """Factory for a default that names a model nobody registers.
 
@@ -87,10 +98,8 @@ class NoModelConfigured(OpenAILike):
         ``Session.__init__`` and the backend died before it could say
         anything at all.
         """
-        names = sorted(known)
-        listed = f"the models there: {', '.join(names)}" if names else "it is empty"
         placeholder = cls()
-        placeholder.ERROR_MESSAGE = cls.STALE_DEFAULT_MESSAGE.format(name=name, known=listed)
+        placeholder.ERROR_MESSAGE = cls.stale_default_message(name, known)
         return placeholder
 
     EXPIRED_SIGN_IN_MESSAGE = (

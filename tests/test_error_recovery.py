@@ -10,6 +10,7 @@ import pytest
 
 from igni_core.backend.server import BackendServer
 from igni_core.core.config.schemas.models import ModelsConfig
+from igni_core.core.sub_agent_hitl import SubAgentHITLCoordinator
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Error
 from tests.backend_server_factory import make_backend
@@ -105,6 +106,10 @@ class TestBackendCancelRun:
         """cancel_run should not crash even if no team/run active."""
         session = MagicMock()
         session.main_team = MagicMock(spec=[])  # no run_id attr
+        # A cancel drops what the session's sub-agents left waiting: the
+        # real coordinator, with nothing waiting, rather than a mock's
+        # unanswerable count.
+        session.sub_agent_hitl = SubAgentHITLCoordinator()
         server = make_backend(session, settings=MagicMock())
 
         # Should not raise

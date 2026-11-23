@@ -24,6 +24,11 @@ from igni_core.backend.backend_bootstrap import BackendBootstrap
 from igni_core.backend.command_handler import CommandHandler
 from igni_core.backend.controller_registry import ControllerRegistry, Controllers
 from igni_core.backend.schemas_sessions import AutoNameResult
+from igni_core.backend.schemas_visualization import (
+    VisualizationAction,
+    VisualizationActionResult,
+    VisualizationVerdictResult,
+)
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustController, reload_settings
 from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.config.group_policy.gate import RunGate
@@ -39,6 +44,7 @@ from igni_core.core.session.event_log_schema import (
 from igni_core.core.session.schemas import PersistResult
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
+from igni_core.core.tools.visualization_verdicts import VERDICTS
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
@@ -58,10 +64,6 @@ if TYPE_CHECKING:
     )
     from igni_core.backend.schemas_plan import LatestPlanResult
     from igni_core.backend.schemas_rpc import GroupPolicyPackResult
-    from igni_core.backend.schemas_visualization import (
-        VisualizationAction,
-        VisualizationActionResult,
-    )
     from igni_core.backend.server_files import ReadFileBytesResult, ReadFileResult
     from igni_core.backend.server_processes import ProcessRow
     from igni_core.backend.session_pool import SessionRuntime
@@ -77,6 +79,7 @@ if TYPE_CHECKING:
     from igni_core.core.skills.parser import SkillInfo
     from igni_core.core.tools.orchestrate_contracts import OnProgress
     from igni_core.core.tools.todo import TodoItemWire
+    from igni_core.core.tools.visualization_verdicts import VisualizationVerdict
     from igni_core.core.utils.media_schemas import MediaAttachments
 
 logger = logging.getLogger(__name__)
@@ -195,6 +198,7 @@ class BackendServer:
         """Called by :class:`SessionRuntimeFactory` once the runtime
         that owns this backend is built."""
         self._runtime = runtime
+        self.controllers.runs.stream_to(runtime.transport.send)
 
     @property
     def runtime(self) -> SessionRuntime | None:
@@ -452,6 +456,19 @@ class BackendServer:
         self, entry: VisualizationAction
     ) -> VisualizationActionResult:
         return self.controllers.viz_actions.dispatch(entry)
+
+    def report_visualization_verdict(
+        self, verdict: VisualizationVerdict
+    ) -> VisualizationVerdictResult:
+        """Record what the client drew of a card, for the visualizer's recap.
+
+        The verdict is kept against the card's spec id and revision — a
+        card drawn twice has two verdicts, and a late one cannot answer
+        for the other draw — and the visualizer's recap quotes it, so
+        the agent is told what is on the screen.
+        """
+        VERDICTS.report(verdict)
+        return VisualizationVerdictResult.of(verdict)
 
     def list_background_processes(self) -> list[ProcessRow]:
         return self.controllers.processes.list()

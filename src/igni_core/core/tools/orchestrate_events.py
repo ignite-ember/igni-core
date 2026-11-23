@@ -183,6 +183,17 @@ class VisualizationDeltaEvent(OrchestrateEventBase):
     spec_id: str
     spec_json: str = Field(alias="json")
     final: bool = False
+    #: Which draw of the card this is. The first draw is 1. The
+    #: client sends it back with its verdict, so the verdict names
+    #: the draw it is about — a card drawn twice has two verdicts,
+    #: and a late one cannot answer for the other. A partial frame
+    #: carries none: it is not a draw, it is a frame of one.
+    revision: int | None = Field(
+        default=None,
+        description="Which draw of the card this is. The first draw is 1. The client sends it "
+        "back with its verdict, so the verdict names the draw it is about. Null on a partial "
+        "frame, which is not a draw.",
+    )
     #: The card this delta belongs to. It is stamped like every other
     #: event's, but it is not part of this event's wire shape: the
     #: frontend routes a visualisation by its ``spec_id``, and the
