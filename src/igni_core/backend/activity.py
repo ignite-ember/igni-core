@@ -24,6 +24,8 @@ from igni_core.core.activity import ActivityRegistry, BusyLease
 
 
 class ActivityState(StrEnum):
+    """What igni, or one of its chats, is doing: running, waiting on a person, or nothing."""
+
     #: Nothing running and nothing waiting.
     IDLE = "idle"
     #: Nothing running; one or more approvals wait on a person.

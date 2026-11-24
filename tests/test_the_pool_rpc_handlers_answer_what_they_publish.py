@@ -45,6 +45,7 @@ from igni_core.backend.pool_rpcs import (
     PoolRpc,
     PoolRpcRouter,
     ServiceEventRpc,
+    SessionStatesRpc,
     UnavailableRpc,
     VmSignInRpc,
 )
@@ -172,7 +173,7 @@ def test_the_router_exposes_the_replier_it_answers_on() -> None:
     assert isinstance(router.replier, PoolReplier)
 
 
-def test_the_pool_rpcs_are_the_six_handlers_and_publish_every_method_they_answer() -> None:
+def test_the_pool_rpcs_are_the_seven_handlers_and_publish_every_method_they_answer() -> None:
     assert set(POOL_RPCS) == {
         AttachSessionRpc,
         HostModelRpcs,
@@ -180,6 +181,7 @@ def test_the_pool_rpcs_are_the_six_handlers_and_publish_every_method_they_answer
         VmSignInRpc,
         ServiceEventRpc,
         ApproverTokenRpc,
+        SessionStatesRpc,
     }
     methods: set[RpcMethod] = set()
     for handler in POOL_RPCS:
@@ -194,6 +196,8 @@ def test_the_pool_rpcs_are_the_six_handlers_and_publish_every_method_they_answer
         RpcMethod.DELIVER_SERVICE_EVENTS,
         RpcMethod.MINT_APPROVER_TOKEN,
         RpcMethod.REVOKE_APPROVER_TOKENS,
+        RpcMethod.LIST_SESSION_STATES,
+        RpcMethod.MARK_SESSION_SEEN,
     }
 
 

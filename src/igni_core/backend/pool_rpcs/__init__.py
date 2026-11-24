@@ -9,6 +9,7 @@ from igni_core.backend.pool_rpcs.host_model import HostModelRpcs, PageHostModel
 from igni_core.backend.pool_rpcs.page_token import PageTokenRpc
 from igni_core.backend.pool_rpcs.platform_calls import ServiceEventRpc, VmSignIn, VmSignInRpc
 from igni_core.backend.pool_rpcs.router import PoolRpcRouter
+from igni_core.backend.pool_rpcs.session_states import SessionStatesRpc
 
 #: Every class that answers a pool-level call, whether or not this backend
 #: mounts it: the methods their tagged methods implement are the pool's.
@@ -19,6 +20,7 @@ POOL_RPCS: tuple[type[PoolRpc], ...] = (
     VmSignInRpc,
     ServiceEventRpc,
     ApproverTokenRpc,
+    SessionStatesRpc,
 )
 
 __all__ = [
@@ -32,6 +34,7 @@ __all__ = [
     "PoolRpc",
     "PoolRpcRouter",
     "ServiceEventRpc",
+    "SessionStatesRpc",
     "UnavailableRpc",
     "VmSignIn",
     "VmSignInRpc",

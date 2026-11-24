@@ -11,6 +11,7 @@ from functools import cached_property
 from igni_core.core.config.settings import Settings
 from igni_core.core.db.locator import StorageLocator
 from igni_core.core.session.session_directories import SessionDirectoryStore
+from igni_core.core.session.session_reads import SessionReadStore
 
 
 class GlobalStores:
@@ -27,9 +28,17 @@ class GlobalStores:
     def session_directories(self) -> SessionDirectoryStore:
         return SessionDirectoryStore.from_locator(self._locator)
 
+    @cached_property
+    def session_reads(self) -> SessionReadStore:
+        return SessionReadStore.from_locator(self._locator)
+
     def directory_of(self, session_id: str) -> str | None:
         """The project folder ``session_id`` is bound to, or ``None``."""
         return self.session_directories.get_dir(session_id)
+
+    def unread_sessions(self) -> set[str]:
+        """The chats with a finished run the person has not looked at."""
+        return self.session_reads.unread()
 
 
 __all__ = ["GlobalStores"]

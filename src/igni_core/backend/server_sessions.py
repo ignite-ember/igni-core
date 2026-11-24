@@ -49,6 +49,7 @@ class SessionsController:
         ],
         waiting_sessions: Callable[[], set[str]] | None = None,
         session_dir_lookup: Callable[[str], str | None] | None = None,
+        unread_sessions: Callable[[], set[str]] | None = None,
     ) -> None:
         self._session = session
         # session_id → the project folder it is bound to, so the sidebar
@@ -66,12 +67,17 @@ class SessionsController:
         # that is not loaded right now still waits on somebody, and a
         # person who just restarted the backend still has to be told.
         self._waiting_sessions = waiting_sessions
+        # The sessions with a finished run the person has not looked at
+        # (:class:`~igni_core.core.session.session_reads.SessionReadStore`).
+        # None → no session is reported unread.
+        self._unread_sessions = unread_sessions
 
     async def list_sessions(self) -> msg.SessionListResult:
         """List all sessions for this project. No cap — the FE has
         virtualisation."""
         rows = await self._session.persistence.list_sessions(limit=None)
         waiting = self._paused_sessions()
+        unread = self._unread_sessions() if self._unread_sessions is not None else set()
 
         def folder(session_id: str) -> str:
             if self._session_dir_lookup is None:
@@ -87,6 +93,7 @@ class SessionsController:
                 msg.SessionListEntry(
                     **row.model_dump(),
                     has_paused_run=row.session_id in waiting,
+                    unread=row.session_id in unread,
                     project_dir=folder(row.session_id),
                 )
                 for row in rows

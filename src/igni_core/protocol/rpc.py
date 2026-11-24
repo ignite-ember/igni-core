@@ -351,6 +351,12 @@ class RpcMethod(StrEnum):
     # it, held in memory (``backend/standing_policy.py``).
     MINT_APPROVER_TOKEN = "mint_approver_token"  # noqa: S105 — an RPC method's name, not a secret
     REVOKE_APPROVER_TOKENS = "revoke_approver_tokens"  # noqa: S105 — an RPC method's name, not a secret
+    # What each chat is doing and whether the person has seen its last
+    # run (``backend/session_state_watch.py``). Pool-level: the sidebar
+    # lists every chat, and what the person has seen is theirs, not a
+    # session's.
+    LIST_SESSION_STATES = "list_session_states"
+    MARK_SESSION_SEEN = "mark_session_seen"
 
 
 class RpcScope(StrEnum):

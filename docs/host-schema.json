@@ -778,6 +778,54 @@
       ]
     },
     {
+      "name": "SessionState",
+      "doc": "What one chat is doing, and whether it has a finished run the person has not seen.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "state",
+          "type": "str",
+          "doc": "`idle`, `waiting` or `running`.",
+          "optional": false
+        },
+        {
+          "name": "waiting_approvals",
+          "type": "int",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "unread",
+          "type": "bool",
+          "doc": "A run finished after the person last looked at the chat. Read state is the person's, across windows and devices.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SessionStates",
+      "doc": "The chats that are running, waiting or unread; any other chat is idle and read.",
+      "fields": [
+        {
+          "name": "sessions",
+          "type": "list[SessionState]",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "cause",
+          "type": "str",
+          "doc": "`activity`: a run moved. `seen`: a chat was marked seen.",
+          "optional": false
+        }
+      ]
+    },
+    {
       "name": "SessionAttached",
       "doc": "A session bound, and the folder it works in.",
       "fields": [
@@ -4739,6 +4787,19 @@
           "permission": null,
           "inherit_permission": true,
           "stage": 1
+        },
+        {
+          "name": "states",
+          "type": "list[SessionState]",
+          "doc": "The chats that are running, waiting on the person, or have a finished run the person has not seen. A chat not listed is idle and read.",
+          "writable": false,
+          "changed_by": [
+            "states_changed"
+          ],
+          "constant": false,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
         }
       ],
       "signals": [
@@ -4773,6 +4834,15 @@
           "name": "named",
           "type": "SessionNamed",
           "doc": "A session got its name.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "states_changed",
+          "type": "SessionStates",
+          "doc": "A chat started or finished a run, began or stopped waiting, or was seen.",
           "wire": null,
           "permission": null,
           "inherit_permission": true,
@@ -4844,6 +4914,23 @@
           ],
           "result": "SessionAttached",
           "doc": "Make sure a session is live, without showing it.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "mark_seen",
+          "params": [
+            {
+              "name": "session_id",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "SessionStates",
+          "doc": "Mark a chat seen, so its finished runs are no longer unread — for the person, in every window.",
           "permission": null,
           "inherit_permission": true,
           "stage": 1,

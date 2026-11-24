@@ -30,7 +30,7 @@ from igni_core.core.db.urls import DatabaseUrl
 
 #: alembic's head revision for ``igni_core/migrations``. Kept equal to
 #: it by a test; update it with every new migration.
-HEAD_REVISION = "b5d8e1c3a7f9"
+HEAD_REVISION = "c8e4f2a6b9d1"
 
 #: Where the migrator lives. Imported by name, and only when a database
 #: is behind — this is the database layer's one run-time import, the

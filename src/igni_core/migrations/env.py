@@ -20,6 +20,7 @@ from igni_core.core.session import pending_messages as _pending_messages  # noqa
 from igni_core.core.session import queued_messages as _queued_messages  # noqa: F401
 from igni_core.core.session import session_directories as _session_directories  # noqa: F401
 from igni_core.core.session import session_preferences as _session_preferences  # noqa: F401
+from igni_core.core.session import session_reads as _session_reads  # noqa: F401
 from igni_core.core.tools import process_store as _process_store  # noqa: F401
 from igni_core.core.utils import attachment_store as _attachment_store  # noqa: F401
 from igni_core.core.utils import memory_files as _memory_files  # noqa: F401

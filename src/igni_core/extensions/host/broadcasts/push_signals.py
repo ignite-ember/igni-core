@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from igni_core.backend.schemas_session_states import SessionStates
 from igni_core.backend.schemas_visualization import VisualizationActionDispatchedEvent
 from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
 from igni_core.core.session.event_log_schema import VisualizationDeltaPayload
@@ -46,6 +47,7 @@ from igni_core.protocol.schemas.push_payloads import (
 )
 
 NOTIFICATIONS_CHANGED = "notifications.changed"
+SESSION_STATES_CHANGED = "sessions.states_changed"
 
 
 class AgentEvent(Signal):
@@ -135,6 +137,7 @@ class PushSignals:
                 PushChannel.SESSION_NAMED: self._session_named,
                 PushChannel.PERMISSION_MODE_CHANGED: self._permission_mode_changed,
                 PushChannel.NOTIFICATIONS_CHANGED: self._notifications_changed,
+                PushChannel.SESSION_STATES_CHANGED: self._session_states_changed,
                 PushChannel.WORKFLOW_EVENT: self._workflow_event,
                 PushChannel.VISUALIZATION_ACTION_DISPATCHED: self._view_action,
                 PushChannel.PLAN_SUBMITTED: self._plan_submitted,
@@ -262,6 +265,12 @@ class PushSignals:
                 NotificationCounts.from_counts(counts.model_dump()).visible_to(grants).model_dump()
             ),
         )
+
+    def _session_states_changed(self, m: msg.PushNotification) -> None:
+        payload = read_push(SessionStates, m.payload, channel=m.channel)
+        if payload is None:
+            return
+        self._emitter.value(SESSION_STATES_CHANGED, payload)
 
     def _view_action(self, m: msg.PushNotification) -> None:
         payload = read_push(VisualizationActionDispatchedEvent, m.payload, channel=m.channel)

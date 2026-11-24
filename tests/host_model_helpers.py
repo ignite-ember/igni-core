@@ -84,6 +84,7 @@ from igni_core.core.session.schemas import (
     PersistResult,
     PlanDecisionResult,
 )
+from igni_core.core.session.session_reads import SessionReadStore
 from igni_core.core.skills.parser import SkillInfo
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
 from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
@@ -685,7 +686,17 @@ class HostRig:
         self.channel: HostChannel | None = None
         self._requests = 0
 
-    async def start(self, *, strict: bool = True) -> HostRig:
+    async def start(
+        self,
+        *,
+        strict: bool = True,
+        reads: SessionReadStore | None = None,
+        with_reads: bool = True,
+    ) -> HostRig:
+        """``reads`` is the chats' read marks — a store of the rig's own unless
+        given, as every backend has one; ``with_reads=False`` builds without."""
+        if reads is None and with_reads:
+            reads = SessionReadStore(self.tmp / "global.db")
         loop = asyncio.get_running_loop()
         queue: list[str] = []
         push = PushNotificationBridge(transport=self.transport, loop=loop, queue=queue)
@@ -735,6 +746,7 @@ class HostRig:
                 install_hooks=extension_hook_gate.install,
             ),
             store=self.store,
+            reads=reads,
             strict=strict,
         )
         self.channel = HostChannel(self.model, hooks=self.hooks, processes=ExtensionProcesses())

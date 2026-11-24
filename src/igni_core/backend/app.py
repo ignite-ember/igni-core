@@ -46,6 +46,7 @@ from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
+from igni_core.core.session.session_reads import SessionReadStore
 from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 from igni_core.extensions.principal import SignedInPerson
 from igni_core.extensions.store import ExtensionStore
@@ -278,6 +279,7 @@ class BackendApp:
             project_dir=launch.project_dir,
             store=store,
             notices=notifications.notices,
+            reads=SessionReadStore.from_locator(StorageLocator.from_settings(settings)),
         )
         ingress = ServiceEventIngress.build(
             producer_db=StorageLocator.from_settings(settings).project_database(launch.project_dir),

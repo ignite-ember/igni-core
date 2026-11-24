@@ -1,6 +1,16 @@
 {
   "access": "Who may make a call, as igni enforces it.\n\n* `client` \u2014 any connection igni admitted.\n* `approver` \u2014 igni's window, or a connection standing as an approver.\n* `window` \u2014 a connection standing as igni's window only.\n* `page` \u2014 an extension's page, through a window that sets the\n  request's `caller`, where the deployment lets a connection speak\n  for an extension.\n* `platform` \u2014 the platform. Where the deployment requires it (the\n  cloud), only on the gateway's control connection; elsewhere any\n  connection.\n\nA connection's standing is decided once, at the WebSocket handshake,\nby the token it offers:\n\n* **Local client, on the desktop.** igni's desktop app launches igni\n  with a per-launch secret that only the app holds, so only the app's\n  own window stands as the window. A client attaching with the token\n  igni publishes in its owner-only lockfile stands as a *program*: it\n  reaches every `client` call and the `platform` calls (the\n  desktop does not require a control connection for them), and is\n  refused every `window` and `approver` call, every approval\n  answer (`hitl_response`), any `caller`, and the window-only\n  slash commands. A client given an approver token (minted in igni's\n  window with `mint_approver_token`) stands as an *approver*: it\n  also answers approval requests and calls `approve_plan`, each\n  time once \u2014 no saved rule, no permission-mode change. It still\n  reaches no `window` call.\n* **Local client, igni started by hand.** With no launcher to give it\n  a secret, igni mints its own window token and prints it once to the\n  terminal; the connection that offers it stands as the window, and\n  the lockfile's program token makes a program, as on the desktop.\n* **Local client, igni started with the development switch**\n  (`IGNI_DEV_NO_WS_TOKEN=1`): no token at all, so every connection\n  stands as the window and reaches `client`, `approver` and\n  `window` calls.\n* **Through Fleet's gateway** (a cloud VM): the gateway authenticates\n  the client \u2014 with a person's key or an app's \u2014 and igni on the VM\n  takes no token, so every connection stands as the window and\n  reaches `client`, `approver` and `window` calls alike; igni\n  cannot tell a person's key from an app's. No connection there may\n  speak for an extension, so `page` calls are refused, and the\n  `platform` calls are taken only from the gateway's control\n  connection, which a client never has.",
   "defs": {
+    "ActivityState": {
+      "description": "What igni, or one of its chats, is doing: running, waiting on a person, or nothing.",
+      "enum": [
+        "idle",
+        "waiting",
+        "running"
+      ],
+      "title": "ActivityState",
+      "type": "string"
+    },
     "AgentCompletedEvent": {
       "description": "A sub-agent finished its run, with its token usage.",
       "properties": {
@@ -3460,6 +3470,23 @@
         }
       },
       "title": "MarkReadArgs",
+      "type": "object"
+    },
+    "MarkSessionSeenArgs": {
+      "additionalProperties": false,
+      "description": "Arguments for marking a chat as seen.",
+      "properties": {
+        "session_id": {
+          "description": "The chat the person looked at.",
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "title": "MarkSessionSeenArgs",
       "type": "object"
     },
     "MarkdownSlashCommand": {
@@ -7532,6 +7559,12 @@
           "title": "Summary",
           "type": "string"
         },
+        "unread": {
+          "default": false,
+          "description": "True when a run in this session finished after the person last looked at it (`mark_session_seen`).",
+          "title": "Unread",
+          "type": "boolean"
+        },
         "updated_at": {
           "default": 0,
           "description": "When the session last changed, in Unix seconds.",
@@ -7602,6 +7635,64 @@
         "name"
       ],
       "title": "SessionNamedPayload",
+      "type": "object"
+    },
+    "SessionState": {
+      "description": "One chat's state, and whether it is unread.",
+      "properties": {
+        "session_id": {
+          "description": "The chat's session id.",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/defs/ActivityState",
+          "default": "idle",
+          "description": "What the chat is doing. `running`: a run is working. `waiting`: a run waits on the person's answer to an approval. `idle`: nothing \u2014 also every chat that is not loaded."
+        },
+        "unread": {
+          "default": false,
+          "description": "True when a run in the chat finished after the person last looked at it (`mark_session_seen`). Read state is the person's, across windows and devices.",
+          "title": "Unread",
+          "type": "boolean"
+        },
+        "waiting_approvals": {
+          "default": 0,
+          "description": "How many approvals in the chat wait on the person.",
+          "title": "Waiting Approvals",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "title": "SessionState",
+      "type": "object"
+    },
+    "SessionStates": {
+      "description": "Every chat that is doing something or is unread; any other chat is idle and read.",
+      "properties": {
+        "cause": {
+          "default": "activity",
+          "description": "Why this was sent. `activity`: a run started, finished, paused or resumed, or the states were asked for. `seen`: a `mark_session_seen` call.",
+          "enum": [
+            "activity",
+            "seen"
+          ],
+          "title": "Cause",
+          "type": "string"
+        },
+        "sessions": {
+          "default": [],
+          "description": "The chats that are running, waiting or unread, each once.",
+          "items": {
+            "$ref": "#/defs/SessionState"
+          },
+          "title": "Sessions",
+          "type": "array"
+        }
+      },
+      "title": "SessionStates",
       "type": "object"
     },
     "SessionSwitch": {
@@ -12462,6 +12553,25 @@
       "summary": "List this session's MCP servers that need a first-use approval.",
       "timeout_seconds": 10
     },
+    "list_session_states": {
+      "access": "client",
+      "area": "session_states",
+      "args": {
+        "$ref": "#/defs/NoArgs"
+      },
+      "correlate": null,
+      "doc": "List the chats that are running, waiting on the person, or unread.\n\nTakes no arguments. Returns `sessions`: each chat that is doing\nsomething or has a finished run the person has not seen, with its\n`state` (`running`, `waiting` or `idle`), how many approvals\nwait in it, and `unread`. A chat not listed is idle and read.\n`session_states_changed` pushes the same shape whenever it moves.",
+      "duration": "io",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/SessionStates"
+      },
+      "scope": "igni",
+      "streams": [],
+      "summary": "List the chats that are running, waiting on the person, or unread.",
+      "timeout_seconds": 30
+    },
     "list_sessions": {
       "access": "client",
       "area": "session",
@@ -12585,6 +12695,30 @@
       "streams": [],
       "summary": "Read the state of this session's `/loop`.",
       "timeout_seconds": 10
+    },
+    "mark_session_seen": {
+      "access": "client",
+      "area": "session_states",
+      "args": {
+        "$ref": "#/defs/MarkSessionSeenArgs"
+      },
+      "correlate": {
+        "by": "payload.cause",
+        "equals": "seen"
+      },
+      "doc": "Mark a chat as seen, so it is no longer unread.\n\n`session_id` is the chat the person looked at. Its runs that\nfinished until now are read, wherever the person looks next; a run\nthat finishes later makes it unread again. Returns the chats'\nstates afterwards, also pushed to every window as\n`session_states_changed`. An unknown id is recorded all the same.",
+      "duration": "io",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/SessionStates"
+      },
+      "scope": "igni",
+      "streams": [
+        "push_notification:session_states_changed"
+      ],
+      "summary": "Mark a chat as seen, so it is no longer unread.",
+      "timeout_seconds": 30
     },
     "mcp_connect": {
       "access": "client",
@@ -13627,6 +13761,12 @@
       "doc": "A session was given a name.",
       "schema": {
         "$ref": "#/defs/SessionNamedPayload"
+      }
+    },
+    "session_states_changed": {
+      "doc": "Which chats are running, waiting on the person, or finished unseen moved.",
+      "schema": {
+        "$ref": "#/defs/SessionStates"
       }
     },
     "todos_updated": {

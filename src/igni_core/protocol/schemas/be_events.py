@@ -466,6 +466,13 @@ class SessionListEntry(BaseModel):
         default=False,
         description="True when this session has a run waiting for the person to answer an approval.",
     )
+    unread: bool = Field(
+        default=False,
+        description=(
+            "True when a run in this session finished after the person last looked at it "
+            "(`mark_session_seen`)."
+        ),
+    )
 
 
 class SessionListResult(Message):

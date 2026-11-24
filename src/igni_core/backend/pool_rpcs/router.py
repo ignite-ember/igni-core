@@ -3,7 +3,7 @@
 One table, keyed by method, of the handler that answers it. Every slot
 starts filled: a method whose collaborator is built after the
 orchestrator (the host model, the page tokens, the event inbox, the VM's
-credential keeper) answers why it cannot until that handler is mounted.
+credential keeper, the chats' states) answers why it cannot until that handler is mounted.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from igni_core.backend.pool_rpcs.base import PoolRpc
 from igni_core.backend.pool_rpcs.host_model import HostModelRpcs
 from igni_core.backend.pool_rpcs.page_token import PageTokenRpc
 from igni_core.backend.pool_rpcs.platform_calls import ServiceEventRpc, VmSignInRpc
+from igni_core.backend.pool_rpcs.session_states import SessionStatesRpc
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Message
 from igni_core.protocol.rpc import RpcMethod
@@ -32,6 +33,7 @@ class PoolRpcRouter:
             *PageTokenRpc.unmounted(),
             *VmSignInRpc.unmounted(),
             *ServiceEventRpc.unmounted(),
+            *SessionStatesRpc.unmounted(),
         ):
             self.mount(placeholder)
         self.mount(ApproverTokenRpc(None))

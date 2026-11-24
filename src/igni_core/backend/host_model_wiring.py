@@ -12,13 +12,15 @@ from pydantic import BaseModel, ConfigDict
 from igni_core.backend.activity_nudge import ActivityNudge
 from igni_core.backend.host_backend import OrchestratorHostBackend
 from igni_core.backend.observed_transport import ObservedTransport
-from igni_core.backend.pool_rpcs import HostModelRpcs
+from igni_core.backend.pool_rpcs import HostModelRpcs, SessionStatesRpc
 from igni_core.backend.rpc_watch import RpcWatch
 from igni_core.backend.session_orchestrator import SessionOrchestrator
+from igni_core.backend.session_state_watch import SessionStateWatch
 from igni_core.backend.workspace_signals import WorkspaceSignals
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.approvals.events import ApprovalEvents
 from igni_core.core.hooks.extension_gate import ExtensionHookAnswerer
+from igni_core.core.session.session_reads import SessionReadStore
 from igni_core.extensions.host.hooks import ExtensionHooks
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.host.model_config import HostModelConfig
@@ -65,6 +67,7 @@ class HostModelWiring:
         store: ExtensionStore | None = None,
         notices: ExtensionNoticeReceiver | None = None,
         workspace_signals: WorkspaceSignals | None = None,
+        reads: SessionReadStore | None = None,
         strict: bool = False,
     ) -> HostModel:
         backend = OrchestratorHostBackend(
@@ -74,9 +77,25 @@ class HostModelWiring:
             client_state=orchestrator.client_state,
             activities=hubs.activities,
         )
+        # The sidebar's marks follow the activity: running, waiting, unread.
+        states = (
+            SessionStateWatch(
+                reads=reads,
+                activity=backend.activity,
+                project_dir_of=backend.project_dir_of,
+                broadcast=backend.broadcast,
+            )
+            if reads is not None
+            else None
+        )
         model = HostModel.build(
             HostModelConfig(
-                backend=backend, registry=registry, store=store, notices=notices, strict=strict
+                backend=backend,
+                registry=registry,
+                store=store,
+                notices=notices,
+                session_states=states,
+                strict=strict,
             )
         )
         orchestrator.mount(HostModelRpcs(model))
@@ -95,6 +114,9 @@ class HostModelWiring:
         # Busy leases and wakes move the activity too (``core/activity``).
         with contextlib.suppress(RuntimeError):
             hubs.activities.watch(ActivityNudge(model, asyncio.get_running_loop()))
+        if states is not None:
+            model.services.activity_watch.listen(states.activity_moved)
+            orchestrator.mount(SessionStatesRpc(states))
 
         def closed(event: str, connection_id: str) -> None:
             if event == "detached":

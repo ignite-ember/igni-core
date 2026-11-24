@@ -319,6 +319,11 @@ class PushChannel(StrEnum):
     #: state last pushed to each client as it connects. The payload is
     #: :class:`~igni_core.backend.schemas_pool.VmCredentialState`.
     VM_CREDENTIAL = "vm_credential"
+    #: Which chats are running, waiting on the person, or finished unseen
+    #: moved — a run started or ended, or someone looked at a chat. Every
+    #: window gets it. The payload is
+    #: :class:`~igni_core.backend.schemas_session_states.SessionStates`.
+    SESSION_STATES_CHANGED = "session_states_changed"
     UNKNOWN = "unknown"
 
     @classmethod

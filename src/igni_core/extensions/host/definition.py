@@ -358,6 +358,25 @@ TYPES = (
         field("name", "str"),
     ),
     typedef(
+        "SessionState",
+        "What one chat is doing, and whether it has a finished run the person has not seen.",
+        field("session_id", "str"),
+        field("state", "str", "`idle`, `waiting` or `running`."),
+        field("waiting_approvals", "int"),
+        field(
+            "unread",
+            "bool",
+            "A run finished after the person last looked at the chat. Read state is the "
+            "person's, across windows and devices.",
+        ),
+    ),
+    typedef(
+        "SessionStates",
+        "The chats that are running, waiting or unread; any other chat is idle and read.",
+        field("sessions", "list[SessionState]"),
+        field("cause", "str", "`activity`: a run moved. `seen`: a chat was marked seen."),
+    ),
+    typedef(
         "SessionAttached",
         "A session bound, and the folder it works in.",
         field("session_id", "str"),
@@ -1628,6 +1647,13 @@ OBJECTS = (
                 changed_by=["current_changed"],
                 writable=True,
             ),
+            prop(
+                "states",
+                "list[SessionState]",
+                "The chats that are running, waiting on the person, or have a finished run "
+                "the person has not seen. A chat not listed is idle and read.",
+                changed_by=["states_changed"],
+            ),
         ),
         signals=(
             signal(
@@ -1639,6 +1665,11 @@ OBJECTS = (
             signal("listed", "SessionList", "The session list was read."),
             signal("cleared", "SessionCleared", "`/clear` renewed a session."),
             signal("named", "SessionNamed", "A session got its name."),
+            signal(
+                "states_changed",
+                "SessionStates",
+                "A chat started or finished a run, began or stopped waiting, or was seen.",
+            ),
         ),
         methods=(
             method(
@@ -1670,6 +1701,13 @@ OBJECTS = (
                 param("session_id", "str"),
                 param("project_dir", "str", optional=True),
                 result="SessionAttached",
+            ),
+            method(
+                "mark_seen",
+                "Mark a chat seen, so its finished runs are no longer unread — for the "
+                "person, in every window.",
+                param("session_id", "str"),
+                result="SessionStates",
             ),
         ),
     ),

@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from igni_core.backend.schemas_session_states import SessionState, SessionStates
+from igni_core.backend.session_state_watch import SessionStateWatch
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.members.base import Members
 from igni_core.extensions.host.members.call import Call
@@ -30,6 +32,24 @@ class SessionMembers(Members):
         result = await self.rpc(RpcMethod.LIST_SESSIONS, c=c)
         sessions = result.get("sessions", []) if isinstance(result, dict) else result
         return [SessionInfo.from_entry(s) for s in sessions or []]
+
+    @get("sessions.states")
+    async def states(self, c: Call) -> list[SessionState]:
+        return self._states().states().sessions
+
+    @call("sessions.mark_seen")
+    async def mark_seen(self, c: Call) -> SessionStates:
+        session_id = str(c.params["session_id"])
+        if not session_id:
+            raise HostModelError(ErrorCode.INVALID, "a session id is required")
+        return self._states().mark_seen(session_id)
+
+    def _states(self) -> SessionStateWatch:
+        if self.host.session_states is None:
+            raise HostModelError(
+                ErrorCode.UNAVAILABLE, "nothing follows the chats' states in this igni"
+            )
+        return self.host.session_states
 
     @get("sessions.current")
     async def current(self, c: Call) -> str:
