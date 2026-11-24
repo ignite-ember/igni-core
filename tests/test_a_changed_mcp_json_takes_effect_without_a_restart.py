@@ -178,6 +178,44 @@ async def test_the_next_message_picks_up_a_changed_config(home: Path, tmp_path: 
     assert pool.build_agents.call_count == 2
 
 
+async def test_the_first_connect_uses_the_config_on_disk_not_the_one_at_boot(
+    home: Path, tmp_path: Path
+) -> None:
+    """The manager reads the files when the session is built; the first
+    connect can come much later (the MCP page opened, the first message).
+    A file edited in between used to be ignored on that first connect —
+    the stale command was started, and only a second call saw the edit."""
+    project = tmp_path / "proj"
+    _write(project / ".mcp.json", {"srv": {"command": "at-boot"}})
+    manager = _manager(project)
+    phase, _, pool = _phase(manager)
+
+    _write(project / ".mcp.json", {"srv": {"command": "edited"}, "late": {"command": "c"}})
+
+    result = await phase.ensure()
+
+    assert manager.configs["srv"].command == "edited"
+    assert sorted(result.connected) == ["late", "srv"]
+    assert [call.args[0] for call in manager.connect.await_args_list] == ["srv", "late"]
+    assert pool.build_agents.call_count == 1, "one connect pass, one rebuild"
+
+
+async def test_the_first_connect_with_a_broken_file_uses_what_was_read_at_boot(
+    home: Path, tmp_path: Path
+) -> None:
+    project = tmp_path / "proj"
+    _write(project / ".mcp.json", {"srv": {"command": "at-boot"}})
+    manager = _manager(project)
+    phase, _, _ = _phase(manager)
+
+    (project / ".mcp.json").write_text("{ not json", encoding="utf-8")
+
+    result = await phase.ensure()
+
+    assert manager.configs["srv"].command == "at-boot"
+    assert result.connected == ["srv"]
+
+
 async def test_an_unchanged_config_makes_the_next_message_a_no_op(
     home: Path, tmp_path: Path
 ) -> None:
