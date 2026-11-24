@@ -25,7 +25,7 @@ def _pyproject() -> dict:
 
 def test_the_reported_version_is_the_version_the_wheel_is_built_with():
     assert igni_core.__version__ == _pyproject()["project"]["version"]
-    assert igni_core.__version__ == "1.0.5"
+    assert igni_core.__version__ == "1.0.6"
 
 
 def test_igni_is_the_one_command_and_it_starts_main():

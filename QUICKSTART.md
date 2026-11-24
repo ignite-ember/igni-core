@@ -24,7 +24,7 @@ brew install ignite-ember/tap/igni-core
 **pip:**
 
 ```bash
-pip install 'igni-core[decisions]==1.0.5'
+pip install 'igni-core[decisions]==1.0.6'
 ```
 
 **uv:**
@@ -33,7 +33,7 @@ pip install 'igni-core[decisions]==1.0.5'
 uv tool install igni-core
 ```
 
-Each of these installs **v1.0.5** — this repository's build: the
+Each of these installs **v1.0.6** — this repository's build: the
 `igni_core` module, the `igni` command and the decisions service. The
 package is `igni-core` on PyPI and the formula is `igni-core` in the tap;
 `igni` is the one command they install. The old name, `ignite-ember`, is
