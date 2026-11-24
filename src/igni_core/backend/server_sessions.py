@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from igni_core.backend.chat_history_searcher import ChatHistorySearcher
 from igni_core.backend.schemas_history import ChatHistoryEntry, ChatSearchHit, GlobalChatSearchHit
 from igni_core.backend.schemas_sessions import AutoNameResult
-from igni_core.core.session.schemas import PersistResult
+from igni_core.core.session.schemas import PersistResult, SessionListRow, SessionReadRow
 from igni_core.protocol import messages as msg
 
 if TYPE_CHECKING:
@@ -49,7 +49,7 @@ class SessionsController:
         ],
         waiting_sessions: Callable[[], set[str]] | None = None,
         session_dir_lookup: Callable[[str], str | None] | None = None,
-        unread_sessions: Callable[[], set[str]] | None = None,
+        session_marks: Callable[[], list[SessionReadRow]] | None = None,
     ) -> None:
         self._session = session
         # session_id → the project folder it is bound to, so the sidebar
@@ -67,17 +67,26 @@ class SessionsController:
         # that is not loaded right now still waits on somebody, and a
         # person who just restarted the backend still has to be told.
         self._waiting_sessions = waiting_sessions
-        # The sessions with a finished run the person has not looked at
+        # Each chat's read mark and last message
         # (:class:`~igni_core.core.session.session_reads.SessionReadStore`).
-        # None → no session is reported unread.
-        self._unread_sessions = unread_sessions
+        # None → no chat is unread, and the list keeps persistence's order.
+        self._session_marks = session_marks
 
     async def list_sessions(self) -> msg.SessionListResult:
         """List all sessions for this project. No cap — the FE has
         virtualisation."""
         rows = await self._session.persistence.list_sessions(limit=None)
         waiting = self._paused_sessions()
-        unread = self._unread_sessions() if self._unread_sessions is not None else set()
+        marks = {m.session_id: m for m in self._marks()}
+
+        def last_message_at(row: SessionListRow) -> int:
+            mark = marks.get(row.session_id)
+            return mark.last_message_at if mark is not None else 0
+
+        # Newest conversation first: by its last message, or — for a chat
+        # nothing recorded one for — by when it last changed. Stable, so
+        # persistence's order breaks ties.
+        rows = sorted(rows, key=lambda r: last_message_at(r) or r.updated_at * 1000, reverse=True)
 
         def folder(session_id: str) -> str:
             if self._session_dir_lookup is None:
@@ -93,12 +102,23 @@ class SessionsController:
                 msg.SessionListEntry(
                     **row.model_dump(),
                     has_paused_run=row.session_id in waiting,
-                    unread=row.session_id in unread,
+                    unread=row.session_id in marks and marks[row.session_id].unread,
+                    last_message_at=last_message_at(row),
                     project_dir=folder(row.session_id),
                 )
                 for row in rows
             ]
         )
+
+    def _marks(self) -> list[SessionReadRow]:
+        """Each chat's read mark and last message; none when nothing keeps them."""
+        if self._session_marks is None:
+            return []
+        try:
+            return self._session_marks()
+        except Exception as exc:
+            logger.debug("session list: could not read the chats' marks: %s", exc)
+            return []
 
     def _paused_sessions(self) -> set[str]:
         """The sessions with a run waiting for the person to answer.

@@ -89,17 +89,24 @@ async def test_a_run_shows_running_then_unread_then_read(
     assert rig.session.run_release is not None
     run = rig.orchestrator.spawn_dispatch(msg.UserMessage(text="Work.", client_id="ws-1"))
 
-    assert await _told(rig, "running") == [
-        {"session_id": "boot", "state": "running", "waiting_approvals": 0, "unread": False}
-    ]
+    [running] = await _told(rig, "running")
+    sent_at = running.pop("last_message_at")
+    assert running == {
+        "session_id": "boot",
+        "state": "running",
+        "waiting_approvals": 0,
+        "unread": False,
+    }
+    assert sent_at > 0, "the chat moves when the message goes in"
 
     rig.session.run_release.set()
     async with asyncio.timeout(5):
         await run
 
-    assert await _told(rig, "idle") == [
-        {"session_id": "boot", "state": "idle", "waiting_approvals": 0, "unread": True}
-    ]
+    [done] = await _told(rig, "idle")
+    replied_at = done.pop("last_message_at")
+    assert done == {"session_id": "boot", "state": "idle", "waiting_approvals": 0, "unread": True}
+    assert replied_at >= sent_at, "and again when the reply comes out"
     assert reads.unread() == {"boot"}
 
     listed = await _rpc(rig, "list_session_states")
@@ -145,9 +152,9 @@ async def test_an_extension_reads_the_states_marks_seen_and_hears_each_move(
 
     states = await rig.ask(ext, "get", "sessions.states")
     assert states.ok, states.error
-    assert states.result == [
-        {"session_id": "boot", "state": "idle", "waiting_approvals": 0, "unread": True}
-    ]
+    [state] = states.result
+    assert state.pop("last_message_at") > 0
+    assert state == {"session_id": "boot", "state": "idle", "waiting_approvals": 0, "unread": True}
 
     seen = await rig.ask(ext, "call", "sessions.mark_seen", session_id="boot")
     assert seen.ok, seen.error

@@ -10,6 +10,7 @@ from functools import cached_property
 
 from igni_core.core.config.settings import Settings
 from igni_core.core.db.locator import StorageLocator
+from igni_core.core.session.schemas import SessionReadRow
 from igni_core.core.session.session_directories import SessionDirectoryStore
 from igni_core.core.session.session_reads import SessionReadStore
 
@@ -36,9 +37,9 @@ class GlobalStores:
         """The project folder ``session_id`` is bound to, or ``None``."""
         return self.session_directories.get_dir(session_id)
 
-    def unread_sessions(self) -> set[str]:
-        """The chats with a finished run the person has not looked at."""
-        return self.session_reads.unread()
+    def session_marks(self) -> list[SessionReadRow]:
+        """Each chat's read mark and when its last message was."""
+        return self.session_reads.rows()
 
 
 __all__ = ["GlobalStores"]

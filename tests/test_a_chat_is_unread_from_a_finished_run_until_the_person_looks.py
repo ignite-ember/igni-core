@@ -1,4 +1,4 @@
-"""A chat is unread from a finished run until the person looks at it.
+"""A chat is unread from a finished run until the person looks at it, and is listed by its last message.
 
 The sidebar marks a chat whose run finished while the person was
 elsewhere. The marks come from :class:`SessionReadStore` in the global
@@ -16,7 +16,13 @@ What we pin:
   raises nothing;
 * an empty session id is not recorded;
 * ``list_sessions`` marks exactly the unread chats, and marks none when
-  nothing tells it.
+  nothing tells it;
+* a message going in and a reply coming out each move the chat's last
+  message; a look does not;
+* ``list_sessions`` is newest first by last message, falls back to
+  ``updated_at`` for a chat with none, keeps persistence's order on a tie
+  and when the marks cannot be read, and says each chat's
+  ``last_message_at``.
 """
 
 from __future__ import annotations
@@ -28,7 +34,7 @@ import pytest
 
 from igni_core.backend.server_sessions import SessionsController
 from igni_core.core.db.database import Database
-from igni_core.core.session.schemas import SessionListRow
+from igni_core.core.session.schemas import SessionListRow, SessionReadRow
 from igni_core.core.session.session_reads import SessionReadStore
 
 
@@ -149,15 +155,22 @@ def test_an_empty_session_id_is_not_recorded(reads: SessionReadStore) -> None:
     assert reads.unread() == set()
 
 
-def _controller(unread: SessionReadStore | None, *session_ids: str) -> SessionsController:
+def _controller(
+    reads: SessionReadStore | None, *session_ids: str, updated: dict[str, int] | None = None
+) -> SessionsController:
+    """Persistence lists ``session_ids`` in that order, each changed at ``updated[sid]`` (seconds)."""
+    changed = updated or {}
     session = MagicMock()
     session.persistence.list_sessions = AsyncMock(
-        return_value=[SessionListRow(session_id=sid, name=sid) for sid in session_ids]
+        return_value=[
+            SessionListRow(session_id=sid, name=sid, updated_at=changed.get(sid, 0))
+            for sid in session_ids
+        ]
     )
     return SessionsController(
         session=session,
         chat_history_provider=AsyncMock(return_value=[]),
-        unread_sessions=unread.unread if unread is not None else None,
+        session_marks=reads.rows if reads is not None else None,
     )
 
 
@@ -177,3 +190,104 @@ async def test_with_nothing_to_tell_it_no_chat_is_unread() -> None:
     listed = await _controller(None, "s1").list_sessions()
 
     assert [e.unread for e in listed.sessions] == [False]
+
+
+def _row(reads: SessionReadStore, session_id: str) -> SessionReadRow:
+    [row] = [r for r in reads.rows() if r.session_id == session_id]
+    return row
+
+
+def test_a_message_going_in_moves_the_chat_but_leaves_it_read(
+    reads: SessionReadStore, clock: Clock
+) -> None:
+    reads.message("s1", PROJECT)
+
+    assert _row(reads, "s1") == SessionReadRow(session_id="s1", unread=False, last_message_at=1_000)
+
+
+def test_the_reply_coming_out_moves_it_again(reads: SessionReadStore, clock: Clock) -> None:
+    reads.message("s1", PROJECT)
+    clock.now += 40
+
+    reads.finished("s1", PROJECT)
+
+    assert _row(reads, "s1") == SessionReadRow(session_id="s1", unread=True, last_message_at=1_040)
+
+
+def test_a_look_does_not_move_the_chat(reads: SessionReadStore, clock: Clock) -> None:
+    reads.finished("s1", PROJECT)
+    clock.now += 40
+
+    reads.seen("s1", PROJECT)
+
+    assert _row(reads, "s1").last_message_at == 1_000
+
+
+def test_a_store_that_cannot_be_read_has_no_rows(tmp_path: Path) -> None:
+    broken = SessionReadStore(tmp_path / "igni.db")
+    broken._db = MagicMock()
+    broken._db.sync_session.side_effect = OSError("disk gone")
+
+    assert broken.rows() == []
+
+
+async def test_the_list_is_newest_first_by_last_message(
+    reads: SessionReadStore, clock: Clock
+) -> None:
+    reads.message("old", PROJECT)
+    clock.now += 10
+    reads.message("new", PROJECT)
+
+    listed = await _controller(reads, "old", "new").list_sessions()
+
+    assert [(e.session_id, e.last_message_at) for e in listed.sessions] == [
+        ("new", 1_010),
+        ("old", 1_000),
+    ]
+
+
+async def test_a_chat_with_no_recorded_message_is_placed_by_when_it_changed(
+    reads: SessionReadStore,
+) -> None:
+    """A rename moves ``updated_at`` but records no message: the message wins."""
+    reads.message("talked", PROJECT)  # at 1_000 ms
+    listed = await _controller(
+        reads, "renamed", "talked", "ancient", updated={"renamed": 0, "ancient": 0}
+    ).list_sessions()
+    assert [e.session_id for e in listed.sessions] == ["talked", "renamed", "ancient"]
+
+    newer = await _controller(reads, "talked", "fresh", updated={"fresh": 2}).list_sessions()
+    assert [(e.session_id, e.last_message_at) for e in newer.sessions] == [
+        ("fresh", 0),
+        ("talked", 1_000),
+    ]
+
+
+async def test_a_tie_keeps_persistences_order(reads: SessionReadStore) -> None:
+    listed = await _controller(
+        reads, "a", "b", "c", updated={"a": 5, "b": 5, "c": 5}
+    ).list_sessions()
+
+    assert [e.session_id for e in listed.sessions] == ["a", "b", "c"]
+
+
+async def test_marks_that_cannot_be_read_leave_the_list_in_persistences_order() -> None:
+    session = MagicMock()
+    session.persistence.list_sessions = AsyncMock(
+        return_value=[
+            SessionListRow(session_id="b", updated_at=1),
+            SessionListRow(session_id="a", updated_at=9),
+        ]
+    )
+    controller = SessionsController(
+        session=session,
+        chat_history_provider=AsyncMock(return_value=[]),
+        session_marks=MagicMock(side_effect=OSError("disk gone")),
+    )
+
+    listed = await controller.list_sessions()
+
+    assert [(e.session_id, e.unread, e.last_message_at) for e in listed.sessions] == [
+        ("a", False, 0),
+        ("b", False, 0),
+    ]

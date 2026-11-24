@@ -7535,6 +7535,12 @@
           "title": "Has Paused Run",
           "type": "boolean"
         },
+        "last_message_at": {
+          "default": 0,
+          "description": "When a message last went into this session or a reply came out, in Unix milliseconds; `0` when igni has not recorded one. The list is newest first by it, or by `updated_at` for a session without one.",
+          "title": "Last Message At",
+          "type": "integer"
+        },
         "name": {
           "default": "",
           "description": "The session's name; empty when it has none.",
@@ -7640,6 +7646,12 @@
     "SessionState": {
       "description": "One chat's state, and whether it is unread.",
       "properties": {
+        "last_message_at": {
+          "default": 0,
+          "description": "When a message last went into the chat or a reply came out, in Unix milliseconds; `0` when igni has not recorded one. The sidebar lists chats by it, newest first.",
+          "title": "Last Message At",
+          "type": "integer"
+        },
         "session_id": {
           "description": "The chat's session id.",
           "title": "Session Id",

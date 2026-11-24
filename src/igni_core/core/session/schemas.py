@@ -206,6 +206,17 @@ class SessionListRow(BaseModel):
         )
 
 
+class SessionReadRow(BaseModel):
+    """One chat's read mark and when its last message was, from the global database."""
+
+    session_id: str
+    #: A run finished after the person last looked at the chat.
+    unread: bool = False
+    #: When a message last went into the chat or a reply came out, in Unix
+    #: milliseconds; ``0`` when igni has not seen one since it began keeping it.
+    last_message_at: int = 0
+
+
 class LoadResult(BaseModel, Generic[_T]):
     """Pattern-3 envelope for the persistence stores' load path.
 

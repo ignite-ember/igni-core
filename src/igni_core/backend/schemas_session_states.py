@@ -40,6 +40,14 @@ class SessionState(BaseModel):
             "(`mark_session_seen`). Read state is the person's, across windows and devices."
         ),
     )
+    last_message_at: int = Field(
+        default=0,
+        description=(
+            "When a message last went into the chat or a reply came out, in Unix "
+            "milliseconds; `0` when igni has not recorded one. The sidebar lists chats by it, "
+            "newest first."
+        ),
+    )
 
 
 class SessionStates(BaseModel):

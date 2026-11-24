@@ -1,8 +1,9 @@
-"""Every window is told which chats are running, waiting or unread.
+"""Every window is told which chats are running, waiting or unread, and when each last moved.
 
 :class:`SessionStateWatch` follows ``app.activity``: a chat that goes from
-running or waiting to idle has finished a run, which is recorded, and
-every window hears ``session_states_changed``. ``list_session_states``
+idle to running or waiting has had a message go in; one that goes back to
+idle has finished a run. Both are recorded, and every window hears
+``session_states_changed``. ``list_session_states``
 answers the same shape on demand; ``mark_session_seen`` reads a chat and
 tells every window.
 
@@ -10,6 +11,8 @@ What we pin:
 
 * running → idle and waiting → idle record a finished run; idle → idle,
   running → waiting and a chat first seen idle record none;
+* a message going in (idle, or never seen, → busy) records the chat's last
+  message; an approval answered (waiting → running) is not a new message;
 * the push lists the chats that are running, waiting or unread — an
   unread chat that is not loaded too — and no idle, read chat;
 * a move that changes no chat (a busy lease) pushes nothing again;
@@ -104,8 +107,15 @@ def test_a_run_that_ends_makes_its_chat_unread(rig: Rig) -> None:
     rig.moves(s1=IDLE)
 
     assert rig.reads.unread() == {"s1"}
+    # The message went in at 1001; the reply came out at 1002.
     assert rig.last() == {
-        "s1": {"session_id": "s1", "state": "idle", "waiting_approvals": 0, "unread": True}
+        "s1": {
+            "session_id": "s1",
+            "state": "idle",
+            "waiting_approvals": 0,
+            "unread": True,
+            "last_message_at": 1002,
+        }
     }
 
 
@@ -136,11 +146,27 @@ def test_a_chat_first_seen_idle_finished_nothing(rig: Rig) -> None:
     assert rig.pushes() == [{"sessions": [], "cause": "activity"}]
 
 
-def test_the_finish_is_recorded_in_the_chats_own_folder(rig: Rig) -> None:
+def test_each_mark_is_recorded_in_the_chats_own_folder(rig: Rig) -> None:
     rig.moves(s1=RUNNING, s2=RUNNING)
     rig.moves(s1=IDLE, s2=RUNNING)
 
-    assert rig.dirs == ["s1"]
+    assert rig.dirs == ["s1", "s2", "s1"]
+
+
+def test_a_message_going_in_moves_the_chat_at_once(rig: Rig) -> None:
+    rig.moves(s1=IDLE)
+    rig.moves(s1=RUNNING)
+
+    assert rig.last()["s1"]["last_message_at"] == 1001
+    assert rig.reads.unread() == set()
+
+
+def test_an_approval_answered_is_not_a_new_message(rig: Rig) -> None:
+    rig.moves(s1=RUNNING)
+    rig.moves(s1=WAITING)
+    rig.moves(s1=RUNNING)
+
+    assert rig.last()["s1"]["last_message_at"] == 1001
 
 
 def test_the_push_lists_running_waiting_and_unread_chats_only(rig: Rig) -> None:
@@ -148,9 +174,27 @@ def test_the_push_lists_running_waiting_and_unread_chats_only(rig: Rig) -> None:
     rig.moves(done=IDLE, busy=RUNNING, asks=WAITING, quiet=IDLE)
 
     assert rig.last() == {
-        "busy": {"session_id": "busy", "state": "running", "waiting_approvals": 0, "unread": False},
-        "asks": {"session_id": "asks", "state": "waiting", "waiting_approvals": 1, "unread": False},
-        "done": {"session_id": "done", "state": "idle", "waiting_approvals": 0, "unread": True},
+        "busy": {
+            "session_id": "busy",
+            "state": "running",
+            "waiting_approvals": 0,
+            "unread": False,
+            "last_message_at": 1003,
+        },
+        "asks": {
+            "session_id": "asks",
+            "state": "waiting",
+            "waiting_approvals": 1,
+            "unread": False,
+            "last_message_at": 1004,
+        },
+        "done": {
+            "session_id": "done",
+            "state": "idle",
+            "waiting_approvals": 0,
+            "unread": True,
+            "last_message_at": 1002,
+        },
     }
 
 
@@ -164,6 +208,7 @@ def test_an_unread_chat_that_is_not_loaded_is_listed(rig: Rig) -> None:
         "state": "idle",
         "waiting_approvals": 0,
         "unread": True,
+        "last_message_at": 1001,
     }
 
 
@@ -191,7 +236,7 @@ def test_a_chat_seen_while_it_runs_stays_listed_as_running(rig: Rig) -> None:
 
     answered = rig.watch.mark_seen("s1")
 
-    assert answered.sessions == [SessionState(session_id="s1", state=RUNNING)]
+    assert answered.sessions == [SessionState(session_id="s1", state=RUNNING, last_message_at=1001)]
 
 
 def test_after_a_look_the_same_states_are_pushed_again_on_a_move(rig: Rig) -> None:
