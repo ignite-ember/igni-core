@@ -182,6 +182,7 @@ RPC: dict[RpcMethod, str] = {
     RpcMethod.DISCARD_EPHEMERAL_AGENT: "agents.discard_ephemeral",
     RpcMethod.GET_SKILL_DETAILS: "commands.skill_details",
     RpcMethod.READ_FILE: "workspace.read",
+    RpcMethod.READ_FILE_BYTES: "workspace.read_bytes",
     RpcMethod.TRUNCATE_HISTORY: "chat.truncate",
     RpcMethod.SEARCH_CODE: "workspace.search",
     RpcMethod.COUNT_CONTEXT_TOKENS: "chat.context",

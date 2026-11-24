@@ -10,6 +10,7 @@ the real RPC tables, the real transport tap — with stand-in sessions.
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -120,6 +121,25 @@ class TestGrants:
         )
         refused(await rig.ask(docs, "call", "workspace.read", path="secret.txt"), "not_granted")
         refused(await rig.ask(docs, "call", "workspace.read", path="../outside"), "refused")
+
+    async def test_workspace_read_bytes_is_held_to_the_same_grant_and_paths(
+        self, rig: HostRig
+    ) -> None:
+        none = rig.install("acme.none")
+        docs = rig.install("acme.docs", workspace="read", workspacePaths=["docs/**"])
+        (rig.project / "docs").mkdir()
+        (rig.project / "docs" / "dot.png").write_bytes(b"\x89PNG\r\n")
+        (rig.project / "secret.png").write_bytes(b"s")
+        read = ok(await rig.ask(docs, "call", "workspace.read_bytes", path="docs/dot.png"))
+        assert base64.b64decode(read["data"]) == b"\x89PNG\r\n"
+        assert read["media_type"] == "image/png"
+        refused(
+            await rig.ask(none, "call", "workspace.read_bytes", path="docs/dot.png"), "not_granted"
+        )
+        refused(
+            await rig.ask(docs, "call", "workspace.read_bytes", path="secret.png"), "not_granted"
+        )
+        refused(await rig.ask(docs, "call", "workspace.read_bytes", path="../outside"), "refused")
 
     async def test_an_uninstalled_extension_is_nobody(self, rig: HostRig) -> None:
         refused(await rig.ask("acme.ghost", "get", "self.id"), "not_found")
