@@ -85,19 +85,21 @@ class McpInitPhase(SessionStartupPhase):
         ``~/.igni/debug.log`` when diagnosing a "MCP says connected
         but the agent doesn't see the tools" race.
 
-        On every later call the config files are re-read. A
-        ``.mcp.json`` added or edited after the backend started used
-        to be invisible until a restart (campaign R209/R669); now the
-        next message picks it up: the changed servers are connected,
-        the vanished ones are dropped, and the team is rebuilt.
+        Every call re-reads the config files first. A ``.mcp.json``
+        added or edited after the backend started used to be invisible
+        until a restart (campaign R209/R669); now the next call picks
+        it up: the changed servers are connected, the vanished ones are
+        dropped, and the team is rebuilt. That includes the first call:
+        the manager read the files when the session was built, and a
+        file edited before the first connect would otherwise start the
+        stale command.
 
         Returns a :class:`McpInitResult` describing the outcome so
         callers can branch on ``connected`` / ``failed`` /
         ``rebuilt`` / ``skipped_reason`` without log-scraping.
         """
-        reloaded: list[str] = []
+        reloaded = await self._reload_configs()
         if self._initialized:
-            reloaded = await self._reload_configs()
             if not reloaded:
                 return McpInitResult(skipped_reason="already_initialized")
         else:

@@ -52,10 +52,14 @@ class McpRpcHandler(RpcHandler):
 
     @rpc(RpcMethod.ENSURE_MCP, duration=RpcDuration.LONG, args=NoArgs, scope=RpcScope.SESSION)
     async def ensure_mcp(self, args: NoArgs) -> McpInitResult:
-        """Connect this session's configured MCP servers, once.
+        """Connect this session's configured MCP servers, re-reading their config.
 
-        Takes no arguments. The first call connects every configured server
-        and rebuilds the agent with their tools; later calls do nothing.
+        Takes no arguments. Every call re-reads the ``.mcp.json`` files
+        first, so a server added, edited or removed since the backend
+        started takes effect without a restart. The first call connects
+        every configured server and rebuilds the agent with their tools;
+        a later call reconnects only the servers whose config changed,
+        drops the removed ones, and does nothing when nothing changed.
         Returns the servers ``connected``, the ones that ``failed`` with
         their errors, whether the agent was ``rebuilt``, and, when nothing
         was done, ``skipped_reason`` (``already_initialized``,
