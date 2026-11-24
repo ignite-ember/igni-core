@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, SkipValidation
 
+from igni_core.backend.session_state_watch import SessionStateWatch
 from igni_core.core.decisions.laya import Laya, process_laya
 from igni_core.extensions.busy import ExtensionBusy
 from igni_core.extensions.host.activity import ActivityWatch
@@ -70,6 +71,8 @@ class HostServices(BaseModel):
     #: ``app.activity``, told when it moves.
     activity_watch: ActivityWatch
     observations: HostObservations
+    #: ``host.sessions.states`` and ``mark_seen``; ``None`` where nothing follows them.
+    session_states: SkipValidation[SessionStateWatch | None] = None
 
     @classmethod
     def build(cls, config: HostModelConfig) -> HostServices:
@@ -107,6 +110,7 @@ class HostServices(BaseModel):
             # Read through the backend each time, so a test can replace it.
             activity_watch=ActivityWatch(lambda: backend.activity(), bus.emit),
             observations=observations,
+            session_states=config.session_states,
         )
 
 

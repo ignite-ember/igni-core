@@ -479,3 +479,32 @@ def test_two_paused_runs_in_one_scope_are_both_kept_by_the_waiting_spawn_table(c
     _insert(chain, "waiting_spawns", columns, "'r1', 's', 'a', 'n', '[]', 1", ("o", "p", "j"))
     _insert(chain, "waiting_spawns", columns, "'r2', 's', 'a', 'n', '[]', 1", ("o", "p", "j"))
     assert chain.rows("SELECT run_id FROM waiting_spawns ORDER BY run_id") == [("r1",), ("r2",)]
+
+
+def test_the_session_reads_revision_keys_a_chat_once_per_person_and_holds_milliseconds(
+    chain: Chain,
+):
+    chain.up("b5d8e1c3a7f9")
+    assert "ember_session_reads" not in chain.tables()
+
+    chain.up("c8e4f2a6b9d1")
+    millis = 1_764_000_000_000
+    chain.run(
+        "INSERT INTO ember_session_reads (org, producer, project, session_id, finished_at)"
+        " VALUES ('o', 'p', 'j', 's1', :at)",
+        at=millis,
+    )
+    assert chain.rows("SELECT finished_at, seen_at FROM ember_session_reads") == [(millis, None)]
+    # A chat is in one project, so another project does not make it another row.
+    with pytest.raises(IntegrityError):
+        chain.run(
+            "INSERT INTO ember_session_reads (org, producer, project, session_id)"
+            " VALUES ('o', 'p', 'j2', 's1')"
+        )
+    chain.run(
+        "INSERT INTO ember_session_reads (org, producer, project, session_id)"
+        " VALUES ('o', 'p2', 'j', 's1')"
+    )
+
+    chain.down("b5d8e1c3a7f9")
+    assert "ember_session_reads" not in chain.tables()

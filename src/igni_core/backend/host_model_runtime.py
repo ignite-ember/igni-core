@@ -16,6 +16,7 @@ from igni_core.backend.workspace_signals import WorkspaceSignals
 from igni_core.core.activity import ActivityRegistry
 from igni_core.core.approvals.events import approval_events
 from igni_core.core.hooks.extension_gate import extension_hook_gate
+from igni_core.core.session.session_reads import SessionReadStore
 from igni_core.extensions.host.channel import HostChannel
 from igni_core.extensions.host.model import HostModel
 from igni_core.extensions.store import ExtensionStore
@@ -42,6 +43,7 @@ class HostModelRuntime:
         project_dir: Path,
         store: ExtensionStore,
         notices: ExtensionNoticeReceiver,
+        reads: SessionReadStore | None = None,
     ) -> HostModelRuntime:
         # The workspace poll does no git work until some extension
         # entitled to the workspace is subscribed.
@@ -60,6 +62,7 @@ class HostModelRuntime:
             store=store,
             notices=notices,
             workspace_signals=signals,
+            reads=reads,
         )
         return cls(
             model=model,

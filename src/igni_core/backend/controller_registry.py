@@ -193,6 +193,7 @@ class ControllerRegistry:
             chat_history_provider=chat_history.rebuild,
             waiting_sessions=journal.waiting_sessions if journal is not None else None,
             session_dir_lookup=stores.directory_of,
+            session_marks=stores.session_marks,
         )
 
         # One portal client, shared: sign-in and the group-policy fetch

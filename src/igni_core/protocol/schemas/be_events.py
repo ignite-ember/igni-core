@@ -466,6 +466,21 @@ class SessionListEntry(BaseModel):
         default=False,
         description="True when this session has a run waiting for the person to answer an approval.",
     )
+    unread: bool = Field(
+        default=False,
+        description=(
+            "True when a run in this session finished after the person last looked at it "
+            "(`mark_session_seen`)."
+        ),
+    )
+    last_message_at: int = Field(
+        default=0,
+        description=(
+            "When a message last went into this session or a reply came out, in Unix "
+            "milliseconds; `0` when igni has not recorded one. The list is newest first by it, "
+            "or by `updated_at` for a session without one."
+        ),
+    )
 
 
 class SessionListResult(Message):

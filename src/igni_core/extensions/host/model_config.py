@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, SkipValidation
 
+from igni_core.backend.session_state_watch import SessionStateWatch
 from igni_core.core.decisions import Laya
 from igni_core.extensions.host.backend import HostBackend
 from igni_core.extensions.host.definition import HOST_SCHEMA
@@ -28,6 +29,9 @@ class HostModelConfig(BaseModel):
     #: Laya, for ``host.decide``; the process's own (``process_laya``) unless a test
     #: brings its own.
     decisions: SkipValidation[Laya | None] = None
+    #: Which chats run, wait or are unread, for ``host.sessions.states``;
+    #: those members say unavailable without it.
+    session_states: SkipValidation[SessionStateWatch | None] = None
     #: The schema every request and signal is checked against.
     host_schema: HostSchema = HOST_SCHEMA
     #: Check every answer against the schema and fail loudly when it does

@@ -21,6 +21,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Field
 
 from igni_core.backend.schemas_pool import VmCredentialState
+from igni_core.backend.schemas_session_states import SessionStates
 from igni_core.backend.schemas_visualization import VisualizationActionDispatchedEvent
 from igni_core.backend.schemas_workflow_events import WorkflowEventRecord
 from igni_core.backend.workspace_trust_controller import WorkspaceTrustStatus
@@ -174,6 +175,10 @@ PUSH_PAYLOADS: Mapping[PushChannel, PushPayload] = {
         VmCredentialState,
         "A cloud VM's own credential changed state; a client that connects later "
         "is sent the state last pushed, to it alone.",
+    ),
+    PushChannel.SESSION_STATES_CHANGED: PushPayload(
+        SessionStates,
+        "Which chats are running, waiting on the person, or finished unseen moved.",
     ),
 }
 

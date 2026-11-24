@@ -206,6 +206,8 @@ RPC: dict[RpcMethod, str] = {
     RpcMethod.NOTIFICATIONS_LIST: "notifications.list",
     RpcMethod.NOTIFICATIONS_COUNTS: "notifications.unread",
     RpcMethod.NOTIFICATIONS_MARK_READ: "notifications.mark_read",
+    RpcMethod.LIST_SESSION_STATES: "sessions.states",
+    RpcMethod.MARK_SESSION_SEEN: "sessions.mark_seen",
 }
 
 #: RPC methods no member reaches, by the *Not reachable* row that says why.
@@ -334,6 +336,7 @@ PUSH: dict[PushChannel, str] = {
     PushChannel.HTTP_RETRY_ATTEMPT: "chat.retry",
     PushChannel.HTTP_RETRY_SUCCEEDED: "chat.retry",
     PushChannel.VISUALIZATION_ACTION_DISPATCHED: "chat.views.action",
+    PushChannel.SESSION_STATES_CHANGED: "sessions.states_changed",
 }
 
 PUSH_UNREACHABLE: dict[PushChannel, str] = {
