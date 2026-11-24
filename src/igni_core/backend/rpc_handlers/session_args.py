@@ -67,6 +67,13 @@ class SearchChatArgs(SessionIdArgs):
     limit: int = Field(default=50, description="Maximum number of hits to return.")
 
 
+class SearchAllChatsArgs(SessionRpcArgs):
+    """Arguments for searching across every session in the project."""
+
+    query: str = Field(description="Text to find, case-insensitive; blank finds nothing.")
+    limit: int = Field(default=50, description="Maximum number of hits to return in total.")
+
+
 class TruncateHistoryArgs(SessionIdArgs):
     """Arguments for dropping a run, and every later run, from a
     session's history."""

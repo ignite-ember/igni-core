@@ -302,3 +302,55 @@ class TestUploadingAnAttachment:
         assert result.size == 3_000_000
         assert seen and seen[0] != loop_thread
         assert ticks > 0
+
+
+class TestWhatAByteReadAnswers:
+    """``read_file_bytes`` — the image/PDF preview path. Same sandbox,
+    bigger cap, base64 body and a media-type hint."""
+
+    def test_the_base64_bytes_the_size_and_the_media_type(self, project: Path) -> None:
+        raw = b"\x89PNG\r\n\x1a\n\x00\x01\x02\x03"
+        (project / "logo.png").write_bytes(raw)
+
+        result = _controller(project).read_file_bytes("logo.png")
+
+        assert result.error == ""
+        assert base64.b64decode(result.data) == raw
+        assert result.size == len(raw)
+        assert result.media_type == "image/png"
+        assert result.path == str((project / "logo.png").resolve())
+
+    def test_a_pdf_is_named_as_one(self, project: Path) -> None:
+        (project / "doc.pdf").write_bytes(b"%PDF-1.4\n")
+
+        assert _controller(project).read_file_bytes("doc.pdf").media_type == "application/pdf"
+
+    def test_an_unknown_extension_has_no_media_type(self, project: Path) -> None:
+        (project / "blob.bin").write_bytes(b"\x00\x01")
+
+        assert _controller(project).read_file_bytes("blob.bin").media_type == ""
+
+    def test_a_path_outside_the_sandbox_is_refused(self, project: Path, tmp_path: Path) -> None:
+        outside = tmp_path / "secret.png"
+        outside.write_bytes(b"\x00")
+
+        result = _controller(project).read_file_bytes(str(outside))
+
+        assert result.data == ""
+        assert "Refused" in result.error
+
+    def test_a_file_over_the_cap_is_refused(self, project: Path) -> None:
+        from igni_core.backend.server_files import _READ_FILE_BYTES_MAX
+
+        (project / "big.png").write_bytes(b"\x00" * (_READ_FILE_BYTES_MAX + 1))
+
+        result = _controller(project).read_file_bytes("big.png")
+
+        assert result.data == ""
+        assert "too large" in result.error.lower()
+
+    def test_a_directory_is_refused(self, project: Path) -> None:
+        result = _controller(project).read_file_bytes("")
+
+        assert result.error == "Path is a directory."
+        assert result.data == ""

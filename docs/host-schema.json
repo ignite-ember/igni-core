@@ -2008,6 +2008,42 @@
       ]
     },
     {
+      "name": "FileBytes",
+      "doc": "A file's bytes, for showing an image or a PDF.",
+      "fields": [
+        {
+          "name": "path",
+          "type": "str",
+          "doc": "The file, as it was resolved.",
+          "optional": false
+        },
+        {
+          "name": "data",
+          "type": "str",
+          "doc": "Its bytes, base64-encoded; empty when `error` is set.",
+          "optional": false
+        },
+        {
+          "name": "size",
+          "type": "int",
+          "doc": "Its size in bytes.",
+          "optional": false
+        },
+        {
+          "name": "media_type",
+          "type": "str",
+          "doc": "What kind of file it is, e.g. `image/png`.",
+          "optional": false
+        },
+        {
+          "name": "error",
+          "type": "str",
+          "doc": "Why it could not be read; empty when it was.",
+          "optional": false
+        }
+      ]
+    },
+    {
       "name": "Head",
       "doc": "The project's git HEAD.",
       "fields": [
@@ -5233,6 +5269,29 @@
           "elsewhere": "chat.read"
         },
         {
+          "name": "search_all",
+          "params": [
+            {
+              "name": "query",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            },
+            {
+              "name": "limit",
+              "type": "int",
+              "doc": "At most this many in total; 50 by default.",
+              "optional": true
+            }
+          ],
+          "result": "list[json]",
+          "doc": "Search the transcripts of every session in the project.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": "chat.read"
+        },
+        {
           "name": "cancel",
           "params": [],
           "result": "None",
@@ -6234,6 +6293,23 @@
           ],
           "result": "json",
           "doc": "Read a file in the project.",
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1,
+          "elsewhere": null
+        },
+        {
+          "name": "read_bytes",
+          "params": [
+            {
+              "name": "path",
+              "type": "str",
+              "doc": "",
+              "optional": false
+            }
+          ],
+          "result": "FileBytes",
+          "doc": "Read a file in the project as bytes: base64-encoded, with its media type.",
           "permission": null,
           "inherit_permission": true,
           "stage": 1,

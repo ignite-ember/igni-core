@@ -6,6 +6,7 @@ import asyncio
 from typing import Any
 
 from igni_core.backend.file_opener import FileOpener
+from igni_core.backend.server_files import ReadFileBytesResult
 from igni_core.backend.workspace_watch import GitWorkspace
 from igni_core.extensions.host.errors import HostModelError
 from igni_core.extensions.host.members.base import Members
@@ -37,6 +38,12 @@ class WorkspaceMembers(Members):
     async def read(self, c: Call) -> Any:
         relative = self.scope(c).relative(str(c.params["path"]))
         return await self.rpc(RpcMethod.READ_FILE, PathArgs(path=relative), c=c)
+
+    @call("workspace.read_bytes")
+    async def read_bytes(self, c: Call) -> ReadFileBytesResult:
+        relative = self.scope(c).relative(str(c.params["path"]))
+        found = await self.rpc(RpcMethod.READ_FILE_BYTES, PathArgs(path=relative), c=c)
+        return ReadFileBytesResult.model_validate(found)
 
     @call("workspace.list")
     async def list_dir(self, c: Call) -> Any:

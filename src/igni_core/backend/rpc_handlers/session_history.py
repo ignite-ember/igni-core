@@ -10,12 +10,13 @@ from __future__ import annotations
 from igni_core.backend.rpc_binding import NoArgs, rpc
 from igni_core.backend.rpc_handlers.base import RpcHandler
 from igni_core.backend.rpc_handlers.session_args import (
+    SearchAllChatsArgs,
     SearchChatArgs,
     SessionIdArgs,
     TruncateHistoryArgs,
 )
 from igni_core.backend.schemas_context import TruncateHistoryResult
-from igni_core.backend.schemas_history import ChatSearchHit, ChatTurn
+from igni_core.backend.schemas_history import ChatSearchHit, ChatTurn, GlobalChatSearchHit
 from igni_core.core.session.schemas import ContextBreakdown
 from igni_core.protocol.rpc import RpcDuration, RpcMethod, RpcScope
 
@@ -55,6 +56,23 @@ class SessionHistoryRpcHandler(RpcHandler):
         around it, and where the match sits in the snippet.
         """
         return await self._ctx.backend.search_chat(args.session_id, args.query, args.limit)
+
+    @rpc(
+        RpcMethod.SEARCH_ALL_CHATS,
+        duration=RpcDuration.IO,
+        args=SearchAllChatsArgs,
+        scope=RpcScope.SESSION,
+    )
+    async def search_all_chats(self, args: SearchAllChatsArgs) -> list[GlobalChatSearchHit]:
+        """Find text across every session in the project, not just one.
+
+        ``query`` is the text to find (case-insensitive; blank finds
+        nothing); ``limit`` caps the total hits (default 50). Returns one
+        hit per match, newest session first, each carrying the
+        ``session_id`` and ``session_name`` it was found in alongside the
+        same fields :meth:`search_chat` returns.
+        """
+        return await self._ctx.backend.search_all_chats(args.query, args.limit)
 
     @rpc(
         RpcMethod.TRUNCATE_HISTORY,

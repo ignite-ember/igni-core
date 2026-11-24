@@ -15,6 +15,7 @@ tests are about what reaches them, not what they answer.
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import sys
 from collections.abc import AsyncIterator
@@ -574,6 +575,16 @@ class FakeSession:
             "path": path,
             "contents": (self.project_dir / path).read_text(),
             "language": "",
+            "error": "",
+        }
+
+    def read_file_bytes(self, path: str) -> dict:
+        data = (self.project_dir / path).read_bytes()
+        return {
+            "path": path,
+            "data": base64.b64encode(data).decode(),
+            "size": len(data),
+            "media_type": "image/png" if path.endswith(".png") else "application/octet-stream",
             "error": "",
         }
 

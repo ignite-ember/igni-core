@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from igni_core.backend.global_stores import GlobalStores
 from igni_core.backend.group_policy_sync import GroupPolicySync
 from igni_core.backend.hitl_controller import HitlController
 from igni_core.backend.hitl_tracer import HITLTracer
@@ -186,10 +187,12 @@ class ControllerRegistry:
         )
 
         chat_history = ChatHistoryRebuilder(session=session)
+        stores = GlobalStores(settings)
         sessions = SessionsController(
             session=session,
             chat_history_provider=chat_history.rebuild,
             waiting_sessions=journal.waiting_sessions if journal is not None else None,
+            session_dir_lookup=stores.directory_of,
         )
 
         # One portal client, shared: sign-in and the group-policy fetch

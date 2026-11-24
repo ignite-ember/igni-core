@@ -53,7 +53,7 @@ if TYPE_CHECKING:
         PendingMessage,
         TruncateHistoryResult,
     )
-    from igni_core.backend.schemas_history import ChatSearchHit, ChatTurn
+    from igni_core.backend.schemas_history import ChatSearchHit, ChatTurn, GlobalChatSearchHit
     from igni_core.backend.schemas_loop import LoopStatusSnapshot
     from igni_core.backend.schemas_mcp import MCPServerSnapshot, MCPServerSummary
     from igni_core.backend.schemas_panels import (
@@ -64,7 +64,7 @@ if TYPE_CHECKING:
     )
     from igni_core.backend.schemas_plan import LatestPlanResult
     from igni_core.backend.schemas_rpc import GroupPolicyPackResult
-    from igni_core.backend.server_files import ReadFileResult
+    from igni_core.backend.server_files import ReadFileBytesResult, ReadFileResult
     from igni_core.backend.server_processes import ProcessRow
     from igni_core.backend.session_pool import SessionRuntime
     from igni_core.core.agents import AgentInfo
@@ -366,6 +366,9 @@ class BackendServer:
     ) -> list[ChatSearchHit]:
         return await self.controllers.sessions.search_chat(session_id, query, limit)
 
+    async def search_all_chats(self, query: str, limit: int = 50) -> list[GlobalChatSearchHit]:
+        return await self.controllers.sessions.search_all_chats(query, limit)
+
     async def get_chat_history(self, session_id: str) -> list[ChatTurn]:
         return await self.controllers.chat_history.rebuild(session_id)
 
@@ -439,6 +442,9 @@ class BackendServer:
 
     def read_file(self, path: str) -> ReadFileResult:
         return self.controllers.files.read_file(path)
+
+    def read_file_bytes(self, path: str) -> ReadFileBytesResult:
+        return self.controllers.files.read_file_bytes(path)
 
     def get_latest_plan(self) -> LatestPlanResult:
         return self.controllers.plan_snapshots.latest()

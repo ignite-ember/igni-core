@@ -731,6 +731,15 @@ TYPES = (
         field("payload", "json"),
     ),
     typedef(
+        "FileBytes",
+        "A file's bytes, for showing an image or a PDF.",
+        field("path", "str", "The file, as it was resolved."),
+        field("data", "str", "Its bytes, base64-encoded; empty when `error` is set."),
+        field("size", "int", "Its size in bytes."),
+        field("media_type", "str", "What kind of file it is, e.g. `image/png`."),
+        field("error", "str", "Why it could not be read; empty when it was."),
+    ),
+    typedef(
         "Head",
         "The project's git HEAD.",
         field("commit_sha", "str"),
@@ -1792,6 +1801,14 @@ OBJECTS = (
                 elsewhere="chat.read",
             ),
             method(
+                "search_all",
+                "Search the transcripts of every session in the project.",
+                param("query", "str"),
+                param("limit", "int", "At most this many in total; 50 by default.", optional=True),
+                result="list[json]",
+                elsewhere="chat.read",
+            ),
+            method(
                 "cancel",
                 "Stop the run. A run waiting on an approval is ended only with "
                 "`chat.approvals` too: ending it refuses the approval. Either way the "
@@ -2106,6 +2123,12 @@ OBJECTS = (
         ),
         methods=(
             method("read", "Read a file in the project.", param("path", "str"), result="json"),
+            method(
+                "read_bytes",
+                "Read a file in the project as bytes: base64-encoded, with its media type.",
+                param("path", "str"),
+                result="FileBytes",
+            ),
             method(
                 "list",
                 "List a directory in the project.",

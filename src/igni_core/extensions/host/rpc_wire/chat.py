@@ -19,6 +19,11 @@ class SearchChatArgs(RpcArgs):
     limit: int
 
 
+class SearchAllChatsArgs(RpcArgs):
+    query: str
+    limit: int
+
+
 class RunIdArgs(RpcArgs):
     run_id: str
 
@@ -67,6 +72,7 @@ __all__ = [
     "DispatchViewArgs",
     "LearningsArgs",
     "RunIdArgs",
+    "SearchAllChatsArgs",
     "SearchChatArgs",
     "SessionArgs",
     "TruncateArgs",

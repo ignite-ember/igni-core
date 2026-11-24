@@ -544,6 +544,11 @@ class MarketplacePluginInfo(BaseModel):
         default="",
         description="Git branch to install from. Empty for the repository's default branch.",
     )
+    category: str = Field(
+        default="",
+        description="Category the catalog files the plugin under (e.g. `development`, "
+        "`security`). Empty when the catalog gives none.",
+    )
 
     @classmethod
     def from_catalog_entry(
@@ -575,6 +580,7 @@ class MarketplacePluginInfo(BaseModel):
             description=entry.description or "",
             version=entry.version or "",
             branch=entry.branch or "",
+            category=str(getattr(entry, "category", "") or ""),
         )
 
 

@@ -2141,6 +2141,67 @@
       "title": "FloorNotification",
       "type": "object"
     },
+    "GlobalChatSearchHit": {
+      "description": "One match from searching across every session in the project.",
+      "properties": {
+        "created_at": {
+          "default": 0,
+          "description": "When the turn was created, in Unix epoch seconds; `0` if unknown.",
+          "title": "Created At",
+          "type": "integer"
+        },
+        "history_index": {
+          "default": 0,
+          "description": "Index of the matching turn in the list returned by `get_chat_history`; use it to jump to that turn.",
+          "title": "History Index",
+          "type": "integer"
+        },
+        "match_end": {
+          "default": 0,
+          "description": "End offset (exclusive) of the match within `snippet`.",
+          "title": "Match End",
+          "type": "integer"
+        },
+        "match_start": {
+          "default": 0,
+          "description": "Start offset of the match within `snippet` (not the full text).",
+          "title": "Match Start",
+          "type": "integer"
+        },
+        "role": {
+          "default": "",
+          "description": "Kind of the matching turn, e.g. `user`, `assistant` or `tool`.",
+          "title": "Role",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "description": "Id of the agent run the matching turn belongs to.",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "session_id": {
+          "default": "",
+          "description": "Id of the session the match is in; open it to read the turn.",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "session_name": {
+          "default": "",
+          "description": "Name of that session, or empty when it has none.",
+          "title": "Session Name",
+          "type": "string"
+        },
+        "snippet": {
+          "default": "",
+          "description": "Excerpt of the turn's text around the match.",
+          "title": "Snippet",
+          "type": "string"
+        }
+      },
+      "title": "GlobalChatSearchHit",
+      "type": "object"
+    },
     "GroupPolicyPackResult": {
       "description": "The policy pack of the group the current user belongs to on igni\nserver. Every field is empty when the user belongs to no group.",
       "properties": {
@@ -3493,6 +3554,12 @@
           "default": "",
           "description": "Git branch to install from. Empty for the repository's default branch.",
           "title": "Branch",
+          "type": "string"
+        },
+        "category": {
+          "default": "",
+          "description": "Category the catalog files the plugin under (e.g. `development`, `security`). Empty when the catalog gives none.",
+          "title": "Category",
           "type": "string"
         },
         "description": {
@@ -5922,6 +5989,60 @@
       "title": "ReadFileArgs",
       "type": "object"
     },
+    "ReadFileBytesArgs": {
+      "description": "Arguments for reading a file's raw bytes to preview an image or PDF.",
+      "properties": {
+        "path": {
+          "description": "The file: relative to the project, absolute, or an `attachment:<id>` reference.",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ReadFileBytesArgs",
+      "type": "object"
+    },
+    "ReadFileBytesResult": {
+      "description": "The raw bytes of a file, base64-encoded, for previewing an image\nor a PDF the text reader cannot show.\n\nSame sandbox as `ReadFileResult`; a larger cap, since an image\nor a PDF is bigger than a source file.",
+      "properties": {
+        "data": {
+          "description": "The file's bytes, base64-encoded; empty when `error` is set.",
+          "title": "Data",
+          "type": "string"
+        },
+        "error": {
+          "default": "",
+          "description": "Why the file could not be read; empty on success.",
+          "title": "Error",
+          "type": "string"
+        },
+        "media_type": {
+          "default": "",
+          "description": "The file's media type guessed from its extension (e.g. `image/png`); empty if unknown or on error.",
+          "title": "Media Type",
+          "type": "string"
+        },
+        "path": {
+          "description": "The file's path (resolved when the read got that far).",
+          "title": "Path",
+          "type": "string"
+        },
+        "size": {
+          "description": "The file's size in bytes.",
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "data",
+        "size"
+      ],
+      "title": "ReadFileBytesResult",
+      "type": "object"
+    },
     "ReadFileResult": {
       "description": "The contents of a text file, for previewing it.\n\nOnly files inside the project or igni's data folder can be read,\nand large files are refused.",
       "properties": {
@@ -6788,6 +6909,27 @@
         }
       },
       "title": "Scroll",
+      "type": "object"
+    },
+    "SearchAllChatsArgs": {
+      "description": "Arguments for searching across every session in the project.",
+      "properties": {
+        "limit": {
+          "default": 50,
+          "description": "Maximum number of hits to return in total.",
+          "title": "Limit",
+          "type": "integer"
+        },
+        "query": {
+          "description": "Text to find, case-insensitive; blank finds nothing.",
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "SearchAllChatsArgs",
       "type": "object"
     },
     "SearchChatArgs": {
@@ -12670,6 +12812,25 @@
       "summary": "Read a file for preview: one of this session's project, igni's data, or an attachment.",
       "timeout_seconds": 30
     },
+    "read_file_bytes": {
+      "access": "client",
+      "area": "panels",
+      "args": {
+        "$ref": "#/defs/ReadFileBytesArgs"
+      },
+      "correlate": null,
+      "doc": "Read a file's raw bytes (base64) to preview an image or a PDF.\n\nThe same sandbox as `read_file` with a larger cap (10 MiB).\nReturns the resolved `path`, the base64 `data`, its `size`\nand a `media_type` hint; or `error` when the file is missing,\na directory, too large, unreadable, or outside the folders igni\nlets a client read.",
+      "duration": "io",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/ReadFileBytesResult"
+      },
+      "scope": "session",
+      "streams": [],
+      "summary": "Read a file's raw bytes (base64) to preview an image or a PDF.",
+      "timeout_seconds": 30
+    },
     "read_process_tail": {
       "access": "client",
       "area": "panels",
@@ -12890,6 +13051,28 @@
       "scope": "session",
       "streams": [],
       "summary": "Save a permission rule for this session's project.",
+      "timeout_seconds": 30
+    },
+    "search_all_chats": {
+      "access": "client",
+      "area": "session_history",
+      "args": {
+        "$ref": "#/defs/SearchAllChatsArgs"
+      },
+      "correlate": null,
+      "doc": "Find text across every session in the project, not just one.\n\n`query` is the text to find (case-insensitive; blank finds\nnothing); `limit` caps the total hits (default 50). Returns one\nhit per match, newest session first, each carrying the\n`session_id` and `session_name` it was found in alongside the\nsame fields `search_chat` returns.",
+      "duration": "io",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "items": {
+          "$ref": "#/defs/GlobalChatSearchHit"
+        },
+        "type": "array"
+      },
+      "scope": "session",
+      "streams": [],
+      "summary": "Find text across every session in the project, not just one.",
       "timeout_seconds": 30
     },
     "search_chat": {

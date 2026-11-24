@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from igni_core.backend.chat_history_searcher import ChatHistorySearcher
-from igni_core.backend.schemas_history import ChatHistoryEntry, ChatSearchHit
+from igni_core.backend.schemas_history import ChatHistoryEntry, ChatSearchHit, GlobalChatSearchHit
 from igni_core.backend.schemas_sessions import AutoNameResult
 from igni_core.core.session.schemas import PersistResult
 from igni_core.protocol import messages as msg
@@ -48,8 +48,13 @@ class SessionsController:
             [str], Awaitable[list[ChatTurn] | list[ChatHistoryEntry] | list[dict]]
         ],
         waiting_sessions: Callable[[], set[str]] | None = None,
+        session_dir_lookup: Callable[[str], str | None] | None = None,
     ) -> None:
         self._session = session
+        # session_id → the project folder it is bound to, so the sidebar
+        # can group chats by folder. Global registry; a callable so this
+        # class does not own the store. None → no folder is reported.
+        self._session_dir_lookup = session_dir_lookup
         # :meth:`ChatHistoryRebuilder.rebuild` in production; injected
         # as a callable so this class does not own the rebuilder.
         # :meth:`search_chat` normalises whatever it returns to
@@ -67,11 +72,23 @@ class SessionsController:
         virtualisation."""
         rows = await self._session.persistence.list_sessions(limit=None)
         waiting = self._paused_sessions()
+
+        def folder(session_id: str) -> str:
+            if self._session_dir_lookup is None:
+                return ""
+            return self._session_dir_lookup(session_id) or ""
+
         # The wire boundary is the one place a persistence row turns
-        # into JSON — the typed row in, the wire entry out.
+        # into JSON — the typed row in, the wire entry out. ``project_dir``
+        # rides along as an extra field (``SessionListEntry`` allows them)
+        # so the sidebar can group chats by folder.
         return msg.SessionListResult(
             sessions=[
-                msg.SessionListEntry(**row.model_dump(), has_paused_run=row.session_id in waiting)
+                msg.SessionListEntry(
+                    **row.model_dump(),
+                    has_paused_run=row.session_id in waiting,
+                    project_dir=folder(row.session_id),
+                )
                 for row in rows
             ]
         )
@@ -155,6 +172,42 @@ class SessionsController:
         raw_history = await self._chat_history_provider(session_id)
         history = [self._as_entry(entry) for entry in raw_history]
         return ChatHistorySearcher(history).search(needle, limit=limit)
+
+    async def search_all_chats(self, query: str, limit: int = 50) -> list[GlobalChatSearchHit]:
+        """Case-insensitive substring search across every session in the
+        project, newest session first, capped at ``limit`` hits in total.
+
+        Each hit carries its ``session_id`` and ``session_name`` so the
+        client can open the right conversation; the rest of the shape
+        matches :meth:`search_chat`.
+        """
+        needle = (query or "").strip()
+        if not needle:
+            return []
+        listing = await self._session.persistence.list_sessions(limit=None)
+        rows = listing.value if listing.ok else []
+        out: list[GlobalChatSearchHit] = []
+        for row in rows:
+            if len(out) >= limit:
+                break
+            try:
+                raw_history = await self._chat_history_provider(row.session_id)
+            except Exception as exc:
+                logger.debug("search_all_chats: skipping %s (%s)", row.session_id, exc)
+                continue
+            history = [self._as_entry(entry) for entry in raw_history]
+            hits = ChatHistorySearcher(history).search(needle, limit=limit - len(out))
+            for hit in hits:
+                out.append(
+                    GlobalChatSearchHit(
+                        session_id=row.session_id,
+                        session_name=row.name or "",
+                        **hit.model_dump(),
+                    )
+                )
+                if len(out) >= limit:
+                    break
+        return out
 
     @staticmethod
     def _as_entry(entry: ChatTurn | ChatHistoryEntry | dict) -> ChatHistoryEntry:

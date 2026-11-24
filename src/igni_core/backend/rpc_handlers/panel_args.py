@@ -33,6 +33,14 @@ class ReadFileArgs(PanelArgs):
     )
 
 
+class ReadFileBytesArgs(PanelArgs):
+    """Arguments for reading a file's raw bytes to preview an image or PDF."""
+
+    path: str = Field(
+        description="The file: relative to the project, absolute, or an `attachment:<id>` reference."
+    )
+
+
 class SearchCodeArgs(PanelArgs):
     """Arguments for finding where a code snippet appears in the project.
 

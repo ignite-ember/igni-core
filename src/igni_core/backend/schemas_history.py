@@ -460,6 +460,17 @@ class ChatSearchHit(BaseModel):
     )
 
 
+class GlobalChatSearchHit(ChatSearchHit):
+    """One match from searching across every session in the project."""
+
+    session_id: str = Field(
+        default="", description="Id of the session the match is in; open it to read the turn."
+    )
+    session_name: str = Field(
+        default="", description="Name of that session, or empty when it has none."
+    )
+
+
 __all__ = [
     "UserTurn",
     "AssistantTurn",
@@ -476,5 +487,6 @@ __all__ = [
     "AgnoRunMetricsView",
     "ChatHistoryEntry",
     "ChatSearchHit",
+    "GlobalChatSearchHit",
     "SessionListEntry",
 ]
