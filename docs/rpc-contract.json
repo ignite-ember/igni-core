@@ -11614,7 +11614,7 @@
         "$ref": "#/defs/NoArgs"
       },
       "correlate": null,
-      "doc": "Connect this session's configured MCP servers, once.\n\nTakes no arguments. The first call connects every configured server\nand rebuilds the agent with their tools; later calls do nothing.\nReturns the servers `connected`, the ones that `failed` with\ntheir errors, whether the agent was `rebuilt`, and, when nothing\nwas done, `skipped_reason` (`already_initialized`,\n`no_configured_servers`, `no_clients_connected`).",
+      "doc": "Connect this session's configured MCP servers, re-reading their config.\n\nTakes no arguments. Every call re-reads the `.mcp.json` files\nfirst, so a server added, edited or removed since the backend\nstarted takes effect without a restart. The first call connects\nevery configured server and rebuilds the agent with their tools;\na later call reconnects only the servers whose config changed,\ndrops the removed ones, and does nothing when nothing changed.\nReturns the servers `connected`, the ones that `failed` with\ntheir errors, whether the agent was `rebuilt`, and, when nothing\nwas done, `skipped_reason` (`already_initialized`,\n`no_configured_servers`, `no_clients_connected`).",
       "duration": "long",
       "may_stream": [],
       "reply": "rpc_response",
@@ -11623,7 +11623,7 @@
       },
       "scope": "session",
       "streams": [],
-      "summary": "Connect this session's configured MCP servers, once.",
+      "summary": "Connect this session's configured MCP servers, re-reading their config.",
       "timeout_seconds": 600
     },
     "execute_scheduled_task": {
