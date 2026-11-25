@@ -360,6 +360,7 @@ class MessageDispatcher:
                     confidence=verdict.confidence,
                     message_run_id=message_run_id,
                     reply_run_id=await self._reply_before(session_id, message_run_id),
+                    aspects=verdict.aspects,
                 )
             )
         )

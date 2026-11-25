@@ -1656,6 +1656,102 @@
           "type": "str | None",
           "doc": "The run whose reply the message reacts to.",
           "optional": true
+        },
+        {
+          "name": "aspects",
+          "type": "SentimentAspects",
+          "doc": "Every question Laya answered about the message.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "LabelProbability",
+      "doc": "One label of a question Laya answered, and its probability.",
+      "fields": [
+        {
+          "name": "label",
+          "type": "str",
+          "doc": "The option, level, or `yes` / `no`.",
+          "optional": false
+        },
+        {
+          "name": "probability",
+          "type": "float",
+          "doc": "From 0 to 1.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SentimentAspect",
+      "doc": "The label Laya chose, and every label's probability.",
+      "fields": [
+        {
+          "name": "answer",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "probabilities",
+          "type": "list[LabelProbability]",
+          "doc": "In the question's order.",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "name": "SentimentAspects",
+      "doc": "What Laya read in the message besides the verdict.",
+      "fields": [
+        {
+          "name": "feeling",
+          "type": "SentimentAspect",
+          "doc": "`positive`, `negative` or `neutral`.",
+          "optional": false
+        },
+        {
+          "name": "gesture",
+          "type": "SentimentAspect",
+          "doc": "`gratitude`, `compliment`, `insult` or `neither`.",
+          "optional": false
+        },
+        {
+          "name": "negative_reason",
+          "type": "SentimentAspect",
+          "doc": "What displeased the person.",
+          "optional": false
+        },
+        {
+          "name": "positive_reason",
+          "type": "SentimentAspect",
+          "doc": "What pleased the person.",
+          "optional": false
+        },
+        {
+          "name": "repeat",
+          "type": "SentimentAspect",
+          "doc": "Whether the same problem happened again.",
+          "optional": false
+        },
+        {
+          "name": "redo_requested",
+          "type": "SentimentAspect",
+          "doc": "Whether the person asks to redo or undo.",
+          "optional": false
+        },
+        {
+          "name": "task_done",
+          "type": "SentimentAspect",
+          "doc": "Whether the person says the task is done.",
+          "optional": false
+        },
+        {
+          "name": "intensity",
+          "type": "SentimentAspect",
+          "doc": "`none`, `mild`, `strong` or `angry`.",
+          "optional": false
         }
       ]
     },

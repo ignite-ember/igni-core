@@ -24,6 +24,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from igni_core.protocol.schemas.enums import SentimentKind
+from igni_core.protocol.schemas.sentiment.sentiment_aspects import SentimentAspects
 
 
 class LoginStatusPayload(BaseModel):
@@ -138,6 +139,9 @@ class UserSentimentPayload(BaseModel):
     )
     reply_run_id: str | None = Field(
         description="The run whose reply the message reacts to; `null` when the session had none."
+    )
+    aspects: SentimentAspects = Field(
+        description="Every question Laya answered about the message, with every probability."
     )
 
 

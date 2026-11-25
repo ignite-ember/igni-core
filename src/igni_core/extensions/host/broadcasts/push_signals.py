@@ -46,6 +46,7 @@ from igni_core.protocol.schemas.push_payloads import (
     SessionNamedPayload,
     UserSentimentPayload,
 )
+from igni_core.protocol.schemas.sentiment.sentiment_aspects import SentimentAspects
 
 NOTIFICATIONS_CHANGED = "notifications.changed"
 SESSION_STATES_CHANGED = "sessions.states_changed"
@@ -116,6 +117,7 @@ class ChatSentiment(Signal):
     confidence: float
     message_run_id: str | None
     reply_run_id: str | None
+    aspects: SentimentAspects
 
 
 class PermissionModeChanged(Signal):
@@ -295,6 +297,7 @@ class PushSignals:
                 confidence=payload.confidence,
                 message_run_id=payload.message_run_id,
                 reply_run_id=payload.reply_run_id,
+                aspects=payload.aspects,
             )
         )
 
