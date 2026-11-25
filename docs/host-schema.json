@@ -1624,8 +1624,8 @@
       ]
     },
     {
-      "name": "Appreciation",
-      "doc": "Laya read the person's message as thanks or praise for igni.",
+      "name": "Sentiment",
+      "doc": "Laya read the person's message as thanks, praise or an insult for igni.",
       "fields": [
         {
           "name": "session_id",
@@ -1636,7 +1636,7 @@
         {
           "name": "kind",
           "type": "str",
-          "doc": "`gratitude` or `compliment`.",
+          "doc": "`gratitude`, `compliment` or `insult`.",
           "optional": false
         }
       ]
@@ -5263,9 +5263,9 @@
           "stage": 1
         },
         {
-          "name": "appreciated",
-          "type": "Appreciation",
-          "doc": "The person thanked or praised igni.",
+          "name": "sentiment",
+          "type": "Sentiment",
+          "doc": "The person thanked, praised or insulted igni.",
           "wire": null,
           "permission": null,
           "inherit_permission": true,

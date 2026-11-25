@@ -324,8 +324,8 @@ class PushChannel(StrEnum):
     #: window gets it. The payload is
     #: :class:`~igni_core.backend.schemas_session_states.SessionStates`.
     SESSION_STATES_CHANGED = "session_states_changed"
-    USER_APPRECIATION = "user_appreciation"
-    """Laya read the person's message as thanks or praise for igni; the payload is ``UserAppreciationPayload``."""
+    USER_SENTIMENT = "user_sentiment"
+    """Laya read the person's message as thanks, praise or an insult for igni; the payload is ``UserSentimentPayload``."""
     UNKNOWN = "unknown"
 
     @classmethod
@@ -333,15 +333,15 @@ class PushChannel(StrEnum):
         return cls.UNKNOWN
 
 
-class AppreciationKind(StrEnum):
-    """What Laya heard in a message that appreciates igni."""
+class SentimentKind(StrEnum):
+    """What Laya heard in a person's message to igni: thanks, praise or an insult."""
 
     GRATITUDE = "gratitude"
     COMPLIMENT = "compliment"
+    INSULT = "insult"
 
 
 __all__ = [
-    "AppreciationKind",
     "CommandResultKind",
     "CommandAction",
     "OrchestrationTaskStatus",
@@ -350,4 +350,5 @@ __all__ = [
     "SchedulerEventType",
     "PermissionModeName",
     "PushChannel",
+    "SentimentKind",
 ]

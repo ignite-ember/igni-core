@@ -356,20 +356,22 @@ async def test_session_mode_plan_and_todo_pushes_are_told(rig, heard):
     ]
 
 
-async def test_thanks_or_praise_for_igni_is_told_as_chat_appreciated(rig, heard):
-    def appreciation(**payload: Any) -> msg.PushNotification:
-        return msg.PushNotification(channel="user_appreciation", session_id="boot", payload=payload)
+async def test_thanks_praise_or_an_insult_for_igni_is_told_as_chat_sentiment(rig, heard):
+    def sentiment(**payload: Any) -> msg.PushNotification:
+        return msg.PushNotification(channel="user_sentiment", session_id="boot", payload=payload)
 
     await _send(
         rig,
-        appreciation(session_id="boot", kind="gratitude"),
-        appreciation(session_id="other", kind="compliment"),
-        appreciation(session_id="boot", kind="sarcasm"),
+        sentiment(session_id="boot", kind="gratitude"),
+        sentiment(session_id="other", kind="compliment"),
+        sentiment(session_id="boot", kind="insult"),
+        sentiment(session_id="boot", kind="sarcasm"),
     )
 
-    assert heard.values("chat.appreciated") == [
+    assert heard.values("chat.sentiment") == [
         {"session_id": "boot", "kind": "gratitude"},
         {"session_id": "other", "kind": "compliment"},
+        {"session_id": "boot", "kind": "insult"},
     ]
 
 

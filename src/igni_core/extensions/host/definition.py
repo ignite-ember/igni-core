@@ -628,10 +628,10 @@ TYPES = (
         field("breakdown", "json"),
     ),
     typedef(
-        "Appreciation",
-        "Laya read the person's message as thanks or praise for igni.",
+        "Sentiment",
+        "Laya read the person's message as thanks, praise or an insult for igni.",
         field("session_id", "str"),
-        field("kind", "str", "`gratitude` or `compliment`."),
+        field("kind", "str", "`gratitude`, `compliment` or `insult`."),
     ),
     typedef(
         "FileEdited",
@@ -1801,7 +1801,7 @@ OBJECTS = (
             signal("agent_event", "AgentEvent", "A sub-agent or team moved on."),
             signal("retry", "Retry", "A network call is being retried."),
             signal("history_changed", "HistoryChange", "Turns were truncated or discarded."),
-            signal("appreciated", "Appreciation", "The person thanked or praised igni."),
+            signal("sentiment", "Sentiment", "The person thanked, praised or insulted igni."),
         ),
         methods=(
             method(

@@ -26,7 +26,7 @@ import pytest
 from pydantic import TypeAdapter
 
 from igni_core.notifications.schemas import NotificationsChanged
-from igni_core.protocol.schemas.enums import AppreciationKind, PushChannel
+from igni_core.protocol.schemas.enums import PushChannel, SentimentKind
 from igni_core.protocol.schemas.push import (
     PushNotification,
     push_background_process_done,
@@ -40,7 +40,7 @@ from igni_core.protocol.schemas.push import (
     push_scheduler_completed,
     push_scheduler_started,
     push_session_named,
-    push_user_appreciation,
+    push_user_sentiment,
 )
 from igni_core.protocol.schemas.push_payloads import (
     BackgroundProcessDonePayload,
@@ -53,7 +53,7 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerCompletedPayload,
     SchedulerStartedPayload,
     SessionNamedPayload,
-    UserAppreciationPayload,
+    UserSentimentPayload,
 )
 from igni_core.protocol.schemas.wire import WireMessage
 
@@ -139,10 +139,10 @@ CASES = [
         {"path": "/project/main.py"},
     ),
     _Case(
-        push_user_appreciation,
-        UserAppreciationPayload,
-        PushChannel.USER_APPRECIATION,
-        {"session_id": "s-1", "kind": AppreciationKind.GRATITUDE},
+        push_user_sentiment,
+        UserSentimentPayload,
+        PushChannel.USER_SENTIMENT,
+        {"session_id": "s-1", "kind": SentimentKind.GRATITUDE},
     ),
 ]
 
@@ -198,7 +198,7 @@ def test_every_channel_with_a_payload_model_has_a_factory():
         "SchedulerCompletedPayload",
         "SchedulerStartedPayload",
         "SessionNamedPayload",
-        "UserAppreciationPayload",
+        "UserSentimentPayload",
     }
     assert factories == {
         "push_background_process_done",
@@ -211,7 +211,7 @@ def test_every_channel_with_a_payload_model_has_a_factory():
         "push_scheduler_completed",
         "push_scheduler_started",
         "push_session_named",
-        "push_user_appreciation",
+        "push_user_sentiment",
     }
 
 

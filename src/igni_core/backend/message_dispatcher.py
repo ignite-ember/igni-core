@@ -35,14 +35,14 @@ from igni_core.backend.rpc_errors import code_of
 from igni_core.backend.rpc_result import RpcResult
 from igni_core.backend.schemas_sessions import DispatchedBackend, TransportLike
 from igni_core.core.activity import BusyKind, background
-from igni_core.core.appreciation.judge import AppreciationJudge
+from igni_core.core.sentiment.judge import SentimentJudge
 from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.registry import ExtensionRefused
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Message
-from igni_core.protocol.schemas.enums import AppreciationKind
-from igni_core.protocol.schemas.push_payloads import SessionNamedPayload, UserAppreciationPayload
+from igni_core.protocol.schemas.enums import SentimentKind
+from igni_core.protocol.schemas.push_payloads import SessionNamedPayload, UserSentimentPayload
 from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ class MessageDispatcher:
         queue: MutableSequence[str],
         login: LoginCoordinator | None,
         extensions: ExtensionRpc | None = None,
-        appreciation: AppreciationJudge | None = None,
+        sentiment: SentimentJudge | None = None,
     ) -> None:
         self._backend = backend
         self._transport = transport
@@ -86,7 +86,7 @@ class MessageDispatcher:
         # what it did for as long as the namespace did not exist and
         # is the least informative thing it could say.
         self._extensions = extensions
-        self._appreciation = appreciation
+        self._sentiment = sentiment
 
     async def dispatch(self, message: Message) -> None:
         req_id = message.id or ""
@@ -131,7 +131,7 @@ class MessageDispatcher:
         await self._transport.send(
             msg.UserMessageReceived(text=message.text, client_id=message.client_id)
         )
-        self._spawn_appreciation(message.text)
+        self._spawn_sentiment(message.text)
         # ``force=true`` is the FE's "Retry" semantic on an
         # interrupted banner: supersede any pending + interrupted
         # rows for this session, then start clean. Without this
@@ -302,25 +302,23 @@ class MessageDispatcher:
             )
         )
 
-    def _spawn_appreciation(self, text: str) -> None:
-        """Beside the run, never before it: ask Laya whether ``text`` thanks or praises igni."""
-        judge = self._appreciation
+    def _spawn_sentiment(self, text: str) -> None:
+        """Beside the run, never before it: ask Laya whether ``text`` thanks, praises or insults igni."""
+        judge = self._sentiment
         if judge is None or not judge.worth_asking(text):
             return
         background.start(
-            self._appreciation_coro(judge, self._backend.session_id, text),
-            holder="appreciation",
-            reason="reading a message for thanks",
+            self._sentiment_coro(judge, self._backend.session_id, text),
+            holder="sentiment",
+            reason="reading a message for thanks or insults",
         )
 
-    async def _appreciation_coro(
-        self, judge: AppreciationJudge, session_id: str, text: str
-    ) -> None:
-        kind: AppreciationKind | None = await judge.judge(text)
+    async def _sentiment_coro(self, judge: SentimentJudge, session_id: str, text: str) -> None:
+        kind: SentimentKind | None = await judge.judge(text)
         if kind is None:
             return
         await self._transport.send(
-            msg.push_user_appreciation(UserAppreciationPayload(session_id=session_id, kind=kind))
+            msg.push_user_sentiment(UserSentimentPayload(session_id=session_id, kind=kind))
         )
 
     async def _on_hitl_response(self, message: msg.HITLResponse, req_id: str) -> None:

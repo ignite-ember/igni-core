@@ -54,7 +54,7 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerCompletedPayload,
     SchedulerStartedPayload,
     SessionNamedPayload,
-    UserAppreciationPayload,
+    UserSentimentPayload,
 )
 
 #: The payload of a push: a JSON object whose shape the channel
@@ -182,9 +182,9 @@ def push_file_edited(payload: FileEditedPayload) -> PushNotification:
     return _push(PushChannel.FILE_EDITED, payload)
 
 
-def push_user_appreciation(payload: UserAppreciationPayload) -> PushNotification:
-    """The ``user_appreciation`` push — the person thanked or praised igni."""
-    return _push(PushChannel.USER_APPRECIATION, payload)
+def push_user_sentiment(payload: UserSentimentPayload) -> PushNotification:
+    """The ``user_sentiment`` push — the person thanked, praised or insulted igni."""
+    return _push(PushChannel.USER_SENTIMENT, payload)
 
 
 __all__ = [
@@ -201,5 +201,5 @@ __all__ = [
     "push_scheduler_completed",
     "push_scheduler_started",
     "push_session_named",
-    "push_user_appreciation",
+    "push_user_sentiment",
 ]
