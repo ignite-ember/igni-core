@@ -33,14 +33,16 @@ from igni_core.backend.agent_framing import ExtensionMessage, PlanResearchHint
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.rpc_errors import code_of
 from igni_core.backend.rpc_result import RpcResult
+from igni_core.backend.schemas_history import AssistantTurn
 from igni_core.backend.schemas_sessions import DispatchedBackend, TransportLike
 from igni_core.core.activity import BusyKind, background
+from igni_core.core.sentiment.judge import SentimentJudge
 from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.extensions.registry import ExtensionRefused
 from igni_core.extensions.rpc import ExtensionRpc
 from igni_core.protocol import messages as msg
 from igni_core.protocol.messages import Message
-from igni_core.protocol.schemas.push_payloads import SessionNamedPayload
+from igni_core.protocol.schemas.push_payloads import SessionNamedPayload, UserSentimentPayload
 from igni_core.protocol.schemas.rpc import RpcErrorCode
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,7 @@ class MessageDispatcher:
         queue: MutableSequence[str],
         login: LoginCoordinator | None,
         extensions: ExtensionRpc | None = None,
+        sentiment: SentimentJudge | None = None,
     ) -> None:
         self._backend = backend
         self._transport = transport
@@ -83,6 +86,7 @@ class MessageDispatcher:
         # what it did for as long as the namespace did not exist and
         # is the least informative thing it could say.
         self._extensions = extensions
+        self._sentiment = sentiment
 
     async def dispatch(self, message: Message) -> None:
         req_id = message.id or ""
@@ -127,6 +131,7 @@ class MessageDispatcher:
         await self._transport.send(
             msg.UserMessageReceived(text=message.text, client_id=message.client_id)
         )
+        run_id = self._spawn_sentiment(message.text)
         # ``force=true`` is the FE's "Retry" semantic on an
         # interrupted banner: supersede any pending + interrupted
         # rows for this session, then start clean. Without this
@@ -143,9 +148,15 @@ class MessageDispatcher:
                 discarded,
             )
         agent_text = self._maybe_wrap_plan_hint(message.text)
-        await self._run_turn(agent_text, message.file_contents, req_id)
+        await self._run_turn(agent_text, message.file_contents, req_id, run_id)
 
-    async def _run_turn(self, agent_text: str, files: dict[str, str], req_id: str) -> None:
+    async def _run_turn(
+        self,
+        agent_text: str,
+        files: dict[str, str],
+        req_id: str,
+        run_id: asyncio.Future[str | None] | None = None,
+    ) -> None:
         """Run one turn and stream it to every view.
 
         ``files`` is a path → content map of *text* files: the wire's
@@ -156,11 +167,13 @@ class MessageDispatcher:
         it into extra fields on the media bundle and handed them to
         ``arun`` as unknown keyword arguments, which Agno dropped.
         The model's own tools read such files instead, under their
-        permissions.
+        permissions. ``run_id`` is told the id of the run, once it is known.
         """
         if files:
             logger.debug("message carries %d file(s) of text", len(files))
-        outcome = await self._stream(self._backend.run_message(agent_text, media=None), req_id)
+        outcome = await self._stream(
+            self._backend.run_message(agent_text, media=None), req_id, run_id
+        )
         if outcome is _RunOutcome.FAILED:
             return
 
@@ -192,7 +205,12 @@ class MessageDispatcher:
             if outcome is not _RunOutcome.ENDED:
                 return
 
-    async def _stream(self, frames: AsyncIterator[Any], req_id: str) -> _RunOutcome:
+    async def _stream(
+        self,
+        frames: AsyncIterator[Any],
+        req_id: str,
+        run_id: asyncio.Future[str | None] | None = None,
+    ) -> _RunOutcome:
         """Send ``frames`` to every view under ``req_id``, then ``StreamEnd``.
 
         ``StreamEnd`` is what a window waits for to finish the reply, and it
@@ -200,11 +218,19 @@ class MessageDispatcher:
         so the window spun forever while the error went out under the
         request's id after the fact. A failure is now an ``Error`` inside
         the stream, and the stream still ends. Says whether the run failed, paused for a
-        person, or ended.
+        person, or ended. ``run_id`` gets the top-level run's id, or None when none started.
         """
         outcome = _RunOutcome.ENDED
         try:
             async for proto in frames:
+                if (
+                    run_id is not None
+                    and not run_id.done()
+                    and isinstance(proto, msg.RunStarted | msg.RunCompleted)
+                    and proto.run_id
+                    and not proto.parent_run_id
+                ):
+                    run_id.set_result(proto.run_id)
                 if isinstance(proto, msg.RunPaused):
                     outcome = _RunOutcome.PAUSED
                 elif isinstance(proto, msg.RunCompleted):
@@ -217,6 +243,8 @@ class MessageDispatcher:
             await self._transport.send(msg.Error(id=req_id, text=f"The run failed: {exc}"))
             return _RunOutcome.FAILED
         finally:
+            if run_id is not None and not run_id.done():
+                run_id.set_result(None)
             await self._transport.send(msg.StreamEnd(id=req_id))
         return outcome
 
@@ -296,6 +324,61 @@ class MessageDispatcher:
                 SessionNamedPayload(session_id=self._backend.session_id, name=result.name)
             )
         )
+
+    def _spawn_sentiment(self, text: str) -> asyncio.Future[str | None] | None:
+        """Beside the run, never before it: ask Laya how ``text`` feels about igni.
+
+        Returns where the run is to tell its id, when Laya is asked.
+        """
+        judge = self._sentiment
+        if judge is None or not judge.worth_asking(text):
+            return None
+        run_id: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
+        background.start(
+            self._sentiment_coro(judge, self._backend.session_id, text, run_id),
+            holder="sentiment",
+            reason="reading how a message feels about igni",
+        )
+        return run_id
+
+    async def _sentiment_coro(
+        self,
+        judge: SentimentJudge,
+        session_id: str,
+        text: str,
+        run_id: asyncio.Future[str | None],
+    ) -> None:
+        verdict = await judge.judge(text)
+        if verdict is None:
+            return
+        message_run_id = await run_id
+        await self._transport.send(
+            msg.push_user_sentiment(
+                UserSentimentPayload(
+                    session_id=session_id,
+                    sentiment=verdict.sentiment,
+                    confidence=verdict.confidence,
+                    message_run_id=message_run_id,
+                    reply_run_id=await self._reply_before(session_id, message_run_id),
+                )
+            )
+        )
+
+    async def _reply_before(self, session_id: str, message_run_id: str | None) -> str | None:
+        """The run of the last assistant reply before the message's run; None when there is none."""
+        try:
+            turns = await self._backend.get_chat_history(session_id)
+        except Exception as exc:  # noqa: BLE001 — a reference is optional; the push still goes out
+            logger.debug("sentiment: the history could not be read (%s)", exc)
+            return None
+        mine = [
+            i for i, turn in enumerate(turns) if message_run_id and turn.run_id == message_run_id
+        ]
+        before = turns[: mine[0]] if mine else turns
+        for turn in reversed(before):
+            if isinstance(turn, AssistantTurn) and turn.run_id:
+                return turn.run_id
+        return None
 
     async def _on_hitl_response(self, message: msg.HITLResponse, req_id: str) -> None:
         # Mirroring: dismiss the now-stale permission dialog on

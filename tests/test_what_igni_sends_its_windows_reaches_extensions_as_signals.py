@@ -356,6 +356,53 @@ async def test_session_mode_plan_and_todo_pushes_are_told(rig, heard):
     ]
 
 
+async def test_how_a_message_feels_about_igni_is_told_as_chat_sentiment(rig, heard):
+    def sentiment(**payload: Any) -> msg.PushNotification:
+        return msg.PushNotification(channel="user_sentiment", session_id="boot", payload=payload)
+
+    await _send(
+        rig,
+        sentiment(
+            session_id="boot",
+            sentiment="positive",
+            confidence=0.95,
+            message_run_id="r-2",
+            reply_run_id="r-1",
+        ),
+        sentiment(
+            session_id="other",
+            sentiment="negative",
+            confidence=0.84,
+            message_run_id=None,
+            reply_run_id=None,
+        ),
+        sentiment(
+            session_id="boot",
+            sentiment="neutral",
+            confidence=0.9,
+            message_run_id="r-3",
+            reply_run_id="r-2",
+        ),
+    )
+
+    assert heard.values("chat.sentiment") == [
+        {
+            "session_id": "boot",
+            "sentiment": "positive",
+            "confidence": 0.95,
+            "message_run_id": "r-2",
+            "reply_run_id": "r-1",
+        },
+        {
+            "session_id": "other",
+            "sentiment": "negative",
+            "confidence": 0.84,
+            "message_run_id": None,
+            "reply_run_id": None,
+        },
+    ]
+
+
 async def test_a_push_whose_payload_does_not_fit_its_model_is_dropped(rig, heard):
     """A payload that does not fit the model that produced it is not read half-way."""
     await _send(

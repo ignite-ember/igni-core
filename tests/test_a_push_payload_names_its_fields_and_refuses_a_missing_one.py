@@ -29,6 +29,7 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerCompletedPayload,
     SchedulerStartedPayload,
     SessionNamedPayload,
+    UserSentimentPayload,
 )
 
 REQUIRED = {
@@ -42,6 +43,13 @@ REQUIRED = {
     ProcessLinePayload: {"pid", "line"},
     ProcessExitedPayload: {"pid", "cmd", "exit_code", "duration_seconds"},
     SessionNamedPayload: {"session_id", "name"},
+    UserSentimentPayload: {
+        "session_id",
+        "sentiment",
+        "confidence",
+        "message_run_id",
+        "reply_run_id",
+    },
 }
 
 
@@ -60,6 +68,10 @@ _VALID = {
     "line": "l",
     "session_id": "s",
     "name": "n",
+    "sentiment": "negative",
+    "confidence": 0.9,
+    "message_run_id": "r-2",
+    "reply_run_id": "r-1",
 }
 
 

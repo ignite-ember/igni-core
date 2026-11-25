@@ -628,6 +628,20 @@ TYPES = (
         field("breakdown", "json"),
     ),
     typedef(
+        "Sentiment",
+        "Laya read the person's message as pleased or displeased with igni.",
+        field("session_id", "str"),
+        field("sentiment", "str", "`positive` or `negative`."),
+        field("confidence", "float", "How sure Laya is, from 0 to 1."),
+        field("message_run_id", "str | None", "The run the judged message started.", optional=True),
+        field(
+            "reply_run_id",
+            "str | None",
+            "The run whose reply the message reacts to.",
+            optional=True,
+        ),
+    ),
+    typedef(
         "FileEdited",
         "The agent wrote a file.",
         field("session_id", "str"),
@@ -1795,6 +1809,7 @@ OBJECTS = (
             signal("agent_event", "AgentEvent", "A sub-agent or team moved on."),
             signal("retry", "Retry", "A network call is being retried."),
             signal("history_changed", "HistoryChange", "Turns were truncated or discarded."),
+            signal("sentiment", "Sentiment", "The person was pleased or displeased with igni."),
         ),
         methods=(
             method(

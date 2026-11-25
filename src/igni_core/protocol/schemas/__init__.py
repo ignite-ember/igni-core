@@ -71,6 +71,7 @@ from igni_core.protocol.schemas.enums import (
     PermissionModeName,
     PushChannel,
     SchedulerEventType,
+    SentimentKind,
 )
 from igni_core.protocol.schemas.envelope import Message, RunHeader, RunScopedMessage
 from igni_core.protocol.schemas.fe_actions import (
@@ -111,6 +112,7 @@ from igni_core.protocol.schemas.push import (
     push_scheduler_completed,
     push_scheduler_started,
     push_session_named,
+    push_user_sentiment,
 )
 from igni_core.protocol.schemas.push_payloads import (
     BackgroundProcessDonePayload,
@@ -123,6 +125,7 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerCompletedPayload,
     SchedulerStartedPayload,
     SessionNamedPayload,
+    UserSentimentPayload,
 )
 from igni_core.protocol.schemas.rpc import RpcErrorCode, RPCRequest, RPCResponse
 
@@ -140,6 +143,7 @@ __all__ = [
     "PermissionModeName",
     "PushChannel",
     "SchedulerEventType",
+    "SentimentKind",
     # BE → FE events
     "CommandResult",
     "ContentDelta",
@@ -204,6 +208,7 @@ __all__ = [
     "SchedulerCompletedPayload",
     "SchedulerStartedPayload",
     "SessionNamedPayload",
+    "UserSentimentPayload",
     "push_background_process_done",
     "push_file_edited",
     "push_login_result",
@@ -215,6 +220,7 @@ __all__ = [
     "push_scheduler_completed",
     "push_scheduler_started",
     "push_session_named",
+    "push_user_sentiment",
     # Internal (not on wire)
     "ToolResultData",
 ]

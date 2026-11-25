@@ -60,6 +60,7 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerCompletedPayload,
     SchedulerStartedPayload,
     SessionNamedPayload,
+    UserSentimentPayload,
 )
 
 #: One ``orchestrate_event``: a sub-agent's progress, or a view the agent
@@ -179,6 +180,10 @@ PUSH_PAYLOADS: Mapping[PushChannel, PushPayload] = {
     PushChannel.SESSION_STATES_CHANGED: PushPayload(
         SessionStates,
         "Which chats are running, waiting on the person, or finished unseen moved.",
+    ),
+    PushChannel.USER_SENTIMENT: PushPayload(
+        UserSentimentPayload,
+        "Laya read the person's message as pleased or displeased with igni.",
     ),
 }
 

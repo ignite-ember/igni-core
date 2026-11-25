@@ -324,11 +324,20 @@ class PushChannel(StrEnum):
     #: window gets it. The payload is
     #: :class:`~igni_core.backend.schemas_session_states.SessionStates`.
     SESSION_STATES_CHANGED = "session_states_changed"
+    USER_SENTIMENT = "user_sentiment"
+    """Laya read the person's message as pleased or displeased with igni; the payload is ``UserSentimentPayload``."""
     UNKNOWN = "unknown"
 
     @classmethod
     def _missing_(cls, value: object) -> PushChannel:
         return cls.UNKNOWN
+
+
+class SentimentKind(StrEnum):
+    """How the person feels about igni or its last answer, as Laya read their message."""
+
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
 
 
 __all__ = [
@@ -340,4 +349,5 @@ __all__ = [
     "SchedulerEventType",
     "PermissionModeName",
     "PushChannel",
+    "SentimentKind",
 ]

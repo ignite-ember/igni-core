@@ -44,6 +44,7 @@ from igni_core.protocol.schemas.push_payloads import (
     ProcessLinePayload,
     ProcessStartedPayload,
     SessionNamedPayload,
+    UserSentimentPayload,
 )
 
 NOTIFICATIONS_CHANGED = "notifications.changed"
@@ -107,6 +108,16 @@ class SessionNamed(Signal):
     name: str
 
 
+class ChatSentiment(Signal):
+    WIRE: ClassVar[str] = "chat.sentiment"
+
+    session_id: str
+    sentiment: str
+    confidence: float
+    message_run_id: str | None
+    reply_run_id: str | None
+
+
 class PermissionModeChanged(Signal):
     WIRE: ClassVar[str] = "permissions.mode_changed"
 
@@ -138,6 +149,7 @@ class PushSignals:
                 PushChannel.PERMISSION_MODE_CHANGED: self._permission_mode_changed,
                 PushChannel.NOTIFICATIONS_CHANGED: self._notifications_changed,
                 PushChannel.SESSION_STATES_CHANGED: self._session_states_changed,
+                PushChannel.USER_SENTIMENT: self._user_sentiment,
                 PushChannel.WORKFLOW_EVENT: self._workflow_event,
                 PushChannel.VISUALIZATION_ACTION_DISPATCHED: self._view_action,
                 PushChannel.PLAN_SUBMITTED: self._plan_submitted,
@@ -272,6 +284,20 @@ class PushSignals:
             return
         self._emitter.value(SESSION_STATES_CHANGED, payload)
 
+    def _user_sentiment(self, m: msg.PushNotification) -> None:
+        payload = read_push(UserSentimentPayload, m.payload, channel=m.channel)
+        if payload is None:
+            return
+        self._emitter.send(
+            ChatSentiment(
+                session_id=payload.session_id,
+                sentiment=payload.sentiment.value,
+                confidence=payload.confidence,
+                message_run_id=payload.message_run_id,
+                reply_run_id=payload.reply_run_id,
+            )
+        )
+
     def _view_action(self, m: msg.PushNotification) -> None:
         payload = read_push(VisualizationActionDispatchedEvent, m.payload, channel=m.channel)
         if payload is None:
@@ -281,6 +307,7 @@ class PushSignals:
 
 __all__ = [
     "AgentEvent",
+    "ChatSentiment",
     "PermissionModeChanged",
     "PlanChanged",
     "ProcessesChanged",

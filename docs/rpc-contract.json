@@ -7121,6 +7121,15 @@
       "title": "Selection",
       "type": "object"
     },
+    "SentimentKind": {
+      "description": "How the person feels about igni or its last answer, as Laya read their message.",
+      "enum": [
+        "positive",
+        "negative"
+      ],
+      "title": "SentimentKind",
+      "type": "string"
+    },
     "ServerChoice": {
       "description": "The igni server now in use, or why the choice was refused.",
       "properties": {
@@ -9638,6 +9647,58 @@
         }
       },
       "title": "UserMessageReceived",
+      "type": "object"
+    },
+    "UserSentimentPayload": {
+      "description": "Channel `user_sentiment`. The person's message was pleased or displeased with igni.",
+      "properties": {
+        "confidence": {
+          "description": "How sure Laya is, from 0 to 1.",
+          "title": "Confidence",
+          "type": "number"
+        },
+        "message_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The run the judged message started; `null` when none started.",
+          "title": "Message Run Id"
+        },
+        "reply_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The run whose reply the message reacts to; `null` when the session had none.",
+          "title": "Reply Run Id"
+        },
+        "sentiment": {
+          "$ref": "#/defs/SentimentKind",
+          "description": "`positive` or `negative`; neutral is never sent."
+        },
+        "session_id": {
+          "description": "The session the message was sent in.",
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "sentiment",
+        "confidence",
+        "message_run_id",
+        "reply_run_id"
+      ],
+      "title": "UserSentimentPayload",
       "type": "object"
     },
     "UserTurn": {
@@ -13785,6 +13846,12 @@
       "doc": "The agent's to-do list, whole, after it changed.",
       "schema": {
         "$ref": "#/defs/TodosUpdatedEventPayload"
+      }
+    },
+    "user_sentiment": {
+      "doc": "Laya read the person's message as pleased or displeased with igni.",
+      "schema": {
+        "$ref": "#/defs/UserSentimentPayload"
       }
     },
     "visualization_action_dispatched": {

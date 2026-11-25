@@ -46,6 +46,7 @@ from igni_core.core.plugins.installer import PluginInstaller
 from igni_core.core.prompts.contributions import PromptContributions
 from igni_core.core.prompts.fragments import PromptFragments
 from igni_core.core.prompts.loader import PromptLoader
+from igni_core.core.sentiment.judge import SentimentJudge
 from igni_core.core.session.session_reads import SessionReadStore
 from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
 from igni_core.extensions.principal import SignedInPerson
@@ -257,6 +258,7 @@ class BackendApp:
                 extension_store=store,
                 notifications=notifications.center,
                 extension_mcp=backend.mcp_manager,
+                sentiment=SentimentJudge(),
             ),
             settings=settings,
             dirs=ProjectDirs(

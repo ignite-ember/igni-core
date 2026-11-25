@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from igni_core.protocol.schemas.enums import SentimentKind
+
 
 class LoginStatusPayload(BaseModel):
     """Channel ``login_status``. Progress of a sign-in that is under way,
@@ -125,6 +127,20 @@ class SessionNamedPayload(BaseModel):
     name: str = Field(description="Its new display name.")
 
 
+class UserSentimentPayload(BaseModel):
+    """Channel ``user_sentiment``. The person's message was pleased or displeased with igni."""
+
+    session_id: str = Field(description="The session the message was sent in.")
+    sentiment: SentimentKind = Field(description="`positive` or `negative`; neutral is never sent.")
+    confidence: float = Field(description="How sure Laya is, from 0 to 1.")
+    message_run_id: str | None = Field(
+        description="The run the judged message started; `null` when none started."
+    )
+    reply_run_id: str | None = Field(
+        description="The run whose reply the message reacts to; `null` when the session had none."
+    )
+
+
 __all__ = [
     "BackgroundProcessDonePayload",
     "FileEditedPayload",
@@ -136,4 +152,5 @@ __all__ = [
     "SchedulerCompletedPayload",
     "SchedulerStartedPayload",
     "SessionNamedPayload",
+    "UserSentimentPayload",
 ]

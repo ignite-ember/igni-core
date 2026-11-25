@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 
     from igni_core.backend.activity import SessionActivity
     from igni_core.backend.controller_registry import Controllers
+    from igni_core.backend.schemas_history import ChatTurn
     from igni_core.backend.session_pool import SessionRuntime
     from igni_core.core.session.event_log_schema import (
         SessionEvent,
@@ -188,6 +189,7 @@ class DispatchedBackend(BackendLike, Protocol):
     def cancel_run(self) -> None: ...
     def consume_plan_research_flag(self) -> bool: ...
     async def maybe_auto_name_session(self) -> AutoNameResult: ...
+    async def get_chat_history(self, session_id: str) -> list[ChatTurn]: ...
 
 
 class TransportLike(Protocol):
