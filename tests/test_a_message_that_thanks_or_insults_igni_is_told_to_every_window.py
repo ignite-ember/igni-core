@@ -31,11 +31,11 @@ from igni_core.core.decisions.schemas import (
 )
 from igni_core.core.sentiment import judge as judge_module
 from igni_core.core.sentiment.constants import (
-    APPRECIATION_THRESHOLD,
     INSULT_THRESHOLD,
     MAX_MESSAGE_CHARS,
     MESSAGE_FIELD,
     SENTIMENT_QUESTION,
+    THANKS_OR_PRAISE_THRESHOLD,
 )
 from igni_core.core.sentiment.judge import SentimentJudge
 from igni_core.extensions.host.attachments import ChatAttachments
@@ -209,7 +209,9 @@ async def test_anything_else_is_not_pushed(asks):
 
 
 async def test_an_unsure_answer_is_not_pushed(asks):
-    transport, _ = await _say("thanks I guess", _Laya("gratitude", APPRECIATION_THRESHOLD - 0.01))
+    transport, _ = await _say(
+        "thanks I guess", _Laya("gratitude", THANKS_OR_PRAISE_THRESHOLD - 0.01)
+    )
 
     assert _ended_cleanly(asks)
     assert _sentiments(transport.sent) == []
@@ -326,7 +328,7 @@ def test_the_question_is_one_choice_of_gratitude_compliment_insult_or_neither():
         "neither",
     ]
     assert MESSAGE_FIELD == "message"
-    assert (MAX_MESSAGE_CHARS, APPRECIATION_THRESHOLD, INSULT_THRESHOLD) == (280, 0.6, 0.6)
+    assert (MAX_MESSAGE_CHARS, THANKS_OR_PRAISE_THRESHOLD, INSULT_THRESHOLD) == (280, 0.6, 0.6)
 
 
 def _probabilities(gratitude: float, compliment: float, insult: float) -> dict[str, float]:
@@ -341,16 +343,16 @@ def _probabilities(gratitude: float, compliment: float, insult: float) -> dict[s
 @pytest.mark.parametrize(
     ("probabilities", "expected"),
     [
-        (_probabilities(APPRECIATION_THRESHOLD, 0, 0), SentimentKind.GRATITUDE),
-        (_probabilities(0, APPRECIATION_THRESHOLD, 0), SentimentKind.COMPLIMENT),
+        (_probabilities(THANKS_OR_PRAISE_THRESHOLD, 0, 0), SentimentKind.GRATITUDE),
+        (_probabilities(0, THANKS_OR_PRAISE_THRESHOLD, 0), SentimentKind.COMPLIMENT),
         (_probabilities(1.0, 0, 0), SentimentKind.GRATITUDE),
         (_probabilities(0, 0.99, 0), SentimentKind.COMPLIMENT),
         (_probabilities(0.29, 0.6, 0.06), SentimentKind.COMPLIMENT),
         (_probabilities(0.4, 0.2, 0.1), SentimentKind.GRATITUDE),
         (_probabilities(0.3, 0.3, 0), SentimentKind.GRATITUDE),
         (_probabilities(0.2, 0.4, 0.1), SentimentKind.COMPLIMENT),
-        (_probabilities(APPRECIATION_THRESHOLD - 0.001, 0, 0), None),
-        (_probabilities(0, APPRECIATION_THRESHOLD - 0.001, 0), None),
+        (_probabilities(THANKS_OR_PRAISE_THRESHOLD - 0.001, 0, 0), None),
+        (_probabilities(0, THANKS_OR_PRAISE_THRESHOLD - 0.001, 0), None),
         (_probabilities(0.3, 0.299, 0), None),
         (_probabilities(0, 0, INSULT_THRESHOLD), SentimentKind.INSULT),
         (_probabilities(0, 0, 1.0), SentimentKind.INSULT),
@@ -361,7 +363,7 @@ def _probabilities(gratitude: float, compliment: float, insult: float) -> dict[s
         ({"something Laya made up": 1.0}, None),
     ],
 )
-async def test_only_a_sure_appreciation_or_insult_counts(probabilities, expected):
+async def test_only_sure_thanks_praise_or_an_insult_counts(probabilities, expected):
     laya = _Laya(probabilities=probabilities)
 
     assert await SentimentJudge(laya).judge("thanks") is expected

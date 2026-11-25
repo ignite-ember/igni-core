@@ -14,11 +14,11 @@ from igni_core.core.decisions.schemas import (
 )
 from igni_core.core.sentiment.constants import (
     ANSWER_TIMEOUT_S,
-    APPRECIATION_THRESHOLD,
     INSULT_THRESHOLD,
     MAX_MESSAGE_CHARS,
     MESSAGE_FIELD,
     SENTIMENT_QUESTION,
+    THANKS_OR_PRAISE_THRESHOLD,
 )
 from igni_core.protocol.schemas.enums import SentimentKind
 
@@ -55,7 +55,7 @@ class SentimentJudge:
         compliment = probabilities.get(SentimentKind.COMPLIMENT, 0.0)
         if probabilities.get(SentimentKind.INSULT, 0.0) >= INSULT_THRESHOLD:
             return SentimentKind.INSULT
-        if gratitude + compliment >= APPRECIATION_THRESHOLD:
+        if gratitude + compliment >= THANKS_OR_PRAISE_THRESHOLD:
             return SentimentKind.GRATITUDE if gratitude >= compliment else SentimentKind.COMPLIMENT
         return None
 

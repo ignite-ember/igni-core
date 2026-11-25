@@ -10,7 +10,7 @@ MESSAGE_FIELD = "message"
 MAX_MESSAGE_CHARS = 280
 """The longest message, stripped, worth asking about: thanks and insults are short, and Laya's queue stays clear."""
 
-APPRECIATION_THRESHOLD = 0.6
+THANKS_OR_PRAISE_THRESHOLD = 0.6
 """The least probability of ``gratitude`` and ``compliment`` together that counts as either."""
 
 INSULT_THRESHOLD = 0.6
