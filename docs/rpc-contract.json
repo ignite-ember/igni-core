@@ -7122,11 +7122,10 @@
       "type": "object"
     },
     "SentimentKind": {
-      "description": "What Laya heard in a person's message to igni: thanks, praise or an insult.",
+      "description": "How the person feels about igni or its last answer, as Laya read their message.",
       "enum": [
-        "gratitude",
-        "compliment",
-        "insult"
+        "positive",
+        "negative"
       ],
       "title": "SentimentKind",
       "type": "string"
@@ -9651,11 +9650,40 @@
       "type": "object"
     },
     "UserSentimentPayload": {
-      "description": "Channel `user_sentiment`. The person's message thanked, praised or insulted igni.",
+      "description": "Channel `user_sentiment`. The person's message was pleased or displeased with igni.",
       "properties": {
-        "kind": {
+        "confidence": {
+          "description": "How sure Laya is, from 0 to 1.",
+          "title": "Confidence",
+          "type": "number"
+        },
+        "message_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The run the judged message started; `null` when none started.",
+          "title": "Message Run Id"
+        },
+        "reply_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The run whose reply the message reacts to; `null` when the session had none.",
+          "title": "Reply Run Id"
+        },
+        "sentiment": {
           "$ref": "#/defs/SentimentKind",
-          "description": "Whether it was thanks, praise or an insult."
+          "description": "`positive` or `negative`; neutral is never sent."
         },
         "session_id": {
           "description": "The session the message was sent in.",
@@ -9665,7 +9693,10 @@
       },
       "required": [
         "session_id",
-        "kind"
+        "sentiment",
+        "confidence",
+        "message_run_id",
+        "reply_run_id"
       ],
       "title": "UserSentimentPayload",
       "type": "object"
@@ -13818,7 +13849,7 @@
       }
     },
     "user_sentiment": {
-      "doc": "Laya read the person's message as thanks, praise or an insult for igni.",
+      "doc": "Laya read the person's message as pleased or displeased with igni.",
       "schema": {
         "$ref": "#/defs/UserSentimentPayload"
       }

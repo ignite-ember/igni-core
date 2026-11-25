@@ -629,9 +629,17 @@ TYPES = (
     ),
     typedef(
         "Sentiment",
-        "Laya read the person's message as thanks, praise or an insult for igni.",
+        "Laya read the person's message as pleased or displeased with igni.",
         field("session_id", "str"),
-        field("kind", "str", "`gratitude`, `compliment` or `insult`."),
+        field("sentiment", "str", "`positive` or `negative`."),
+        field("confidence", "float", "How sure Laya is, from 0 to 1."),
+        field("message_run_id", "str | None", "The run the judged message started.", optional=True),
+        field(
+            "reply_run_id",
+            "str | None",
+            "The run whose reply the message reacts to.",
+            optional=True,
+        ),
     ),
     typedef(
         "FileEdited",
@@ -1801,7 +1809,7 @@ OBJECTS = (
             signal("agent_event", "AgentEvent", "A sub-agent or team moved on."),
             signal("retry", "Retry", "A network call is being retried."),
             signal("history_changed", "HistoryChange", "Turns were truncated or discarded."),
-            signal("sentiment", "Sentiment", "The person thanked, praised or insulted igni."),
+            signal("sentiment", "Sentiment", "The person was pleased or displeased with igni."),
         ),
         methods=(
             method(

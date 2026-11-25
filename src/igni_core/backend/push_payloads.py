@@ -183,7 +183,7 @@ PUSH_PAYLOADS: Mapping[PushChannel, PushPayload] = {
     ),
     PushChannel.USER_SENTIMENT: PushPayload(
         UserSentimentPayload,
-        "Laya read the person's message as thanks, praise or an insult for igni.",
+        "Laya read the person's message as pleased or displeased with igni.",
     ),
 }
 

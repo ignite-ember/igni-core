@@ -128,10 +128,17 @@ class SessionNamedPayload(BaseModel):
 
 
 class UserSentimentPayload(BaseModel):
-    """Channel ``user_sentiment``. The person's message thanked, praised or insulted igni."""
+    """Channel ``user_sentiment``. The person's message was pleased or displeased with igni."""
 
     session_id: str = Field(description="The session the message was sent in.")
-    kind: SentimentKind = Field(description="Whether it was thanks, praise or an insult.")
+    sentiment: SentimentKind = Field(description="`positive` or `negative`; neutral is never sent.")
+    confidence: float = Field(description="How sure Laya is, from 0 to 1.")
+    message_run_id: str | None = Field(
+        description="The run the judged message started; `null` when none started."
+    )
+    reply_run_id: str | None = Field(
+        description="The run whose reply the message reacts to; `null` when the session had none."
+    )
 
 
 __all__ = [

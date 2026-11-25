@@ -142,7 +142,13 @@ CASES = [
         push_user_sentiment,
         UserSentimentPayload,
         PushChannel.USER_SENTIMENT,
-        {"session_id": "s-1", "kind": SentimentKind.GRATITUDE},
+        {
+            "session_id": "s-1",
+            "sentiment": SentimentKind.POSITIVE,
+            "confidence": 0.93,
+            "message_run_id": "r-2",
+            "reply_run_id": None,
+        },
     ),
 ]
 

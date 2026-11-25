@@ -183,7 +183,7 @@ def push_file_edited(payload: FileEditedPayload) -> PushNotification:
 
 
 def push_user_sentiment(payload: UserSentimentPayload) -> PushNotification:
-    """The ``user_sentiment`` push — the person thanked, praised or insulted igni."""
+    """The ``user_sentiment`` push — the person was pleased or displeased with igni."""
     return _push(PushChannel.USER_SENTIMENT, payload)
 
 

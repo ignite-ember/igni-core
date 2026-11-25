@@ -112,7 +112,10 @@ class ChatSentiment(Signal):
     WIRE: ClassVar[str] = "chat.sentiment"
 
     session_id: str
-    kind: str
+    sentiment: str
+    confidence: float
+    message_run_id: str | None
+    reply_run_id: str | None
 
 
 class PermissionModeChanged(Signal):
@@ -285,7 +288,15 @@ class PushSignals:
         payload = read_push(UserSentimentPayload, m.payload, channel=m.channel)
         if payload is None:
             return
-        self._emitter.send(ChatSentiment(session_id=payload.session_id, kind=payload.kind.value))
+        self._emitter.send(
+            ChatSentiment(
+                session_id=payload.session_id,
+                sentiment=payload.sentiment.value,
+                confidence=payload.confidence,
+                message_run_id=payload.message_run_id,
+                reply_run_id=payload.reply_run_id,
+            )
+        )
 
     def _view_action(self, m: msg.PushNotification) -> None:
         payload = read_push(VisualizationActionDispatchedEvent, m.payload, channel=m.channel)

@@ -325,7 +325,7 @@ class PushChannel(StrEnum):
     #: :class:`~igni_core.backend.schemas_session_states.SessionStates`.
     SESSION_STATES_CHANGED = "session_states_changed"
     USER_SENTIMENT = "user_sentiment"
-    """Laya read the person's message as thanks, praise or an insult for igni; the payload is ``UserSentimentPayload``."""
+    """Laya read the person's message as pleased or displeased with igni; the payload is ``UserSentimentPayload``."""
     UNKNOWN = "unknown"
 
     @classmethod
@@ -334,11 +334,10 @@ class PushChannel(StrEnum):
 
 
 class SentimentKind(StrEnum):
-    """What Laya heard in a person's message to igni: thanks, praise or an insult."""
+    """How the person feels about igni or its last answer, as Laya read their message."""
 
-    GRATITUDE = "gratitude"
-    COMPLIMENT = "compliment"
-    INSULT = "insult"
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
 
 
 __all__ = [

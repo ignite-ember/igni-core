@@ -1625,7 +1625,7 @@
     },
     {
       "name": "Sentiment",
-      "doc": "Laya read the person's message as thanks, praise or an insult for igni.",
+      "doc": "Laya read the person's message as pleased or displeased with igni.",
       "fields": [
         {
           "name": "session_id",
@@ -1634,10 +1634,28 @@
           "optional": false
         },
         {
-          "name": "kind",
+          "name": "sentiment",
           "type": "str",
-          "doc": "`gratitude`, `compliment` or `insult`.",
+          "doc": "`positive` or `negative`.",
           "optional": false
+        },
+        {
+          "name": "confidence",
+          "type": "float",
+          "doc": "How sure Laya is, from 0 to 1.",
+          "optional": false
+        },
+        {
+          "name": "message_run_id",
+          "type": "str | None",
+          "doc": "The run the judged message started.",
+          "optional": true
+        },
+        {
+          "name": "reply_run_id",
+          "type": "str | None",
+          "doc": "The run whose reply the message reacts to.",
+          "optional": true
         }
       ]
     },
@@ -5265,7 +5283,7 @@
         {
           "name": "sentiment",
           "type": "Sentiment",
-          "doc": "The person thanked, praised or insulted igni.",
+          "doc": "The person was pleased or displeased with igni.",
           "wire": null,
           "permission": null,
           "inherit_permission": true,
