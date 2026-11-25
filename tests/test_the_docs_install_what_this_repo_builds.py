@@ -60,7 +60,7 @@ _NOTE = "last pre-split release"
 #: What is published now, and the version it is at. The next release
 #: changes this — and this test is what says so.
 _PUBLISHED = "igni-core"
-_PUBLISHED_VERSION = "1.0.6"
+_PUBLISHED_VERSION = "1.0.7"
 
 
 def _shell_blocks(doc: pathlib.Path) -> list[str]:

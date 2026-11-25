@@ -939,7 +939,7 @@ wheels = [
 
 [[package]]
 name = "igni-core"
-version = "1.0.6"
+version = "1.0.7"
 source = { editable = "." }
 dependencies = [
     { name = "agno", extra = ["ddg", "mcp", "openai", "sql", "sqlite"] },
