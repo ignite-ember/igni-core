@@ -1,1 +1,1 @@
-"""Laya's reading of whether a person's message is pleased or displeased with igni."""
+"""Laya's reading of how a person's message feels about igni, and why."""

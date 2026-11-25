@@ -61,6 +61,27 @@ from igni_core.protocol.schemas.wire import WireMessage
 # (factory, payload model, channel, payload keyword arguments)
 
 
+ASPECTS = {
+    name: {
+        "answer": "no",
+        "probabilities": [
+            {"label": "yes", "probability": 0.1},
+            {"label": "no", "probability": 0.9},
+        ],
+    }
+    for name in (
+        "feeling",
+        "gesture",
+        "negative_reason",
+        "positive_reason",
+        "repeat",
+        "redo_requested",
+        "task_done",
+        "intensity",
+    )
+}
+
+
 class _Case:
     """One factory and the channel it must produce."""
 
@@ -148,6 +169,7 @@ CASES = [
             "confidence": 0.93,
             "message_run_id": "r-2",
             "reply_run_id": None,
+            "aspects": ASPECTS,
         },
     ),
 ]

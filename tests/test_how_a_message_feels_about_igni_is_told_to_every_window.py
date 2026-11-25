@@ -26,6 +26,7 @@ from igni_core.core.decisions.laya import Laya, process_laya
 from igni_core.core.decisions.schemas import (
     Decision,
     DecisionAnswer,
+    DecisionQuestion,
     DecisionRequest,
     DecisionsUnavailable,
     DecisionTooLong,
@@ -33,16 +34,22 @@ from igni_core.core.decisions.schemas import (
 )
 from igni_core.core.sentiment import judge as judge_module
 from igni_core.core.sentiment.constants import (
+    ASPECT_QUESTIONS,
     GESTURE_QUESTION,
     INSULT_THRESHOLD,
+    INTENSITY_QUESTION,
     MAX_MESSAGE_CHARS,
     MESSAGE_FIELD,
+    NEGATIVE_REASON_QUESTION,
     NEGATIVE_THRESHOLD,
+    POSITIVE_REASON_QUESTION,
     POSITIVE_THRESHOLD,
+    REDO_QUESTION,
+    REPEAT_QUESTION,
     SENTIMENT_QUESTION,
+    TASK_DONE_QUESTION,
 )
 from igni_core.core.sentiment.judge import SentimentJudge
-from igni_core.core.sentiment.schemas import SentimentVerdict
 from igni_core.extensions.host.attachments import ChatAttachments
 from igni_core.protocol import messages as msg
 from igni_core.protocol.schemas.enums import PushChannel, SentimentKind
@@ -62,7 +69,7 @@ def _answer(probabilities: dict[str, float]) -> DecisionAnswer:
 
 
 class _Laya(Laya):
-    """Answers both questions with the probabilities given, or raises; records every request."""
+    """Answers every question with the probabilities given, or raises; records every request."""
 
     def __init__(
         self,
@@ -71,10 +78,12 @@ class _Laya(Laya):
         *,
         error: Exception | None = None,
         gate: asyncio.Event | None = None,
+        aspects: dict[str, dict[str, float]] | None = None,
     ) -> None:
         super().__init__()
         self.gesture = {"neither": 1.0, **(gesture or {})}
         self.feeling = {"neutral": 1.0, **(feeling or {})}
+        self.aspects = aspects or {}
         self.error = error
         self.gate = gate
         self.requests: list[DecisionRequest] = []
@@ -91,7 +100,19 @@ class _Laya(Laya):
             SENTIMENT_QUESTION.id: _answer(self.feeling),
             GESTURE_QUESTION.id: _answer(self.gesture),
         }
+        for question in ASPECT_QUESTIONS:
+            answers[question.id] = _answer(self.aspects.get(question.id, _quiet(question)))
         return [Decision(answers=answers, model="laya-test")]
+
+
+def _quiet(question: DecisionQuestion) -> dict[str, float]:
+    """The answer a question gets when a test says nothing about it: its last label, sure."""
+    if question.kind is QuestionKind.NOUL:
+        return {"yes": 0.0, "no": 1.0}
+    labels = list(question.options or {}) or list(question.levels or [])
+    return {
+        label: (1.0 if label == labels[0 if question.levels else -1] else 0.0) for label in labels
+    }
 
 
 class _Transport:
@@ -185,12 +206,17 @@ def _dispatcher(
     return dispatcher, transport, backend
 
 
-def _sentiments(sent: list[Any]) -> list[dict[str, Any]]:
+def _pushes(sent: list[Any]) -> list[dict[str, Any]]:
     return [
         m.payload
         for m in sent
         if isinstance(m, msg.PushNotification) and m.channel == PushChannel.USER_SENTIMENT
     ]
+
+
+def _sentiments(sent: list[Any]) -> list[dict[str, Any]]:
+    """The pushes without their aspects, which the aspect tests read."""
+    return [{k: v for k, v in push.items() if k != "aspects"} for push in _pushes(sent)]
 
 
 def _push(sentiment: str, confidence: float, message: str | None, reply: str | None) -> dict:
@@ -467,10 +493,11 @@ async def test_the_judge_asks_both_questions_about_the_stripped_message_in_one_c
 
     verdict = await SentimentJudge(laya).judge("  дякую!  \n")
 
-    assert verdict == SentimentVerdict(sentiment=SentimentKind.POSITIVE, confidence=0.95)
+    assert verdict is not None
+    assert (verdict.sentiment, verdict.confidence) == (SentimentKind.POSITIVE, 0.95)
     [request] = laya.requests
     assert [context.root for context in request.contexts] == [{MESSAGE_FIELD: "дякую!"}]
-    assert request.questions == [SENTIMENT_QUESTION, GESTURE_QUESTION]
+    assert request.questions == [SENTIMENT_QUESTION, GESTURE_QUESTION, *ASPECT_QUESTIONS]
 
 
 def test_the_questions_and_their_limits():
@@ -623,3 +650,127 @@ def test_a_wiring_without_a_judge_asks_nothing():
 def test_the_backend_wires_a_judge_into_its_pool():
     source = Path(app_module.__file__).read_text()
     assert "sentiment=SentimentJudge()," in source
+
+
+# ── The aspects ───────────────────────────────────────────────────
+
+
+def _probabilities(question: DecisionQuestion, chosen: str, p: float) -> dict[str, float]:
+    labels = list(question.options or {}) or list(question.levels or []) or ["yes", "no"]
+    rest = (1 - p) / (len(labels) - 1)
+    return {label: (p if label == chosen else rest) for label in labels}
+
+
+async def test_the_aspects_ride_along_with_every_label_and_its_probability():
+    aspects = {
+        NEGATIVE_REASON_QUESTION.id: _probabilities(
+            NEGATIVE_REASON_QUESTION, "unwanted_action", 0.98
+        ),
+        POSITIVE_REASON_QUESTION.id: _probabilities(POSITIVE_REASON_QUESTION, "other", 0.4),
+        REPEAT_QUESTION.id: {"yes": 0.12, "no": 0.88},
+        REDO_QUESTION.id: {"yes": 0.7, "no": 0.3},
+        TASK_DONE_QUESTION.id: {"yes": 0.09, "no": 0.91},
+        INTENSITY_QUESTION.id: _probabilities(INTENSITY_QUESTION, "angry", 0.7),
+    }
+    laya = _Laya(feeling={"negative": 0.86, "neutral": 0.1, "positive": 0.04}, aspects=aspects)
+    transport, _ = await _say("why did you delete my config?!", laya)
+
+    [push] = _pushes(transport.sent)
+    got = push["aspects"]
+    assert list(got) == [
+        "feeling",
+        "gesture",
+        "negative_reason",
+        "positive_reason",
+        "repeat",
+        "redo_requested",
+        "task_done",
+        "intensity",
+    ]
+    assert got["feeling"] == {
+        "answer": "negative",
+        "probabilities": [
+            {"label": "neutral", "probability": 0.1},
+            {"label": "negative", "probability": 0.86},
+            {"label": "positive", "probability": 0.04},
+        ],
+    }
+    assert got["gesture"] == {
+        "answer": "neither",
+        "probabilities": [{"label": "neither", "probability": 1.0}],
+    }
+    assert got["negative_reason"]["answer"] == "unwanted_action"
+    assert [p["label"] for p in got["negative_reason"]["probabilities"]] == list(
+        NEGATIVE_REASON_QUESTION.options or {}
+    )
+    assert {p["label"]: p["probability"] for p in got["negative_reason"]["probabilities"]} == (
+        aspects[NEGATIVE_REASON_QUESTION.id]
+    )
+    assert got["positive_reason"]["answer"] == "other"
+    assert got["repeat"] == {
+        "answer": "no",
+        "probabilities": [
+            {"label": "yes", "probability": 0.12},
+            {"label": "no", "probability": 0.88},
+        ],
+    }
+    assert got["redo_requested"] == {
+        "answer": "yes",
+        "probabilities": [
+            {"label": "yes", "probability": 0.7},
+            {"label": "no", "probability": 0.3},
+        ],
+    }
+    assert got["task_done"] == {
+        "answer": "no",
+        "probabilities": [
+            {"label": "yes", "probability": 0.09},
+            {"label": "no", "probability": 0.91},
+        ],
+    }
+    assert got["intensity"]["answer"] == "angry"
+    assert [p["label"] for p in got["intensity"]["probabilities"]] == INTENSITY_QUESTION.levels
+
+
+async def test_no_aspects_are_sent_without_a_verdict():
+    aspects = {REDO_QUESTION.id: {"yes": 0.99, "no": 0.01}}
+    transport, _ = await _say("undo it, but kindly", _Laya(aspects=aspects))
+
+    assert _pushes(transport.sent) == []
+
+
+def test_the_aspect_questions():
+    assert [q.id for q in ASPECT_QUESTIONS] == [
+        "negative_reason",
+        "positive_reason",
+        "repeat",
+        "redo_requested",
+        "task_done",
+        "intensity",
+    ]
+    assert list(NEGATIVE_REASON_QUESTION.options or {}) == [
+        "wrong_or_incorrect",
+        "misunderstood_request",
+        "incomplete",
+        "ignored_instruction",
+        "unwanted_action",
+        "too_slow",
+        "wrong_length",
+        "tone",
+        "refused_or_gave_up",
+        "other",
+    ]
+    assert list(POSITIVE_REASON_QUESTION.options or {}) == [
+        "solved_or_correct",
+        "fast",
+        "clear_explanation",
+        "beyond_expectations",
+        "other",
+    ]
+    assert {q.kind for q in (REPEAT_QUESTION, REDO_QUESTION, TASK_DONE_QUESTION)} == {
+        QuestionKind.NOUL
+    }
+    assert INTENSITY_QUESTION.kind is QuestionKind.SCORE
+    assert INTENSITY_QUESTION.levels == ["none", "mild", "strong", "angry"]
+    for question in ASPECT_QUESTIONS:
+        assert f"`{MESSAGE_FIELD}`" in question.question

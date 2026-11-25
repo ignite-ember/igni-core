@@ -2929,6 +2929,27 @@
         "null"
       ]
     },
+    "LabelProbability": {
+      "description": "One option, level, or `yes` / `no`, and how likely Laya found it.",
+      "properties": {
+        "label": {
+          "description": "The option, level, or `yes` / `no`.",
+          "title": "Label",
+          "type": "string"
+        },
+        "probability": {
+          "description": "Its probability, from 0 to 1.",
+          "title": "Probability",
+          "type": "number"
+        }
+      },
+      "required": [
+        "label",
+        "probability"
+      ],
+      "title": "LabelProbability",
+      "type": "object"
+    },
     "LatestPlanResult": {
       "description": "The session's current plan-mode plan and task list.\n\nRead it when opening a plan view and again after the agent submits\na plan.",
       "properties": {
@@ -7121,6 +7142,79 @@
       "title": "Selection",
       "type": "object"
     },
+    "SentimentAspect": {
+      "description": "The label Laya chose, and every label's probability, to threshold again later.",
+      "properties": {
+        "answer": {
+          "description": "The label Laya chose.",
+          "title": "Answer",
+          "type": "string"
+        },
+        "probabilities": {
+          "description": "Every label's probability, in the question's order.",
+          "items": {
+            "$ref": "#/defs/LabelProbability"
+          },
+          "title": "Probabilities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "answer",
+        "probabilities"
+      ],
+      "title": "SentimentAspect",
+      "type": "object"
+    },
+    "SentimentAspects": {
+      "description": "What Laya read in the message besides the verdict, for whoever learns from the turn.",
+      "properties": {
+        "feeling": {
+          "$ref": "#/defs/SentimentAspect",
+          "description": "`positive`, `negative` or `neutral`."
+        },
+        "gesture": {
+          "$ref": "#/defs/SentimentAspect",
+          "description": "`gratitude`, `compliment`, `insult` or `neither`."
+        },
+        "intensity": {
+          "$ref": "#/defs/SentimentAspect",
+          "description": "`none`, `mild`, `strong` or `angry`."
+        },
+        "negative_reason": {
+          "$ref": "#/defs/SentimentAspect",
+          "description": "What displeased the person: `wrong_or_incorrect`, `misunderstood_request`, `incomplete`, `ignored_instruction`, `unwanted_action`, `too_slow`, `wrong_length`, `tone`, `refused_or_gave_up` or `other`."
+        },
+        "positive_reason": {
+          "$ref": "#/defs/SentimentAspect",
+          "description": "What pleased the person: `solved_or_correct`, `fast`, `clear_explanation`, `beyond_expectations` or `other`."
+        },
+        "redo_requested": {
+          "$ref": "#/defs/SentimentAspect",
+          "description": "Whether the person asks to redo or undo something."
+        },
+        "repeat": {
+          "$ref": "#/defs/SentimentAspect",
+          "description": "Whether the same problem happened again."
+        },
+        "task_done": {
+          "$ref": "#/defs/SentimentAspect",
+          "description": "Whether the person says the task is done."
+        }
+      },
+      "required": [
+        "feeling",
+        "gesture",
+        "negative_reason",
+        "positive_reason",
+        "repeat",
+        "redo_requested",
+        "task_done",
+        "intensity"
+      ],
+      "title": "SentimentAspects",
+      "type": "object"
+    },
     "SentimentKind": {
       "description": "How the person feels about igni or its last answer, as Laya read their message.",
       "enum": [
@@ -9652,6 +9746,10 @@
     "UserSentimentPayload": {
       "description": "Channel `user_sentiment`. The person's message was pleased or displeased with igni.",
       "properties": {
+        "aspects": {
+          "$ref": "#/defs/SentimentAspects",
+          "description": "Every question Laya answered about the message, with every probability."
+        },
         "confidence": {
           "description": "How sure Laya is, from 0 to 1.",
           "title": "Confidence",
@@ -9696,7 +9794,8 @@
         "sentiment",
         "confidence",
         "message_run_id",
-        "reply_run_id"
+        "reply_run_id",
+        "aspects"
       ],
       "title": "UserSentimentPayload",
       "type": "object"

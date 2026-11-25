@@ -49,6 +49,7 @@ REQUIRED = {
         "confidence",
         "message_run_id",
         "reply_run_id",
+        "aspects",
     },
 }
 
@@ -72,6 +73,25 @@ _VALID = {
     "confidence": 0.9,
     "message_run_id": "r-2",
     "reply_run_id": "r-1",
+    "aspects": {
+        name: {
+            "answer": "no",
+            "probabilities": [
+                {"label": "yes", "probability": 0.1},
+                {"label": "no", "probability": 0.9},
+            ],
+        }
+        for name in (
+            "feeling",
+            "gesture",
+            "negative_reason",
+            "positive_reason",
+            "repeat",
+            "redo_requested",
+            "task_done",
+            "intensity",
+        )
+    },
 }
 
 

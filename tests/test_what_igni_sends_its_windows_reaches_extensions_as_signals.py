@@ -356,6 +356,27 @@ async def test_session_mode_plan_and_todo_pushes_are_told(rig, heard):
     ]
 
 
+ASPECTS = {
+    name: {
+        "answer": "no",
+        "probabilities": [
+            {"label": "yes", "probability": 0.1},
+            {"label": "no", "probability": 0.9},
+        ],
+    }
+    for name in (
+        "feeling",
+        "gesture",
+        "negative_reason",
+        "positive_reason",
+        "repeat",
+        "redo_requested",
+        "task_done",
+        "intensity",
+    )
+}
+
+
 async def test_how_a_message_feels_about_igni_is_told_as_chat_sentiment(rig, heard):
     def sentiment(**payload: Any) -> msg.PushNotification:
         return msg.PushNotification(channel="user_sentiment", session_id="boot", payload=payload)
@@ -368,6 +389,7 @@ async def test_how_a_message_feels_about_igni_is_told_as_chat_sentiment(rig, hea
             confidence=0.95,
             message_run_id="r-2",
             reply_run_id="r-1",
+            aspects=ASPECTS,
         ),
         sentiment(
             session_id="other",
@@ -375,6 +397,7 @@ async def test_how_a_message_feels_about_igni_is_told_as_chat_sentiment(rig, hea
             confidence=0.84,
             message_run_id=None,
             reply_run_id=None,
+            aspects=ASPECTS,
         ),
         sentiment(
             session_id="boot",
@@ -382,6 +405,14 @@ async def test_how_a_message_feels_about_igni_is_told_as_chat_sentiment(rig, hea
             confidence=0.9,
             message_run_id="r-3",
             reply_run_id="r-2",
+            aspects=ASPECTS,
+        ),
+        sentiment(
+            session_id="boot",
+            sentiment="positive",
+            confidence=0.9,
+            message_run_id="r-4",
+            reply_run_id="r-3",
         ),
     )
 
@@ -392,6 +423,7 @@ async def test_how_a_message_feels_about_igni_is_told_as_chat_sentiment(rig, hea
             "confidence": 0.95,
             "message_run_id": "r-2",
             "reply_run_id": "r-1",
+            "aspects": ASPECTS,
         },
         {
             "session_id": "other",
@@ -399,6 +431,7 @@ async def test_how_a_message_feels_about_igni_is_told_as_chat_sentiment(rig, hea
             "confidence": 0.84,
             "message_run_id": None,
             "reply_run_id": None,
+            "aspects": ASPECTS,
         },
     ]
 
