@@ -120,7 +120,7 @@ pipe); there is no terminal chat UI any more — run it bare and it says so.
 The interactive chat is the desktop app and the web client.
 
 **What the published package holds today.** `igni-core` on PyPI is
-**v1.0.6**, and it is this repository's build: the `igni_core` module,
+**v1.0.7**, and it is this repository's build: the `igni_core` module,
 the `igni` command and the decisions service, and the Homebrew formula
 installs the same package. The old name, `ignite-ember`, is retired: its
 releases are yanked from PyPI and there is no formula or command by it.
