@@ -356,6 +356,23 @@ async def test_session_mode_plan_and_todo_pushes_are_told(rig, heard):
     ]
 
 
+async def test_thanks_or_praise_for_igni_is_told_as_chat_appreciated(rig, heard):
+    def appreciation(**payload: Any) -> msg.PushNotification:
+        return msg.PushNotification(channel="user_appreciation", session_id="boot", payload=payload)
+
+    await _send(
+        rig,
+        appreciation(session_id="boot", kind="gratitude"),
+        appreciation(session_id="other", kind="compliment"),
+        appreciation(session_id="boot", kind="sarcasm"),
+    )
+
+    assert heard.values("chat.appreciated") == [
+        {"session_id": "boot", "kind": "gratitude"},
+        {"session_id": "other", "kind": "compliment"},
+    ]
+
+
 async def test_a_push_whose_payload_does_not_fit_its_model_is_dropped(rig, heard):
     """A payload that does not fit the model that produced it is not read half-way."""
     await _send(

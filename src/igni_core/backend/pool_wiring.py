@@ -12,6 +12,7 @@ from igni_core.backend.rpc_router import RpcRouter
 from igni_core.backend.schemas_sessions import BackendLike
 from igni_core.backend.session_pool import SessionRuntime
 from igni_core.backend.session_stamping_transport import SessionStampingTransport
+from igni_core.core.appreciation.judge import AppreciationJudge
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.mcp.client import MCPClientManager
 from igni_core.core.mcp.hints import ToolHintsRegistry
@@ -72,6 +73,8 @@ class PoolWiring:
     #: The manager the extensions are connected on (the boot session's):
     #: every session of the pool is offered their tools.
     extension_mcp: MCPClientManager | None = None
+    appreciation: AppreciationJudge | None = None
+    """Asks Laya whether a person's message thanks or praises igni; None asks nothing."""
 
     def stamped(self, backend: BackendLike) -> SessionStampingTransport:
         """The root transport, stamping ``backend``'s session id on everything it sends."""
@@ -98,4 +101,5 @@ class PoolWiring:
             queue=runtime.queue,
             login=self.login,
             extensions=self.extensions,
+            appreciation=self.appreciation,
         )

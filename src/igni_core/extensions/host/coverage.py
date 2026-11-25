@@ -337,6 +337,7 @@ PUSH: dict[PushChannel, str] = {
     PushChannel.HTTP_RETRY_SUCCEEDED: "chat.retry",
     PushChannel.VISUALIZATION_ACTION_DISPATCHED: "chat.views.action",
     PushChannel.SESSION_STATES_CHANGED: "sessions.states_changed",
+    PushChannel.USER_APPRECIATION: "chat.appreciated",
 }
 
 PUSH_UNREACHABLE: dict[PushChannel, str] = {

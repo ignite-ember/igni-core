@@ -312,6 +312,15 @@
       "title": "AgentStartedEvent",
       "type": "object"
     },
+    "AppreciationKind": {
+      "description": "What Laya heard in a message that appreciates igni.",
+      "enum": [
+        "gratitude",
+        "compliment"
+      ],
+      "title": "AppreciationKind",
+      "type": "string"
+    },
     "ApproverTokenMinted": {
       "description": "A new token that lets a program answer the agent's approval requests.",
       "properties": {
@@ -9519,6 +9528,26 @@
       "title": "UploadAttachmentResult",
       "type": "object"
     },
+    "UserAppreciationPayload": {
+      "description": "Channel `user_appreciation`. The person's message thanked or praised igni.",
+      "properties": {
+        "kind": {
+          "$ref": "#/defs/AppreciationKind",
+          "description": "Whether it was thanks or praise."
+        },
+        "session_id": {
+          "description": "The session the message was sent in.",
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "kind"
+      ],
+      "title": "UserAppreciationPayload",
+      "type": "object"
+    },
     "UserMessage": {
       "description": "The person sends a chat message, starting a run.\n\nA run waiting on an approval ends with it, and its approvals are\ndropped. That refuses them, so it takes what answering takes: from a\nprogram without an approver token it is refused while the session\nwaits, with an `error` and the stream's end, and nothing is dropped.",
       "properties": {
@@ -13785,6 +13814,12 @@
       "doc": "The agent's to-do list, whole, after it changed.",
       "schema": {
         "$ref": "#/defs/TodosUpdatedEventPayload"
+      }
+    },
+    "user_appreciation": {
+      "doc": "Laya read the person's message as thanks or praise for igni.",
+      "schema": {
+        "$ref": "#/defs/UserAppreciationPayload"
       }
     },
     "visualization_action_dispatched": {

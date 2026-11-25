@@ -63,6 +63,7 @@ from igni_core.protocol.schemas.be_events import (
     ToolStarted,
 )
 from igni_core.protocol.schemas.enums import (
+    AppreciationKind,
     CommandAction,
     CommandResultKind,
     HITLAction,
@@ -111,6 +112,7 @@ from igni_core.protocol.schemas.push import (
     push_scheduler_completed,
     push_scheduler_started,
     push_session_named,
+    push_user_appreciation,
 )
 from igni_core.protocol.schemas.push_payloads import (
     BackgroundProcessDonePayload,
@@ -123,6 +125,7 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerCompletedPayload,
     SchedulerStartedPayload,
     SessionNamedPayload,
+    UserAppreciationPayload,
 )
 from igni_core.protocol.schemas.rpc import RpcErrorCode, RPCRequest, RPCResponse
 
@@ -132,6 +135,7 @@ __all__ = [
     "RunHeader",
     "RunScopedMessage",
     # Enums
+    "AppreciationKind",
     "CommandAction",
     "CommandResultKind",
     "HITLAction",
@@ -204,6 +208,7 @@ __all__ = [
     "SchedulerCompletedPayload",
     "SchedulerStartedPayload",
     "SessionNamedPayload",
+    "UserAppreciationPayload",
     "push_background_process_done",
     "push_file_edited",
     "push_login_result",
@@ -215,6 +220,7 @@ __all__ = [
     "push_scheduler_completed",
     "push_scheduler_started",
     "push_session_named",
+    "push_user_appreciation",
     # Internal (not on wire)
     "ToolResultData",
 ]

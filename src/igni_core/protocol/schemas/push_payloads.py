@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from igni_core.protocol.schemas.enums import AppreciationKind
+
 
 class LoginStatusPayload(BaseModel):
     """Channel ``login_status``. Progress of a sign-in that is under way,
@@ -125,6 +127,13 @@ class SessionNamedPayload(BaseModel):
     name: str = Field(description="Its new display name.")
 
 
+class UserAppreciationPayload(BaseModel):
+    """Channel ``user_appreciation``. The person's message thanked or praised igni."""
+
+    session_id: str = Field(description="The session the message was sent in.")
+    kind: AppreciationKind = Field(description="Whether it was thanks or praise.")
+
+
 __all__ = [
     "BackgroundProcessDonePayload",
     "FileEditedPayload",
@@ -136,4 +145,5 @@ __all__ = [
     "SchedulerCompletedPayload",
     "SchedulerStartedPayload",
     "SessionNamedPayload",
+    "UserAppreciationPayload",
 ]

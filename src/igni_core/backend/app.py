@@ -36,6 +36,7 @@ from igni_core.backend.session_runtime_factory import BootRuntime
 from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.backend.supervisor import BackendSupervisor
 from igni_core.backend.transport_builder import TransportBuilder
+from igni_core.core.appreciation.judge import AppreciationJudge
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.settings import Settings
 from igni_core.core.db.locator import StorageLocator
@@ -257,6 +258,7 @@ class BackendApp:
                 extension_store=store,
                 notifications=notifications.center,
                 extension_mcp=backend.mcp_manager,
+                appreciation=AppreciationJudge(),
             ),
             settings=settings,
             dirs=ProjectDirs(

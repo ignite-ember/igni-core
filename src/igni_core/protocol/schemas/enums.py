@@ -324,6 +324,8 @@ class PushChannel(StrEnum):
     #: window gets it. The payload is
     #: :class:`~igni_core.backend.schemas_session_states.SessionStates`.
     SESSION_STATES_CHANGED = "session_states_changed"
+    USER_APPRECIATION = "user_appreciation"
+    """Laya read the person's message as thanks or praise for igni; the payload is ``UserAppreciationPayload``."""
     UNKNOWN = "unknown"
 
     @classmethod
@@ -331,7 +333,15 @@ class PushChannel(StrEnum):
         return cls.UNKNOWN
 
 
+class AppreciationKind(StrEnum):
+    """What Laya heard in a message that appreciates igni."""
+
+    GRATITUDE = "gratitude"
+    COMPLIMENT = "compliment"
+
+
 __all__ = [
+    "AppreciationKind",
     "CommandResultKind",
     "CommandAction",
     "OrchestrationTaskStatus",

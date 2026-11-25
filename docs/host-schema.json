@@ -1624,6 +1624,24 @@
       ]
     },
     {
+      "name": "Appreciation",
+      "doc": "Laya read the person's message as thanks or praise for igni.",
+      "fields": [
+        {
+          "name": "session_id",
+          "type": "str",
+          "doc": "",
+          "optional": false
+        },
+        {
+          "name": "kind",
+          "type": "str",
+          "doc": "`gratitude` or `compliment`.",
+          "optional": false
+        }
+      ]
+    },
+    {
       "name": "FileEdited",
       "doc": "The agent wrote a file.",
       "fields": [
@@ -5239,6 +5257,15 @@
           "name": "history_changed",
           "type": "HistoryChange",
           "doc": "Turns were truncated or discarded.",
+          "wire": null,
+          "permission": null,
+          "inherit_permission": true,
+          "stage": 1
+        },
+        {
+          "name": "appreciated",
+          "type": "Appreciation",
+          "doc": "The person thanked or praised igni.",
           "wire": null,
           "permission": null,
           "inherit_permission": true,

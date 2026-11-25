@@ -26,7 +26,7 @@ import pytest
 from pydantic import TypeAdapter
 
 from igni_core.notifications.schemas import NotificationsChanged
-from igni_core.protocol.schemas.enums import PushChannel
+from igni_core.protocol.schemas.enums import AppreciationKind, PushChannel
 from igni_core.protocol.schemas.push import (
     PushNotification,
     push_background_process_done,
@@ -40,6 +40,7 @@ from igni_core.protocol.schemas.push import (
     push_scheduler_completed,
     push_scheduler_started,
     push_session_named,
+    push_user_appreciation,
 )
 from igni_core.protocol.schemas.push_payloads import (
     BackgroundProcessDonePayload,
@@ -52,6 +53,7 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerCompletedPayload,
     SchedulerStartedPayload,
     SessionNamedPayload,
+    UserAppreciationPayload,
 )
 from igni_core.protocol.schemas.wire import WireMessage
 
@@ -136,6 +138,12 @@ CASES = [
         PushChannel.FILE_EDITED,
         {"path": "/project/main.py"},
     ),
+    _Case(
+        push_user_appreciation,
+        UserAppreciationPayload,
+        PushChannel.USER_APPRECIATION,
+        {"session_id": "s-1", "kind": AppreciationKind.GRATITUDE},
+    ),
 ]
 
 
@@ -167,7 +175,7 @@ class TestEachFactoryBindsItsChannelToItsPayload:
 def test_every_channel_with_a_payload_model_has_a_factory():
     """A producer set that grows a payload model grows a factory.
 
-    The ten models in ``push_payloads`` are the channels igni produces
+    The eleven models in ``push_payloads`` are the channels igni produces
     with a shape of its own; each one has a factory that takes it, so
     the pairing is spelled out once and cannot drift.
     """
@@ -190,6 +198,7 @@ def test_every_channel_with_a_payload_model_has_a_factory():
         "SchedulerCompletedPayload",
         "SchedulerStartedPayload",
         "SessionNamedPayload",
+        "UserAppreciationPayload",
     }
     assert factories == {
         "push_background_process_done",
@@ -202,6 +211,7 @@ def test_every_channel_with_a_payload_model_has_a_factory():
         "push_scheduler_completed",
         "push_scheduler_started",
         "push_session_named",
+        "push_user_appreciation",
     }
 
 
