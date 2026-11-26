@@ -253,7 +253,7 @@ class TestThePushMapsAreConsistent:
 
 
 class TestTheNotReachableTable:
-    def test_the_ten_rows_are_unique_and_each_is_used_or_named(self) -> None:
+    def test_the_eleven_rows_are_unique_and_each_is_used_or_named(self) -> None:
         keys = [row.key for row in coverage.NOT_REACHABLE]
         assert keys == [
             "credentials",
@@ -264,6 +264,7 @@ class TestTheNotReachableTable:
             "workspace_trust",
             "service",
             "approver_tokens",
+            "terminal",
             "verdict",
             "dead_channel",
         ]

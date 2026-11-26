@@ -16,6 +16,7 @@ from igni_core.backend.observed_transport import ObservedTransport
 from igni_core.backend.service_event_ingress import ServiceEventIngress
 from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.supervisor import BackendSupervisor
+from igni_core.backend.terminal.terminal_registry import TerminalRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class BackendParts(BaseModel):
     extensions: ExtensionsRuntime
     startup: ExtensionStartup
     host: HostModelRuntime
+    terminals: TerminalRegistry
 
 
 class ServingBackend:
@@ -85,6 +87,7 @@ class ServingBackend:
         """In order."""
         parts = self._parts
         return [
+            parts.terminals.close_all,
             parts.ingress.stop,
             parts.notifications.stop,
             parts.host.stop,

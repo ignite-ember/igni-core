@@ -84,6 +84,8 @@ class ModePolicy(BaseModel):
     floors: tuple[ModeFloor, ...] = ()
     allow_bypass: bool = True
     bypass_source: str | None = None
+    allow_terminal: bool = True
+    terminal_source: str | None = None
 
     @classmethod
     def from_tiers(
@@ -95,10 +97,11 @@ class ModePolicy(BaseModel):
 
         Not the merge's precedence: for a limit the stricter tier wins,
         whichever it is. A mode that does not parse sets no floor, and an
-        ``allow_bypass`` that is not a boolean is ignored.
+        ``allow_bypass`` or ``allow_terminal`` that is not a boolean is ignored.
         """
         floors: list[ModeFloor] = []
         bypass_sources: list[str] = []
+        terminal_sources: list[str] = []
         for source, payload in ((cls.MANAGED, managed), (cls.GROUP, group)):
             perms = (payload or {}).get("permissions")
             if not isinstance(perms, dict):
@@ -108,11 +111,15 @@ class ModePolicy(BaseModel):
                 floors.append(ModeFloor(mode=PermissionMode(raw_mode), source=source))
             if perms.get("allow_bypass") is False:
                 bypass_sources.append(source)
+            if perms.get("allow_terminal") is False:
+                terminal_sources.append(source)
         floors.sort(key=lambda f: MODE_RANK[f.mode])
         return cls(
             floors=tuple(floors),
             allow_bypass=not bypass_sources,
             bypass_source=" and ".join(bypass_sources) or None,
+            allow_terminal=not terminal_sources,
+            terminal_source=" and ".join(terminal_sources) or None,
         )
 
     @property
@@ -127,6 +134,15 @@ class ModePolicy(BaseModel):
     @property
     def is_empty(self) -> bool:
         return not self.floors and self.allow_bypass
+
+    def terminal_refusal(self) -> str | None:
+        """Why no interactive terminal may be opened, or ``None`` if one may."""
+        if self.allow_terminal:
+            return None
+        return (
+            f"the terminal is turned off by your organisation's "
+            f"{self.terminal_source or 'policy'} (permissions.allow_terminal: false)"
+        )
 
     def refusal(self, mode: PermissionMode) -> str | None:
         """Why ``mode`` may not be entered, or ``None`` if it may."""

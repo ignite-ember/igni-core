@@ -93,6 +93,10 @@ class PermissionsConfig(BaseModel):
     #: ``allow_bypass`` changes nothing. Defaults to ``true``: with no
     #: organisation policy every mode, fully automatic included, is open.
     allow_bypass: bool = True
+    #: ``false`` turns the app's interactive terminal off: no window may
+    #: open one. Honoured only from the managed-settings file or the group
+    #: policy, exactly like ``allow_bypass``.
+    allow_terminal: bool = True
     #: ``--read-only``: plan-mode reads for the whole session, with no
     #: questions. A shell command built only from the read-only allow-list
     #: runs, as do the web tools (a search or a GET) and an extension's tools

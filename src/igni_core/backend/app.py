@@ -20,7 +20,7 @@ from igni_core.backend.host_model_runtime import HostModelRuntime
 from igni_core.backend.igni_server_access import IgniServerAccess
 from igni_core.backend.login_coordinator import LoginCoordinator
 from igni_core.backend.observed_transport import ObservedTransport
-from igni_core.backend.pool_rpcs import ApproverTokenRpc
+from igni_core.backend.pool_rpcs import ApproverTokenRpc, TerminalRpc
 from igni_core.backend.pool_wiring import PoolWiring
 from igni_core.backend.process_environment import ProcessEnvironment
 from igni_core.backend.push_bridge import PushNotificationBridge
@@ -35,6 +35,7 @@ from igni_core.backend.session_orchestrator import SessionOrchestrator
 from igni_core.backend.session_runtime_factory import BootRuntime
 from igni_core.backend.settings_loader import BackendSettingsLoader
 from igni_core.backend.supervisor import BackendSupervisor
+from igni_core.backend.terminal.terminal_registry import TerminalRegistry
 from igni_core.backend.transport_builder import TransportBuilder
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.settings import Settings
@@ -49,6 +50,7 @@ from igni_core.core.prompts.loader import PromptLoader
 from igni_core.core.sentiment.judge import SentimentJudge
 from igni_core.core.session.session_reads import SessionReadStore
 from igni_core.core.tools.process_supervisor_locator import SupervisorLocator
+from igni_core.core.utils.audit import AuditLogger
 from igni_core.extensions.principal import SignedInPerson
 from igni_core.extensions.store import ExtensionStore
 
@@ -272,6 +274,16 @@ class BackendApp:
         # The WebSocket's guard mints the tokens igni's window hands a
         # program it lets answer approval requests.
         orchestrator.mount(ApproverTokenRpc(builder.ws_transport))
+        # The window's terminals: each ends with its connection, and all
+        # of them when igni stops; the organisation's policy may turn
+        # them off, read at every open.
+        terminals = TerminalRegistry(
+            send=transport.send, cwd=launch.project_dir, audit=AuditLogger(settings)
+        )
+        orchestrator.mount(
+            TerminalRpc(terminals, policy=lambda: backend.settings.permissions.mode_policy)
+        )
+        transport.watch_connections(terminals.connection_watcher)
         pool = orchestrator.pool
         supervisor.set_pool(pool)
         host = HostModelRuntime.build(
@@ -331,4 +343,5 @@ class BackendApp:
             extensions=extensions,
             startup=startup,
             host=host,
+            terminals=terminals,
         )

@@ -337,6 +337,30 @@ hook when the person approved it and it runs (`decided_by: person`), or as
 without asking (a deny rule, plan mode) is written as `blocked` by `rule` or
 `mode`.
 
+**The window's terminal.** Opening an interactive terminal in igni's window
+(`terminal_open`) and its end — closed, its shell exited, or its connection
+gone — each write a line with `agent: person`, `tool: terminal`, `status:
+success` and an empty `session_id`. What was typed and what the shell printed
+are never written.
+
+```json
+{"timestamp": "2026-11-26T09:12:00.501213+00:00", "session_id": "", "agent": "person", "tool": "terminal", "status": "success", "details": {"action": "opened", "terminal_id": "term-5f0c1d2e3a4b6c7d", "shell": "/bin/zsh", "cwd": "/Users/me/src/app"}}
+{"timestamp": "2026-11-26T09:20:41.118020+00:00", "session_id": "", "agent": "person", "tool": "terminal", "status": "success", "details": {"action": "closed", "terminal_id": "term-5f0c1d2e3a4b6c7d", "shell": "/bin/zsh", "cwd": "/Users/me/src/app", "exit_code": 0, "duration_s": 520.617}}
+```
+
+| Field | Meaning |
+|---|---|
+| `details.action` | `opened` when the shell started; `closed` when it ended |
+| `details.terminal_id` | The terminal's id, the same on both lines |
+| `details.shell` | The shell it ran |
+| `details.cwd` | The folder it started in: the project folder |
+| `details.exit_code` | On `closed`: the shell's exit code, negative for the signal that ended it; absent when unknown |
+| `details.duration_s` | On `closed`: how long the terminal was open, in seconds |
+
+An organisation turns the terminal off with `permissions.allow_terminal:
+false` in the managed-settings file or the group policy
+([CONFIGURATION.md](CONFIGURATION.md#organisation-switches)).
+
 **What is never written.** The log keeps what an exported OpenTelemetry span
 keeps when content is not captured ([CONFIGURATION.md](CONFIGURATION.md#opentelemetry)):
 argument **values** are not recorded — only their names — because a command, a
@@ -526,7 +550,11 @@ It is refused, before any handler runs:
   outside a run (`run_shell`);
 - changing whom igni signs in to (`login`, `/login`, `/logout`,
   `set_server`, the cloud credential calls);
-- minting or revoking approver tokens.
+- minting or revoking approver tokens;
+- the interactive terminal (`terminal_open`, `terminal_input`,
+  `terminal_resize`, `terminal_close`): it is the person's own shell. Even
+  the window reaches only the terminals its own connection opened, and
+  their output is sent to that connection alone.
 
 An approver may do none of these either, except answer approvals, and only
 for that once: an answer that would save a permission rule (`always`,

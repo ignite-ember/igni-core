@@ -357,6 +357,13 @@ class RpcMethod(StrEnum):
     # session's.
     LIST_SESSION_STATES = "list_session_states"
     MARK_SESSION_SEEN = "mark_session_seen"
+    # The interactive terminal (``backend/terminal``): a shell on igni's
+    # machine for the window that opened it alone. Pool-level: a terminal
+    # is its connection's, not a session's.
+    TERMINAL_OPEN = "terminal_open"
+    TERMINAL_INPUT = "terminal_input"
+    TERMINAL_RESIZE = "terminal_resize"
+    TERMINAL_CLOSE = "terminal_close"
 
 
 class RpcScope(StrEnum):

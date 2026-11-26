@@ -8763,6 +8763,193 @@
       "title": "TeamTurn",
       "type": "object"
     },
+    "TerminalAck": {
+      "description": "The call was done to the terminal it names.",
+      "properties": {
+        "terminal_id": {
+          "description": "The terminal the call was done to.",
+          "title": "Terminal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "terminal_id"
+      ],
+      "title": "TerminalAck",
+      "type": "object"
+    },
+    "TerminalCloseArgs": {
+      "additionalProperties": false,
+      "description": "Arguments for closing a terminal.",
+      "properties": {
+        "terminal_id": {
+          "description": "The terminal to close.",
+          "title": "Terminal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "terminal_id"
+      ],
+      "title": "TerminalCloseArgs",
+      "type": "object"
+    },
+    "TerminalExitedPayload": {
+      "description": "Channel `terminal_exited`. A terminal's shell ended; sent once, only to the\nwindow that opened it.",
+      "properties": {
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The shell's exit code; negative when a signal ended it, `null` when unknown.",
+          "title": "Exit Code"
+        },
+        "terminal_id": {
+          "description": "The terminal whose shell ended.",
+          "title": "Terminal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "terminal_id",
+        "exit_code"
+      ],
+      "title": "TerminalExitedPayload",
+      "type": "object"
+    },
+    "TerminalInputArgs": {
+      "additionalProperties": false,
+      "description": "Arguments for typing into a terminal.",
+      "properties": {
+        "data": {
+          "description": "What to type, exactly as the keyboard sends it: text, `\\r` for Enter, `\\u0003` for Ctrl-C, escape sequences for the arrow keys.",
+          "title": "Data",
+          "type": "string"
+        },
+        "terminal_id": {
+          "description": "The terminal to type into, as `terminal_open` named it.",
+          "title": "Terminal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "terminal_id",
+        "data"
+      ],
+      "title": "TerminalInputArgs",
+      "type": "object"
+    },
+    "TerminalOpenArgs": {
+      "additionalProperties": false,
+      "description": "Arguments for opening a terminal.",
+      "properties": {
+        "cols": {
+          "description": "How many columns wide the terminal is.",
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Cols",
+          "type": "integer"
+        },
+        "rows": {
+          "description": "How many rows tall the terminal is.",
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Rows",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cols",
+        "rows"
+      ],
+      "title": "TerminalOpenArgs",
+      "type": "object"
+    },
+    "TerminalOpened": {
+      "description": "A terminal that was opened: its id, its shell and where it started.",
+      "properties": {
+        "cwd": {
+          "description": "The folder it started in: the project folder.",
+          "title": "Cwd",
+          "type": "string"
+        },
+        "shell": {
+          "description": "The shell it runs, as a path or a command name.",
+          "title": "Shell",
+          "type": "string"
+        },
+        "terminal_id": {
+          "description": "The terminal's id, which its `terminal_output` and `terminal_exited` pushes carry and every later call names.",
+          "title": "Terminal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "terminal_id",
+        "shell",
+        "cwd"
+      ],
+      "title": "TerminalOpened",
+      "type": "object"
+    },
+    "TerminalOutputPayload": {
+      "description": "Channel `terminal_output`. What a terminal's shell printed, sent only to the\nwindow that opened it.",
+      "properties": {
+        "data": {
+          "description": "The output as the shell wrote it, escape sequences included, decoded as UTF-8; a character split across reads arrives whole in a later push.",
+          "title": "Data",
+          "type": "string"
+        },
+        "terminal_id": {
+          "description": "The terminal that printed it.",
+          "title": "Terminal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "terminal_id",
+        "data"
+      ],
+      "title": "TerminalOutputPayload",
+      "type": "object"
+    },
+    "TerminalResizeArgs": {
+      "additionalProperties": false,
+      "description": "Arguments for resizing a terminal.",
+      "properties": {
+        "cols": {
+          "description": "Its new width, in columns.",
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Cols",
+          "type": "integer"
+        },
+        "rows": {
+          "description": "Its new height, in rows.",
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Rows",
+          "type": "integer"
+        },
+        "terminal_id": {
+          "description": "The terminal to resize.",
+          "title": "Terminal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "terminal_id",
+        "cols",
+        "rows"
+      ],
+      "title": "TerminalResizeArgs",
+      "type": "object"
+    },
     "ThinkingTurn": {
       "description": "The model's reasoning (\"thinking\") for part of a run.\n\nComes either from the model's separate reasoning output or from an\ninline `<think>` block in the reply.",
       "properties": {
@@ -13660,6 +13847,93 @@
       "summary": "Make the session this request is routed to continue another stored session.",
       "timeout_seconds": 30
     },
+    "terminal_close": {
+      "access": "window",
+      "area": "terminal",
+      "args": {
+        "$ref": "#/defs/TerminalCloseArgs"
+      },
+      "correlate": {
+        "by": "payload.terminal_id",
+        "from": "args.terminal_id"
+      },
+      "doc": "Close a terminal this window opened, ending its shell and what it started.\n\nThe shell is hung up, and killed if it is still there a moment later.\nIts `terminal_exited` push goes out before the answer. Not found when\nthis window has no open terminal by that id, or it has already ended.",
+      "duration": "io",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/TerminalAck"
+      },
+      "scope": "igni",
+      "streams": [
+        "push_notification:terminal_exited"
+      ],
+      "summary": "Close a terminal this window opened, ending its shell and what it started.",
+      "timeout_seconds": 30
+    },
+    "terminal_input": {
+      "access": "window",
+      "area": "terminal",
+      "args": {
+        "$ref": "#/defs/TerminalInputArgs"
+      },
+      "correlate": null,
+      "doc": "Type into a terminal this window opened.\n\n`data` is sent to the shell as the keyboard sends it. What it\nprints back comes on `terminal_output`. Not found when this window\nhas no open terminal by that id.",
+      "duration": "instant",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/TerminalAck"
+      },
+      "scope": "igni",
+      "streams": [],
+      "summary": "Type into a terminal this window opened.",
+      "timeout_seconds": 10
+    },
+    "terminal_open": {
+      "access": "window",
+      "area": "terminal",
+      "args": {
+        "$ref": "#/defs/TerminalOpenArgs"
+      },
+      "correlate": {
+        "by": "payload.terminal_id",
+        "from": "result.terminal_id"
+      },
+      "doc": "Open an interactive terminal: the person's login shell, in the project folder.\n\n`cols` and `rows` are its size (1 to 1000 each). Returns the\n`terminal_id` every later call names, the `shell` it runs and the\n`cwd` it started in. What the shell prints comes as\n`terminal_output` pushes, and its end once as `terminal_exited`,\nto this window alone. The terminal ends when this window's connection\ndoes. A window may have eight open at once.\n\nRefused when the organisation turned the terminal off\n(`permissions.allow_terminal: false`) or the window already has\neight; unavailable when this machine has no terminal support.",
+      "duration": "io",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/TerminalOpened"
+      },
+      "scope": "igni",
+      "streams": [
+        "push_notification:terminal_exited",
+        "push_notification:terminal_output"
+      ],
+      "summary": "Open an interactive terminal: the person's login shell, in the project folder.",
+      "timeout_seconds": 30
+    },
+    "terminal_resize": {
+      "access": "window",
+      "area": "terminal",
+      "args": {
+        "$ref": "#/defs/TerminalResizeArgs"
+      },
+      "correlate": null,
+      "doc": "Resize a terminal this window opened.\n\n`cols` and `rows` are its new size (1 to 1000 each); the shell and\nthe program in the foreground are told. Not found when this window\nhas no open terminal by that id.",
+      "duration": "instant",
+      "may_stream": [],
+      "reply": "rpc_response",
+      "result": {
+        "$ref": "#/defs/TerminalAck"
+      },
+      "scope": "igni",
+      "streams": [],
+      "summary": "Resize a terminal this window opened.",
+      "timeout_seconds": 10
+    },
     "toggle_verbose": {
       "access": "client",
       "area": "models",
@@ -13939,6 +14213,18 @@
       "doc": "Which chats are running, waiting on the person, or finished unseen moved.",
       "schema": {
         "$ref": "#/defs/SessionStates"
+      }
+    },
+    "terminal_exited": {
+      "doc": "A terminal's shell ended; sent once, only to the window that opened it.",
+      "schema": {
+        "$ref": "#/defs/TerminalExitedPayload"
+      }
+    },
+    "terminal_output": {
+      "doc": "What a terminal's shell printed; sent only to the window that opened it.",
+      "schema": {
+        "$ref": "#/defs/TerminalOutputPayload"
       }
     },
     "todos_updated": {
