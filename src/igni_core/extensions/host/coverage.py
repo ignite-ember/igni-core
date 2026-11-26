@@ -91,6 +91,15 @@ NOT_REACHABLE: tuple[Unreachable, ...] = (
         "mint the token could approve its own agent's calls (SECURITY §10).",
     ),
     Unreachable(
+        key="terminal",
+        what="The window's interactive terminal (`terminal_open`, `terminal_input`, "
+        "`terminal_resize`, `terminal_close`, and the `terminal_output` and `terminal_exited` "
+        "pushes)",
+        why="The person's own shell on igni's machine, for the window that opened it alone: "
+        "an extension that could type into it would run any command as the person, past "
+        "every approval.",
+    ),
+    Unreachable(
         key="verdict",
         what="The verdict on the card the agent drew (`report_visualization_verdict`)",
         why="Only the client that draws the agent's card has a verdict to give: it is "
@@ -230,6 +239,10 @@ RPC_UNREACHABLE: dict[RpcMethod, str] = {
     RpcMethod.SET_MCP_APPROVAL: "workspace_trust",
     RpcMethod.MINT_APPROVER_TOKEN: "approver_tokens",
     RpcMethod.REVOKE_APPROVER_TOKENS: "approver_tokens",
+    RpcMethod.TERMINAL_OPEN: "terminal",
+    RpcMethod.TERMINAL_INPUT: "terminal",
+    RpcMethod.TERMINAL_RESIZE: "terminal",
+    RpcMethod.TERMINAL_CLOSE: "terminal",
     RpcMethod.REPORT_VISUALIZATION_VERDICT: "verdict",
 }
 
@@ -346,6 +359,8 @@ PUSH_UNREACHABLE: dict[PushChannel, str] = {
     PushChannel.WINDOW_MODEL_CHANGED: "channel",
     PushChannel.WORKSPACE_TRUST_REQUIRED: "workspace_trust",
     PushChannel.VM_CREDENTIAL: "credentials",
+    PushChannel.TERMINAL_OUTPUT: "terminal",
+    PushChannel.TERMINAL_EXITED: "terminal",
 }
 
 #: ``UNKNOWN`` is the enum's catch-all for a channel nobody listed,

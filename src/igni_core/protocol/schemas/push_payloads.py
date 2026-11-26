@@ -145,6 +145,27 @@ class UserSentimentPayload(BaseModel):
     )
 
 
+class TerminalOutputPayload(BaseModel):
+    """Channel ``terminal_output``. What a terminal's shell printed, sent only to the
+    window that opened it."""
+
+    terminal_id: str = Field(description="The terminal that printed it.")
+    data: str = Field(
+        description="The output as the shell wrote it, escape sequences included, decoded "
+        "as UTF-8; a character split across reads arrives whole in a later push."
+    )
+
+
+class TerminalExitedPayload(BaseModel):
+    """Channel ``terminal_exited``. A terminal's shell ended; sent once, only to the
+    window that opened it."""
+
+    terminal_id: str = Field(description="The terminal whose shell ended.")
+    exit_code: int | None = Field(
+        description="The shell's exit code; negative when a signal ended it, `null` when unknown."
+    )
+
+
 __all__ = [
     "BackgroundProcessDonePayload",
     "FileEditedPayload",
@@ -156,5 +177,7 @@ __all__ = [
     "SchedulerCompletedPayload",
     "SchedulerStartedPayload",
     "SessionNamedPayload",
+    "TerminalExitedPayload",
+    "TerminalOutputPayload",
     "UserSentimentPayload",
 ]

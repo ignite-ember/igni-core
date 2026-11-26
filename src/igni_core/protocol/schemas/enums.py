@@ -326,6 +326,10 @@ class PushChannel(StrEnum):
     SESSION_STATES_CHANGED = "session_states_changed"
     USER_SENTIMENT = "user_sentiment"
     """Laya read the person's message as pleased or displeased with igni; the payload is ``UserSentimentPayload``."""
+    TERMINAL_OUTPUT = "terminal_output"
+    """What a terminal's shell printed, to the window that opened it alone; the payload is ``TerminalOutputPayload``."""
+    TERMINAL_EXITED = "terminal_exited"
+    """A terminal's shell ended, told once to the window that opened it; the payload is ``TerminalExitedPayload``."""
     UNKNOWN = "unknown"
 
     @classmethod

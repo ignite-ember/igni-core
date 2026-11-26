@@ -11,7 +11,7 @@ Pinned:
 
 * the router starts with every slot answered, mounts replace, and
   ``handles`` is true only for a known method of an ``rpc_request``;
-* ``POOL_RPCS`` lists the six handlers and every method they implement;
+* ``POOL_RPCS`` lists the eight handlers and every method they implement;
 * a call that breaks is answered with its error and a code, a refusal
   keeps its own code, a non-model result is a ``TypeError``, and the
   result is dumped as JSON only where the call always was;
@@ -46,6 +46,7 @@ from igni_core.backend.pool_rpcs import (
     PoolRpcRouter,
     ServiceEventRpc,
     SessionStatesRpc,
+    TerminalRpc,
     UnavailableRpc,
     VmSignInRpc,
 )
@@ -173,7 +174,7 @@ def test_the_router_exposes_the_replier_it_answers_on() -> None:
     assert isinstance(router.replier, PoolReplier)
 
 
-def test_the_pool_rpcs_are_the_seven_handlers_and_publish_every_method_they_answer() -> None:
+def test_the_pool_rpcs_are_the_eight_handlers_and_publish_every_method_they_answer() -> None:
     assert set(POOL_RPCS) == {
         AttachSessionRpc,
         HostModelRpcs,
@@ -182,6 +183,7 @@ def test_the_pool_rpcs_are_the_seven_handlers_and_publish_every_method_they_answ
         ServiceEventRpc,
         ApproverTokenRpc,
         SessionStatesRpc,
+        TerminalRpc,
     }
     methods: set[RpcMethod] = set()
     for handler in POOL_RPCS:
@@ -198,6 +200,10 @@ def test_the_pool_rpcs_are_the_seven_handlers_and_publish_every_method_they_answ
         RpcMethod.REVOKE_APPROVER_TOKENS,
         RpcMethod.LIST_SESSION_STATES,
         RpcMethod.MARK_SESSION_SEEN,
+        RpcMethod.TERMINAL_OPEN,
+        RpcMethod.TERMINAL_INPUT,
+        RpcMethod.TERMINAL_RESIZE,
+        RpcMethod.TERMINAL_CLOSE,
     }
 
 

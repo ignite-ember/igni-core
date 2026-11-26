@@ -54,6 +54,8 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerCompletedPayload,
     SchedulerStartedPayload,
     SessionNamedPayload,
+    TerminalExitedPayload,
+    TerminalOutputPayload,
     UserSentimentPayload,
 )
 
@@ -187,6 +189,16 @@ def push_user_sentiment(payload: UserSentimentPayload) -> PushNotification:
     return _push(PushChannel.USER_SENTIMENT, payload)
 
 
+def push_terminal_output(payload: TerminalOutputPayload) -> PushNotification:
+    """The ``terminal_output`` push — what a terminal's shell printed."""
+    return _push(PushChannel.TERMINAL_OUTPUT, payload)
+
+
+def push_terminal_exited(payload: TerminalExitedPayload) -> PushNotification:
+    """The ``terminal_exited`` push — a terminal's shell ended."""
+    return _push(PushChannel.TERMINAL_EXITED, payload)
+
+
 __all__ = [
     "PushNotification",
     "PushPayload",
@@ -201,5 +213,7 @@ __all__ = [
     "push_scheduler_completed",
     "push_scheduler_started",
     "push_session_named",
+    "push_terminal_exited",
+    "push_terminal_output",
     "push_user_sentiment",
 ]

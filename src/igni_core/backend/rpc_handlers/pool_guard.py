@@ -33,6 +33,10 @@ POOL_LEVEL_RPCS: frozenset[RpcMethod] = frozenset(
         RpcMethod.REVOKE_APPROVER_TOKENS,
         RpcMethod.LIST_SESSION_STATES,
         RpcMethod.MARK_SESSION_SEEN,
+        RpcMethod.TERMINAL_OPEN,
+        RpcMethod.TERMINAL_INPUT,
+        RpcMethod.TERMINAL_RESIZE,
+        RpcMethod.TERMINAL_CLOSE,
     }
 )
 

@@ -21,7 +21,7 @@ from igni_core.backend.rpc_handlers.pool_guard import (
 from igni_core.protocol.rpc import RpcMethod
 
 
-def test_the_pool_level_calls_are_exactly_these_ten():
+def test_the_pool_level_calls_are_exactly_these_fourteen():
     assert {
         RpcMethod.ATTACH_SESSION,
         RpcMethod.HOST_MODEL,
@@ -33,6 +33,10 @@ def test_the_pool_level_calls_are_exactly_these_ten():
         RpcMethod.REVOKE_APPROVER_TOKENS,
         RpcMethod.LIST_SESSION_STATES,
         RpcMethod.MARK_SESSION_SEEN,
+        RpcMethod.TERMINAL_OPEN,
+        RpcMethod.TERMINAL_INPUT,
+        RpcMethod.TERMINAL_RESIZE,
+        RpcMethod.TERMINAL_CLOSE,
     } == POOL_LEVEL_RPCS
 
 

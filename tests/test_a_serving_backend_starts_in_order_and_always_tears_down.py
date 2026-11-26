@@ -26,6 +26,7 @@ STARTS = [
     "orchestrator.serve",
 ]
 STOPS = [
+    "terminals.close_all",
     "ingress.stop",
     "notifications.stop",
     "host.stop",
@@ -102,6 +103,7 @@ class Rig:
             host=SimpleNamespace(
                 start_signals=self.step("host.start_signals"), stop=self.step("host.stop")
             ),
+            terminals=SimpleNamespace(close_all=self.step("terminals.close_all")),
         )
 
     async def _serve(self, event: asyncio.Event) -> None:

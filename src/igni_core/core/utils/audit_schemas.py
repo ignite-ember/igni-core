@@ -135,8 +135,26 @@ class ToolCallDetails(BaseModel):
     error_type: str | None = None
 
 
+class TerminalDetails(BaseModel):
+    """Details variant for an interactive terminal opened or closed; never what was typed or shown."""
+
+    kind: Literal["terminal"] = "terminal"
+    action: Literal["opened", "closed"] = Field(
+        description="`opened` when the shell started, `closed` when it ended."
+    )
+    terminal_id: str = Field(description="The terminal's id.")
+    shell: str = Field(description="The shell it runs.")
+    cwd: str = Field(description="The folder it started in.")
+    exit_code: int | None = Field(
+        default=None, description="The shell's exit code on close; negative for a signal."
+    )
+    duration_s: float | None = Field(
+        default=None, description="How long the terminal was open, in seconds, on close."
+    )
+
+
 AuditDetails = Annotated[
-    SuccessDetails | ErrorDetails | BlockedDetails | ToolCallDetails,
+    SuccessDetails | ErrorDetails | BlockedDetails | ToolCallDetails | TerminalDetails,
     Field(discriminator="kind"),
 ]
 
@@ -244,6 +262,17 @@ class AuditEntry(BaseModel):
             agent=agent_name,
             tool=tool_name,
             status=status,
+            details=details,
+        )
+
+    @classmethod
+    def terminal(cls, details: TerminalDetails) -> AuditEntry:
+        """Build the entry for a terminal the person opened or closed."""
+        return cls(
+            session_id="",
+            agent="person",
+            tool="terminal",
+            status=AuditStatus.SUCCESS,
             details=details,
         )
 

@@ -782,6 +782,29 @@ workspace_trust:
 the configured one, the remotes when no tier named any. An invalid policy
 block fails closed (`never`).
 
+## Organisation switches
+
+Two `permissions` fields only an organisation sets. Each is honoured only
+from the managed-settings file or the group policy; the same field in
+`~/.igni/config.yaml`, a project's config or on the CLI changes nothing.
+Either tier saying `false` is enough.
+
+```yaml
+# managed-settings.yaml, or a group policy's settings
+permissions:
+  allow_bypass: false     # bypassPermissions cannot be entered: not by --auto-approve, /bypass or a tool
+  allow_terminal: false   # no window may open the interactive terminal
+```
+
+- `allow_bypass` (default `true`): `false` forbids the fully automatic
+  `bypassPermissions` mode outright.
+- `allow_terminal` (default `true`): `false` turns igni's interactive
+  terminal off. `terminal_open` is refused with code `refused` and the
+  sentence *the terminal is turned off by your organisation's managed
+  settings (permissions.allow_terminal: false)*; terminals already open
+  keep running until they close. Opening and closing a terminal
+  are written to the audit log ([SECURITY.md](SECURITY.md#6-audit-logging)).
+
 ## Air-gapped mode
 
 One switch for a deployment whose network has no route out. Once set, igni

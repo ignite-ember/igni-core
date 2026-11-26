@@ -203,7 +203,7 @@ class TestEachFactoryBindsItsChannelToItsPayload:
 def test_every_channel_with_a_payload_model_has_a_factory():
     """A producer set that grows a payload model grows a factory.
 
-    The eleven models in ``push_payloads`` are the channels igni produces
+    The thirteen models in ``push_payloads`` are the channels igni produces
     with a shape of its own; each one has a factory that takes it, so
     the pairing is spelled out once and cannot drift.
     """
@@ -226,6 +226,8 @@ def test_every_channel_with_a_payload_model_has_a_factory():
         "SchedulerCompletedPayload",
         "SchedulerStartedPayload",
         "SessionNamedPayload",
+        "TerminalExitedPayload",
+        "TerminalOutputPayload",
         "UserSentimentPayload",
     }
     assert factories == {
@@ -239,6 +241,8 @@ def test_every_channel_with_a_payload_model_has_a_factory():
         "push_scheduler_completed",
         "push_scheduler_started",
         "push_session_named",
+        "push_terminal_exited",
+        "push_terminal_output",
         "push_user_sentiment",
     }
 

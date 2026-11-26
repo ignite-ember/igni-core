@@ -17,6 +17,7 @@ sessions but not decide for the person:
   extension setting, no shell command outside a run, no change of whom
   igni signs in to;
 * it mints no approver token;
+* it opens no interactive terminal, and types into none;
 * it stops nothing: no ``shutdown`` message, no ``shutdown`` call;
 * it ends no run waiting on an approval (``cancel_run``, ``cancel``), and
   sends no new message into its session (``user_message``), which ends it
@@ -56,7 +57,7 @@ class ApproverTokens(Protocol):
 
 
 #: Calls only igni's window makes: each loosens a rule the agent is held to,
-#: speaks as a page, or changes whom igni acts for.
+#: speaks as a page, changes whom igni acts for, or is the person's own shell.
 WINDOW_ONLY_RPCS: frozenset[str] = frozenset(
     {
         RpcMethod.SAVE_PERMISSION_RULE,
@@ -80,6 +81,10 @@ WINDOW_ONLY_RPCS: frozenset[str] = frozenset(
         RpcMethod.EXTENSION_SERVICE_TOKEN,
         RpcMethod.MINT_APPROVER_TOKEN,
         RpcMethod.REVOKE_APPROVER_TOKENS,
+        RpcMethod.TERMINAL_OPEN,
+        RpcMethod.TERMINAL_INPUT,
+        RpcMethod.TERMINAL_RESIZE,
+        RpcMethod.TERMINAL_CLOSE,
         RpcMethod.SHUTDOWN,
     }
 )

@@ -35,6 +35,7 @@ from igni_core.core.utils.audit_schemas import (
     BlockedDetails,
     ErrorDetails,
     SuccessDetails,
+    TerminalDetails,
     ToolCallDetails,
 )
 
@@ -48,6 +49,7 @@ __all__ = [
     "BlockedDetails",
     "ErrorDetails",
     "SuccessDetails",
+    "TerminalDetails",
     "ToolCallDetails",
 ]
 

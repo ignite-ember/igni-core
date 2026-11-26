@@ -60,6 +60,8 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerCompletedPayload,
     SchedulerStartedPayload,
     SessionNamedPayload,
+    TerminalExitedPayload,
+    TerminalOutputPayload,
     UserSentimentPayload,
 )
 
@@ -184,6 +186,14 @@ PUSH_PAYLOADS: Mapping[PushChannel, PushPayload] = {
     PushChannel.USER_SENTIMENT: PushPayload(
         UserSentimentPayload,
         "Laya read the person's message as pleased or displeased with igni.",
+    ),
+    PushChannel.TERMINAL_OUTPUT: PushPayload(
+        TerminalOutputPayload,
+        "What a terminal's shell printed; sent only to the window that opened it.",
+    ),
+    PushChannel.TERMINAL_EXITED: PushPayload(
+        TerminalExitedPayload,
+        "A terminal's shell ended; sent once, only to the window that opened it.",
     ),
 }
 

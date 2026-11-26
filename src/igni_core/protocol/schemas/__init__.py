@@ -112,6 +112,8 @@ from igni_core.protocol.schemas.push import (
     push_scheduler_completed,
     push_scheduler_started,
     push_session_named,
+    push_terminal_exited,
+    push_terminal_output,
     push_user_sentiment,
 )
 from igni_core.protocol.schemas.push_payloads import (
@@ -125,6 +127,8 @@ from igni_core.protocol.schemas.push_payloads import (
     SchedulerCompletedPayload,
     SchedulerStartedPayload,
     SessionNamedPayload,
+    TerminalExitedPayload,
+    TerminalOutputPayload,
     UserSentimentPayload,
 )
 from igni_core.protocol.schemas.rpc import RpcErrorCode, RPCRequest, RPCResponse
@@ -208,6 +212,8 @@ __all__ = [
     "SchedulerCompletedPayload",
     "SchedulerStartedPayload",
     "SessionNamedPayload",
+    "TerminalExitedPayload",
+    "TerminalOutputPayload",
     "UserSentimentPayload",
     "push_background_process_done",
     "push_file_edited",
@@ -220,6 +226,8 @@ __all__ = [
     "push_scheduler_completed",
     "push_scheduler_started",
     "push_session_named",
+    "push_terminal_exited",
+    "push_terminal_output",
     "push_user_sentiment",
     # Internal (not on wire)
     "ToolResultData",

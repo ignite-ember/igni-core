@@ -78,6 +78,9 @@ dependencies = [
     # do: the pin is what keeps the install a wheel.
     "ripgrep~=15.1.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "ripgrep==14.1.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    # The app's interactive terminal on Windows (ConPTY,
+    # ``backend/terminal/windows_pty.py``); POSIX uses the standard library.
+    "pywinpty~=3.1.2; sys_platform == 'win32'",
     # Ed25519 verification of extension bundle signatures
     # (``extensions/signature.py``). It was already importable as a
     # transitive dependency, which a security control may not rely on.
