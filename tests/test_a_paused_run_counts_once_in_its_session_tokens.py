@@ -1,17 +1,4 @@
-"""A run's tokens are added to its session's totals once, however often it paused.
-
-Agno adds a run's metrics to ``session_data["session_metrics"]`` each
-time it persists the run, and it persists a paused run at every pause.
-The metrics are the run's running total, so each pause added everything
-so far again. In Bypass every shell call pauses and is resumed by the
-policy: a real 54-call turn of 2.4M input tokens left its session at
-56.8M.
-
-A session's composition makes Agno count a run once, when it ends.
-These tests compose a real session, then run a paused-and-resumed agent
-against a local OpenAI-compatible server and read the totals back from
-SQLite.
-"""
+"""A run's tokens are added to its session's totals once, however often it paused."""
 
 from __future__ import annotations
 
@@ -26,14 +13,21 @@ from typing import Any
 import pytest
 from agno.agent import Agent
 from agno.db.sqlite import AsyncSqliteDb
+from agno.metrics import RunMetrics
 from agno.models.openai.like import OpenAILike
+from agno.run.base import RunStatus
+from agno.run.team import TeamRunOutput
+from agno.session.team import TeamSession
+from agno.team import Team
+from agno.team import _session as team_session
 from agno.tools import tool
 
 from tests.session_factory import build_session
 
-#: The usage every reply reports.
 PROMPT_TOKENS = 100
+"""Prompt tokens every reply reports."""
 COMPLETION_TOKENS = 10
+"""Completion tokens every reply reports."""
 
 
 class ScriptedServer:
@@ -186,3 +180,19 @@ def test_a_run_left_paused_adds_nothing_yet(serve, tmp_path):
 
     totals = (session.session_data or {}).get("session_metrics") or {}
     assert totals.get("input_tokens", 0) == 0
+
+
+@pytest.mark.usefixtures("composed")
+@pytest.mark.parametrize(
+    ("status", "counted"),
+    [(RunStatus.paused, 0), (RunStatus.running, 0), (RunStatus.completed, 7)],
+)
+def test_a_team_run_is_counted_only_once_it_ends(status, counted):
+    team = Team(members=[], telemetry=False)
+    session = TeamSession(session_id="s", session_data={})
+    run = TeamRunOutput(run_id="r", status=status, metrics=RunMetrics(input_tokens=7))
+
+    team_session.update_session_metrics(team, session, run)
+
+    totals = session.session_data.get("session_metrics") or {}
+    assert totals.get("input_tokens", 0) == counted
