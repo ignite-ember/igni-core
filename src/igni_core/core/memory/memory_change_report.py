@@ -12,8 +12,8 @@ from igni_core.core.memory.stored_memory import StoredMemory
 class MemoryChangeReport(BaseModel):
     """The memories before and after one update, and the reply that says what changed."""
 
-    #: Agno's own reply when the extraction changed nothing.
     UNCHANGED: ClassVar[str] = "No updates needed"
+    """Agno's own reply when the extraction changed nothing."""
 
     before: list[StoredMemory] = Field(default_factory=list)
     after: list[StoredMemory] = Field(default_factory=list)

@@ -31,17 +31,11 @@ logger = logging.getLogger(__name__)
 
 
 class TrainedUserMemoryStore(UserMemoryStore):
-    """Agno 3's user-memory store, rendering its system-prompt block as Agno 2.6 did.
-
-    Its extraction tools write one at a time, and ``update_user_memory``
-    answers with what the store holds after the call, not with the
-    extraction model's own account of it.
-    """
+    """Agno 3's user-memory store: 2.6's prompt block, serial writes, replies read from the store."""
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        # Each write reads the record, changes it and upserts it whole; run
-        # side by side, the last upsert dropped the others' memories.
+        # Each write upserts the whole record, so parallel writes drop each other's memories.
         self._writes = asyncio.Lock()
 
     async def _aget_extraction_tools(self, *args: Any, **kwargs: Any) -> list[Callable]:

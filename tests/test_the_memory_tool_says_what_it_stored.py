@@ -1,16 +1,4 @@
-"""``update_user_memory`` saves every memory it is given and says exactly what it stored.
-
-Seen in a real session: the extraction model answered one
-``update_user_memory`` call with four ``add_memory`` calls in one reply,
-Agno ran them side by side, and each read the empty record, added its
-line and upserted the whole record. One line survived. The tool then
-handed back the extraction model's own summary ("Memories saved — four
-entries covering …"), and the agent spent twenty shell calls looking for
-the three that were never stored.
-
-Each test serves the extraction model from a local OpenAI-compatible
-server and reads the memories back from a real SQLite store.
-"""
+"""``update_user_memory`` stores every memory it is given and replies with what it stored."""
 
 from __future__ import annotations
 
@@ -23,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from agno.db.sqlite import AsyncSqliteDb
+from agno.db.sqlite import AsyncSqliteDb, SqliteDb
 from agno.models.openai.like import OpenAILike
 
 from igni_core.core.config.settings import Settings
@@ -107,9 +95,10 @@ def serve() -> Iterator[Any]:
         server.close()
 
 
-def _store(url: str, db_file: Path) -> Any:
+def _store(url: str, db_file: Path, *, sync: bool = False) -> Any:
+    db = SqliteDb(db_file=str(db_file)) if sync else AsyncSqliteDb(db_file=str(db_file))
     machine = TrainedLearningMachine(
-        db=AsyncSqliteDb(db_file=str(db_file)),
+        db=db,
         model=OpenAILike(id="m", base_url=url, api_key="k"),
         user_memory=Settings().learning.to_user_memory_input(),
     )
@@ -215,3 +204,20 @@ def test_an_extraction_that_changes_nothing_says_so(serve, tmp_path):
 
     assert reply == "No updates needed"
     assert asyncio.run(_stored(store)) == []
+
+
+def test_the_sync_tool_replies_with_what_was_stored(serve, tmp_path):
+    server = serve(
+        [
+            _calls("add_memory", [{"memory": f} for f in FACTS]),
+            {"role": "assistant", "content": CLAIM},
+        ]
+    )
+    store = _store(server.url, tmp_path / "state.db", sync=True)
+    (tool,) = store.get_agent_tools(user_id="u", agent_id="igni")
+
+    reply = tool("Remember who Dmytro is.")
+
+    stored = [m["content"] for m in store.get(user_id="u").memories]
+    assert sorted(stored) == sorted(FACTS)
+    assert reply.splitlines() == [f"Memory saved: {content}" for content in stored]
