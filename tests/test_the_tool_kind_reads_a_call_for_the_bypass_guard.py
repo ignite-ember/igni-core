@@ -76,14 +76,17 @@ def test_the_target_is_the_one_argument_the_kind_is_about(kind, args, target) ->
     assert kind.target(args) == target
 
 
-def test_only_a_file_read_of_a_secret_path_is_a_secret_read() -> None:
+def test_only_a_file_read_or_a_shell_read_of_a_secret_path_is_a_secret_read() -> None:
     secret = {"file_path": "/home/me/.ssh/id_rsa"}
     assert ToolKind.READ_FILE.secret_read(secret) == "reads a credential or secret file"
     assert ToolKind.READ_FILE.secret_read({"path": "/home/me/.aws/credentials"})
     assert ToolKind.READ_FILE.secret_read({"file_path": "src/main.py"}) is None
     assert ToolKind.READ_FILE.secret_read({}) is None
-    for kind in (ToolKind.SHELL, ToolKind.WRITE, ToolKind.FETCH, ToolKind.OTHER):
-        assert kind.secret_read({"command": "cat ~/.ssh/id_rsa", "path": "/x/.ssh/id_rsa"}) is None
+    call = {"command": "cat ~/.ssh/id_rsa", "path": "/x/.ssh/id_rsa"}
+    assert ToolKind.SHELL.secret_read(call) == "reads a credential or secret file"
+    assert ToolKind.SHELL.secret_read({"command": "cat notes.md"}) is None
+    for kind in (ToolKind.WRITE, ToolKind.FETCH, ToolKind.OTHER):
+        assert kind.secret_read(call) is None
 
 
 def test_each_kind_runs_its_own_rule_and_a_read_or_other_call_has_none(tmp_path: Path) -> None:
