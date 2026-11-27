@@ -107,7 +107,7 @@ class ReasoningContentHandler(EventHandler):
     """Native reasoning-content delta.
 
     Strips the MiniMax ``<think>...</think>`` wrapper in
-    :meth:`_unwrap_provider_reasoning` — the FE already renders
+    :meth:`unwrap_provider_reasoning` — the FE already renders
     this delta inside a thinking bubble that styles it as
     reasoning, so leaving the literal tags in would show them as
     raw text.
@@ -119,11 +119,11 @@ class ReasoningContentHandler(EventHandler):
         rc = getattr(event, "reasoning_content", "") or ""
         if not rc:
             return None
-        rc = self._unwrap_provider_reasoning(rc)
+        rc = self.unwrap_provider_reasoning(rc)
         return msg.ContentDelta(text=rc, is_thinking=True)
 
     @staticmethod
-    def _unwrap_provider_reasoning(rc: str) -> str:
+    def unwrap_provider_reasoning(rc: str) -> str:
         """Strip literal ``<think>``/``</think>`` tags that some
         providers (notably MiniMax) emit inside a reasoning-content
         event even though Agno already surfaces the delta on the
@@ -137,15 +137,27 @@ class ReasoningContentHandler(EventHandler):
 
 
 class ContentHandler(EventHandler):
-    """Streamed visible-content delta."""
+    """Streamed visible-content delta, or the model's own reasoning delta.
+
+    Agno puts a provider's native reasoning (``reasoning_content`` /
+    ``reasoning`` in an OpenAI-compatible delta, a Claude thinking block)
+    on ``RunContentEvent.reasoning_content``, with no visible content in
+    the same event. ``ReasoningContentDeltaEvent`` is only the reasoning
+    agent's, so this is where a reasoning model's thinking arrives.
+    """
 
     event_types = CONTENT_EVENTS
 
     def build(self, event: Any) -> msg.Message | None:
         content = event.content or ""
-        if not content:
+        if content:
+            return msg.ContentDelta(text=content, is_thinking=False)
+        reasoning = getattr(event, "reasoning_content", "") or ""
+        if not reasoning:
             return None
-        return msg.ContentDelta(text=content, is_thinking=False)
+        return msg.ContentDelta(
+            text=ReasoningContentHandler.unwrap_provider_reasoning(reasoning), is_thinking=True
+        )
 
 
 class ToolStartedHandler(EventHandler):
